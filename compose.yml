@@ -1,0 +1,14 @@
+services:
+  aldevtoolbox:
+    build: .
+    image: aldevtoolbox:latest
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      DB_PATH: /data/app.db
+      SEED_PATH: /app/Templates.seed
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+    restart: unless-stopped
