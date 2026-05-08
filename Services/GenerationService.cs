@@ -648,6 +648,29 @@ public class GenerationService
         await resource.CopyToAsync(entryStream, ct);
     }
 
+    // ===== Read-side helpers (used by the live preview) =====
+
+    /// <summary>
+    /// Returns the relative file paths (forward-slash, sorted) inside a single
+    /// example folder. Used by the New Workspace live preview to show the same
+    /// files the generator will emit when "Include examples" is on. Returns an
+    /// empty list when the example folder is missing — the preview treats that
+    /// the same as a <c>.gitkeep</c> placeholder.
+    /// </summary>
+    public IReadOnlyList<string> ListExampleFiles(string templateKey, string examplePath)
+    {
+        if (string.IsNullOrWhiteSpace(examplePath)) return Array.Empty<string>();
+        var examplesRoot = ResolveExamplesRoot(templateKey);
+        if (examplesRoot is null) return Array.Empty<string>();
+        var examplesDir = Path.Combine(examplesRoot, examplePath);
+        if (!Directory.Exists(examplesDir)) return Array.Empty<string>();
+
+        return Directory.EnumerateFiles(examplesDir, "*", SearchOption.AllDirectories)
+            .Select(f => Path.GetRelativePath(examplesDir, f).Replace(Path.DirectorySeparatorChar, '/'))
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
+    }
+
     // ===== Filesystem helpers =====
 
     /// <summary>

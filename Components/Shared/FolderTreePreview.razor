@@ -1,0 +1,20 @@
+@using ALDevToolbox.Domain.ValueObjects
+
+@*
+    Folder-tree preview used by the New Workspace and New Extension pages. The
+    actual recursion lives in <FolderTreeNode> so this root component can own
+    the outer <ul> wrapper without re-applying it at every level. See
+    ui-design.md for the visual spec.
+*@
+
+@if (Root is not null)
+{
+    <ul class="ftp ftp--root" role="tree">
+        <FolderTreeNode Node="Root" />
+    </ul>
+}
+
+@code {
+    /// <summary>Tree to render. <c>null</c> renders nothing (loading state).</summary>
+    [Parameter, EditorRequired] public PreviewNode? Root { get; set; }
+}

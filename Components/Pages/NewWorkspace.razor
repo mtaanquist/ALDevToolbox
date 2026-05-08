@@ -1,12 +1,15 @@
 @page "/projects/new"
+@rendermode InteractiveServer
 @inject TemplateService Templates
+@inject GenerationService Generation
 @using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
 
 <PageTitle>New workspace · AL Dev Toolbox</PageTitle>
 
 <TabBar Active="TabBar.Tab.NewWorkspace" />
 
-<div class="workspace-form">
+<div class="workspace-page">
     @if (_templates is null || _modules is null)
     {
         <p class="muted">Loading…</p>
@@ -20,98 +23,126 @@
     }
     else
     {
-        <form method="post" action="/generate/workspace" class="form-grid">
-            <AntiforgeryToken />
+        <div class="workspace-layout">
+            <form method="post" action="/generate/workspace" class="form-grid workspace-layout__form">
+                <AntiforgeryToken />
 
-            <section class="form-section">
-                <label class="section-label">Runtime template</label>
-                <select name="TemplateKey" required>
-                    @foreach (var t in _templates)
-                    {
-                        <option value="@t.Key" selected="@(t.Key == _selected!.Key)">@t.Name</option>
-                    }
-                </select>
-                <p class="caption muted">
-                    @_selected!.Description
-                    <span> · Default application: <code>@_selected.DefaultApplication</code></span>
-                </p>
-            </section>
-
-            <section class="form-section">
-                <label class="section-label">Project</label>
-                <input type="text" name="WorkspaceName" placeholder="e.g. Acme Customer"
-                       pattern="^[A-Za-z][A-Za-z0-9 ]*$" required />
-                <input type="text" name="Brief" placeholder="One-line description" required />
-                <textarea name="Description" rows="3" placeholder="Longer description" required></textarea>
-            </section>
-
-            <section class="form-section form-section--row">
-                <div>
-                    <label class="section-label">Core ID range — from</label>
-                    <input type="number" name="CoreIdRangeFrom" required min="1"
-                           value="@_selected.CoreIdRangeFrom" />
-                </div>
-                <div>
-                    <label class="section-label">Core ID range — to</label>
-                    <input type="number" name="CoreIdRangeTo" required min="1"
-                           value="@_selected.CoreIdRangeTo" />
-                </div>
-            </section>
-
-            <section class="form-section form-section--row">
-                <div>
-                    <label class="section-label">Application version</label>
-                    <input type="text" name="ApplicationVersion" required
-                           pattern="^\d+\.\d+\.\d+\.\d+$"
-                           value="@_selected.DefaultApplication" />
-                </div>
-                <div>
-                    <label class="section-label">Runtime version</label>
-                    <input type="text" name="RuntimeVersion" required
-                           value="@($"{_selected.Runtime}.0")" />
-                </div>
-            </section>
-
-            <section class="form-section">
-                <label class="section-label">Modules</label>
-                @if (_modules.Count == 0)
-                {
-                    <p class="muted">No modules available.</p>
-                }
-                else
-                {
-                    <div class="module-list">
-                        @foreach (var m in _modules)
+                <section class="form-section">
+                    <label class="section-label" for="ws-template">Runtime template</label>
+                    <select id="ws-template" name="TemplateKey" required
+                            @bind="_templateKey" @bind:after="OnTemplateChanged">
+                        @foreach (var t in _templates)
                         {
-                            <label class="module-card">
-                                <input type="checkbox" name="SelectedModuleKeys" value="@m.Key" />
-                                <span class="module-card__body">
-                                    <span class="module-card__name">@m.Name</span>
-                                    <span class="module-card__caption muted">
-                                        + @m.Dependencies.Count
-                                        @(m.Dependencies.Count == 1 ? "dependency" : "dependencies")
-                                    </span>
-                                </span>
-                            </label>
+                            <option value="@t.Key">@t.Name</option>
                         }
+                    </select>
+                    <p class="caption muted">
+                        @_selected!.Description
+                        <span> · Default application: <code>@_selected.DefaultApplication</code></span>
+                    </p>
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label">Project</label>
+                    <input type="text" name="WorkspaceName" placeholder="e.g. Acme Customer"
+                           pattern="^[A-Za-z][A-Za-z0-9 ]*$" required
+                           @bind="_workspaceName" @bind:event="oninput" />
+                    <input type="text" name="Brief" placeholder="One-line description" required
+                           @bind="_brief" @bind:event="oninput" />
+                    <textarea name="Description" rows="3" placeholder="Longer description" required
+                              @bind="_description" @bind:event="oninput"></textarea>
+                </section>
+
+                <section class="form-section form-section--row">
+                    <div>
+                        <label class="section-label" for="ws-core-from">Core ID range — from</label>
+                        <input id="ws-core-from" type="number" name="CoreIdRangeFrom" required min="1"
+                               @bind="_coreIdRangeFrom" @bind:event="oninput" />
                     </div>
-                }
-            </section>
+                    <div>
+                        <label class="section-label" for="ws-core-to">Core ID range — to</label>
+                        <input id="ws-core-to" type="number" name="CoreIdRangeTo" required min="1"
+                               @bind="_coreIdRangeTo" @bind:event="oninput" />
+                    </div>
+                </section>
 
-            <section class="form-section">
-                <label class="section-label">Options</label>
-                <label class="check-row">
-                    <input type="checkbox" name="IncludeExamples" value="true" checked="checked" />
-                    <span>Include example AL files</span>
-                </label>
-                <label class="check-row">
-                    <input type="checkbox" name="IncludeForNav" value="true" />
-                    <span>Include ForNAV in Core</span>
-                </label>
-            </section>
+                <section class="form-section form-section--row">
+                    <div>
+                        <label class="section-label" for="ws-app-version">Application version</label>
+                        <input id="ws-app-version" type="text" name="ApplicationVersion" required
+                               pattern="^\d+\.\d+\.\d+\.\d+$"
+                               @bind="_applicationVersion" @bind:event="oninput" />
+                    </div>
+                    <div>
+                        <label class="section-label" for="ws-runtime-version">Runtime version</label>
+                        <input id="ws-runtime-version" type="text" name="RuntimeVersion" required
+                               @bind="_runtimeVersion" @bind:event="oninput" />
+                    </div>
+                </section>
 
-            <button type="submit" class="btn btn--primary">Generate</button>
-        </form>
+                <section class="form-section">
+                    <label class="section-label">Modules</label>
+                    @if (_modules.Count == 0)
+                    {
+                        <p class="muted">No modules available.</p>
+                    }
+                    else
+                    {
+                        <div class="module-list">
+                            @foreach (var m in _modules)
+                            {
+                                <label class="module-card">
+                                    <input type="checkbox" name="SelectedModuleKeys" value="@m.Key"
+                                           checked="@_selectedModuleKeys.Contains(m.Key)"
+                                           @onchange="e => OnModuleToggled(m.Key, (bool)(e.Value ?? false))" />
+                                    <span class="module-card__body">
+                                        <span class="module-card__name">@m.Name</span>
+                                        <span class="module-card__caption muted">
+                                            + @m.Dependencies.Count
+                                            @(m.Dependencies.Count == 1 ? "dependency" : "dependencies")
+                                        </span>
+                                    </span>
+                                </label>
+                            }
+                        </div>
+                    }
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label">Options</label>
+                    <label class="check-row">
+                        <input type="checkbox" name="IncludeExamples" value="true"
+                               @bind="_includeExamples" />
+                        <span>Include example AL files</span>
+                    </label>
+                    <label class="check-row">
+                        <input type="checkbox" name="IncludeForNav" value="true"
+                               @bind="_includeForNav" />
+                        <span>Include ForNAV in Core</span>
+                    </label>
+                </section>
+
+                <button type="submit" class="btn btn--primary workspace-layout__generate">Generate</button>
+            </form>
+
+            <aside class="workspace-layout__preview">
+                <section class="preview-card">
+                    <div class="section-label">Preview</div>
+                    <FolderTreePreview Root="BuildPreview()" />
+                </section>
+
+                <section class="preview-stats">
+                    <div class="stat-card">
+                        <div class="stat-card__value">@(1 + _selectedModuleKeys.Count)</div>
+                        <div class="stat-card__label">Extensions</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card__value">@CountDependencies()</div>
+                        <div class="stat-card__label">Dependencies</div>
+                    </div>
+                </section>
+            </aside>
+        </div>
     }
 </div>
 
@@ -120,10 +151,186 @@
     private List<ALDevToolbox.Domain.Entities.Module>? _modules;
     private RuntimeTemplate? _selected;
 
+    // Form state. Mirrors what the form posts to /generate/workspace; the live
+    // preview reads from these same fields so it always reflects the user's
+    // current input.
+    private string _templateKey = string.Empty;
+    private string _workspaceName = string.Empty;
+    private string _brief = string.Empty;
+    private string _description = string.Empty;
+    private int _coreIdRangeFrom;
+    private int _coreIdRangeTo;
+    private string _applicationVersion = string.Empty;
+    private string _runtimeVersion = string.Empty;
+    private readonly HashSet<string> _selectedModuleKeys = new(StringComparer.Ordinal);
+    private bool _includeExamples = true;
+    private bool _includeForNav;
+
+    // Cached example file listings keyed by the template's example_path. Repopulated
+    // when the user picks a different template so we never hit disk during render.
+    private Dictionary<string, IReadOnlyList<string>> _exampleFiles = new(StringComparer.Ordinal);
+
     protected override async Task OnInitializedAsync()
     {
         _templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
         _modules = await Templates.GetModulesAsync(includeDeprecated: false);
         _selected = _templates.FirstOrDefault();
+        if (_selected is not null)
+        {
+            ApplyTemplateDefaults(_selected);
+        }
     }
+
+    private void OnTemplateChanged()
+    {
+        var picked = _templates?.FirstOrDefault(t => t.Key == _templateKey);
+        if (picked is null) return;
+        _selected = picked;
+        ApplyTemplateDefaults(picked);
+    }
+
+    private void ApplyTemplateDefaults(RuntimeTemplate template)
+    {
+        _templateKey = template.Key;
+        _coreIdRangeFrom = template.CoreIdRangeFrom;
+        _coreIdRangeTo = template.CoreIdRangeTo;
+        _applicationVersion = template.DefaultApplication;
+        _runtimeVersion = $"{template.Runtime}.0";
+        _exampleFiles = template.Folders
+            .Where(f => !string.IsNullOrWhiteSpace(f.ExamplePath))
+            .Select(f => f.ExamplePath!)
+            .Distinct(StringComparer.Ordinal)
+            .ToDictionary(
+                p => p,
+                p => Generation.ListExampleFiles(template.Key, p),
+                StringComparer.Ordinal);
+    }
+
+    private void OnModuleToggled(string key, bool isChecked)
+    {
+        if (isChecked) _selectedModuleKeys.Add(key);
+        else _selectedModuleKeys.Remove(key);
+    }
+
+    private int CountDependencies()
+    {
+        if (_modules is null) return 0;
+        // One self-reference to Core per module, plus each module's own
+        // dependencies. Core itself has no dependencies unless ForNAV is on,
+        // in which case we just call out a non-zero count without looking up
+        // catalogue rows for the preview.
+        var total = 0;
+        foreach (var key in _selectedModuleKeys)
+        {
+            var module = _modules.FirstOrDefault(m => m.Key == key);
+            if (module is null) continue;
+            total += 1 + module.Dependencies.Count;
+        }
+        if (_includeForNav) total += 1;
+        return total;
+    }
+
+    /// <summary>
+    /// Builds the <see cref="PreviewNode"/> tree displayed in the right column.
+    /// Mirrors the structure documented in <c>generation-engine.md</c>: the
+    /// workspace root contains <c>.assets</c>, the Core extension, one folder
+    /// per selected module, and three workspace-level files. Per-extension
+    /// folders are populated from the active template; <c>.gitkeep</c> stand-ins
+    /// are shown when examples are off or the example folder is missing.
+    /// </summary>
+    private PreviewNode BuildPreview()
+    {
+        var rootName = string.IsNullOrWhiteSpace(_workspaceName)
+            ? "Workspace"
+            : StripWhitespace(_workspaceName);
+
+        var children = new List<PreviewNode>
+        {
+            PreviewNode.Folder(".assets", new[]
+            {
+                PreviewNode.Folder("images", new[] { PreviewNode.File("logo.png") }),
+                PreviewNode.Folder("rulesets", new[] { PreviewNode.File("Company.ruleset.json") }),
+            }),
+            BuildExtensionNode("Core"),
+        };
+
+        if (_modules is not null)
+        {
+            foreach (var key in _selectedModuleKeys)
+            {
+                var module = _modules.FirstOrDefault(m => m.Key == key);
+                if (module is null) continue;
+                children.Add(BuildExtensionNode(StripWhitespace(module.Name)));
+            }
+        }
+
+        children.Add(PreviewNode.File($"{rootName}.code-workspace"));
+        children.Add(PreviewNode.File(".gitignore"));
+        children.Add(PreviewNode.File("README.md"));
+
+        return new PreviewNode(rootName, PreviewNodeKind.Workspace, children);
+    }
+
+    private PreviewNode BuildExtensionNode(string folderName)
+    {
+        var contents = new List<PreviewNode>
+        {
+            PreviewNode.File("app.json"),
+            PreviewNode.File("AppSourceCop.json"),
+            PreviewNode.Folder("libs", new[] { PreviewNode.File(".gitkeep") }),
+            PreviewNode.Folder("permissionsets", new[] { PreviewNode.File(".gitkeep") }),
+        };
+
+        if (_selected is not null)
+        {
+            foreach (var folder in _selected.Folders.OrderBy(f => f.Ordering))
+            {
+                contents.Add(BuildTemplateFolderNode(folder));
+            }
+        }
+
+        contents.Add(PreviewNode.Folder("Translations", new[] { PreviewNode.File(".gitkeep") }));
+
+        return PreviewNode.Extension(folderName, contents);
+    }
+
+    /// <summary>
+    /// Renders one of the template's nested folders. Splits the slash-delimited
+    /// <see cref="TemplateFolder.Path"/> into a chain of <see cref="PreviewNode"/>s
+    /// so e.g. <c>Source/Foundation</c> appears as a Source folder containing a
+    /// Foundation folder, then drops the leaf's contents (example files or a
+    /// single <c>.gitkeep</c>) into the Foundation level.
+    /// </summary>
+    private PreviewNode BuildTemplateFolderNode(TemplateFolder folder)
+    {
+        var leaves = LeafFiles(folder);
+        var segments = folder.Path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+        {
+            return PreviewNode.Folder(folder.Path, leaves);
+        }
+
+        // Walk from the inside out so each parent wraps the previously built level.
+        PreviewNode current = PreviewNode.Folder(segments[^1], leaves);
+        for (var i = segments.Length - 2; i >= 0; i--)
+        {
+            current = PreviewNode.Folder(segments[i], new[] { current });
+        }
+        return current;
+    }
+
+    private List<PreviewNode> LeafFiles(TemplateFolder folder)
+    {
+        if (_includeExamples
+            && !string.IsNullOrWhiteSpace(folder.ExamplePath)
+            && _exampleFiles.TryGetValue(folder.ExamplePath, out var files)
+            && files.Count > 0)
+        {
+            return files.Select(PreviewNode.File).ToList();
+        }
+        return new List<PreviewNode> { PreviewNode.File(".gitkeep") };
+    }
+
+    private static string StripWhitespace(string value) =>
+        new(value.Where(c => !char.IsWhiteSpace(c)).ToArray());
 }
