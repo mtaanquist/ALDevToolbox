@@ -2,13 +2,19 @@
 
 ## Where templates live
 
-**At runtime:** in the SQLite database. Templates, modules, and catalogue entries are stored as rows in the tables described in `domain-model.md`. The admin UI is the canonical way to edit them.
+**Persistence:** in the SQLite database. Templates, modules, and catalogue entries are stored as rows in the tables described in `domain-model.md`. The DB is the source of truth at runtime — every read on the user-facing flows hits these tables.
 
-**At seed time:** in `Templates.seed/`, a sibling directory to `docs/`. This folder contains TOML files that are imported into the database the first time the app runs against an empty database. After that, the seed files are ignored — they're not a fallback or a sync source.
+**Authoring surfaces:** two equal options, both writing through the same `TemplateInput` validation pipeline into the DB.
+
+1. **The structured admin form.** Field-by-field editing on `/admin/templates/{key}`. Best for incremental tweaks, single-flag changes, and folder reordering.
+2. **TOML.** A textarea on the same admin page (toggle in the header) that round-trips a `template.toml` document. Best for authoring a new template from scratch, bulk folder edits, and copy-pasting a template from one environment to another. New templates default to TOML mode because that's the workflow this is optimised for.
+
+**Bootstrap:** `Templates.seed/` is the source-controlled starting point. On first run against an empty DB, every TOML file under it is imported. After that, the seed files are ignored — neither a fallback, nor a sync source. Edits made through either authoring surface live in the DB only; nothing rewrites `Templates.seed/`.
 
 This split exists so:
-- The repo has a sensible "starting point" that's source-controlled and reviewable.
-- Day-to-day edits don't require a PR + redeploy.
+- The repo has a sensible "starting point" for fresh deployments that's source-controlled and reviewable.
+- Day-to-day edits — and authoring entire new templates — don't require a PR + redeploy.
+- Admins comfortable with TOML can stay in TOML; admins who prefer forms can stay in forms.
 - Backups / snapshots can be exported back to TOML if anyone wants the source-control workflow back temporarily.
 
 ## Seed strategy
@@ -169,16 +175,16 @@ These are the variables available when seeding example AL files into a generated
 | `{{namespace}}`      | The folder path, dot-separated                |
 | `{{guid}}`           | A fresh GUID per call                         |
 
-## Editing a single template as TOML
+## TOML as an authoring surface
 
-The admin template edit page (`/admin/templates/{key}`) offers a TOML view alongside the structured form. It's a per-template editor surface, not a sync mechanism: the DB remains the source of truth. Saving from TOML mode parses the textarea, maps it onto the same `TemplateInput` payload the structured form produces, and runs through identical validation. The on-disk seed files under `Templates.seed/` are not touched.
+Both `/admin/templates/new` and `/admin/templates/{key}` expose a TOML editor next to the structured form via a header toggle. The new-template flow opens in TOML mode by default because pasting in a `template.toml` is usually the fastest way to get a fresh template going; the edit flow opens in the structured form because surgical tweaks are what people do most often there.
 
-A few fields are deliberately not represented in the TOML view (and have to be toggled from the structured form):
+Saving from TOML mode parses the textarea via Tomlyn, maps it onto the same `TemplateInput` payload the structured form produces, and runs through identical validation. There is no separate code path on the way to the database. The on-disk files under `Templates.seed/` are not touched — that directory is a one-time bootstrap, not a peer store.
 
-- `deprecated` — seed TOML doesn't carry it, so admins flip it from the structured form's checkbox before / after a TOML save.
-- Folder reordering by drag — express the desired order by writing the `[[folders]]` blocks in that order; the parser treats array order as ordering.
+The mapper (`Services/TemplateTomlMapper.cs`) is now load-bearing infrastructure rather than seed-time-only glue: schema changes there affect admins directly. Two things to keep in mind when touching it:
 
-This was added because directly authoring TOML is sometimes faster for bulk folder edits than clicking through the structured editor. If the TOML view ever drifts from the seed format the seed files ship with, fix the mapper, not the seed schema — interoperability with `Templates.seed/` is the whole point.
+- The TOML schema admins type into is the same schema the seed files ship with. Don't fork it.
+- A few fields are deliberately not represented in the TOML view: `deprecated` (seed TOML doesn't carry it — flip it from the structured form's checkbox), and per-row folder reordering by drag (express the order by writing the `[[folders]]` blocks in that order; array order is preserved as `ordering`).
 
 ## Export to TOML
 

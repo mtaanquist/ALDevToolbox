@@ -148,6 +148,6 @@ A few decisions throughout the design exist to keep this small. If you find your
 - SQLite instead of Postgres.
 - One container, one volume.
 - Synchronous generation (no queue).
-- TOML used only at seed time (no two-way sync).
+- TOML is an authoring format on top of the DB, never a peer persistence path. `Templates.seed/` bootstraps an empty database; nothing watches it or writes back to it.
 - JSON columns for `defaults` and `app_source_cop` instead of normalised tables.
-- Admin UI only edits structured data; AL file contents stay in the repo.
+- Admin UI edits structured data and TOML; AL file contents stay in the repo.

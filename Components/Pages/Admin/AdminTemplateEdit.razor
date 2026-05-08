@@ -11,8 +11,13 @@
 
 @*
     Combined create/edit page.
-    - /admin/templates/new      → no [Key] route value, shows the empty form.
-    - /admin/templates/{key}    → loads the existing row by key and prefills it.
+    - /admin/templates/new      → no [Key] route value. Opens in TOML mode
+                                  because authoring a fresh template is usually
+                                  faster as a single TOML document than
+                                  clicking through the structured form.
+    - /admin/templates/{key}    → loads the existing row by key. Opens in the
+                                  structured form because surgical edits are
+                                  what people do most often.
 
     Reordering uses Up/Down buttons rather than HTML5 drag-and-drop because the
     latter would need .razor.js plumbing for v1; can be upgraded later if asked
@@ -377,7 +382,6 @@
         _saveSuccess = null;
         _fieldErrors = new Dictionary<string, string>();
         _confirmDelete = false;
-        _mode = EditorMode.Form;
 
         if (!IsEdit)
         {
@@ -385,6 +389,11 @@
             _existingId = null;
             _isDeleted = false;
             _loadFailed = false;
+            // New-template flow opens in TOML — pasting a template.toml is the
+            // common path. Pre-render the blank scaffold once so the textarea
+            // has something useful to start from.
+            _mode = EditorMode.Toml;
+            _toml = TemplateTomlMapper.BlankToml();
             return;
         }
 
@@ -400,6 +409,7 @@
         _existingId = existing.Id;
         _isDeleted = existing.DeletedAt is not null;
         _form = FormState.From(existing);
+        _mode = EditorMode.Form;
     }
 
     private void AddFolder()
