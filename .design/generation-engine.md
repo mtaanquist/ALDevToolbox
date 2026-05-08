@@ -77,9 +77,9 @@ AcmeCustomer/
      a. Build app.json from template.defaults + project plan
      b. Build AppSourceCop.json from template.app_source_cop
      c. Walk template.folders — for each:
-          if folder.example_path is set AND IncludeExamples is true:
-              copy each file from Templates.seed/<runtime>/examples/<example_path>/
-              run mustache substitution on each .al file's contents
+          if folder has template_files rows AND IncludeExamples is true:
+              for each file row, write its `path` into the folder with `content` as the body
+              run mustache substitution on each `.al` file's content
           else:
               create the folder with a .gitkeep file
      d. Add libs/.gitkeep, permissionsets/.gitkeep, translations/.gitkeep
@@ -159,7 +159,7 @@ Module folder paths in the workspace match the on-disk folder names — module n
 
 ## Mustache substitution
 
-When `IncludeExamples` is true and example AL files are copied from `Templates.seed/<runtime>/examples/`, run mustache substitution on the file contents. Available variables:
+When `IncludeExamples` is true, run mustache substitution on the `content` of every `template_files` row whose `path` ends in `.al`. Non-AL files are written verbatim. Available variables:
 
 | Variable             | Source                                            |
 |----------------------|---------------------------------------------------|
@@ -236,8 +236,9 @@ The `app.json` `dependencies` array is built from the user's selected dependenci
 ## Error handling
 
 - Invalid `ProjectPlan` (validation failed) → throw a `ValidationException`-style exception with a list of field-keyed errors. The page catches this and renders inline.
-- Missing example file referenced from a `template_folder` → log a warning, skip the file, continue. Don't fail the whole generation over a missing example.
 - IO error mid-stream → propagate. The user gets a server error page; the audit log captures nothing because nothing was written.
+
+(There is no longer a "missing example file" warning case: file content lives in the DB alongside the folder row, so it can't go missing relative to the row.)
 
 ## What gets logged
 

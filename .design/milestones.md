@@ -97,6 +97,21 @@ Goal: admins can list and edit runtime templates through the UI.
 
 **Done when:** an admin can edit a template's folders, save, and see the change reflected next time they generate a workspace using that template. The audit log shows the change.
 
+## Milestone 8.5 — Files in folders
+
+Goal: admins can add, edit, and remove files inside template folders through the same admin surface. The on-disk `Templates.seed/<runtime>/examples/` tree stops being the runtime source for example content; the DB owns it.
+
+- Add the `template_files` table per `domain-model.md`. New `TemplateFile` entity hung off `TemplateFolder.Files`.
+- Migration: schema add for `template_files`; data backfill that walks the on-disk `examples/<example_path>/` directory for every existing `template_folders` row whose legacy `example_path` is set, inserting one `template_file` row per file (UTF-8 text only); column drop for `template_folders.example_path`.
+- Update `SeedService` to populate `template_files` from the example directories on first-run seeds. After this milestone, `Templates.seed/runtime-*/examples/` exists only as a bootstrap source.
+- Extend `TemplateInput` / `TemplateFolderInput` with a per-folder `Files` list. Validation: relative path, no `..`, no leading slash, unique per folder. Reuse the same reconciliation pattern `ReconcileFolders` already uses.
+- Update `GenerationService.WriteExtensionAsync` to emit files from `TemplateFolder.Files` instead of walking the disk. Remove `ResolveExamplesRoot` and the disk-fallback code path. Mustache substitution still runs on `.al` content.
+- Update `TemplateTomlMapper` (and `Domain/Seed/FolderSeed`) to round-trip `[[folders.files]]` blocks with `path` and `content`.
+- Admin UI: per-folder expandable file editor in `AdminTemplateEdit.razor`. Path input + content `<textarea>` per row, with reorder/remove/add. Pull the file list out into a small `Components/Shared/TemplateFileEditor.razor` so the live preview can read the same data.
+- Audit: `template_files` snapshots store `path` + `sha256(content)` only, not the raw content, to keep the log compact.
+
+**Done when:** an admin can open a template, expand a folder, edit an `.al` file's content, save, and the next workspace generation reflects the change. The on-disk `examples/` tree is no longer read at runtime — confirmed by deleting it on a deployed instance and verifying generation still emits the right files.
+
 ## Milestone 9 — Admin: modules and catalogue
 
 Goal: same coverage as templates, for the other two editable entity types.
@@ -137,7 +152,6 @@ These are mentioned in the design but should not be implemented in the initial b
 - A structured editor for `defaults_json` and `app_source_cop_json`. Textarea is fine for v1.
 - An in-app diff viewer for audit snapshots. Showing the JSON is fine for v1.
 - Automatic migration testing in CI. Manual is fine for v1.
-- Editing example AL file *contents* through the UI. They stay as repo files.
 - Multi-tenancy.
 
 ## Deliberately small
@@ -148,6 +162,6 @@ A few decisions throughout the design exist to keep this small. If you find your
 - SQLite instead of Postgres.
 - One container, one volume.
 - Synchronous generation (no queue).
-- TOML is an authoring format on top of the DB, never a peer persistence path. `Templates.seed/` bootstraps an empty database; nothing watches it or writes back to it.
+- TOML is an authoring format on top of the DB, never a peer persistence path. `Templates.seed/` bootstraps an empty database (templates, modules, catalogue, *and* per-folder file contents); nothing watches it or writes back to it.
 - JSON columns for `defaults` and `app_source_cop` instead of normalised tables.
 - Admin UI edits structured data and TOML; AL file contents stay in the repo.
