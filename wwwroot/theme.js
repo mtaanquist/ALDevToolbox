@@ -65,4 +65,28 @@
     }
     syncWhenReady();
     document.addEventListener("enhancedload", syncButtons);
+
+    // Interactive Blazor navigations (the New Workspace / New Extension pages
+    // opt into InteractiveServer) diff the layout subtree without firing
+    // enhancedload, so the active class would be wiped on every nav back to
+    // them. A targeted MutationObserver re-applies the highlight whenever the
+    // toggle reappears in the DOM.
+    const observer = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+            for (const node of m.addedNodes) {
+                if (node.nodeType !== 1) continue;
+                if (node.matches?.("[data-theme-button]") || node.querySelector?.("[data-theme-button]")) {
+                    syncButtons();
+                    return;
+                }
+            }
+        }
+    });
+    if (document.body) {
+        observer.observe(document.body, { childList: true, subtree: true });
+    } else {
+        document.addEventListener("DOMContentLoaded", () => {
+            observer.observe(document.body, { childList: true, subtree: true });
+        }, { once: true });
+    }
 })();
