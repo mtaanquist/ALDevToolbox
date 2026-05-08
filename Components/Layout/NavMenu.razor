@@ -38,11 +38,22 @@
         </ul>
     </div>
 
-    <div class="nav-section nav-section--admin">
-        <div class="nav-divider"></div>
-        <a class="nav-link nav-link--muted" href="/login">
-            <Icon Name="wrench" Width="18" Height="18" Css="nav-link__icon" />
-            <span>Admin</span>
-        </a>
-    </div>
+    @* Admin section is only visible once signed in. Anonymous users reach
+       /login through the muted "Sign in" affordance in the top bar. *@
+    <AuthorizeView>
+        <Authorized>
+            <div class="nav-section">
+                <div class="nav-divider"></div>
+                <div class="nav-section__label">Admin</div>
+                <ul class="nav-list">
+                    <li>
+                        <NavLink class="nav-link" href="/admin" Match="NavLinkMatch.All" ActiveClass="active">
+                            <Icon Name="layout-dashboard" Width="18" Height="18" Css="nav-link__icon" />
+                            <span>Dashboard</span>
+                        </NavLink>
+                    </li>
+                </ul>
+            </div>
+        </Authorized>
+    </AuthorizeView>
 </nav>

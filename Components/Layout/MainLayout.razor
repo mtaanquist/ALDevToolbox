@@ -9,7 +9,22 @@
         </div>
         <div class="top-bar__user">
             <ThemeToggle />
-            <a href="/login" class="signin-link">Sign in</a>
+            <AuthorizeView>
+                <Authorized>
+                    <span class="signed-in-as">
+                        Signed in as <strong>@context.User.Identity?.Name</strong>
+                    </span>
+                    <form method="post" action="/auth/logout" class="signout-form">
+                        <AntiforgeryToken />
+                        <button type="submit" class="signin-link signin-link--button">Sign out</button>
+                    </form>
+                </Authorized>
+                <NotAuthorized>
+                    <a href="/login" class="signin-link signin-link--icon" aria-label="Sign in" title="Sign in">
+                        <Icon Name="log-in" Width="16" Height="16" />
+                    </a>
+                </NotAuthorized>
+            </AuthorizeView>
         </div>
     </header>
 

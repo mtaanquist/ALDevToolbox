@@ -1,0 +1,55 @@
+@page "/login"
+@using Lucide.Blazor.Components
+
+<PageTitle>Sign in · AL Dev Toolbox</PageTitle>
+
+<div class="login-page">
+    <h1>Sign in</h1>
+    <p class="caption muted">
+        Enter the admin password and pick a display name. The display name appears
+        in the audit log so other admins can see who made which change — there are
+        no individual accounts.
+    </p>
+
+    @if (Error == "invalid")
+    {
+        <p class="form-error" role="alert">Invalid password.</p>
+    }
+    else if (Error == "not-configured")
+    {
+        <p class="form-error" role="alert">
+            The admin password isn't configured on this server. Set
+            <code>ADMIN_PASSWORD</code> or <code>ADMIN_PASSWORD_FILE</code>
+            and restart the app.
+        </p>
+    }
+
+    <form method="post" action="/auth/login" class="form-grid login-form">
+        <AntiforgeryToken />
+        <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+
+        <section class="form-section">
+            <label class="section-label" for="lg-name">Display name</label>
+            <input id="lg-name" type="text" name="DisplayName" required autofocus
+                   placeholder="e.g. Bob — Engineering" />
+        </section>
+
+        <section class="form-section">
+            <label class="section-label" for="lg-password">Password</label>
+            <input id="lg-password" type="password" name="Password" required />
+        </section>
+
+        <button type="submit" class="btn">
+            <Icon Name="log-in" Width="16" Height="16" />
+            <span>Sign in</span>
+        </button>
+    </form>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "err")]
+    public string? Error { get; set; }
+
+    [SupplyParameterFromQuery(Name = "return")]
+    public string? ReturnUrl { get; set; }
+}
