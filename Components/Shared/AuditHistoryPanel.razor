@@ -25,6 +25,13 @@
     }
     else
     {
+        @if (_entries.Count >= _limit)
+        {
+            <p class="muted audit-panel__limit-note">
+                Showing the @_limit most recent changes. Older entries are still
+                in the database and visible from <a href="/admin/audit">the global audit log</a>.
+            </p>
+        }
         <table class="data-table audit-table">
             <thead>
                 <tr>
@@ -74,6 +81,7 @@
     [Parameter]
     public string Title { get; set; } = "History";
 
+    private const int _limit = 200;
     private List<AuditLogEntry>? _entries;
     private (AuditEntityType type, int id)? _loadedKey;
 
@@ -85,7 +93,7 @@
             return;
         }
         _entries = null;
-        _entries = await Audit.GetForEntityAsync(EntityType, EntityId);
+        _entries = await Audit.GetForEntityAsync(EntityType, EntityId, _limit);
         _loadedKey = currentKey;
     }
 

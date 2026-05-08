@@ -28,9 +28,10 @@ public class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        // Reusable converters for the two JSON columns. The same JsonSerializerOptions
-        // are used for read and write so the round-trip is symmetric.
-        var jsonOptions = new JsonSerializerOptions { WriteIndented = false };
+        // Reusable converters for the two JSON columns. Options come from
+        // PersistenceJson so the round-trip stays symmetric with the audit
+        // interceptor and the admin form's JSON pre-parse.
+        var jsonOptions = PersistenceJson.Options;
         var defaultsConverter = new ValueConverter<TemplateDefaults, string>(
             v => JsonSerializer.Serialize(v, jsonOptions),
             v => JsonSerializer.Deserialize<TemplateDefaults>(v, jsonOptions) ?? new TemplateDefaults());
@@ -170,6 +171,12 @@ public class AppDbContext : DbContext
             entity.Property(e => e.SnapshotJson).HasColumnName("snapshot_json");
             entity.HasIndex(e => new { e.EntityType, e.EntityId, e.Timestamp })
                 .HasDatabaseName("ix_audit_log_entity_timestamp");
+            // Standalone (timestamp) index serves the global /admin/audit
+            // overview, which orders by timestamp desc with no entity filter.
+            // The compound index above doesn't help that query because the
+            // leading columns don't match.
+            entity.HasIndex(e => e.Timestamp)
+                .HasDatabaseName("ix_audit_log_timestamp");
         });
     }
 }

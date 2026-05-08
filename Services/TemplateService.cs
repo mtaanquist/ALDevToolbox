@@ -17,7 +17,7 @@ public class TemplateService
 {
     private static readonly Regex KeyRegex = new("^[a-z0-9-]+$", RegexOptions.Compiled);
 
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
+    private static readonly JsonSerializerOptions JsonOptions = PersistenceJson.Options;
 
     private readonly AppDbContext _db;
     private readonly ILogger<TemplateService> _logger;

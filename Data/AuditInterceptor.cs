@@ -21,7 +21,7 @@ namespace ALDevToolbox.Data;
 /// </summary>
 public sealed class AuditInterceptor : SaveChangesInterceptor
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
+    private static readonly JsonSerializerOptions JsonOptions = PersistenceJson.Options;
 
     private static readonly HashSet<Type> AuditedTypes = new()
     {

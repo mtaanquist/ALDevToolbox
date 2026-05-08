@@ -145,8 +145,7 @@ app.MapPost("/generate/workspace", async (HttpContext ctx, GenerationService gen
     try
     {
         var archive = await gen.GenerateWorkspaceAsync(plan, ct);
-        ctx.Response.ContentType = "application/zip";
-        ctx.Response.Headers.ContentDisposition = $"attachment; filename=\"{archive.FileName}\"";
+        WriteAttachmentHeaders(ctx, archive.FileName);
         SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
         archive.Stream.Position = 0;
         await archive.Stream.CopyToAsync(ctx.Response.Body, ct);
@@ -200,8 +199,7 @@ app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen
     try
     {
         var archive = await gen.GenerateExtensionAsync(plan, ct);
-        ctx.Response.ContentType = "application/zip";
-        ctx.Response.Headers.ContentDisposition = $"attachment; filename=\"{archive.FileName}\"";
+        WriteAttachmentHeaders(ctx, archive.FileName);
         SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
         archive.Stream.Position = 0;
         await archive.Stream.CopyToAsync(ctx.Response.Body, ct);
@@ -225,8 +223,7 @@ app.MapPost("/admin/export", async (HttpContext ctx, ExportService export, IAnti
     if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
 
     var archive = await export.ExportAllAsync(ct);
-    ctx.Response.ContentType = "application/zip";
-    ctx.Response.Headers.ContentDisposition = $"attachment; filename=\"{archive.FileName}\"";
+    WriteAttachmentHeaders(ctx, archive.FileName);
     archive.Stream.Position = 0;
     await archive.Stream.CopyToAsync(ctx.Response.Body, ct);
 }).RequireAuthorization();
@@ -305,6 +302,19 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
+
+// Writes Content-Type + a properly quoted Content-Disposition for a ZIP
+// download. Routes filename through ContentDispositionHeaderValue so a
+// hostile filename can't smuggle CR/LF or embedded quotes into the
+// response headers — today the names are server-built, but doing it
+// once here means future callers get the same treatment for free.
+static void WriteAttachmentHeaders(HttpContext ctx, string fileName)
+{
+    ctx.Response.ContentType = "application/zip";
+    var cd = new Microsoft.Net.Http.Headers.ContentDispositionHeaderValue("attachment");
+    cd.SetHttpFileName(fileName);
+    ctx.Response.Headers.ContentDisposition = cd.ToString();
+}
 
 // Antiforgery preamble shared by every mutating endpoint. Returns true when
 // the token is valid; otherwise writes the 400 response inline and returns
