@@ -9,6 +9,12 @@
 
   <ItemGroup>
     <PackageReference Include="Lucide.Blazor" Version="0.0.38" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.*">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.*" />
+    <PackageReference Include="Tomlyn" Version="2.3.2" />
   </ItemGroup>
 
 </Project>

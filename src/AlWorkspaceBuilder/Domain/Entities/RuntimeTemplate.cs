@@ -1,0 +1,75 @@
+using AlWorkspaceBuilder.Domain.ValueObjects;
+
+namespace AlWorkspaceBuilder.Domain.Entities;
+
+/// <summary>
+/// A runtime template — a named layout the workspace generator can use to scaffold
+/// an extension. Each row corresponds to an entry in the New Workspace dropdown
+/// and ships with its own folder list, app.json defaults, and AppSourceCop settings.
+/// </summary>
+public class RuntimeTemplate
+{
+    /// <summary>Database identifier. Auto-incremented by SQLite.</summary>
+    public int Id { get; set; }
+
+    /// <summary>
+    /// URL-safe unique key (e.g. <c>runtime-15</c>). Used in admin URLs and as
+    /// the stable identifier when the form posts back a chosen template.
+    /// </summary>
+    public string Key { get; set; } = string.Empty;
+
+    /// <summary>The AL runtime version this template targets (e.g. 15).</summary>
+    public int Runtime { get; set; }
+
+    /// <summary>Display name shown in the dropdown.</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>Caption rendered under the dropdown when this template is selected.</summary>
+    public string? Description { get; set; }
+
+    /// <summary>Pre-fills the <c>application</c> field on the New Workspace form.</summary>
+    public string DefaultApplication { get; set; } = string.Empty;
+
+    /// <summary>Pre-fills the <c>platform</c> field on the New Workspace form.</summary>
+    public string DefaultPlatform { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Typed view of the rest of the <c>app.json</c> defaults (publisher, target,
+    /// features, etc.). Stored on the row as a JSON column to avoid schema churn
+    /// when AL adds new fields.
+    /// </summary>
+    public TemplateDefaults Defaults { get; set; } = new();
+
+    /// <summary>
+    /// Typed view of the <c>AppSourceCop.json</c> contents. Stored on the row as
+    /// a JSON column for the same reason as <see cref="Defaults"/>.
+    /// </summary>
+    public AppSourceCopSettings AppSourceCop { get; set; } = new();
+
+    /// <summary>Inclusive lower bound of the Core extension's id range.</summary>
+    public int CoreIdRangeFrom { get; set; }
+
+    /// <summary>Inclusive upper bound of the Core extension's id range.</summary>
+    public int CoreIdRangeTo { get; set; }
+
+    /// <summary>The first object id assigned to a module-derived extension.</summary>
+    public int ModuleIdRangeStart { get; set; }
+
+    /// <summary>How many object ids each module gets, unless it overrides this.</summary>
+    public int ModuleIdRangeSize { get; set; }
+
+    /// <summary>
+    /// When true the template is hidden from the user-facing dropdown but remains
+    /// usable for regenerating older workspaces from the admin UI.
+    /// </summary>
+    public bool Deprecated { get; set; }
+
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+
+    /// <summary>Soft-delete marker. <c>null</c> means the row is active.</summary>
+    public DateTime? DeletedAt { get; set; }
+
+    /// <summary>The folders this template lays out, ordered as they appear in the UI.</summary>
+    public List<TemplateFolder> Folders { get; set; } = new();
+}

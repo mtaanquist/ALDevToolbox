@@ -1,0 +1,11 @@
+# Dynalogic JobManager — project / job management.
+
+[module]
+key = "job-manager"
+name = "JobManager"
+
+[[module.dependencies]]
+dep_id = "88b17f5c-c5a1-4c2e-aff3-3d7aba65b4c5"
+dep_name = "JobManager"
+dep_publisher = "dynalogic"
+dep_version = "1.0.0.0"
