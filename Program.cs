@@ -97,6 +97,69 @@ app.MapPost("/generate/workspace", async (HttpContext ctx, GenerationService gen
     }
 });
 
+// File download endpoint for the New Extension flow. Same shape as the
+// workspace endpoint above but maps the form to a StandaloneExtensionPlan and
+// reconstructs the dependency list from four parallel hidden-input arrays.
+app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    try
+    {
+        await antiforgery.ValidateRequestAsync(ctx);
+    }
+    catch (AntiforgeryValidationException)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+        ctx.Response.ContentType = "text/plain; charset=utf-8";
+        await ctx.Response.WriteAsync("Antiforgery validation failed. Reload the form and try again.", ct);
+        return;
+    }
+    var form = await ctx.Request.ReadFormAsync(ct);
+
+    var ids = form["DependencyIds"];
+    var names = form["DependencyNames"];
+    var publishers = form["DependencyPublishers"];
+    var versions = form["DependencyVersions"];
+    var dependencies = new List<DependencyEntry>(ids.Count);
+    for (var i = 0; i < ids.Count; i++)
+    {
+        dependencies.Add(new DependencyEntry(
+            DepId: ids[i] ?? string.Empty,
+            DepName: i < names.Count ? names[i] ?? string.Empty : string.Empty,
+            DepPublisher: i < publishers.Count ? publishers[i] ?? string.Empty : string.Empty,
+            DepVersion: i < versions.Count ? versions[i] ?? string.Empty : string.Empty));
+    }
+
+    var plan = new StandaloneExtensionPlan(
+        TemplateKey: form["TemplateKey"].ToString(),
+        ExtensionName: form["ExtensionName"].ToString().Trim(),
+        Brief: form["Brief"].ToString().Trim(),
+        Description: form["Description"].ToString().Trim(),
+        ApplicationVersion: form["ApplicationVersion"].ToString().Trim(),
+        RuntimeVersion: form["RuntimeVersion"].ToString().Trim(),
+        IdRangeFrom: int.TryParse(form["IdRangeFrom"], out var idFrom) ? idFrom : 0,
+        IdRangeTo: int.TryParse(form["IdRangeTo"], out var idTo) ? idTo : 0,
+        IncludeExamples: form["IncludeExamples"] == "true" || form["IncludeExamples"] == "on",
+        Publisher: form["Publisher"].ToString().Trim(),
+        Dependencies: dependencies);
+
+    try
+    {
+        var archive = await gen.GenerateExtensionAsync(plan, ct);
+        ctx.Response.ContentType = "application/zip";
+        ctx.Response.Headers.ContentDisposition = $"attachment; filename=\"{archive.FileName}\"";
+        archive.Stream.Position = 0;
+        await archive.Stream.CopyToAsync(ctx.Response.Body, ct);
+    }
+    catch (PlanValidationException ex)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+        ctx.Response.ContentType = "text/plain; charset=utf-8";
+        var body = "The submitted form failed validation:\n\n"
+            + string.Join("\n", ex.Errors.Select(e => $"  - {e.Key}: {e.Value}"));
+        await ctx.Response.WriteAsync(body, ct);
+    }
+});
+
 // Run migrations (creating the database if needed) and then seed from disk if
 // the templates table is empty. Both steps are idempotent on subsequent starts.
 using (var scope = app.Services.CreateScope())
