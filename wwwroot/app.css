@@ -22,10 +22,15 @@
     --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
 
-/* Dark theme follows the user's OS preference. Variables only — no per-rule
-   overrides — so component styles don't need to know which theme is active. */
+/* Dark-theme variables. Variables only — no per-rule overrides — so component
+   styles don't need to know which theme is active.
+
+   The same dark variables are applied in two situations: when the OS prefers
+   dark and the user hasn't explicitly chosen light, and when the user has
+   explicitly chosen dark from the toggle. Duplicating the block is simpler
+   than doing CSS gymnastics with multi-selector @media rules. */
 @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
         --color-bg: #16181c;
         --color-surface: #1d2024;
         --color-border: #2c2f36;
@@ -42,6 +47,24 @@
         --color-valid: #4cc972;
         --color-shadow: rgba(0, 0, 0, 0.5);
     }
+}
+
+:root[data-theme="dark"] {
+    --color-bg: #16181c;
+    --color-surface: #1d2024;
+    --color-border: #2c2f36;
+    --color-border-strong: #3a3e47;
+    --color-text: #e6e7ea;
+    --color-text-muted: #9aa0aa;
+    --color-text-secondary: #777c86;
+    --color-accent: #4b8bff;
+    --color-accent-soft: #1a2742;
+    --color-accent-hover: #6ba0ff;
+    --color-info: #6ba3ff;
+    --color-danger: #ef6464;
+    --color-error-text: #ff6b6b;
+    --color-valid: #4cc972;
+    --color-shadow: rgba(0, 0, 0, 0.5);
 }
 
 * { box-sizing: border-box; }
@@ -627,3 +650,43 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .valid.modified:not([type=checkbox]) { outline: 1px solid var(--color-valid); }
 .invalid { outline: 1px solid var(--color-error-text); }
 .validation-message { color: var(--color-error-text); }
+
+/* ---------- Theme toggle ---------- */
+
+.theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    padding: 2px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    background: var(--color-bg);
+    margin-right: 12px;
+}
+
+.theme-toggle__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+}
+
+.theme-toggle__btn:hover { color: var(--color-text); }
+
+.theme-toggle__btn--active {
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow: 0 1px 2px var(--color-shadow);
+}
+
+.top-bar__user {
+    display: flex;
+    align-items: center;
+}

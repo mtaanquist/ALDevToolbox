@@ -1,0 +1,20 @@
+@using Lucide.Blazor.Components
+
+@*
+    Three-way Light / System / Dark toggle. Static markup — no Blazor render
+    mode. Click handling, persistence, and active-state sync live in
+    wwwroot/theme.js (referenced once from App.razor) and use event
+    delegation, so this component renders identically on every navigation.
+*@
+
+<div class="theme-toggle" role="group" aria-label="Color theme">
+    <button type="button" class="theme-toggle__btn" data-theme-button="light" aria-label="Light theme" title="Light">
+        <Icon Name="sun" Width="14" Height="14" />
+    </button>
+    <button type="button" class="theme-toggle__btn" data-theme-button="system" aria-label="Follow system theme" title="System">
+        <Icon Name="monitor" Width="14" Height="14" />
+    </button>
+    <button type="button" class="theme-toggle__btn" data-theme-button="dark" aria-label="Dark theme" title="Dark">
+        <Icon Name="moon" Width="14" Height="14" />
+    </button>
+</div>
