@@ -4,7 +4,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│  [icon] Consortio Tools                       [user/login]│  ← top bar
+│  [icon] AL Dev Toolbox                        [user/login]│  ← top bar
 ├─────────────┬────────────────────────────────────────────┤
 │             │                                              │
 │  TOOLS      │                                              │
