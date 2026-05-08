@@ -848,6 +848,21 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     text-decoration: none;
 }
 
+.admin-section {
+    margin-top: 32px;
+    padding-top: 20px;
+    border-top: 1px solid var(--color-border);
+}
+
+.admin-section h2 {
+    margin: 0 0 6px;
+    font-size: 16px;
+}
+
+.admin-section p {
+    margin: 0 0 12px;
+}
+
 /* ---------- Audit log ---------- */
 
 .audit-page { max-width: 1100px; }
