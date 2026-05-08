@@ -140,6 +140,15 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     text-decoration: none;
 }
 
+/* Icon-only variant used for the anonymous "Sign in" affordance — square
+   with no text so it stays visually quiet next to the theme toggle. */
+.signin-link--icon {
+    padding: 4px;
+    width: 28px;
+    height: 28px;
+    justify-content: center;
+}
+
 .sidebar {
     grid-area: sidebar;
     background: var(--color-surface);
@@ -428,6 +437,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .form-section input[type="text"],
 .form-section input[type="number"],
+.form-section input[type="password"],
 .form-section textarea,
 .form-section select {
     width: 100%;
@@ -448,6 +458,18 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     outline: 2px solid var(--color-accent);
     outline-offset: -1px;
     border-color: var(--color-accent);
+}
+
+/* Browsers (Chrome / Safari) repaint autofilled fields with their own
+   light-yellow background, which clashes badly with dark mode. Pin the
+   colour and use the inset-shadow trick to mask the agent default. */
+.form-section input:-webkit-autofill,
+.form-section input:-webkit-autofill:hover,
+.form-section input:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--color-text);
+    -webkit-box-shadow: 0 0 0 1000px var(--color-surface) inset;
+    caret-color: var(--color-text);
+    transition: background-color 9999s ease-in-out 0s;
 }
 
 .caption { font-size: 12px; margin: 0; }
@@ -750,19 +772,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     display: inline-flex;
     align-items: center;
     gap: 6px;
-}
-
-/* Browsers (Chrome / Safari especially) repaint autofilled password fields
-   with their own light-yellow / white background, which clashes badly with
-   the dark theme. Pin the colour and use an inset box-shadow trick to mask
-   the agent default. */
-.login-form input:-webkit-autofill,
-.login-form input:-webkit-autofill:hover,
-.login-form input:-webkit-autofill:focus {
-    -webkit-text-fill-color: var(--color-text);
-    -webkit-box-shadow: 0 0 0 1000px var(--color-surface) inset;
-    caret-color: var(--color-text);
-    transition: background-color 9999s ease-in-out 0s;
 }
 
 .form-error {
