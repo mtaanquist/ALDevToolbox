@@ -289,40 +289,15 @@
 
         if (_selected is not null)
         {
-            foreach (var folder in _selected.Folders.OrderBy(f => f.Ordering))
-            {
-                contents.Add(BuildTemplateFolderNode(folder));
-            }
+            var entries = _selected.Folders
+                .OrderBy(f => f.Ordering)
+                .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFiles(f)));
+            contents.AddRange(PreviewTreeBuilder.BuildFolderChildren(entries));
         }
 
         contents.Add(PreviewNode.Folder("Translations", new[] { PreviewNode.File(".gitkeep") }));
 
         return PreviewNode.Extension(folderName, contents);
-    }
-
-    /// <summary>
-    /// Renders one of the template's nested folders. Splits the slash-delimited
-    /// <see cref="TemplateFolder.Path"/> into a chain of <see cref="PreviewNode"/>s
-    /// so e.g. <c>Source/Foundation</c> appears as a Source folder containing a
-    /// Foundation folder, then drops the leaf's contents (example files or a
-    /// single <c>.gitkeep</c>) into the Foundation level.
-    /// </summary>
-    private PreviewNode BuildTemplateFolderNode(TemplateFolder folder)
-    {
-        var leaves = LeafFiles(folder);
-        var segments = folder.Path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length == 0)
-        {
-            return PreviewNode.Folder(folder.Path, leaves);
-        }
-
-        // Walk from the inside out so each parent wraps the previously built level.
-        PreviewNode current = PreviewNode.Folder(segments[^1], leaves);
-        for (var i = segments.Length - 2; i >= 0; i--)
-        {
-            current = PreviewNode.Folder(segments[i], new[] { current });
-        }
-        return current;
     }
 
     private List<PreviewNode> LeafFiles(TemplateFolder folder)

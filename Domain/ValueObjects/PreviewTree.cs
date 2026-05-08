@@ -40,3 +40,62 @@ public enum PreviewNodeKind
     /// <summary>A leaf file (<c>app.json</c>, <c>.gitkeep</c>, an example <c>.al</c>).</summary>
     File,
 }
+
+/// <summary>
+/// Helpers for building a <see cref="PreviewNode"/> tree from a list of
+/// slash-delimited template folder paths. Splitting each path independently
+/// would emit one parent chain per leaf, so siblings that share a prefix
+/// (e.g. <c>Source/Foundation</c> and <c>Source/Finance</c>) would each get
+/// their own <c>Source/</c> wrapper. This helper merges them so a shared
+/// prefix renders as a single parent.
+/// </summary>
+public static class PreviewTreeBuilder
+{
+    /// <summary>
+    /// Folds the given <paramref name="entries"/> into a list of merged
+    /// <see cref="PreviewNode"/>s ready to be spliced into an extension's
+    /// contents. <c>Path</c> uses <c>/</c> as the separator; <c>Leaves</c>
+    /// is the file list to attach at the deepest segment.
+    /// </summary>
+    public static List<PreviewNode> BuildFolderChildren(
+        IEnumerable<(string Path, IReadOnlyList<PreviewNode> Leaves)> entries)
+    {
+        var root = new MutableNode();
+        foreach (var (path, leaves) in entries)
+        {
+            var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var node = root;
+            foreach (var segment in segments)
+            {
+                if (!node.ChildIndex.TryGetValue(segment, out var child))
+                {
+                    child = new MutableNode { Name = segment };
+                    node.ChildIndex[segment] = child;
+                    node.Children.Add(child);
+                }
+                node = child;
+            }
+            node.Files.AddRange(leaves);
+        }
+        return root.Children.Select(ToPreview).ToList();
+    }
+
+    private static PreviewNode ToPreview(MutableNode node)
+    {
+        var children = new List<PreviewNode>(node.Children.Count + node.Files.Count);
+        foreach (var child in node.Children)
+        {
+            children.Add(ToPreview(child));
+        }
+        children.AddRange(node.Files);
+        return PreviewNode.Folder(node.Name, children);
+    }
+
+    private sealed class MutableNode
+    {
+        public string Name = string.Empty;
+        public List<MutableNode> Children { get; } = new();
+        public Dictionary<string, MutableNode> ChildIndex { get; } = new();
+        public List<PreviewNode> Files { get; } = new();
+    }
+}
