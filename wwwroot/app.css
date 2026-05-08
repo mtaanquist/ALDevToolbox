@@ -118,9 +118,26 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .brand-icon { color: var(--color-accent); }
 .brand-name { font-size: 15px; }
 
+/* Muted, low-emphasis affordance in the top bar. The admin section is
+   secondary to the generator flows, so the entry point shouldn't compete
+   visually with anything on the page. */
 .signin-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    background: transparent;
     color: var(--color-text-muted);
-    font-size: 13px;
+    font-size: 12.5px;
+    text-decoration: none;
+}
+
+.signin-link:hover {
+    color: var(--color-text);
+    background: var(--color-bg);
+    text-decoration: none;
 }
 
 .sidebar {
@@ -728,7 +745,25 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .login-form { gap: 18px; }
 
-.login-form .btn { align-self: flex-start; }
+.login-form .btn {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Browsers (Chrome / Safari especially) repaint autofilled password fields
+   with their own light-yellow / white background, which clashes badly with
+   the dark theme. Pin the colour and use an inset box-shadow trick to mask
+   the agent default. */
+.login-form input:-webkit-autofill,
+.login-form input:-webkit-autofill:hover,
+.login-form input:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--color-text);
+    -webkit-box-shadow: 0 0 0 1000px var(--color-surface) inset;
+    caret-color: var(--color-text);
+    transition: background-color 9999s ease-in-out 0s;
+}
 
 .form-error {
     color: var(--color-error-text);

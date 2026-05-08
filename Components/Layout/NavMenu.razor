@@ -38,9 +38,8 @@
         </ul>
     </div>
 
-    @* Authenticated admins see the admin section as a real nav group with the
-       active-state highlight; everyone else gets the muted "Admin" link that
-       takes them through /login first. *@
+    @* Admin section is only visible once signed in. Anonymous users reach
+       /login through the muted "Sign in" affordance in the top bar. *@
     <AuthorizeView>
         <Authorized>
             <div class="nav-section">
@@ -56,14 +55,5 @@
                 </ul>
             </div>
         </Authorized>
-        <NotAuthorized>
-            <div class="nav-section nav-section--admin">
-                <div class="nav-divider"></div>
-                <a class="nav-link nav-link--muted" href="/login">
-                    <Icon Name="wrench" Width="18" Height="18" Css="nav-link__icon" />
-                    <span>Admin</span>
-                </a>
-            </div>
-        </NotAuthorized>
     </AuthorizeView>
 </nav>
