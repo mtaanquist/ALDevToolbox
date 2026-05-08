@@ -1,0 +1,715 @@
+@page "/admin/templates/new"
+@page "/admin/templates/{Key}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject TemplateService Templates
+@inject NavigationManager Nav
+@inject ILogger<AdminTemplateEdit> Log
+@using System.Text.Json
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
+
+@*
+    Combined create/edit page.
+    - /admin/templates/new      → no [Key] route value. Opens in TOML mode
+                                  because authoring a fresh template is usually
+                                  faster as a single TOML document than
+                                  clicking through the structured form.
+    - /admin/templates/{key}    → loads the existing row by key. Opens in the
+                                  structured form because surgical edits are
+                                  what people do most often.
+
+    Reordering uses Up/Down buttons rather than HTML5 drag-and-drop because the
+    latter would need .razor.js plumbing for v1; can be upgraded later if asked
+    for. Form state lives in a mutable inner class so two-way bindings stay
+    light — TemplateInput is built fresh on Save.
+*@
+
+<PageTitle>@PageTitleText · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page admin-template-edit">
+    <header class="admin-page__header">
+        <div>
+            <h1>@PageTitleText</h1>
+            <p class="muted">
+                @if (IsEdit)
+                {
+                    <span>Editing template <code>@Key</code>. Changes apply on the next generation.</span>
+                }
+                else
+                {
+                    <span>Create a new runtime template. Folders, defaults, and ID ranges can all be edited later.</span>
+                }
+            </p>
+        </div>
+        <a class="btn btn--sm" href="/admin/templates">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to list</span>
+        </a>
+    </header>
+
+    @if (IsEdit && _loadFailed)
+    {
+        <p class="form-error" role="alert">
+            No template with key <code>@Key</code> was found. It may have been
+            renamed or hard-deleted.
+        </p>
+    }
+    else if (_form is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        <div class="admin-template-edit__mode" role="tablist" aria-label="Editor mode">
+            <button type="button"
+                    class="@ModeButtonClass(EditorMode.Form)"
+                    role="tab"
+                    aria-selected="@(_mode == EditorMode.Form)"
+                    @onclick="() => SwitchMode(EditorMode.Form)">
+                <Icon Name="list" Width="14" Height="14" />
+                <span>Structured form</span>
+            </button>
+            <button type="button"
+                    class="@ModeButtonClass(EditorMode.Toml)"
+                    role="tab"
+                    aria-selected="@(_mode == EditorMode.Toml)"
+                    @onclick="() => SwitchMode(EditorMode.Toml)">
+                <Icon Name="file-code" Width="14" Height="14" />
+                <span>TOML</span>
+            </button>
+        </div>
+
+        @if (_saveError is not null)
+        {
+            <p class="form-error" role="alert">@_saveError</p>
+        }
+        @if (_saveSuccess is not null)
+        {
+            <p class="form-success" role="status">@_saveSuccess</p>
+        }
+    }
+
+    @if (_form is not null && _mode == EditorMode.Toml)
+    {
+        <form class="form-grid admin-template-edit__form admin-template-edit__toml-form"
+              @onsubmit="SaveTomlAsync" @onsubmit:preventDefault>
+            <section class="form-section">
+                <label class="section-label" for="tpl-toml">template.toml</label>
+                <textarea id="tpl-toml" class="json-editor admin-template-edit__toml" rows="28"
+                          spellcheck="false"
+                          @bind="_toml" @bind:event="oninput"></textarea>
+                <small class="muted">
+                    Edits the same fields as the structured form. The
+                    <code>deprecated</code> flag and folder reordering by row aren't
+                    represented here; toggle deprecated and reorder folders in the
+                    structured view.
+                </small>
+            </section>
+
+            <div class="admin-template-edit__actions">
+                <button type="submit" class="btn btn--primary" disabled="@_saving">
+                    <Icon Name="save" Width="16" Height="16" />
+                    <span>@(_saving ? "Saving…" : (IsEdit ? "Save TOML" : "Create from TOML"))</span>
+                </button>
+                <button type="button" class="btn" @onclick="() => SwitchMode(EditorMode.Form)" disabled="@_saving">
+                    <span>Discard &amp; back to form</span>
+                </button>
+            </div>
+        </form>
+    }
+    else if (_form is not null)
+    {
+        <form class="form-grid admin-template-edit__form" @onsubmit="SaveAsync" @onsubmit:preventDefault>
+            <section class="form-section">
+                <label class="section-label" for="tpl-key">Key</label>
+                <input id="tpl-key" type="text" @bind="_form.Key" @bind:event="oninput"
+                       readonly="@IsEdit" pattern="[a-z0-9-]+" required
+                       placeholder="e.g. runtime-15" />
+                <small class="muted">
+                    @(IsEdit ? "The key is fixed once a template is created." : "Lowercase letters, digits, hyphens. Used in admin URLs.")
+                </small>
+                <FieldError Field="Key" Errors="_fieldErrors" />
+            </section>
+
+            <section class="form-section form-section--row">
+                <div>
+                    <label class="section-label" for="tpl-runtime">Runtime</label>
+                    <input id="tpl-runtime" type="number" min="1" required
+                           @bind="_form.Runtime" @bind:event="oninput" />
+                    <FieldError Field="Runtime" Errors="_fieldErrors" />
+                </div>
+                <div>
+                    <label class="section-label" for="tpl-name">Name</label>
+                    <input id="tpl-name" type="text" required
+                           @bind="_form.Name" @bind:event="oninput"
+                           placeholder="e.g. Runtime 15 (BC 24)" />
+                    <FieldError Field="Name" Errors="_fieldErrors" />
+                </div>
+            </section>
+
+            <section class="form-section">
+                <label class="section-label" for="tpl-description">Description</label>
+                <textarea id="tpl-description" rows="2"
+                          @bind="_form.Description" @bind:event="oninput"></textarea>
+                <small class="muted">Caption shown under the template dropdown on the New Workspace page.</small>
+            </section>
+
+            <section class="form-section form-section--row">
+                <div>
+                    <label class="section-label" for="tpl-app">Default application</label>
+                    <input id="tpl-app" type="text" required pattern="\d+\.\d+\.\d+\.\d+"
+                           @bind="_form.DefaultApplication" @bind:event="oninput"
+                           placeholder="e.g. 24.0.0.0" />
+                    <FieldError Field="DefaultApplication" Errors="_fieldErrors" />
+                </div>
+                <div>
+                    <label class="section-label" for="tpl-platform">Default platform</label>
+                    <input id="tpl-platform" type="text" required pattern="\d+\.\d+\.\d+\.\d+"
+                           @bind="_form.DefaultPlatform" @bind:event="oninput"
+                           placeholder="e.g. 1.0.0.0" />
+                    <FieldError Field="DefaultPlatform" Errors="_fieldErrors" />
+                </div>
+            </section>
+
+            <section class="form-section form-section--row">
+                <div>
+                    <label class="section-label" for="tpl-core-from">Core ID range from</label>
+                    <input id="tpl-core-from" type="number" required min="1"
+                           @bind="_form.CoreIdRangeFrom" @bind:event="oninput" />
+                    <FieldError Field="CoreIdRangeFrom" Errors="_fieldErrors" />
+                </div>
+                <div>
+                    <label class="section-label" for="tpl-core-to">Core ID range to</label>
+                    <input id="tpl-core-to" type="number" required min="1"
+                           @bind="_form.CoreIdRangeTo" @bind:event="oninput" />
+                    <FieldError Field="CoreIdRangeTo" Errors="_fieldErrors" />
+                </div>
+            </section>
+
+            <section class="form-section form-section--row">
+                <div>
+                    <label class="section-label" for="tpl-mod-start">Module ID range start</label>
+                    <input id="tpl-mod-start" type="number" required min="1"
+                           @bind="_form.ModuleIdRangeStart" @bind:event="oninput" />
+                    <FieldError Field="ModuleIdRangeStart" Errors="_fieldErrors" />
+                </div>
+                <div>
+                    <label class="section-label" for="tpl-mod-size">Module ID range size</label>
+                    <input id="tpl-mod-size" type="number" required min="1"
+                           @bind="_form.ModuleIdRangeSize" @bind:event="oninput" />
+                    <FieldError Field="ModuleIdRangeSize" Errors="_fieldErrors" />
+                </div>
+            </section>
+
+            <section class="form-section">
+                <label class="section-label" for="tpl-defaults">Defaults JSON</label>
+                <textarea id="tpl-defaults" class="json-editor" rows="10" spellcheck="false"
+                          @bind="_form.DefaultsJson" @bind:event="oninput"></textarea>
+                <small class="muted">
+                    Merged into every generated <code>app.json</code>. Fields:
+                    <code>publisher</code>, <code>target</code>, <code>features</code>,
+                    <code>supportedLocales</code>, <code>url</code>, <code>logo</code>,
+                    <code>resourceExposurePolicy</code>.
+                </small>
+                <FieldError Field="DefaultsJson" Errors="_fieldErrors" />
+            </section>
+
+            <section class="form-section">
+                <label class="section-label" for="tpl-cop">AppSourceCop JSON</label>
+                <textarea id="tpl-cop" class="json-editor" rows="6" spellcheck="false"
+                          @bind="_form.AppSourceCopJson" @bind:event="oninput"></textarea>
+                <small class="muted">
+                    Written verbatim into <code>AppSourceCop.json</code>. Fields:
+                    <code>mandatoryPrefix</code>, <code>supportedCountries</code>.
+                </small>
+                <FieldError Field="AppSourceCopJson" Errors="_fieldErrors" />
+            </section>
+
+            <section class="form-section">
+                <label class="check-row">
+                    <input type="checkbox" @bind="_form.Deprecated" />
+                    <span>Deprecated — hide from the user-facing dropdown but keep available for admin regeneration.</span>
+                </label>
+            </section>
+
+            <section class="form-section">
+                <div class="folder-editor__header">
+                    <label class="section-label">Folders</label>
+                    <button type="button" class="btn btn--sm" @onclick="AddFolder">
+                        <Icon Name="plus" Width="14" Height="14" />
+                        <span>Add folder</span>
+                    </button>
+                </div>
+                @if (_form.Folders.Count == 0)
+                {
+                    <p class="muted">No folders yet. Add at least one — the generator emits one folder per row in the order shown.</p>
+                }
+                else
+                {
+                    <table class="data-table folder-editor__table">
+                        <thead>
+                            <tr>
+                                <th class="folder-editor__handle"></th>
+                                <th>Path</th>
+                                <th>Example path</th>
+                                <th class="data-table__actions"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (var i = 0; i < _form.Folders.Count; i++)
+                            {
+                                var index = i;
+                                var row = _form.Folders[index];
+                                <tr>
+                                    <td class="folder-editor__handle">
+                                        <div class="folder-editor__order">
+                                            <button type="button" class="btn btn--sm" disabled="@(index == 0)"
+                                                    @onclick="() => MoveFolder(index, -1)" title="Move up">
+                                                <Icon Name="arrow-up" Width="12" Height="12" />
+                                            </button>
+                                            <button type="button" class="btn btn--sm" disabled="@(index == _form.Folders.Count - 1)"
+                                                    @onclick="() => MoveFolder(index, 1)" title="Move down">
+                                                <Icon Name="arrow-down" Width="12" Height="12" />
+                                            </button>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <input type="text" required placeholder="e.g. Source/Foundation"
+                                               @bind="row.Path" @bind:event="oninput" />
+                                        <FieldError Field="@($"Folders[{index}].Path")" Errors="_fieldErrors" />
+                                    </td>
+                                    <td>
+                                        <input type="text" placeholder="optional, e.g. Foundation"
+                                               @bind="row.ExamplePath" @bind:event="oninput" />
+                                    </td>
+                                    <td class="data-table__actions">
+                                        <button type="button" class="btn btn--sm" @onclick="() => RemoveFolder(index)" title="Remove">
+                                            <Icon Name="trash-2" Width="12" Height="12" />
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    <small class="muted">
+                        <strong>Path</strong> is relative inside the generated extension folder
+                        (e.g. <code>Source/Foundation</code>). <strong>Example path</strong> points
+                        at a folder under <code>Templates.seed/&lt;runtime&gt;/examples/</code>.
+                        Leave it blank to seed only a <code>.gitkeep</code>.
+                    </small>
+                }
+            </section>
+
+            <div class="admin-template-edit__actions">
+                <button type="submit" class="btn btn--primary" disabled="@_saving">
+                    <Icon Name="save" Width="16" Height="16" />
+                    <span>@(_saving ? "Saving…" : (IsEdit ? "Save changes" : "Create template"))</span>
+                </button>
+                @if (IsEdit && _existingId is not null)
+                {
+                    @if (_isDeleted)
+                    {
+                        <button type="button" class="btn" @onclick="RestoreAsync" disabled="@_saving">
+                            <Icon Name="rotate-ccw" Width="16" Height="16" />
+                            <span>Restore</span>
+                        </button>
+                    }
+                    else
+                    {
+                        @if (_confirmDelete)
+                        {
+                            <span class="muted">Are you sure?</span>
+                            <button type="button" class="btn btn--danger" @onclick="DeleteAsync" disabled="@_saving">
+                                <Icon Name="trash-2" Width="16" Height="16" />
+                                <span>Yes, delete</span>
+                            </button>
+                            <button type="button" class="btn" @onclick="() => _confirmDelete = false" disabled="@_saving">
+                                <span>Cancel</span>
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn" @onclick="() => _confirmDelete = true" disabled="@_saving">
+                                <Icon Name="trash-2" Width="16" Height="16" />
+                                <span>Soft-delete</span>
+                            </button>
+                        }
+                    }
+                }
+            </div>
+        </form>
+
+    }
+
+    @if (_form is not null && IsEdit && _existingId is not null)
+    {
+        <AuditHistoryPanel EntityType="AuditEntityType.RuntimeTemplate" EntityId="_existingId.Value" Title="Template history" />
+    }
+</div>
+
+@code {
+    [Parameter] public string? Key { get; set; }
+
+    private bool IsEdit => !string.IsNullOrEmpty(Key);
+    private string PageTitleText => IsEdit ? "Edit template" : "New template";
+
+    private FormState? _form;
+    private int? _existingId;
+    private bool _isDeleted;
+    private bool _loadFailed;
+    private bool _saving;
+    private bool _confirmDelete;
+    private string? _saveError;
+    private string? _saveSuccess;
+    private IReadOnlyDictionary<string, string> _fieldErrors = new Dictionary<string, string>();
+    private EditorMode _mode = EditorMode.Form;
+    private string _toml = string.Empty;
+
+    private static readonly JsonSerializerOptions PrettyJson = new() { WriteIndented = true };
+
+    /// <summary>
+    /// Which editor surface is currently visible. The structured form is the
+    /// default; TOML mode is opt-in for admins comfortable with the seed file
+    /// shape. The DB stays the source of truth either way.
+    /// </summary>
+    private enum EditorMode { Form, Toml }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _saveError = null;
+        _saveSuccess = null;
+        _fieldErrors = new Dictionary<string, string>();
+        _confirmDelete = false;
+
+        if (!IsEdit)
+        {
+            _form ??= FormState.Blank();
+            _existingId = null;
+            _isDeleted = false;
+            _loadFailed = false;
+            // New-template flow opens in TOML — pasting a template.toml is the
+            // common path. Pre-render the blank scaffold once so the textarea
+            // has something useful to start from.
+            _mode = EditorMode.Toml;
+            _toml = TemplateTomlMapper.BlankToml();
+            return;
+        }
+
+        var existing = await Templates.GetByKeyAsync(Key!);
+        if (existing is null)
+        {
+            _loadFailed = true;
+            _form = null;
+            return;
+        }
+
+        _loadFailed = false;
+        _existingId = existing.Id;
+        _isDeleted = existing.DeletedAt is not null;
+        _form = FormState.From(existing);
+        _mode = EditorMode.Form;
+    }
+
+    private void AddFolder()
+    {
+        _form?.Folders.Add(new FolderRow());
+    }
+
+    private void RemoveFolder(int index)
+    {
+        if (_form is null) return;
+        if (index >= 0 && index < _form.Folders.Count)
+        {
+            _form.Folders.RemoveAt(index);
+        }
+    }
+
+    private void MoveFolder(int index, int delta)
+    {
+        if (_form is null) return;
+        var target = index + delta;
+        if (index < 0 || index >= _form.Folders.Count || target < 0 || target >= _form.Folders.Count)
+        {
+            return;
+        }
+        (_form.Folders[index], _form.Folders[target]) = (_form.Folders[target], _form.Folders[index]);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_form is null || _saving) return;
+        _saving = true;
+        _saveError = null;
+        _saveSuccess = null;
+        _fieldErrors = new Dictionary<string, string>();
+
+        var payload = _form.ToInput();
+
+        try
+        {
+            if (IsEdit && _existingId is not null)
+            {
+                await Templates.UpdateAsync(_existingId.Value, payload);
+                _saveSuccess = "Saved.";
+            }
+            else
+            {
+                var created = await Templates.CreateAsync(payload);
+                Nav.NavigateTo($"/admin/templates/{Uri.EscapeDataString(created.Key)}");
+                return;
+            }
+        }
+        catch (PlanValidationException ex)
+        {
+            _fieldErrors = ex.Errors;
+            _saveError = $"Couldn't save: {ex.Errors.Count} validation error(s). See messages next to each field.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Unexpected error saving template '{Key}'.", payload.Key);
+            _saveError = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_existingId is null || _saving) return;
+        _saving = true;
+        _confirmDelete = false;
+        try
+        {
+            await Templates.SoftDeleteAsync(_existingId.Value);
+            Nav.NavigateTo("/admin/templates");
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to soft-delete template id={Id}.", _existingId);
+            _saveError = "Couldn't delete the template. Check the logs.";
+            _saving = false;
+        }
+    }
+
+    private async Task RestoreAsync()
+    {
+        if (_existingId is null || _saving) return;
+        _saving = true;
+        try
+        {
+            await Templates.RestoreAsync(_existingId.Value);
+            _isDeleted = false;
+            _saveSuccess = "Template restored.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to restore template id={Id}.", _existingId);
+            _saveError = "Couldn't restore the template. Check the logs.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void SwitchMode(EditorMode mode)
+    {
+        if (_mode == mode || _saving) return;
+
+        if (mode == EditorMode.Toml)
+        {
+            _toml = BuildTomlFromFormState();
+        }
+
+        _mode = mode;
+        _saveError = null;
+        _saveSuccess = null;
+        _fieldErrors = new Dictionary<string, string>();
+    }
+
+    private string ModeButtonClass(EditorMode mode) =>
+        _mode == mode ? "btn btn--sm admin-template-edit__mode-btn admin-template-edit__mode-btn--active"
+                      : "btn btn--sm admin-template-edit__mode-btn";
+
+    /// <summary>
+    /// Builds a TOML view of the current in-memory form state. We round-trip
+    /// through <see cref="TemplateInput"/> so the same JSON parsing behaviour
+    /// is exercised in both modes — i.e. the TOML you see is the TOML the
+    /// service would produce after parsing whatever JSON sat in the textareas.
+    /// </summary>
+    private string BuildTomlFromFormState()
+    {
+        if (_form is null) return string.Empty;
+        try
+        {
+            var defaults = string.IsNullOrWhiteSpace(_form.DefaultsJson)
+                ? new TemplateDefaults()
+                : JsonSerializer.Deserialize<TemplateDefaults>(_form.DefaultsJson) ?? new TemplateDefaults();
+            var appSourceCop = string.IsNullOrWhiteSpace(_form.AppSourceCopJson)
+                ? new AppSourceCopSettings()
+                : JsonSerializer.Deserialize<AppSourceCopSettings>(_form.AppSourceCopJson) ?? new AppSourceCopSettings();
+
+            var stub = new RuntimeTemplate
+            {
+                Key = _form.Key,
+                Runtime = _form.Runtime,
+                Name = _form.Name,
+                Description = _form.Description,
+                DefaultApplication = _form.DefaultApplication,
+                DefaultPlatform = _form.DefaultPlatform,
+                Defaults = defaults,
+                AppSourceCop = appSourceCop,
+                CoreIdRangeFrom = _form.CoreIdRangeFrom,
+                CoreIdRangeTo = _form.CoreIdRangeTo,
+                ModuleIdRangeStart = _form.ModuleIdRangeStart,
+                ModuleIdRangeSize = _form.ModuleIdRangeSize,
+                Deprecated = _form.Deprecated,
+                Folders = _form.Folders.Select((f, i) => new TemplateFolder
+                {
+                    Ordering = i,
+                    Path = f.Path,
+                    ExamplePath = f.ExamplePath,
+                }).ToList(),
+            };
+            return TemplateTomlMapper.ToToml(stub);
+        }
+        catch (JsonException ex)
+        {
+            return $"# Could not render TOML — Defaults or AppSourceCop JSON is invalid:\n# {ex.Message}\n";
+        }
+    }
+
+    private async Task SaveTomlAsync()
+    {
+        if (_form is null || _saving) return;
+        _saving = true;
+        _saveError = null;
+        _saveSuccess = null;
+        _fieldErrors = new Dictionary<string, string>();
+
+        try
+        {
+            var payload = TemplateTomlMapper.FromToml(_toml, deprecated: _form.Deprecated);
+
+            if (IsEdit && _existingId is not null)
+            {
+                await Templates.UpdateAsync(_existingId.Value, payload);
+                var refreshed = await Templates.GetByKeyAsync(Key!);
+                if (refreshed is not null)
+                {
+                    _form = FormState.From(refreshed);
+                    _toml = TemplateTomlMapper.ToToml(refreshed);
+                }
+                _saveSuccess = "Saved from TOML.";
+            }
+            else
+            {
+                var created = await Templates.CreateAsync(payload);
+                Nav.NavigateTo($"/admin/templates/{Uri.EscapeDataString(created.Key)}");
+                return;
+            }
+        }
+        catch (InvalidDataException ex)
+        {
+            _saveError = ex.Message;
+        }
+        catch (PlanValidationException ex)
+        {
+            _fieldErrors = ex.Errors;
+            _saveError = "Couldn't save: "
+                + string.Join("; ", ex.Errors.Select(e => $"{e.Key}: {e.Value}"));
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Unexpected error saving template from TOML.");
+            _saveError = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    /// <summary>
+    /// Mutable form-state mirror of <see cref="TemplateInput"/>. Lives in the
+    /// page so Razor's <c>@bind</c> can write into individual fields without
+    /// the per-keystroke record allocations a record-based form would need.
+    /// </summary>
+    private sealed class FormState
+    {
+        public string Key { get; set; } = string.Empty;
+        public int Runtime { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public string DefaultApplication { get; set; } = string.Empty;
+        public string DefaultPlatform { get; set; } = "1.0.0.0";
+        public string DefaultsJson { get; set; } = string.Empty;
+        public string AppSourceCopJson { get; set; } = string.Empty;
+        public int CoreIdRangeFrom { get; set; }
+        public int CoreIdRangeTo { get; set; }
+        public int ModuleIdRangeStart { get; set; }
+        public int ModuleIdRangeSize { get; set; }
+        public bool Deprecated { get; set; }
+        public List<FolderRow> Folders { get; } = new();
+
+        public static FormState Blank() => new()
+        {
+            DefaultsJson = JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson),
+            AppSourceCopJson = JsonSerializer.Serialize(new AppSourceCopSettings(), PrettyJson),
+            CoreIdRangeFrom = 90000,
+            CoreIdRangeTo = 90999,
+            ModuleIdRangeStart = 91000,
+            ModuleIdRangeSize = 200,
+        };
+
+        public static FormState From(RuntimeTemplate template)
+        {
+            var state = new FormState
+            {
+                Key = template.Key,
+                Runtime = template.Runtime,
+                Name = template.Name,
+                Description = template.Description,
+                DefaultApplication = template.DefaultApplication,
+                DefaultPlatform = template.DefaultPlatform,
+                DefaultsJson = JsonSerializer.Serialize(template.Defaults, PrettyJson),
+                AppSourceCopJson = JsonSerializer.Serialize(template.AppSourceCop, PrettyJson),
+                CoreIdRangeFrom = template.CoreIdRangeFrom,
+                CoreIdRangeTo = template.CoreIdRangeTo,
+                ModuleIdRangeStart = template.ModuleIdRangeStart,
+                ModuleIdRangeSize = template.ModuleIdRangeSize,
+                Deprecated = template.Deprecated,
+            };
+            foreach (var f in template.Folders.OrderBy(f => f.Ordering))
+            {
+                state.Folders.Add(new FolderRow { Path = f.Path, ExamplePath = f.ExamplePath });
+            }
+            return state;
+        }
+
+        public TemplateInput ToInput() => new(
+            Key: Key,
+            Runtime: Runtime,
+            Name: Name,
+            Description: Description,
+            DefaultApplication: DefaultApplication,
+            DefaultPlatform: DefaultPlatform,
+            DefaultsJson: DefaultsJson,
+            AppSourceCopJson: AppSourceCopJson,
+            CoreIdRangeFrom: CoreIdRangeFrom,
+            CoreIdRangeTo: CoreIdRangeTo,
+            ModuleIdRangeStart: ModuleIdRangeStart,
+            ModuleIdRangeSize: ModuleIdRangeSize,
+            Deprecated: Deprecated,
+            Folders: Folders.Select(f => new TemplateFolderInput(f.Path, f.ExamplePath)).ToList());
+    }
+
+    private sealed class FolderRow
+    {
+        public string Path { get; set; } = string.Empty;
+        public string? ExamplePath { get; set; }
+    }
+}
