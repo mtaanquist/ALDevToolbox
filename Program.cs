@@ -6,6 +6,7 @@ using ALDevToolbox.Services;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,6 +23,18 @@ builder.Logging.AddSimpleConsole(options =>
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
+// Forwarded-headers — production runs behind a TLS-terminating proxy
+// (Traefik / nginx / Caddy). Without this, Request.IsHttps is false and
+// the auth cookie's Secure flag would never engage. Limiting the trusted
+// proxy set is a follow-up for a hardened deployment; for now we accept
+// X-Forwarded-* from any source on the bridge network.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 // Cookie auth — single shared admin password, no user accounts.
 // See .design/auth-and-audit.md. The cookie stores the display name as a
 // single claim; possession of a valid cookie means "this user is an admin".
@@ -31,9 +44,12 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.Cookie.Name = "alwb_auth";
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Lax;
-        // SameAsRequest keeps local HTTP dev working; production runs behind
-        // HSTS (see app.UseHsts below) so the cookie is HTTPS-only there.
-        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        // The deployment doc requires Always — production runs behind a TLS
+        // proxy; UseForwardedHeaders below makes Request.IsHttps reflect the
+        // edge, so the cookie reliably gets the Secure flag. Local HTTP dev
+        // (dotnet run on http://localhost:5000) won't issue a cookie until
+        // ASPNETCORE_URLS includes an https:// binding — that's intentional.
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
         options.LoginPath = "/login";
@@ -62,7 +78,21 @@ builder.Services.AddScoped<SeedService>();
 builder.Services.AddScoped<GenerationService>();
 builder.Services.AddScoped<ExportService>();
 
+// Health checks. /health is a liveness probe (always 200 if the process is
+// up); /health/ready exercises the database with a SELECT 1 and is what an
+// orchestrator should poll before sending traffic. Tagged so we can route
+// the same set of checks to both endpoints with different predicates.
+builder.Services.AddScoped<DatabaseHealthCheck>();
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>("database", tags: new[] { "ready" });
+
 var app = builder.Build();
+
+// Honour X-Forwarded-Proto / X-Forwarded-For from the upstream proxy. Must
+// run before authentication so the cookie's Secure decision and any
+// downstream URL building see the edge scheme, not the http://+:8080 the
+// container actually listens on.
+app.UseForwardedHeaders();
 
 if (!app.Environment.IsDevelopment())
 {
@@ -79,23 +109,22 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
+// Liveness: process is up. Readiness: database is reachable. Both are
+// unauthenticated so an external load balancer or compose healthcheck can
+// poll without credentials. See .design/deployment.md.
+app.MapHealthChecks("/health");
+app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+});
+
 // File download endpoint for the New Workspace flow. The form posts here and
 // the response is a ZIP attachment. Validation errors render an inline error
 // page so the user can navigate back; the form fields themselves enforce most
 // of the same rules client-side via HTML attributes.
 app.MapPost("/generate/workspace", async (HttpContext ctx, GenerationService gen, IAntiforgery antiforgery, CancellationToken ct) =>
 {
-    try
-    {
-        await antiforgery.ValidateRequestAsync(ctx);
-    }
-    catch (AntiforgeryValidationException)
-    {
-        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
-        ctx.Response.ContentType = "text/plain; charset=utf-8";
-        await ctx.Response.WriteAsync("Antiforgery validation failed. Reload the form and try again.", ct);
-        return;
-    }
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
     var form = await ctx.Request.ReadFormAsync(ct);
     var plan = new ProjectPlan(
         TemplateKey: form["TemplateKey"].ToString(),
@@ -116,8 +145,8 @@ app.MapPost("/generate/workspace", async (HttpContext ctx, GenerationService gen
     try
     {
         var archive = await gen.GenerateWorkspaceAsync(plan, ct);
-        ctx.Response.ContentType = "application/zip";
-        ctx.Response.Headers.ContentDisposition = $"attachment; filename=\"{archive.FileName}\"";
+        WriteAttachmentHeaders(ctx, archive.FileName);
+        SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
         archive.Stream.Position = 0;
         await archive.Stream.CopyToAsync(ctx.Response.Body, ct);
     }
@@ -125,6 +154,7 @@ app.MapPost("/generate/workspace", async (HttpContext ctx, GenerationService gen
     {
         ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
         ctx.Response.ContentType = "text/plain; charset=utf-8";
+        SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
         var body = "The submitted form failed validation:\n\n"
             + string.Join("\n", ex.Errors.Select(e => $"  - {e.Key}: {e.Value}"));
         await ctx.Response.WriteAsync(body, ct);
@@ -136,17 +166,7 @@ app.MapPost("/generate/workspace", async (HttpContext ctx, GenerationService gen
 // reconstructs the dependency list from four parallel hidden-input arrays.
 app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen, IAntiforgery antiforgery, CancellationToken ct) =>
 {
-    try
-    {
-        await antiforgery.ValidateRequestAsync(ctx);
-    }
-    catch (AntiforgeryValidationException)
-    {
-        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
-        ctx.Response.ContentType = "text/plain; charset=utf-8";
-        await ctx.Response.WriteAsync("Antiforgery validation failed. Reload the form and try again.", ct);
-        return;
-    }
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
     var form = await ctx.Request.ReadFormAsync(ct);
 
     var ids = form["DependencyIds"];
@@ -179,8 +199,8 @@ app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen
     try
     {
         var archive = await gen.GenerateExtensionAsync(plan, ct);
-        ctx.Response.ContentType = "application/zip";
-        ctx.Response.Headers.ContentDisposition = $"attachment; filename=\"{archive.FileName}\"";
+        WriteAttachmentHeaders(ctx, archive.FileName);
+        SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
         archive.Stream.Position = 0;
         await archive.Stream.CopyToAsync(ctx.Response.Body, ct);
     }
@@ -188,6 +208,7 @@ app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen
     {
         ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
         ctx.Response.ContentType = "text/plain; charset=utf-8";
+        SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
         var body = "The submitted form failed validation:\n\n"
             + string.Join("\n", ex.Errors.Select(e => $"  - {e.Key}: {e.Value}"));
         await ctx.Response.WriteAsync(body, ct);
@@ -199,30 +220,13 @@ app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen
 // state outside the app. See .design/templates-and-seeding.md.
 app.MapPost("/admin/export", async (HttpContext ctx, ExportService export, IAntiforgery antiforgery, CancellationToken ct) =>
 {
-    if (ctx.User.Identity?.IsAuthenticated != true)
-    {
-        ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
-        return;
-    }
-
-    try
-    {
-        await antiforgery.ValidateRequestAsync(ctx);
-    }
-    catch (AntiforgeryValidationException)
-    {
-        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
-        ctx.Response.ContentType = "text/plain; charset=utf-8";
-        await ctx.Response.WriteAsync("Antiforgery validation failed. Reload the page and try again.", ct);
-        return;
-    }
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
 
     var archive = await export.ExportAllAsync(ct);
-    ctx.Response.ContentType = "application/zip";
-    ctx.Response.Headers.ContentDisposition = $"attachment; filename=\"{archive.FileName}\"";
+    WriteAttachmentHeaders(ctx, archive.FileName);
     archive.Stream.Position = 0;
     await archive.Stream.CopyToAsync(ctx.Response.Body, ct);
-});
+}).RequireAuthorization();
 
 // Login endpoint: validates the submitted password in constant time, captures
 // the honour-system display name, and issues the auth cookie. The Login page
@@ -232,17 +236,7 @@ app.MapPost("/admin/export", async (HttpContext ctx, ExportService export, IAnti
 app.MapPost("/auth/login", async (HttpContext ctx, AuthService auth, IAntiforgery antiforgery, ILoggerFactory loggerFactory, CancellationToken ct) =>
 {
     var logger = loggerFactory.CreateLogger("Auth");
-    try
-    {
-        await antiforgery.ValidateRequestAsync(ctx);
-    }
-    catch (AntiforgeryValidationException)
-    {
-        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
-        ctx.Response.ContentType = "text/plain; charset=utf-8";
-        await ctx.Response.WriteAsync("Antiforgery validation failed. Reload the form and try again.", ct);
-        return;
-    }
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
 
     var form = await ctx.Request.ReadFormAsync(ct);
     var password = form["Password"].ToString();
@@ -288,30 +282,72 @@ app.MapPost("/auth/login", async (HttpContext ctx, AuthService auth, IAntiforger
 // the top-bar sign-out button, antiforgery-protected like every other mutation.
 app.MapPost("/auth/logout", async (HttpContext ctx, IAntiforgery antiforgery, CancellationToken ct) =>
 {
-    try
-    {
-        await antiforgery.ValidateRequestAsync(ctx);
-    }
-    catch (AntiforgeryValidationException)
-    {
-        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
-        ctx.Response.ContentType = "text/plain; charset=utf-8";
-        await ctx.Response.WriteAsync("Antiforgery validation failed. Reload the form and try again.", ct);
-        return;
-    }
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
     await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     ctx.Response.Redirect("/");
 });
 
 // Run migrations (creating the database if needed) and then seed from disk if
 // the templates table is empty. Both steps are idempotent on subsequent starts.
+// Honour the host's stop signal so a Ctrl-C during a slow first-run seed
+// doesn't leave a half-populated database.
 using (var scope = app.Services.CreateScope())
 {
+    var stopping = app.Lifetime.ApplicationStopping;
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await db.Database.MigrateAsync();
+    await db.Database.MigrateAsync(stopping);
 
     var seed = scope.ServiceProvider.GetRequiredService<SeedService>();
-    await seed.RunAsync();
+    await seed.RunAsync(stopping);
 }
 
 app.Run();
+
+// Writes Content-Type + a properly quoted Content-Disposition for a ZIP
+// download. Routes filename through ContentDispositionHeaderValue so a
+// hostile filename can't smuggle CR/LF or embedded quotes into the
+// response headers — today the names are server-built, but doing it
+// once here means future callers get the same treatment for free.
+static void WriteAttachmentHeaders(HttpContext ctx, string fileName)
+{
+    ctx.Response.ContentType = "application/zip";
+    var cd = new Microsoft.Net.Http.Headers.ContentDispositionHeaderValue("attachment");
+    cd.SetHttpFileName(fileName);
+    ctx.Response.Headers.ContentDisposition = cd.ToString();
+}
+
+// Antiforgery preamble shared by every mutating endpoint. Returns true when
+// the token is valid; otherwise writes the 400 response inline and returns
+// false so the caller can early-out without nesting another try/catch.
+static async Task<bool> ValidateAntiforgeryAsync(HttpContext ctx, IAntiforgery antiforgery, CancellationToken ct)
+{
+    try
+    {
+        await antiforgery.ValidateRequestAsync(ctx);
+        return true;
+    }
+    catch (AntiforgeryValidationException)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+        ctx.Response.ContentType = "text/plain; charset=utf-8";
+        await ctx.Response.WriteAsync("Antiforgery validation failed. Reload the form and try again.", ct);
+        return false;
+    }
+}
+
+// The generate.js companion polls this cookie to know when the matching
+// download response has finished, so the Generate button can drop its
+// loading state. Empty tokens are ignored — the form always includes a
+// freshly-stamped value, but legacy bookmarks or curl callers won't.
+static void SetGenerationCompleteCookie(HttpContext ctx, string token)
+{
+    if (string.IsNullOrEmpty(token)) return;
+    ctx.Response.Cookies.Append("aldt-gen", token, new Microsoft.AspNetCore.Http.CookieOptions
+    {
+        HttpOnly = false,
+        SameSite = SameSiteMode.Lax,
+        Secure = ctx.Request.IsHttps,
+        Path = "/",
+        MaxAge = TimeSpan.FromSeconds(30),
+    });
+}

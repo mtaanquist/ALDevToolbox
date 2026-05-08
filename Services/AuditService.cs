@@ -32,12 +32,17 @@ public class AuditService
     }
 
     /// <summary>
-    /// Returns the full history for a specific entity, newest first. Drives the
+    /// Returns the most recent <paramref name="limit"/> audit entries for a
+    /// specific entity, newest first. Drives the
     /// <c>&lt;AuditHistoryPanel&gt;</c> component embedded on admin edit pages.
+    /// The cap is here so a long-lived entity with thousands of edits doesn't
+    /// page-bomb the panel — older entries are still in the database and the
+    /// global <c>/admin/audit</c> view can surface them.
     /// </summary>
     public Task<List<AuditLogEntry>> GetForEntityAsync(
         AuditEntityType entityType,
         int entityId,
+        int limit = 200,
         CancellationToken ct = default)
     {
         return _db.AuditLog
@@ -45,6 +50,7 @@ public class AuditService
             .Where(e => e.EntityType == entityType && e.EntityId == entityId)
             .OrderByDescending(e => e.Timestamp)
             .ThenByDescending(e => e.Id)
+            .Take(limit)
             .ToListAsync(ct);
     }
 }

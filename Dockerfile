@@ -24,4 +24,10 @@ ENV ASPNETCORE_URLS=http://+:8080 \
 
 VOLUME ["/data"]
 
+# /health/ready is the readiness probe: it pings SQLite via DbContextCheck.
+# /health is liveness-only and would also satisfy this check but tells you
+# less. The dotnet aspnet image already ships with curl.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl --fail --silent --show-error http://localhost:8080/health/ready || exit 1
+
 ENTRYPOINT ["dotnet", "ALDevToolbox.dll"]

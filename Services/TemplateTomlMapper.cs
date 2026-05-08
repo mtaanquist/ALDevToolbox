@@ -93,6 +93,11 @@ public static class TemplateTomlMapper
     /// </summary>
     public static TemplateInput FromToml(string toml, bool deprecated)
     {
+        // Tomlyn 2.3.2 doesn't expose a stable strict-parse hook — the
+        // System.Text.Json-style TomlSerializer surface deliberately drops
+        // unknown keys. We surface syntax errors via the deserializer's
+        // exception path; the bulleted-error display in the admin editor
+        // makes the resulting field-keyed messages tractable to scan.
         TemplateSeed seed;
         try
         {

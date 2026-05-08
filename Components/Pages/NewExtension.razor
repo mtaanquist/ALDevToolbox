@@ -23,8 +23,9 @@
     else
     {
         <div class="workspace-layout">
-            <form method="post" action="/generate/extension" class="form-grid workspace-layout__form">
+            <form method="post" action="/generate/extension" class="form-grid workspace-layout__form" data-loading-form>
                 <AntiforgeryToken />
+                <input type="hidden" name="GenToken" value="" />
 
                 <section class="form-section">
                     <label class="section-label" for="ext-template">Runtime template</label>
@@ -45,13 +46,15 @@
                     <label class="section-label">Extension</label>
                     <input type="text" name="ExtensionName" placeholder="e.g. MyCustomFeature"
                            pattern="^[A-Za-z][A-Za-z0-9]*$" required
+                           title="Letters and digits only, no spaces; must start with a letter."
                            @bind="_extensionName" @bind:event="oninput" />
+                    <small class="muted">Folder and AL extension name. Letters and digits only, no spaces; must start with a letter.</small>
                     <input type="text" name="Brief" placeholder="One-line description" required
-                           @bind="_brief" @bind:event="oninput" />
+                           title="Required." @bind="_brief" @bind:event="oninput" />
                     <textarea name="Description" rows="3" placeholder="Longer description" required
-                              @bind="_description" @bind:event="oninput"></textarea>
+                              title="Required." @bind="_description" @bind:event="oninput"></textarea>
                     <input type="text" name="Publisher" placeholder="Publisher" required
-                           @bind="_publisher" @bind:event="oninput" />
+                           title="Required." @bind="_publisher" @bind:event="oninput" />
                 </section>
 
                 <section class="form-section form-section--row">
@@ -59,11 +62,19 @@
                         <label class="section-label" for="ext-id-from">ID range — from</label>
                         <input id="ext-id-from" type="number" name="IdRangeFrom" required min="1"
                                @bind="_idRangeFrom" @bind:event="oninput" />
+                        @if (_idRangeFrom <= 0)
+                        {
+                            <span class="form-field-error" role="alert">Must be greater than zero.</span>
+                        }
                     </div>
                     <div>
                         <label class="section-label" for="ext-id-to">ID range — to</label>
                         <input id="ext-id-to" type="number" name="IdRangeTo" required min="1"
                                @bind="_idRangeTo" @bind:event="oninput" />
+                        @if (_idRangeTo <= _idRangeFrom)
+                        {
+                            <span class="form-field-error" role="alert">Must be greater than the 'from' value.</span>
+                        }
                     </div>
                 </section>
                 <p class="caption muted">
@@ -75,12 +86,15 @@
                         <label class="section-label" for="ext-app-version">Application version</label>
                         <input id="ext-app-version" type="text" name="ApplicationVersion" required
                                pattern="^\d+\.\d+\.\d+\.\d+$"
+                               title="Four-part version, e.g. 24.0.0.0."
                                @bind="_applicationVersion" @bind:event="oninput" />
+                        <small class="muted">Four-part version (e.g. <code>24.0.0.0</code>).</small>
                     </div>
                     <div>
                         <label class="section-label" for="ext-runtime-version">Runtime version</label>
                         <input id="ext-runtime-version" type="text" name="RuntimeVersion" required
-                               @bind="_runtimeVersion" @bind:event="oninput" />
+                               title="Required." @bind="_runtimeVersion" @bind:event="oninput" />
+                        <small class="muted">Defaults to <code>{runtime}.0</code> from the picked template.</small>
                     </div>
                 </section>
 
@@ -107,7 +121,11 @@
                     </label>
                 </section>
 
-                <button type="submit" class="btn btn--primary workspace-layout__generate">Generate</button>
+                <button type="submit" class="btn btn--primary workspace-layout__generate" data-loading-button>
+                    <span class="btn__spinner" aria-hidden="true"></span>
+                    <span class="btn__label">Generate</span>
+                    <span class="btn__label-busy">Generating…</span>
+                </button>
             </form>
 
             <aside class="workspace-layout__preview">

@@ -23,8 +23,9 @@
     else
     {
         <div class="workspace-layout">
-            <form method="post" action="/generate/workspace" class="form-grid workspace-layout__form">
+            <form method="post" action="/generate/workspace" class="form-grid workspace-layout__form" data-loading-form>
                 <AntiforgeryToken />
+                <input type="hidden" name="GenToken" value="" />
 
                 <section class="form-section">
                     <label class="section-label" for="ws-template">Runtime template</label>
@@ -45,10 +46,14 @@
                     <label class="section-label">Project</label>
                     <input type="text" name="WorkspaceName" placeholder="e.g. Acme Customer"
                            pattern="^[A-Za-z][A-Za-z0-9 ]*$" required
+                           title="Letters, digits and spaces only; must start with a letter."
                            @bind="_workspaceName" @bind:event="oninput" />
+                    <small class="muted">Workspace name. Letters, digits and spaces only; must start with a letter.</small>
                     <input type="text" name="Brief" placeholder="One-line description" required
+                           title="Required."
                            @bind="_brief" @bind:event="oninput" />
                     <textarea name="Description" rows="3" placeholder="Longer description" required
+                              title="Required."
                               @bind="_description" @bind:event="oninput"></textarea>
                 </section>
 
@@ -57,11 +62,19 @@
                         <label class="section-label" for="ws-core-from">Core ID range — from</label>
                         <input id="ws-core-from" type="number" name="CoreIdRangeFrom" required min="1"
                                @bind="_coreIdRangeFrom" @bind:event="oninput" />
+                        @if (_coreIdRangeFrom <= 0)
+                        {
+                            <span class="form-field-error" role="alert">Must be greater than zero.</span>
+                        }
                     </div>
                     <div>
                         <label class="section-label" for="ws-core-to">Core ID range — to</label>
                         <input id="ws-core-to" type="number" name="CoreIdRangeTo" required min="1"
                                @bind="_coreIdRangeTo" @bind:event="oninput" />
+                        @if (_coreIdRangeTo <= _coreIdRangeFrom)
+                        {
+                            <span class="form-field-error" role="alert">Must be greater than the 'from' value.</span>
+                        }
                     </div>
                 </section>
 
@@ -70,12 +83,16 @@
                         <label class="section-label" for="ws-app-version">Application version</label>
                         <input id="ws-app-version" type="text" name="ApplicationVersion" required
                                pattern="^\d+\.\d+\.\d+\.\d+$"
+                               title="Four-part version, e.g. 24.0.0.0."
                                @bind="_applicationVersion" @bind:event="oninput" />
+                        <small class="muted">Four-part version (e.g. <code>24.0.0.0</code>).</small>
                     </div>
                     <div>
                         <label class="section-label" for="ws-runtime-version">Runtime version</label>
                         <input id="ws-runtime-version" type="text" name="RuntimeVersion" required
+                               title="Required."
                                @bind="_runtimeVersion" @bind:event="oninput" />
+                        <small class="muted">Defaults to <code>{runtime}.0</code> from the picked template.</small>
                     </div>
                 </section>
 
@@ -121,7 +138,11 @@
                     </label>
                 </section>
 
-                <button type="submit" class="btn btn--primary workspace-layout__generate">Generate</button>
+                <button type="submit" class="btn btn--primary workspace-layout__generate" data-loading-button>
+                    <span class="btn__spinner" aria-hidden="true"></span>
+                    <span class="btn__label">Generate</span>
+                    <span class="btn__label-busy">Generating…</span>
+                </button>
             </form>
 
             <aside class="workspace-layout__preview">
