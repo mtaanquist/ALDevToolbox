@@ -733,27 +733,33 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .top-bar__user .theme-toggle { margin-right: 0; }
 
-.signed-in-as {
-    color: var(--color-text-muted);
-    font-size: 13px;
-}
-
-.signed-in-as strong {
-    color: var(--color-text);
-    font-weight: 500;
-}
-
 .signout-form { margin: 0; display: inline-flex; }
 
-.signin-link--button {
-    background: none;
-    border: 0;
-    padding: 0;
+.user-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--color-text);
     font: inherit;
+    font-size: 12.5px;
     cursor: pointer;
+    transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease;
 }
 
-.signin-link--button:hover { color: var(--color-text); }
+.user-button:hover {
+    background: var(--color-bg);
+    border-color: var(--color-accent);
+}
+
+.user-button__name { font-weight: 500; }
+
+.user-button__icon { color: var(--color-text-muted); flex: 0 0 auto; }
+
+.user-button:hover .user-button__icon { color: var(--color-accent); }
 
 /* ---------- Login page ---------- */
 
