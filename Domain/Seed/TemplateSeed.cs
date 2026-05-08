@@ -78,9 +78,25 @@ public class AppSourceCopSeed
     public List<string> SupportedCountries { get; set; } = new();
 }
 
-/// <summary>One <c>[[folders]]</c> entry — a single relative folder path.</summary>
+/// <summary>One <c>[[folders]]</c> entry — a relative folder path plus its seeded files.</summary>
 public class FolderSeed
 {
     public string Path { get; set; } = string.Empty;
-    public string? Example { get; set; }
+
+    /// <summary>
+    /// Files seeded into the folder. Empty list means the folder generates
+    /// with a single <c>.gitkeep</c> placeholder. Mustache substitution runs
+    /// at generation time, not at parse time.
+    /// </summary>
+    public List<FolderFileSeed> Files { get; set; } = new();
+}
+
+/// <summary>One <c>[[folders.files]]</c> entry — a path/content pair.</summary>
+public class FolderFileSeed
+{
+    /// <summary>Relative path inside the folder, forward-slash separated.</summary>
+    public string Path { get; set; } = string.Empty;
+
+    /// <summary>Raw file content. Mustache variables are substituted at generation time.</summary>
+    public string Content { get; set; } = string.Empty;
 }

@@ -3,7 +3,8 @@ namespace ALDevToolbox.Domain.Entities;
 /// <summary>
 /// A single folder produced by a <see cref="RuntimeTemplate"/>. Rows are ordered
 /// per template via <see cref="Ordering"/> so the generator emits them in a
-/// predictable shape.
+/// predictable shape. The folder's seeded contents live in <see cref="Files"/>;
+/// a folder with no files generates a single <c>.gitkeep</c> placeholder.
 /// </summary>
 public class TemplateFolder
 {
@@ -23,10 +24,8 @@ public class TemplateFolder
     public string Path { get; set; } = string.Empty;
 
     /// <summary>
-    /// Optional name of an example folder under
-    /// <c>Templates.seed/&lt;runtime&gt;/examples/</c> whose AL files are copied
-    /// into this folder when the user enables examples. <c>null</c> means the
-    /// folder is always seeded with a single <c>.gitkeep</c>.
+    /// Files seeded into this folder when <c>IncludeExamples</c> is on. Empty
+    /// list = generator emits a single <c>.gitkeep</c> regardless of the toggle.
     /// </summary>
-    public string? ExamplePath { get; set; }
+    public List<TemplateFile> Files { get; set; } = new();
 }

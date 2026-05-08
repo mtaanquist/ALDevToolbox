@@ -46,6 +46,7 @@ public class TemplateService
             .OrderBy(t => t.Runtime)
             .ThenBy(t => t.Name)
             .Include(t => t.Folders.OrderBy(f => f.Ordering))
+                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
             .ToListAsync();
     }
 
@@ -66,6 +67,7 @@ public class TemplateService
             .ThenBy(t => t.Runtime)
             .ThenBy(t => t.Name)
             .Include(t => t.Folders.OrderBy(f => f.Ordering))
+                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
             .ToListAsync();
     }
 
@@ -80,6 +82,7 @@ public class TemplateService
             .AsNoTracking()
             .Where(t => t.Key == key)
             .Include(t => t.Folders.OrderBy(f => f.Ordering))
+                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
             .FirstOrDefaultAsync(ct);
     }
 
@@ -148,7 +151,14 @@ public class TemplateService
                 {
                     Ordering = i,
                     Path = f.Path.Trim(),
-                    ExamplePath = string.IsNullOrWhiteSpace(f.ExamplePath) ? null : f.ExamplePath.Trim(),
+                    Files = f.Files
+                        .Select((file, fi) => new TemplateFile
+                        {
+                            Ordering = fi,
+                            Path = file.Path.Trim(),
+                            Content = file.Content ?? string.Empty,
+                        })
+                        .ToList(),
                 })
                 .ToList(),
         };
@@ -170,7 +180,7 @@ public class TemplateService
     public async Task UpdateAsync(int id, TemplateInput input, CancellationToken ct = default)
     {
         var existing = await _db.RuntimeTemplates
-            .Include(t => t.Folders)
+            .Include(t => t.Folders).ThenInclude(f => f.Files)
             .FirstOrDefaultAsync(t => t.Id == id, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
             {
@@ -256,8 +266,9 @@ public class TemplateService
     /// <summary>
     /// Walks the input folder list against the persisted folder list and applies
     /// the minimum set of mutations: update existing rows in-order, append new
-    /// rows for any extras, remove rows that fell off the end. Keeps stable
-    /// primary keys for unchanged folders so the audit log only captures real
+    /// rows for any extras, remove rows that fell off the end. Per-folder
+    /// <see cref="TemplateFile"/> rows are reconciled the same way. Keeps stable
+    /// primary keys for unchanged rows so the audit log only captures real
     /// changes.
     /// </summary>
     private static void ReconcileFolders(RuntimeTemplate existing, IReadOnlyList<TemplateFolderInput> inputs)
@@ -268,31 +279,64 @@ public class TemplateService
         {
             var inputFolder = inputs[i];
             var path = inputFolder.Path.Trim();
-            var examplePath = string.IsNullOrWhiteSpace(inputFolder.ExamplePath)
-                ? null
-                : inputFolder.ExamplePath.Trim();
 
+            TemplateFolder folder;
             if (i < existingFolders.Count)
             {
-                var folder = existingFolders[i];
+                folder = existingFolders[i];
                 folder.Ordering = i;
                 folder.Path = path;
-                folder.ExamplePath = examplePath;
             }
             else
             {
-                existing.Folders.Add(new TemplateFolder
-                {
-                    Ordering = i,
-                    Path = path,
-                    ExamplePath = examplePath,
-                });
+                folder = new TemplateFolder { Ordering = i, Path = path };
+                existing.Folders.Add(folder);
             }
+
+            ReconcileFiles(folder, inputFolder.Files);
         }
 
         for (var i = inputs.Count; i < existingFolders.Count; i++)
         {
             existing.Folders.Remove(existingFolders[i]);
+        }
+    }
+
+    /// <summary>
+    /// Same incremental update as <see cref="ReconcileFolders"/> but for the
+    /// <c>template_files</c> rows hung off a single folder.
+    /// </summary>
+    private static void ReconcileFiles(TemplateFolder folder, IReadOnlyList<TemplateFileInput> inputs)
+    {
+        var existingFiles = folder.Files.OrderBy(f => f.Ordering).ToList();
+
+        for (var i = 0; i < inputs.Count; i++)
+        {
+            var input = inputs[i];
+            var path = input.Path.Trim();
+            var content = input.Content ?? string.Empty;
+
+            if (i < existingFiles.Count)
+            {
+                var file = existingFiles[i];
+                file.Ordering = i;
+                file.Path = path;
+                file.Content = content;
+            }
+            else
+            {
+                folder.Files.Add(new TemplateFile
+                {
+                    Ordering = i,
+                    Path = path,
+                    Content = content,
+                });
+            }
+        }
+
+        for (var i = inputs.Count; i < existingFiles.Count; i++)
+        {
+            folder.Files.Remove(existingFiles[i]);
         }
     }
 
@@ -395,16 +439,38 @@ public class TemplateService
 
         for (var i = 0; i < input.Folders.Count; i++)
         {
-            var path = input.Folders[i].Path?.Trim() ?? string.Empty;
+            var folder = input.Folders[i];
+            var path = folder.Path?.Trim() ?? string.Empty;
             var fieldKey = $"Folders[{i}].Path";
             if (string.IsNullOrEmpty(path))
             {
                 errors[fieldKey] = "Folder path is required.";
-                continue;
             }
-            if (path.StartsWith('/') || path.Contains('\\') || path.Split('/').Any(seg => seg == ".." || string.IsNullOrWhiteSpace(seg)))
+            else if (path.StartsWith('/') || path.Contains('\\') || path.Split('/').Any(seg => seg == ".." || string.IsNullOrWhiteSpace(seg)))
             {
                 errors[fieldKey] = "Folder path must be relative, use '/' separators, and contain no '..' segments.";
+            }
+
+            var seenFilePaths = new HashSet<string>(StringComparer.Ordinal);
+            for (var j = 0; j < folder.Files.Count; j++)
+            {
+                var file = folder.Files[j];
+                var filePath = file.Path?.Trim() ?? string.Empty;
+                var fileFieldKey = $"Folders[{i}].Files[{j}].Path";
+                if (string.IsNullOrEmpty(filePath))
+                {
+                    errors[fileFieldKey] = "File path is required.";
+                    continue;
+                }
+                if (filePath.StartsWith('/') || filePath.Contains('\\') || filePath.Split('/').Any(seg => seg == ".." || string.IsNullOrWhiteSpace(seg)))
+                {
+                    errors[fileFieldKey] = "File path must be relative, use '/' separators, and contain no '..' segments.";
+                    continue;
+                }
+                if (!seenFilePaths.Add(filePath))
+                {
+                    errors[fileFieldKey] = $"Duplicate file path '{filePath}' inside this folder.";
+                }
             }
         }
 
@@ -439,5 +505,8 @@ public record TemplateInput(
     bool Deprecated,
     IReadOnlyList<TemplateFolderInput> Folders);
 
-/// <summary>One folder row submitted by the admin folder editor.</summary>
-public record TemplateFolderInput(string Path, string? ExamplePath);
+/// <summary>One folder row submitted by the admin folder editor, with its files.</summary>
+public record TemplateFolderInput(string Path, IReadOnlyList<TemplateFileInput> Files);
+
+/// <summary>One file row submitted by the admin file editor.</summary>
+public record TemplateFileInput(string Path, string Content);

@@ -9,7 +9,7 @@
 1. **The structured admin form.** Field-by-field editing on `/admin/templates/{key}`. Best for incremental tweaks, single-flag changes, and folder reordering.
 2. **TOML.** A textarea on the same admin page (toggle in the header) that round-trips a `template.toml` document. Best for authoring a new template from scratch, bulk folder edits, and copy-pasting a template from one environment to another. New templates default to TOML mode because that's the workflow this is optimised for.
 
-**Bootstrap:** `Templates.seed/` is the source-controlled starting point. On first run against an empty DB, every TOML file under it is imported. After that, the seed files are ignored — neither a fallback, nor a sync source. Edits made through either authoring surface live in the DB only; nothing rewrites `Templates.seed/`.
+**Bootstrap:** `Templates.seed/` is the source-controlled starting point. On first run against an empty DB, every TOML file under it is imported, and the example AL files alongside each `template.toml` are slurped into `template_files` rows so admins can edit them without touching disk. After that, the seed files are ignored — neither a fallback, nor a sync source. Edits made through either authoring surface live in the DB only; nothing rewrites `Templates.seed/`.
 
 This split exists so:
 - The repo has a sensible "starting point" for fresh deployments that's source-controlled and reviewable.
@@ -27,7 +27,11 @@ on app start:
         for each subfolder of Templates.seed/runtime-* :
             parse template.toml
             insert runtime_template row
-            insert template_folder rows
+            for each [[folders]] entry:
+                insert template_folder row
+                if folder has an `example` directory under examples/<example>/:
+                    for each file in that directory (recursive):
+                        insert template_file row with the file's relative path + UTF-8 content
         for each file in Templates.seed/modules/*.toml :
             parse the file
             insert module row + module_dependency rows
@@ -36,6 +40,8 @@ on app start:
     else:
         do nothing
 ```
+
+The `examples/` directory walk is text-only: every file the seeder picks up is read as UTF-8 and stored verbatim in `template_files.content`. Mustache substitution does **not** happen at seed time — it stays at generation time, where the per-extension context exists. A migration helper backfills `template_files` rows from the on-disk `examples/` tree for any pre-existing `template_folders` row whose legacy `example_path` was set, so existing deployments transition without losing their seeded examples.
 
 The check is "no runtime_templates exist" rather than per-row idempotency — this avoids the complication of trying to merge live edits with seed file changes. If you ever want to re-seed, you do it deliberately by clearing the relevant tables first.
 
@@ -54,7 +60,11 @@ class TemplateSeed {
 }
 class FolderSeed {
     public string Path { get; set; }
-    public string Example { get; set; }   // optional
+    public List<FolderFileSeed> Files { get; set; } = new();  // file contents stored inline
+}
+class FolderFileSeed {
+    public string Path { get; set; }       // relative to the folder, e.g. "AppInstall.Codeunit.al"
+    public string Content { get; set; }    // raw file content; mustache substitution runs at generation time
 }
 // ...etc
 ```
@@ -101,15 +111,24 @@ supportedCountries = ["US", "DK"]
 # Required: array of folder definitions, in display order
 [[folders]]
 path = "Source/Foundation"
-example = "Foundation"           # optional; resolves to Templates.seed/runtime-15/examples/Foundation/
 
-[[folders]]
-path = "Source/Finance"
-example = "Finance"
+# Optional: file contents seeded into this folder. When empty, the folder
+# generates with a single .gitkeep regardless of the include-examples toggle.
+# Mustache substitution runs at generation time, not at seed/parse time.
+[[folders.files]]
+path = "AppInstall.Codeunit.al"
+content = """
+namespace {{namespace}};
+
+codeunit 90100 "{{prefix}} App Install"
+{
+    Subtype = Install;
+}
+"""
 
 [[folders]]
 path = "Source/Sales"
-# no example field — gets .gitkeep regardless of include-examples toggle
+# no files — gets .gitkeep when include-examples is off and stays empty when it's on
 
 [[folders]]
 path = "Translations"
@@ -185,6 +204,7 @@ The mapper (`Services/TemplateTomlMapper.cs`) is now load-bearing infrastructure
 
 - The TOML schema admins type into is the same schema the seed files ship with. Don't fork it.
 - A few fields are deliberately not represented in the TOML view: `deprecated` (seed TOML doesn't carry it — flip it from the structured form's checkbox), and per-row folder reordering by drag (express the order by writing the `[[folders]]` blocks in that order; array order is preserved as `ordering`).
+- `[[folders.files]]` blocks make the TOML lossless even when folders carry file content. For larger files this gets noisy; the structured editor is usually the more comfortable surface for editing AL source. Both write through the same pipeline, so neither is "more correct" than the other.
 
 ## Export to TOML
 
@@ -196,7 +216,7 @@ The admin section should provide a one-click "Export all to TOML" button (under 
 
 Implementation: walk all active rows, serialise each template/module/catalogue back into the TOML shape, ZIP into `Templates.seed.zip`. Use Tomlyn's `Toml.FromModel(...)` for the inverse direction.
 
-## What is *not* TOML-editable
+## What is *not* admin-editable
 
-- Example AL file *contents* — those live as actual `.al` files under `Templates.seed/<runtime>/examples/`. They ship with the app, are not stored in SQLite, are not editable through the admin UI. Changing them is a code change and a redeploy. This is intentional: a SQLite admin UI is not the right place for arbitrary AL source.
-- The static `.gitignore`, `README.md` boilerplate, ruleset JSON, and logo file. These ship as embedded resources. Treat them as code.
+- The static `.gitignore`, `README.md` boilerplate, ruleset JSON, and logo file. These ship as embedded resources under `Resources/` because they're per-deployment branding/policy rather than per-template content. Treat them as code.
+- Binary files inside template folders. v1 stores file content as UTF-8 text only; PNGs, ZIPs, or anything else non-text don't have a place in `template_files`. If we need binary template assets later, the likely shape is a separate `template_file_blobs` table or a URL-fetched asset; defer until there's a real ask.

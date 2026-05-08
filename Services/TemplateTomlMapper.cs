@@ -66,7 +66,14 @@ public static class TemplateTomlMapper
             },
             Folders = template.Folders
                 .OrderBy(f => f.Ordering)
-                .Select(f => new FolderSeed { Path = f.Path, Example = f.ExamplePath })
+                .Select(f => new FolderSeed
+                {
+                    Path = f.Path,
+                    Files = f.Files
+                        .OrderBy(x => x.Ordering)
+                        .Select(x => new FolderFileSeed { Path = x.Path, Content = x.Content })
+                        .ToList(),
+                })
                 .ToList(),
         };
 
@@ -137,7 +144,9 @@ public static class TemplateTomlMapper
             ModuleIdRangeStart: seed.Template.ModuleIdRangeStart,
             ModuleIdRangeSize: seed.Template.ModuleIdRangeSize,
             Deprecated: deprecated,
-            Folders: seed.Folders.Select(f => new TemplateFolderInput(f.Path, f.Example)).ToList());
+            Folders: seed.Folders.Select(f => new TemplateFolderInput(
+                f.Path,
+                f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList());
     }
 
     /// <summary>

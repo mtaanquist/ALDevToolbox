@@ -7,6 +7,7 @@ This document specifies the entities, their relationships, and the SQLite schema
 ```
 RuntimeTemplate ──┐
                   ├── has many ──> TemplateFolder (ordered)
+                  │                    └── has many ──> TemplateFile (ordered)
                   └── has one ────> TemplateDefaults (JSON column on the row)
 
 Module ───────────┐
@@ -58,11 +59,26 @@ The folder structure the runtime template generates. Each row is one folder.
 | `template_id`  | INTEGER FK     | → runtime_templates.id, cascade delete          |
 | `ordering`     | INTEGER NOT NULL | Position within the template's folder list   |
 | `path`         | TEXT NOT NULL  | Relative path inside the extension folder. e.g. "Source/Foundation" |
-| `example_path` | TEXT           | Path inside `Templates.seed/<runtime>/examples/` to seed example files from. Null = always `.gitkeep` |
 
 Index: `(template_id, ordering)`.
 
-The example AL files themselves live on disk in `Templates.seed/<runtime>/examples/<...>` and are *not* loaded into the database. They're treated as immutable assets shipped with the app. If admins want to change them, that's a code change and a redeploy. (This is a deliberate limit: stuffing arbitrary AL source code into a SQLite admin UI is more pain than it's worth.)
+A folder's seeded contents live in `template_files` rows hung off this table. A folder with no `template_files` rows generates a single `.gitkeep` placeholder; a folder with rows generates one entry in the ZIP per row when `include_examples` is true (and a `.gitkeep` otherwise).
+
+### `template_files`
+
+Per-folder file content. Stored as UTF-8 text — binary assets are not supported in v1.
+
+| Column              | Type           | Notes                                          |
+|---------------------|----------------|------------------------------------------------|
+| `id`                | INTEGER PK     |                                                |
+| `template_folder_id`| INTEGER FK     | → template_folders.id, cascade delete           |
+| `ordering`          | INTEGER NOT NULL | Position within the folder's file list        |
+| `path`              | TEXT NOT NULL  | Relative path inside the folder, forward-slash separated. e.g. "AppInstall.Codeunit.al" or "subfolder/Util.Codeunit.al". No leading slash, no `..` segments. |
+| `content`           | TEXT NOT NULL  | Raw file content. Mustache substitution runs at generation time, not at write time. |
+
+Indexes: `(template_folder_id, ordering)` for ordered enumeration; `(template_folder_id, path)` UNIQUE so a single folder can't carry two files at the same relative path.
+
+Editing `path` or `content` flows through the same `TemplateInput` pipeline both authoring surfaces use. The structured editor offers per-file path inputs and a `<textarea>` for content; the TOML editor expresses the same data via `[[folders.files]]` blocks (see `templates-and-seeding.md`).
 
 ### `modules`
 
@@ -122,7 +138,7 @@ One row per write to any of the above tables. See `auth-and-audit.md` for the fu
 | `id`           | INTEGER PK     |                                                      |
 | `timestamp`    | TEXT NOT NULL  | UTC ISO8601                                          |
 | `changed_by`   | TEXT NOT NULL  | The honour-system display name from login            |
-| `entity_type`  | TEXT NOT NULL  | "runtime_template" \| "template_folder" \| "module" \| "module_dependency" \| "well_known_dependency" |
+| `entity_type`  | TEXT NOT NULL  | "runtime_template" \| "template_folder" \| "template_file" \| "module" \| "module_dependency" \| "well_known_dependency" |
 | `entity_id`    | INTEGER NOT NULL | The id within that entity's table                  |
 | `action`       | TEXT NOT NULL  | "created" \| "updated" \| "deleted"                  |
 | `snapshot_json`| TEXT           | Full JSON of the row's state *before* the change. Null for "created" |
@@ -137,6 +153,8 @@ These are domain rules — they should be enforced in service code, not just at 
 - `runtime_templates.runtime` must be > 0.
 - `runtime_templates.core_id_range_from < core_id_range_to`.
 - `template_folders.path` must be a relative path with `/` separators, no leading slash, no `..`.
+- `template_files.path` must be a relative path with `/` separators, no leading slash, no `..`. It is unique per `template_folder_id`.
+- `template_files.content` is UTF-8 text. Audit snapshots store a SHA-256 hash of the content (plus the path) rather than the content itself, so the audit log doesn't bloat with copies of every AL file on every save.
 - `modules.key` must match `^[a-z0-9-]+$` and be unique.
 - `module_dependencies.dep_id` must be a GUID format.
 - `well_known_dependencies.dep_id` must be a GUID format.

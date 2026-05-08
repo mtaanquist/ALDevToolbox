@@ -1,7 +1,6 @@
 @page "/projects/new"
 @rendermode InteractiveServer
 @inject TemplateService Templates
-@inject GenerationService Generation
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 
@@ -168,10 +167,6 @@
     private bool _includeExamples = true;
     private bool _includeForNav;
 
-    // Cached example file listings keyed by the template's example_path. Repopulated
-    // when the user picks a different template so we never hit disk during render.
-    private Dictionary<string, IReadOnlyList<string>> _exampleFiles = new(StringComparer.Ordinal);
-
     protected override async Task OnInitializedAsync()
     {
         _templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
@@ -202,14 +197,6 @@
         _coreIdRangeTo = template.CoreIdRangeTo;
         _applicationVersion = template.DefaultApplication;
         _runtimeVersion = $"{template.Runtime}.0";
-        _exampleFiles = template.Folders
-            .Where(f => !string.IsNullOrWhiteSpace(f.ExamplePath))
-            .Select(f => f.ExamplePath!)
-            .Distinct(StringComparer.Ordinal)
-            .ToDictionary(
-                p => p,
-                p => Generation.ListExampleFiles(template.Key, p),
-                StringComparer.Ordinal);
     }
 
     private void OnModuleToggled(string key, bool isChecked)
@@ -302,12 +289,12 @@
 
     private List<PreviewNode> LeafFiles(TemplateFolder folder)
     {
-        if (_includeExamples
-            && !string.IsNullOrWhiteSpace(folder.ExamplePath)
-            && _exampleFiles.TryGetValue(folder.ExamplePath, out var files)
-            && files.Count > 0)
+        if (_includeExamples && folder.Files.Count > 0)
         {
-            return files.Select(PreviewNode.File).ToList();
+            return folder.Files
+                .OrderBy(f => f.Ordering)
+                .Select(f => PreviewNode.File(f.Path))
+                .ToList();
         }
         return new List<PreviewNode> { PreviewNode.File(".gitkeep") };
     }

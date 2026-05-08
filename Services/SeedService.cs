@@ -125,7 +125,14 @@ public class SeedService
                 {
                     Ordering = i,
                     Path = f.Path,
-                    ExamplePath = string.IsNullOrWhiteSpace(f.Example) ? null : f.Example,
+                    Files = f.Files
+                        .Select((file, fi) => new TemplateFile
+                        {
+                            Ordering = fi,
+                            Path = file.Path,
+                            Content = file.Content,
+                        })
+                        .ToList(),
                 }).ToList(),
             };
 

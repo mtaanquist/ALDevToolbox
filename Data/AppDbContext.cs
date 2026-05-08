@@ -20,6 +20,7 @@ public class AppDbContext : DbContext
 
     public DbSet<RuntimeTemplate> RuntimeTemplates => Set<RuntimeTemplate>();
     public DbSet<TemplateFolder> TemplateFolders => Set<TemplateFolder>();
+    public DbSet<TemplateFile> TemplateFiles => Set<TemplateFile>();
     public DbSet<Module> Modules => Set<Module>();
     public DbSet<ModuleDependency> ModuleDependencies => Set<ModuleDependency>();
     public DbSet<WellKnownDependency> WellKnownDependencies => Set<WellKnownDependency>();
@@ -80,8 +81,25 @@ public class AppDbContext : DbContext
             entity.Property(e => e.TemplateId).HasColumnName("template_id").IsRequired();
             entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
             entity.Property(e => e.Path).HasColumnName("path").IsRequired();
-            entity.Property(e => e.ExamplePath).HasColumnName("example_path");
             entity.HasIndex(e => new { e.TemplateId, e.Ordering });
+
+            entity.HasMany(e => e.Files)
+                .WithOne(f => f.Folder!)
+                .HasForeignKey(f => f.TemplateFolderId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<TemplateFile>(entity =>
+        {
+            entity.ToTable("template_files");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(e => e.TemplateFolderId).HasColumnName("template_folder_id").IsRequired();
+            entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
+            entity.Property(e => e.Path).HasColumnName("path").IsRequired();
+            entity.Property(e => e.Content).HasColumnName("content").IsRequired();
+            entity.HasIndex(e => new { e.TemplateFolderId, e.Ordering });
+            entity.HasIndex(e => new { e.TemplateFolderId, e.Path }).IsUnique();
         });
 
         modelBuilder.Entity<Module>(entity =>
