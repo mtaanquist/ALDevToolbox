@@ -147,6 +147,8 @@
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "template")] public string? PreselectedTemplate { get; set; }
+
     private List<RuntimeTemplate>? _templates;
     private List<ALDevToolbox.Domain.Entities.Module>? _modules;
     private RuntimeTemplate? _selected;
@@ -174,7 +176,11 @@
     {
         _templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
         _modules = await Templates.GetModulesAsync(includeDeprecated: false);
-        _selected = _templates.FirstOrDefault();
+        // Honour the ?template=<key> hint from the Templates browser when present
+        // and the key matches an active template; otherwise fall back to the first.
+        _selected = (!string.IsNullOrWhiteSpace(PreselectedTemplate)
+            ? _templates.FirstOrDefault(t => t.Key == PreselectedTemplate)
+            : null) ?? _templates.FirstOrDefault();
         if (_selected is not null)
         {
             ApplyTemplateDefaults(_selected);
