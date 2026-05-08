@@ -103,7 +103,7 @@ public class GenerationService
             fileCount += 2;
 
             // Core extension
-            var coreAppJson = BuildCoreAppJson(template, plan, coreId, coreName);
+            var coreAppJson = await BuildCoreAppJsonAsync(template, plan, coreId, coreName, ct);
             fileCount += await WriteExtensionAsync(
                 archive,
                 rootRelative: $"{rootFolder}/Core",
@@ -275,7 +275,12 @@ public class GenerationService
 
     // ===== app.json builders =====
 
-    private string BuildCoreAppJson(RuntimeTemplate template, ProjectPlan plan, Guid coreId, string coreName)
+    private async Task<string> BuildCoreAppJsonAsync(
+        RuntimeTemplate template,
+        ProjectPlan plan,
+        Guid coreId,
+        string coreName,
+        CancellationToken ct)
     {
         var node = BaseAppJson(template);
         node["id"] = coreId.ToString();
@@ -295,10 +300,10 @@ public class GenerationService
         var coreDeps = new JsonArray();
         if (plan.IncludeForNav)
         {
-            foreach (var d in BuildForNavDependencies()) coreDeps.Add(d);
+            foreach (var d in await LoadForNavDependenciesAsync(ct)) coreDeps.Add(d);
         }
         node["dependencies"] = coreDeps;
-        return node.ToJsonString(JsonOptions);
+        return SerializeIndented(node);
     }
 
     private static string BuildModuleAppJson(ModuleAssignment info, RuntimeTemplate template, ProjectPlan plan)
@@ -340,7 +345,7 @@ public class GenerationService
             });
         }
         node["dependencies"] = deps;
-        return node.ToJsonString(JsonOptions);
+        return SerializeIndented(node);
     }
 
     private static string BuildStandaloneAppJson(RuntimeTemplate template, StandaloneExtensionPlan plan)
@@ -373,7 +378,7 @@ public class GenerationService
             });
         }
         node["dependencies"] = deps;
-        return node.ToJsonString(JsonOptions);
+        return SerializeIndented(node);
     }
 
     /// <summary>
@@ -405,23 +410,20 @@ public class GenerationService
     /// <c>dependencies</c> array when the user opts in. Uses the well-known
     /// catalogue rather than hardcoded GUIDs so admins control the list.
     /// </summary>
-    private IEnumerable<JsonObject> BuildForNavDependencies()
+    private async Task<List<JsonObject>> LoadForNavDependenciesAsync(CancellationToken ct)
     {
-        var rows = _db.WellKnownDependencies
+        var rows = await _db.WellKnownDependencies
             .AsNoTracking()
             .Where(w => w.DepPublisher == ForNavPublisher)
             .OrderBy(w => w.Ordering)
-            .ToList();
-        foreach (var r in rows)
+            .ToListAsync(ct);
+        return rows.Select(r => new JsonObject
         {
-            yield return new JsonObject
-            {
-                ["id"] = r.DepId,
-                ["name"] = r.DepName,
-                ["publisher"] = r.DepPublisher,
-                ["version"] = r.DepVersionDefault,
-            };
-        }
+            ["id"] = r.DepId,
+            ["name"] = r.DepName,
+            ["publisher"] = r.DepPublisher,
+            ["version"] = r.DepVersionDefault,
+        }).ToList();
     }
 
     // ===== Code-workspace + README =====
@@ -440,8 +442,17 @@ public class GenerationService
             ["folders"] = folders,
             ["settings"] = settings,
         };
-        return root.ToJsonString(JsonOptions);
+        return SerializeIndented(root);
     }
+
+    /// <summary>
+    /// Serialise a <see cref="JsonNode"/> to indented JSON. Goes through
+    /// <see cref="JsonSerializer"/> rather than <c>JsonNode.ToJsonString</c>
+    /// because the latter has historically dropped the writer's indent setting
+    /// — generation-engine.md mandates 2-space-indented output.
+    /// </summary>
+    private static string SerializeIndented(JsonNode node) =>
+        JsonSerializer.Serialize(node, JsonOptions);
 
     private static string BuildReadme(ProjectPlan plan) =>
         $"""
@@ -599,6 +610,20 @@ public class GenerationService
             errors[nameof(plan.ApplicationVersion)] = "Must be a four-part version (e.g. 24.0.0.0).";
         if (string.IsNullOrWhiteSpace(plan.RuntimeVersion))
             errors[nameof(plan.RuntimeVersion)] = "Required.";
+
+        // The picker UI prevents duplicate selections, but a direct POST could
+        // ship two rows with the same GUID — emit Each AL extension can only
+        // declare a given dependency once, mirroring ModuleService.
+        var seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < plan.Dependencies.Count; i++)
+        {
+            var dep = plan.Dependencies[i];
+            if (string.IsNullOrWhiteSpace(dep.DepId)) continue;
+            if (!seenIds.Add(dep.DepId.Trim()))
+            {
+                errors[$"Dependencies[{i}].DepId"] = $"Duplicate dependency id '{dep.DepId}'.";
+            }
+        }
         if (errors.Count > 0) throw new PlanValidationException(errors);
     }
 
