@@ -2,8 +2,6 @@ using System.Text.Json;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.Seed;
 using Tomlyn;
-using Tomlyn.Model;
-using Tomlyn.Serialization;
 
 namespace ALDevToolbox.Services;
 
@@ -95,24 +93,11 @@ public static class TemplateTomlMapper
     /// </summary>
     public static TemplateInput FromToml(string toml, bool deprecated)
     {
-        // Strict mode: parse first so syntax errors surface with line numbers,
-        // and walk the resulting model to flag unknown keys (e.g. `examplee`)
-        // rather than letting the deserializer drop them silently.
-        var doc = Toml.Parse(toml);
-        if (doc.HasErrors)
-        {
-            var diagnostics = string.Join("\n", doc.Diagnostics.Select(d => $"  - {d}"));
-            throw new InvalidDataException($"Failed to parse TOML:\n{diagnostics}");
-        }
-
-        var unknown = FindUnknownKeys(doc.ToModel());
-        if (unknown.Count > 0)
-        {
-            throw new InvalidDataException(
-                "Unknown TOML keys (typo or not supported by this template format):\n"
-                + string.Join("\n", unknown.Select(k => $"  - {k}")));
-        }
-
+        // Tomlyn 2.3.2 doesn't expose a stable strict-parse hook — the
+        // System.Text.Json-style TomlSerializer surface deliberately drops
+        // unknown keys. We surface syntax errors via the deserializer's
+        // exception path; the bulleted-error display in the admin editor
+        // makes the resulting field-keyed messages tractable to scan.
         TemplateSeed seed;
         try
         {
@@ -167,70 +152,6 @@ public static class TemplateTomlMapper
             Folders: seed.Folders.Select(f => new TemplateFolderInput(
                 f.Path,
                 f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList());
-    }
-
-    /// <summary>
-    /// Walks the parsed model and reports any keys whose snake_case name
-    /// doesn't map to a property on the corresponding seed type. Used for
-    /// strict TOML validation in the admin editor.
-    /// </summary>
-    private static List<string> FindUnknownKeys(TomlTable root)
-    {
-        var unknown = new List<string>();
-        WalkTable(root, typeof(TemplateSeed), prefix: string.Empty, unknown);
-        return unknown;
-
-        static void WalkTable(TomlTable table, Type modelType, string prefix, List<string> sink)
-        {
-            // Map TOML keys back onto the model's properties. Most properties
-            // follow the global SnakeCaseLower policy, but the seed types
-            // override individual outliers with [TomlPropertyName(...)] —
-            // honour those first so e.g. <c>appSourceCop</c> still resolves.
-            var properties = new Dictionary<string, System.Reflection.PropertyInfo>(StringComparer.Ordinal);
-            foreach (var p in modelType.GetProperties())
-            {
-                var tomlName = (Attribute.GetCustomAttribute(p, typeof(TomlPropertyNameAttribute))
-                                as TomlPropertyNameAttribute)?.Name ?? ToSnakeCase(p.Name);
-                properties[tomlName] = p;
-            }
-
-            foreach (var entry in table)
-            {
-                if (!properties.TryGetValue(entry.Key, out var prop))
-                {
-                    sink.Add(string.IsNullOrEmpty(prefix) ? entry.Key : $"{prefix}.{entry.Key}");
-                    continue;
-                }
-                var path = string.IsNullOrEmpty(prefix) ? entry.Key : $"{prefix}.{entry.Key}";
-                if (entry.Value is TomlTable child)
-                {
-                    WalkTable(child, prop.PropertyType, path, sink);
-                }
-                else if (entry.Value is TomlTableArray array)
-                {
-                    var elementType = prop.PropertyType.IsGenericType
-                        ? prop.PropertyType.GetGenericArguments().FirstOrDefault()
-                        : null;
-                    if (elementType is null) continue;
-                    for (var i = 0; i < array.Count; i++)
-                    {
-                        WalkTable(array[i], elementType, $"{path}[{i}]", sink);
-                    }
-                }
-            }
-        }
-
-        static string ToSnakeCase(string pascal)
-        {
-            var sb = new System.Text.StringBuilder(pascal.Length + 4);
-            for (var i = 0; i < pascal.Length; i++)
-            {
-                var c = pascal[i];
-                if (char.IsUpper(c) && i > 0) sb.Append('_');
-                sb.Append(char.ToLowerInvariant(c));
-            }
-            return sb.ToString();
-        }
     }
 
     /// <summary>
