@@ -1091,3 +1091,23 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     min-height: 160px;
 }
 
+/* Per-row field grid used by the module dependency editor and the catalogue
+   editor. Sits inside a .folder-editor__row beneath the GUID/order/remove
+   header so the four metadata fields wrap predictably on narrow viewports. */
+.dep-editor__fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px;
+    padding: 0 8px 8px;
+}
+
+.dep-editor__fields input[type="text"] {
+    width: 100%;
+    padding: 6px 8px;
+    font-size: 13px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-bg);
+    color: var(--color-text);
+}
+
