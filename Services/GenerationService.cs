@@ -51,13 +51,11 @@ public class GenerationService
 """;
 
     private readonly AppDbContext _db;
-    private readonly IWebHostEnvironment _env;
     private readonly ILogger<GenerationService> _logger;
 
-    public GenerationService(AppDbContext db, IWebHostEnvironment env, ILogger<GenerationService> logger)
+    public GenerationService(AppDbContext db, ILogger<GenerationService> logger)
     {
         _db = db;
-        _env = env;
         _logger = logger;
     }
 
@@ -75,6 +73,7 @@ public class GenerationService
         var template = await _db.RuntimeTemplates
             .AsNoTracking()
             .Include(t => t.Folders.OrderBy(f => f.Ordering))
+                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
             .Where(t => t.DeletedAt == null && t.Key == plan.TemplateKey)
             .FirstOrDefaultAsync(ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
@@ -165,6 +164,7 @@ public class GenerationService
         var template = await _db.RuntimeTemplates
             .AsNoTracking()
             .Include(t => t.Folders.OrderBy(f => f.Ordering))
+                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
             .Where(t => t.DeletedAt == null && t.Key == plan.TemplateKey)
             .FirstOrDefaultAsync(ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
@@ -211,8 +211,10 @@ public class GenerationService
     /// <summary>
     /// Emits one extension folder (Core or module or standalone). Returns the
     /// number of files written so the caller can roll up totals for logging.
+    /// File contents come from the folder's <see cref="TemplateFolder.Files"/>;
+    /// mustache substitution runs on every <c>.al</c> file before it's written.
     /// </summary>
-    private async Task<int> WriteExtensionAsync(
+    private Task<int> WriteExtensionAsync(
         ZipArchive archive,
         string rootRelative,
         string appJson,
@@ -223,6 +225,8 @@ public class GenerationService
         string? publisherOverride = null,
         CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         WriteString(archive, $"{rootRelative}/app.json", appJson);
         WriteString(archive, $"{rootRelative}/AppSourceCop.json", JsonSerializer.Serialize(template.AppSourceCop, JsonOptions));
         WriteEmptyFile(archive, $"{rootRelative}/libs/.gitkeep");
@@ -230,62 +234,43 @@ public class GenerationService
         WriteEmptyFile(archive, $"{rootRelative}/Translations/.gitkeep");
         var fileCount = 5;
 
-        var examplesRoot = ResolveExamplesRoot(template.Key);
-
         foreach (var folder in template.Folders.OrderBy(f => f.Ordering))
         {
             var folderRelative = $"{rootRelative}/{folder.Path}";
-            var copiedAny = false;
+            var files = folder.Files.OrderBy(f => f.Ordering).ToList();
 
-            if (plan.IncludeExamples && !string.IsNullOrWhiteSpace(folder.ExamplePath) && examplesRoot is not null)
+            if (plan.IncludeExamples && files.Count > 0)
             {
-                var examplesDir = Path.Combine(examplesRoot, folder.ExamplePath);
-                if (Directory.Exists(examplesDir))
+                foreach (var file in files)
                 {
-                    foreach (var sourceFile in Directory.EnumerateFiles(examplesDir, "*", SearchOption.AllDirectories))
+                    var destInZip = $"{folderRelative}/{file.Path}";
+                    if (file.Path.EndsWith(".al", StringComparison.OrdinalIgnoreCase))
                     {
-                        var relativeWithinExample = Path.GetRelativePath(examplesDir, sourceFile)
-                            .Replace(Path.DirectorySeparatorChar, '/');
-                        var destInZip = $"{folderRelative}/{relativeWithinExample}";
-
-                        var raw = await File.ReadAllBytesAsync(sourceFile, ct);
-                        if (sourceFile.EndsWith(".al", StringComparison.OrdinalIgnoreCase))
-                        {
-                            var text = Encoding.UTF8.GetString(raw);
-                            var substituted = SubstituteMustache(text, new MustacheContext(
-                                Name: extensionName,
-                                WorkspaceName: plan.WorkspaceName,
-                                ShortName: StripWhitespace(plan.WorkspaceName),
-                                ModuleName: moduleName,
-                                Publisher: publisherOverride ?? template.Defaults.Publisher,
-                                Prefix: template.AppSourceCop.MandatoryPrefix,
-                                FolderPath: folder.Path));
-                            WriteString(archive, destInZip, substituted);
-                        }
-                        else
-                        {
-                            WriteBytes(archive, destInZip, raw);
-                        }
-                        fileCount++;
-                        copiedAny = true;
+                        var substituted = SubstituteMustache(file.Content, new MustacheContext(
+                            Name: extensionName,
+                            WorkspaceName: plan.WorkspaceName,
+                            ShortName: StripWhitespace(plan.WorkspaceName),
+                            ModuleName: moduleName,
+                            Publisher: publisherOverride ?? template.Defaults.Publisher,
+                            Prefix: template.AppSourceCop.MandatoryPrefix,
+                            FolderPath: folder.Path));
+                        WriteString(archive, destInZip, substituted);
                     }
-                }
-                else
-                {
-                    _logger.LogWarning(
-                        "Example folder missing for {Template}/{Path}: expected at {Dir}. Falling back to .gitkeep.",
-                        template.Key, folder.Path, examplesDir);
+                    else
+                    {
+                        WriteString(archive, destInZip, file.Content);
+                    }
+                    fileCount++;
                 }
             }
-
-            if (!copiedAny)
+            else
             {
                 WriteEmptyFile(archive, $"{folderRelative}/.gitkeep");
                 fileCount++;
             }
         }
 
-        return fileCount;
+        return Task.FromResult(fileCount);
     }
 
     // ===== app.json builders =====
@@ -626,13 +611,6 @@ public class GenerationService
         writer.Write(content);
     }
 
-    private static void WriteBytes(ZipArchive archive, string path, byte[] bytes)
-    {
-        var entry = archive.CreateEntry(path, CompressionLevel.Optimal);
-        using var stream = entry.Open();
-        stream.Write(bytes, 0, bytes.Length);
-    }
-
     private static void WriteEmptyFile(ZipArchive archive, string path)
     {
         archive.CreateEntry(path, CompressionLevel.NoCompression).Open().Dispose();
@@ -646,62 +624,6 @@ public class GenerationService
         var entry = archive.CreateEntry(path, CompressionLevel.Optimal);
         await using var entryStream = entry.Open();
         await resource.CopyToAsync(entryStream, ct);
-    }
-
-    // ===== Read-side helpers (used by the live preview) =====
-
-    /// <summary>
-    /// Returns the relative file paths (forward-slash, sorted) inside a single
-    /// example folder. Used by the New Workspace live preview to show the same
-    /// files the generator will emit when "Include examples" is on. Returns an
-    /// empty list when the example folder is missing — the preview treats that
-    /// the same as a <c>.gitkeep</c> placeholder.
-    /// </summary>
-    public IReadOnlyList<string> ListExampleFiles(string templateKey, string examplePath)
-    {
-        if (string.IsNullOrWhiteSpace(examplePath)) return Array.Empty<string>();
-        var examplesRoot = ResolveExamplesRoot(templateKey);
-        if (examplesRoot is null) return Array.Empty<string>();
-        var examplesDir = Path.Combine(examplesRoot, examplePath);
-        if (!Directory.Exists(examplesDir)) return Array.Empty<string>();
-
-        return Directory.EnumerateFiles(examplesDir, "*", SearchOption.AllDirectories)
-            .Select(f => Path.GetRelativePath(examplesDir, f).Replace(Path.DirectorySeparatorChar, '/'))
-            .OrderBy(p => p, StringComparer.Ordinal)
-            .ToList();
-    }
-
-    // ===== Filesystem helpers =====
-
-    /// <summary>
-    /// Resolves the on-disk folder that holds a template's example AL files.
-    /// Mirrors <c>SeedService</c>'s discovery: <c>SEED_PATH</c> first, otherwise
-    /// the nearest <c>Templates.seed/</c> walking up from the content root.
-    /// Returns <c>null</c> when nothing is found — callers fall back to
-    /// <c>.gitkeep</c> placeholders.
-    /// </summary>
-    private string? ResolveExamplesRoot(string templateKey)
-    {
-        var seedPath = ResolveSeedPath();
-        if (seedPath is null) return null;
-        var examplesRoot = Path.Combine(seedPath, templateKey, "examples");
-        return Directory.Exists(examplesRoot) ? examplesRoot : null;
-    }
-
-    private string? ResolveSeedPath()
-    {
-        var fromEnv = Environment.GetEnvironmentVariable("SEED_PATH");
-        if (!string.IsNullOrWhiteSpace(fromEnv))
-            return Path.GetFullPath(fromEnv);
-
-        var dir = new DirectoryInfo(_env.ContentRootPath);
-        while (dir is not null)
-        {
-            var candidate = Path.Combine(dir.FullName, "Templates.seed");
-            if (Directory.Exists(candidate)) return candidate;
-            dir = dir.Parent;
-        }
-        return null;
     }
 
     private static string StripWhitespace(string value) => Regex.Replace(value ?? string.Empty, @"\s+", string.Empty);

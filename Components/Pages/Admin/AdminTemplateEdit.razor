@@ -247,56 +247,90 @@
                 }
                 else
                 {
-                    <table class="data-table folder-editor__table">
-                        <thead>
-                            <tr>
-                                <th class="folder-editor__handle"></th>
-                                <th>Path</th>
-                                <th>Example path</th>
-                                <th class="data-table__actions"></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @for (var i = 0; i < _form.Folders.Count; i++)
-                            {
-                                var index = i;
-                                var row = _form.Folders[index];
-                                <tr>
-                                    <td class="folder-editor__handle">
-                                        <div class="folder-editor__order">
-                                            <button type="button" class="btn btn--sm" disabled="@(index == 0)"
-                                                    @onclick="() => MoveFolder(index, -1)" title="Move up">
-                                                <Icon Name="arrow-up" Width="12" Height="12" />
-                                            </button>
-                                            <button type="button" class="btn btn--sm" disabled="@(index == _form.Folders.Count - 1)"
-                                                    @onclick="() => MoveFolder(index, 1)" title="Move down">
-                                                <Icon Name="arrow-down" Width="12" Height="12" />
-                                            </button>
-                                        </div>
-                                    </td>
-                                    <td>
+                    <div class="folder-editor__list">
+                        @for (var i = 0; i < _form.Folders.Count; i++)
+                        {
+                            var index = i;
+                            var row = _form.Folders[index];
+                            <div class="folder-editor__row">
+                                <div class="folder-editor__row-head">
+                                    <div class="folder-editor__order">
+                                        <button type="button" class="btn btn--sm" disabled="@(index == 0)"
+                                                @onclick="() => MoveFolder(index, -1)" title="Move up">
+                                            <Icon Name="arrow-up" Width="12" Height="12" />
+                                        </button>
+                                        <button type="button" class="btn btn--sm" disabled="@(index == _form.Folders.Count - 1)"
+                                                @onclick="() => MoveFolder(index, 1)" title="Move down">
+                                            <Icon Name="arrow-down" Width="12" Height="12" />
+                                        </button>
+                                    </div>
+                                    <div class="folder-editor__path">
                                         <input type="text" required placeholder="e.g. Source/Foundation"
                                                @bind="row.Path" @bind:event="oninput" />
                                         <FieldError Field="@($"Folders[{index}].Path")" Errors="_fieldErrors" />
-                                    </td>
-                                    <td>
-                                        <input type="text" placeholder="optional, e.g. Foundation"
-                                               @bind="row.ExamplePath" @bind:event="oninput" />
-                                    </td>
-                                    <td class="data-table__actions">
-                                        <button type="button" class="btn btn--sm" @onclick="() => RemoveFolder(index)" title="Remove">
-                                            <Icon Name="trash-2" Width="12" Height="12" />
+                                    </div>
+                                    <button type="button" class="btn btn--sm" @onclick="() => ToggleFolderExpanded(index)"
+                                            title="@(IsFolderExpanded(index) ? "Hide files" : "Show files")">
+                                        <Icon Name="@(IsFolderExpanded(index) ? "chevron-up" : "chevron-down")" Width="12" Height="12" />
+                                        <span>@(row.Files.Count == 0 ? "No files" : $"{row.Files.Count} file{(row.Files.Count == 1 ? "" : "s")}")</span>
+                                    </button>
+                                    <button type="button" class="btn btn--sm" @onclick="() => RemoveFolder(index)" title="Remove folder">
+                                        <Icon Name="trash-2" Width="12" Height="12" />
+                                    </button>
+                                </div>
+
+                                @if (IsFolderExpanded(index))
+                                {
+                                    <div class="folder-editor__files">
+                                        @if (row.Files.Count == 0)
+                                        {
+                                            <p class="muted folder-editor__files-empty">
+                                                No files. The generator emits a single <code>.gitkeep</code> for empty folders.
+                                            </p>
+                                        }
+                                        @for (var j = 0; j < row.Files.Count; j++)
+                                        {
+                                            var fileIndex = j;
+                                            var file = row.Files[fileIndex];
+                                            <div class="folder-editor__file">
+                                                <div class="folder-editor__file-head">
+                                                    <div class="folder-editor__order">
+                                                        <button type="button" class="btn btn--sm" disabled="@(fileIndex == 0)"
+                                                                @onclick="() => MoveFile(index, fileIndex, -1)" title="Move up">
+                                                            <Icon Name="arrow-up" Width="12" Height="12" />
+                                                        </button>
+                                                        <button type="button" class="btn btn--sm" disabled="@(fileIndex == row.Files.Count - 1)"
+                                                                @onclick="() => MoveFile(index, fileIndex, 1)" title="Move down">
+                                                            <Icon Name="arrow-down" Width="12" Height="12" />
+                                                        </button>
+                                                    </div>
+                                                    <div class="folder-editor__path">
+                                                        <input type="text" required placeholder="e.g. AppInstall.Codeunit.al"
+                                                               @bind="file.Path" @bind:event="oninput" />
+                                                        <FieldError Field="@($"Folders[{index}].Files[{fileIndex}].Path")" Errors="_fieldErrors" />
+                                                    </div>
+                                                    <button type="button" class="btn btn--sm" @onclick="() => RemoveFile(index, fileIndex)" title="Remove file">
+                                                        <Icon Name="trash-2" Width="12" Height="12" />
+                                                    </button>
+                                                </div>
+                                                <textarea class="json-editor folder-editor__file-content" rows="10" spellcheck="false"
+                                                          @bind="file.Content" @bind:event="oninput"></textarea>
+                                            </div>
+                                        }
+                                        <button type="button" class="btn btn--sm" @onclick="() => AddFile(index)">
+                                            <Icon Name="plus" Width="12" Height="12" />
+                                            <span>Add file</span>
                                         </button>
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
                     <small class="muted">
                         <strong>Path</strong> is relative inside the generated extension folder
-                        (e.g. <code>Source/Foundation</code>). <strong>Example path</strong> points
-                        at a folder under <code>Templates.seed/&lt;runtime&gt;/examples/</code>.
-                        Leave it blank to seed only a <code>.gitkeep</code>.
+                        (e.g. <code>Source/Foundation</code>). Each folder optionally seeds files
+                        (toggle the chevron to expand). <code>.al</code> files run through mustache
+                        substitution at generation time; everything else is written verbatim.
                     </small>
                 }
             </section>
@@ -365,6 +399,9 @@
     private IReadOnlyDictionary<string, string> _fieldErrors = new Dictionary<string, string>();
     private EditorMode _mode = EditorMode.Form;
     private string _toml = string.Empty;
+    // Indices of folder rows whose file list is currently expanded. Tracked
+    // outside FormState so reordering folders doesn't drag the wrong rows open.
+    private readonly HashSet<int> _expandedFolders = new();
 
     private static readonly JsonSerializerOptions PrettyJson = new() { WriteIndented = true };
 
@@ -422,6 +459,7 @@
         if (index >= 0 && index < _form.Folders.Count)
         {
             _form.Folders.RemoveAt(index);
+            _expandedFolders.Clear();
         }
     }
 
@@ -434,6 +472,50 @@
             return;
         }
         (_form.Folders[index], _form.Folders[target]) = (_form.Folders[target], _form.Folders[index]);
+        // Re-anchor expanded rows so the user keeps their open editor tracking
+        // the folder they were editing, not the row index.
+        var wasExpandedHere = _expandedFolders.Contains(index);
+        var wasExpandedThere = _expandedFolders.Contains(target);
+        _expandedFolders.Remove(index);
+        _expandedFolders.Remove(target);
+        if (wasExpandedHere) _expandedFolders.Add(target);
+        if (wasExpandedThere) _expandedFolders.Add(index);
+    }
+
+    private bool IsFolderExpanded(int index) => _expandedFolders.Contains(index);
+
+    private void ToggleFolderExpanded(int index)
+    {
+        if (!_expandedFolders.Add(index))
+        {
+            _expandedFolders.Remove(index);
+        }
+    }
+
+    private void AddFile(int folderIndex)
+    {
+        if (_form is null || folderIndex < 0 || folderIndex >= _form.Folders.Count) return;
+        _form.Folders[folderIndex].Files.Add(new FileRow());
+        _expandedFolders.Add(folderIndex);
+    }
+
+    private void RemoveFile(int folderIndex, int fileIndex)
+    {
+        if (_form is null || folderIndex < 0 || folderIndex >= _form.Folders.Count) return;
+        var files = _form.Folders[folderIndex].Files;
+        if (fileIndex >= 0 && fileIndex < files.Count)
+        {
+            files.RemoveAt(fileIndex);
+        }
+    }
+
+    private void MoveFile(int folderIndex, int fileIndex, int delta)
+    {
+        if (_form is null || folderIndex < 0 || folderIndex >= _form.Folders.Count) return;
+        var files = _form.Folders[folderIndex].Files;
+        var target = fileIndex + delta;
+        if (fileIndex < 0 || fileIndex >= files.Count || target < 0 || target >= files.Count) return;
+        (files[fileIndex], files[target]) = (files[target], files[fileIndex]);
     }
 
     private async Task SaveAsync()
@@ -571,7 +653,12 @@
                 {
                     Ordering = i,
                     Path = f.Path,
-                    ExamplePath = f.ExamplePath,
+                    Files = f.Files.Select((file, fi) => new TemplateFile
+                    {
+                        Ordering = fi,
+                        Path = file.Path,
+                        Content = file.Content,
+                    }).ToList(),
                 }).ToList(),
             };
             return TemplateTomlMapper.ToToml(stub);
@@ -685,7 +772,12 @@
             };
             foreach (var f in template.Folders.OrderBy(f => f.Ordering))
             {
-                state.Folders.Add(new FolderRow { Path = f.Path, ExamplePath = f.ExamplePath });
+                var folderRow = new FolderRow { Path = f.Path };
+                foreach (var file in f.Files.OrderBy(x => x.Ordering))
+                {
+                    folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content });
+                }
+                state.Folders.Add(folderRow);
             }
             return state;
         }
@@ -704,12 +796,20 @@
             ModuleIdRangeStart: ModuleIdRangeStart,
             ModuleIdRangeSize: ModuleIdRangeSize,
             Deprecated: Deprecated,
-            Folders: Folders.Select(f => new TemplateFolderInput(f.Path, f.ExamplePath)).ToList());
+            Folders: Folders.Select(f => new TemplateFolderInput(
+                f.Path,
+                f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList());
     }
 
     private sealed class FolderRow
     {
         public string Path { get; set; } = string.Empty;
-        public string? ExamplePath { get; set; }
+        public List<FileRow> Files { get; } = new();
+    }
+
+    private sealed class FileRow
+    {
+        public string Path { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
     }
 }

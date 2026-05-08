@@ -1025,3 +1025,69 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .folder-editor__order { display: flex; gap: 4px; }
 
+.folder-editor__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.folder-editor__row {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+}
+
+.folder-editor__row-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px;
+}
+
+.folder-editor__path {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.folder-editor__path input[type="text"] {
+    width: 100%;
+    padding: 6px 8px;
+    font-size: 13px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-bg);
+    color: var(--color-text);
+}
+
+.folder-editor__files {
+    border-top: 1px solid var(--color-border);
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--color-bg);
+}
+
+.folder-editor__files-empty { margin: 0; }
+
+.folder-editor__file {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.folder-editor__file-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.folder-editor__file-content {
+    width: 100%;
+    min-height: 160px;
+}
+

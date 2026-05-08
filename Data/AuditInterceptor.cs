@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using ALDevToolbox.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -25,6 +27,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     {
         typeof(RuntimeTemplate),
         typeof(TemplateFolder),
+        typeof(TemplateFile),
         typeof(Module),
         typeof(ModuleDependency),
         typeof(WellKnownDependency),
@@ -136,6 +139,9 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     /// Builds the JSON "before" snapshot for a modified or deleted row. Parent
     /// entities (template, module) inline their child collection's pre-save state so
     /// an investigator can read one snapshot row instead of joining several.
+    /// <see cref="TemplateFile"/> rows replace their (potentially large)
+    /// <c>Content</c> column with a SHA-256 hash so the audit log doesn't
+    /// inflate with every AL file edit — see <c>.design/domain-model.md</c>.
     /// </summary>
     private static string BuildOriginalSnapshot(EntityEntry entry, List<EntityEntry> allEntries)
     {
@@ -144,10 +150,33 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         if (entry.Entity is RuntimeTemplate)
         {
             var templateId = (int)entry.OriginalValues["Id"]!;
-            snapshot["folders"] = allEntries
+            var folders = allEntries
                 .Where(e => e.Entity is TemplateFolder
                             && e.State != EntityState.Added
                             && (int)e.OriginalValues["TemplateId"]! == templateId)
+                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
+                .ToList();
+            snapshot["folders"] = folders.Select(folder =>
+            {
+                var folderDict = OriginalValuesToDict(folder);
+                var folderId = (int)folder.OriginalValues["Id"]!;
+                folderDict["files"] = allEntries
+                    .Where(e => e.Entity is TemplateFile
+                                && e.State != EntityState.Added
+                                && (int)e.OriginalValues["TemplateFolderId"]! == folderId)
+                    .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
+                    .Select(OriginalValuesToDict)
+                    .ToList();
+                return folderDict;
+            }).ToList();
+        }
+        else if (entry.Entity is TemplateFolder)
+        {
+            var folderId = (int)entry.OriginalValues["Id"]!;
+            snapshot["files"] = allEntries
+                .Where(e => e.Entity is TemplateFile
+                            && e.State != EntityState.Added
+                            && (int)e.OriginalValues["TemplateFolderId"]! == folderId)
                 .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
                 .Select(OriginalValuesToDict)
                 .ToList();
@@ -167,20 +196,41 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         return JsonSerializer.Serialize(snapshot, JsonOptions);
     }
 
+    /// <summary>
+    /// Materialises an entry's original values into a dictionary, replacing
+    /// <see cref="TemplateFile.Content"/> with a SHA-256 hash so the audit log
+    /// stays compact even when files contain large AL bodies.
+    /// </summary>
     private static Dictionary<string, object?> OriginalValuesToDict(EntityEntry entry)
     {
         var dict = new Dictionary<string, object?>();
+        var hashContent = entry.Entity is TemplateFile;
         foreach (var property in entry.OriginalValues.Properties)
         {
-            dict[property.Name] = entry.OriginalValues[property.Name];
+            var value = entry.OriginalValues[property.Name];
+            if (hashContent && property.Name == nameof(TemplateFile.Content) && value is string s)
+            {
+                dict["ContentSha256"] = Sha256(s);
+            }
+            else
+            {
+                dict[property.Name] = value;
+            }
         }
         return dict;
+    }
+
+    private static string Sha256(string value)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
     private static AuditEntityType MapEntityType(Type t)
     {
         if (t == typeof(RuntimeTemplate)) return AuditEntityType.RuntimeTemplate;
         if (t == typeof(TemplateFolder)) return AuditEntityType.TemplateFolder;
+        if (t == typeof(TemplateFile)) return AuditEntityType.TemplateFile;
         if (t == typeof(Module)) return AuditEntityType.Module;
         if (t == typeof(ModuleDependency)) return AuditEntityType.ModuleDependency;
         if (t == typeof(WellKnownDependency)) return AuditEntityType.WellKnownDependency;
