@@ -11,12 +11,12 @@
             <ThemeToggle />
             <AuthorizeView>
                 <Authorized>
-                    <span class="signed-in-as">
-                        Signed in as <strong>@context.User.Identity?.Name</strong>
-                    </span>
                     <form method="post" action="/auth/logout" class="signout-form">
                         <AntiforgeryToken />
-                        <button type="submit" class="signin-link signin-link--button">Sign out</button>
+                        <button type="submit" class="user-button" title="Sign out">
+                            <span class="user-button__name">@context.User.Identity?.Name</span>
+                            <Icon Name="log-out" Width="14" Height="14" Css="user-button__icon" />
+                        </button>
                     </form>
                 </Authorized>
                 <NotAuthorized>

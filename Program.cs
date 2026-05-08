@@ -48,10 +48,14 @@ builder.Services.AddSingleton<AuthService>();
 // content root for local `dotnet run` so devs don't need to set anything up.
 var dbPath = Environment.GetEnvironmentVariable("DB_PATH")
     ?? Path.Combine(builder.Environment.ContentRootPath, "app.db");
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite($"Data Source={dbPath}"));
+builder.Services.AddScoped<AuditInterceptor>();
+builder.Services.AddDbContext<AppDbContext>((sp, options) =>
+    options
+        .UseSqlite($"Data Source={dbPath}")
+        .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
 
 builder.Services.AddScoped<TemplateService>();
+builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<SeedService>();
 builder.Services.AddScoped<GenerationService>();
 
