@@ -56,4 +56,18 @@ public class TemplateService
             .Include(m => m.Dependencies.OrderBy(d => d.Ordering))
             .ToListAsync();
     }
+
+    /// <summary>
+    /// Returns every well-known catalogue dependency, in display order. Drives
+    /// the catalogue side of the New Extension dependency picker.
+    /// </summary>
+    public Task<List<WellKnownDependency>> GetCatalogAsync()
+    {
+        return _db.WellKnownDependencies
+            .AsNoTracking()
+            .OrderBy(w => w.Category)
+            .ThenBy(w => w.Ordering)
+            .ThenBy(w => w.DepName)
+            .ToListAsync();
+    }
 }

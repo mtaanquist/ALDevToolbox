@@ -1,13 +1,268 @@
 @page "/projects/extension"
+@rendermode InteractiveServer
+@inject TemplateService Templates
+@inject GenerationService Generation
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
 
 <PageTitle>New extension · AL Dev Toolbox</PageTitle>
 
 <TabBar Active="TabBar.Tab.NewExtension" />
 
-<div class="page-stub">
-    <h1>New extension</h1>
-    <p class="muted">
-        Generate a single standalone AL extension folder for an existing workspace.
-        The form and live preview will be wired up in a later milestone.
-    </p>
+<div class="workspace-page">
+    @if (_templates is null || _catalog is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_templates.Count == 0)
+    {
+        <p class="muted">
+            No active runtime templates are available. Seed the database or add one
+            through the admin section before generating an extension.
+        </p>
+    }
+    else
+    {
+        <div class="workspace-layout">
+            <form method="post" action="/generate/extension" class="form-grid workspace-layout__form">
+                <AntiforgeryToken />
+
+                <section class="form-section">
+                    <label class="section-label" for="ext-template">Runtime template</label>
+                    <select id="ext-template" name="TemplateKey" required
+                            @bind="_templateKey" @bind:after="OnTemplateChanged">
+                        @foreach (var t in _templates)
+                        {
+                            <option value="@t.Key">@t.Name</option>
+                        }
+                    </select>
+                    <p class="caption muted">
+                        @_selected!.Description
+                        <span> · Default application: <code>@_selected.DefaultApplication</code></span>
+                    </p>
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label">Extension</label>
+                    <input type="text" name="ExtensionName" placeholder="e.g. MyCustomFeature"
+                           pattern="^[A-Za-z][A-Za-z0-9]*$" required
+                           @bind="_extensionName" @bind:event="oninput" />
+                    <input type="text" name="Brief" placeholder="One-line description" required
+                           @bind="_brief" @bind:event="oninput" />
+                    <textarea name="Description" rows="3" placeholder="Longer description" required
+                              @bind="_description" @bind:event="oninput"></textarea>
+                    <input type="text" name="Publisher" placeholder="Publisher" required
+                           @bind="_publisher" @bind:event="oninput" />
+                </section>
+
+                <section class="form-section form-section--row">
+                    <div>
+                        <label class="section-label" for="ext-id-from">ID range — from</label>
+                        <input id="ext-id-from" type="number" name="IdRangeFrom" required min="1"
+                               @bind="_idRangeFrom" @bind:event="oninput" />
+                    </div>
+                    <div>
+                        <label class="section-label" for="ext-id-to">ID range — to</label>
+                        <input id="ext-id-to" type="number" name="IdRangeTo" required min="1"
+                               @bind="_idRangeTo" @bind:event="oninput" />
+                    </div>
+                </section>
+                <p class="caption muted">
+                    You're responsible for choosing a range that doesn't collide with the rest of your workspace.
+                </p>
+
+                <section class="form-section form-section--row">
+                    <div>
+                        <label class="section-label" for="ext-app-version">Application version</label>
+                        <input id="ext-app-version" type="text" name="ApplicationVersion" required
+                               pattern="^\d+\.\d+\.\d+\.\d+$"
+                               @bind="_applicationVersion" @bind:event="oninput" />
+                    </div>
+                    <div>
+                        <label class="section-label" for="ext-runtime-version">Runtime version</label>
+                        <input id="ext-runtime-version" type="text" name="RuntimeVersion" required
+                               @bind="_runtimeVersion" @bind:event="oninput" />
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label">Dependencies</label>
+                    <DependencyPicker Catalog="_catalog!" Value="_dependencies" ValueChanged="OnDependenciesChanged" />
+                    @* Hidden inputs serialise the picker's state into the form post.
+                       The endpoint reads them as four parallel string arrays. *@
+                    @foreach (var d in _dependencies)
+                    {
+                        <input type="hidden" name="DependencyIds" value="@d.DepId" />
+                        <input type="hidden" name="DependencyNames" value="@d.DepName" />
+                        <input type="hidden" name="DependencyPublishers" value="@d.DepPublisher" />
+                        <input type="hidden" name="DependencyVersions" value="@d.DepVersion" />
+                    }
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label">Options</label>
+                    <label class="check-row">
+                        <input type="checkbox" name="IncludeExamples" value="true"
+                               @bind="_includeExamples" />
+                        <span>Include example AL files</span>
+                    </label>
+                </section>
+
+                <button type="submit" class="btn btn--primary workspace-layout__generate">Generate</button>
+            </form>
+
+            <aside class="workspace-layout__preview">
+                <section class="preview-card">
+                    <div class="section-label">Preview</div>
+                    <FolderTreePreview Root="BuildPreview()" />
+                </section>
+
+                <section class="preview-stats">
+                    <div class="stat-card">
+                        <div class="stat-card__value">1</div>
+                        <div class="stat-card__label">Extensions</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card__value">@_dependencies.Count</div>
+                        <div class="stat-card__label">Dependencies</div>
+                    </div>
+                </section>
+
+                <section class="success-tip">
+                    <div class="section-label">After downloading</div>
+                    <p class="caption">
+                        Drop <code>@FolderName/</code> into your existing workspace folder, then add this
+                        line to the <code>folders</code> array in your <code>.code-workspace</code>:
+                    </p>
+                    <pre class="success-tip__snippet"><code>@WorkspaceFoldersSnippet</code></pre>
+                </section>
+            </aside>
+        </div>
+    }
 </div>
+
+@code {
+    private List<RuntimeTemplate>? _templates;
+    private List<WellKnownDependency>? _catalog;
+    private RuntimeTemplate? _selected;
+
+    // Form state. Mirrors the fields posted to /generate/extension; the live
+    // preview and the post-generation snippet read from the same source so
+    // they always reflect the user's current input.
+    private string _templateKey = string.Empty;
+    private string _extensionName = string.Empty;
+    private string _brief = string.Empty;
+    private string _description = string.Empty;
+    private string _publisher = string.Empty;
+    private int _idRangeFrom = 90000;
+    private int _idRangeTo = 90999;
+    private string _applicationVersion = string.Empty;
+    private string _runtimeVersion = string.Empty;
+    private bool _includeExamples = true;
+    private List<DependencyEntry> _dependencies = new();
+
+    // Cached example file listings keyed by the template's example_path.
+    private Dictionary<string, IReadOnlyList<string>> _exampleFiles = new(StringComparer.Ordinal);
+
+    private string FolderName => string.IsNullOrWhiteSpace(_extensionName) ? "MyExtension" : _extensionName;
+
+    private string WorkspaceFoldersSnippet => $"{{ \"path\": \"{FolderName}\" }}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
+        _catalog = await Templates.GetCatalogAsync();
+        _selected = _templates.FirstOrDefault();
+        if (_selected is not null)
+        {
+            ApplyTemplateDefaults(_selected);
+        }
+    }
+
+    private void OnTemplateChanged()
+    {
+        var picked = _templates?.FirstOrDefault(t => t.Key == _templateKey);
+        if (picked is null) return;
+        _selected = picked;
+        ApplyTemplateDefaults(picked);
+    }
+
+    private void ApplyTemplateDefaults(RuntimeTemplate template)
+    {
+        _templateKey = template.Key;
+        _publisher = template.Defaults.Publisher;
+        _applicationVersion = template.DefaultApplication;
+        _runtimeVersion = $"{template.Runtime}.0";
+        _exampleFiles = template.Folders
+            .Where(f => !string.IsNullOrWhiteSpace(f.ExamplePath))
+            .Select(f => f.ExamplePath!)
+            .Distinct(StringComparer.Ordinal)
+            .ToDictionary(
+                p => p,
+                p => Generation.ListExampleFiles(template.Key, p),
+                StringComparer.Ordinal);
+    }
+
+    private void OnDependenciesChanged(List<DependencyEntry> next)
+    {
+        _dependencies = next;
+    }
+
+    /// <summary>
+    /// Builds the <see cref="PreviewNode"/> tree displayed in the right column.
+    /// Mirrors the standalone-extension layout in <c>generation-engine.md</c>:
+    /// a single extension root with the standard subfolders plus the template's
+    /// own folders, no workspace wrapper.
+    /// </summary>
+    private PreviewNode BuildPreview()
+    {
+        var contents = new List<PreviewNode>
+        {
+            PreviewNode.File("app.json"),
+            PreviewNode.File("AppSourceCop.json"),
+            PreviewNode.Folder("libs", new[] { PreviewNode.File(".gitkeep") }),
+            PreviewNode.Folder("permissionsets", new[] { PreviewNode.File(".gitkeep") }),
+        };
+
+        if (_selected is not null)
+        {
+            foreach (var folder in _selected.Folders.OrderBy(f => f.Ordering))
+            {
+                contents.Add(BuildTemplateFolderNode(folder));
+            }
+        }
+
+        contents.Add(PreviewNode.Folder("Translations", new[] { PreviewNode.File(".gitkeep") }));
+
+        return PreviewNode.Extension(FolderName, contents);
+    }
+
+    private PreviewNode BuildTemplateFolderNode(TemplateFolder folder)
+    {
+        var leaves = LeafFiles(folder);
+        var segments = folder.Path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+        {
+            return PreviewNode.Folder(folder.Path, leaves);
+        }
+
+        PreviewNode current = PreviewNode.Folder(segments[^1], leaves);
+        for (var i = segments.Length - 2; i >= 0; i--)
+        {
+            current = PreviewNode.Folder(segments[i], new[] { current });
+        }
+        return current;
+    }
+
+    private List<PreviewNode> LeafFiles(TemplateFolder folder)
+    {
+        if (_includeExamples
+            && !string.IsNullOrWhiteSpace(folder.ExamplePath)
+            && _exampleFiles.TryGetValue(folder.ExamplePath, out var files)
+            && files.Count > 0)
+        {
+            return files.Select(PreviewNode.File).ToList();
+        }
+        return new List<PreviewNode> { PreviewNode.File(".gitkeep") };
+    }
+}
