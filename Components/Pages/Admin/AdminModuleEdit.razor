@@ -184,24 +184,10 @@
                     }
                     else
                     {
-                        @if (_confirmDelete)
-                        {
-                            <span class="muted">Are you sure?</span>
-                            <button type="button" class="btn btn--danger" @onclick="DeleteAsync" disabled="@_saving">
-                                <Icon Name="trash-2" Width="16" Height="16" />
-                                <span>Yes, delete</span>
-                            </button>
-                            <button type="button" class="btn" @onclick="() => _confirmDelete = false" disabled="@_saving">
-                                <span>Cancel</span>
-                            </button>
-                        }
-                        else
-                        {
-                            <button type="button" class="btn" @onclick="() => _confirmDelete = true" disabled="@_saving">
-                                <Icon Name="trash-2" Width="16" Height="16" />
-                                <span>Soft-delete</span>
-                            </button>
-                        }
+                        <button type="button" class="btn" @onclick="ConfirmDeleteAsync" disabled="@_saving">
+                            <Icon Name="trash-2" Width="16" Height="16" />
+                            <span>Soft-delete</span>
+                        </button>
                     }
                 }
             </div>
@@ -214,6 +200,12 @@
     }
 </div>
 
+<ConfirmDialog @ref="_deleteConfirm"
+               Title="Soft-delete this module?"
+               Message="It will disappear from the user-facing module picker. You can restore it from this page; the audit log keeps the change either way."
+               ConfirmLabel="Soft-delete"
+               ConfirmIcon="trash-2" />
+
 @code {
     [Parameter] public string? Key { get; set; }
 
@@ -225,7 +217,7 @@
     private bool _isDeleted;
     private bool _loadFailed;
     private bool _saving;
-    private bool _confirmDelete;
+    private ConfirmDialog? _deleteConfirm;
     private string? _saveError;
     private string? _saveSuccess;
     private IReadOnlyDictionary<string, string> _fieldErrors = new Dictionary<string, string>();
@@ -235,7 +227,6 @@
         _saveError = null;
         _saveSuccess = null;
         _fieldErrors = new Dictionary<string, string>();
-        _confirmDelete = false;
 
         if (!IsEdit)
         {
@@ -326,11 +317,11 @@
         }
     }
 
-    private async Task DeleteAsync()
+    private async Task ConfirmDeleteAsync()
     {
-        if (_existingId is null || _saving) return;
+        if (_existingId is null || _saving || _deleteConfirm is null) return;
+        if (!await _deleteConfirm.OpenAsync()) return;
         _saving = true;
-        _confirmDelete = false;
         try
         {
             await Modules.SoftDeleteAsync(_existingId.Value);

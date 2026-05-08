@@ -62,6 +62,14 @@ builder.Services.AddScoped<SeedService>();
 builder.Services.AddScoped<GenerationService>();
 builder.Services.AddScoped<ExportService>();
 
+// Health checks. /health is a liveness probe (always 200 if the process is
+// up); /health/ready exercises the database with a SELECT 1 and is what an
+// orchestrator should poll before sending traffic. Tagged so we can route
+// the same set of checks to both endpoints with different predicates.
+builder.Services.AddScoped<DatabaseHealthCheck>();
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>("database", tags: new[] { "ready" });
+
 var app = builder.Build();
 
 if (!app.Environment.IsDevelopment())
@@ -78,6 +86,15 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+// Liveness: process is up. Readiness: database is reachable. Both are
+// unauthenticated so an external load balancer or compose healthcheck can
+// poll without credentials. See .design/deployment.md.
+app.MapHealthChecks("/health");
+app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+});
 
 // File download endpoint for the New Workspace flow. The form posts here and
 // the response is a ZIP attachment. Validation errors render an inline error
@@ -118,6 +135,7 @@ app.MapPost("/generate/workspace", async (HttpContext ctx, GenerationService gen
         var archive = await gen.GenerateWorkspaceAsync(plan, ct);
         ctx.Response.ContentType = "application/zip";
         ctx.Response.Headers.ContentDisposition = $"attachment; filename=\"{archive.FileName}\"";
+        SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
         archive.Stream.Position = 0;
         await archive.Stream.CopyToAsync(ctx.Response.Body, ct);
     }
@@ -125,6 +143,7 @@ app.MapPost("/generate/workspace", async (HttpContext ctx, GenerationService gen
     {
         ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
         ctx.Response.ContentType = "text/plain; charset=utf-8";
+        SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
         var body = "The submitted form failed validation:\n\n"
             + string.Join("\n", ex.Errors.Select(e => $"  - {e.Key}: {e.Value}"));
         await ctx.Response.WriteAsync(body, ct);
@@ -181,6 +200,7 @@ app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen
         var archive = await gen.GenerateExtensionAsync(plan, ct);
         ctx.Response.ContentType = "application/zip";
         ctx.Response.Headers.ContentDisposition = $"attachment; filename=\"{archive.FileName}\"";
+        SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
         archive.Stream.Position = 0;
         await archive.Stream.CopyToAsync(ctx.Response.Body, ct);
     }
@@ -188,6 +208,7 @@ app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen
     {
         ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
         ctx.Response.ContentType = "text/plain; charset=utf-8";
+        SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
         var body = "The submitted form failed validation:\n\n"
             + string.Join("\n", ex.Errors.Select(e => $"  - {e.Key}: {e.Value}"));
         await ctx.Response.WriteAsync(body, ct);
@@ -315,3 +336,20 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
+
+// The generate.js companion polls this cookie to know when the matching
+// download response has finished, so the Generate button can drop its
+// loading state. Empty tokens are ignored — the form always includes a
+// freshly-stamped value, but legacy bookmarks or curl callers won't.
+static void SetGenerationCompleteCookie(HttpContext ctx, string token)
+{
+    if (string.IsNullOrEmpty(token)) return;
+    ctx.Response.Cookies.Append("aldt-gen", token, new Microsoft.AspNetCore.Http.CookieOptions
+    {
+        HttpOnly = false,
+        SameSite = SameSiteMode.Lax,
+        Secure = ctx.Request.IsHttps,
+        Path = "/",
+        MaxAge = TimeSpan.FromSeconds(30),
+    });
+}

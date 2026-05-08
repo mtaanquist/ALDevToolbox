@@ -28,19 +28,33 @@
             <input type="checkbox" @bind="_showDeleted" @bind:after="ReloadAsync" />
             <span>Show soft-deleted</span>
         </label>
+        <label class="check-row">
+            <input type="checkbox" @bind="_hideDeprecated" />
+            <span>Hide deprecated</span>
+        </label>
     </div>
 
     @if (_rows is null)
     {
         <p class="muted">Loading…</p>
     }
-    else if (_rows.Count == 0)
+    else if (FilteredRows.Count == 0)
     {
-        <p class="muted">
-            No templates yet. Click <strong>New template</strong> to add one, or
-            populate <code>Templates.seed/</code> and restart the app to seed
-            from TOML.
-        </p>
+        @if (_rows.Count == 0)
+        {
+            <p class="muted">
+                No templates yet. Click <strong>New template</strong> to add one, or
+                populate <code>Templates.seed/</code> and restart the app to seed
+                from TOML.
+            </p>
+        }
+        else
+        {
+            <p class="muted">
+                No templates match the current filters. Untick
+                <strong>Hide deprecated</strong> to see deprecated rows.
+            </p>
+        }
     }
     else
     {
@@ -57,7 +71,7 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach (var t in _rows)
+                @foreach (var t in FilteredRows)
                 {
                     <tr class="@(t.DeletedAt is not null ? "data-table__row--muted" : null)">
                         <td><code>@t.Key</code></td>
@@ -81,7 +95,12 @@
 
 @code {
     private bool _showDeleted;
+    private bool _hideDeprecated;
     private List<RuntimeTemplate>? _rows;
+
+    private List<RuntimeTemplate> FilteredRows => _rows is null
+        ? new()
+        : (_hideDeprecated ? _rows.Where(t => !t.Deprecated).ToList() : _rows);
 
     protected override Task OnInitializedAsync() => ReloadAsync();
 

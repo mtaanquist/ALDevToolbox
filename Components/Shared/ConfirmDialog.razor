@@ -1,0 +1,73 @@
+@*
+    Two-button modal that resolves a Task<bool> when the user picks. Use it via:
+
+      <ConfirmDialog @ref="_confirm" Title="Delete X?" Message="..." ConfirmLabel="Delete" />
+      ...
+      if (await _confirm.OpenAsync()) { ... }
+
+    Built as a plain CSS overlay rather than the native <dialog> element so it
+    works without a JS interop hop and renders consistently inside the
+    InteractiveServer pages we use it from.
+*@
+
+@if (_open)
+{
+    <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="@_titleId">
+        <div class="confirm-modal__backdrop" @onclick="Cancel"></div>
+        <div class="confirm-modal__panel" @onclick:stopPropagation>
+            <h2 id="@_titleId" class="confirm-modal__title">@Title</h2>
+            @if (!string.IsNullOrEmpty(Message))
+            {
+                <p class="confirm-modal__message">@Message</p>
+            }
+            <div class="confirm-modal__actions">
+                <button type="button" class="btn" @onclick="Cancel">@CancelLabel</button>
+                <button type="button" class="btn @ConfirmButtonClass" @onclick="Confirm" autofocus>
+                    @if (!string.IsNullOrEmpty(ConfirmIcon))
+                    {
+                        <Icon Name="@ConfirmIcon" Width="14" Height="14" />
+                    }
+                    <span>@ConfirmLabel</span>
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string Title { get; set; } = "Are you sure?";
+    [Parameter] public string Message { get; set; } = string.Empty;
+    [Parameter] public string ConfirmLabel { get; set; } = "Confirm";
+    [Parameter] public string CancelLabel { get; set; } = "Cancel";
+    [Parameter] public string ConfirmButtonClass { get; set; } = "btn--danger";
+    [Parameter] public string? ConfirmIcon { get; set; }
+
+    private readonly string _titleId = $"confirm-{Guid.NewGuid():N}";
+    private bool _open;
+    private TaskCompletionSource<bool>? _tcs;
+
+    public Task<bool> OpenAsync()
+    {
+        // Replace any previous unresolved task with a fresh one so re-opening
+        // the same dialog doesn't leak the prior caller's continuation.
+        _tcs?.TrySetResult(false);
+        _tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _open = true;
+        StateHasChanged();
+        return _tcs.Task;
+    }
+
+    private void Confirm()
+    {
+        _open = false;
+        _tcs?.TrySetResult(true);
+        _tcs = null;
+    }
+
+    private void Cancel()
+    {
+        _open = false;
+        _tcs?.TrySetResult(false);
+        _tcs = null;
+    }
+}
