@@ -5,23 +5,44 @@
     One row of <FolderTreePreview>'s tree. Recursively renders its own children
     inside a nested <ul>. Kept as a separate component because Razor cannot
     inline a recursive RenderFragment with markup in a single .razor file.
+
+    Folders are click-to-collapse. Component instance state (_expanded) survives
+    re-renders triggered by parent inputs because the parent rebuilds the tree
+    in the same shape — Blazor preserves the matching component instances.
 *@
 
-<li class="@NodeClass" role="treeitem">
-    <span class="ftp__row">
-        <span class="ftp__icon">
-            @if (Node.Kind == PreviewNodeKind.File)
-            {
-                <Icon Name="file" Width="14" Height="14" />
-            }
-            else
-            {
-                <Icon Name="folder" Width="14" Height="14" />
-            }
+<li class="@NodeClass" role="treeitem" aria-expanded="@(IsFolder ? (_expanded ? "true" : "false") : null)">
+    @if (IsFolder && Node.Children.Count > 0)
+    {
+        <button type="button" class="ftp__row ftp__row--toggle"
+                @onclick="Toggle" aria-label="@(_expanded ? "Collapse" : "Expand")">
+            <span class="ftp__chevron">
+                <Icon Name="@(_expanded ? "chevron-down" : "chevron-right")" Width="12" Height="12" />
+            </span>
+            <span class="ftp__icon">
+                <Icon Name="@(_expanded ? "folder-open" : "folder")" Width="14" Height="14" />
+            </span>
+            <span class="ftp__name">@Node.Name/</span>
+        </button>
+    }
+    else
+    {
+        <span class="ftp__row">
+            <span class="ftp__chevron ftp__chevron--placeholder"></span>
+            <span class="ftp__icon">
+                @if (Node.Kind == PreviewNodeKind.File)
+                {
+                    <Icon Name="file" Width="14" Height="14" />
+                }
+                else
+                {
+                    <Icon Name="folder" Width="14" Height="14" />
+                }
+            </span>
+            <span class="ftp__name">@Node.Name@(Node.Kind == PreviewNodeKind.File ? "" : "/")</span>
         </span>
-        <span class="ftp__name">@Node.Name@(Node.Kind == PreviewNodeKind.File ? "" : "/")</span>
-    </span>
-    @if (Node.Children.Count > 0)
+    }
+    @if (IsFolder && Node.Children.Count > 0 && _expanded)
     {
         <ul class="ftp__children">
             @foreach (var child in Node.Children)
@@ -34,6 +55,12 @@
 
 @code {
     [Parameter, EditorRequired] public PreviewNode Node { get; set; } = default!;
+
+    private bool _expanded = true;
+
+    private bool IsFolder => Node.Kind != PreviewNodeKind.File;
+
+    private void Toggle() => _expanded = !_expanded;
 
     private string NodeClass => Node.Kind switch
     {

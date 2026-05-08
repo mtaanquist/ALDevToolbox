@@ -11,10 +11,37 @@
     --color-accent: #0066ff;
     --color-accent-soft: #e8f0ff;
     --color-info: #2563eb;
+    --color-danger: #b32121;
+    --color-error-text: #e50000;
+    --color-valid: #26b050;
+    --color-accent-hover: #0052cc;
+    --color-shadow: rgba(0, 0, 0, 0.1);
     --sidebar-width: 220px;
     --top-bar-height: 52px;
     --radius: 6px;
     --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+/* Dark theme follows the user's OS preference. Variables only — no per-rule
+   overrides — so component styles don't need to know which theme is active. */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --color-bg: #16181c;
+        --color-surface: #1d2024;
+        --color-border: #2c2f36;
+        --color-border-strong: #3a3e47;
+        --color-text: #e6e7ea;
+        --color-text-muted: #9aa0aa;
+        --color-text-secondary: #777c86;
+        --color-accent: #4b8bff;
+        --color-accent-soft: #1a2742;
+        --color-accent-hover: #6ba0ff;
+        --color-info: #6ba3ff;
+        --color-danger: #ef6464;
+        --color-error-text: #ff6b6b;
+        --color-valid: #4cc972;
+        --color-shadow: rgba(0, 0, 0, 0.5);
+    }
 }
 
 * { box-sizing: border-box; }
@@ -281,6 +308,30 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     gap: 6px;
 }
 
+/* Folder rows render as a button so the whole label is clickable to toggle. */
+.ftp__row--toggle {
+    background: none;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+}
+
+.ftp__row--toggle:hover .ftp__name { color: var(--color-text); }
+
+.ftp__chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    color: var(--color-text-secondary);
+    flex: 0 0 auto;
+}
+
+.ftp__chevron--placeholder { visibility: hidden; }
+
 .ftp__icon {
     display: inline-flex;
     align-items: center;
@@ -412,7 +463,23 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     color: white;
 }
 
-.btn--primary:hover { background: #0052cc; }
+.btn--primary:hover { background: var(--color-accent-hover); }
+
+/* Compact button used inside table rows (e.g. quick actions in the templates
+   browser). Renders inline-flex so an Icon + label sit on one line. */
+.btn--sm {
+    padding: 4px 10px;
+    font-size: 12.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.btn--sm:hover { text-decoration: none; }
+
+.data-table__actions { width: 1%; text-align: right; white-space: nowrap; }
 
 /* ---------- Dependency picker ---------- */
 
@@ -476,7 +543,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     min-width: 0;
 }
 
-.dep-picker__error { color: #b32121; margin: 0; }
+.dep-picker__error { color: var(--color-danger); margin: 0; }
 
 .dep-picker__manual-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 
@@ -504,7 +571,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     padding: 0 4px;
 }
 
-.dep-chip__remove:hover { color: #b32121; }
+.dep-chip__remove:hover { color: var(--color-danger); }
 
 /* ---------- Success tip (New Extension) ---------- */
 
@@ -542,10 +609,10 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 /* ---------- Errors ---------- */
 
 #blazor-error-ui {
-    background: #b32121;
+    background: var(--color-danger);
     color: white;
     padding: 0.6rem 1rem;
-    box-shadow: 0 -1px 2px rgba(0,0,0,.2);
+    box-shadow: 0 -1px 2px var(--color-shadow);
     display: none;
     position: fixed;
     bottom: 0; left: 0; right: 0;
@@ -557,6 +624,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     cursor: pointer;
 }
 
-.valid.modified:not([type=checkbox]) { outline: 1px solid #26b050; }
-.invalid { outline: 1px solid #e50000; }
-.validation-message { color: #e50000; }
+.valid.modified:not([type=checkbox]) { outline: 1px solid var(--color-valid); }
+.invalid { outline: 1px solid var(--color-error-text); }
+.validation-message { color: var(--color-error-text); }

@@ -1,5 +1,6 @@
 @page "/templates"
 @inject TemplateService Templates
+@using Lucide.Blazor.Components
 
 <PageTitle>Templates · AL Dev Toolbox</PageTitle>
 
@@ -31,6 +32,7 @@
                     <th>Description</th>
                     <th>Folders</th>
                     <th>Status</th>
+                    <th class="data-table__actions"></th>
                 </tr>
             </thead>
             <tbody>
@@ -43,6 +45,15 @@
                         <td class="muted">@t.Description</td>
                         <td>@t.Folders.Count</td>
                         <td>@(t.Deprecated ? "Deprecated" : "Active")</td>
+                        <td class="data-table__actions">
+                            @if (!t.Deprecated)
+                            {
+                                <a class="btn btn--sm" href="@($"/projects/new?template={Uri.EscapeDataString(t.Key)}")">
+                                    <Icon Name="folder-plus" Width="14" Height="14" />
+                                    <span>New workspace</span>
+                                </a>
+                            }
+                        </td>
                     </tr>
                 }
             </tbody>
