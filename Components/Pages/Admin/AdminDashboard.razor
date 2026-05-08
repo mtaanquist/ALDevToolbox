@@ -1,0 +1,46 @@
+@page "/admin"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+@using Lucide.Blazor.Components
+
+<PageTitle>Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-dashboard">
+    <h1>Admin</h1>
+    <p class="muted">
+        Manage runtime templates, modules, the well-known dependency catalogue,
+        and view the audit log. The individual sections will be filled in as
+        further milestones (templates, modules, catalogue, audit, export) land.
+    </p>
+
+    <div class="admin-tiles">
+        <div class="admin-tile admin-tile--placeholder">
+            <Icon Name="layers" Width="20" Height="20" Css="admin-tile__icon" />
+            <div class="admin-tile__body">
+                <div class="admin-tile__title">Templates</div>
+                <div class="admin-tile__caption">Coming in milestone 8.</div>
+            </div>
+        </div>
+        <div class="admin-tile admin-tile--placeholder">
+            <Icon Name="package" Width="20" Height="20" Css="admin-tile__icon" />
+            <div class="admin-tile__body">
+                <div class="admin-tile__title">Modules</div>
+                <div class="admin-tile__caption">Coming in milestone 9.</div>
+            </div>
+        </div>
+        <div class="admin-tile admin-tile--placeholder">
+            <Icon Name="book-open" Width="20" Height="20" Css="admin-tile__icon" />
+            <div class="admin-tile__body">
+                <div class="admin-tile__title">Catalogue</div>
+                <div class="admin-tile__caption">Coming in milestone 9.</div>
+            </div>
+        </div>
+        <div class="admin-tile admin-tile--placeholder">
+            <Icon Name="history" Width="20" Height="20" Css="admin-tile__icon" />
+            <div class="admin-tile__body">
+                <div class="admin-tile__title">Audit log</div>
+                <div class="admin-tile__caption">Coming in milestone 7.</div>
+            </div>
+        </div>
+    </div>
+</div>

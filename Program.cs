@@ -1,8 +1,11 @@
+using System.Security.Claims;
 using ALDevToolbox.Components;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -18,6 +21,28 @@ builder.Logging.AddSimpleConsole(options =>
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+// Cookie auth — single shared admin password, no user accounts.
+// See .design/auth-and-audit.md. The cookie stores the display name as a
+// single claim; possession of a valid cookie means "this user is an admin".
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
+    {
+        options.Cookie.Name = "alwb_auth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        // SameAsRequest keeps local HTTP dev working; production runs behind
+        // HSTS (see app.UseHsts below) so the cookie is HTTPS-only there.
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        options.SlidingExpiration = true;
+        options.LoginPath = "/login";
+        options.AccessDeniedPath = "/login";
+    });
+builder.Services.AddAuthorization();
+builder.Services.AddCascadingAuthenticationState();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<AuthService>();
 
 // SQLite connection string. DB_PATH wins, falling back to a file alongside the
 // content root for local `dotnet run` so devs don't need to set anything up.
@@ -39,6 +64,8 @@ if (!app.Environment.IsDevelopment())
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
@@ -158,6 +185,85 @@ app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen
             + string.Join("\n", ex.Errors.Select(e => $"  - {e.Key}: {e.Value}"));
         await ctx.Response.WriteAsync(body, ct);
     }
+});
+
+// Login endpoint: validates the submitted password in constant time, captures
+// the honour-system display name, and issues the auth cookie. The Login page
+// posts here directly so the sign-in happens during a real HTTP request (cookie
+// SignIn doesn't work over the SignalR pipe). Failures redirect back to /login
+// with an error code rather than telling the user *why* sign-in failed.
+app.MapPost("/auth/login", async (HttpContext ctx, AuthService auth, IAntiforgery antiforgery, ILoggerFactory loggerFactory, CancellationToken ct) =>
+{
+    var logger = loggerFactory.CreateLogger("Auth");
+    try
+    {
+        await antiforgery.ValidateRequestAsync(ctx);
+    }
+    catch (AntiforgeryValidationException)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+        ctx.Response.ContentType = "text/plain; charset=utf-8";
+        await ctx.Response.WriteAsync("Antiforgery validation failed. Reload the form and try again.", ct);
+        return;
+    }
+
+    var form = await ctx.Request.ReadFormAsync(ct);
+    var password = form["Password"].ToString();
+    var displayName = form["DisplayName"].ToString().Trim();
+    var requestedReturn = form["ReturnUrl"].ToString();
+    // Open-redirect guard: only allow same-site relative paths. Reject anything
+    // that could resolve to a different host, including protocol-relative
+    // forms ("//evil.com/foo").
+    var safeReturn = !string.IsNullOrEmpty(requestedReturn)
+                     && Uri.IsWellFormedUriString(requestedReturn, UriKind.Relative)
+                     && requestedReturn.StartsWith('/')
+                     && !requestedReturn.StartsWith("//", StringComparison.Ordinal)
+                     && !requestedReturn.StartsWith("/\\", StringComparison.Ordinal)
+        ? requestedReturn
+        : "/admin";
+
+    if (!auth.IsConfigured)
+    {
+        logger.LogWarning("Login attempted but no admin password is configured.");
+        ctx.Response.Redirect("/login?err=not-configured");
+        return;
+    }
+
+    if (string.IsNullOrEmpty(displayName) || !auth.Verify(password))
+    {
+        logger.LogInformation("Failed login attempt.");
+        var qs = $"/login?err=invalid&return={Uri.EscapeDataString(safeReturn)}";
+        ctx.Response.Redirect(qs);
+        return;
+    }
+
+    var identity = new ClaimsIdentity(
+        new[] { new Claim(ClaimTypes.Name, displayName) },
+        CookieAuthenticationDefaults.AuthenticationScheme);
+    await ctx.SignInAsync(
+        CookieAuthenticationDefaults.AuthenticationScheme,
+        new ClaimsPrincipal(identity));
+    logger.LogInformation("Admin signed in as {DisplayName}.", displayName);
+    ctx.Response.Redirect(safeReturn);
+});
+
+// Logout endpoint: clears the cookie and returns to the home page. Posted from
+// the top-bar sign-out button, antiforgery-protected like every other mutation.
+app.MapPost("/auth/logout", async (HttpContext ctx, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    try
+    {
+        await antiforgery.ValidateRequestAsync(ctx);
+    }
+    catch (AntiforgeryValidationException)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+        ctx.Response.ContentType = "text/plain; charset=utf-8";
+        await ctx.Response.WriteAsync("Antiforgery validation failed. Reload the form and try again.", ct);
+        return;
+    }
+    await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    ctx.Response.Redirect("/");
 });
 
 // Run migrations (creating the database if needed) and then seed from disk if
