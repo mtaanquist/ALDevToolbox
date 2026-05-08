@@ -1,0 +1,177 @@
+/* AL Workspace Builder — global styles */
+
+:root {
+    --color-bg: #fafafa;
+    --color-surface: #ffffff;
+    --color-border: #e6e6e8;
+    --color-border-strong: #d2d3d8;
+    --color-text: #1f2024;
+    --color-text-muted: #6b6f76;
+    --color-text-secondary: #8a8e96;
+    --color-accent: #0066ff;
+    --color-accent-soft: #e8f0ff;
+    --color-info: #2563eb;
+    --sidebar-width: 220px;
+    --top-bar-height: 52px;
+    --radius: 6px;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--color-text);
+    background: var(--color-bg);
+}
+
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+h1 { font-size: 22px; font-weight: 600; margin: 0 0 12px; }
+h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
+.muted { color: var(--color-text-muted); }
+
+/* ---------- Shell ---------- */
+
+.app-shell {
+    display: grid;
+    grid-template-columns: var(--sidebar-width) 1fr;
+    grid-template-rows: var(--top-bar-height) 1fr;
+    grid-template-areas:
+        "topbar topbar"
+        "sidebar content";
+    min-height: 100vh;
+}
+
+.top-bar {
+    grid-area: topbar;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.top-bar__brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+}
+
+.brand-icon { color: var(--color-accent); }
+.brand-name { font-size: 15px; }
+
+.signin-link {
+    color: var(--color-text-muted);
+    font-size: 13px;
+}
+
+.sidebar {
+    grid-area: sidebar;
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+    padding: 20px 12px;
+    overflow-y: auto;
+}
+
+.content {
+    grid-area: content;
+    padding: 24px 32px;
+    overflow-y: auto;
+}
+
+/* ---------- Sidebar nav ---------- */
+
+.sidebar-nav { display: flex; flex-direction: column; gap: 18px; }
+
+.nav-section__label {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    padding: 0 10px 6px;
+}
+
+.nav-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+
+.nav-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: var(--radius);
+    color: var(--color-text);
+    font-size: 13.5px;
+}
+
+.nav-link:hover { background: var(--color-bg); text-decoration: none; }
+.nav-link.active { background: var(--color-accent-soft); color: var(--color-accent); font-weight: 500; }
+.nav-link__icon { color: var(--color-text-secondary); flex: 0 0 auto; }
+.nav-link.active .nav-link__icon { color: var(--color-accent); }
+.nav-link--muted { color: var(--color-text-muted); }
+
+.nav-divider {
+    height: 1px;
+    background: var(--color-border);
+    margin: 10px 6px 10px;
+}
+
+/* ---------- Tab bar (page-level) ---------- */
+
+.tab-bar {
+    display: flex;
+    gap: 6px;
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: 24px;
+}
+
+.tab {
+    padding: 8px 14px;
+    color: var(--color-text-muted);
+    font-size: 13.5px;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+}
+
+.tab:hover { color: var(--color-text); text-decoration: none; }
+
+.tab.active {
+    color: var(--color-text);
+    border-bottom-color: var(--color-accent);
+    font-weight: 500;
+}
+
+/* ---------- Page stub ---------- */
+
+.page-stub { max-width: 720px; }
+.page-stub p { margin: 0; }
+
+/* ---------- Errors ---------- */
+
+#blazor-error-ui {
+    background: #b32121;
+    color: white;
+    padding: 0.6rem 1rem;
+    box-shadow: 0 -1px 2px rgba(0,0,0,.2);
+    display: none;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 1000;
+}
+#blazor-error-ui .reload, #blazor-error-ui .dismiss {
+    color: white;
+    margin-left: 12px;
+    cursor: pointer;
+}
+
+.valid.modified:not([type=checkbox]) { outline: 1px solid #26b050; }
+.invalid { outline: 1px solid #e50000; }
+.validation-message { color: #e50000; }

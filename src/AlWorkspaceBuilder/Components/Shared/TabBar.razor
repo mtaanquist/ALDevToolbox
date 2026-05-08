@@ -1,0 +1,13 @@
+@* Top tab bar shown above the form pages: New workspace | New extension | Templates *@
+
+<nav class="tab-bar" aria-label="Primary">
+    <a href="/projects/new" class="tab @(Active == Tab.NewWorkspace ? "active" : null)">New workspace</a>
+    <a href="/projects/extension" class="tab @(Active == Tab.NewExtension ? "active" : null)">New extension</a>
+    <a href="/templates" class="tab @(Active == Tab.Templates ? "active" : null)">Templates</a>
+</nav>
+
+@code {
+    public enum Tab { NewWorkspace, NewExtension, Templates }
+
+    [Parameter] public Tab Active { get; set; }
+}
