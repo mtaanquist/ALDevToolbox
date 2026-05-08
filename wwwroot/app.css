@@ -184,6 +184,117 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .data-table tr:last-child td { border-bottom: 0; }
 .data-table code { font-family: var(--font-mono); font-size: 12.5px; }
 
+/* ---------- Workspace form ---------- */
+
+.workspace-form { max-width: 640px; }
+
+.form-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+}
+
+.form-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.form-section--row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.form-section--row > div { display: flex; flex-direction: column; gap: 6px; }
+
+.section-label {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+}
+
+.form-section input[type="text"],
+.form-section input[type="number"],
+.form-section textarea,
+.form-section select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    font-family: inherit;
+    font-size: 13.5px;
+    background: var(--color-surface);
+    color: var(--color-text);
+}
+
+.form-section textarea { resize: vertical; min-height: 70px; }
+
+.form-section input:focus,
+.form-section textarea:focus,
+.form-section select:focus {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -1px;
+    border-color: var(--color-accent);
+}
+
+.caption { font-size: 12px; margin: 0; }
+
+.module-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.module-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.1s ease;
+}
+
+.module-card:hover { background: var(--color-bg); }
+.module-card:has(input:checked) { background: var(--color-accent-soft); border-color: var(--color-accent); }
+
+.module-card__body { display: flex; flex-direction: column; gap: 2px; }
+.module-card__name { font-weight: 500; }
+.module-card__caption { font-size: 12px; }
+
+.check-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.btn {
+    padding: 9px 16px;
+    border-radius: var(--radius);
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: 13.5px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.btn:hover { background: var(--color-bg); }
+
+.btn--primary {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: white;
+}
+
+.btn--primary:hover { background: #0052cc; }
+
 /* ---------- Errors ---------- */
 
 #blazor-error-ui {

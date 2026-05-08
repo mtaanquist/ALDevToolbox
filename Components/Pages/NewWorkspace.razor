@@ -1,13 +1,129 @@
 @page "/projects/new"
+@inject TemplateService Templates
+@using ALDevToolbox.Domain.Entities
 
 <PageTitle>New workspace · AL Workspace Builder</PageTitle>
 
 <TabBar Active="TabBar.Tab.NewWorkspace" />
 
-<div class="page-stub">
-    <h1>New workspace</h1>
-    <p class="muted">
-        Generate an AL workspace skeleton with a Core extension and selected modules.
-        The form and live preview will be wired up in a later milestone.
-    </p>
+<div class="workspace-form">
+    @if (_templates is null || _modules is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_templates.Count == 0)
+    {
+        <p class="muted">
+            No active runtime templates are available. Seed the database or add one
+            through the admin section before generating a workspace.
+        </p>
+    }
+    else
+    {
+        <form method="post" action="/generate/workspace" class="form-grid">
+            <AntiforgeryToken />
+
+            <section class="form-section">
+                <label class="section-label">Runtime template</label>
+                <select name="TemplateKey" required>
+                    @foreach (var t in _templates)
+                    {
+                        <option value="@t.Key" selected="@(t.Key == _selected!.Key)">@t.Name</option>
+                    }
+                </select>
+                <p class="caption muted">
+                    @_selected!.Description
+                    <span> · Default application: <code>@_selected.DefaultApplication</code></span>
+                </p>
+            </section>
+
+            <section class="form-section">
+                <label class="section-label">Project</label>
+                <input type="text" name="WorkspaceName" placeholder="e.g. Acme Customer"
+                       pattern="^[A-Za-z][A-Za-z0-9 ]*$" required />
+                <input type="text" name="Brief" placeholder="One-line description" required />
+                <textarea name="Description" rows="3" placeholder="Longer description" required></textarea>
+            </section>
+
+            <section class="form-section form-section--row">
+                <div>
+                    <label class="section-label">Core ID range — from</label>
+                    <input type="number" name="CoreIdRangeFrom" required min="1"
+                           value="@_selected.CoreIdRangeFrom" />
+                </div>
+                <div>
+                    <label class="section-label">Core ID range — to</label>
+                    <input type="number" name="CoreIdRangeTo" required min="1"
+                           value="@_selected.CoreIdRangeTo" />
+                </div>
+            </section>
+
+            <section class="form-section form-section--row">
+                <div>
+                    <label class="section-label">Application version</label>
+                    <input type="text" name="ApplicationVersion" required
+                           pattern="^\d+\.\d+\.\d+\.\d+$"
+                           value="@_selected.DefaultApplication" />
+                </div>
+                <div>
+                    <label class="section-label">Runtime version</label>
+                    <input type="text" name="RuntimeVersion" required
+                           value="@($"{_selected.Runtime}.0")" />
+                </div>
+            </section>
+
+            <section class="form-section">
+                <label class="section-label">Modules</label>
+                @if (_modules.Count == 0)
+                {
+                    <p class="muted">No modules available.</p>
+                }
+                else
+                {
+                    <div class="module-list">
+                        @foreach (var m in _modules)
+                        {
+                            <label class="module-card">
+                                <input type="checkbox" name="SelectedModuleKeys" value="@m.Key" />
+                                <span class="module-card__body">
+                                    <span class="module-card__name">@m.Name</span>
+                                    <span class="module-card__caption muted">
+                                        + @m.Dependencies.Count
+                                        @(m.Dependencies.Count == 1 ? "dependency" : "dependencies")
+                                    </span>
+                                </span>
+                            </label>
+                        }
+                    </div>
+                }
+            </section>
+
+            <section class="form-section">
+                <label class="section-label">Options</label>
+                <label class="check-row">
+                    <input type="checkbox" name="IncludeExamples" value="true" checked="checked" />
+                    <span>Include example AL files</span>
+                </label>
+                <label class="check-row">
+                    <input type="checkbox" name="IncludeForNav" value="true" />
+                    <span>Include ForNAV in Core</span>
+                </label>
+            </section>
+
+            <button type="submit" class="btn btn--primary">Generate</button>
+        </form>
+    }
 </div>
+
+@code {
+    private List<RuntimeTemplate>? _templates;
+    private List<ALDevToolbox.Domain.Entities.Module>? _modules;
+    private RuntimeTemplate? _selected;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
+        _modules = await Templates.GetModulesAsync(includeDeprecated: false);
+        _selected = _templates.FirstOrDefault();
+    }
+}
