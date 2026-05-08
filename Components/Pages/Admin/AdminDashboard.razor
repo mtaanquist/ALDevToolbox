@@ -9,8 +9,7 @@
     <h1>Admin</h1>
     <p class="muted">
         Manage runtime templates, modules, the well-known dependency catalogue,
-        and view the audit log. The individual sections will be filled in as
-        further milestones (templates, modules, catalogue, audit, export) land.
+        and view the audit log.
     </p>
 
     <div class="admin-tiles">
@@ -43,4 +42,21 @@
             </div>
         </a>
     </div>
+
+    <section class="admin-section">
+        <h2>Backup</h2>
+        <p class="muted">
+            Download every active template, module, and catalogue entry as a
+            ZIP whose layout matches <code>Templates.seed/</code>. Use it as a
+            point-in-time snapshot, to grep the live state outside the app, or
+            to re-seed a fresh database after a wipe.
+        </p>
+        <form method="post" action="/admin/export">
+            <AntiforgeryToken />
+            <button type="submit" class="btn">
+                <Icon Name="download" Width="16" Height="16" />
+                <span>Export all to TOML</span>
+            </button>
+        </form>
+    </section>
 </div>

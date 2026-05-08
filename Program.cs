@@ -60,6 +60,7 @@ builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<SeedService>();
 builder.Services.AddScoped<GenerationService>();
+builder.Services.AddScoped<ExportService>();
 
 var app = builder.Build();
 
@@ -191,6 +192,36 @@ app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen
             + string.Join("\n", ex.Errors.Select(e => $"  - {e.Key}: {e.Value}"));
         await ctx.Response.WriteAsync(body, ct);
     }
+});
+
+// Admin: export the current database state as a TOML ZIP that mirrors the
+// Templates.seed/ layout. Used as a one-click backup or for diffing the live
+// state outside the app. See .design/templates-and-seeding.md.
+app.MapPost("/admin/export", async (HttpContext ctx, ExportService export, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (ctx.User.Identity?.IsAuthenticated != true)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return;
+    }
+
+    try
+    {
+        await antiforgery.ValidateRequestAsync(ctx);
+    }
+    catch (AntiforgeryValidationException)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+        ctx.Response.ContentType = "text/plain; charset=utf-8";
+        await ctx.Response.WriteAsync("Antiforgery validation failed. Reload the page and try again.", ct);
+        return;
+    }
+
+    var archive = await export.ExportAllAsync(ct);
+    ctx.Response.ContentType = "application/zip";
+    ctx.Response.Headers.ContentDisposition = $"attachment; filename=\"{archive.FileName}\"";
+    archive.Stream.Position = 0;
+    await archive.Stream.CopyToAsync(ctx.Response.Body, ct);
 });
 
 // Login endpoint: validates the submitted password in constant time, captures
