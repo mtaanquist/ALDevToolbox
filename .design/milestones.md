@@ -136,6 +136,7 @@ Goal: the snapshot/backup feature.
 Goal: everything that makes the difference between "works" and "feels good."
 
 - Validation messages on every form field.
+- TOML editor error display: render `PlanValidationException.Errors` as a bulleted list rather than a single concatenated string so admins can scan field-keyed messages back to their TOML location, and consider enabling Tomlyn strict mode so unknown keys (typos like `examplee = "..."`) surface as parse errors instead of being silently dropped.
 - Confirmation modals on delete.
 - Loading states on the Generate button.
 - Empty states on every list (no templates? no modules?).
