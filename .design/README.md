@@ -1,4 +1,4 @@
-# AL Workspace Builder
+# AL Dev Toolbox
 
 Internal Blazor Server tool for generating Microsoft Dynamics 365 Business Central (AL) workspace skeletons.
 

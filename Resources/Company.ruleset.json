@@ -1,6 +1,6 @@
 {
     "name": "Company default rules",
-    "description": "Baseline ruleset shipped by AL Workspace Builder. Customise as your team's standards evolve.",
+    "description": "Baseline ruleset shipped by AL Dev Toolbox. Customise as your team's standards evolve.",
     "generalAction": "Default",
     "includedRuleSets": [],
     "rules": [
