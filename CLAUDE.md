@@ -61,7 +61,7 @@ When you add a new file, match the folder. Resist creating top-level folders —
 
 These are deliberate constraints from `.design/architecture.md` and `.design/templates-and-seeding.md`. Don't quietly relax them.
 
-- **Templates live in the DB at runtime.** TOML is seed-time only. There is no two-way sync. The export-to-TOML feature (Milestone 10) is a backup hatch, not a sync source.
+- **Templates live in the DB at runtime.** The DB is always the source of truth. TOML is the seed-time format and a backup hatch (export, milestone 10). The admin template edit page also offers an "Edit as TOML" view that round-trips through the same `TemplateInput` pipeline as the structured form — it does not write back to the on-disk seed files and is not a sync source. Don't introduce mechanisms that watch `Templates.seed/` at runtime or treat TOML as a peer persistence path.
 - **Static AL files, the ruleset, the `.gitignore`, and the logo ship as code.** Embedded resources or files on disk under `Templates.seed/<runtime>/examples/`. They are not stored in SQLite and not editable through the admin UI.
 - **`defaults_json` and `app_source_cop_json` stay as JSON columns.** Don't normalise them into separate tables — the AL ecosystem changes those shapes too often.
 - **Single shared admin password.** No per-user accounts, no roles, no IdP integration in v1.

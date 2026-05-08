@@ -56,6 +56,25 @@
     }
     else
     {
+        <div class="admin-template-edit__mode" role="tablist" aria-label="Editor mode">
+            <button type="button"
+                    class="@ModeButtonClass(EditorMode.Form)"
+                    role="tab"
+                    aria-selected="@(_mode == EditorMode.Form)"
+                    @onclick="() => SwitchMode(EditorMode.Form)">
+                <Icon Name="list" Width="14" Height="14" />
+                <span>Structured form</span>
+            </button>
+            <button type="button"
+                    class="@ModeButtonClass(EditorMode.Toml)"
+                    role="tab"
+                    aria-selected="@(_mode == EditorMode.Toml)"
+                    @onclick="() => SwitchMode(EditorMode.Toml)">
+                <Icon Name="file-code" Width="14" Height="14" />
+                <span>TOML</span>
+            </button>
+        </div>
+
         @if (_saveError is not null)
         {
             <p class="form-error" role="alert">@_saveError</p>
@@ -64,7 +83,39 @@
         {
             <p class="form-success" role="status">@_saveSuccess</p>
         }
+    }
 
+    @if (_form is not null && _mode == EditorMode.Toml)
+    {
+        <form class="form-grid admin-template-edit__form admin-template-edit__toml-form"
+              @onsubmit="SaveTomlAsync" @onsubmit:preventDefault>
+            <section class="form-section">
+                <label class="section-label" for="tpl-toml">template.toml</label>
+                <textarea id="tpl-toml" class="json-editor admin-template-edit__toml" rows="28"
+                          spellcheck="false"
+                          @bind="_toml" @bind:event="oninput"></textarea>
+                <small class="muted">
+                    Edits the same fields as the structured form. The
+                    <code>deprecated</code> flag and folder reordering by row aren't
+                    represented here; toggle deprecated and reorder folders in the
+                    structured view. Schema lives in
+                    <code>.design/templates-and-seeding.md</code>.
+                </small>
+            </section>
+
+            <div class="admin-template-edit__actions">
+                <button type="submit" class="btn btn--primary" disabled="@_saving">
+                    <Icon Name="save" Width="16" Height="16" />
+                    <span>@(_saving ? "Saving…" : (IsEdit ? "Save TOML" : "Create from TOML"))</span>
+                </button>
+                <button type="button" class="btn" @onclick="() => SwitchMode(EditorMode.Form)" disabled="@_saving">
+                    <span>Discard &amp; back to form</span>
+                </button>
+            </div>
+        </form>
+    }
+    else if (_form is not null)
+    {
         <form class="form-grid admin-template-edit__form" @onsubmit="SaveAsync" @onsubmit:preventDefault>
             <section class="form-section">
                 <label class="section-label" for="tpl-key">Key</label>
@@ -285,10 +336,11 @@
             </div>
         </form>
 
-        @if (IsEdit && _existingId is not null)
-        {
-            <AuditHistoryPanel EntityType="AuditEntityType.RuntimeTemplate" EntityId="_existingId.Value" Title="Template history" />
-        }
+    }
+
+    @if (_form is not null && IsEdit && _existingId is not null)
+    {
+        <AuditHistoryPanel EntityType="AuditEntityType.RuntimeTemplate" EntityId="_existingId.Value" Title="Template history" />
     }
 </div>
 
@@ -307,8 +359,17 @@
     private string? _saveError;
     private string? _saveSuccess;
     private IReadOnlyDictionary<string, string> _fieldErrors = new Dictionary<string, string>();
+    private EditorMode _mode = EditorMode.Form;
+    private string _toml = string.Empty;
 
     private static readonly JsonSerializerOptions PrettyJson = new() { WriteIndented = true };
+
+    /// <summary>
+    /// Which editor surface is currently visible. The structured form is the
+    /// default; TOML mode is opt-in for admins comfortable with the seed file
+    /// shape. The DB stays the source of truth either way.
+    /// </summary>
+    private enum EditorMode { Form, Toml }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -316,6 +377,7 @@
         _saveSuccess = null;
         _fieldErrors = new Dictionary<string, string>();
         _confirmDelete = false;
+        _mode = EditorMode.Form;
 
         if (!IsEdit)
         {
@@ -437,6 +499,124 @@
         {
             Log.LogError(ex, "Failed to restore template id={Id}.", _existingId);
             _saveError = "Couldn't restore the template. Check the logs.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void SwitchMode(EditorMode mode)
+    {
+        if (_mode == mode || _saving) return;
+
+        if (mode == EditorMode.Toml)
+        {
+            _toml = BuildTomlFromFormState();
+        }
+
+        _mode = mode;
+        _saveError = null;
+        _saveSuccess = null;
+        _fieldErrors = new Dictionary<string, string>();
+    }
+
+    private string ModeButtonClass(EditorMode mode) =>
+        _mode == mode ? "btn btn--sm admin-template-edit__mode-btn admin-template-edit__mode-btn--active"
+                      : "btn btn--sm admin-template-edit__mode-btn";
+
+    /// <summary>
+    /// Builds a TOML view of the current in-memory form state. We round-trip
+    /// through <see cref="TemplateInput"/> so the same JSON parsing behaviour
+    /// is exercised in both modes — i.e. the TOML you see is the TOML the
+    /// service would produce after parsing whatever JSON sat in the textareas.
+    /// </summary>
+    private string BuildTomlFromFormState()
+    {
+        if (_form is null) return string.Empty;
+        try
+        {
+            var defaults = string.IsNullOrWhiteSpace(_form.DefaultsJson)
+                ? new TemplateDefaults()
+                : JsonSerializer.Deserialize<TemplateDefaults>(_form.DefaultsJson) ?? new TemplateDefaults();
+            var appSourceCop = string.IsNullOrWhiteSpace(_form.AppSourceCopJson)
+                ? new AppSourceCopSettings()
+                : JsonSerializer.Deserialize<AppSourceCopSettings>(_form.AppSourceCopJson) ?? new AppSourceCopSettings();
+
+            var stub = new RuntimeTemplate
+            {
+                Key = _form.Key,
+                Runtime = _form.Runtime,
+                Name = _form.Name,
+                Description = _form.Description,
+                DefaultApplication = _form.DefaultApplication,
+                DefaultPlatform = _form.DefaultPlatform,
+                Defaults = defaults,
+                AppSourceCop = appSourceCop,
+                CoreIdRangeFrom = _form.CoreIdRangeFrom,
+                CoreIdRangeTo = _form.CoreIdRangeTo,
+                ModuleIdRangeStart = _form.ModuleIdRangeStart,
+                ModuleIdRangeSize = _form.ModuleIdRangeSize,
+                Deprecated = _form.Deprecated,
+                Folders = _form.Folders.Select((f, i) => new TemplateFolder
+                {
+                    Ordering = i,
+                    Path = f.Path,
+                    ExamplePath = f.ExamplePath,
+                }).ToList(),
+            };
+            return TemplateTomlMapper.ToToml(stub);
+        }
+        catch (JsonException ex)
+        {
+            return $"# Could not render TOML — Defaults or AppSourceCop JSON is invalid:\n# {ex.Message}\n";
+        }
+    }
+
+    private async Task SaveTomlAsync()
+    {
+        if (_form is null || _saving) return;
+        _saving = true;
+        _saveError = null;
+        _saveSuccess = null;
+        _fieldErrors = new Dictionary<string, string>();
+
+        try
+        {
+            var payload = TemplateTomlMapper.FromToml(_toml, deprecated: _form.Deprecated);
+
+            if (IsEdit && _existingId is not null)
+            {
+                await Templates.UpdateAsync(_existingId.Value, payload);
+                var refreshed = await Templates.GetByKeyAsync(Key!);
+                if (refreshed is not null)
+                {
+                    _form = FormState.From(refreshed);
+                    _toml = TemplateTomlMapper.ToToml(refreshed);
+                }
+                _saveSuccess = "Saved from TOML.";
+            }
+            else
+            {
+                var created = await Templates.CreateAsync(payload);
+                Nav.NavigateTo($"/admin/templates/{Uri.EscapeDataString(created.Key)}");
+                return;
+            }
+        }
+        catch (InvalidDataException ex)
+        {
+            _saveError = ex.Message;
+        }
+        catch (PlanValidationException ex)
+        {
+            _fieldErrors = ex.Errors;
+            _saveError = "Couldn't save: "
+                + string.Join("; ", ex.Errors.Select(e => $"{e.Key}: {e.Value}"));
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Unexpected error saving template from TOML.");
+            _saveError = "An unexpected error occurred. The change was not saved.";
         }
         finally
         {

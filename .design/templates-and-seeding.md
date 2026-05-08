@@ -169,6 +169,17 @@ These are the variables available when seeding example AL files into a generated
 | `{{namespace}}`      | The folder path, dot-separated                |
 | `{{guid}}`           | A fresh GUID per call                         |
 
+## Editing a single template as TOML
+
+The admin template edit page (`/admin/templates/{key}`) offers a TOML view alongside the structured form. It's a per-template editor surface, not a sync mechanism: the DB remains the source of truth. Saving from TOML mode parses the textarea, maps it onto the same `TemplateInput` payload the structured form produces, and runs through identical validation. The on-disk seed files under `Templates.seed/` are not touched.
+
+A few fields are deliberately not represented in the TOML view (and have to be toggled from the structured form):
+
+- `deprecated` — seed TOML doesn't carry it, so admins flip it from the structured form's checkbox before / after a TOML save.
+- Folder reordering by drag — express the desired order by writing the `[[folders]]` blocks in that order; the parser treats array order as ordering.
+
+This was added because directly authoring TOML is sometimes faster for bulk folder edits than clicking through the structured editor. If the TOML view ever drifts from the seed format the seed files ship with, fix the mapper, not the seed schema — interoperability with `Templates.seed/` is the whole point.
+
 ## Export to TOML
 
 The admin section should provide a one-click "Export all to TOML" button (under `/admin` or `/admin/templates`) that produces a ZIP containing the current state of the database serialised back into the same TOML structure as the seed folder. This is the safety hatch for:

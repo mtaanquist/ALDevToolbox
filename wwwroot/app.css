@@ -971,6 +971,30 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .admin-template-edit__form { max-width: 880px; }
 
+.admin-template-edit__mode {
+    display: inline-flex;
+    gap: 0;
+    margin-bottom: 16px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 2px;
+    background: var(--color-surface);
+}
+
+.admin-template-edit__mode-btn {
+    border: 1px solid transparent;
+    background: transparent;
+}
+
+.admin-template-edit__mode-btn--active {
+    background: var(--color-bg);
+    border-color: var(--color-border);
+}
+
+.admin-template-edit__toml-form { max-width: 880px; }
+
+.admin-template-edit__toml { min-height: 480px; }
+
 .admin-template-edit__actions {
     display: flex;
     align-items: center;
