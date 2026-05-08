@@ -1,0 +1,28 @@
+@inherits LayoutComponentBase
+@using Lucide.Blazor.Components
+
+<div class="app-shell">
+    <header class="top-bar">
+        <div class="top-bar__brand">
+            <Icon Name="hammer" Css="brand-icon" Width="20" Height="20" />
+            <span class="brand-name">Consortio Tools</span>
+        </div>
+        <div class="top-bar__user">
+            <a href="/login" class="signin-link">Sign in</a>
+        </div>
+    </header>
+
+    <aside class="sidebar">
+        <NavMenu />
+    </aside>
+
+    <main class="content">
+        @Body
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">×</span>
+</div>
