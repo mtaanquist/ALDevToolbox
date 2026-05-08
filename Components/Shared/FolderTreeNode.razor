@@ -1,0 +1,46 @@
+@using ALDevToolbox.Domain.ValueObjects
+@using Lucide.Blazor.Components
+
+@*
+    One row of <FolderTreePreview>'s tree. Recursively renders its own children
+    inside a nested <ul>. Kept as a separate component because Razor cannot
+    inline a recursive RenderFragment with markup in a single .razor file.
+*@
+
+<li class="@NodeClass" role="treeitem">
+    <span class="ftp__row">
+        <span class="ftp__icon">
+            @if (Node.Kind == PreviewNodeKind.File)
+            {
+                <Icon Name="file" Width="14" Height="14" />
+            }
+            else
+            {
+                <Icon Name="folder" Width="14" Height="14" />
+            }
+        </span>
+        <span class="ftp__name">@Node.Name@(Node.Kind == PreviewNodeKind.File ? "" : "/")</span>
+    </span>
+    @if (Node.Children.Count > 0)
+    {
+        <ul class="ftp__children">
+            @foreach (var child in Node.Children)
+            {
+                <FolderTreeNode Node="child" />
+            }
+        </ul>
+    }
+</li>
+
+@code {
+    [Parameter, EditorRequired] public PreviewNode Node { get; set; } = default!;
+
+    private string NodeClass => Node.Kind switch
+    {
+        PreviewNodeKind.Workspace => "ftp__node ftp__node--workspace",
+        PreviewNodeKind.Extension => "ftp__node ftp__node--extension",
+        PreviewNodeKind.Folder => "ftp__node ftp__node--folder",
+        PreviewNodeKind.File => "ftp__node ftp__node--file",
+        _ => "ftp__node",
+    };
+}
