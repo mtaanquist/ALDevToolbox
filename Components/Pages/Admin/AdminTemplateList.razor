@@ -1,0 +1,101 @@
+@page "/admin/templates"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject TemplateService Templates
+@inject NavigationManager Nav
+@using ALDevToolbox.Domain.Entities
+
+<PageTitle>Templates · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Templates</h1>
+            <p class="muted">
+                Runtime templates back the New Workspace dropdown. Edits here
+                take effect on the next generation; the previous state is captured
+                in the audit log for every change.
+            </p>
+        </div>
+        <a class="btn btn--primary" href="/admin/templates/new">
+            <Icon Name="folder-plus" Width="16" Height="16" />
+            <span>New template</span>
+        </a>
+    </header>
+
+    <div class="admin-page__toolbar">
+        <label class="check-row">
+            <input type="checkbox" @bind="_showDeleted" @bind:after="ReloadAsync" />
+            <span>Show soft-deleted</span>
+        </label>
+    </div>
+
+    @if (_rows is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_rows.Count == 0)
+    {
+        <p class="muted">
+            No templates yet. Click <strong>New template</strong> to add one, or
+            populate <code>Templates.seed/</code> and restart the app to seed
+            from TOML.
+        </p>
+    }
+    else
+    {
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Key</th>
+                    <th>Runtime</th>
+                    <th>Name</th>
+                    <th>Folders</th>
+                    <th>Status</th>
+                    <th>Last updated (UTC)</th>
+                    <th class="data-table__actions"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var t in _rows)
+                {
+                    <tr class="@(t.DeletedAt is not null ? "data-table__row--muted" : null)">
+                        <td><code>@t.Key</code></td>
+                        <td>@t.Runtime</td>
+                        <td>@t.Name</td>
+                        <td>@t.Folders.Count</td>
+                        <td>@StatusFor(t)</td>
+                        <td><time datetime="@t.UpdatedAt.ToString("O")">@t.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
+                        <td class="data-table__actions">
+                            <a class="btn btn--sm" href="@($"/admin/templates/{Uri.EscapeDataString(t.Key)}")">
+                                <Icon Name="pencil" Width="14" Height="14" />
+                                <span>Edit</span>
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private bool _showDeleted;
+    private List<RuntimeTemplate>? _rows;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _rows = null;
+        StateHasChanged();
+        _rows = await Templates.GetAllForAdminAsync(includeDeleted: _showDeleted);
+    }
+
+    private static string StatusFor(RuntimeTemplate t)
+    {
+        if (t.DeletedAt is not null) return "Deleted";
+        if (t.Deprecated) return "Deprecated";
+        return "Active";
+    }
+}
