@@ -1,0 +1,151 @@
+# Domain model
+
+This document specifies the entities, their relationships, and the SQLite schema. EF Core code-first migrations are the expected mechanism for creating the schema; the SQL below is the target shape.
+
+## Entities
+
+```
+RuntimeTemplate ──┐
+                  ├── has many ──> TemplateFolder (ordered)
+                  └── has one ────> TemplateDefaults (JSON column on the row)
+
+Module ───────────┐
+                  ├── has many ──> ModuleDependency (ordered)
+                  └── id-range fields on the row
+
+WellKnownDependency  (flat list, used by New Extension flow's dep picker)
+
+AuditLogEntry        (one row per change to any of the above)
+
+AuthSession          (optional — see auth-and-audit.md for cookie strategy)
+```
+
+## Tables
+
+### `runtime_templates`
+
+The primary template entity — corresponds one-to-one with a runtime version (or rather, a *named* template; you might have multiple per runtime in theory, though we don't expect to).
+
+| Column                  | Type           | Notes                                              |
+|-------------------------|----------------|----------------------------------------------------|
+| `id`                    | INTEGER PK     | Autoincrement                                      |
+| `key`                   | TEXT NOT NULL  | Unique. Used in URLs and the dropdown. e.g. "runtime-15" |
+| `runtime`               | INTEGER NOT NULL | The AL runtime version, e.g. 15                  |
+| `name`                  | TEXT NOT NULL  | Display name in the dropdown                       |
+| `description`           | TEXT           | Caption under the dropdown selection               |
+| `default_application`   | TEXT NOT NULL  | e.g. "24.0.0.0" — pre-fills the form               |
+| `default_platform`      | TEXT NOT NULL  | e.g. "1.0.0.0"                                     |
+| `defaults_json`         | TEXT NOT NULL  | JSON blob of remaining `app.json` defaults (target, features, supportedLocales, url, logo, resourceExposurePolicy, etc.) |
+| `app_source_cop_json`   | TEXT NOT NULL  | JSON blob of the AppSourceCop.json contents        |
+| `core_id_range_from`    | INTEGER NOT NULL | Default 90000                                    |
+| `core_id_range_to`      | INTEGER NOT NULL | Default 90999                                    |
+| `module_id_range_start` | INTEGER NOT NULL | Default 91000 — first module gets this           |
+| `module_id_range_size`  | INTEGER NOT NULL | Default 200 — span per module                    |
+| `deprecated`            | INTEGER NOT NULL | 0/1 boolean. Hidden from the dropdown if 1       |
+| `created_at`            | TEXT NOT NULL  | UTC ISO8601                                        |
+| `updated_at`            | TEXT NOT NULL  | UTC ISO8601                                        |
+| `deleted_at`            | TEXT           | Null = active. Soft-delete                         |
+
+`defaults_json` and `app_source_cop_json` are JSON columns rather than normalized tables because they're write-once-edit-rarely metadata, and the structure is closed (defined by the AL/BC ecosystem). Normalising them would mean a schema migration every time AL adds a new app.json field. EF Core can use `HasConversion<string>()` with `JsonSerializer` to make these typed in C# while stored as text.
+
+### `template_folders`
+
+The folder structure the runtime template generates. Each row is one folder.
+
+| Column         | Type           | Notes                                          |
+|----------------|----------------|------------------------------------------------|
+| `id`           | INTEGER PK     |                                                |
+| `template_id`  | INTEGER FK     | → runtime_templates.id, cascade delete          |
+| `ordering`     | INTEGER NOT NULL | Position within the template's folder list   |
+| `path`         | TEXT NOT NULL  | Relative path inside the extension folder. e.g. "Source/Foundation" |
+| `example_path` | TEXT           | Path inside `Templates.seed/<runtime>/examples/` to seed example files from. Null = always `.gitkeep` |
+
+Index: `(template_id, ordering)`.
+
+The example AL files themselves live on disk in `Templates.seed/<runtime>/examples/<...>` and are *not* loaded into the database. They're treated as immutable assets shipped with the app. If admins want to change them, that's a code change and a redeploy. (This is a deliberate limit: stuffing arbitrary AL source code into a SQLite admin UI is more pain than it's worth.)
+
+### `modules`
+
+| Column                   | Type           | Notes                                          |
+|--------------------------|----------------|------------------------------------------------|
+| `id`                     | INTEGER PK     |                                                |
+| `key`                    | TEXT NOT NULL  | Unique. URL-safe, e.g. "document-capture"      |
+| `name`                   | TEXT NOT NULL  | Display name e.g. "Document Capture"           |
+| `id_range_size`          | INTEGER        | Optional override; null = use the template's `module_id_range_size` |
+| `deprecated`             | INTEGER NOT NULL | 0/1                                          |
+| `created_at`             | TEXT NOT NULL  |                                                |
+| `updated_at`             | TEXT NOT NULL  |                                                |
+| `deleted_at`             | TEXT           |                                                |
+
+Modules are not tied to a specific runtime — they declare dependencies that work across runtimes. The runtime template owns the folder layout; the module just contributes to `app.json`'s `dependencies` array.
+
+### `module_dependencies`
+
+| Column         | Type           | Notes                                                |
+|----------------|----------------|------------------------------------------------------|
+| `id`           | INTEGER PK     |                                                      |
+| `module_id`    | INTEGER FK     | → modules.id, cascade delete                          |
+| `ordering`     | INTEGER NOT NULL |                                                    |
+| `dep_id`       | TEXT NOT NULL  | The GUID of the dependency, e.g. "4b915d7e-..."      |
+| `dep_name`     | TEXT NOT NULL  | e.g. "Continia Core"                                 |
+| `dep_publisher`| TEXT NOT NULL  | e.g. "Continia Software"                             |
+| `dep_version`  | TEXT NOT NULL  | e.g. "1.0.0.0"                                       |
+
+Index: `(module_id, ordering)`.
+
+### `well_known_dependencies`
+
+Used by the New Extension flow's dependency picker. This is the catalogue of "things you might depend on without us knowing in advance," and it's deliberately separate from `module_dependencies` because:
+
+- Modules group dependencies into sets. Well-known deps are flat.
+- The same dependency might appear in multiple modules' lists (Continia Core appears in three).
+- Admins should be able to add new well-known deps without creating a fake module for them.
+
+| Column         | Type           | Notes                                                |
+|----------------|----------------|------------------------------------------------------|
+| `id`           | INTEGER PK     |                                                      |
+| `dep_id`       | TEXT NOT NULL  | GUID                                                 |
+| `dep_name`     | TEXT NOT NULL  |                                                      |
+| `dep_publisher`| TEXT NOT NULL  |                                                      |
+| `dep_version_default` | TEXT NOT NULL  | Pre-fills the version field; the user can override it for their specific extension |
+| `category`     | TEXT           | Optional grouping label e.g. "Continia", "ForNAV", "Other" — used to group items in the picker UI |
+| `ordering`     | INTEGER NOT NULL |                                                    |
+| `created_at`   | TEXT NOT NULL  |                                                      |
+| `updated_at`   | TEXT NOT NULL  |                                                      |
+
+### `audit_log`
+
+One row per write to any of the above tables. See `auth-and-audit.md` for the full behaviour.
+
+| Column         | Type           | Notes                                                |
+|----------------|----------------|------------------------------------------------------|
+| `id`           | INTEGER PK     |                                                      |
+| `timestamp`    | TEXT NOT NULL  | UTC ISO8601                                          |
+| `changed_by`   | TEXT NOT NULL  | The honour-system display name from login            |
+| `entity_type`  | TEXT NOT NULL  | "runtime_template" \| "template_folder" \| "module" \| "module_dependency" \| "well_known_dependency" |
+| `entity_id`    | INTEGER NOT NULL | The id within that entity's table                  |
+| `action`       | TEXT NOT NULL  | "created" \| "updated" \| "deleted"                  |
+| `snapshot_json`| TEXT           | Full JSON of the row's state *before* the change. Null for "created" |
+
+Index: `(entity_type, entity_id, timestamp DESC)` for the per-entity history view.
+
+## Validation rules
+
+These are domain rules — they should be enforced in service code, not just at the form layer. In particular, anything that calls `TemplateService.Update` should fail before hitting the DB if these are violated.
+
+- `runtime_templates.key` must match `^[a-z0-9-]+$` and be unique.
+- `runtime_templates.runtime` must be > 0.
+- `runtime_templates.core_id_range_from < core_id_range_to`.
+- `template_folders.path` must be a relative path with `/` separators, no leading slash, no `..`.
+- `modules.key` must match `^[a-z0-9-]+$` and be unique.
+- `module_dependencies.dep_id` must be a GUID format.
+- `well_known_dependencies.dep_id` must be a GUID format.
+
+## Soft-delete and "deprecated" semantics
+
+These are deliberately separate flags:
+
+- **`deprecated`** — visible in admin lists, hidden from end-user-facing dropdowns. Used for "we don't recommend this anymore but old projects still need to be regeneratable."
+- **`deleted_at`** — soft-deleted. Hidden from both admin and end-user lists by default; recoverable through a "show deleted" toggle in the admin section.
+
+Hard delete is not exposed in the UI. Hard delete only happens via direct database access if someone really needs to clean up.

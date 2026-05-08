@@ -1,0 +1,24 @@
+# Continia Document Capture — vendor invoice OCR and document handling.
+# Depends on Continia Core and Delivery Network in addition to its own app.
+
+[module]
+key = "document-capture"
+name = "Document Capture"
+
+[[module.dependencies]]
+dep_id = "4b915d7e-c02a-435f-85ab-649086c1e002"
+dep_name = "Continia Core"
+dep_publisher = "Continia Software"
+dep_version = "1.0.0.0"
+
+[[module.dependencies]]
+dep_id = "0745e76d-0b72-4641-87c2-ee45db5d2c32"
+dep_name = "Continia Delivery Network"
+dep_publisher = "Continia Software"
+dep_version = "1.0.0.0"
+
+[[module.dependencies]]
+dep_id = "6da8dd2f-e698-461f-9147-8e404244dd85"
+dep_name = "Continia Document Capture"
+dep_publisher = "Continia Software"
+dep_version = "1.0.0.0"
