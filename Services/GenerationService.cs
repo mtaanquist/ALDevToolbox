@@ -51,11 +51,13 @@ public class GenerationService
 """;
 
     private readonly AppDbContext _db;
+    private readonly WorkspaceConfigService _config;
     private readonly ILogger<GenerationService> _logger;
 
-    public GenerationService(AppDbContext db, ILogger<GenerationService> logger)
+    public GenerationService(AppDbContext db, WorkspaceConfigService config, ILogger<GenerationService> logger)
     {
         _db = db;
+        _config = config;
         _logger = logger;
     }
 
@@ -144,7 +146,10 @@ public class GenerationService
             await WriteEmbeddedAsync(archive, $"{rootFolder}/.gitignore", "ALDevToolbox.Resources.al.gitignore", ct);
             WriteString(archive, $"{rootFolder}/{shortName}.code-workspace", BuildCodeWorkspace(moduleInfos));
             WriteString(archive, $"{rootFolder}/README.md", BuildReadme(plan));
-            fileCount += 3;
+            // Save the form-post shape alongside the ZIP so the user can
+            // re-import it later. See Milestone P2.3 in .design/milestones.md.
+            WriteString(archive, $"{rootFolder}/{WorkspaceConfigService.FileName}", _config.BuildWorkspace(plan));
+            fileCount += 4;
         }
 
         stream.Position = 0;
@@ -206,6 +211,14 @@ public class GenerationService
                 moduleName: plan.ExtensionName,
                 publisherOverride: plan.Publisher,
                 ct: ct);
+
+            // Mirror the workspace flow: save the form-post shape alongside the
+            // ZIP so the user can re-import the same settings later. The file
+            // sits inside the extension folder rather than at archive root so
+            // it tags along with the extension when the user drops the folder
+            // into an existing workspace.
+            WriteString(archive, $"{folderName}/{WorkspaceConfigService.FileName}", _config.BuildExtension(plan));
+            fileCount++;
         }
 
         stream.Position = 0;

@@ -75,6 +75,7 @@ builder.Services.AddScoped<ModuleService>();
 builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<SeedService>();
+builder.Services.AddScoped<WorkspaceConfigService>();
 builder.Services.AddScoped<GenerationService>();
 builder.Services.AddScoped<ExportService>();
 

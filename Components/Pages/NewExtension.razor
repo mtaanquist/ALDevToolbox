@@ -1,8 +1,12 @@
 @page "/projects/extension"
 @rendermode InteractiveServer
 @inject TemplateService Templates
+@inject WorkspaceConfigService Configs
+@inject ILogger<NewExtension> Logger
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services
+@using Microsoft.AspNetCore.Components.Forms
 
 <PageTitle>New extension · AL Dev Toolbox</PageTitle>
 
@@ -26,6 +30,29 @@
             <form method="post" action="/generate/extension" class="form-grid workspace-layout__form" data-loading-form>
                 <AntiforgeryToken />
                 <input type="hidden" name="GenToken" value="" />
+
+                <section class="form-section form-section--import">
+                    <label class="section-label">Import config</label>
+                    <InputFile OnChange="OnImportFileChosen" accept=".toml" />
+                    <small class="muted">
+                        Re-hydrate this form from a previously saved <code>@WorkspaceConfigService.FileName</code>.
+                        A workspace config seeds the template, versions, and publisher; an
+                        extension config restores the full extension form.
+                    </small>
+                    @if (!string.IsNullOrEmpty(_importMessage))
+                    {
+                        <p class="caption muted">@_importMessage</p>
+                    }
+                    @if (_importErrors.Count > 0)
+                    {
+                        <ul class="form-field-error" role="alert">
+                            @foreach (var err in _importErrors)
+                            {
+                                <li>@err.Key: @err.Value</li>
+                            }
+                        </ul>
+                    }
+                </section>
 
                 <section class="form-section">
                     <label class="section-label" for="ext-template">Runtime template</label>
@@ -178,6 +205,13 @@
     private bool _includeExamples = true;
     private List<DependencyEntry> _dependencies = new();
 
+    // Import-config feedback. _importMessage describes the last successful
+    // hydration; _importErrors carries field-keyed validation messages when a
+    // file was rejected. See the workspace-page comments for the same shape.
+    private string _importMessage = string.Empty;
+    private Dictionary<string, string> _importErrors = new();
+    private const long MaxImportSize = 1 * 1024 * 1024;
+
     private string FolderName => string.IsNullOrWhiteSpace(_extensionName) ? "MyExtension" : _extensionName;
 
     private string WorkspaceFoldersSnippet => $"{{ \"path\": \"{FolderName}\" }}";
@@ -270,5 +304,113 @@
                 .ToList();
         }
         return new List<PreviewNode> { PreviewNode.File(".gitkeep") };
+    }
+
+    /// <summary>
+    /// Reads a saved <c>workspace.aldt.toml</c> and hydrates the form from it.
+    /// Per Milestone P2.3, this page accepts both kinds: an extension config
+    /// restores every field including dependencies; a workspace config seeds
+    /// the shared subset (template, versions, publisher from the template's
+    /// defaults) so the user can scaffold a sibling extension that lines up
+    /// with the original workspace.
+    /// </summary>
+    private async Task OnImportFileChosen(InputFileChangeEventArgs e)
+    {
+        _importMessage = string.Empty;
+        _importErrors = new();
+
+        var file = e.File;
+        if (file is null) return;
+
+        if (file.Size > MaxImportSize)
+        {
+            _importErrors["File"] = $"File is larger than {MaxImportSize / 1024} KiB.";
+            return;
+        }
+
+        string toml;
+        try
+        {
+            await using var stream = file.OpenReadStream(MaxImportSize);
+            using var reader = new StreamReader(stream);
+            toml = await reader.ReadToEndAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to read uploaded config '{Name}'.", file.Name);
+            _importErrors["File"] = $"Could not read the file: {ex.Message}";
+            return;
+        }
+
+        WorkspaceConfigImport import;
+        try
+        {
+            import = await Configs.ParseAsync(toml);
+        }
+        catch (PlanValidationException ex)
+        {
+            _importErrors = ex.Errors.ToDictionary(p => p.Key, p => p.Value);
+            return;
+        }
+
+        switch (import.Kind)
+        {
+            case WorkspaceConfigService.ExtensionKind when import.Extension is not null:
+                ApplyImportedExtension(import.Extension);
+                _importMessage = $"Imported extension settings from {file.Name}.";
+                break;
+            case WorkspaceConfigService.WorkspaceKind when import.Workspace is not null:
+                ApplyImportedWorkspace(import.Workspace);
+                _importMessage = $"Seeded extension form from workspace config {file.Name}. "
+                    + "Fill in the extension name and adjust the ID range before generating.";
+                break;
+            default:
+                _importErrors["Kind"] = $"Unsupported config kind '{import.Kind}'.";
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Restores every extension form field from an extension-shaped config.
+    /// </summary>
+    private void ApplyImportedExtension(StandaloneExtensionPlan plan)
+    {
+        var template = _templates?.FirstOrDefault(t => t.Key == plan.TemplateKey);
+        _selected = template ?? _selected;
+        _templateKey = plan.TemplateKey;
+        _extensionName = plan.ExtensionName;
+        _brief = plan.Brief;
+        _description = plan.Description;
+        _publisher = plan.Publisher;
+        _applicationVersion = plan.ApplicationVersion;
+        _runtimeVersion = plan.RuntimeVersion;
+        _idRangeFrom = plan.IdRangeFrom;
+        _idRangeTo = plan.IdRangeTo;
+        _includeExamples = plan.IncludeExamples;
+        _dependencies = plan.Dependencies.ToList();
+    }
+
+    /// <summary>
+    /// Hydrates the shared subset of fields from a workspace config so the user
+    /// can scaffold a sibling extension. Publisher comes from the picked
+    /// template's defaults (the workspace config doesn't carry a publisher of
+    /// its own — it always uses the template's). The extension-specific fields
+    /// (name, dependencies, ID range) are deliberately left at their current
+    /// values so the user picks them explicitly for the new extension.
+    /// </summary>
+    private void ApplyImportedWorkspace(ProjectPlan plan)
+    {
+        var template = _templates?.FirstOrDefault(t => t.Key == plan.TemplateKey);
+        _selected = template ?? _selected;
+        _templateKey = plan.TemplateKey;
+        _brief = plan.Brief;
+        _description = plan.Description;
+        _applicationVersion = plan.ApplicationVersion;
+        _runtimeVersion = plan.RuntimeVersion;
+        _includeExamples = plan.IncludeExamples;
+        if (template is not null)
+        {
+            _publisher = template.Defaults.Publisher;
+        }
     }
 }
