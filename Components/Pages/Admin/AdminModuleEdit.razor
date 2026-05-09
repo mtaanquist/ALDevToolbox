@@ -296,8 +296,10 @@
             }
             else
             {
-                var created = await Modules.CreateAsync(payload);
-                Nav.NavigateTo($"/admin/modules/{Uri.EscapeDataString(created.Key)}");
+                await Modules.CreateAsync(payload);
+                // Land back on the list so admins can see the new row in
+                // context. Editing it further is one click away.
+                Nav.NavigateTo("/admin/modules");
                 return;
             }
         }

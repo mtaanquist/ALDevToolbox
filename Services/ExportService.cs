@@ -51,7 +51,7 @@ public class ExportService
     {
         var stopwatch = Stopwatch.StartNew();
 
-        var templates = await _db.RuntimeTemplates
+        var templateRows = await _db.RuntimeTemplates
             .AsNoTracking()
             .Where(t => t.DeletedAt == null)
             .Include(t => t.Folders.OrderBy(f => f.Ordering))
@@ -60,9 +60,15 @@ public class ExportService
                 .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
             .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
                 .ThenInclude(d => d.Module!)
-            .OrderBy(t => t.Runtime)
-            .ThenBy(t => t.Key)
             .ToListAsync(ct);
+
+        // Sort client-side because Runtime is a TEXT column now and SQLite's
+        // lexicographic order would put "10" before "9". TemplateService
+        // exposes the version-aware tuple comparer.
+        var templates = templateRows
+            .OrderBy(t => TemplateService.RuntimeSortKey(t.Runtime))
+            .ThenBy(t => t.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         var modules = await _db.Modules
             .AsNoTracking()

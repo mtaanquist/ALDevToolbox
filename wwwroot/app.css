@@ -1059,6 +1059,32 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .kv-grid dd { margin: 0; }
 
+/* Two-column layout: editor on the left, live preview on the right.
+   Same shape as the New Workspace page's workspace-layout grid so the
+   admin and end-user surfaces feel related. */
+.admin-template-edit__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 32px;
+    align-items: start;
+    max-width: 1240px;
+}
+
+.admin-template-edit__editor { min-width: 0; }
+
+.admin-template-edit__preview {
+    position: sticky;
+    top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.preview-card__hint {
+    margin: 0 0 8px;
+    font-size: 12px;
+}
+
 .admin-template-edit__form { max-width: 880px; }
 
 .admin-template-edit__mode {
@@ -1083,7 +1109,31 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .admin-template-edit__toml-form { max-width: 880px; }
 
-.admin-template-edit__toml { min-height: 480px; }
+/* The CodeMirror 6 editor mounts into this div. We give it a fixed height
+   so the gutter and content area share a stable scroll context, and let
+   the inner .cm-editor fill it. Theme colours come from the CodeMirror
+   extension in AdminTemplateEdit.razor.js — we only frame the box. */
+.admin-template-edit__toml {
+    height: 540px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--color-surface);
+}
+
+.admin-template-edit__toml .cm-editor {
+    height: 100%;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+}
+
+.admin-template-edit__toml .cm-scroller {
+    line-height: 1.5;
+}
+
+.admin-template-edit__toml-issues {
+    margin-top: 8px;
+}
 
 .admin-template-edit__actions {
     display: flex;

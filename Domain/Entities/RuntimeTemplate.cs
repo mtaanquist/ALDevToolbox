@@ -18,8 +18,14 @@ public class RuntimeTemplate
     /// </summary>
     public string Key { get; set; } = string.Empty;
 
-    /// <summary>The AL runtime version this template targets (e.g. 15).</summary>
-    public int Runtime { get; set; }
+    /// <summary>
+    /// The AL runtime version this template targets (e.g. <c>15</c> or
+    /// <c>15.2</c>). BC's runtime is conceptually a Major[.Minor] string —
+    /// kept as a string so newer BC releases (15.2, 15.3, …) round-trip
+    /// cleanly through the seed TOML, the admin form, and the generated
+    /// <c>app.json</c>'s <c>runtime</c> field.
+    /// </summary>
+    public string Runtime { get; set; } = string.Empty;
 
     /// <summary>Display name shown in the dropdown.</summary>
     public string Name { get; set; } = string.Empty;

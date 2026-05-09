@@ -85,6 +85,11 @@
                                 <Icon Name="pencil" Width="14" Height="14" />
                                 <span>Edit</span>
                             </a>
+                            <a class="btn btn--sm" href="@($"/admin/templates/new?from={Uri.EscapeDataString(t.Key)}")"
+                               title="Create a new template pre-filled from this one">
+                                <Icon Name="copy" Width="14" Height="14" />
+                                <span>Duplicate</span>
+                            </a>
                         </td>
                     </tr>
                 }

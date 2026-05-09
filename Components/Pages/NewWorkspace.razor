@@ -215,7 +215,10 @@
         _coreIdRangeFrom = template.CoreIdRangeFrom;
         _coreIdRangeTo = template.CoreIdRangeTo;
         _applicationVersion = template.DefaultApplication;
-        _runtimeVersion = $"{template.Runtime}.0";
+        // Runtime is a string in the entity (Major or Major.Minor). The
+        // app.json runtime field always wants Major.Minor, so append ".0"
+        // when only a major was supplied.
+        _runtimeVersion = template.Runtime.Contains('.') ? template.Runtime : $"{template.Runtime}.0";
 
         // Pre-select the modules this template ships with (Milestone P2.1).
         // Switching templates retunes the selection; the user's subsequent

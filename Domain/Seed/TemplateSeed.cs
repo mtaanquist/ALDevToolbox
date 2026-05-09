@@ -37,7 +37,13 @@ public class TemplateSeed
 public class TemplateMetaSeed
 {
     public string Key { get; set; } = string.Empty;
-    public int Runtime { get; set; }
+
+    /// <summary>
+    /// Runtime version, e.g. <c>"15"</c> or <c>"15.2"</c>. Older seed files
+    /// have it as a bare integer; <c>SeedService</c> normalises both forms
+    /// before deserialisation so the schema stays welcoming.
+    /// </summary>
+    public string Runtime { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string DefaultApplication { get; set; } = string.Empty;

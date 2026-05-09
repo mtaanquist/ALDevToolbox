@@ -110,7 +110,12 @@ public class SeedService
                 continue;
             }
 
-            var seed = ParseToml<TemplateSeed>(await File.ReadAllTextAsync(tomlPath, ct), tomlPath);
+            // Normalise runtime values so old seed files using `runtime = 15`
+            // (bare integer) keep parsing into the new string-typed
+            // TemplateMetaSeed.Runtime alongside the new `runtime = "15.2"`
+            // form.
+            var rawToml = await File.ReadAllTextAsync(tomlPath, ct);
+            var seed = ParseToml<TemplateSeed>(TemplateTomlMapper.NormalizeRuntimeValue(rawToml), tomlPath);
 
             var template = new RuntimeTemplate
             {
