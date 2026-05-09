@@ -548,6 +548,13 @@
                ConfirmLabel="Soft-delete"
                ConfirmIcon="trash-2" />
 
+<ConfirmDialog @ref="_leaveConfirm"
+               Title="Leave with unsaved changes?"
+               Message="Your edits to template.toml haven't been saved. Leaving now will discard them."
+               ConfirmLabel="Discard changes"
+               CancelLabel="Stay on page"
+               ConfirmIcon="log-out" />
+
 @code {
     [Parameter] public string? Key { get; set; }
 
@@ -561,6 +568,8 @@
     private bool _saving;
     private List<ALDevToolbox.Domain.Entities.Module> _availableModules = new();
     private ConfirmDialog? _deleteConfirm;
+    private ConfirmDialog? _leaveConfirm;
+    private IDisposable? _locationChangingRegistration;
     private string? _saveError;
     private string? _saveSuccess;
     private IReadOnlyDictionary<string, string> _fieldErrors = new Dictionary<string, string>();
@@ -594,6 +603,42 @@
     /// shape. The DB stays the source of truth either way.
     /// </summary>
     private enum EditorMode { Form, Toml }
+
+    protected override void OnInitialized()
+    {
+        // Intercept SPA navigation (sidebar links, "Back to list", browser
+        // back to an in-app URL) so we can warn before the user discards
+        // unsaved TOML edits. Browser-level navigation (full reload, tab
+        // close, back to an external URL) goes through beforeunload in the
+        // .razor.js companion.
+        _locationChangingRegistration = Nav.RegisterLocationChangingHandler(OnLocationChangingAsync);
+    }
+
+    private async ValueTask OnLocationChangingAsync(LocationChangingContext context)
+    {
+        if (_editorId == 0 || _editorModule is null || _leaveConfirm is null) return;
+
+        bool dirty;
+        try
+        {
+            dirty = await _editorModule.InvokeAsync<bool>("isDirty", _editorId);
+        }
+        catch (Exception ex)
+        {
+            // If we can't check, fail open — blocking nav on a transient JS
+            // hiccup would be worse than the rare lost edit.
+            Log.LogWarning(ex, "Failed to read dirty state from editor; allowing navigation.");
+            return;
+        }
+
+        if (!dirty) return;
+
+        var leave = await _leaveConfirm.OpenAsync();
+        if (!leave)
+        {
+            context.PreventNavigation();
+        }
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -984,6 +1029,8 @@
 
     public async ValueTask DisposeAsync()
     {
+        _locationChangingRegistration?.Dispose();
+        _locationChangingRegistration = null;
         await DisposeEditorAsync();
         if (_editorModule is not null)
         {
@@ -1118,12 +1165,29 @@
                 {
                     _form = FormState.From(refreshed);
                     _toml = TemplateTomlMapper.ToToml(refreshed);
+                    _editorMountedToml = _toml;
+                    if (_editorId != 0 && _editorModule is not null)
+                    {
+                        // setValue resets the editor's pristine baseline, so
+                        // markPristine here is mostly belt-and-braces — but
+                        // it also covers the case where the refreshed TOML
+                        // matches the editor doc exactly (setValue early-outs
+                        // and dirty would otherwise stay set).
+                        await _editorModule.InvokeVoidAsync("setValue", _editorId, _toml);
+                        await _editorModule.InvokeVoidAsync("markPristine", _editorId);
+                    }
                 }
                 _saveSuccess = "Saved from TOML.";
             }
             else
             {
                 var created = await Templates.CreateAsync(payload);
+                if (_editorId != 0 && _editorModule is not null)
+                {
+                    // The follow-up navigation is in-app and would trip the
+                    // location-changing guard if the editor is still dirty.
+                    await _editorModule.InvokeVoidAsync("markPristine", _editorId);
+                }
                 Nav.NavigateTo($"/admin/templates/{Uri.EscapeDataString(created.Key)}");
                 return;
             }

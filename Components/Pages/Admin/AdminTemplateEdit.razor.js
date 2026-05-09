@@ -39,6 +39,29 @@ import { oneDark }
 let nextId = 1;
 const editors = new Map();
 
+// Browser-level guard against losing edits to a full reload, tab close, or a
+// browser back that exits the SPA. In-app navigation goes through Blazor's
+// LocationChangingHandler instead — see AdminTemplateEdit.razor.
+let beforeUnloadAttached = false;
+function beforeUnloadHandler(e) {
+    e.preventDefault();
+    // Modern browsers ignore the message text and show their own copy, but
+    // Chrome still requires a non-empty returnValue to actually trigger the
+    // dialog.
+    e.returnValue = "";
+    return "";
+}
+function syncBeforeUnload() {
+    const anyDirty = [...editors.values()].some(rec => rec.dirty);
+    if (anyDirty && !beforeUnloadAttached) {
+        window.addEventListener("beforeunload", beforeUnloadHandler);
+        beforeUnloadAttached = true;
+    } else if (!anyDirty && beforeUnloadAttached) {
+        window.removeEventListener("beforeunload", beforeUnloadHandler);
+        beforeUnloadAttached = false;
+    }
+}
+
 // Best-effort read of the active theme — matches the rules in
 // wwwroot/theme.js so the editor flips with the rest of the page.
 function isDarkTheme() {
@@ -52,8 +75,9 @@ function themeExtensions() {
     return isDarkTheme() ? [oneDark] : [];
 }
 
-function buildExtensions(themeCompartment) {
+function buildExtensions(themeCompartment, dirtyListener) {
     return [
+        dirtyListener,
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightSpecialChars(),
@@ -91,12 +115,27 @@ export function mount(container, initialValue) {
     if (!container) return 0;
     const id = nextId++;
     const themeCompartment = new Compartment();
+    const initial = initialValue ?? "";
+
+    // Re-evaluate dirtiness on every doc change so the navigate-away guard
+    // (both browser-level beforeunload and Blazor's LocationChangingHandler)
+    // stays in sync without polling from C#.
+    const dirtyListener = EditorView.updateListener.of((update) => {
+        if (!update.docChanged) return;
+        const rec = editors.get(id);
+        if (!rec) return;
+        const next = view.state.doc.toString() !== rec.pristine;
+        if (next !== rec.dirty) {
+            rec.dirty = next;
+            syncBeforeUnload();
+        }
+    });
 
     const view = new EditorView({
         parent: container,
         state: EditorState.create({
-            doc: initialValue ?? "",
-            extensions: buildExtensions(themeCompartment),
+            doc: initial,
+            extensions: buildExtensions(themeCompartment, dirtyListener),
         }),
     });
 
@@ -115,6 +154,8 @@ export function mount(container, initialValue) {
 
     editors.set(id, {
         view,
+        pristine: initial,
+        dirty: false,
         dispose: () => {
             themeObserver.disconnect();
             mql?.removeEventListener?.("change", reconfigureTheme);
@@ -122,6 +163,22 @@ export function mount(container, initialValue) {
         },
     });
     return id;
+}
+
+export function isDirty(id) {
+    return editors.get(id)?.dirty ?? false;
+}
+
+// Called after a successful save (or after the editor is intentionally
+// repopulated from the server) so the next edit starts a fresh dirty cycle.
+export function markPristine(id) {
+    const rec = editors.get(id);
+    if (!rec) return;
+    rec.pristine = rec.view.state.doc.toString();
+    if (rec.dirty) {
+        rec.dirty = false;
+        syncBeforeUnload();
+    }
 }
 
 export function getValue(id) {
@@ -136,6 +193,14 @@ export function setValue(id, value) {
     e.view.dispatch({
         changes: { from: 0, to: e.view.state.doc.length, insert: next },
     });
+    // setValue is server-driven (mode switch, post-save refresh) so the new
+    // text is the new pristine baseline. Without resetting, the dirty flag
+    // would stay sticky and the navigation guard would warn falsely.
+    e.pristine = next;
+    if (e.dirty) {
+        e.dirty = false;
+        syncBeforeUnload();
+    }
 }
 
 // Issues come from the server: line is 1-based, message is human text.
@@ -166,4 +231,5 @@ export function dispose(id) {
     if (!e) return;
     try { e.dispose(); } catch { /* ignore */ }
     editors.delete(id);
+    syncBeforeUnload();
 }
