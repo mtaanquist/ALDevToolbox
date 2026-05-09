@@ -346,29 +346,24 @@
         contents.Add(PreviewNode.Folder(name, new[] { PreviewNode.File(".gitkeep") }));
     }
 
-    /// <summary>
-    /// Builds the leaf-file list shown under a folder in the live preview.
-    /// Accepts an already-ordered <c>(path)</c> sequence so the same helper
-    /// works for both <see cref="TemplateFile"/> and <see cref="TemplateModuleFile"/>
-    /// without dragging the entity types into the preview layer.
-    /// </summary>
-    private List<PreviewNode> LeafFilesFromFiles<T>(IEnumerable<T> files) where T : class
-    {
-        var paths = files
-            .Select(f => f switch
-            {
-                TemplateFile tf => (tf.Path, tf.Ordering),
-                TemplateModuleFile tmf => (tmf.Path, tmf.Ordering),
-                _ => (string.Empty, 0),
-            })
-            .Where(p => !string.IsNullOrEmpty(p.Path))
-            .OrderBy(p => p.Ordering)
-            .Select(p => p.Path)
-            .ToList();
+    private List<PreviewNode> LeafFilesFromFiles(IEnumerable<TemplateFile> files) =>
+        LeafFilesByPaths(files.OrderBy(f => f.Ordering).Select(f => f.Path));
 
-        if (_includeExamples && paths.Count > 0)
+    private List<PreviewNode> LeafFilesFromFiles(IEnumerable<TemplateModuleFile> files) =>
+        LeafFilesByPaths(files.OrderBy(f => f.Ordering).Select(f => f.Path));
+
+    /// <summary>
+    /// Shared tail for the two <see cref="LeafFilesFromFiles(IEnumerable{TemplateFile})"/>
+    /// overloads above. Same rule as the generator: when examples are off or the
+    /// folder has no files, the preview shows a single <c>.gitkeep</c>; otherwise
+    /// it shows one node per file in the order the admin set.
+    /// </summary>
+    private List<PreviewNode> LeafFilesByPaths(IEnumerable<string> paths)
+    {
+        var list = paths.ToList();
+        if (_includeExamples && list.Count > 0)
         {
-            return paths.Select(PreviewNode.File).ToList();
+            return list.Select(PreviewNode.File).ToList();
         }
         return new List<PreviewNode> { PreviewNode.File(".gitkeep") };
     }
