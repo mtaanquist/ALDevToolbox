@@ -925,8 +925,10 @@
             }
             else
             {
-                var created = await Templates.CreateAsync(payload);
-                Nav.NavigateTo($"/admin/templates/{Uri.EscapeDataString(created.Key)}");
+                await Templates.CreateAsync(payload);
+                // Land back on the list so admins can immediately see the new
+                // row in context. Editing it further is one click away.
+                Nav.NavigateTo("/admin/templates");
                 return;
             }
         }
@@ -1381,14 +1383,15 @@
             }
             else
             {
-                var created = await Templates.CreateAsync(payload);
+                await Templates.CreateAsync(payload);
                 if (_editorId != 0 && _editorModule is not null)
                 {
                     // The follow-up navigation is in-app and would trip the
                     // location-changing guard if the editor is still dirty.
                     await _editorModule.InvokeVoidAsync("markPristine", _editorId);
                 }
-                Nav.NavigateTo($"/admin/templates/{Uri.EscapeDataString(created.Key)}");
+                // Back to the list so the admin sees the new row in context.
+                Nav.NavigateTo("/admin/templates");
                 return;
             }
         }
