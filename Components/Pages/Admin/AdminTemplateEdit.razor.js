@@ -4,29 +4,37 @@
 // stays JS-bundler-free (per .design/milestones.md → P2.2). Versions are
 // pinned to keep cache hits stable and to avoid surprise behaviour drifts.
 //
+// Every URL carries the same `?deps=` query so esm.sh resolves the shared
+// CodeMirror packages to a single canonical instance. Without this, each
+// package fetches its own latest-matching @codemirror/state and the
+// instanceof checks inside CodeMirror's extension system break with the
+// "Unrecognized extension value in extension set" error.
+//
 // The exported functions are ID-keyed so Blazor's IJSObjectReference can
 // stay a plain integer rather than wrapping the EditorView itself: simpler
 // lifecycle, no DotNet.createJSObjectReference plumbing.
 
 import { EditorView, lineNumbers, highlightActiveLineGutter, highlightSpecialChars,
     drawSelection, dropCursor, rectangularSelection, crosshairCursor,
-    highlightActiveLine, keymap } from "https://esm.sh/@codemirror/view@6.34.1";
-import { EditorState, Compartment } from "https://esm.sh/@codemirror/state@6.4.1";
+    highlightActiveLine, keymap }
+    from "https://esm.sh/@codemirror/view@6.34.1?deps=@codemirror/state@6.4.1";
+import { EditorState, Compartment }
+    from "https://esm.sh/@codemirror/state@6.4.1";
 import { defaultKeymap, history, historyKeymap, indentWithTab }
-    from "https://esm.sh/@codemirror/commands@6.7.1";
+    from "https://esm.sh/@codemirror/commands@6.7.1?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
 import { syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatching,
     foldGutter, foldKeymap, StreamLanguage }
-    from "https://esm.sh/@codemirror/language@6.10.6";
+    from "https://esm.sh/@codemirror/language@6.10.6?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
 import { searchKeymap, highlightSelectionMatches }
-    from "https://esm.sh/@codemirror/search@6.5.7";
+    from "https://esm.sh/@codemirror/search@6.5.7?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap }
-    from "https://esm.sh/@codemirror/autocomplete@6.18.3";
+    from "https://esm.sh/@codemirror/autocomplete@6.18.3?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6";
 import { lintKeymap, lintGutter, setDiagnostics }
-    from "https://esm.sh/@codemirror/lint@6.8.4";
+    from "https://esm.sh/@codemirror/lint@6.8.4?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
 import { toml }
-    from "https://esm.sh/@codemirror/legacy-modes@6.4.1/mode/toml";
+    from "https://esm.sh/@codemirror/legacy-modes@6.4.1/mode/toml?deps=@codemirror/state@6.4.1,@codemirror/language@6.10.6";
 import { oneDark }
-    from "https://esm.sh/@codemirror/theme-one-dark@6.1.2";
+    from "https://esm.sh/@codemirror/theme-one-dark@6.1.2?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6";
 
 let nextId = 1;
 const editors = new Map();
