@@ -49,10 +49,10 @@
                            title="Letters and digits only, no spaces; must start with a letter."
                            @bind="_extensionName" @bind:event="oninput" />
                     <small class="muted">Folder and AL extension name. Letters and digits only, no spaces; must start with a letter.</small>
-                    <input type="text" name="Brief" placeholder="One-line description" required
-                           title="Required." @bind="_brief" @bind:event="oninput" />
-                    <textarea name="Description" rows="3" placeholder="Longer description" required
-                              title="Required." @bind="_description" @bind:event="oninput"></textarea>
+                    <input type="text" name="Brief" placeholder="One-line description (optional)"
+                           @bind="_brief" @bind:event="oninput" />
+                    <textarea name="Description" rows="3" placeholder="Longer description (optional)"
+                              @bind="_description" @bind:event="oninput"></textarea>
                     <input type="text" name="Publisher" placeholder="Publisher" required
                            title="Required." @bind="_publisher" @bind:event="oninput" />
                 </section>
@@ -226,8 +226,6 @@
         {
             PreviewNode.File("app.json"),
             PreviewNode.File("AppSourceCop.json"),
-            PreviewNode.Folder("libs", new[] { PreviewNode.File(".gitkeep") }),
-            PreviewNode.Folder("permissionsets", new[] { PreviewNode.File(".gitkeep") }),
         };
 
         if (_selected is not null)
@@ -238,9 +236,26 @@
             contents.AddRange(PreviewTreeBuilder.BuildFolderChildren(entries));
         }
 
-        contents.Add(PreviewNode.Folder("Translations", new[] { PreviewNode.File(".gitkeep") }));
+        AddFallbackFolder(contents, "libs");
+        AddFallbackFolder(contents, "permissionsets");
+        AddFallbackFolder(contents, "Translations");
 
-        return PreviewNode.Extension(FolderName, contents);
+        return PreviewTreeBuilder.SortForDisplay(PreviewNode.Extension(FolderName, contents));
+    }
+
+    /// <summary>
+    /// Adds <paramref name="name"/> as a placeholder folder unless the template
+    /// already contributed a folder whose top-level segment matches case-
+    /// insensitively. See <c>NewWorkspace.razor</c> for the same comment.
+    /// </summary>
+    private static void AddFallbackFolder(List<PreviewNode> contents, string name)
+    {
+        if (contents.Any(n => n.Kind != PreviewNodeKind.File
+                              && string.Equals(n.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+        contents.Add(PreviewNode.Folder(name, new[] { PreviewNode.File(".gitkeep") }));
     }
 
     private List<PreviewNode> LeafFiles(TemplateFolder folder)

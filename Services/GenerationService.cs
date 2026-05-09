@@ -229,10 +229,31 @@ public class GenerationService
 
         WriteString(archive, $"{rootRelative}/app.json", appJson);
         WriteString(archive, $"{rootRelative}/AppSourceCop.json", JsonSerializer.Serialize(template.AppSourceCop, JsonOptions));
-        WriteEmptyFile(archive, $"{rootRelative}/libs/.gitkeep");
-        WriteEmptyFile(archive, $"{rootRelative}/permissionsets/.gitkeep");
-        WriteEmptyFile(archive, $"{rootRelative}/Translations/.gitkeep");
-        var fileCount = 5;
+        var fileCount = 2;
+
+        // Top-level folders the template already declares (case-insensitive),
+        // so the static fallback folders below don't collide on Windows
+        // extraction. Without this, a template that lays out 'translations'
+        // would extract alongside our hardcoded 'Translations/.gitkeep' and
+        // produce two folders that resolve to the same path.
+        var declaredTops = new HashSet<string>(
+            template.Folders.Select(f => f.Path.Split('/', 2)[0]),
+            StringComparer.OrdinalIgnoreCase);
+        if (!declaredTops.Contains("libs"))
+        {
+            WriteEmptyFile(archive, $"{rootRelative}/libs/.gitkeep");
+            fileCount++;
+        }
+        if (!declaredTops.Contains("permissionsets"))
+        {
+            WriteEmptyFile(archive, $"{rootRelative}/permissionsets/.gitkeep");
+            fileCount++;
+        }
+        if (!declaredTops.Contains("Translations"))
+        {
+            WriteEmptyFile(archive, $"{rootRelative}/Translations/.gitkeep");
+            fileCount++;
+        }
 
         foreach (var folder in template.Folders.OrderBy(f => f.Ordering))
         {
@@ -584,8 +605,6 @@ public class GenerationService
         if (string.IsNullOrWhiteSpace(plan.TemplateKey)) errors[nameof(plan.TemplateKey)] = "Required.";
         if (string.IsNullOrWhiteSpace(plan.WorkspaceName) || !WorkspaceNameRegex.IsMatch(plan.WorkspaceName))
             errors[nameof(plan.WorkspaceName)] = "Required. Letters, digits and spaces only; must start with a letter.";
-        if (string.IsNullOrWhiteSpace(plan.Brief)) errors[nameof(plan.Brief)] = "Required.";
-        if (string.IsNullOrWhiteSpace(plan.Description)) errors[nameof(plan.Description)] = "Required.";
         if (plan.CoreIdRangeFrom <= 0) errors[nameof(plan.CoreIdRangeFrom)] = "Must be greater than zero.";
         if (plan.CoreIdRangeTo <= plan.CoreIdRangeFrom) errors[nameof(plan.CoreIdRangeTo)] = "Must be greater than 'from'.";
         if (string.IsNullOrWhiteSpace(plan.ApplicationVersion) || !VersionRegex.IsMatch(plan.ApplicationVersion))
@@ -601,8 +620,6 @@ public class GenerationService
         if (string.IsNullOrWhiteSpace(plan.TemplateKey)) errors[nameof(plan.TemplateKey)] = "Required.";
         if (string.IsNullOrWhiteSpace(plan.ExtensionName) || !ExtensionNameRegex.IsMatch(plan.ExtensionName))
             errors[nameof(plan.ExtensionName)] = "Required. Letters and digits only, no spaces.";
-        if (string.IsNullOrWhiteSpace(plan.Brief)) errors[nameof(plan.Brief)] = "Required.";
-        if (string.IsNullOrWhiteSpace(plan.Description)) errors[nameof(plan.Description)] = "Required.";
         if (string.IsNullOrWhiteSpace(plan.Publisher)) errors[nameof(plan.Publisher)] = "Required.";
         if (plan.IdRangeFrom <= 0) errors[nameof(plan.IdRangeFrom)] = "Must be greater than zero.";
         if (plan.IdRangeTo <= plan.IdRangeFrom) errors[nameof(plan.IdRangeTo)] = "Must be greater than 'from'.";

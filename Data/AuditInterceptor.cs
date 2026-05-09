@@ -76,6 +76,17 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
 
                 case EntityState.Modified:
                 case EntityState.Deleted:
+                    // The reconciliation services rewrite UpdatedAt unconditionally on
+                    // every save, so an admin clicking Save with no real edits would
+                    // otherwise add a noise row to the audit log. Treat "only UpdatedAt
+                    // changed" as a no-op for audit purposes; deletions always pass
+                    // through because their OriginalValues represent the row that's
+                    // about to disappear.
+                    if (entry.State == EntityState.Modified
+                        && !entry.Properties.Any(p => p.IsModified && p.Metadata.Name != nameof(RuntimeTemplate.UpdatedAt)))
+                    {
+                        break;
+                    }
                     var action = entry.State == EntityState.Modified
                         ? AuditAction.Updated
                         : AuditAction.Deleted;

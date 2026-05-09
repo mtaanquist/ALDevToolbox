@@ -548,7 +548,13 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .btn--sm:hover { text-decoration: none; }
 
-.data-table__actions { width: 1%; text-align: right; white-space: nowrap; }
+.data-table__actions {
+    width: 1%;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.data-table__actions .btn + .btn { margin-left: 8px; }
 
 /* ---------- Dependency picker ---------- */
 
@@ -793,7 +799,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     border: 1px solid var(--color-error-text);
     border-radius: var(--radius);
     padding: 8px 12px;
-    margin: 0;
+    margin: 0 0 16px;
     font-size: 13px;
 }
 
@@ -970,12 +976,14 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .btn--danger:hover { background: #a40e26; }
 
 .form-success {
-    color: #1a7f37;
+    color: var(--color-valid);
     background: var(--color-surface);
-    border: 1px solid rgba(26, 127, 55, 0.4);
+    border: 1px solid var(--color-valid);
     border-radius: var(--radius);
     padding: 8px 12px;
-    margin: 0;
+    /* Separate the toast from the form below — without bottom margin the
+       success message sat flush against the next section header. */
+    margin: 0 0 16px;
     font-size: 13px;
 }
 
@@ -991,6 +999,65 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     font-size: 12.5px;
     line-height: 1.5;
 }
+
+/* ---------- Template detail (read-only /templates/{key}) ---------- */
+
+.template-detail { max-width: 1100px; }
+
+.template-detail__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.template-detail__header h1 { margin: 0 0 6px; }
+
+.template-detail__header p { margin: 0; }
+
+.template-detail__meta { margin-bottom: 24px; }
+
+.template-detail__section { margin-bottom: 24px; }
+
+.template-detail__section h2 {
+    font-size: 16px;
+    margin: 0 0 8px;
+}
+
+.template-detail__section textarea.json-editor {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.5;
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-text);
+    resize: vertical;
+}
+
+.template-detail__actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.kv-grid {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px 16px;
+    margin: 0 0 8px;
+    font-size: 13px;
+}
+
+.kv-grid dt {
+    color: var(--color-text-muted, #57606a);
+    font-weight: 500;
+}
+
+.kv-grid dd { margin: 0; }
 
 .admin-template-edit__form { max-width: 880px; }
 

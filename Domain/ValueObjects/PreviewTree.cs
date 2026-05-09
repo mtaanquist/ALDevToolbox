@@ -80,6 +80,23 @@ public static class PreviewTreeBuilder
         return root.Children.Select(ToPreview).ToList();
     }
 
+    /// <summary>
+    /// Returns a copy of <paramref name="node"/> with every level of children
+    /// reordered to mimic Windows File Explorer: folders first (alphabetical),
+    /// then files (alphabetical). Comparison is case-insensitive so casing
+    /// inconsistencies don't surprise users.
+    /// </summary>
+    public static PreviewNode SortForDisplay(PreviewNode node)
+    {
+        if (node.Children.Count == 0) return node;
+        var sorted = node.Children
+            .Select(SortForDisplay)
+            .OrderBy(c => c.Kind == PreviewNodeKind.File ? 1 : 0)
+            .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return node with { Children = sorted };
+    }
+
     private static PreviewNode ToPreview(MutableNode node)
     {
         var children = new List<PreviewNode>(node.Children.Count + node.Files.Count);

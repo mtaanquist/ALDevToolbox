@@ -1,20 +1,41 @@
+@inject IHttpContextAccessor Http
 @using Lucide.Blazor.Components
 
 @*
-    Three-way Light / System / Dark toggle. Static markup — no Blazor render
-    mode. Click handling, persistence, and active-state sync live in
-    wwwroot/theme.js (referenced once from App.razor) and use event
-    delegation, so this component renders identically on every navigation.
+    Three-way Light / System / Dark toggle. The active-state class is rendered
+    server-side from the aldt-theme cookie so Blazor's enhanced-nav diff sees
+    a matching highlight and doesn't strip it on navigation. Click handling
+    and persistence live in wwwroot/theme.js, which keeps the cookie /
+    localStorage in sync and re-syncs the highlight after click events.
 *@
 
 <div class="theme-toggle" role="group" aria-label="Color theme">
-    <button type="button" class="theme-toggle__btn" data-theme-button="light" aria-label="Light theme" title="Light">
+    <button type="button" class="@ButtonClass("light")" data-theme-button="light"
+            aria-label="Light theme" aria-pressed="@AriaPressed("light")" title="Light">
         <Icon Name="sun" Width="14" Height="14" />
     </button>
-    <button type="button" class="theme-toggle__btn" data-theme-button="system" aria-label="Follow system theme" title="System">
+    <button type="button" class="@ButtonClass("system")" data-theme-button="system"
+            aria-label="Follow system theme" aria-pressed="@AriaPressed("system")" title="System">
         <Icon Name="monitor" Width="14" Height="14" />
     </button>
-    <button type="button" class="theme-toggle__btn" data-theme-button="dark" aria-label="Dark theme" title="Dark">
+    <button type="button" class="@ButtonClass("dark")" data-theme-button="dark"
+            aria-label="Dark theme" aria-pressed="@AriaPressed("dark")" title="Dark">
         <Icon Name="moon" Width="14" Height="14" />
     </button>
 </div>
+
+@code {
+    private string Active
+    {
+        get
+        {
+            var cookie = Http.HttpContext?.Request.Cookies["aldt-theme"];
+            return cookie is "light" or "dark" ? cookie : "system";
+        }
+    }
+
+    private string ButtonClass(string which) =>
+        Active == which ? "theme-toggle__btn theme-toggle__btn--active" : "theme-toggle__btn";
+
+    private string AriaPressed(string which) => Active == which ? "true" : "false";
+}
