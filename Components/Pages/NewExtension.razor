@@ -1,6 +1,7 @@
 @page "/projects/extension"
 @rendermode InteractiveServer
 @inject TemplateService Templates
+@inject ApplicationVersionService Versions
 @inject WorkspaceConfigService Configs
 @inject ILogger<NewExtension> Logger
 @using ALDevToolbox.Domain.Entities
@@ -11,7 +12,7 @@
 <TabBar Active="TabBar.Tab.NewExtension" />
 
 <div class="workspace-page">
-    @if (_templates is null || _catalog is null || _modules is null)
+    @if (_templates is null || _catalog is null || _modules is null || _applicationVersions is null)
     {
         <p class="muted">Loading…</p>
     }
@@ -119,21 +120,37 @@
                     You're responsible for choosing a range that doesn't collide with the rest of your workspace.
                 </p>
 
-                <section class="form-section form-section--row">
-                    <div>
-                        <label class="section-label" for="ext-app-version">Application version</label>
+                <section class="form-section">
+                    <label class="section-label" for="ext-app-version">Application version</label>
+                    @if (_applicationVersions is null || _applicationVersions.Count == 0)
+                    {
                         <input id="ext-app-version" type="text" name="ApplicationVersion" required
-                               pattern="^\d+\.\d+\.\d+\.\d+$"
-                               title="Four-part version, e.g. 24.0.0.0."
                                @bind="_applicationVersion" @bind:event="oninput" />
-                        <small class="muted">Four-part version (e.g. <code>24.0.0.0</code>).</small>
-                    </div>
-                    <div>
-                        <label class="section-label" for="ext-runtime-version">Runtime version</label>
-                        <input id="ext-runtime-version" type="text" name="RuntimeVersion" required
-                               title="Required." @bind="_runtimeVersion" @bind:event="oninput" />
-                        <small class="muted">Defaults to <code>{runtime}.0</code> from the picked template.</small>
-                    </div>
+                        <input type="hidden" name="RuntimeVersion" value="@_runtimeVersion" />
+                        <small class="muted">
+                            No application-version catalogue has been seeded.
+                            Add entries under <a href="/admin/application-versions">Application versions</a>
+                            to switch this to a curated select.
+                        </small>
+                    }
+                    else
+                    {
+                        <select id="ext-app-version" name="ApplicationVersion"
+                                @bind="_applicationVersion" @bind:after="OnApplicationVersionChanged">
+                            @if (!_applicationVersions.Any(v => v.Application == _applicationVersion))
+                            {
+                                <option value="@_applicationVersion">@_applicationVersion (template default — not in catalogue)</option>
+                            }
+                            @foreach (var v in _applicationVersions)
+                            {
+                                <option value="@v.Application">@v.Name</option>
+                            }
+                        </select>
+                        <input type="hidden" name="RuntimeVersion" value="@_runtimeVersion" />
+                        <p class="caption muted">
+                            application <code>@_applicationVersion</code> · runtime <code>@_runtimeVersion</code>
+                        </p>
+                    }
                 </section>
 
                 <section class="form-section">
@@ -252,6 +269,7 @@
     // Loaded once at init so the sibling-extension preview can resolve folder
     // names from imported module keys without an extra DB round-trip.
     private List<ALDevToolbox.Domain.Entities.Module>? _modules;
+    private List<ApplicationVersion>? _applicationVersions;
     private RuntimeTemplate? _selected;
 
     // Form state. Mirrors the fields posted to /generate/extension; the live
@@ -298,10 +316,21 @@
         _templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
         _catalog = await Templates.GetCatalogAsync();
         _modules = await Templates.GetModulesAsync(includeDeprecated: false);
+        _applicationVersions = await Versions.GetActiveAsync(includeDeprecated: false);
         _selected = _templates.FirstOrDefault();
         if (_selected is not null)
         {
             ApplyTemplateDefaults(_selected);
+        }
+    }
+
+    private void OnApplicationVersionChanged()
+    {
+        if (_applicationVersions is null) return;
+        var match = _applicationVersions.FirstOrDefault(v => v.Application == _applicationVersion);
+        if (match is not null)
+        {
+            _runtimeVersion = match.Runtime;
         }
     }
 
@@ -317,10 +346,29 @@
     {
         _templateKey = template.Key;
         _publisher = template.Defaults.Publisher;
-        _applicationVersion = template.DefaultApplication;
-        // Runtime is a string (Major or Major.Minor). app.json wants
-        // Major.Minor; append ".0" when the template only has a major.
-        _runtimeVersion = template.Runtime.Contains('.') ? template.Runtime : $"{template.Runtime}.0";
+        // Prefer the curated application-version catalogue (Milestone P2.4)
+        // when the template points at a live entry — both fields snap to it
+        // atomically. Fall back to the template's free-text default otherwise.
+        var curated = ResolveCuratedVersion(template);
+        if (curated is not null)
+        {
+            _applicationVersion = curated.Application;
+            _runtimeVersion = curated.Runtime;
+        }
+        else
+        {
+            _applicationVersion = template.DefaultApplication;
+            // Runtime is a string (Major or Major.Minor). app.json wants
+            // Major.Minor; append ".0" when the template only has a major.
+            _runtimeVersion = template.Runtime.Contains('.') ? template.Runtime : $"{template.Runtime}.0";
+        }
+    }
+
+    private ApplicationVersion? ResolveCuratedVersion(RuntimeTemplate template)
+    {
+        if (template.DefaultApplicationVersion is null || _applicationVersions is null) return null;
+        var key = template.DefaultApplicationVersion.Key;
+        return _applicationVersions.FirstOrDefault(v => v.Key == key);
     }
 
     private void OnDependenciesChanged(List<DependencyEntry> next)

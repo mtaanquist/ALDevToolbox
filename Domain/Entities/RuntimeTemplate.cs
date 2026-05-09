@@ -33,11 +33,28 @@ public class RuntimeTemplate
     /// <summary>Caption rendered under the dropdown when this template is selected.</summary>
     public string? Description { get; set; }
 
-    /// <summary>Pre-fills the <c>application</c> field on the New Workspace form.</summary>
+    /// <summary>
+    /// Free-text fallback for the <c>application</c> field (Major.Minor.Build.Revision).
+    /// Superseded in Milestone P2.4 by <see cref="DefaultApplicationVersion"/>; kept as
+    /// the orphan value when no curated entry matches, and as the backing field exported
+    /// to <c>template.toml</c> for backward compatibility.
+    /// </summary>
     public string DefaultApplication { get; set; } = string.Empty;
 
     /// <summary>Pre-fills the <c>platform</c> field on the New Workspace form.</summary>
     public string DefaultPlatform { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Optional foreign key into <c>application_versions</c>. When set, the user-facing
+    /// builder forms preselect the matching curated entry and fill both
+    /// <c>application</c> and <c>runtime</c> from it. <c>null</c> means the template
+    /// pre-dates the curated catalogue or no entry matches; the form then falls back
+    /// to the free-text <see cref="DefaultApplication"/> / <see cref="Runtime"/> values.
+    /// </summary>
+    public int? DefaultApplicationVersionId { get; set; }
+
+    /// <summary>Navigation back to the curated catalogue entry (when one is set).</summary>
+    public ApplicationVersion? DefaultApplicationVersion { get; set; }
 
     /// <summary>
     /// Typed view of the rest of the <c>app.json</c> defaults (publisher, target,

@@ -20,7 +20,6 @@ public class GenerationService
 {
     private static readonly Regex MustacheRegex = new(@"\{\{(\w+)\}\}", RegexOptions.Compiled);
     private static readonly Regex WorkspaceNameRegex = new(@"^[A-Za-z][A-Za-z0-9 ]*$", RegexOptions.Compiled);
-    private static readonly Regex VersionRegex = new(@"^\d+\.\d+\.\d+\.\d+$", RegexOptions.Compiled);
     private static readonly Regex ExtensionNameRegex = new(@"^[A-Za-z][A-Za-z0-9]*$", RegexOptions.Compiled);
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -762,8 +761,13 @@ public class GenerationService
             errors[nameof(plan.WorkspaceName)] = "Required. Letters, digits and spaces only; must start with a letter.";
         if (plan.CoreIdRangeFrom <= 0) errors[nameof(plan.CoreIdRangeFrom)] = "Must be greater than zero.";
         if (plan.CoreIdRangeTo <= plan.CoreIdRangeFrom) errors[nameof(plan.CoreIdRangeTo)] = "Must be greater than 'from'.";
-        if (string.IsNullOrWhiteSpace(plan.ApplicationVersion) || !VersionRegex.IsMatch(plan.ApplicationVersion))
-            errors[nameof(plan.ApplicationVersion)] = "Must be a four-part version (e.g. 24.0.0.0).";
+        // Milestone P2.4: ApplicationVersion + RuntimeVersion are now sourced
+        // from the curated application_versions catalogue, so the regex checks
+        // moved into the catalogue service. The plan still requires both to be
+        // present — orphan templates without a curated row keep posting their
+        // raw default_application / runtime strings.
+        if (string.IsNullOrWhiteSpace(plan.ApplicationVersion))
+            errors[nameof(plan.ApplicationVersion)] = "Required.";
         if (string.IsNullOrWhiteSpace(plan.RuntimeVersion))
             errors[nameof(plan.RuntimeVersion)] = "Required.";
         if (errors.Count > 0) throw new PlanValidationException(errors);
@@ -778,8 +782,8 @@ public class GenerationService
         if (string.IsNullOrWhiteSpace(plan.Publisher)) errors[nameof(plan.Publisher)] = "Required.";
         if (plan.IdRangeFrom <= 0) errors[nameof(plan.IdRangeFrom)] = "Must be greater than zero.";
         if (plan.IdRangeTo <= plan.IdRangeFrom) errors[nameof(plan.IdRangeTo)] = "Must be greater than 'from'.";
-        if (string.IsNullOrWhiteSpace(plan.ApplicationVersion) || !VersionRegex.IsMatch(plan.ApplicationVersion))
-            errors[nameof(plan.ApplicationVersion)] = "Must be a four-part version (e.g. 24.0.0.0).";
+        if (string.IsNullOrWhiteSpace(plan.ApplicationVersion))
+            errors[nameof(plan.ApplicationVersion)] = "Required.";
         if (string.IsNullOrWhiteSpace(plan.RuntimeVersion))
             errors[nameof(plan.RuntimeVersion)] = "Required.";
 

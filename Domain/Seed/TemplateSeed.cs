@@ -60,6 +60,16 @@ public class TemplateMetaSeed
     /// import — admins can fix typos through the UI later.
     /// </summary>
     public List<string> DefaultModules { get; set; } = new();
+
+    /// <summary>
+    /// Optional key into the curated <c>application_versions</c> catalogue
+    /// (Milestone P2.4). When set and resolvable at seed time, the template's
+    /// <c>DefaultApplicationVersionId</c> FK is filled in so the user-facing
+    /// builder forms preselect this entry. Unresolved keys log a warning and
+    /// the template falls back to its free-text <c>default_application</c> /
+    /// <c>runtime</c> values.
+    /// </summary>
+    public string? DefaultApplicationVersion { get; set; }
 }
 
 /// <summary>The <c>[defaults]</c> table — merged into every generated <c>app.json</c>.</summary>

@@ -1,0 +1,279 @@
+@page "/admin/application-versions"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject ApplicationVersionService Versions
+@inject ILogger<AdminApplicationVersions> Log
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
+
+@*
+    Flat editor for the curated application-version catalogue (Milestone P2.4).
+    The whole list is submitted on Save; the service reconciles row by row so
+    unchanged entries keep their primary keys and the audit log only records
+    real changes. Removed rows are soft-deleted so existing template foreign
+    keys stay resolvable.
+*@
+
+<PageTitle>Application versions · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page admin-template-edit">
+    <header class="admin-page__header">
+        <div>
+            <h1>Application versions</h1>
+            <p class="muted">
+                These rows back the Application Version select on the New
+                Workspace and New Extension forms. Picking an entry there fills
+                both the <code>application</code> and <code>runtime</code>
+                fields on the generated <code>app.json</code>. Removed rows are
+                soft-deleted so historical templates stay linkable in the audit
+                log.
+            </p>
+        </div>
+        <a class="btn btn--sm" href="/admin">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to admin</span>
+        </a>
+    </header>
+
+    @if (_form is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        @if (_saveError is not null)
+        {
+            <p class="form-error" role="alert">@_saveError</p>
+        }
+        @if (_saveSuccess is not null)
+        {
+            <p class="form-success" role="status">@_saveSuccess</p>
+        }
+
+        <form class="form-grid admin-template-edit__form" @onsubmit="SaveAsync" @onsubmit:preventDefault>
+            <section class="form-section">
+                <div class="folder-editor__header">
+                    <label class="section-label">Catalogue entries</label>
+                    <button type="button" class="btn btn--sm" @onclick="AddEntry">
+                        <Icon Name="plus" Width="14" Height="14" />
+                        <span>Add entry</span>
+                    </button>
+                </div>
+                @if (_form.Entries.Count == 0)
+                {
+                    <p class="muted">
+                        No application versions. Click <strong>Add entry</strong>
+                        to seed the list with the BC releases your team supports
+                        (BC v22 → v28 etc.).
+                    </p>
+                }
+                else
+                {
+                    <div class="folder-editor__list">
+                        @for (var i = 0; i < _form.Entries.Count; i++)
+                        {
+                            var index = i;
+                            var row = _form.Entries[index];
+                            <div class="folder-editor__row">
+                                <div class="folder-editor__row-head">
+                                    <div class="folder-editor__order">
+                                        <button type="button" class="btn btn--sm" disabled="@(index == 0)"
+                                                @onclick="() => MoveEntry(index, -1)" title="Move up">
+                                            <Icon Name="arrow-up" Width="12" Height="12" />
+                                        </button>
+                                        <button type="button" class="btn btn--sm" disabled="@(index == _form.Entries.Count - 1)"
+                                                @onclick="() => MoveEntry(index, 1)" title="Move down">
+                                            <Icon Name="arrow-down" Width="12" Height="12" />
+                                        </button>
+                                    </div>
+                                    <div class="folder-editor__path">
+                                        <input type="text" required placeholder="Key (e.g. bc-2026-w1)"
+                                               pattern="[a-z0-9-]+"
+                                               title="Lowercase letters, digits, hyphens."
+                                               @bind="row.Key" @bind:event="oninput" />
+                                        <FieldError Field="@($"Entries[{index}].Key")" Errors="_fieldErrors" />
+                                    </div>
+                                    <button type="button" class="btn btn--sm" @onclick="() => RemoveEntry(index)" title="Remove entry">
+                                        <Icon Name="trash-2" Width="12" Height="12" />
+                                    </button>
+                                </div>
+                                <div class="dep-editor__fields">
+                                    <div>
+                                        <input type="text" required placeholder="Friendly name (e.g. Business Central 2026 Release Wave 1)"
+                                               @bind="row.Name" @bind:event="oninput" />
+                                        <FieldError Field="@($"Entries[{index}].Name")" Errors="_fieldErrors" />
+                                    </div>
+                                    <div>
+                                        <input type="text" required placeholder="Application (e.g. 28.0.0.0)"
+                                               pattern="\d+\.\d+\.\d+\.\d+"
+                                               title="Four-part version, e.g. 28.0.0.0."
+                                               @bind="row.Application" @bind:event="oninput" />
+                                        <FieldError Field="@($"Entries[{index}].Application")" Errors="_fieldErrors" />
+                                    </div>
+                                    <div>
+                                        <input type="text" required placeholder="Runtime (e.g. 15.2)"
+                                               pattern="\d+(\.\d+)?"
+                                               title="Major or Major.Minor (e.g. 15 or 15.2)."
+                                               @bind="row.Runtime" @bind:event="oninput" />
+                                        <FieldError Field="@($"Entries[{index}].Runtime")" Errors="_fieldErrors" />
+                                    </div>
+                                    <div>
+                                        <label class="check-row">
+                                            <input type="checkbox" @bind="row.Deprecated" />
+                                            <span>Deprecated — keep linked but hide from the user-facing select.</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    <small class="muted">
+                        Picking an entry on the builder forms fills both
+                        <code>application</code> and <code>runtime</code>
+                        atomically. The <code>key</code> is what
+                        <code>template.toml</code> stores in
+                        <code>default_application_version</code>.
+                    </small>
+                }
+            </section>
+
+            <div class="admin-template-edit__actions">
+                <button type="submit" class="btn btn--primary" disabled="@_saving">
+                    <Icon Name="save" Width="16" Height="16" />
+                    <span>@(_saving ? "Saving…" : "Save catalogue")</span>
+                </button>
+                <button type="button" class="btn" @onclick="ReloadAsync" disabled="@_saving">
+                    <Icon Name="rotate-ccw" Width="16" Height="16" />
+                    <span>Discard changes</span>
+                </button>
+            </div>
+        </form>
+    }
+</div>
+
+@code {
+    private FormState? _form;
+    private bool _saving;
+    private string? _saveError;
+    private string? _saveSuccess;
+    private IReadOnlyDictionary<string, string> _fieldErrors = new Dictionary<string, string>();
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _form = null;
+        _saving = false;
+        _saveError = null;
+        _saveSuccess = null;
+        _fieldErrors = new Dictionary<string, string>();
+        StateHasChanged();
+        // Hide soft-deleted rows from the editor — the service silently
+        // soft-deletes anything that isn't in the input list, so showing
+        // historical rows here would tempt admins to "fix" them in place.
+        var rows = await Versions.GetActiveAsync(includeDeprecated: true);
+        _form = FormState.From(rows);
+    }
+
+    private void AddEntry()
+    {
+        _form?.Entries.Add(new EntryRow());
+    }
+
+    private void RemoveEntry(int index)
+    {
+        if (_form is null) return;
+        if (index >= 0 && index < _form.Entries.Count)
+        {
+            _form.Entries.RemoveAt(index);
+        }
+    }
+
+    private void MoveEntry(int index, int delta)
+    {
+        if (_form is null) return;
+        var target = index + delta;
+        if (index < 0 || index >= _form.Entries.Count || target < 0 || target >= _form.Entries.Count)
+        {
+            return;
+        }
+        (_form.Entries[index], _form.Entries[target]) =
+            (_form.Entries[target], _form.Entries[index]);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_form is null || _saving) return;
+        _saving = true;
+        _saveError = null;
+        _saveSuccess = null;
+        _fieldErrors = new Dictionary<string, string>();
+
+        var payload = _form.ToInputs();
+
+        try
+        {
+            await Versions.SaveAsync(payload);
+            var rows = await Versions.GetActiveAsync(includeDeprecated: true);
+            _form = FormState.From(rows);
+            _saveSuccess = "Saved.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _fieldErrors = ex.Errors;
+            _saveError = $"Couldn't save: {ex.Errors.Count} validation error(s). See messages next to each field.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Unexpected error saving application versions.");
+            _saveError = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private sealed class FormState
+    {
+        public List<EntryRow> Entries { get; } = new();
+
+        public static FormState From(IReadOnlyList<ApplicationVersion> rows)
+        {
+            var state = new FormState();
+            foreach (var r in rows)
+            {
+                state.Entries.Add(new EntryRow
+                {
+                    Id = r.Id,
+                    Key = r.Key,
+                    Name = r.Name,
+                    Application = r.Application,
+                    Runtime = r.Runtime,
+                    Deprecated = r.Deprecated,
+                });
+            }
+            return state;
+        }
+
+        public List<ApplicationVersionInput> ToInputs() => Entries
+            .Select(e => new ApplicationVersionInput(
+                Id: e.Id,
+                Key: e.Key,
+                Name: e.Name,
+                Application: e.Application,
+                Runtime: e.Runtime,
+                Deprecated: e.Deprecated))
+            .ToList();
+    }
+
+    private sealed class EntryRow
+    {
+        public int? Id { get; set; }
+        public string Key { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Application { get; set; } = string.Empty;
+        public string Runtime { get; set; } = string.Empty;
+        public bool Deprecated { get; set; }
+    }
+}

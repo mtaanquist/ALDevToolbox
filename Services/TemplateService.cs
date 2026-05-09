@@ -74,6 +74,7 @@ public class TemplateService
                 .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
             .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
                 .ThenInclude(d => d.Module!)
+            .Include(t => t.DefaultApplicationVersion)
             .ToListAsync();
 
         return rows
@@ -101,6 +102,7 @@ public class TemplateService
                 .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
             .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
                 .ThenInclude(d => d.Module!)
+            .Include(t => t.DefaultApplicationVersion)
             .ToListAsync();
 
         // Same trick as GetTemplatesAsync: keep version-aware ordering
@@ -128,6 +130,7 @@ public class TemplateService
                 .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
             .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
                 .ThenInclude(d => d.Module!)
+            .Include(t => t.DefaultApplicationVersion)
             .FirstOrDefaultAsync(ct);
     }
 
@@ -170,7 +173,8 @@ public class TemplateService
     /// </summary>
     public async Task<RuntimeTemplate> CreateAsync(TemplateInput input, CancellationToken ct = default)
     {
-        var (defaults, appSourceCop, defaultModuleIds) = await ValidateAsync(input, existingId: null, ct);
+        var (defaults, appSourceCop, defaultModuleIds, defaultApplicationVersionId) =
+            await ValidateAsync(input, existingId: null, ct);
 
         var now = DateTime.UtcNow;
         var template = new RuntimeTemplate
@@ -188,6 +192,7 @@ public class TemplateService
             ModuleIdRangeStart = input.ModuleIdRangeStart,
             ModuleIdRangeSize = input.ModuleIdRangeSize,
             Deprecated = input.Deprecated,
+            DefaultApplicationVersionId = defaultApplicationVersionId,
             CreatedAt = now,
             UpdatedAt = now,
             DeletedAt = null,
@@ -258,7 +263,8 @@ public class TemplateService
 
         // Preserve the existing key for validation (keys can't change after creation).
         var validatableInput = input with { Key = existing.Key };
-        var (defaults, appSourceCop, defaultModuleIds) = await ValidateAsync(validatableInput, existingId: id, ct);
+        var (defaults, appSourceCop, defaultModuleIds, defaultApplicationVersionId) =
+            await ValidateAsync(validatableInput, existingId: id, ct);
 
         existing.Runtime = input.Runtime.Trim();
         existing.Name = input.Name.Trim();
@@ -272,6 +278,10 @@ public class TemplateService
         existing.ModuleIdRangeStart = input.ModuleIdRangeStart;
         existing.ModuleIdRangeSize = input.ModuleIdRangeSize;
         existing.Deprecated = input.Deprecated;
+        existing.DefaultApplicationVersionId = defaultApplicationVersionId;
+        // Drop the cached navigation reference so EF doesn't get confused if a
+        // previously-attached ApplicationVersion is still tracked.
+        existing.DefaultApplicationVersion = null;
         existing.UpdatedAt = DateTime.UtcNow;
 
         ReconcileFolders(existing, input.Folders);
@@ -583,7 +593,7 @@ public class TemplateService
     /// Throws a <see cref="PlanValidationException"/> aggregating every error so
     /// the form can render all of them on a single round-trip.
     /// </summary>
-    private async Task<(TemplateDefaults Defaults, AppSourceCopSettings AppSourceCop, IReadOnlyList<int> DefaultModuleIds)> ValidateAsync(
+    private async Task<(TemplateDefaults Defaults, AppSourceCopSettings AppSourceCop, IReadOnlyList<int> DefaultModuleIds, int? DefaultApplicationVersionId)> ValidateAsync(
         TemplateInput input,
         int? existingId,
         CancellationToken ct)
@@ -723,12 +733,36 @@ public class TemplateService
             }
         }
 
+        // Optional curated application-version key (Milestone P2.4). An empty
+        // key means "no curated entry"; a present key must resolve to a live
+        // (non-deleted) row. Soft-deleted rows are rejected so the form can't
+        // accidentally re-link a template to a removed catalogue entry.
+        int? defaultApplicationVersionId = null;
+        var versionKey = input.DefaultApplicationVersionKey?.Trim();
+        if (!string.IsNullOrEmpty(versionKey))
+        {
+            var resolved = await _db.ApplicationVersions
+                .AsNoTracking()
+                .Where(a => a.Key == versionKey && a.DeletedAt == null)
+                .Select(a => (int?)a.Id)
+                .FirstOrDefaultAsync(ct);
+            if (resolved is null)
+            {
+                errors[nameof(input.DefaultApplicationVersionKey)] =
+                    $"Unknown application version '{versionKey}'.";
+            }
+            else
+            {
+                defaultApplicationVersionId = resolved;
+            }
+        }
+
         if (errors.Count > 0)
         {
             throw new PlanValidationException(errors);
         }
 
-        return (defaults, appSourceCop, defaultModuleIds);
+        return (defaults, appSourceCop, defaultModuleIds, defaultApplicationVersionId);
     }
 }
 
@@ -754,7 +788,8 @@ public record TemplateInput(
     bool Deprecated,
     IReadOnlyList<string> DefaultModuleKeys,
     IReadOnlyList<TemplateFolderInput> Folders,
-    IReadOnlyList<TemplateFolderInput> ModuleFolders);
+    IReadOnlyList<TemplateFolderInput> ModuleFolders,
+    string? DefaultApplicationVersionKey = null);
 
 /// <summary>One folder row submitted by the admin folder editor, with its files.</summary>
 public record TemplateFolderInput(string Path, IReadOnlyList<TemplateFileInput> Files);

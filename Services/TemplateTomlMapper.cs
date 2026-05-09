@@ -50,6 +50,7 @@ public static class TemplateTomlMapper
                     .Where(d => d.Module is not null)
                     .Select(d => d.Module!.Key)
                     .ToList(),
+                DefaultApplicationVersion = template.DefaultApplicationVersion?.Key,
             },
             Defaults = new DefaultsSeed
             {
@@ -250,6 +251,9 @@ public static class TemplateTomlMapper
             ModuleIdRangeSize: seed.Template.ModuleIdRangeSize,
             Deprecated: deprecated,
             DefaultModuleKeys: seed.Template.DefaultModules.ToList(),
+            DefaultApplicationVersionKey: string.IsNullOrWhiteSpace(seed.Template.DefaultApplicationVersion)
+                ? null
+                : seed.Template.DefaultApplicationVersion,
             Folders: seed.Folders.Select(f => new TemplateFolderInput(
                 f.Path,
                 f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList(),
