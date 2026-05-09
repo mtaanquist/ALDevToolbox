@@ -226,8 +226,6 @@
         {
             PreviewNode.File("app.json"),
             PreviewNode.File("AppSourceCop.json"),
-            PreviewNode.Folder("libs", new[] { PreviewNode.File(".gitkeep") }),
-            PreviewNode.Folder("permissionsets", new[] { PreviewNode.File(".gitkeep") }),
         };
 
         if (_selected is not null)
@@ -238,9 +236,26 @@
             contents.AddRange(PreviewTreeBuilder.BuildFolderChildren(entries));
         }
 
-        contents.Add(PreviewNode.Folder("Translations", new[] { PreviewNode.File(".gitkeep") }));
+        AddFallbackFolder(contents, "libs");
+        AddFallbackFolder(contents, "permissionsets");
+        AddFallbackFolder(contents, "Translations");
 
         return PreviewTreeBuilder.SortForDisplay(PreviewNode.Extension(FolderName, contents));
+    }
+
+    /// <summary>
+    /// Adds <paramref name="name"/> as a placeholder folder unless the template
+    /// already contributed a folder whose top-level segment matches case-
+    /// insensitively. See <c>NewWorkspace.razor</c> for the same comment.
+    /// </summary>
+    private static void AddFallbackFolder(List<PreviewNode> contents, string name)
+    {
+        if (contents.Any(n => n.Kind != PreviewNodeKind.File
+                              && string.Equals(n.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+        contents.Add(PreviewNode.Folder(name, new[] { PreviewNode.File(".gitkeep") }));
     }
 
     private List<PreviewNode> LeafFiles(TemplateFolder folder)

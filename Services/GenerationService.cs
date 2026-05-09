@@ -229,10 +229,31 @@ public class GenerationService
 
         WriteString(archive, $"{rootRelative}/app.json", appJson);
         WriteString(archive, $"{rootRelative}/AppSourceCop.json", JsonSerializer.Serialize(template.AppSourceCop, JsonOptions));
-        WriteEmptyFile(archive, $"{rootRelative}/libs/.gitkeep");
-        WriteEmptyFile(archive, $"{rootRelative}/permissionsets/.gitkeep");
-        WriteEmptyFile(archive, $"{rootRelative}/Translations/.gitkeep");
-        var fileCount = 5;
+        var fileCount = 2;
+
+        // Top-level folders the template already declares (case-insensitive),
+        // so the static fallback folders below don't collide on Windows
+        // extraction. Without this, a template that lays out 'translations'
+        // would extract alongside our hardcoded 'Translations/.gitkeep' and
+        // produce two folders that resolve to the same path.
+        var declaredTops = new HashSet<string>(
+            template.Folders.Select(f => f.Path.Split('/', 2)[0]),
+            StringComparer.OrdinalIgnoreCase);
+        if (!declaredTops.Contains("libs"))
+        {
+            WriteEmptyFile(archive, $"{rootRelative}/libs/.gitkeep");
+            fileCount++;
+        }
+        if (!declaredTops.Contains("permissionsets"))
+        {
+            WriteEmptyFile(archive, $"{rootRelative}/permissionsets/.gitkeep");
+            fileCount++;
+        }
+        if (!declaredTops.Contains("Translations"))
+        {
+            WriteEmptyFile(archive, $"{rootRelative}/Translations/.gitkeep");
+            fileCount++;
+        }
 
         foreach (var folder in template.Folders.OrderBy(f => f.Ordering))
         {

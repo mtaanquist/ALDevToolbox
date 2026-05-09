@@ -290,8 +290,6 @@
         {
             PreviewNode.File("app.json"),
             PreviewNode.File("AppSourceCop.json"),
-            PreviewNode.Folder("libs", new[] { PreviewNode.File(".gitkeep") }),
-            PreviewNode.Folder("permissionsets", new[] { PreviewNode.File(".gitkeep") }),
         };
 
         if (_selected is not null)
@@ -302,9 +300,26 @@
             contents.AddRange(PreviewTreeBuilder.BuildFolderChildren(entries));
         }
 
-        contents.Add(PreviewNode.Folder("Translations", new[] { PreviewNode.File(".gitkeep") }));
+        // Hardcoded fallback folders. Each one only goes in if the template
+        // didn't already declare a folder with the same case-insensitive name —
+        // Windows would treat 'translations' and 'Translations' as the same
+        // folder, so emitting both would collide on extraction and look
+        // duplicated in the preview.
+        AddFallbackFolder(contents, "libs");
+        AddFallbackFolder(contents, "permissionsets");
+        AddFallbackFolder(contents, "Translations");
 
         return PreviewNode.Extension(folderName, contents);
+    }
+
+    private static void AddFallbackFolder(List<PreviewNode> contents, string name)
+    {
+        if (contents.Any(n => n.Kind != PreviewNodeKind.File
+                              && string.Equals(n.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+        contents.Add(PreviewNode.Folder(name, new[] { PreviewNode.File(".gitkeep") }));
     }
 
     private List<PreviewNode> LeafFiles(TemplateFolder folder)
