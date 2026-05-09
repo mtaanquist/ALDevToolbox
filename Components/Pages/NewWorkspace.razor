@@ -33,7 +33,7 @@
                     <label class="section-label">Import config</label>
                     <InputFile OnChange="OnImportFileChosen" accept=".toml" />
                     <small class="muted">
-                        Re-hydrate this form from a previously saved <code>@WorkspaceConfigService.FileName</code>.
+                        Restore this form from a previously saved <code>@WorkspaceConfigService.FileName</code>.
                     </small>
                     @if (!string.IsNullOrEmpty(_importMessage))
                     {

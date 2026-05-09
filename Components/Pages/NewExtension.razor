@@ -33,9 +33,9 @@
                     <label class="section-label">Import config</label>
                     <InputFile OnChange="OnImportFileChosen" accept=".toml" />
                     <small class="muted">
-                        Re-hydrate this form from a previously saved <code>@WorkspaceConfigService.FileName</code>.
-                        A workspace config seeds the template, versions, and publisher; an
-                        extension config restores the full extension form.
+                        Restore this form from a previously saved <code>@WorkspaceConfigService.FileName</code>.
+                        A workspace config fills in the template, versions, and publisher;
+                        an extension config restores every field.
                     </small>
                     @if (!string.IsNullOrEmpty(_importMessage))
                     {
