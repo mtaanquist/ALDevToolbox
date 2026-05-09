@@ -9,6 +9,7 @@ public enum AuditEntityType
     RuntimeTemplate,
     TemplateFolder,
     TemplateFile,
+    RuntimeTemplateDefaultModule,
     Module,
     ModuleDependency,
     WellKnownDependency,

@@ -72,4 +72,11 @@ public class RuntimeTemplate
 
     /// <summary>The folders this template lays out, ordered as they appear in the UI.</summary>
     public List<TemplateFolder> Folders { get; set; } = new();
+
+    /// <summary>
+    /// Modules pre-selected on the New Workspace form when this template is
+    /// chosen, in admin-declared order. End-users can still opt out of any
+    /// entry; this only seeds the initial selection.
+    /// </summary>
+    public List<RuntimeTemplateDefaultModule> DefaultModules { get; set; } = new();
 }

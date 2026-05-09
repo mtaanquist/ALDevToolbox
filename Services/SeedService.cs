@@ -53,8 +53,12 @@ public class SeedService
         _logger.LogInformation("Seeding database from {SeedPath}.", seedPath);
 
         var now = DateTime.UtcNow;
-        await ImportTemplatesAsync(seedPath, now, cancellationToken);
-        await ImportModulesAsync(seedPath, now, cancellationToken);
+        // Modules are imported before templates so default-module references
+        // on a template can resolve to already-tracked Module instances by
+        // key. EF's change tracker fixes the foreign keys up at SaveChanges
+        // time, so we never have to know the assigned module ids here.
+        var modulesByKey = await ImportModulesAsync(seedPath, now, cancellationToken);
+        await ImportTemplatesAsync(seedPath, now, modulesByKey, cancellationToken);
         await ImportCatalogAsync(seedPath, now, cancellationToken);
 
         var written = await _db.SaveChangesAsync(cancellationToken);
@@ -91,7 +95,11 @@ public class SeedService
 
     // ----- templates -----
 
-    private async Task ImportTemplatesAsync(string seedPath, DateTime now, CancellationToken ct)
+    private async Task ImportTemplatesAsync(
+        string seedPath,
+        DateTime now,
+        IReadOnlyDictionary<string, Module> modulesByKey,
+        CancellationToken ct)
     {
         foreach (var dir in Directory.EnumerateDirectories(seedPath, "runtime-*"))
         {
@@ -136,6 +144,31 @@ public class SeedService
                 }).ToList(),
             };
 
+            // Pre-selected modules: resolve each key against the already-tracked
+            // Module instances. Drop unknowns with a warning rather than failing
+            // the entire seed run; admins can fix typos via the UI later.
+            var ordering = 0;
+            var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var key in seed.Template.DefaultModules)
+            {
+                if (string.IsNullOrWhiteSpace(key) || !seenKeys.Add(key))
+                {
+                    continue;
+                }
+                if (!modulesByKey.TryGetValue(key, out var module))
+                {
+                    _logger.LogWarning(
+                        "Template '{TemplateKey}' references unknown default module '{ModuleKey}'; skipped.",
+                        template.Key, key);
+                    continue;
+                }
+                template.DefaultModules.Add(new RuntimeTemplateDefaultModule
+                {
+                    Module = module,
+                    Ordering = ordering++,
+                });
+            }
+
             _db.RuntimeTemplates.Add(template);
         }
     }
@@ -164,11 +197,20 @@ public class SeedService
 
     // ----- modules -----
 
-    private async Task ImportModulesAsync(string seedPath, DateTime now, CancellationToken ct)
+    /// <summary>
+    /// Imports the module seed files and returns a key-indexed view so the
+    /// template importer can hydrate <c>default_modules</c> references against
+    /// the same tracked <see cref="Module"/> instances.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, Module>> ImportModulesAsync(
+        string seedPath,
+        DateTime now,
+        CancellationToken ct)
     {
+        var byKey = new Dictionary<string, Module>(StringComparer.Ordinal);
         var modulesDir = Path.Combine(seedPath, "modules");
         if (!Directory.Exists(modulesDir))
-            return;
+            return byKey;
 
         foreach (var path in Directory.EnumerateFiles(modulesDir, "*.toml"))
         {
@@ -191,7 +233,9 @@ public class SeedService
                 }).ToList(),
             };
             _db.Modules.Add(module);
+            byKey[module.Key] = module;
         }
+        return byKey;
     }
 
     // ----- catalogue -----

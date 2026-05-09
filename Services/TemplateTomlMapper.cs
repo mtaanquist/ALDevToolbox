@@ -45,6 +45,11 @@ public static class TemplateTomlMapper
                 CoreIdRangeTo = template.CoreIdRangeTo,
                 ModuleIdRangeStart = template.ModuleIdRangeStart,
                 ModuleIdRangeSize = template.ModuleIdRangeSize,
+                DefaultModules = template.DefaultModules
+                    .OrderBy(d => d.Ordering)
+                    .Where(d => d.Module is not null)
+                    .Select(d => d.Module!.Key)
+                    .ToList(),
             },
             Defaults = new DefaultsSeed
             {
@@ -214,6 +219,7 @@ public static class TemplateTomlMapper
             ModuleIdRangeStart: seed.Template.ModuleIdRangeStart,
             ModuleIdRangeSize: seed.Template.ModuleIdRangeSize,
             Deprecated: deprecated,
+            DefaultModuleKeys: seed.Template.DefaultModules.ToList(),
             Folders: seed.Folders.Select(f => new TemplateFolderInput(
                 f.Path,
                 f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList());

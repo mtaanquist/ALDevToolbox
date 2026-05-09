@@ -248,6 +248,46 @@
             </section>
 
             <section class="form-section">
+                <label class="section-label">Default modules</label>
+                <small class="muted">
+                    Pre-ticked on the New Workspace form when this template is picked.
+                    End-users can still opt out of any entry; this only seeds the
+                    initial selection.
+                </small>
+                @if (_availableModules.Count == 0)
+                {
+                    <p class="muted">No modules available. Add one under <a href="/admin/modules">Modules</a>.</p>
+                }
+                else
+                {
+                    <div class="module-list">
+                        @foreach (var m in _availableModules)
+                        {
+                            var isChecked = _form.DefaultModuleKeys.Contains(m.Key);
+                            <label class="module-card">
+                                <input type="checkbox"
+                                       checked="@isChecked"
+                                       @onchange="e => OnDefaultModuleToggled(m.Key, (bool)(e.Value ?? false))" />
+                                <span class="module-card__body">
+                                    <span class="module-card__name">
+                                        @m.Name
+                                        @if (m.Deprecated)
+                                        {
+                                            <span class="muted"> (deprecated)</span>
+                                        }
+                                    </span>
+                                    <span class="module-card__caption muted">
+                                        <code>@m.Key</code>
+                                    </span>
+                                </span>
+                            </label>
+                        }
+                    </div>
+                    <FieldError Field="DefaultModuleKeys" Errors="_fieldErrors" />
+                }
+            </section>
+
+            <section class="form-section">
                 <div class="folder-editor__header">
                     <label class="section-label">Folders</label>
                     <button type="button" class="btn btn--sm" @onclick="AddFolder">
@@ -399,6 +439,7 @@
     private bool _isDeleted;
     private bool _loadFailed;
     private bool _saving;
+    private List<ALDevToolbox.Domain.Entities.Module> _availableModules = new();
     private ConfirmDialog? _deleteConfirm;
     private string? _saveError;
     private string? _saveSuccess;
@@ -423,6 +464,12 @@
         _saveError = null;
         _saveSuccess = null;
         _fieldErrors = new Dictionary<string, string>();
+
+        // Module list drives the default-module multi-select. Include
+        // deprecated entries so admins can keep them ticked on legacy
+        // templates without losing the reference; the user-facing
+        // dropdown filters them out separately.
+        _availableModules = await Templates.GetModulesAsync(includeDeprecated: true);
 
         if (!IsEdit)
         {
@@ -451,6 +498,22 @@
         _isDeleted = existing.DeletedAt is not null;
         _form = FormState.From(existing);
         _mode = EditorMode.Form;
+    }
+
+    private void OnDefaultModuleToggled(string key, bool isChecked)
+    {
+        if (_form is null) return;
+        if (isChecked)
+        {
+            if (!_form.DefaultModuleKeys.Contains(key))
+            {
+                _form.DefaultModuleKeys.Add(key);
+            }
+        }
+        else
+        {
+            _form.DefaultModuleKeys.Remove(key);
+        }
     }
 
     private void AddFolder()
@@ -665,6 +728,13 @@
                         Content = file.Content,
                     }).ToList(),
                 }).ToList(),
+                DefaultModules = _form.DefaultModuleKeys
+                    .Select((k, i) => new RuntimeTemplateDefaultModule
+                    {
+                        Ordering = i,
+                        Module = new ALDevToolbox.Domain.Entities.Module { Key = k },
+                    })
+                    .ToList(),
             };
             return TemplateTomlMapper.ToToml(stub);
         }
@@ -746,6 +816,13 @@
         public bool Deprecated { get; set; }
         public List<FolderRow> Folders { get; } = new();
 
+        /// <summary>
+        /// Keys of modules pre-selected on the New Workspace form when this
+        /// template is picked. Order matters; the multi-select renders rows
+        /// in this order so admins can curate the visual hierarchy.
+        /// </summary>
+        public List<string> DefaultModuleKeys { get; } = new();
+
         public static FormState Blank() => new()
         {
             DefaultsJson = JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson),
@@ -783,6 +860,13 @@
                 }
                 state.Folders.Add(folderRow);
             }
+            foreach (var d in template.DefaultModules.OrderBy(d => d.Ordering))
+            {
+                if (d.Module is not null)
+                {
+                    state.DefaultModuleKeys.Add(d.Module.Key);
+                }
+            }
             return state;
         }
 
@@ -800,6 +884,7 @@
             ModuleIdRangeStart: ModuleIdRangeStart,
             ModuleIdRangeSize: ModuleIdRangeSize,
             Deprecated: Deprecated,
+            DefaultModuleKeys: DefaultModuleKeys.ToList(),
             Folders: Folders.Select(f => new TemplateFolderInput(
                 f.Path,
                 f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList());

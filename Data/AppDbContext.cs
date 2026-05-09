@@ -21,6 +21,7 @@ public class AppDbContext : DbContext
     public DbSet<RuntimeTemplate> RuntimeTemplates => Set<RuntimeTemplate>();
     public DbSet<TemplateFolder> TemplateFolders => Set<TemplateFolder>();
     public DbSet<TemplateFile> TemplateFiles => Set<TemplateFile>();
+    public DbSet<RuntimeTemplateDefaultModule> RuntimeTemplateDefaultModules => Set<RuntimeTemplateDefaultModule>();
     public DbSet<Module> Modules => Set<Module>();
     public DbSet<ModuleDependency> ModuleDependencies => Set<ModuleDependency>();
     public DbSet<WellKnownDependency> WellKnownDependencies => Set<WellKnownDependency>();
@@ -71,6 +72,28 @@ public class AppDbContext : DbContext
             entity.HasMany(e => e.Folders)
                 .WithOne(f => f.Template!)
                 .HasForeignKey(f => f.TemplateId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.DefaultModules)
+                .WithOne(d => d.Template!)
+                .HasForeignKey(d => d.RuntimeTemplateId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RuntimeTemplateDefaultModule>(entity =>
+        {
+            entity.ToTable("runtime_template_default_modules");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(e => e.RuntimeTemplateId).HasColumnName("runtime_template_id").IsRequired();
+            entity.Property(e => e.ModuleId).HasColumnName("module_id").IsRequired();
+            entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
+            entity.HasIndex(e => new { e.RuntimeTemplateId, e.Ordering });
+            entity.HasIndex(e => new { e.RuntimeTemplateId, e.ModuleId }).IsUnique();
+
+            entity.HasOne(e => e.Module!)
+                .WithMany()
+                .HasForeignKey(e => e.ModuleId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

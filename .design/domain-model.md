@@ -8,6 +8,7 @@ This document specifies the entities, their relationships, and the SQLite schema
 RuntimeTemplate ──┐
                   ├── has many ──> TemplateFolder (ordered)
                   │                    └── has many ──> TemplateFile (ordered)
+                  ├── has many ──> RuntimeTemplateDefaultModule (ordered) ──> Module
                   └── has one ────> TemplateDefaults (JSON column on the row)
 
 Module ───────────┐
@@ -80,6 +81,21 @@ Indexes: `(template_folder_id, ordering)` for ordered enumeration; `(template_fo
 
 Editing `path` or `content` flows through the same `TemplateInput` pipeline both authoring surfaces use. The structured editor offers per-file path inputs and a `<textarea>` for content; the TOML editor expresses the same data via `[[folders.files]]` blocks (see `templates-and-seeding.md`).
 
+### `runtime_template_default_modules`
+
+Pre-selected modules per template (Milestone P2.1). When a user picks a template on the New Workspace form, the modules listed here are ticked automatically — they have to opt out rather than in.
+
+| Column                | Type             | Notes                                         |
+|-----------------------|------------------|-----------------------------------------------|
+| `id`                  | INTEGER PK       |                                               |
+| `runtime_template_id` | INTEGER FK       | → runtime_templates.id, cascade delete         |
+| `module_id`           | INTEGER FK       | → modules.id, cascade delete                   |
+| `ordering`            | INTEGER NOT NULL | Display order in the admin's chosen sequence  |
+
+Indexes: `(runtime_template_id, ordering)` for ordered enumeration; `(runtime_template_id, module_id)` UNIQUE so the same module can't appear twice on a template's default list.
+
+The relation is purely cosmetic for end-users — generation does not consult it. A user who deselects a default module gets a workspace without that module, just as they would by leaving an unticked module unticked. Soft-deleted modules are silently dropped from the pre-selection at form load time.
+
 ### `modules`
 
 | Column                   | Type           | Notes                                          |
@@ -138,7 +154,7 @@ One row per write to any of the above tables. See `auth-and-audit.md` for the fu
 | `id`           | INTEGER PK     |                                                      |
 | `timestamp`    | TEXT NOT NULL  | UTC ISO8601                                          |
 | `changed_by`   | TEXT NOT NULL  | The honour-system display name from login            |
-| `entity_type`  | TEXT NOT NULL  | "runtime_template" \| "template_folder" \| "template_file" \| "module" \| "module_dependency" \| "well_known_dependency" |
+| `entity_type`  | TEXT NOT NULL  | "runtime_template" \| "template_folder" \| "template_file" \| "runtime_template_default_module" \| "module" \| "module_dependency" \| "well_known_dependency" |
 | `entity_id`    | INTEGER NOT NULL | The id within that entity's table                  |
 | `action`       | TEXT NOT NULL  | "created" \| "updated" \| "deleted"                  |
 | `snapshot_json`| TEXT           | Full JSON of the row's state *before* the change. Null for "created" |

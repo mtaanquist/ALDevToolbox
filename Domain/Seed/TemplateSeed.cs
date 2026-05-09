@@ -38,6 +38,14 @@ public class TemplateMetaSeed
     public int CoreIdRangeTo { get; set; } = 90999;
     public int ModuleIdRangeStart { get; set; } = 91000;
     public int ModuleIdRangeSize { get; set; } = 200;
+
+    /// <summary>
+    /// Module keys pre-selected when a user picks this template on the New
+    /// Workspace form. Order matches the array order in the TOML file. Unknown
+    /// keys are dropped at seed time with a warning rather than failing the
+    /// import — admins can fix typos through the UI later.
+    /// </summary>
+    public List<string> DefaultModules { get; set; } = new();
 }
 
 /// <summary>The <c>[defaults]</c> table — merged into every generated <c>app.json</c>.</summary>

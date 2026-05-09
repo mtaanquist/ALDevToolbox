@@ -216,6 +216,23 @@
         _coreIdRangeTo = template.CoreIdRangeTo;
         _applicationVersion = template.DefaultApplication;
         _runtimeVersion = $"{template.Runtime}.0";
+
+        // Pre-select the modules this template ships with (Milestone P2.1).
+        // Switching templates retunes the selection; the user's subsequent
+        // toggles after that are honoured unchanged. We only consider modules
+        // that are still in the active list — soft-deleted or filtered-out
+        // entries silently drop off the default set.
+        _selectedModuleKeys.Clear();
+        if (_modules is null) return;
+        var availableKeys = _modules.Select(m => m.Key).ToHashSet(StringComparer.Ordinal);
+        foreach (var d in template.DefaultModules.OrderBy(d => d.Ordering))
+        {
+            var key = d.Module?.Key;
+            if (!string.IsNullOrEmpty(key) && availableKeys.Contains(key))
+            {
+                _selectedModuleKeys.Add(key);
+            }
+        }
     }
 
     private void OnModuleToggled(string key, bool isChecked)

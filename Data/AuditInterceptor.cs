@@ -28,6 +28,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         typeof(RuntimeTemplate),
         typeof(TemplateFolder),
         typeof(TemplateFile),
+        typeof(RuntimeTemplateDefaultModule),
         typeof(Module),
         typeof(ModuleDependency),
         typeof(WellKnownDependency),
@@ -242,6 +243,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         if (t == typeof(RuntimeTemplate)) return AuditEntityType.RuntimeTemplate;
         if (t == typeof(TemplateFolder)) return AuditEntityType.TemplateFolder;
         if (t == typeof(TemplateFile)) return AuditEntityType.TemplateFile;
+        if (t == typeof(RuntimeTemplateDefaultModule)) return AuditEntityType.RuntimeTemplateDefaultModule;
         if (t == typeof(Module)) return AuditEntityType.Module;
         if (t == typeof(ModuleDependency)) return AuditEntityType.ModuleDependency;
         if (t == typeof(WellKnownDependency)) return AuditEntityType.WellKnownDependency;

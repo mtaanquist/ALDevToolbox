@@ -88,6 +88,11 @@ core_id_range_from = 90000
 core_id_range_to = 90999
 module_id_range_start = 91000
 module_id_range_size = 200
+# Optional: module keys pre-selected on the New Workspace form when this
+# template is picked. End-users can still opt out of any entry; this only
+# seeds the initial selection. Unknown keys are dropped at seed time with a
+# warning rather than failing the import.
+default_modules = ["foundation", "document-capture"]
 
 # Required: defaults merged into every generated app.json
 [defaults]

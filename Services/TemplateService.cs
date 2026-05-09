@@ -47,6 +47,8 @@ public class TemplateService
             .ThenBy(t => t.Name)
             .Include(t => t.Folders.OrderBy(f => f.Ordering))
                 .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
+            .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
+                .ThenInclude(d => d.Module!)
             .ToListAsync();
     }
 
@@ -68,6 +70,8 @@ public class TemplateService
             .ThenBy(t => t.Name)
             .Include(t => t.Folders.OrderBy(f => f.Ordering))
                 .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
+            .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
+                .ThenInclude(d => d.Module!)
             .ToListAsync();
     }
 
@@ -83,6 +87,8 @@ public class TemplateService
             .Where(t => t.Key == key)
             .Include(t => t.Folders.OrderBy(f => f.Ordering))
                 .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
+            .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
+                .ThenInclude(d => d.Module!)
             .FirstOrDefaultAsync(ct);
     }
 
@@ -125,7 +131,7 @@ public class TemplateService
     /// </summary>
     public async Task<RuntimeTemplate> CreateAsync(TemplateInput input, CancellationToken ct = default)
     {
-        var (defaults, appSourceCop) = await ValidateAsync(input, existingId: null, ct);
+        var (defaults, appSourceCop, defaultModuleIds) = await ValidateAsync(input, existingId: null, ct);
 
         var now = DateTime.UtcNow;
         var template = new RuntimeTemplate
@@ -161,6 +167,13 @@ public class TemplateService
                         .ToList(),
                 })
                 .ToList(),
+            DefaultModules = defaultModuleIds
+                .Select((moduleId, i) => new RuntimeTemplateDefaultModule
+                {
+                    ModuleId = moduleId,
+                    Ordering = i,
+                })
+                .ToList(),
         };
 
         _db.RuntimeTemplates.Add(template);
@@ -181,6 +194,7 @@ public class TemplateService
     {
         var existing = await _db.RuntimeTemplates
             .Include(t => t.Folders).ThenInclude(f => f.Files)
+            .Include(t => t.DefaultModules)
             .FirstOrDefaultAsync(t => t.Id == id, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
             {
@@ -189,7 +203,7 @@ public class TemplateService
 
         // Preserve the existing key for validation (keys can't change after creation).
         var validatableInput = input with { Key = existing.Key };
-        var (defaults, appSourceCop) = await ValidateAsync(validatableInput, existingId: id, ct);
+        var (defaults, appSourceCop, defaultModuleIds) = await ValidateAsync(validatableInput, existingId: id, ct);
 
         existing.Runtime = input.Runtime;
         existing.Name = input.Name.Trim();
@@ -206,6 +220,7 @@ public class TemplateService
         existing.UpdatedAt = DateTime.UtcNow;
 
         ReconcileFolders(existing, input.Folders);
+        ReconcileDefaultModules(existing, defaultModuleIds);
 
         await _db.SaveChangesAsync(ct);
 
@@ -303,6 +318,45 @@ public class TemplateService
     }
 
     /// <summary>
+    /// Reconciles the template's <c>runtime_template_default_modules</c> rows
+    /// against the validated module-id list. Like the folder/file reconciler,
+    /// this mutates existing rows in-order so unchanged join rows keep stable
+    /// primary keys and the audit log only captures the rows that really moved.
+    /// </summary>
+    private static void ReconcileDefaultModules(RuntimeTemplate existing, IReadOnlyList<int> moduleIds)
+    {
+        var existingDefaults = existing.DefaultModules.OrderBy(d => d.Ordering).ToList();
+
+        for (var i = 0; i < moduleIds.Count; i++)
+        {
+            var moduleId = moduleIds[i];
+            if (i < existingDefaults.Count)
+            {
+                var row = existingDefaults[i];
+                row.Ordering = i;
+                row.ModuleId = moduleId;
+                // Drop the old navigation reference so EF doesn't treat the
+                // FK change as ambiguous when the previously-attached Module
+                // is still tracked.
+                row.Module = null;
+            }
+            else
+            {
+                existing.DefaultModules.Add(new RuntimeTemplateDefaultModule
+                {
+                    Ordering = i,
+                    ModuleId = moduleId,
+                });
+            }
+        }
+
+        for (var i = moduleIds.Count; i < existingDefaults.Count; i++)
+        {
+            existing.DefaultModules.Remove(existingDefaults[i]);
+        }
+    }
+
+    /// <summary>
     /// Same incremental update as <see cref="ReconcileFolders"/> but for the
     /// <c>template_files</c> rows hung off a single folder.
     /// </summary>
@@ -346,7 +400,7 @@ public class TemplateService
     /// Throws a <see cref="PlanValidationException"/> aggregating every error so
     /// the form can render all of them on a single round-trip.
     /// </summary>
-    private async Task<(TemplateDefaults Defaults, AppSourceCopSettings AppSourceCop)> ValidateAsync(
+    private async Task<(TemplateDefaults Defaults, AppSourceCopSettings AppSourceCop, IReadOnlyList<int> DefaultModuleIds)> ValidateAsync(
         TemplateInput input,
         int? existingId,
         CancellationToken ct)
@@ -482,12 +536,50 @@ public class TemplateService
             }
         }
 
+        // Resolve default-module keys to ids. Duplicates in the input list are
+        // collapsed (preserving the first occurrence's order); unknown or
+        // soft-deleted module keys surface as a single field-keyed error so
+        // the admin sees exactly which row to fix.
+        var defaultModuleIds = new List<int>();
+        if (input.DefaultModuleKeys.Count > 0)
+        {
+            var trimmedKeys = input.DefaultModuleKeys
+                .Select(k => k?.Trim() ?? string.Empty)
+                .Where(k => !string.IsNullOrEmpty(k))
+                .ToList();
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var orderedUnique = new List<string>();
+            foreach (var k in trimmedKeys)
+            {
+                if (seen.Add(k)) orderedUnique.Add(k);
+            }
+
+            var matched = await _db.Modules
+                .AsNoTracking()
+                .Where(m => orderedUnique.Contains(m.Key) && m.DeletedAt == null)
+                .Select(m => new { m.Key, m.Id })
+                .ToListAsync(ct);
+            var idByKey = matched.ToDictionary(m => m.Key, m => m.Id, StringComparer.Ordinal);
+
+            var missing = orderedUnique.Where(k => !idByKey.ContainsKey(k)).ToList();
+            if (missing.Count > 0)
+            {
+                errors[nameof(input.DefaultModuleKeys)] =
+                    $"Unknown default module(s): {string.Join(", ", missing)}.";
+            }
+            else
+            {
+                defaultModuleIds = orderedUnique.Select(k => idByKey[k]).ToList();
+            }
+        }
+
         if (errors.Count > 0)
         {
             throw new PlanValidationException(errors);
         }
 
-        return (defaults, appSourceCop);
+        return (defaults, appSourceCop, defaultModuleIds);
     }
 }
 
@@ -511,6 +603,7 @@ public record TemplateInput(
     int ModuleIdRangeStart,
     int ModuleIdRangeSize,
     bool Deprecated,
+    IReadOnlyList<string> DefaultModuleKeys,
     IReadOnlyList<TemplateFolderInput> Folders);
 
 /// <summary>One folder row submitted by the admin folder editor, with its files.</summary>
