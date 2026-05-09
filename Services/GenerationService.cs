@@ -74,6 +74,8 @@ public class GenerationService
             .AsNoTracking()
             .Include(t => t.Folders.OrderBy(f => f.Ordering))
                 .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
+            .Include(t => t.ModuleFolders.OrderBy(f => f.Ordering))
+                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
             .Where(t => t.DeletedAt == null && t.Key == plan.TemplateKey)
             .FirstOrDefaultAsync(ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
@@ -102,6 +104,13 @@ public class GenerationService
             await WriteEmbeddedAsync(archive, $"{rootFolder}/.assets/rulesets/Company.ruleset.json", "ALDevToolbox.Resources.Company.ruleset.json", ct);
             fileCount += 2;
 
+            // Core extension uses the Core folder list; modules use the module
+            // folder list so Core's per-extension scaffolding (App Install
+            // codeunits, setup tables, permission sets) doesn't get duplicated
+            // into every module ZIP.
+            var coreFolders = SnapshotCoreFolders(template);
+            var moduleFolders = SnapshotModuleFolders(template);
+
             // Core extension
             var coreAppJson = await BuildCoreAppJsonAsync(template, plan, coreId, coreName, ct);
             fileCount += await WriteExtensionAsync(
@@ -109,6 +118,7 @@ public class GenerationService
                 rootRelative: $"{rootFolder}/Core",
                 appJson: coreAppJson,
                 template: template,
+                folders: coreFolders,
                 plan: plan,
                 extensionName: coreName,
                 moduleName: coreName,
@@ -123,6 +133,7 @@ public class GenerationService
                     rootRelative: $"{rootFolder}/{info.FolderName}",
                     appJson: moduleAppJson,
                     template: template,
+                    folders: moduleFolders,
                     plan: plan,
                     extensionName: info.ExtensionName,
                     moduleName: info.Module.Name,
@@ -165,6 +176,8 @@ public class GenerationService
             .AsNoTracking()
             .Include(t => t.Folders.OrderBy(f => f.Ordering))
                 .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
+            .Include(t => t.ModuleFolders.OrderBy(f => f.Ordering))
+                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
             .Where(t => t.DeletedAt == null && t.Key == plan.TemplateKey)
             .FirstOrDefaultAsync(ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
@@ -178,12 +191,16 @@ public class GenerationService
 
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
+            // Standalone extensions reuse the Core folder list — they're a
+            // primary, top-level extension by definition, not a module living
+            // alongside a Core in someone else's workspace.
             var appJson = BuildStandaloneAppJson(template, plan);
             fileCount += await WriteExtensionAsync(
                 archive,
                 rootRelative: folderName,
                 appJson: appJson,
                 template: template,
+                folders: SnapshotCoreFolders(template),
                 plan: PlanForStandaloneSubstitution(plan),
                 extensionName: plan.ExtensionName,
                 moduleName: plan.ExtensionName,
@@ -219,6 +236,7 @@ public class GenerationService
         string rootRelative,
         string appJson,
         RuntimeTemplate template,
+        IReadOnlyList<FolderEmit> folders,
         ProjectPlan plan,
         string extensionName,
         string moduleName,
@@ -231,13 +249,14 @@ public class GenerationService
         WriteString(archive, $"{rootRelative}/AppSourceCop.json", JsonSerializer.Serialize(template.AppSourceCop, JsonOptions));
         var fileCount = 2;
 
-        // Top-level folders the template already declares (case-insensitive),
-        // so the static fallback folders below don't collide on Windows
-        // extraction. Without this, a template that lays out 'translations'
-        // would extract alongside our hardcoded 'Translations/.gitkeep' and
-        // produce two folders that resolve to the same path.
+        // Top-level folders the caller's folder list already declares
+        // (case-insensitive), so the static fallback folders below don't
+        // collide on Windows extraction. Without this, a folder list that
+        // lays out 'translations' would extract alongside our hardcoded
+        // 'Translations/.gitkeep' and produce two folders that resolve to
+        // the same path.
         var declaredTops = new HashSet<string>(
-            template.Folders.Select(f => f.Path.Split('/', 2)[0]),
+            folders.Select(f => f.Path.Split('/', 2)[0]),
             StringComparer.OrdinalIgnoreCase);
         if (!declaredTops.Contains("libs"))
         {
@@ -255,14 +274,13 @@ public class GenerationService
             fileCount++;
         }
 
-        foreach (var folder in template.Folders.OrderBy(f => f.Ordering))
+        foreach (var folder in folders)
         {
             var folderRelative = $"{rootRelative}/{folder.Path}";
-            var files = folder.Files.OrderBy(f => f.Ordering).ToList();
 
-            if (plan.IncludeExamples && files.Count > 0)
+            if (plan.IncludeExamples && folder.Files.Count > 0)
             {
-                foreach (var file in files)
+                foreach (var file in folder.Files)
                 {
                     var destInZip = $"{folderRelative}/{file.Path}";
                     if (file.Path.EndsWith(".al", StringComparison.OrdinalIgnoreCase))
@@ -293,6 +311,35 @@ public class GenerationService
 
         return Task.FromResult(fileCount);
     }
+
+    /// <summary>
+    /// Snapshot of a folder + its files, decoupled from whether the source is
+    /// <see cref="TemplateFolder"/> (Core) or <see cref="TemplateModuleFolder"/>
+    /// (modules). Both flow through <see cref="WriteExtensionAsync"/> the same way.
+    /// </summary>
+    private readonly record struct FolderEmit(string Path, IReadOnlyList<FileEmit> Files);
+
+    private readonly record struct FileEmit(string Path, string Content);
+
+    /// <summary>Snapshots the Core folder list for emission into the Core extension ZIP.</summary>
+    private static IReadOnlyList<FolderEmit> SnapshotCoreFolders(RuntimeTemplate template) =>
+        template.Folders.OrderBy(f => f.Ordering)
+            .Select(f => new FolderEmit(
+                f.Path,
+                f.Files.OrderBy(x => x.Ordering)
+                    .Select(x => new FileEmit(x.Path, x.Content))
+                    .ToList()))
+            .ToList();
+
+    /// <summary>Snapshots the module folder list for emission into every module extension ZIP.</summary>
+    private static IReadOnlyList<FolderEmit> SnapshotModuleFolders(RuntimeTemplate template) =>
+        template.ModuleFolders.OrderBy(f => f.Ordering)
+            .Select(f => new FolderEmit(
+                f.Path,
+                f.Files.OrderBy(x => x.Ordering)
+                    .Select(x => new FileEmit(x.Path, x.Content))
+                    .ToList()))
+            .ToList();
 
     // ===== app.json builders =====
 

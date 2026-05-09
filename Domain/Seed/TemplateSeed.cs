@@ -23,6 +23,14 @@ public class TemplateSeed
     public AppSourceCopSeed AppSourceCop { get; set; } = new();
 
     public List<FolderSeed> Folders { get; set; } = new();
+
+    /// <summary>
+    /// <c>[[module_folders]]</c> entries — the folder layout emitted into every
+    /// generated module extension. Empty by default; if omitted, modules ship
+    /// with just their <c>app.json</c>, <c>AppSourceCop.json</c>, and the
+    /// static fallback folders. Same shape as <see cref="Folders"/>.
+    /// </summary>
+    public List<FolderSeed> ModuleFolders { get; set; } = new();
 }
 
 /// <summary>The <c>[template]</c> table — identifying metadata and id ranges.</summary>
@@ -38,6 +46,14 @@ public class TemplateMetaSeed
     public int CoreIdRangeTo { get; set; } = 90999;
     public int ModuleIdRangeStart { get; set; } = 91000;
     public int ModuleIdRangeSize { get; set; } = 200;
+
+    /// <summary>
+    /// Module keys pre-selected when a user picks this template on the New
+    /// Workspace form. Order matches the array order in the TOML file. Unknown
+    /// keys are dropped at seed time with a warning rather than failing the
+    /// import — admins can fix typos through the UI later.
+    /// </summary>
+    public List<string> DefaultModules { get; set; } = new();
 }
 
 /// <summary>The <c>[defaults]</c> table — merged into every generated <c>app.json</c>.</summary>

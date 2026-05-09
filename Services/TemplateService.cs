@@ -47,6 +47,10 @@ public class TemplateService
             .ThenBy(t => t.Name)
             .Include(t => t.Folders.OrderBy(f => f.Ordering))
                 .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
+            .Include(t => t.ModuleFolders.OrderBy(f => f.Ordering))
+                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
+            .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
+                .ThenInclude(d => d.Module!)
             .ToListAsync();
     }
 
@@ -68,6 +72,10 @@ public class TemplateService
             .ThenBy(t => t.Name)
             .Include(t => t.Folders.OrderBy(f => f.Ordering))
                 .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
+            .Include(t => t.ModuleFolders.OrderBy(f => f.Ordering))
+                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
+            .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
+                .ThenInclude(d => d.Module!)
             .ToListAsync();
     }
 
@@ -83,6 +91,10 @@ public class TemplateService
             .Where(t => t.Key == key)
             .Include(t => t.Folders.OrderBy(f => f.Ordering))
                 .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
+            .Include(t => t.ModuleFolders.OrderBy(f => f.Ordering))
+                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
+            .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
+                .ThenInclude(d => d.Module!)
             .FirstOrDefaultAsync(ct);
     }
 
@@ -125,7 +137,7 @@ public class TemplateService
     /// </summary>
     public async Task<RuntimeTemplate> CreateAsync(TemplateInput input, CancellationToken ct = default)
     {
-        var (defaults, appSourceCop) = await ValidateAsync(input, existingId: null, ct);
+        var (defaults, appSourceCop, defaultModuleIds) = await ValidateAsync(input, existingId: null, ct);
 
         var now = DateTime.UtcNow;
         var template = new RuntimeTemplate
@@ -161,6 +173,28 @@ public class TemplateService
                         .ToList(),
                 })
                 .ToList(),
+            ModuleFolders = input.ModuleFolders
+                .Select((f, i) => new TemplateModuleFolder
+                {
+                    Ordering = i,
+                    Path = f.Path.Trim(),
+                    Files = f.Files
+                        .Select((file, fi) => new TemplateModuleFile
+                        {
+                            Ordering = fi,
+                            Path = file.Path.Trim(),
+                            Content = file.Content ?? string.Empty,
+                        })
+                        .ToList(),
+                })
+                .ToList(),
+            DefaultModules = defaultModuleIds
+                .Select((moduleId, i) => new RuntimeTemplateDefaultModule
+                {
+                    ModuleId = moduleId,
+                    Ordering = i,
+                })
+                .ToList(),
         };
 
         _db.RuntimeTemplates.Add(template);
@@ -181,6 +215,8 @@ public class TemplateService
     {
         var existing = await _db.RuntimeTemplates
             .Include(t => t.Folders).ThenInclude(f => f.Files)
+            .Include(t => t.ModuleFolders).ThenInclude(f => f.Files)
+            .Include(t => t.DefaultModules)
             .FirstOrDefaultAsync(t => t.Id == id, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
             {
@@ -189,7 +225,7 @@ public class TemplateService
 
         // Preserve the existing key for validation (keys can't change after creation).
         var validatableInput = input with { Key = existing.Key };
-        var (defaults, appSourceCop) = await ValidateAsync(validatableInput, existingId: id, ct);
+        var (defaults, appSourceCop, defaultModuleIds) = await ValidateAsync(validatableInput, existingId: id, ct);
 
         existing.Runtime = input.Runtime;
         existing.Name = input.Name.Trim();
@@ -206,6 +242,8 @@ public class TemplateService
         existing.UpdatedAt = DateTime.UtcNow;
 
         ReconcileFolders(existing, input.Folders);
+        ReconcileModuleFolders(existing, input.ModuleFolders);
+        ReconcileDefaultModules(existing, defaultModuleIds);
 
         await _db.SaveChangesAsync(ct);
 
@@ -303,6 +341,172 @@ public class TemplateService
     }
 
     /// <summary>
+    /// Validates a folder-input collection (folders or module-folders) and
+    /// records errors under <paramref name="fieldPrefix"/>. Both collections
+    /// share the same path/uniqueness rules; only the field-key prefix
+    /// differs so the form can render errors next to the right editor.
+    /// </summary>
+    private static void ValidateFolderInputs(
+        IReadOnlyList<TemplateFolderInput> folders,
+        string fieldPrefix,
+        IDictionary<string, string> errors)
+    {
+        var seenFolderPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < folders.Count; i++)
+        {
+            var folder = folders[i];
+            var path = folder.Path?.Trim() ?? string.Empty;
+            var fieldKey = $"{fieldPrefix}[{i}].Path";
+            if (string.IsNullOrEmpty(path))
+            {
+                errors[fieldKey] = "Folder path is required.";
+            }
+            else if (path.StartsWith('/') || path.Contains('\\') || path.Split('/').Any(seg => seg == ".." || string.IsNullOrWhiteSpace(seg)))
+            {
+                errors[fieldKey] = "Folder path must be relative, use '/' separators, and contain no '..' segments.";
+            }
+            else if (!seenFolderPaths.Add(path))
+            {
+                errors[fieldKey] = $"Duplicate folder path '{path}' (case-insensitive). Windows treats these as the same folder.";
+            }
+
+            var seenFilePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (var j = 0; j < folder.Files.Count; j++)
+            {
+                var file = folder.Files[j];
+                var filePath = file.Path?.Trim() ?? string.Empty;
+                var fileFieldKey = $"{fieldPrefix}[{i}].Files[{j}].Path";
+                if (string.IsNullOrEmpty(filePath))
+                {
+                    errors[fileFieldKey] = "File path is required.";
+                    continue;
+                }
+                if (filePath.StartsWith('/') || filePath.Contains('\\') || filePath.Split('/').Any(seg => seg == ".." || string.IsNullOrWhiteSpace(seg)))
+                {
+                    errors[fileFieldKey] = "File path must be relative, use '/' separators, and contain no '..' segments.";
+                    continue;
+                }
+                if (!seenFilePaths.Add(filePath))
+                {
+                    errors[fileFieldKey] = $"Duplicate file path '{filePath}' (case-insensitive) inside this folder.";
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Same incremental update as <see cref="ReconcileFolders"/> but for the
+    /// <c>template_module_folders</c> rows that scaffold module extensions.
+    /// </summary>
+    private static void ReconcileModuleFolders(RuntimeTemplate existing, IReadOnlyList<TemplateFolderInput> inputs)
+    {
+        var existingFolders = existing.ModuleFolders.OrderBy(f => f.Ordering).ToList();
+
+        for (var i = 0; i < inputs.Count; i++)
+        {
+            var inputFolder = inputs[i];
+            var path = inputFolder.Path.Trim();
+
+            TemplateModuleFolder folder;
+            if (i < existingFolders.Count)
+            {
+                folder = existingFolders[i];
+                folder.Ordering = i;
+                folder.Path = path;
+            }
+            else
+            {
+                folder = new TemplateModuleFolder { Ordering = i, Path = path };
+                existing.ModuleFolders.Add(folder);
+            }
+
+            ReconcileModuleFiles(folder, inputFolder.Files);
+        }
+
+        for (var i = inputs.Count; i < existingFolders.Count; i++)
+        {
+            existing.ModuleFolders.Remove(existingFolders[i]);
+        }
+    }
+
+    /// <summary>
+    /// Same incremental update as <see cref="ReconcileFiles"/> but for the
+    /// <c>template_module_files</c> rows hung off a module folder.
+    /// </summary>
+    private static void ReconcileModuleFiles(TemplateModuleFolder folder, IReadOnlyList<TemplateFileInput> inputs)
+    {
+        var existingFiles = folder.Files.OrderBy(f => f.Ordering).ToList();
+
+        for (var i = 0; i < inputs.Count; i++)
+        {
+            var input = inputs[i];
+            var path = input.Path.Trim();
+            var content = input.Content ?? string.Empty;
+
+            if (i < existingFiles.Count)
+            {
+                var file = existingFiles[i];
+                file.Ordering = i;
+                file.Path = path;
+                file.Content = content;
+            }
+            else
+            {
+                folder.Files.Add(new TemplateModuleFile
+                {
+                    Ordering = i,
+                    Path = path,
+                    Content = content,
+                });
+            }
+        }
+
+        for (var i = inputs.Count; i < existingFiles.Count; i++)
+        {
+            folder.Files.Remove(existingFiles[i]);
+        }
+    }
+
+    /// <summary>
+    /// Reconciles the template's <c>runtime_template_default_modules</c> rows
+    /// against the validated module-id list. Like the folder/file reconciler,
+    /// this mutates existing rows in-order so unchanged join rows keep stable
+    /// primary keys and the audit log only captures the rows that really moved.
+    /// </summary>
+    private static void ReconcileDefaultModules(RuntimeTemplate existing, IReadOnlyList<int> moduleIds)
+    {
+        var existingDefaults = existing.DefaultModules.OrderBy(d => d.Ordering).ToList();
+
+        for (var i = 0; i < moduleIds.Count; i++)
+        {
+            var moduleId = moduleIds[i];
+            if (i < existingDefaults.Count)
+            {
+                var row = existingDefaults[i];
+                row.Ordering = i;
+                row.ModuleId = moduleId;
+                // Drop the old navigation reference so EF doesn't treat the
+                // FK change as ambiguous when the previously-attached Module
+                // is still tracked.
+                row.Module = null;
+            }
+            else
+            {
+                existing.DefaultModules.Add(new RuntimeTemplateDefaultModule
+                {
+                    Ordering = i,
+                    ModuleId = moduleId,
+                });
+            }
+        }
+
+        for (var i = moduleIds.Count; i < existingDefaults.Count; i++)
+        {
+            existing.DefaultModules.Remove(existingDefaults[i]);
+        }
+    }
+
+    /// <summary>
     /// Same incremental update as <see cref="ReconcileFolders"/> but for the
     /// <c>template_files</c> rows hung off a single folder.
     /// </summary>
@@ -346,7 +550,7 @@ public class TemplateService
     /// Throws a <see cref="PlanValidationException"/> aggregating every error so
     /// the form can render all of them on a single round-trip.
     /// </summary>
-    private async Task<(TemplateDefaults Defaults, AppSourceCopSettings AppSourceCop)> ValidateAsync(
+    private async Task<(TemplateDefaults Defaults, AppSourceCopSettings AppSourceCop, IReadOnlyList<int> DefaultModuleIds)> ValidateAsync(
         TemplateInput input,
         int? existingId,
         CancellationToken ct)
@@ -439,46 +643,46 @@ public class TemplateService
 
         // Case-insensitive uniqueness for folders and files: Windows treats
         // 'src/Foo' and 'src/foo' as the same path, so admitting both would
-        // fail at extraction time. Mirror that here.
-        var seenFolderPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < input.Folders.Count; i++)
+        // fail at extraction time. Mirror that here. Same rules apply to
+        // module folders, just under their own field-key namespace.
+        ValidateFolderInputs(input.Folders, "Folders", errors);
+        ValidateFolderInputs(input.ModuleFolders, "ModuleFolders", errors);
+
+        // Resolve default-module keys to ids. Duplicates in the input list are
+        // collapsed (preserving the first occurrence's order); unknown or
+        // soft-deleted module keys surface as a single field-keyed error so
+        // the admin sees exactly which row to fix.
+        var defaultModuleIds = new List<int>();
+        if (input.DefaultModuleKeys.Count > 0)
         {
-            var folder = input.Folders[i];
-            var path = folder.Path?.Trim() ?? string.Empty;
-            var fieldKey = $"Folders[{i}].Path";
-            if (string.IsNullOrEmpty(path))
+            var trimmedKeys = input.DefaultModuleKeys
+                .Select(k => k?.Trim() ?? string.Empty)
+                .Where(k => !string.IsNullOrEmpty(k))
+                .ToList();
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var orderedUnique = new List<string>();
+            foreach (var k in trimmedKeys)
             {
-                errors[fieldKey] = "Folder path is required.";
-            }
-            else if (path.StartsWith('/') || path.Contains('\\') || path.Split('/').Any(seg => seg == ".." || string.IsNullOrWhiteSpace(seg)))
-            {
-                errors[fieldKey] = "Folder path must be relative, use '/' separators, and contain no '..' segments.";
-            }
-            else if (!seenFolderPaths.Add(path))
-            {
-                errors[fieldKey] = $"Duplicate folder path '{path}' (case-insensitive). Windows treats these as the same folder.";
+                if (seen.Add(k)) orderedUnique.Add(k);
             }
 
-            var seenFilePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            for (var j = 0; j < folder.Files.Count; j++)
+            var matched = await _db.Modules
+                .AsNoTracking()
+                .Where(m => orderedUnique.Contains(m.Key) && m.DeletedAt == null)
+                .Select(m => new { m.Key, m.Id })
+                .ToListAsync(ct);
+            var idByKey = matched.ToDictionary(m => m.Key, m => m.Id, StringComparer.Ordinal);
+
+            var missing = orderedUnique.Where(k => !idByKey.ContainsKey(k)).ToList();
+            if (missing.Count > 0)
             {
-                var file = folder.Files[j];
-                var filePath = file.Path?.Trim() ?? string.Empty;
-                var fileFieldKey = $"Folders[{i}].Files[{j}].Path";
-                if (string.IsNullOrEmpty(filePath))
-                {
-                    errors[fileFieldKey] = "File path is required.";
-                    continue;
-                }
-                if (filePath.StartsWith('/') || filePath.Contains('\\') || filePath.Split('/').Any(seg => seg == ".." || string.IsNullOrWhiteSpace(seg)))
-                {
-                    errors[fileFieldKey] = "File path must be relative, use '/' separators, and contain no '..' segments.";
-                    continue;
-                }
-                if (!seenFilePaths.Add(filePath))
-                {
-                    errors[fileFieldKey] = $"Duplicate file path '{filePath}' (case-insensitive) inside this folder.";
-                }
+                errors[nameof(input.DefaultModuleKeys)] =
+                    $"Unknown default module(s): {string.Join(", ", missing)}.";
+            }
+            else
+            {
+                defaultModuleIds = orderedUnique.Select(k => idByKey[k]).ToList();
             }
         }
 
@@ -487,7 +691,7 @@ public class TemplateService
             throw new PlanValidationException(errors);
         }
 
-        return (defaults, appSourceCop);
+        return (defaults, appSourceCop, defaultModuleIds);
     }
 }
 
@@ -511,7 +715,9 @@ public record TemplateInput(
     int ModuleIdRangeStart,
     int ModuleIdRangeSize,
     bool Deprecated,
-    IReadOnlyList<TemplateFolderInput> Folders);
+    IReadOnlyList<string> DefaultModuleKeys,
+    IReadOnlyList<TemplateFolderInput> Folders,
+    IReadOnlyList<TemplateFolderInput> ModuleFolders);
 
 /// <summary>One folder row submitted by the admin folder editor, with its files.</summary>
 public record TemplateFolderInput(string Path, IReadOnlyList<TemplateFileInput> Files);

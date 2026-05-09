@@ -58,8 +58,8 @@ AcmeCustomer/
 │   ├── AppSourceCop.json
 │   ├── libs/.gitkeep
 │   ├── permissionsets/.gitkeep
-│   ├── Source/
-│   │   └── ...                          # same folder structure as Core
+│   ├── Source/                          # folders defined by template_module_folders
+│   │   └── .gitkeep                     # empty by default — admins opt in to module scaffolding
 │   └── Translations/.gitkeep
 ├── PaymentManagement/
 │   ├── ...
@@ -76,7 +76,7 @@ AcmeCustomer/
 3. Generate Core extension:
      a. Build app.json from template.defaults + project plan
      b. Build AppSourceCop.json from template.app_source_cop
-     c. Walk template.folders — for each:
+     c. Walk template.folders (Core-only) — for each:
           if folder has template_files rows AND IncludeExamples is true:
               for each file row, write its `path` into the folder with `content` as the body
               run mustache substitution on each `.al` file's content
@@ -88,7 +88,11 @@ AcmeCustomer/
      b. Build app.json including:
           - dependencies = [Core] ++ module's own dependencies
           - the computed ID range
-     c. Same folder/example process as Core
+     c. Walk template.module_folders — same folder/file process as step 3c, but
+        sourced from template_module_folders / template_module_files. Empty by
+        default, so out-of-the-box modules ship with just app.json,
+        AppSourceCop.json and the static fallback folders. Admins can opt in to
+        module scaffolding via the Module folders editor on the template.
 5. Generate root files:
      a. .gitignore (static — see template-and-seeding.md for content; lives as a string constant or embedded resource)
      b. {WorkspaceName}.code-workspace (see below)

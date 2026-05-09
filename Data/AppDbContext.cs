@@ -21,6 +21,9 @@ public class AppDbContext : DbContext
     public DbSet<RuntimeTemplate> RuntimeTemplates => Set<RuntimeTemplate>();
     public DbSet<TemplateFolder> TemplateFolders => Set<TemplateFolder>();
     public DbSet<TemplateFile> TemplateFiles => Set<TemplateFile>();
+    public DbSet<TemplateModuleFolder> TemplateModuleFolders => Set<TemplateModuleFolder>();
+    public DbSet<TemplateModuleFile> TemplateModuleFiles => Set<TemplateModuleFile>();
+    public DbSet<RuntimeTemplateDefaultModule> RuntimeTemplateDefaultModules => Set<RuntimeTemplateDefaultModule>();
     public DbSet<Module> Modules => Set<Module>();
     public DbSet<ModuleDependency> ModuleDependencies => Set<ModuleDependency>();
     public DbSet<WellKnownDependency> WellKnownDependencies => Set<WellKnownDependency>();
@@ -72,6 +75,33 @@ public class AppDbContext : DbContext
                 .WithOne(f => f.Template!)
                 .HasForeignKey(f => f.TemplateId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.ModuleFolders)
+                .WithOne(f => f.Template!)
+                .HasForeignKey(f => f.TemplateId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.DefaultModules)
+                .WithOne(d => d.Template!)
+                .HasForeignKey(d => d.RuntimeTemplateId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RuntimeTemplateDefaultModule>(entity =>
+        {
+            entity.ToTable("runtime_template_default_modules");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(e => e.RuntimeTemplateId).HasColumnName("runtime_template_id").IsRequired();
+            entity.Property(e => e.ModuleId).HasColumnName("module_id").IsRequired();
+            entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
+            entity.HasIndex(e => new { e.RuntimeTemplateId, e.Ordering });
+            entity.HasIndex(e => new { e.RuntimeTemplateId, e.ModuleId }).IsUnique();
+
+            entity.HasOne(e => e.Module!)
+                .WithMany()
+                .HasForeignKey(e => e.ModuleId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<TemplateFolder>(entity =>
@@ -88,6 +118,35 @@ public class AppDbContext : DbContext
                 .WithOne(f => f.Folder!)
                 .HasForeignKey(f => f.TemplateFolderId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<TemplateModuleFolder>(entity =>
+        {
+            entity.ToTable("template_module_folders");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(e => e.TemplateId).HasColumnName("template_id").IsRequired();
+            entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
+            entity.Property(e => e.Path).HasColumnName("path").IsRequired();
+            entity.HasIndex(e => new { e.TemplateId, e.Ordering });
+
+            entity.HasMany(e => e.Files)
+                .WithOne(f => f.Folder!)
+                .HasForeignKey(f => f.TemplateModuleFolderId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<TemplateModuleFile>(entity =>
+        {
+            entity.ToTable("template_module_files");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(e => e.TemplateModuleFolderId).HasColumnName("template_module_folder_id").IsRequired();
+            entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
+            entity.Property(e => e.Path).HasColumnName("path").IsRequired();
+            entity.Property(e => e.Content).HasColumnName("content").IsRequired();
+            entity.HasIndex(e => new { e.TemplateModuleFolderId, e.Ordering });
+            entity.HasIndex(e => new { e.TemplateModuleFolderId, e.Path }).IsUnique();
         });
 
         modelBuilder.Entity<TemplateFile>(entity =>

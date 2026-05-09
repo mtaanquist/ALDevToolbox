@@ -216,6 +216,23 @@
         _coreIdRangeTo = template.CoreIdRangeTo;
         _applicationVersion = template.DefaultApplication;
         _runtimeVersion = $"{template.Runtime}.0";
+
+        // Pre-select the modules this template ships with (Milestone P2.1).
+        // Switching templates retunes the selection; the user's subsequent
+        // toggles after that are honoured unchanged. We only consider modules
+        // that are still in the active list — soft-deleted or filtered-out
+        // entries silently drop off the default set.
+        _selectedModuleKeys.Clear();
+        if (_modules is null) return;
+        var availableKeys = _modules.Select(m => m.Key).ToHashSet(StringComparer.Ordinal);
+        foreach (var d in template.DefaultModules.OrderBy(d => d.Ordering))
+        {
+            var key = d.Module?.Key;
+            if (!string.IsNullOrEmpty(key) && availableKeys.Contains(key))
+            {
+                _selectedModuleKeys.Add(key);
+            }
+        }
     }
 
     private void OnModuleToggled(string key, bool isChecked)
@@ -263,7 +280,7 @@
                 PreviewNode.Folder("images", new[] { PreviewNode.File("logo.png") }),
                 PreviewNode.Folder("rulesets", new[] { PreviewNode.File("Company.ruleset.json") }),
             }),
-            BuildExtensionNode("Core"),
+            BuildExtensionNode("Core", isCore: true),
         };
 
         if (_modules is not null)
@@ -272,7 +289,7 @@
             {
                 var module = _modules.FirstOrDefault(m => m.Key == key);
                 if (module is null) continue;
-                children.Add(BuildExtensionNode(StripWhitespace(module.Name)));
+                children.Add(BuildExtensionNode(StripWhitespace(module.Name), isCore: false));
             }
         }
 
@@ -284,7 +301,7 @@
             new PreviewNode(rootName, PreviewNodeKind.Workspace, children));
     }
 
-    private PreviewNode BuildExtensionNode(string folderName)
+    private PreviewNode BuildExtensionNode(string folderName, bool isCore)
     {
         var contents = new List<PreviewNode>
         {
@@ -294,9 +311,16 @@
 
         if (_selected is not null)
         {
-            var entries = _selected.Folders
-                .OrderBy(f => f.Ordering)
-                .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFiles(f)));
+            // Core uses Folders; modules use ModuleFolders. The split exists
+            // so per-Core scaffolding (App Install codeunits, setup tables)
+            // doesn't bleed into every module preview.
+            var entries = isCore
+                ? _selected.Folders
+                    .OrderBy(f => f.Ordering)
+                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromFiles(f.Files)))
+                : _selected.ModuleFolders
+                    .OrderBy(f => f.Ordering)
+                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromFiles(f.Files)));
             contents.AddRange(PreviewTreeBuilder.BuildFolderChildren(entries));
         }
 
@@ -322,14 +346,24 @@
         contents.Add(PreviewNode.Folder(name, new[] { PreviewNode.File(".gitkeep") }));
     }
 
-    private List<PreviewNode> LeafFiles(TemplateFolder folder)
+    private List<PreviewNode> LeafFilesFromFiles(IEnumerable<TemplateFile> files) =>
+        LeafFilesByPaths(files.OrderBy(f => f.Ordering).Select(f => f.Path));
+
+    private List<PreviewNode> LeafFilesFromFiles(IEnumerable<TemplateModuleFile> files) =>
+        LeafFilesByPaths(files.OrderBy(f => f.Ordering).Select(f => f.Path));
+
+    /// <summary>
+    /// Shared tail for the two <see cref="LeafFilesFromFiles(IEnumerable{TemplateFile})"/>
+    /// overloads above. Same rule as the generator: when examples are off or the
+    /// folder has no files, the preview shows a single <c>.gitkeep</c>; otherwise
+    /// it shows one node per file in the order the admin set.
+    /// </summary>
+    private List<PreviewNode> LeafFilesByPaths(IEnumerable<string> paths)
     {
-        if (_includeExamples && folder.Files.Count > 0)
+        var list = paths.ToList();
+        if (_includeExamples && list.Count > 0)
         {
-            return folder.Files
-                .OrderBy(f => f.Ordering)
-                .Select(f => PreviewNode.File(f.Path))
-                .ToList();
+            return list.Select(PreviewNode.File).ToList();
         }
         return new List<PreviewNode> { PreviewNode.File(".gitkeep") };
     }
