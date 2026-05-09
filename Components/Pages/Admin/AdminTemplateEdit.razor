@@ -583,6 +583,14 @@
 @code {
     [Parameter] public string? Key { get; set; }
 
+    /// <summary>
+    /// When the new-template form is opened via the list-page Duplicate
+    /// action, this carries the source template's key. The form prefills
+    /// from that template and clears the Key field so the admin can pick a
+    /// fresh one before saving.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "from")] public string? DuplicateFrom { get; set; }
+
     private bool IsEdit => !string.IsNullOrEmpty(Key);
     private string PageTitleText => IsEdit ? "Edit template" : "New template";
 
@@ -681,10 +689,41 @@
 
         if (!IsEdit)
         {
-            _form ??= FormState.Blank();
             _existingId = null;
             _isDeleted = false;
             _loadFailed = false;
+
+            // Duplicate flow: prefill the new-template form from an existing
+            // template's state. The Key is intentionally cleared so the admin
+            // has to pick a fresh one — every other field carries over and
+            // can be tweaked before save. Falls back to a blank form if the
+            // source key is missing or no longer exists.
+            if (!string.IsNullOrWhiteSpace(DuplicateFrom))
+            {
+                var source = await Templates.GetByKeyAsync(DuplicateFrom);
+                if (source is not null)
+                {
+                    _form = FormState.From(source);
+                    _form.Key = string.Empty;
+                    _form.Name = string.IsNullOrWhiteSpace(source.Name)
+                        ? string.Empty
+                        : $"{source.Name} (copy)";
+                    // Don't carry the deprecated flag onto a brand-new copy —
+                    // the admin is starting fresh, not preserving end-of-life.
+                    _form.Deprecated = false;
+                    // Open the structured form so the empty Key is the first
+                    // visible required field rather than buried in TOML.
+                    _mode = EditorMode.Form;
+                    _saveSuccess = $"Duplicated from \"{source.Key}\". Pick a new key, then click Create template.";
+                    return;
+                }
+                Log.LogWarning("Duplicate source template '{Key}' not found; falling back to blank form.", DuplicateFrom);
+            }
+
+            // Always reset on the no-source path so navigating from
+            // ?from=foo to a plain /new doesn't carry the prefilled state
+            // through.
+            _form = FormState.Blank();
             // New-template flow opens in TOML — pasting a template.toml is the
             // common path. Pre-render the blank scaffold once so the textarea
             // has something useful to start from.
