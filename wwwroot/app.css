@@ -299,6 +299,52 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .preview-card .section-label { margin-bottom: 8px; display: block; }
 
+/* Import-config card on the New Workspace / New Extension pages. Lives at
+   the top of the right-hand column and reuses .preview-card for chrome. */
+.import-card {
+    max-height: none;
+    overflow: visible;
+}
+
+.import-card__row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.import-card__button {
+    cursor: pointer;
+    margin: 0;
+}
+
+/* Native <input type="file"> is awkward to style cross-browser, so we hide
+   it visually and let the surrounding label trigger it. The accessible
+   name comes from the label's text content. */
+.import-card__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.import-card__filename {
+    font-size: 12.5px;
+    color: var(--color-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.import-card__hint { margin-top: 8px; }
+
 .preview-stats {
     display: grid;
     grid-template-columns: 1fr 1fr;

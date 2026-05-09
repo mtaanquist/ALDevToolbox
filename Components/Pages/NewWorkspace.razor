@@ -29,27 +29,6 @@
                 <AntiforgeryToken />
                 <input type="hidden" name="GenToken" value="" />
 
-                <section class="form-section form-section--import">
-                    <label class="section-label">Import config</label>
-                    <InputFile OnChange="OnImportFileChosen" accept=".toml" />
-                    <small class="muted">
-                        Restore this form from a previously saved <code>@WorkspaceConfigService.FileName</code>.
-                    </small>
-                    @if (!string.IsNullOrEmpty(_importMessage))
-                    {
-                        <p class="caption muted">@_importMessage</p>
-                    }
-                    @if (_importErrors.Count > 0)
-                    {
-                        <ul class="form-field-error" role="alert">
-                            @foreach (var err in _importErrors)
-                            {
-                                <li>@err.Key: @err.Value</li>
-                            }
-                        </ul>
-                    }
-                </section>
-
                 <section class="form-section">
                     <label class="section-label" for="ws-template">Runtime template</label>
                     <select id="ws-template" name="TemplateKey" required
@@ -167,6 +146,37 @@
             </form>
 
             <aside class="workspace-layout__preview">
+                <section class="preview-card import-card">
+                    <div class="section-label">Import config</div>
+                    <div class="import-card__row">
+                        <label class="btn btn--sm import-card__button">
+                            <Icon Name="upload" Width="14" Height="14" />
+                            <span>Choose file…</span>
+                            <InputFile OnChange="OnImportFileChosen" accept=".toml" class="import-card__input" />
+                        </label>
+                        @if (!string.IsNullOrEmpty(_importFileName))
+                        {
+                            <span class="import-card__filename" title="@_importFileName">@_importFileName</span>
+                        }
+                    </div>
+                    <p class="caption muted import-card__hint">
+                        Restore this form from a previously saved <code>@WorkspaceConfigService.FileName</code>.
+                    </p>
+                    @if (!string.IsNullOrEmpty(_importMessage))
+                    {
+                        <p class="caption muted">@_importMessage</p>
+                    }
+                    @if (_importErrors.Count > 0)
+                    {
+                        <ul class="form-field-error" role="alert">
+                            @foreach (var err in _importErrors)
+                            {
+                                <li>@err.Key: @err.Value</li>
+                            }
+                        </ul>
+                    }
+                </section>
+
                 <section class="preview-card">
                     <div class="section-label">Preview</div>
                     <FolderTreePreview Root="BuildPreview()" />
@@ -209,9 +219,11 @@
     private bool _includeExamples = true;
     private bool _includeForNav;
 
-    // Import-config feedback. _importMessage is informational (e.g. the name of
-    // the file we just hydrated from); _importErrors is populated when the file
-    // failed validation so the user can see exactly what went wrong.
+    // Import-config feedback. _importFileName is the name shown next to the
+    // file picker; _importMessage is the success/seed line shown underneath;
+    // _importErrors carries the field-keyed validation messages when a file
+    // was rejected.
+    private string _importFileName = string.Empty;
     private string _importMessage = string.Empty;
     private Dictionary<string, string> _importErrors = new();
     // 1 MiB is well above any plausible workspace.aldt.toml size; bigger files
@@ -420,6 +432,8 @@
         var file = e.File;
         if (file is null) return;
 
+        _importFileName = file.Name;
+
         if (file.Size > MaxImportSize)
         {
             _importErrors["File"] = $"File is larger than {MaxImportSize / 1024} KiB.";
@@ -459,7 +473,7 @@
         }
 
         ApplyImportedPlan(import.Workspace);
-        _importMessage = $"Imported settings from {file.Name}.";
+        _importMessage = "Form restored from this config.";
     }
 
     /// <summary>

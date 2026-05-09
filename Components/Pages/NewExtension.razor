@@ -29,29 +29,6 @@
                 <AntiforgeryToken />
                 <input type="hidden" name="GenToken" value="" />
 
-                <section class="form-section form-section--import">
-                    <label class="section-label">Import config</label>
-                    <InputFile OnChange="OnImportFileChosen" accept=".toml" />
-                    <small class="muted">
-                        Restore this form from a previously saved <code>@WorkspaceConfigService.FileName</code>.
-                        A workspace config fills in the template, versions, and publisher;
-                        an extension config restores every field.
-                    </small>
-                    @if (!string.IsNullOrEmpty(_importMessage))
-                    {
-                        <p class="caption muted">@_importMessage</p>
-                    }
-                    @if (_importErrors.Count > 0)
-                    {
-                        <ul class="form-field-error" role="alert">
-                            @foreach (var err in _importErrors)
-                            {
-                                <li>@err.Key: @err.Value</li>
-                            }
-                        </ul>
-                    }
-                </section>
-
                 <section class="form-section">
                     <label class="section-label" for="ext-template">Runtime template</label>
                     <select id="ext-template" name="TemplateKey" required
@@ -154,6 +131,39 @@
             </form>
 
             <aside class="workspace-layout__preview">
+                <section class="preview-card import-card">
+                    <div class="section-label">Import config</div>
+                    <div class="import-card__row">
+                        <label class="btn btn--sm import-card__button">
+                            <Icon Name="upload" Width="14" Height="14" />
+                            <span>Choose file…</span>
+                            <InputFile OnChange="OnImportFileChosen" accept=".toml" class="import-card__input" />
+                        </label>
+                        @if (!string.IsNullOrEmpty(_importFileName))
+                        {
+                            <span class="import-card__filename" title="@_importFileName">@_importFileName</span>
+                        }
+                    </div>
+                    <p class="caption muted import-card__hint">
+                        Restore this form from a previously saved <code>@WorkspaceConfigService.FileName</code>.
+                        A workspace config fills in the template, versions, and publisher;
+                        an extension config restores every field.
+                    </p>
+                    @if (!string.IsNullOrEmpty(_importMessage))
+                    {
+                        <p class="caption muted">@_importMessage</p>
+                    }
+                    @if (_importErrors.Count > 0)
+                    {
+                        <ul class="form-field-error" role="alert">
+                            @foreach (var err in _importErrors)
+                            {
+                                <li>@err.Key: @err.Value</li>
+                            }
+                        </ul>
+                    }
+                </section>
+
                 <section class="preview-card">
                     <div class="section-label">Preview</div>
                     <FolderTreePreview Root="BuildPreview()" />
@@ -203,9 +213,11 @@
     private bool _includeExamples = true;
     private List<DependencyEntry> _dependencies = new();
 
-    // Import-config feedback. _importMessage describes the last successful
-    // hydration; _importErrors carries field-keyed validation messages when a
-    // file was rejected. See the workspace-page comments for the same shape.
+    // Import-config feedback. _importFileName labels the picked file next to
+    // the button; _importMessage is the success/seed line shown underneath;
+    // _importErrors carries field-keyed validation messages when a file was
+    // rejected. See the workspace-page comments for the same shape.
+    private string _importFileName = string.Empty;
     private string _importMessage = string.Empty;
     private Dictionary<string, string> _importErrors = new();
     private const long MaxImportSize = 1 * 1024 * 1024;
@@ -320,6 +332,8 @@
         var file = e.File;
         if (file is null) return;
 
+        _importFileName = file.Name;
+
         if (file.Size > MaxImportSize)
         {
             _importErrors["File"] = $"File is larger than {MaxImportSize / 1024} KiB.";
@@ -355,12 +369,12 @@
         {
             case WorkspaceConfigService.ExtensionKind when import.Extension is not null:
                 ApplyImportedExtension(import.Extension);
-                _importMessage = $"Imported extension settings from {file.Name}.";
+                _importMessage = "Form restored from this extension config.";
                 break;
             case WorkspaceConfigService.WorkspaceKind when import.Workspace is not null:
                 ApplyImportedWorkspace(import.Workspace);
-                _importMessage = $"Seeded extension form from workspace config {file.Name}. "
-                    + "Fill in the extension name and adjust the ID range before generating.";
+                _importMessage = "Filled in template, versions, and publisher from this workspace config. "
+                    + "Set the extension name and ID range before generating.";
                 break;
             default:
                 _importErrors["Kind"] = $"Unsupported config kind '{import.Kind}'.";
