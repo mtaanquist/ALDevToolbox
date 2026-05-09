@@ -206,7 +206,9 @@
         _templateKey = template.Key;
         _publisher = template.Defaults.Publisher;
         _applicationVersion = template.DefaultApplication;
-        _runtimeVersion = $"{template.Runtime}.0";
+        // Runtime is a string (Major or Major.Minor). app.json wants
+        // Major.Minor; append ".0" when the template only has a major.
+        _runtimeVersion = template.Runtime.Contains('.') ? template.Runtime : $"{template.Runtime}.0";
     }
 
     private void OnDependenciesChanged(List<DependencyEntry> next)

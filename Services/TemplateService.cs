@@ -17,7 +17,29 @@ public class TemplateService
 {
     private static readonly Regex KeyRegex = new("^[a-z0-9-]+$", RegexOptions.Compiled);
 
+    /// <summary>
+    /// Accepts BC's runtime formats: bare major (<c>15</c>) or
+    /// Major.Minor (<c>15.2</c>). The seed schema and the admin form both
+    /// post strings; the validation lives here so neither can sneak past it.
+    /// </summary>
+    private static readonly Regex RuntimeFormatRegex = new(@"^\d+(\.\d+)?$", RegexOptions.Compiled);
+
     private static readonly JsonSerializerOptions JsonOptions = PersistenceJson.Options;
+
+    /// <summary>
+    /// Parses a Runtime string (e.g. <c>"15"</c> or <c>"15.2"</c>) into a
+    /// sortable tuple so <c>9 &lt; 15 &lt; 15.2 &lt; 16</c> the way an admin
+    /// expects, instead of the lexicographic order SQLite would otherwise
+    /// give us. Unparseable values sort first.
+    /// </summary>
+    public static (int Major, int Minor) RuntimeSortKey(string? runtime)
+    {
+        if (string.IsNullOrWhiteSpace(runtime)) return (-1, -1);
+        var parts = runtime.Trim().Split('.', 2);
+        var major = int.TryParse(parts[0], out var m) ? m : -1;
+        var minor = parts.Length > 1 && int.TryParse(parts[1], out var n) ? n : 0;
+        return (major, minor);
+    }
 
     private readonly AppDbContext _db;
     private readonly ILogger<TemplateService> _logger;
@@ -33,7 +55,7 @@ public class TemplateService
     /// runtime version. <paramref name="includeDeprecated"/> is <c>true</c> for
     /// admin views and <c>false</c> for end-user dropdowns.
     /// </summary>
-    public Task<List<RuntimeTemplate>> GetTemplatesAsync(bool includeDeprecated = true)
+    public async Task<List<RuntimeTemplate>> GetTemplatesAsync(bool includeDeprecated = true)
     {
         var query = _db.RuntimeTemplates
             .AsNoTracking()
@@ -42,9 +64,10 @@ public class TemplateService
         if (!includeDeprecated)
             query = query.Where(t => !t.Deprecated);
 
-        return query
-            .OrderBy(t => t.Runtime)
-            .ThenBy(t => t.Name)
+        // Sorting on Runtime happens after materialisation now: the column is
+        // TEXT and SQLite's lexicographic ordering would put "10" before "9".
+        // RuntimeSortKey gives admins the version-aware ordering they expect.
+        var rows = await query
             .Include(t => t.Folders.OrderBy(f => f.Ordering))
                 .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
             .Include(t => t.ModuleFolders.OrderBy(f => f.Ordering))
@@ -52,13 +75,18 @@ public class TemplateService
             .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
                 .ThenInclude(d => d.Module!)
             .ToListAsync();
+
+        return rows
+            .OrderBy(t => RuntimeSortKey(t.Runtime))
+            .ThenBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     /// <summary>
     /// Returns every template, including deprecated and soft-deleted ones. Drives
     /// the admin list view, where deleted rows are recoverable via "Restore".
     /// </summary>
-    public Task<List<RuntimeTemplate>> GetAllForAdminAsync(bool includeDeleted)
+    public async Task<List<RuntimeTemplate>> GetAllForAdminAsync(bool includeDeleted)
     {
         var query = _db.RuntimeTemplates.AsNoTracking();
         if (!includeDeleted)
@@ -66,10 +94,7 @@ public class TemplateService
             query = query.Where(t => t.DeletedAt == null);
         }
 
-        return query
-            .OrderBy(t => t.DeletedAt == null ? 0 : 1)
-            .ThenBy(t => t.Runtime)
-            .ThenBy(t => t.Name)
+        var rows = await query
             .Include(t => t.Folders.OrderBy(f => f.Ordering))
                 .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
             .Include(t => t.ModuleFolders.OrderBy(f => f.Ordering))
@@ -77,6 +102,14 @@ public class TemplateService
             .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
                 .ThenInclude(d => d.Module!)
             .ToListAsync();
+
+        // Same trick as GetTemplatesAsync: keep version-aware ordering
+        // client-side because the DB column is now TEXT.
+        return rows
+            .OrderBy(t => t.DeletedAt == null ? 0 : 1)
+            .ThenBy(t => RuntimeSortKey(t.Runtime))
+            .ThenBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     /// <summary>
@@ -143,7 +176,7 @@ public class TemplateService
         var template = new RuntimeTemplate
         {
             Key = input.Key.Trim(),
-            Runtime = input.Runtime,
+            Runtime = input.Runtime.Trim(),
             Name = input.Name.Trim(),
             Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim(),
             DefaultApplication = input.DefaultApplication.Trim(),
@@ -227,7 +260,7 @@ public class TemplateService
         var validatableInput = input with { Key = existing.Key };
         var (defaults, appSourceCop, defaultModuleIds) = await ValidateAsync(validatableInput, existingId: id, ct);
 
-        existing.Runtime = input.Runtime;
+        existing.Runtime = input.Runtime.Trim();
         existing.Name = input.Name.Trim();
         existing.Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim();
         existing.DefaultApplication = input.DefaultApplication.Trim();
@@ -579,9 +612,13 @@ public class TemplateService
             }
         }
 
-        if (input.Runtime <= 0)
+        if (string.IsNullOrWhiteSpace(input.Runtime))
         {
-            errors[nameof(input.Runtime)] = "Runtime must be a positive integer.";
+            errors[nameof(input.Runtime)] = "Runtime is required.";
+        }
+        else if (!RuntimeFormatRegex.IsMatch(input.Runtime.Trim()))
+        {
+            errors[nameof(input.Runtime)] = "Runtime must be a number, optionally with one minor part (e.g. 15 or 15.2).";
         }
 
         if (string.IsNullOrWhiteSpace(input.Name))
@@ -703,7 +740,7 @@ public class TemplateService
 /// </summary>
 public record TemplateInput(
     string Key,
-    int Runtime,
+    string Runtime,
     string Name,
     string? Description,
     string DefaultApplication,

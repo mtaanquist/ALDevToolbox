@@ -185,7 +185,7 @@ public static class TemplateTomlMapper
         TemplateSeed seed;
         try
         {
-            seed = TomlSerializer.Deserialize<TemplateSeed>(toml, TomlOptions) ?? new TemplateSeed();
+            seed = TomlSerializer.Deserialize<TemplateSeed>(NormalizeRuntimeValue(toml), TomlOptions) ?? new TemplateSeed();
         }
         catch (Tomlyn.TomlException tex)
         {
@@ -258,6 +258,31 @@ public static class TemplateTomlMapper
                 f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList());
     }
 
+    private static readonly Regex UnquotedRuntimeRegex =
+        new(@"(?m)^(\s*runtime\s*=\s*)(\d+(?:\.\d+)?)\s*(#.*)?$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Wraps unquoted <c>runtime = 15</c> / <c>runtime = 15.2</c> values in
+    /// quotes so Tomlyn can deserialise them into the seed's
+    /// <see cref="TemplateMetaSeed.Runtime"/> string property. Already-quoted
+    /// values pass through untouched. Lets old seed files (and pasted snippets
+    /// from the same era) keep parsing while the schema moves on. Doesn't
+    /// fully scope to the <c>[template]</c> section — but the regex anchors on
+    /// the literal key <c>runtime</c> at line start, which doesn't collide
+    /// with the rest of the template schema.
+    /// </summary>
+    public static string NormalizeRuntimeValue(string toml)
+    {
+        if (string.IsNullOrEmpty(toml)) return toml;
+        return UnquotedRuntimeRegex.Replace(toml, m =>
+        {
+            var prefix = m.Groups[1].Value;
+            var value = m.Groups[2].Value;
+            var trailing = m.Groups[3].Success ? " " + m.Groups[3].Value : string.Empty;
+            return $"{prefix}\"{value}\"{trailing}";
+        });
+    }
+
     /// <summary>
     /// Builds a starter TOML document for the New Template flow. Mirrors the
     /// structure of a fresh <c>template.toml</c> but with placeholder values so
@@ -270,7 +295,7 @@ public static class TemplateTomlMapper
             Template = new TemplateMetaSeed
             {
                 Key = "runtime-new",
-                Runtime = 0,
+                Runtime = "0",
                 Name = string.Empty,
                 Description = null,
                 DefaultApplication = string.Empty,

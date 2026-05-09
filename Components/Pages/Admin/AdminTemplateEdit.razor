@@ -173,8 +173,10 @@
             <section class="form-section form-section--row">
                 <div>
                     <label class="section-label" for="tpl-runtime">Runtime</label>
-                    <input id="tpl-runtime" type="number" min="1" required
+                    <input id="tpl-runtime" type="text" required
+                           pattern="\d+(\.\d+)?" placeholder="e.g. 15 or 15.2"
                            @bind="_form.Runtime" @bind:event="oninput" />
+                    <small class="muted">Major or Major.Minor. Goes into <code>app.json</code> as <code>runtime</code>.</small>
                     <FieldError Field="Runtime" Errors="_fieldErrors" />
                 </div>
                 <div>
@@ -1426,7 +1428,7 @@
     private sealed class FormState
     {
         public string Key { get; set; } = string.Empty;
-        public int Runtime { get; set; }
+        public string Runtime { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string? Description { get; set; }
         public string DefaultApplication { get; set; } = string.Empty;
