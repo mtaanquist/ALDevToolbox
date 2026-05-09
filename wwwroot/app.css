@@ -453,6 +453,24 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .ftp__node--file > .ftp__row > .ftp__name { color: var(--color-text-muted); }
 
+/* Marker pinned next to a node that's been added relative to an existing
+   workspace — used by New Extension's sibling-extension preview. */
+.ftp__badge {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: 999px;
+    line-height: 1.4;
+    margin-left: 6px;
+}
+
+.ftp__badge--new {
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+}
+
 .form-grid {
     display: flex;
     flex-direction: column;

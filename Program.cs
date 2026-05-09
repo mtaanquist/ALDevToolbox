@@ -197,9 +197,23 @@ app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen
         Publisher: form["Publisher"].ToString().Trim(),
         Dependencies: dependencies);
 
+    // Sibling-extension context: present when the page had a workspace config
+    // imported. The hidden inputs survive the antiforgery + form post round
+    // trip without a session, so the endpoint stays stateless.
+    var workspaceName = form["WorkspaceName"].ToString().Trim();
+    SiblingWorkspaceContext? sibling = null;
+    if (!string.IsNullOrEmpty(workspaceName))
+    {
+        var workspaceModules = form["WorkspaceModuleKeys"]
+            .Where(s => !string.IsNullOrEmpty(s))
+            .Select(s => s!)
+            .ToList();
+        sibling = new SiblingWorkspaceContext(workspaceName, workspaceModules);
+    }
+
     try
     {
-        var archive = await gen.GenerateExtensionAsync(plan, ct);
+        var archive = await gen.GenerateExtensionAsync(plan, sibling, ct);
         WriteAttachmentHeaders(ctx, archive.FileName);
         SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
         archive.Stream.Position = 0;

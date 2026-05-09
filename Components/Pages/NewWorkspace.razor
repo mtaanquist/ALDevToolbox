@@ -1,8 +1,6 @@
 @page "/projects/new"
 @rendermode InteractiveServer
 @inject TemplateService Templates
-@inject WorkspaceConfigService Configs
-@inject ILogger<NewWorkspace> Logger
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 
@@ -146,37 +144,6 @@
             </form>
 
             <aside class="workspace-layout__preview">
-                <section class="preview-card import-card">
-                    <div class="section-label">Import config</div>
-                    <div class="import-card__row">
-                        <label class="btn btn--sm import-card__button">
-                            <Icon Name="upload" Width="14" Height="14" />
-                            <span>Choose file…</span>
-                            <InputFile OnChange="OnImportFileChosen" accept=".toml" class="import-card__input" />
-                        </label>
-                        @if (!string.IsNullOrEmpty(_importFileName))
-                        {
-                            <span class="import-card__filename" title="@_importFileName">@_importFileName</span>
-                        }
-                    </div>
-                    <p class="caption muted import-card__hint">
-                        Restore this form from a previously saved <code>@WorkspaceConfigService.FileName</code>.
-                    </p>
-                    @if (!string.IsNullOrEmpty(_importMessage))
-                    {
-                        <p class="caption muted">@_importMessage</p>
-                    }
-                    @if (_importErrors.Count > 0)
-                    {
-                        <ul class="form-field-error" role="alert">
-                            @foreach (var err in _importErrors)
-                            {
-                                <li>@err.Key: @err.Value</li>
-                            }
-                        </ul>
-                    }
-                </section>
-
                 <section class="preview-card">
                     <div class="section-label">Preview</div>
                     <FolderTreePreview Root="BuildPreview()" />
@@ -218,17 +185,6 @@
     private readonly HashSet<string> _selectedModuleKeys = new(StringComparer.Ordinal);
     private bool _includeExamples = true;
     private bool _includeForNav;
-
-    // Import-config feedback. _importFileName is the name shown next to the
-    // file picker; _importMessage is the success/seed line shown underneath;
-    // _importErrors carries the field-keyed validation messages when a file
-    // was rejected.
-    private string _importFileName = string.Empty;
-    private string _importMessage = string.Empty;
-    private Dictionary<string, string> _importErrors = new();
-    // 1 MiB is well above any plausible workspace.aldt.toml size; bigger files
-    // are almost certainly the wrong file and shouldn't be read into memory.
-    private const long MaxImportSize = 1 * 1024 * 1024;
 
     protected override async Task OnInitializedAsync()
     {
@@ -417,96 +373,4 @@
 
     private static string StripWhitespace(string value) =>
         new(value.Where(c => !char.IsWhiteSpace(c)).ToArray());
-
-    /// <summary>
-    /// Reads a saved <c>workspace.aldt.toml</c>, validates it against the live
-    /// database, and hydrates the form from the parsed plan. Per Milestone P2.3
-    /// in <c>.design/milestones.md</c>, only the workspace shape is accepted on
-    /// this page — the New Extension page handles the extension shape.
-    /// </summary>
-    private async Task OnImportFileChosen(InputFileChangeEventArgs e)
-    {
-        _importMessage = string.Empty;
-        _importErrors = new();
-
-        var file = e.File;
-        if (file is null) return;
-
-        _importFileName = file.Name;
-
-        if (file.Size > MaxImportSize)
-        {
-            _importErrors["File"] = $"File is larger than {MaxImportSize / 1024} KiB.";
-            return;
-        }
-
-        string toml;
-        try
-        {
-            await using var stream = file.OpenReadStream(MaxImportSize);
-            using var reader = new StreamReader(stream);
-            toml = await reader.ReadToEndAsync();
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Failed to read uploaded config '{Name}'.", file.Name);
-            _importErrors["File"] = $"Could not read the file: {ex.Message}";
-            return;
-        }
-
-        WorkspaceConfigImport import;
-        try
-        {
-            import = await Configs.ParseAsync(toml);
-        }
-        catch (PlanValidationException ex)
-        {
-            _importErrors = ex.Errors.ToDictionary(p => p.Key, p => p.Value);
-            return;
-        }
-
-        if (import.Kind != WorkspaceConfigService.WorkspaceKind || import.Workspace is null)
-        {
-            _importErrors["Kind"] = $"This page accepts kind = '{WorkspaceConfigService.WorkspaceKind}' configs only. "
-                + $"Got '{import.Kind}'. Use the New Extension page for extension configs.";
-            return;
-        }
-
-        ApplyImportedPlan(import.Workspace);
-        _importMessage = "Form restored from this config.";
-    }
-
-    /// <summary>
-    /// Copies a parsed <see cref="ProjectPlan"/> into the bound form fields.
-    /// Uses the picked template's defaults to backfill anything the config
-    /// can't carry on its own (publisher comes from the template, not the
-    /// config) and silently drops module keys whose templates have since been
-    /// soft-deleted — same rule as <see cref="ApplyTemplateDefaults"/>.
-    /// </summary>
-    private void ApplyImportedPlan(ProjectPlan plan)
-    {
-        var template = _templates?.FirstOrDefault(t => t.Key == plan.TemplateKey);
-        _selected = template ?? _selected;
-        _templateKey = plan.TemplateKey;
-        _workspaceName = plan.WorkspaceName;
-        _brief = plan.Brief;
-        _description = plan.Description;
-        _coreIdRangeFrom = plan.CoreIdRangeFrom;
-        _coreIdRangeTo = plan.CoreIdRangeTo;
-        _applicationVersion = plan.ApplicationVersion;
-        _runtimeVersion = plan.RuntimeVersion;
-        _includeExamples = plan.IncludeExamples;
-        _includeForNav = plan.IncludeForNav;
-
-        _selectedModuleKeys.Clear();
-        var availableKeys = _modules?.Select(m => m.Key).ToHashSet(StringComparer.Ordinal)
-            ?? new HashSet<string>(StringComparer.Ordinal);
-        foreach (var key in plan.SelectedModuleKeys)
-        {
-            if (availableKeys.Contains(key))
-            {
-                _selectedModuleKeys.Add(key);
-            }
-        }
-    }
 }
