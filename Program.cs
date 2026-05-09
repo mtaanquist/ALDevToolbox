@@ -31,7 +31,7 @@ builder.Services.AddRazorComponents()
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    options.KnownNetworks.Clear();
+    options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
 });
 
@@ -67,7 +67,7 @@ var dbPath = Environment.GetEnvironmentVariable("DB_PATH")
 builder.Services.AddScoped<AuditInterceptor>();
 builder.Services.AddDbContext<AppDbContext>((sp, options) =>
     options
-        .UseSqlite($"Data Source={dbPath}")
+        .UseSqlite($"Data Source={dbPath}", sqlite => sqlite.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery))
         .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
 
 builder.Services.AddScoped<TemplateService>();
