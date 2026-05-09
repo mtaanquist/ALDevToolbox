@@ -9,11 +9,16 @@ public sealed record TomlParseIssue(int Line, int Column, string Message);
 
 /// <summary>
 /// Raised by <see cref="TemplateTomlMapper.FromToml"/> when the input TOML
-/// fails to parse. Inherits from <see cref="InvalidDataException"/> so existing
-/// callers that already catch the wider type keep working — only the admin
-/// editor reaches in for the structured <see cref="Issues"/> list.
+/// fails to parse. The admin editor reaches in for the structured
+/// <see cref="Issues"/> list to render gutter markers; other callers can fall
+/// back on <see cref="Exception.Message"/>.
 /// </summary>
-public sealed class TomlParseException : InvalidDataException
+/// <remarks>
+/// Doesn't derive from <see cref="InvalidDataException"/> because that type is
+/// sealed in .NET 10. Callers that previously caught the wider type need a
+/// dedicated <c>catch (TomlParseException)</c> branch.
+/// </remarks>
+public sealed class TomlParseException : Exception
 {
     public IReadOnlyList<TomlParseIssue> Issues { get; }
 
