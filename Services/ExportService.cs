@@ -56,6 +56,8 @@ public class ExportService
             .Where(t => t.DeletedAt == null)
             .Include(t => t.Folders.OrderBy(f => f.Ordering))
                 .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
+            .Include(t => t.ModuleFolders.OrderBy(f => f.Ordering))
+                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
             .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
                 .ThenInclude(d => d.Module!)
             .OrderBy(t => t.Runtime)

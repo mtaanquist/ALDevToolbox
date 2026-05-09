@@ -113,7 +113,10 @@ includeSourceInSymbolFile = true
 mandatoryPrefix = "CONIT"
 supportedCountries = ["US", "DK"]
 
-# Required: array of folder definitions, in display order
+# Required: array of folder definitions, in display order. These are emitted
+# into the Core extension only (and into the single extension produced by the
+# standalone New Extension flow). Module extensions in a generated workspace
+# use [[module_folders]] below — see generation-engine.md for why.
 [[folders]]
 path = "Source/Foundation"
 
@@ -137,6 +140,13 @@ path = "Source/Sales"
 
 [[folders]]
 path = "Translations"
+
+# Optional: array of folders emitted into every module extension. Empty (or
+# omitted) means modules ship with just app.json + AppSourceCop.json + the
+# static fallback folders (libs/, permissionsets/, Translations/). Same shape
+# as [[folders]]: optional [[module_folders.files]] blocks seed file content.
+[[module_folders]]
+path = "Source"
 ```
 
 ## Module TOML schema

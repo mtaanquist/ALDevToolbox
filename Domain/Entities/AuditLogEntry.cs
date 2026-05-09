@@ -9,6 +9,8 @@ public enum AuditEntityType
     RuntimeTemplate,
     TemplateFolder,
     TemplateFile,
+    TemplateModuleFolder,
+    TemplateModuleFile,
     RuntimeTemplateDefaultModule,
     Module,
     ModuleDependency,

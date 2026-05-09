@@ -28,6 +28,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         typeof(RuntimeTemplate),
         typeof(TemplateFolder),
         typeof(TemplateFile),
+        typeof(TemplateModuleFolder),
+        typeof(TemplateModuleFile),
         typeof(RuntimeTemplateDefaultModule),
         typeof(Module),
         typeof(ModuleDependency),
@@ -181,6 +183,26 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                     .ToList();
                 return folderDict;
             }).ToList();
+
+            var moduleFolders = allEntries
+                .Where(e => e.Entity is TemplateModuleFolder
+                            && e.State != EntityState.Added
+                            && (int)e.OriginalValues["TemplateId"]! == templateId)
+                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
+                .ToList();
+            snapshot["module_folders"] = moduleFolders.Select(folder =>
+            {
+                var folderDict = OriginalValuesToDict(folder);
+                var folderId = (int)folder.OriginalValues["Id"]!;
+                folderDict["files"] = allEntries
+                    .Where(e => e.Entity is TemplateModuleFile
+                                && e.State != EntityState.Added
+                                && (int)e.OriginalValues["TemplateModuleFolderId"]! == folderId)
+                    .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
+                    .Select(OriginalValuesToDict)
+                    .ToList();
+                return folderDict;
+            }).ToList();
         }
         else if (entry.Entity is TemplateFolder)
         {
@@ -189,6 +211,17 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                 .Where(e => e.Entity is TemplateFile
                             && e.State != EntityState.Added
                             && (int)e.OriginalValues["TemplateFolderId"]! == folderId)
+                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
+                .Select(OriginalValuesToDict)
+                .ToList();
+        }
+        else if (entry.Entity is TemplateModuleFolder)
+        {
+            var folderId = (int)entry.OriginalValues["Id"]!;
+            snapshot["files"] = allEntries
+                .Where(e => e.Entity is TemplateModuleFile
+                            && e.State != EntityState.Added
+                            && (int)e.OriginalValues["TemplateModuleFolderId"]! == folderId)
                 .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
                 .Select(OriginalValuesToDict)
                 .ToList();
@@ -216,7 +249,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     private static Dictionary<string, object?> OriginalValuesToDict(EntityEntry entry)
     {
         var dict = new Dictionary<string, object?>();
-        var hashContent = entry.Entity is TemplateFile;
+        var hashContent = entry.Entity is TemplateFile or TemplateModuleFile;
         foreach (var property in entry.OriginalValues.Properties)
         {
             var value = entry.OriginalValues[property.Name];
@@ -243,6 +276,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         if (t == typeof(RuntimeTemplate)) return AuditEntityType.RuntimeTemplate;
         if (t == typeof(TemplateFolder)) return AuditEntityType.TemplateFolder;
         if (t == typeof(TemplateFile)) return AuditEntityType.TemplateFile;
+        if (t == typeof(TemplateModuleFolder)) return AuditEntityType.TemplateModuleFolder;
+        if (t == typeof(TemplateModuleFile)) return AuditEntityType.TemplateModuleFile;
         if (t == typeof(RuntimeTemplateDefaultModule)) return AuditEntityType.RuntimeTemplateDefaultModule;
         if (t == typeof(Module)) return AuditEntityType.Module;
         if (t == typeof(ModuleDependency)) return AuditEntityType.ModuleDependency;

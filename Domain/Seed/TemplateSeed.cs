@@ -23,6 +23,14 @@ public class TemplateSeed
     public AppSourceCopSeed AppSourceCop { get; set; } = new();
 
     public List<FolderSeed> Folders { get; set; } = new();
+
+    /// <summary>
+    /// <c>[[module_folders]]</c> entries — the folder layout emitted into every
+    /// generated module extension. Empty by default; if omitted, modules ship
+    /// with just their <c>app.json</c>, <c>AppSourceCop.json</c>, and the
+    /// static fallback folders. Same shape as <see cref="Folders"/>.
+    /// </summary>
+    public List<FolderSeed> ModuleFolders { get; set; } = new();
 }
 
 /// <summary>The <c>[template]</c> table — identifying metadata and id ranges.</summary>

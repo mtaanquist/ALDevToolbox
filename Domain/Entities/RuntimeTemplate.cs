@@ -70,8 +70,20 @@ public class RuntimeTemplate
     /// <summary>Soft-delete marker. <c>null</c> means the row is active.</summary>
     public DateTime? DeletedAt { get; set; }
 
-    /// <summary>The folders this template lays out, ordered as they appear in the UI.</summary>
+    /// <summary>
+    /// Folders emitted into the Core extension only, ordered as they appear in
+    /// the UI. Module extensions use <see cref="ModuleFolders"/> instead so
+    /// Core-specific scaffolding doesn't bleed into every module ZIP.
+    /// </summary>
     public List<TemplateFolder> Folders { get; set; } = new();
+
+    /// <summary>
+    /// Folders emitted into every module extension generated from this template.
+    /// Empty by default — modules then ship with just <c>app.json</c>,
+    /// <c>AppSourceCop.json</c>, and the static fallback placeholders
+    /// (<c>libs/</c>, <c>permissionsets/</c>, <c>Translations/</c>).
+    /// </summary>
+    public List<TemplateModuleFolder> ModuleFolders { get; set; } = new();
 
     /// <summary>
     /// Modules pre-selected on the New Workspace form when this template is

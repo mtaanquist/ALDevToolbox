@@ -102,12 +102,26 @@ public static class TemplateTomlMapper
                 sb.Append("content = ").AppendLine(TomlMultilineBasic(file.Content));
             }
         }
+        foreach (var folder in template.ModuleFolders.OrderBy(f => f.Ordering))
+        {
+            sb.AppendLine();
+            sb.AppendLine();
+            sb.AppendLine("[[module_folders]]");
+            sb.Append("path = ").AppendLine(TomlBasicString(folder.Path));
+            foreach (var file in folder.Files.OrderBy(x => x.Ordering))
+            {
+                sb.AppendLine();
+                sb.AppendLine("[[module_folders.files]]");
+                sb.Append("path = ").AppendLine(TomlBasicString(file.Path));
+                sb.Append("content = ").AppendLine(TomlMultilineBasic(file.Content));
+            }
+        }
         sb.AppendLine();
         return sb.ToString();
     }
 
     private static readonly Regex EmptyFoldersLineRegex =
-        new(@"(?m)^folders\s*=\s*\[\s*\]\s*\r?\n?", RegexOptions.Compiled);
+        new(@"(?m)^(folders|module_folders)\s*=\s*\[\s*\]\s*\r?\n?", RegexOptions.Compiled);
 
     /// <summary>TOML basic-string encoding for short, single-line values like paths.</summary>
     private static string TomlBasicString(string value)
@@ -221,6 +235,9 @@ public static class TemplateTomlMapper
             Deprecated: deprecated,
             DefaultModuleKeys: seed.Template.DefaultModules.ToList(),
             Folders: seed.Folders.Select(f => new TemplateFolderInput(
+                f.Path,
+                f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList(),
+            ModuleFolders: seed.ModuleFolders.Select(f => new TemplateFolderInput(
                 f.Path,
                 f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList());
     }

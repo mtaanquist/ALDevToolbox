@@ -280,7 +280,7 @@
                 PreviewNode.Folder("images", new[] { PreviewNode.File("logo.png") }),
                 PreviewNode.Folder("rulesets", new[] { PreviewNode.File("Company.ruleset.json") }),
             }),
-            BuildExtensionNode("Core"),
+            BuildExtensionNode("Core", isCore: true),
         };
 
         if (_modules is not null)
@@ -289,7 +289,7 @@
             {
                 var module = _modules.FirstOrDefault(m => m.Key == key);
                 if (module is null) continue;
-                children.Add(BuildExtensionNode(StripWhitespace(module.Name)));
+                children.Add(BuildExtensionNode(StripWhitespace(module.Name), isCore: false));
             }
         }
 
@@ -301,7 +301,7 @@
             new PreviewNode(rootName, PreviewNodeKind.Workspace, children));
     }
 
-    private PreviewNode BuildExtensionNode(string folderName)
+    private PreviewNode BuildExtensionNode(string folderName, bool isCore)
     {
         var contents = new List<PreviewNode>
         {
@@ -311,9 +311,16 @@
 
         if (_selected is not null)
         {
-            var entries = _selected.Folders
-                .OrderBy(f => f.Ordering)
-                .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFiles(f)));
+            // Core uses Folders; modules use ModuleFolders. The split exists
+            // so per-Core scaffolding (App Install codeunits, setup tables)
+            // doesn't bleed into every module preview.
+            var entries = isCore
+                ? _selected.Folders
+                    .OrderBy(f => f.Ordering)
+                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromFiles(f.Files)))
+                : _selected.ModuleFolders
+                    .OrderBy(f => f.Ordering)
+                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromFiles(f.Files)));
             contents.AddRange(PreviewTreeBuilder.BuildFolderChildren(entries));
         }
 
@@ -339,14 +346,29 @@
         contents.Add(PreviewNode.Folder(name, new[] { PreviewNode.File(".gitkeep") }));
     }
 
-    private List<PreviewNode> LeafFiles(TemplateFolder folder)
+    /// <summary>
+    /// Builds the leaf-file list shown under a folder in the live preview.
+    /// Accepts an already-ordered <c>(path)</c> sequence so the same helper
+    /// works for both <see cref="TemplateFile"/> and <see cref="TemplateModuleFile"/>
+    /// without dragging the entity types into the preview layer.
+    /// </summary>
+    private List<PreviewNode> LeafFilesFromFiles<T>(IEnumerable<T> files) where T : class
     {
-        if (_includeExamples && folder.Files.Count > 0)
+        var paths = files
+            .Select(f => f switch
+            {
+                TemplateFile tf => (tf.Path, tf.Ordering),
+                TemplateModuleFile tmf => (tmf.Path, tmf.Ordering),
+                _ => (string.Empty, 0),
+            })
+            .Where(p => !string.IsNullOrEmpty(p.Path))
+            .OrderBy(p => p.Ordering)
+            .Select(p => p.Path)
+            .ToList();
+
+        if (_includeExamples && paths.Count > 0)
         {
-            return folder.Files
-                .OrderBy(f => f.Ordering)
-                .Select(f => PreviewNode.File(f.Path))
-                .ToList();
+            return paths.Select(PreviewNode.File).ToList();
         }
         return new List<PreviewNode> { PreviewNode.File(".gitkeep") };
     }

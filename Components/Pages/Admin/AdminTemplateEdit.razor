@@ -289,12 +289,16 @@
 
             <section class="form-section">
                 <div class="folder-editor__header">
-                    <label class="section-label">Folders</label>
+                    <label class="section-label">Core folders</label>
                     <button type="button" class="btn btn--sm" @onclick="AddFolder">
                         <Icon Name="plus" Width="14" Height="14" />
                         <span>Add folder</span>
                     </button>
                 </div>
+                <small class="muted">
+                    Emitted into the <strong>Core</strong> extension only. Module
+                    extensions get their own list below.
+                </small>
                 @if (_form.Folders.Count == 0)
                 {
                     <p class="muted">No folders yet. Add at least one — the generator emits one folder per row in the order shown.</p>
@@ -389,6 +393,107 @@
                 }
             </section>
 
+            <section class="form-section">
+                <div class="folder-editor__header">
+                    <label class="section-label">Module folders</label>
+                    <button type="button" class="btn btn--sm" @onclick="AddModuleFolder">
+                        <Icon Name="plus" Width="14" Height="14" />
+                        <span>Add folder</span>
+                    </button>
+                </div>
+                <small class="muted">
+                    Emitted into every <strong>module</strong> extension generated from this
+                    template. Leave empty to ship modules with just <code>app.json</code>,
+                    <code>AppSourceCop.json</code>, and the static fallback folders.
+                </small>
+                @if (_form.ModuleFolders.Count == 0)
+                {
+                    <p class="muted">No module folders. Add one to scaffold a starter layout inside every generated module extension.</p>
+                }
+                else
+                {
+                    <div class="folder-editor__list">
+                        @for (var i = 0; i < _form.ModuleFolders.Count; i++)
+                        {
+                            var index = i;
+                            var row = _form.ModuleFolders[index];
+                            <div class="folder-editor__row">
+                                <div class="folder-editor__row-head">
+                                    <div class="folder-editor__order">
+                                        <button type="button" class="btn btn--sm" disabled="@(index == 0)"
+                                                @onclick="() => MoveModuleFolder(index, -1)" title="Move up">
+                                            <Icon Name="arrow-up" Width="12" Height="12" />
+                                        </button>
+                                        <button type="button" class="btn btn--sm" disabled="@(index == _form.ModuleFolders.Count - 1)"
+                                                @onclick="() => MoveModuleFolder(index, 1)" title="Move down">
+                                            <Icon Name="arrow-down" Width="12" Height="12" />
+                                        </button>
+                                    </div>
+                                    <div class="folder-editor__path">
+                                        <input type="text" required placeholder="e.g. Source"
+                                               @bind="row.Path" @bind:event="oninput" />
+                                        <FieldError Field="@($"ModuleFolders[{index}].Path")" Errors="_fieldErrors" />
+                                    </div>
+                                    <button type="button" class="btn btn--sm" @onclick="() => ToggleModuleFolderExpanded(index)"
+                                            title="@(IsModuleFolderExpanded(index) ? "Hide files" : "Show files")">
+                                        <Icon Name="@(IsModuleFolderExpanded(index) ? "chevron-up" : "chevron-down")" Width="12" Height="12" />
+                                        <span>@(row.Files.Count == 0 ? "No files" : $"{row.Files.Count} file{(row.Files.Count == 1 ? "" : "s")}")</span>
+                                    </button>
+                                    <button type="button" class="btn btn--sm" @onclick="() => RemoveModuleFolder(index)" title="Remove folder">
+                                        <Icon Name="trash-2" Width="12" Height="12" />
+                                    </button>
+                                </div>
+
+                                @if (IsModuleFolderExpanded(index))
+                                {
+                                    <div class="folder-editor__files">
+                                        @if (row.Files.Count == 0)
+                                        {
+                                            <p class="muted folder-editor__files-empty">
+                                                No files. The generator emits a single <code>.gitkeep</code> for empty folders.
+                                            </p>
+                                        }
+                                        @for (var j = 0; j < row.Files.Count; j++)
+                                        {
+                                            var fileIndex = j;
+                                            var file = row.Files[fileIndex];
+                                            <div class="folder-editor__file">
+                                                <div class="folder-editor__file-head">
+                                                    <div class="folder-editor__order">
+                                                        <button type="button" class="btn btn--sm" disabled="@(fileIndex == 0)"
+                                                                @onclick="() => MoveModuleFile(index, fileIndex, -1)" title="Move up">
+                                                            <Icon Name="arrow-up" Width="12" Height="12" />
+                                                        </button>
+                                                        <button type="button" class="btn btn--sm" disabled="@(fileIndex == row.Files.Count - 1)"
+                                                                @onclick="() => MoveModuleFile(index, fileIndex, 1)" title="Move down">
+                                                            <Icon Name="arrow-down" Width="12" Height="12" />
+                                                        </button>
+                                                    </div>
+                                                    <div class="folder-editor__path">
+                                                        <input type="text" required placeholder="e.g. Setup.Page.al"
+                                                               @bind="file.Path" @bind:event="oninput" />
+                                                        <FieldError Field="@($"ModuleFolders[{index}].Files[{fileIndex}].Path")" Errors="_fieldErrors" />
+                                                    </div>
+                                                    <button type="button" class="btn btn--sm" @onclick="() => RemoveModuleFile(index, fileIndex)" title="Remove file">
+                                                        <Icon Name="trash-2" Width="12" Height="12" />
+                                                    </button>
+                                                </div>
+                                                <textarea class="json-editor folder-editor__file-content" rows="10" spellcheck="false"
+                                                          @bind="file.Content" @bind:event="oninput"></textarea>
+                                            </div>
+                                        }
+                                        <button type="button" class="btn btn--sm" @onclick="() => AddModuleFile(index)">
+                                            <Icon Name="plus" Width="12" Height="12" />
+                                            <span>Add file</span>
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </section>
+
             <div class="admin-template-edit__actions">
                 <button type="submit" class="btn btn--primary" disabled="@_saving">
                     <Icon Name="save" Width="16" Height="16" />
@@ -448,7 +553,10 @@
     private string _toml = string.Empty;
     // Indices of folder rows whose file list is currently expanded. Tracked
     // outside FormState so reordering folders doesn't drag the wrong rows open.
+    // Separate sets for the two editors (Core folders vs module folders) so
+    // they expand independently.
     private readonly HashSet<int> _expandedFolders = new();
+    private readonly HashSet<int> _expandedModuleFolders = new();
 
     private static readonly JsonSerializerOptions PrettyJson = new() { WriteIndented = true };
 
@@ -581,6 +689,77 @@
     {
         if (_form is null || folderIndex < 0 || folderIndex >= _form.Folders.Count) return;
         var files = _form.Folders[folderIndex].Files;
+        var target = fileIndex + delta;
+        if (fileIndex < 0 || fileIndex >= files.Count || target < 0 || target >= files.Count) return;
+        (files[fileIndex], files[target]) = (files[target], files[fileIndex]);
+    }
+
+    // Parallel handlers for the module-folder editor. Same shape as the
+    // Core-folder handlers above; the duplication is deliberate so the two
+    // editors can expand and reorder independently without sharing state.
+    private void AddModuleFolder()
+    {
+        _form?.ModuleFolders.Add(new FolderRow());
+    }
+
+    private void RemoveModuleFolder(int index)
+    {
+        if (_form is null) return;
+        if (index >= 0 && index < _form.ModuleFolders.Count)
+        {
+            _form.ModuleFolders.RemoveAt(index);
+            _expandedModuleFolders.Clear();
+        }
+    }
+
+    private void MoveModuleFolder(int index, int delta)
+    {
+        if (_form is null) return;
+        var target = index + delta;
+        if (index < 0 || index >= _form.ModuleFolders.Count || target < 0 || target >= _form.ModuleFolders.Count)
+        {
+            return;
+        }
+        (_form.ModuleFolders[index], _form.ModuleFolders[target]) = (_form.ModuleFolders[target], _form.ModuleFolders[index]);
+        var wasExpandedHere = _expandedModuleFolders.Contains(index);
+        var wasExpandedThere = _expandedModuleFolders.Contains(target);
+        _expandedModuleFolders.Remove(index);
+        _expandedModuleFolders.Remove(target);
+        if (wasExpandedHere) _expandedModuleFolders.Add(target);
+        if (wasExpandedThere) _expandedModuleFolders.Add(index);
+    }
+
+    private bool IsModuleFolderExpanded(int index) => _expandedModuleFolders.Contains(index);
+
+    private void ToggleModuleFolderExpanded(int index)
+    {
+        if (!_expandedModuleFolders.Add(index))
+        {
+            _expandedModuleFolders.Remove(index);
+        }
+    }
+
+    private void AddModuleFile(int folderIndex)
+    {
+        if (_form is null || folderIndex < 0 || folderIndex >= _form.ModuleFolders.Count) return;
+        _form.ModuleFolders[folderIndex].Files.Add(new FileRow());
+        _expandedModuleFolders.Add(folderIndex);
+    }
+
+    private void RemoveModuleFile(int folderIndex, int fileIndex)
+    {
+        if (_form is null || folderIndex < 0 || folderIndex >= _form.ModuleFolders.Count) return;
+        var files = _form.ModuleFolders[folderIndex].Files;
+        if (fileIndex >= 0 && fileIndex < files.Count)
+        {
+            files.RemoveAt(fileIndex);
+        }
+    }
+
+    private void MoveModuleFile(int folderIndex, int fileIndex, int delta)
+    {
+        if (_form is null || folderIndex < 0 || folderIndex >= _form.ModuleFolders.Count) return;
+        var files = _form.ModuleFolders[folderIndex].Files;
         var target = fileIndex + delta;
         if (fileIndex < 0 || fileIndex >= files.Count || target < 0 || target >= files.Count) return;
         (files[fileIndex], files[target]) = (files[target], files[fileIndex]);
@@ -728,6 +907,17 @@
                         Content = file.Content,
                     }).ToList(),
                 }).ToList(),
+                ModuleFolders = _form.ModuleFolders.Select((f, i) => new TemplateModuleFolder
+                {
+                    Ordering = i,
+                    Path = f.Path,
+                    Files = f.Files.Select((file, fi) => new TemplateModuleFile
+                    {
+                        Ordering = fi,
+                        Path = file.Path,
+                        Content = file.Content,
+                    }).ToList(),
+                }).ToList(),
                 DefaultModules = _form.DefaultModuleKeys
                     .Select((k, i) => new RuntimeTemplateDefaultModule
                     {
@@ -817,6 +1007,14 @@
         public List<FolderRow> Folders { get; } = new();
 
         /// <summary>
+        /// Folders emitted into every generated module extension. Empty by
+        /// default — modules then ship with just app.json + AppSourceCop.json
+        /// + the static fallback folders until an admin opts in to extra
+        /// scaffolding.
+        /// </summary>
+        public List<FolderRow> ModuleFolders { get; } = new();
+
+        /// <summary>
         /// Keys of modules pre-selected on the New Workspace form when this
         /// template is picked. Order matters; the multi-select renders rows
         /// in this order so admins can curate the visual hierarchy.
@@ -860,6 +1058,15 @@
                 }
                 state.Folders.Add(folderRow);
             }
+            foreach (var f in template.ModuleFolders.OrderBy(f => f.Ordering))
+            {
+                var folderRow = new FolderRow { Path = f.Path };
+                foreach (var file in f.Files.OrderBy(x => x.Ordering))
+                {
+                    folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content });
+                }
+                state.ModuleFolders.Add(folderRow);
+            }
             foreach (var d in template.DefaultModules.OrderBy(d => d.Ordering))
             {
                 if (d.Module is not null)
@@ -886,6 +1093,9 @@
             Deprecated: Deprecated,
             DefaultModuleKeys: DefaultModuleKeys.ToList(),
             Folders: Folders.Select(f => new TemplateFolderInput(
+                f.Path,
+                f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList(),
+            ModuleFolders: ModuleFolders.Select(f => new TemplateFolderInput(
                 f.Path,
                 f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList());
     }

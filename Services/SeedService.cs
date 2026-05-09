@@ -142,6 +142,19 @@ public class SeedService
                         })
                         .ToList(),
                 }).ToList(),
+                ModuleFolders = seed.ModuleFolders.Select((f, i) => new TemplateModuleFolder
+                {
+                    Ordering = i,
+                    Path = f.Path,
+                    Files = f.Files
+                        .Select((file, fi) => new TemplateModuleFile
+                        {
+                            Ordering = fi,
+                            Path = file.Path,
+                            Content = file.Content,
+                        })
+                        .ToList(),
+                }).ToList(),
             };
 
             // Pre-selected modules: resolve each key against the already-tracked
