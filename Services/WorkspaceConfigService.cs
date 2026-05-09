@@ -52,12 +52,13 @@ public class WorkspaceConfigService
     // ===== Build (no DB access) =====
 
     /// <summary>
-    /// Serialises a workspace plan to its <c>workspace.aldt.toml</c> form. The
-    /// shape is the same one <see cref="ParseAsync"/> reads back; round-trips
-    /// produce an equivalent plan modulo per-generation GUIDs (those are
-    /// regenerated on every run by design).
+    /// Serialises a workspace plan plus the identities (GUIDs, names, folders,
+    /// id-ranges) of every generated extension. The identity block is what lets
+    /// a later sibling-extension import declare real dependencies and avoid
+    /// id-range collisions; pass an empty list when no identities are available
+    /// (e.g. legacy callers).
     /// </summary>
-    public string BuildWorkspace(ProjectPlan plan)
+    public string BuildWorkspace(ProjectPlan plan, IReadOnlyList<WorkspaceExtensionIdentity> extensions)
     {
         var doc = new WorkspaceDoc
         {
@@ -76,6 +77,19 @@ public class WorkspaceConfigService
                 IncludeExamples = plan.IncludeExamples,
                 IncludeForNav = plan.IncludeForNav,
                 Modules = plan.SelectedModuleKeys.ToList(),
+                Extensions = extensions
+                    .Select(e => new ExtensionIdentitySection
+                    {
+                        Kind = e.Kind,
+                        Key = e.Key ?? string.Empty,
+                        Id = e.Id.ToString(),
+                        Name = e.Name,
+                        Folder = e.Folder,
+                        Publisher = e.Publisher,
+                        IdRangeFrom = e.IdRangeFrom,
+                        IdRangeTo = e.IdRangeTo,
+                    })
+                    .ToList(),
             },
         };
         return PrependHeader(TomlSerializer.Serialize(doc, TomlOptions));
@@ -175,13 +189,48 @@ public class WorkspaceConfigService
 
         return doc.Kind switch
         {
-            WorkspaceKind => new WorkspaceConfigImport(WorkspaceKind, await BuildWorkspaceImportAsync(doc, ct), null),
-            ExtensionKind => new WorkspaceConfigImport(ExtensionKind, null, await BuildExtensionImportAsync(doc, ct)),
+            WorkspaceKind => new WorkspaceConfigImport(
+                WorkspaceKind,
+                await BuildWorkspaceImportAsync(doc, ct),
+                null,
+                ParseExtensions(doc.Workspace?.Extensions)),
+            ExtensionKind => new WorkspaceConfigImport(
+                ExtensionKind,
+                null,
+                await BuildExtensionImportAsync(doc, ct),
+                Array.Empty<WorkspaceExtensionIdentity>()),
             _ => throw new PlanValidationException(new Dictionary<string, string>
             {
                 ["Kind"] = $"Unknown kind '{doc.Kind}'. Expected '{WorkspaceKind}' or '{ExtensionKind}'.",
             }),
         };
+    }
+
+    /// <summary>
+    /// Maps the persisted <c>[[workspace.extensions]]</c> rows into the public
+    /// <see cref="WorkspaceExtensionIdentity"/> shape. Rows with malformed GUIDs
+    /// are dropped silently — older configs without the section yield an empty
+    /// list, and the sibling-extension import falls back to template defaults.
+    /// </summary>
+    private static IReadOnlyList<WorkspaceExtensionIdentity> ParseExtensions(IReadOnlyList<ExtensionIdentitySection>? rows)
+    {
+        if (rows is null || rows.Count == 0) return Array.Empty<WorkspaceExtensionIdentity>();
+
+        var result = new List<WorkspaceExtensionIdentity>(rows.Count);
+        foreach (var row in rows)
+        {
+            if (!Guid.TryParse(row.Id, out var id)) continue;
+            result.Add(new WorkspaceExtensionIdentity(
+                Kind: row.Kind,
+                Key: string.IsNullOrEmpty(row.Key) ? null : row.Key,
+                Id: id,
+                Name: row.Name,
+                Folder: row.Folder,
+                Publisher: row.Publisher,
+                IdRangeFrom: row.IdRangeFrom,
+                IdRangeTo: row.IdRangeTo));
+        }
+        return result;
     }
 
     private async Task<ProjectPlan> BuildWorkspaceImportAsync(UnionDoc doc, CancellationToken ct)
@@ -327,6 +376,13 @@ public class WorkspaceConfigService
         public int CoreIdRangeTo { get; set; }
         public bool IncludeExamples { get; set; } = true;
         public bool IncludeForNav { get; set; }
+        // Per-extension identity for Core + every module, captured at workspace
+        // generation time. Populated when the workspace flow emits a config so
+        // a sibling-extension import can see the actual GUIDs / id-ranges /
+        // folder names rather than guessing. Optional on read — older configs
+        // (and hand-written ones) lack the section and the import gracefully
+        // falls back to template defaults.
+        public List<ExtensionIdentitySection> Extensions { get; set; } = new();
         public List<string> Modules { get; set; } = new();
     }
 
@@ -352,14 +408,57 @@ public class WorkspaceConfigService
         public string Publisher { get; set; } = string.Empty;
         public string Version { get; set; } = string.Empty;
     }
+
+    /// <summary>
+    /// Per-extension identity row inside a workspace config. <c>Kind</c> is
+    /// <c>"core"</c> or <c>"module"</c>; <c>Key</c> is the module key
+    /// (empty for Core); <c>Id</c> is the GUID stamped into the corresponding
+    /// <c>app.json</c> at generation time.
+    /// </summary>
+    private class ExtensionIdentitySection
+    {
+        public string Kind { get; set; } = string.Empty;
+        public string Key { get; set; } = string.Empty;
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Folder { get; set; } = string.Empty;
+        public string Publisher { get; set; } = string.Empty;
+        public int IdRangeFrom { get; set; }
+        public int IdRangeTo { get; set; }
+    }
+}
+
+/// <summary>
+/// Identity of one extension inside a workspace, persisted in
+/// <c>workspace.aldt.toml</c> and read back when the New Extension page
+/// imports a workspace config. The GUID and id-range are stamped at the
+/// original generation time so a sibling extension can declare a real
+/// dependency on the existing extension and pick a non-colliding id range.
+/// </summary>
+public record WorkspaceExtensionIdentity(
+    string Kind,
+    string? Key,
+    Guid Id,
+    string Name,
+    string Folder,
+    string Publisher,
+    int IdRangeFrom,
+    int IdRangeTo)
+{
+    public const string CoreKind = "core";
+    public const string ModuleKind = "module";
 }
 
 /// <summary>
 /// Result of <see cref="WorkspaceConfigService.ParseAsync"/>. Exactly one of
 /// <see cref="Workspace"/> / <see cref="Extension"/> is non-null, matching the
-/// declared <see cref="Kind"/>.
+/// declared <see cref="Kind"/>. <see cref="Extensions"/> carries the per-
+/// extension identity rows from a workspace config (GUIDs / names / id-ranges
+/// for Core + every module) and is empty for extension-kind imports or for
+/// older workspace configs that lack the section.
 /// </summary>
 public record WorkspaceConfigImport(
     string Kind,
     ProjectPlan? Workspace,
-    StandaloneExtensionPlan? Extension);
+    StandaloneExtensionPlan? Extension,
+    IReadOnlyList<WorkspaceExtensionIdentity> Extensions);

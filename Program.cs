@@ -199,7 +199,9 @@ app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen
 
     // Sibling-extension context: present when the page had a workspace config
     // imported. The hidden inputs survive the antiforgery + form post round
-    // trip without a session, so the endpoint stays stateless.
+    // trip without a session, so the endpoint stays stateless. Folder names
+    // come from the persisted identities so the regenerated .code-workspace
+    // uses the names the user already has on disk.
     var workspaceName = form["WorkspaceName"].ToString().Trim();
     SiblingWorkspaceContext? sibling = null;
     if (!string.IsNullOrEmpty(workspaceName))
@@ -208,7 +210,11 @@ app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen
             .Where(s => !string.IsNullOrEmpty(s))
             .Select(s => s!)
             .ToList();
-        sibling = new SiblingWorkspaceContext(workspaceName, workspaceModules);
+        var workspaceFolders = form["WorkspaceFolders"]
+            .Where(s => !string.IsNullOrEmpty(s))
+            .Select(s => s!)
+            .ToList();
+        sibling = new SiblingWorkspaceContext(workspaceName, workspaceModules, workspaceFolders);
     }
 
     try
