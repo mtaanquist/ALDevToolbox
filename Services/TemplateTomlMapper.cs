@@ -1,4 +1,6 @@
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.Seed;
 using Tomlyn;
@@ -64,24 +66,87 @@ public static class TemplateTomlMapper
                 MandatoryPrefix = template.AppSourceCop.MandatoryPrefix,
                 SupportedCountries = template.AppSourceCop.SupportedCountries.ToList(),
             },
-            Folders = template.Folders
-                .OrderBy(f => f.Ordering)
-                .Select(f => new FolderSeed
-                {
-                    Path = f.Path,
-                    Files = f.Files
-                        .OrderBy(x => x.Ordering)
-                        .Select(x => new FolderFileSeed { Path = x.Path, Content = x.Content })
-                        .ToList(),
-                })
-                .ToList(),
+            // Folders intentionally left empty for the high-level serializer —
+            // it would emit them as a single inline `folders = [{...}, {...}]`
+            // line which is unreadable for non-trivial templates. We strip the
+            // empty `folders = []` line below and append [[folders]] /
+            // [[folders.files]] blocks ourselves so each entry sits on its own
+            // line. Tomlyn deserialises both forms back into List<FolderSeed>,
+            // so FromToml keeps working unchanged.
         };
 
         // Note that the Deprecated flag is intentionally not round-tripped
         // through TOML — seed TOML doesn't carry it, so we keep TOML editing
         // focused on the same surface as a fresh seed file. Toggle it via the
         // structured form instead.
-        return TomlSerializer.Serialize(seed, TomlOptions);
+        var head = TomlSerializer.Serialize(seed, TomlOptions);
+        head = EmptyFoldersLineRegex.Replace(head, string.Empty).TrimEnd();
+
+        var sb = new StringBuilder(head);
+        foreach (var folder in template.Folders.OrderBy(f => f.Ordering))
+        {
+            sb.AppendLine();
+            sb.AppendLine();
+            sb.AppendLine("[[folders]]");
+            sb.Append("path = ").AppendLine(TomlBasicString(folder.Path));
+            foreach (var file in folder.Files.OrderBy(x => x.Ordering))
+            {
+                sb.AppendLine();
+                sb.AppendLine("[[folders.files]]");
+                sb.Append("path = ").AppendLine(TomlBasicString(file.Path));
+                sb.Append("content = ").AppendLine(TomlMultilineBasic(file.Content));
+            }
+        }
+        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    private static readonly Regex EmptyFoldersLineRegex =
+        new(@"(?m)^folders\s*=\s*\[\s*\]\s*\r?\n?", RegexOptions.Compiled);
+
+    /// <summary>TOML basic-string encoding for short, single-line values like paths.</summary>
+    private static string TomlBasicString(string value)
+    {
+        var sb = new StringBuilder(value.Length + 2);
+        sb.Append('"');
+        foreach (var c in value)
+        {
+            switch (c)
+            {
+                case '\\': sb.Append("\\\\"); break;
+                case '"': sb.Append("\\\""); break;
+                case '\b': sb.Append("\\b"); break;
+                case '\t': sb.Append("\\t"); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\f': sb.Append("\\f"); break;
+                case '\r': sb.Append("\\r"); break;
+                default:
+                    if (c < 0x20) sb.Append($"\\u{(int)c:X4}");
+                    else sb.Append(c);
+                    break;
+            }
+        }
+        sb.Append('"');
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// TOML multi-line basic string (<c>"""…"""</c>) for arbitrary file
+    /// content. Matches the format the seed TOML files use, so round-trips
+    /// through the editor produce documents that look like the originals.
+    /// Backslashes are doubled and any literal <c>"""</c> in the content is
+    /// escaped per character so the closing delimiter stays unambiguous; every
+    /// other character (newlines, tabs, single/double quotes) passes through
+    /// verbatim because multi-line basic strings allow them. The newline
+    /// immediately after the opening delimiter is trimmed by the TOML parser,
+    /// so the round trip is exact.
+    /// </summary>
+    private static string TomlMultilineBasic(string content)
+    {
+        var escaped = content
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"\"\"", "\\\"\\\"\\\"", StringComparison.Ordinal);
+        return $"\"\"\"\n{escaped}\"\"\"";
     }
 
     /// <summary>

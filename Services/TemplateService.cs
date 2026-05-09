@@ -437,6 +437,10 @@ public class TemplateService
             errors[nameof(input.AppSourceCopJson)] = $"AppSourceCop JSON is invalid: {ex.Message}";
         }
 
+        // Case-insensitive uniqueness for folders and files: Windows treats
+        // 'src/Foo' and 'src/foo' as the same path, so admitting both would
+        // fail at extraction time. Mirror that here.
+        var seenFolderPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (var i = 0; i < input.Folders.Count; i++)
         {
             var folder = input.Folders[i];
@@ -450,8 +454,12 @@ public class TemplateService
             {
                 errors[fieldKey] = "Folder path must be relative, use '/' separators, and contain no '..' segments.";
             }
+            else if (!seenFolderPaths.Add(path))
+            {
+                errors[fieldKey] = $"Duplicate folder path '{path}' (case-insensitive). Windows treats these as the same folder.";
+            }
 
-            var seenFilePaths = new HashSet<string>(StringComparer.Ordinal);
+            var seenFilePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             for (var j = 0; j < folder.Files.Count; j++)
             {
                 var file = folder.Files[j];
@@ -469,7 +477,7 @@ public class TemplateService
                 }
                 if (!seenFilePaths.Add(filePath))
                 {
-                    errors[fileFieldKey] = $"Duplicate file path '{filePath}' inside this folder.";
+                    errors[fileFieldKey] = $"Duplicate file path '{filePath}' (case-insensitive) inside this folder.";
                 }
             }
         }

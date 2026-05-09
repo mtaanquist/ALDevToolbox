@@ -49,10 +49,10 @@
                            title="Letters and digits only, no spaces; must start with a letter."
                            @bind="_extensionName" @bind:event="oninput" />
                     <small class="muted">Folder and AL extension name. Letters and digits only, no spaces; must start with a letter.</small>
-                    <input type="text" name="Brief" placeholder="One-line description" required
-                           title="Required." @bind="_brief" @bind:event="oninput" />
-                    <textarea name="Description" rows="3" placeholder="Longer description" required
-                              title="Required." @bind="_description" @bind:event="oninput"></textarea>
+                    <input type="text" name="Brief" placeholder="One-line description (optional)"
+                           @bind="_brief" @bind:event="oninput" />
+                    <textarea name="Description" rows="3" placeholder="Longer description (optional)"
+                              @bind="_description" @bind:event="oninput"></textarea>
                     <input type="text" name="Publisher" placeholder="Publisher" required
                            title="Required." @bind="_publisher" @bind:event="oninput" />
                 </section>
@@ -240,7 +240,7 @@
 
         contents.Add(PreviewNode.Folder("Translations", new[] { PreviewNode.File(".gitkeep") }));
 
-        return PreviewNode.Extension(FolderName, contents);
+        return PreviewTreeBuilder.SortForDisplay(PreviewNode.Extension(FolderName, contents));
     }
 
     private List<PreviewNode> LeafFiles(TemplateFolder folder)

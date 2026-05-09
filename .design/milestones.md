@@ -144,6 +144,70 @@ Goal: everything that makes the difference between "works" and "feels good."
 - Health check endpoints.
 - A real README at the repo root explaining how to run locally and in Docker.
 
+## Phase 2 — post-v1 follow-ups
+
+These came out of UX review on the live build. They're real wins but each is
+heavy enough to deserve its own milestone, so we land them after v1 ships.
+
+### Milestone P2.1 — Pre-selected modules per template
+
+Goal: the New Workspace module list arrives with the "obvious" set already
+ticked, so end-users opt **out** of modules they don't want rather than opting
+in to every one.
+
+- Domain: add a many-to-many between `runtime_templates` and `modules`
+  (`runtime_template_default_modules`, ordered) capturing "ship this template
+  with these modules pre-selected." Migration + EF mapping. Audit it like
+  every other relation.
+- Admin: a multi-select picker on the template edit page (structured form
+  + TOML) that writes the relation. Reuse the `<DependencyPicker>` shape if
+  it fits; otherwise factor out a thin `<ModuleMultiSelect>` shared component.
+- Seed: extend `template.toml` with a `default_modules = ["foundation", …]`
+  array and round-trip it through `TemplateTomlMapper` and `SeedService`.
+- New Workspace: hydrate `_selectedModuleKeys` from the picked template's
+  defaults on first paint and on template-changed; honour the user's
+  subsequent toggles unchanged.
+
+**Done when:** picking a template with default modules ticks them
+automatically; switching templates retunes the selection; the admin can edit
+defaults via either form or TOML and the change survives a round-trip.
+
+### Milestone P2.2 — Real TOML editor
+
+Goal: the admin TOML view stops being a plain `<textarea>`. Syntax
+highlighting, gutter line numbers, error marks at the offending line.
+
+- Pick a small editor: CodeMirror 6 (TOML mode) is the obvious candidate;
+  Monaco is heavier than we want. Bring it in via a `.razor.js` companion file
+  on `AdminTemplateEdit.razor` so the rest of the app stays JS-bundler-free.
+- Render the existing `_fieldErrors` as gutter marks tied to TOML line numbers
+  where we can map them; fall back to the bulleted list otherwise.
+- Match the app's light/dark theme via the existing `ThemeToggle` signal.
+
+**Done when:** opening the TOML tab loads the editor with syntax colours,
+typing produces clear feedback on parse errors, and the dark-mode theme
+follows the rest of the app.
+
+### Milestone P2.3 — Workspace config save & re-import
+
+Goal: a workspace generated today can be regenerated tomorrow with the same
+settings, and a sibling extension can be authored against the same shape.
+
+- New Workspace: include a `workspace.aldt.toml` (or similar) at the workspace
+  root capturing template key, brief/description, ID ranges, application/
+  runtime versions, and the module selection. Same shape as the form post.
+- New Workspace + New Extension: an "Import config" action that accepts the
+  saved file, hydrates the form, then lets the user generate from there.
+  Validate against the live database (the chosen template/modules must still
+  exist and not be deleted) before populating the form.
+- Round-trip via the same `ProjectPlan` / `StandaloneExtensionPlan` records;
+  no new domain types unless the test forces it.
+
+**Done when:** generate → save the included config file → import it on a fresh
+session → identical ZIP back. New Extension can pick up the same config and
+scaffold a sibling extension that lines up with the workspace's ID ranges and
+publisher.
+
 ## Out of scope for v1
 
 These are mentioned in the design but should not be implemented in the initial build. They're listed here so they don't get pulled in by accident:

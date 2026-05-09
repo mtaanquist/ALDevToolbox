@@ -46,6 +46,10 @@
                         <td>@t.Folders.Count</td>
                         <td>@(t.Deprecated ? "Deprecated" : "Active")</td>
                         <td class="data-table__actions">
+                            <a class="btn btn--sm" href="@($"/templates/{Uri.EscapeDataString(t.Key)}")">
+                                <Icon Name="eye" Width="14" Height="14" />
+                                <span>View</span>
+                            </a>
                             @if (!t.Deprecated)
                             {
                                 <a class="btn btn--sm" href="@($"/projects/new?template={Uri.EscapeDataString(t.Key)}")">

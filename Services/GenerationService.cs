@@ -584,8 +584,6 @@ public class GenerationService
         if (string.IsNullOrWhiteSpace(plan.TemplateKey)) errors[nameof(plan.TemplateKey)] = "Required.";
         if (string.IsNullOrWhiteSpace(plan.WorkspaceName) || !WorkspaceNameRegex.IsMatch(plan.WorkspaceName))
             errors[nameof(plan.WorkspaceName)] = "Required. Letters, digits and spaces only; must start with a letter.";
-        if (string.IsNullOrWhiteSpace(plan.Brief)) errors[nameof(plan.Brief)] = "Required.";
-        if (string.IsNullOrWhiteSpace(plan.Description)) errors[nameof(plan.Description)] = "Required.";
         if (plan.CoreIdRangeFrom <= 0) errors[nameof(plan.CoreIdRangeFrom)] = "Must be greater than zero.";
         if (plan.CoreIdRangeTo <= plan.CoreIdRangeFrom) errors[nameof(plan.CoreIdRangeTo)] = "Must be greater than 'from'.";
         if (string.IsNullOrWhiteSpace(plan.ApplicationVersion) || !VersionRegex.IsMatch(plan.ApplicationVersion))
@@ -601,8 +599,6 @@ public class GenerationService
         if (string.IsNullOrWhiteSpace(plan.TemplateKey)) errors[nameof(plan.TemplateKey)] = "Required.";
         if (string.IsNullOrWhiteSpace(plan.ExtensionName) || !ExtensionNameRegex.IsMatch(plan.ExtensionName))
             errors[nameof(plan.ExtensionName)] = "Required. Letters and digits only, no spaces.";
-        if (string.IsNullOrWhiteSpace(plan.Brief)) errors[nameof(plan.Brief)] = "Required.";
-        if (string.IsNullOrWhiteSpace(plan.Description)) errors[nameof(plan.Description)] = "Required.";
         if (string.IsNullOrWhiteSpace(plan.Publisher)) errors[nameof(plan.Publisher)] = "Required.";
         if (plan.IdRangeFrom <= 0) errors[nameof(plan.IdRangeFrom)] = "Must be greater than zero.";
         if (plan.IdRangeTo <= plan.IdRangeFrom) errors[nameof(plan.IdRangeTo)] = "Must be greater than 'from'.";

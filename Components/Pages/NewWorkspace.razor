@@ -49,11 +49,9 @@
                            title="Letters, digits and spaces only; must start with a letter."
                            @bind="_workspaceName" @bind:event="oninput" />
                     <small class="muted">Workspace name. Letters, digits and spaces only; must start with a letter.</small>
-                    <input type="text" name="Brief" placeholder="One-line description" required
-                           title="Required."
+                    <input type="text" name="Brief" placeholder="One-line description (optional)"
                            @bind="_brief" @bind:event="oninput" />
-                    <textarea name="Description" rows="3" placeholder="Longer description" required
-                              title="Required."
+                    <textarea name="Description" rows="3" placeholder="Longer description (optional)"
                               @bind="_description" @bind:event="oninput"></textarea>
                 </section>
 
@@ -282,7 +280,8 @@
         children.Add(PreviewNode.File(".gitignore"));
         children.Add(PreviewNode.File("README.md"));
 
-        return new PreviewNode(rootName, PreviewNodeKind.Workspace, children);
+        return PreviewTreeBuilder.SortForDisplay(
+            new PreviewNode(rootName, PreviewNodeKind.Workspace, children));
     }
 
     private PreviewNode BuildExtensionNode(string folderName)
