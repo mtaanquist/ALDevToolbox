@@ -793,7 +793,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     border: 1px solid var(--color-error-text);
     border-radius: var(--radius);
     padding: 8px 12px;
-    margin: 0;
+    margin: 0 0 16px;
     font-size: 13px;
 }
 
@@ -970,12 +970,14 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .btn--danger:hover { background: #a40e26; }
 
 .form-success {
-    color: #1a7f37;
+    color: var(--color-valid);
     background: var(--color-surface);
-    border: 1px solid rgba(26, 127, 55, 0.4);
+    border: 1px solid var(--color-valid);
     border-radius: var(--radius);
     padding: 8px 12px;
-    margin: 0;
+    /* Separate the toast from the form below — without bottom margin the
+       success message sat flush against the next section header. */
+    margin: 0 0 16px;
     font-size: 13px;
 }
 
@@ -1022,7 +1024,12 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     font-size: 12.5px;
     line-height: 1.5;
     width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
     background: var(--color-surface);
+    color: var(--color-text);
+    resize: vertical;
 }
 
 .template-detail__actions {

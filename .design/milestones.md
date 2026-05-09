@@ -208,6 +208,43 @@ session → identical ZIP back. New Extension can pick up the same config and
 scaffold a sibling extension that lines up with the workspace's ID ranges and
 publisher.
 
+### Milestone P2.4 — Application-version catalogue
+
+Goal: Application Version and Runtime stop being free-text inputs. They become
+selects backed by an admin-managed list with friendly names, and picking an
+application version automatically sets the matching runtime.
+
+- Domain: new `application_versions` table with `key`, friendly `name`
+  (e.g. "Business Central 2026 Release Wave 1"), `application` (four-part
+  Major.Minor.Build.Revision), `runtime` (string like "28.0", since runtimes
+  also have minor versions in real BC releases — e.g. "15.2"), `deprecated`,
+  `deleted_at`. Audit it like the rest.
+- Persistence: drop the regex validators on free-text application/runtime
+  inputs; in their place, store a foreign key from the runtime template's
+  *defaults* to the application-version row, so each template's default
+  preselects an entry rather than carrying its own raw string.
+- Admin: `/admin/application-versions` list + edit, mirroring the catalogue
+  editor's shape. Reuse the same reconciliation pattern (`Id`-keyed rows,
+  audit on real changes only).
+- Builder forms: replace the two text inputs on New Workspace and New
+  Extension with a single Application-Version select. Picking a row
+  populates both `ApplicationVersion` and `RuntimeVersion` from the catalogue
+  entry — no separate Runtime input. Keep a small caption underneath that
+  shows the resolved versions in code style so users still see what they're
+  about to ship.
+- Seed: extend `template.toml` with `default_application_version = "<key>"`
+  on the `[template]` table; `Templates.seed/application-versions/*.toml`
+  bootstraps the well-known list (BC v22 → BC v28 etc.). Round-trip through
+  `TemplateTomlMapper` and `ExportService`.
+- Migration: backfill from the current `default_application` /
+  `default_platform` columns by deriving runtime from the existing
+  `runtime` column; orphan templates without a match keep raw strings until
+  an admin assigns one.
+
+**Done when:** an admin can curate the version list with friendly labels;
+picking an entry on the builder forms fills both fields atomically; seed and
+export round-trip; the audit log captures version-table changes.
+
 ## Out of scope for v1
 
 These are mentioned in the design but should not be implemented in the initial build. They're listed here so they don't get pulled in by accident:

@@ -81,7 +81,9 @@
                                         </button>
                                     </div>
                                     <div class="folder-editor__path">
-                                        <input type="text" required placeholder="GUID"
+                                        <input type="text" required placeholder="GUID (e.g. 12345678-1234-1234-1234-1234567890ab)"
+                                               pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                                               title="Must be a GUID in 8-4-4-4-12 hex form."
                                                @bind="row.DepId" @bind:event="oninput" />
                                         <FieldError Field="@($"Entries[{index}].DepId")" Errors="_fieldErrors" />
                                     </div>

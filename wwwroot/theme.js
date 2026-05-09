@@ -55,28 +55,38 @@
         }
     });
 
-    // Re-sync the active-button highlight after navigation rerenders the bar.
+    // Blazor's enhanced navigation diffs the <html> element against the
+    // server-rendered response, which has no data-theme attribute (the inline
+    // FOUC script in App.razor only runs on cold loads). Without re-applying
+    // the attribute on each navigation, the user's choice would visually revert
+    // to the OS preference even though localStorage still holds it. refresh()
+    // both restores the theme and the active-button highlight.
+    function refresh() {
+        applyTheme(currentTheme());
+        syncButtons();
+    }
+
     function syncWhenReady() {
         if (document.readyState === "loading") {
-            document.addEventListener("DOMContentLoaded", syncButtons, { once: true });
+            document.addEventListener("DOMContentLoaded", refresh, { once: true });
         } else {
-            syncButtons();
+            refresh();
         }
     }
     syncWhenReady();
-    document.addEventListener("enhancedload", syncButtons);
+    document.addEventListener("enhancedload", refresh);
 
     // Interactive Blazor navigations (the New Workspace / New Extension pages
     // opt into InteractiveServer) diff the layout subtree without firing
-    // enhancedload, so the active class would be wiped on every nav back to
-    // them. A targeted MutationObserver re-applies the highlight whenever the
-    // toggle reappears in the DOM.
+    // enhancedload. A targeted MutationObserver catches those — re-applying
+    // both the data-theme attribute and the active-button highlight whenever
+    // the toggle reappears in the DOM.
     const observer = new MutationObserver((mutations) => {
         for (const m of mutations) {
             for (const node of m.addedNodes) {
                 if (node.nodeType !== 1) continue;
                 if (node.matches?.("[data-theme-button]") || node.querySelector?.("[data-theme-button]")) {
-                    syncButtons();
+                    refresh();
                     return;
                 }
             }
