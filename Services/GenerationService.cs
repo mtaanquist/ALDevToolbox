@@ -51,11 +51,13 @@ public class GenerationService
 """;
 
     private readonly AppDbContext _db;
+    private readonly WorkspaceConfigService _config;
     private readonly ILogger<GenerationService> _logger;
 
-    public GenerationService(AppDbContext db, ILogger<GenerationService> logger)
+    public GenerationService(AppDbContext db, WorkspaceConfigService config, ILogger<GenerationService> logger)
     {
         _db = db;
+        _config = config;
         _logger = logger;
     }
 
@@ -142,9 +144,17 @@ public class GenerationService
 
             // Root files
             await WriteEmbeddedAsync(archive, $"{rootFolder}/.gitignore", "ALDevToolbox.Resources.al.gitignore", ct);
-            WriteString(archive, $"{rootFolder}/{shortName}.code-workspace", BuildCodeWorkspace(moduleInfos));
+            var workspaceFolderList = new List<string> { "Core" };
+            workspaceFolderList.AddRange(moduleInfos.Select(m => m.FolderName));
+            WriteString(archive, $"{rootFolder}/{shortName}.code-workspace", BuildCodeWorkspace(workspaceFolderList));
             WriteString(archive, $"{rootFolder}/README.md", BuildReadme(plan));
-            fileCount += 3;
+            // Save the form-post shape plus per-extension identities (Core +
+            // every module) alongside the ZIP so a sibling-extension import
+            // later can declare real dependencies on these GUIDs and avoid id
+            // range collisions. See Milestone P2.3 in .design/milestones.md.
+            var identities = BuildExtensionIdentities(template, plan, coreId, coreName, moduleInfos);
+            WriteString(archive, $"{rootFolder}/{WorkspaceConfigService.FileName}", _config.BuildWorkspace(plan, identities));
+            fileCount += 4;
         }
 
         stream.Position = 0;
@@ -162,12 +172,19 @@ public class GenerationService
         return new GeneratedArchive(stream, $"{shortName}.zip");
     }
 
-    // ===== Standalone extension flow =====
+    // ===== Standalone / sibling extension flow =====
 
     /// <summary>
-    /// Generates a single-extension ZIP for the New Extension flow.
+    /// Generates an extension ZIP for the New Extension flow. With
+    /// <paramref name="sibling"/> non-null, the ZIP also carries an updated
+    /// <c>&lt;WorkspaceName&gt;.code-workspace</c> at archive root listing
+    /// every existing extension plus the new one — see Milestone P2.3 in
+    /// <c>.design/milestones.md</c> for the sibling-extension UX.
     /// </summary>
-    public async Task<GeneratedArchive> GenerateExtensionAsync(StandaloneExtensionPlan plan, CancellationToken ct = default)
+    public async Task<GeneratedArchive> GenerateExtensionAsync(
+        StandaloneExtensionPlan plan,
+        SiblingWorkspaceContext? sibling = null,
+        CancellationToken ct = default)
     {
         ValidateExtensionPlan(plan);
 
@@ -185,6 +202,14 @@ public class GenerationService
                 [nameof(plan.TemplateKey)] = $"Template '{plan.TemplateKey}' was not found.",
             });
 
+        // Resolve the imported workspace's modules up front so we can build a
+        // .code-workspace folder list that matches the existing on-disk layout.
+        // Unknown / soft-deleted module keys are dropped silently, mirroring
+        // the import-side validation that already gated this submission.
+        var siblingModules = sibling is null
+            ? new List<Module>()
+            : await LoadSelectedModulesAsync(sibling.ModuleKeys, ct);
+
         var stream = new MemoryStream();
         var fileCount = 0;
         var folderName = StripWhitespace(plan.ExtensionName);
@@ -193,7 +218,11 @@ public class GenerationService
         {
             // Standalone extensions reuse the Core folder list — they're a
             // primary, top-level extension by definition, not a module living
-            // alongside a Core in someone else's workspace.
+            // alongside a Core in someone else's workspace. The sibling-extension
+            // flow doesn't auto-wire dependencies on the workspace's Core or
+            // modules: the workspace config doesn't carry their GUIDs, and we
+            // shouldn't fabricate IDs that won't match the existing app.json
+            // files. Users add those references by hand from their workspace.
             var appJson = BuildStandaloneAppJson(template, plan);
             fileCount += await WriteExtensionAsync(
                 archive,
@@ -206,13 +235,41 @@ public class GenerationService
                 moduleName: plan.ExtensionName,
                 publisherOverride: plan.Publisher,
                 ct: ct);
+
+            // Mirror the workspace flow: save the form-post shape alongside the
+            // ZIP so the user can re-import the same settings later. The file
+            // sits inside the extension folder rather than at archive root so
+            // it tags along with the extension when the user drops the folder
+            // into an existing workspace.
+            WriteString(archive, $"{folderName}/{WorkspaceConfigService.FileName}", _config.BuildExtension(plan));
+            fileCount++;
+
+            // Sibling-extension flow: regenerate the workspace's .code-workspace
+            // with the new folder appended so the user can drop it straight
+            // into the existing repo without hand-editing the folders array.
+            if (sibling is not null)
+            {
+                var workspaceFile = $"{StripWhitespace(sibling.WorkspaceName)}.code-workspace";
+                // Prefer folder names captured at the original generation time
+                // (carried in the imported config's identities); fall back to
+                // a DB lookup only when older configs lacked the section.
+                var workspaceFolders = sibling.ExistingFolders.Count > 0
+                    ? sibling.ExistingFolders.ToList()
+                    : new[] { "Core" }
+                        .Concat(siblingModules.Select(m => StripWhitespace(m.Name)))
+                        .ToList();
+                workspaceFolders.Add(folderName);
+                WriteString(archive, workspaceFile, BuildCodeWorkspace(workspaceFolders));
+                fileCount++;
+            }
         }
 
         stream.Position = 0;
         stopwatch.Stop();
 
         _logger.LogInformation(
-            "Generated standalone extension '{Extension}' from template '{Template}' with {Deps} deps: {Files} files, {Bytes} bytes, {Ms} ms.",
+            "Generated {Mode} extension '{Extension}' from template '{Template}' with {Deps} deps: {Files} files, {Bytes} bytes, {Ms} ms.",
+            sibling is null ? "standalone" : "sibling",
             plan.ExtensionName,
             plan.TemplateKey,
             plan.Dependencies.Count,
@@ -496,12 +553,19 @@ public class GenerationService
 
     // ===== Code-workspace + README =====
 
-    private static string BuildCodeWorkspace(IReadOnlyList<ModuleAssignment> modules)
+    /// <summary>
+    /// Serialises a <c>.code-workspace</c> JSON document with the given list
+    /// of folder paths (workspace-relative, in display order) plus the fixed
+    /// editor/AL settings. Used by both the workspace flow (Core + modules)
+    /// and the sibling-extension flow (Core + every existing module + the
+    /// new extension).
+    /// </summary>
+    private static string BuildCodeWorkspace(IReadOnlyList<string> folderPaths)
     {
-        var folders = new JsonArray { new JsonObject { ["path"] = "Core" } };
-        foreach (var m in modules)
+        var folders = new JsonArray();
+        foreach (var path in folderPaths)
         {
-            folders.Add(new JsonObject { ["path"] = m.FolderName });
+            folders.Add(new JsonObject { ["path"] = path });
         }
 
         var settings = JsonNode.Parse(WorkspaceSettingsJson)!.AsObject();
@@ -530,6 +594,50 @@ public class GenerationService
 
         Generated by AL Dev Toolbox.
         """;
+
+    // ===== Workspace extension identities =====
+
+    /// <summary>
+    /// Snapshots Core + every module assignment as
+    /// <see cref="WorkspaceExtensionIdentity"/> rows for the workspace's
+    /// <c>workspace.aldt.toml</c>. The GUID, id-range, and folder name baked
+    /// in here are the same ones <see cref="ZipArchive"/> just stamped into
+    /// the per-extension <c>app.json</c> files; persisting them lets a
+    /// sibling-extension import quote real values back without guessing.
+    /// </summary>
+    private static IReadOnlyList<WorkspaceExtensionIdentity> BuildExtensionIdentities(
+        RuntimeTemplate template,
+        ProjectPlan plan,
+        Guid coreId,
+        string coreName,
+        IReadOnlyList<ModuleAssignment> moduleInfos)
+    {
+        var rows = new List<WorkspaceExtensionIdentity>(moduleInfos.Count + 1)
+        {
+            new WorkspaceExtensionIdentity(
+                Kind: WorkspaceExtensionIdentity.CoreKind,
+                Key: null,
+                Id: coreId,
+                Name: coreName,
+                Folder: "Core",
+                Publisher: template.Defaults.Publisher,
+                IdRangeFrom: plan.CoreIdRangeFrom,
+                IdRangeTo: plan.CoreIdRangeTo),
+        };
+        foreach (var info in moduleInfos)
+        {
+            rows.Add(new WorkspaceExtensionIdentity(
+                Kind: WorkspaceExtensionIdentity.ModuleKind,
+                Key: info.Module.Key,
+                Id: info.ExtensionId,
+                Name: info.ExtensionName,
+                Folder: info.FolderName,
+                Publisher: template.Defaults.Publisher,
+                IdRangeFrom: info.IdRangeFrom,
+                IdRangeTo: info.IdRangeTo));
+        }
+        return rows;
+    }
 
     // ===== ID range allocation =====
 
@@ -734,3 +842,20 @@ public class GenerationService
 /// into the HTTP response body.
 /// </summary>
 public record GeneratedArchive(MemoryStream Stream, string FileName);
+
+/// <summary>
+/// Sibling-extension context: tells <see cref="GenerationService.GenerateExtensionAsync"/>
+/// the new extension is being generated for an existing workspace. Drives the
+/// extra <c>&lt;WorkspaceName&gt;.code-workspace</c> emitted at archive root
+/// alongside the new extension folder.
+/// <see cref="ExistingFolders"/> is the authoritative list of workspace
+/// folders (Core + every existing extension) when the imported workspace
+/// config carried persisted identities; the regenerated workspace file uses
+/// these names verbatim so a module rename in the DB since the original
+/// generation can't desync the user's repo. With an empty list (older
+/// configs) we fall back to DB lookups via <see cref="ModuleKeys"/>.
+/// </summary>
+public record SiblingWorkspaceContext(
+    string WorkspaceName,
+    IReadOnlyList<string> ModuleKeys,
+    IReadOnlyList<string> ExistingFolders);

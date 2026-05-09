@@ -75,6 +75,7 @@ builder.Services.AddScoped<ModuleService>();
 builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<SeedService>();
+builder.Services.AddScoped<WorkspaceConfigService>();
 builder.Services.AddScoped<GenerationService>();
 builder.Services.AddScoped<ExportService>();
 
@@ -196,9 +197,29 @@ app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen
         Publisher: form["Publisher"].ToString().Trim(),
         Dependencies: dependencies);
 
+    // Sibling-extension context: present when the page had a workspace config
+    // imported. The hidden inputs survive the antiforgery + form post round
+    // trip without a session, so the endpoint stays stateless. Folder names
+    // come from the persisted identities so the regenerated .code-workspace
+    // uses the names the user already has on disk.
+    var workspaceName = form["WorkspaceName"].ToString().Trim();
+    SiblingWorkspaceContext? sibling = null;
+    if (!string.IsNullOrEmpty(workspaceName))
+    {
+        var workspaceModules = form["WorkspaceModuleKeys"]
+            .Where(s => !string.IsNullOrEmpty(s))
+            .Select(s => s!)
+            .ToList();
+        var workspaceFolders = form["WorkspaceFolders"]
+            .Where(s => !string.IsNullOrEmpty(s))
+            .Select(s => s!)
+            .ToList();
+        sibling = new SiblingWorkspaceContext(workspaceName, workspaceModules, workspaceFolders);
+    }
+
     try
     {
-        var archive = await gen.GenerateExtensionAsync(plan, ct);
+        var archive = await gen.GenerateExtensionAsync(plan, sibling, ct);
         WriteAttachmentHeaders(ctx, archive.FileName);
         SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
         archive.Stream.Position = 0;

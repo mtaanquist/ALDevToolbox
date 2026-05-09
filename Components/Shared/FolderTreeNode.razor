@@ -23,6 +23,10 @@
                 <Icon Name="@(IsExpanded ? "folder-open" : "folder")" Width="14" Height="14" />
             </span>
             <span class="ftp__name">@Node.Name/</span>
+            @if (Node.IsNew)
+            {
+                <span class="ftp__badge ftp__badge--new" aria-label="newly added">new</span>
+            }
         </button>
     }
     else
@@ -40,6 +44,10 @@
                 }
             </span>
             <span class="ftp__name">@Node.Name@(Node.Kind == PreviewNodeKind.File ? "" : "/")</span>
+            @if (Node.IsNew)
+            {
+                <span class="ftp__badge ftp__badge--new" aria-label="newly added">new</span>
+            }
         </span>
     }
     @if (IsFolder && Node.Children.Count > 0 && IsExpanded)

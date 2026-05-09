@@ -11,6 +11,15 @@ public record PreviewNode(
     IReadOnlyList<PreviewNode> Children
 )
 {
+    /// <summary>
+    /// Marks a node as "newly added" relative to an existing workspace, so the
+    /// preview renderer can label it. Used by the New Extension page when a
+    /// workspace config has been imported and the user is scaffolding a sibling
+    /// extension; the rest of the tree shows what's already there, this flag
+    /// pins the addition.
+    /// </summary>
+    public bool IsNew { get; init; }
+
     public static PreviewNode Folder(string name, IEnumerable<PreviewNode>? children = null) =>
         new(name, PreviewNodeKind.Folder, children?.ToList() ?? new List<PreviewNode>());
 
