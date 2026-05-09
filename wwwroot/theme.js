@@ -11,6 +11,9 @@
 
 (function () {
     const STORAGE_KEY = "aldt-theme";
+    const COOKIE_KEY = "aldt-theme";
+    // One year — this is a cosmetic preference, not a security cookie.
+    const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
     function currentTheme() {
         const stored = localStorage.getItem(STORAGE_KEY);
@@ -22,6 +25,19 @@
             document.documentElement.setAttribute("data-theme", theme);
         } else {
             document.documentElement.removeAttribute("data-theme");
+        }
+    }
+
+    // Mirror localStorage to a cookie so server-rendered responses can emit
+    // <html data-theme="..."> directly, matching whatever the browser already
+    // has applied. Otherwise Blazor's enhanced-nav HTML diff strips the
+    // attribute on every navigation because the response wouldn't carry it.
+    function writeCookie(theme) {
+        const base = `${COOKIE_KEY}=`;
+        if (theme === "light" || theme === "dark") {
+            document.cookie = `${base}${theme}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`;
+        } else {
+            document.cookie = `${base}; path=/; max-age=0; SameSite=Lax`;
         }
     }
 
@@ -40,6 +56,7 @@
         } else {
             localStorage.setItem(STORAGE_KEY, theme);
         }
+        writeCookie(theme);
         applyTheme(theme);
         syncButtons();
     }
@@ -55,14 +72,13 @@
         }
     });
 
-    // Blazor's enhanced navigation diffs the <html> element against the
-    // server-rendered response, which has no data-theme attribute (the inline
-    // FOUC script in App.razor only runs on cold loads). Without re-applying
-    // the attribute on each navigation, the user's choice would visually revert
-    // to the OS preference even though localStorage still holds it. refresh()
-    // both restores the theme and the active-button highlight.
     function refresh() {
-        applyTheme(currentTheme());
+        const t = currentTheme();
+        // Migration: users who set a theme before the cookie pathway existed
+        // have localStorage but no cookie. Write it now so the server's next
+        // render produces the matching <html data-theme="...">.
+        writeCookie(t);
+        applyTheme(t);
         syncButtons();
     }
 
@@ -76,12 +92,35 @@
     syncWhenReady();
     document.addEventListener("enhancedload", refresh);
 
-    // Interactive Blazor navigations (the New Workspace / New Extension pages
-    // opt into InteractiveServer) diff the layout subtree without firing
-    // enhancedload. A targeted MutationObserver catches those — re-applying
-    // both the data-theme attribute and the active-button highlight whenever
-    // the toggle reappears in the DOM.
-    const observer = new MutationObserver((mutations) => {
+    // Blazor's enhanced navigation diffs the <html> element against the
+    // server-rendered response, which has no data-theme attribute (the inline
+    // FOUC script in App.razor only runs on cold loads, not on enhanced
+    // navs). The diff strips the attribute on every navigation, even though
+    // localStorage still holds the user's choice. enhancedload fires *after*
+    // the strip, but interactive Blazor navigation doesn't emit enhancedload
+    // at all — the InteractiveServer runtime patches the DOM through its own
+    // pipeline. Watching the attribute itself catches both pathways: any
+    // outside-our-code change to data-theme triggers a re-apply from
+    // localStorage. Re-applying the same value is a no-op so we don't loop.
+    const htmlObserver = new MutationObserver(() => {
+        const desired = currentTheme();
+        const actual = document.documentElement.getAttribute("data-theme");
+        if (desired === "system" && actual !== null) {
+            document.documentElement.removeAttribute("data-theme");
+        } else if ((desired === "light" || desired === "dark") && actual !== desired) {
+            document.documentElement.setAttribute("data-theme", desired);
+        }
+    });
+    htmlObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["data-theme"],
+    });
+
+    // The toggle row itself can re-mount during InteractiveServer navigation
+    // (Blazor patches the layout subtree). When that happens we need to
+    // re-sync the active-button highlight against the persisted choice; the
+    // theme attribute on <html> is handled by htmlObserver above.
+    const toggleObserver = new MutationObserver((mutations) => {
         for (const m of mutations) {
             for (const node of m.addedNodes) {
                 if (node.nodeType !== 1) continue;
@@ -93,10 +132,10 @@
         }
     });
     if (document.body) {
-        observer.observe(document.body, { childList: true, subtree: true });
+        toggleObserver.observe(document.body, { childList: true, subtree: true });
     } else {
         document.addEventListener("DOMContentLoaded", () => {
-            observer.observe(document.body, { childList: true, subtree: true });
+            toggleObserver.observe(document.body, { childList: true, subtree: true });
         }, { once: true });
     }
 })();
