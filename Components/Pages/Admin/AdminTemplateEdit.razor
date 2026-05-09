@@ -4,7 +4,9 @@
 @rendermode InteractiveServer
 @inject TemplateService Templates
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @inject ILogger<AdminTemplateEdit> Log
+@implements IAsyncDisposable
 @using System.Text.Json
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
@@ -66,7 +68,7 @@
                     class="@ModeButtonClass(EditorMode.Form)"
                     role="tab"
                     aria-selected="@(_mode == EditorMode.Form)"
-                    @onclick="() => SwitchMode(EditorMode.Form)">
+                    @onclick="() => SwitchModeAsync(EditorMode.Form)">
                 <Icon Name="list" Width="14" Height="14" />
                 <span>Structured form</span>
             </button>
@@ -74,7 +76,7 @@
                     class="@ModeButtonClass(EditorMode.Toml)"
                     role="tab"
                     aria-selected="@(_mode == EditorMode.Toml)"
-                    @onclick="() => SwitchMode(EditorMode.Toml)">
+                    @onclick="() => SwitchModeAsync(EditorMode.Toml)">
                 <Icon Name="file-code" Width="14" Height="14" />
                 <span>TOML</span>
             </button>
@@ -109,10 +111,23 @@
         <form class="form-grid admin-template-edit__form admin-template-edit__toml-form"
               @onsubmit="SaveTomlAsync" @onsubmit:preventDefault>
             <section class="form-section">
-                <label class="section-label" for="tpl-toml">template.toml</label>
-                <textarea id="tpl-toml" class="json-editor admin-template-edit__toml" rows="28"
-                          spellcheck="false"
-                          @bind="_toml" @bind:event="oninput"></textarea>
+                @* `for=` would point at a non-input here — the editor is a
+                   contenteditable div managed by CodeMirror — so this is a
+                   plain section header rather than a real label. *@
+                <span class="section-label">template.toml</span>
+                @* CodeMirror 6 mounts into this div on first render. The
+                   editor handles its own state; we pull the current text on
+                   save and on mode-switch via JS interop. *@
+                <div class="admin-template-edit__toml" @ref="_tomlContainer"></div>
+                @if (_tomlIssues.Count > 0)
+                {
+                    <ul class="form-error__list admin-template-edit__toml-issues">
+                        @foreach (var issue in _tomlIssues)
+                        {
+                            <li>line @issue.Line: @issue.Message</li>
+                        }
+                    </ul>
+                }
                 <small class="muted">
                     Edits the same fields as the structured form. The
                     <code>deprecated</code> flag and folder reordering by row aren't
@@ -126,7 +141,7 @@
                     <Icon Name="save" Width="16" Height="16" />
                     <span>@(_saving ? "Saving…" : (IsEdit ? "Save TOML" : "Create from TOML"))</span>
                 </button>
-                <button type="button" class="btn" @onclick="() => SwitchMode(EditorMode.Form)" disabled="@_saving">
+                <button type="button" class="btn" @onclick="() => SwitchModeAsync(EditorMode.Form)" disabled="@_saving">
                     <span>Discard &amp; back to form</span>
                 </button>
             </div>
@@ -551,6 +566,19 @@
     private IReadOnlyDictionary<string, string> _fieldErrors = new Dictionary<string, string>();
     private EditorMode _mode = EditorMode.Form;
     private string _toml = string.Empty;
+    // CodeMirror 6 plumbing. The editor module is loaded lazily the first
+    // time the TOML tab is rendered, so the structured-form path doesn't pay
+    // the import cost. _editorId is the JS-side handle returned by mount().
+    private ElementReference _tomlContainer;
+    private IJSObjectReference? _editorModule;
+    private int _editorId;
+    private string _editorMountedToml = string.Empty;
+    private List<TomlParseIssue> _tomlIssues = new();
+    private bool _editorIssueSyncPending;
+    // Guards against OnAfterRenderAsync re-entrancy: a second render can fire
+    // while the first mount() is still awaiting and would otherwise spin up a
+    // duplicate editor.
+    private bool _editorMounting;
     // Indices of folder rows whose file list is currently expanded. Tracked
     // outside FormState so reordering folders doesn't drag the wrong rows open.
     // Separate sets for the two editors (Core folders vs module folders) so
@@ -572,6 +600,8 @@
         _saveError = null;
         _saveSuccess = null;
         _fieldErrors = new Dictionary<string, string>();
+        _tomlIssues = new();
+        _editorIssueSyncPending = false;
 
         // Module list drives the default-module multi-select. Include
         // deprecated entries so admins can keep them ticked on legacy
@@ -844,19 +874,133 @@
         }
     }
 
-    private void SwitchMode(EditorMode mode)
+    private async Task SwitchModeAsync(EditorMode mode)
     {
         if (_mode == mode || _saving) return;
+
+        // Leaving TOML — pull whatever the user typed into the editor back
+        // into _toml so the next switch-back round-trips their work.
+        if (_mode == EditorMode.Toml && _editorId != 0 && _editorModule is not null)
+        {
+            try
+            {
+                _toml = await _editorModule.InvokeAsync<string>("getValue", _editorId);
+                _editorMountedToml = _toml;
+            }
+            catch (Exception ex)
+            {
+                Log.LogWarning(ex, "Failed to read TOML value from editor on mode switch.");
+            }
+        }
 
         if (mode == EditorMode.Toml)
         {
             _toml = BuildTomlFromFormState();
+            _tomlIssues = new();
         }
 
         _mode = mode;
         _saveError = null;
         _saveSuccess = null;
         _fieldErrors = new Dictionary<string, string>();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_form is null) return;
+
+        // Tear down first so a mode flip in the same render doesn't leak the
+        // previous editor instance.
+        if (_mode != EditorMode.Toml && _editorId != 0)
+        {
+            await DisposeEditorAsync();
+        }
+
+        if (_mode == EditorMode.Toml && _editorId == 0 && !_editorMounting)
+        {
+            _editorMounting = true;
+            try
+            {
+                _editorModule ??= await JS.InvokeAsync<IJSObjectReference>(
+                    "import", "./Components/Pages/Admin/AdminTemplateEdit.razor.js");
+                _editorId = await _editorModule.InvokeAsync<int>("mount", _tomlContainer, _toml);
+                _editorMountedToml = _toml;
+                if (_tomlIssues.Count > 0)
+                {
+                    _editorIssueSyncPending = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.LogError(ex, "Failed to mount the CodeMirror TOML editor.");
+                return;
+            }
+            finally
+            {
+                _editorMounting = false;
+            }
+        }
+
+        if (_mode == EditorMode.Toml && _editorId != 0 && _editorModule is not null)
+        {
+            if (_editorMountedToml != _toml)
+            {
+                await _editorModule.InvokeVoidAsync("setValue", _editorId, _toml);
+                _editorMountedToml = _toml;
+            }
+
+            if (_editorIssueSyncPending)
+            {
+                _editorIssueSyncPending = false;
+                var payload = _tomlIssues
+                    .Select(i => new { line = i.Line, message = i.Message, severity = "error" })
+                    .ToArray();
+                await _editorModule.InvokeVoidAsync("setIssues", _editorId, payload);
+            }
+        }
+    }
+
+    private async Task DisposeEditorAsync()
+    {
+        if (_editorId == 0 || _editorModule is null) return;
+        try
+        {
+            await _editorModule.InvokeVoidAsync("dispose", _editorId);
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit gone — JS already cleaned up.
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning(ex, "Disposing the CodeMirror TOML editor failed.");
+        }
+        finally
+        {
+            _editorId = 0;
+            _editorMountedToml = string.Empty;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await DisposeEditorAsync();
+        if (_editorModule is not null)
+        {
+            try
+            {
+                await _editorModule.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+                // Circuit already gone.
+            }
+            catch (Exception ex)
+            {
+                Log.LogWarning(ex, "Disposing the editor module failed.");
+            }
+            _editorModule = null;
+        }
     }
 
     private string ModeButtonClass(EditorMode mode) =>
@@ -941,6 +1085,26 @@
         _saveError = null;
         _saveSuccess = null;
         _fieldErrors = new Dictionary<string, string>();
+        _tomlIssues = new();
+
+        // Pull the latest text from CodeMirror; the editor doesn't two-way
+        // bind to _toml, so a stale value here would silently save the
+        // pre-edit document.
+        if (_editorId != 0 && _editorModule is not null)
+        {
+            try
+            {
+                _toml = await _editorModule.InvokeAsync<string>("getValue", _editorId);
+                _editorMountedToml = _toml;
+            }
+            catch (Exception ex)
+            {
+                Log.LogError(ex, "Failed to read TOML value from editor before save.");
+                _saveError = "Couldn't read the editor contents. Try again or refresh.";
+                _saving = false;
+                return;
+            }
+        }
 
         try
         {
@@ -963,6 +1127,14 @@
                 Nav.NavigateTo($"/admin/templates/{Uri.EscapeDataString(created.Key)}");
                 return;
             }
+        }
+        catch (TomlParseException ex)
+        {
+            _tomlIssues = ex.Issues.ToList();
+            _editorIssueSyncPending = true;
+            _saveError = _tomlIssues.Count == 1
+                ? $"TOML parse error on line {_tomlIssues[0].Line}."
+                : $"TOML parse error: {_tomlIssues.Count} issue(s). See gutter markers.";
         }
         catch (InvalidDataException ex)
         {

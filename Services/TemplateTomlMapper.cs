@@ -187,6 +187,22 @@ public static class TemplateTomlMapper
         {
             seed = TomlSerializer.Deserialize<TemplateSeed>(toml, TomlOptions) ?? new TemplateSeed();
         }
+        catch (Tomlyn.TomlException tex)
+        {
+            // Tomlyn diagnostics carry zero-based line/column positions.
+            // Promote them to 1-based so they line up with the gutter the
+            // CodeMirror editor renders on the admin TOML tab.
+            var issues = tex.Diagnostics
+                .Select(d => new TomlParseIssue(
+                    Line: d.Span.Start.Line + 1,
+                    Column: d.Span.Start.Column + 1,
+                    Message: d.Message))
+                .ToList();
+            var summary = issues.Count == 0
+                ? tex.Message
+                : string.Join("; ", issues.Take(3).Select(i => $"line {i.Line}: {i.Message}"));
+            throw new TomlParseException($"Failed to parse TOML: {summary}", issues, tex);
+        }
         catch (Exception ex)
         {
             throw new InvalidDataException($"Failed to parse TOML: {ex.Message}", ex);
