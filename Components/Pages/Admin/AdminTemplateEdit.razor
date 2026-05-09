@@ -145,6 +145,11 @@
                     <Icon Name="save" Width="16" Height="16" />
                     <span>@(_saving ? "Saving…" : (IsEdit ? "Save TOML" : "Create from TOML"))</span>
                 </button>
+                <button type="button" class="btn" @onclick="RefreshPreviewAsync" disabled="@_saving"
+                        title="Parse the TOML and rebuild the preview without leaving this view">
+                    <Icon Name="refresh-cw" Width="14" Height="14" />
+                    <span>Refresh preview</span>
+                </button>
                 <button type="button" class="btn" @onclick="() => SwitchModeAsync(EditorMode.Form)" disabled="@_saving">
                     <span>Discard &amp; back to form</span>
                 </button>
@@ -970,6 +975,20 @@
         _fieldErrors = new Dictionary<string, string>();
     }
 
+    private async Task RefreshPreviewAsync()
+    {
+        if (_form is null || _saving) return;
+        // Same parse + rebuild path the mode switch uses, just without the
+        // mode flip. Successful parses update _form so the preview re-reads
+        // it on the next render; failures populate _tomlIssues for the
+        // gutter and leave the preview as-is.
+        if (await TryHydrateFormFromEditorAsync())
+        {
+            _saveError = null;
+            _saveSuccess = "Preview refreshed.";
+        }
+    }
+
     /// <summary>
     /// Pulls the current TOML out of the editor, parses it, and rebuilds
     /// <see cref="_form"/> from the result. Returns <c>false</c> (and surfaces
@@ -1008,13 +1027,13 @@
             _tomlIssues = ex.Issues.ToList();
             _editorIssueSyncPending = true;
             _saveError = _tomlIssues.Count == 1
-                ? $"Can't switch to the form view: TOML parse error on line {_tomlIssues[0].Line}."
-                : $"Can't switch to the form view: {_tomlIssues.Count} TOML parse error(s). See gutter markers.";
+                ? $"TOML parse error on line {_tomlIssues[0].Line}. Fix it to refresh the preview or switch to the form view."
+                : $"TOML parse error: {_tomlIssues.Count} issue(s). See gutter markers — fix them to refresh the preview or switch to the form view.";
             return false;
         }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Unexpected error parsing TOML on mode switch.");
+            Log.LogError(ex, "Unexpected error parsing TOML.");
             _saveError = "Couldn't parse the TOML. Fix the issue, or save anyway from the TOML view.";
             return false;
         }
