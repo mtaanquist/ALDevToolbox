@@ -14,7 +14,16 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageReference Include="FluentAssertions" Version="6.12.2" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.*" />
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      AuditInterceptorTests constructs an IHttpContextAccessor / DefaultHttpContext
+      to drive the interceptor. Those types live in the ASP.NET Core shared
+      framework, which a Microsoft.NET.Sdk test project doesn't pick up implicitly
+      from a Microsoft.NET.Sdk.Web project reference.
+    -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>
