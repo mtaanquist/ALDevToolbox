@@ -42,6 +42,7 @@ public class AppDbContext : DbContext
         public static readonly NullOrganizationContext Instance = new();
         public int? CurrentOrganizationId => null;
         public int? CurrentUserId => null;
+        public bool IsSiteAdmin => false;
         public int OrganizationIdForFilter => 0;
     }
 
@@ -64,6 +65,7 @@ public class AppDbContext : DbContext
     public DbSet<OrganizationSettings> OrganizationSettings => Set<OrganizationSettings>();
     public DbSet<OrganizationAsset> OrganizationAssets => Set<OrganizationAsset>();
     public DbSet<OrganizationFile> OrganizationFiles => Set<OrganizationFile>();
+    public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
     public DbSet<AuditLogEntry> AuditLog => Set<AuditLogEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -100,6 +102,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.DisplayName).HasColumnName("display_name").IsRequired();
             entity.Property(e => e.Role).HasColumnName("role").HasConversion<string>().IsRequired();
             entity.Property(e => e.Status).HasColumnName("status").HasConversion<string>().IsRequired();
+            entity.Property(e => e.IsSiteAdmin).HasColumnName("is_site_admin").IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
             entity.Property(e => e.LastLoginAt).HasColumnName("last_login_at");
             entity.HasIndex(e => new { e.OrganizationId, e.Email }).IsUnique();
@@ -469,6 +472,28 @@ public class AppDbContext : DbContext
                 .HasForeignKey(e => e.OrganizationId)
                 .OnDelete(DeleteBehavior.Cascade);
             ScopeToOrganization<OrganizationFile>(entity);
+        });
+
+        modelBuilder.Entity<SystemSettings>(entity =>
+        {
+            entity.ToTable("system_settings");
+            entity.HasKey(e => e.Id);
+            // Singleton: id is pinned to 1 by the migration. We don't want
+            // EF to generate one — explicit ValueGeneratedNever() makes it
+            // obvious the row is special.
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
+            entity.Property(e => e.SmtpHost).HasColumnName("smtp_host");
+            entity.Property(e => e.SmtpPort).HasColumnName("smtp_port");
+            entity.Property(e => e.SmtpUser).HasColumnName("smtp_user");
+            entity.Property(e => e.SmtpPasswordEncrypted).HasColumnName("smtp_password_encrypted");
+            entity.Property(e => e.SmtpFrom).HasColumnName("smtp_from");
+            entity.Property(e => e.SmtpUseStartTls).HasColumnName("smtp_use_starttls");
+            entity.Property(e => e.BannerText).HasColumnName("banner_text");
+            entity.Property(e => e.DefaultSignupAutoApprove).HasColumnName("default_signup_auto_approve").IsRequired();
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
+            // Cross-org table: no organization_id and no scoping query filter.
+            // Mutations route through SiteAdmin services that call
+            // RequireSiteAdmin() rather than RequireOrganizationId().
         });
 
         modelBuilder.Entity<AuditLogEntry>(entity =>

@@ -42,6 +42,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         typeof(OrganizationSettings),
         typeof(OrganizationAsset),
         typeof(OrganizationFile),
+        typeof(SystemSettings),
     };
 
     private readonly IHttpContextAccessor _http;
@@ -258,13 +259,17 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     /// <summary>
     /// Materialises an entry's original values into a dictionary, replacing
     /// <see cref="TemplateFile.Content"/> with a SHA-256 hash so the audit log
-    /// stays compact even when files contain large AL bodies.
+    /// stays compact even when files contain large AL bodies. The encrypted
+    /// SMTP password on <see cref="SystemSettings"/> is replaced with a fixed
+    /// sentinel so the audit log never captures ciphertext history (which
+    /// would leak structure of the protected blob).
     /// </summary>
     private static Dictionary<string, object?> OriginalValuesToDict(EntityEntry entry)
     {
         var dict = new Dictionary<string, object?>();
         var hashContent = entry.Entity is TemplateFile or TemplateModuleFile or OrganizationFile;
         var hashAssetBytes = entry.Entity is OrganizationAsset;
+        var redactSmtpPassword = entry.Entity is SystemSettings;
         foreach (var property in entry.OriginalValues.Properties)
         {
             var value = entry.OriginalValues[property.Name];
@@ -275,6 +280,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             else if (hashAssetBytes && property.Name == nameof(OrganizationAsset.Content) && value is byte[] bytes)
             {
                 dict["ContentSha256"] = Sha256Bytes(bytes);
+            }
+            else if (redactSmtpPassword && property.Name == nameof(SystemSettings.SmtpPasswordEncrypted))
+            {
+                dict[property.Name] = value is null ? null : "[redacted]";
             }
             else
             {
@@ -313,6 +322,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         if (t == typeof(OrganizationSettings)) return AuditEntityType.OrganizationSettings;
         if (t == typeof(OrganizationAsset)) return AuditEntityType.OrganizationAsset;
         if (t == typeof(OrganizationFile)) return AuditEntityType.OrganizationFile;
+        if (t == typeof(SystemSettings)) return AuditEntityType.SystemSettings;
         throw new InvalidOperationException($"Entity type {t.Name} is not audited.");
     }
 

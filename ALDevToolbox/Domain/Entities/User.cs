@@ -41,6 +41,14 @@ public class User
     public UserRole Role { get; set; }
     public UserStatus Status { get; set; }
 
+    /// <summary>
+    /// Hosting-operator flag (Milestone P4.17). Distinct from the per-org
+    /// <see cref="UserRole.Admin"/> role; granted explicitly via the
+    /// <c>/site-admin/users</c> page or by being the bootstrap admin on a
+    /// fresh database. Carried as a separate claim on the auth cookie.
+    /// </summary>
+    public bool IsSiteAdmin { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime? LastLoginAt { get; set; }
 }

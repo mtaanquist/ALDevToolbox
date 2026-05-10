@@ -1,0 +1,116 @@
+@page "/site-admin/settings"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Services
+@inject SystemSettingsService Settings
+
+<PageTitle>Site Admin · Settings · AL Dev Toolbox</PageTitle>
+
+<div class="admin-section">
+    <h1>Site Admin · Settings</h1>
+    <p class="muted">
+        Hosting-wide configuration. SMTP values entered here override the
+        <code>SMTP_*</code> environment variables on the next email send —
+        no restart required. Leave a field blank to fall back to the env-var
+        path; clear all fields to disable the override entirely.
+    </p>
+
+    @if (!string.IsNullOrEmpty(Error))
+    {
+        <p class="form-error" role="alert">
+            @(string.IsNullOrEmpty(Message) ? Error : Message)
+        </p>
+    }
+    @if (Ok == "saved")
+    {
+        <p class="form-info" role="status">Settings saved.</p>
+    }
+    else if (Ok == "test-sent")
+    {
+        <p class="form-info" role="status">Test email sent — check your inbox.</p>
+    }
+
+    @if (_view is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        <form method="post" action="/site-admin/settings" class="admin-form">
+            <AntiforgeryToken />
+
+            <h2>SMTP</h2>
+            <div class="form-row">
+                <label>
+                    Host
+                    <input type="text" name="SmtpHost" value="@_view.SmtpHost" placeholder="smtp.example.com" />
+                </label>
+                <label>
+                    Port
+                    <input type="number" name="SmtpPort" value="@_view.SmtpPort" min="1" max="65535" placeholder="587" />
+                </label>
+            </div>
+            <div class="form-row">
+                <label>
+                    User
+                    <input type="text" name="SmtpUser" value="@_view.SmtpUser" autocomplete="off" />
+                </label>
+                <label>
+                    From address
+                    <input type="email" name="SmtpFrom" value="@_view.SmtpFrom" placeholder="noreply@@example.com" />
+                </label>
+            </div>
+            <div class="form-row">
+                <label>
+                    New password
+                    <input type="password" name="SmtpPassword" value="" autocomplete="new-password"
+                           placeholder="@(_view.HasSmtpPassword ? "(leave blank to keep current)" : "set a password")" />
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" name="ClearSmtpPassword" value="true" />
+                    Clear stored password
+                </label>
+            </div>
+            <label class="checkbox-label">
+                <input type="checkbox" name="SmtpUseStartTls" value="true" checked="@(_view.SmtpUseStartTls != false)" />
+                Use STARTTLS
+            </label>
+
+            <h2>Banner &amp; signup</h2>
+            <label>
+                System banner
+                <textarea name="BannerText" rows="2" maxlength="500"
+                          placeholder="Optional notice shown at the top of every page.">@_view.BannerText</textarea>
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" name="DefaultSignupAutoApprove" value="true"
+                       checked="@_view.DefaultSignupAutoApprove" />
+                Auto-approve signups into existing organisations (skip admin review)
+            </label>
+
+            <div class="form-actions">
+                <button type="submit" class="btn">Save settings</button>
+            </div>
+        </form>
+
+        <form method="post" action="/site-admin/settings/test-email" class="admin-form admin-form--inline">
+            <AntiforgeryToken />
+            <button type="submit" class="btn btn--secondary">Send test email to me</button>
+            <span class="muted">Sends a one-line test to your own address using the resolved SMTP settings.</span>
+        </form>
+
+        <p class="muted">Last updated: @_view.UpdatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</p>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }
+    [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+
+    private SystemSettingsView? _view;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _view = await Settings.GetViewAsync();
+    }
+}

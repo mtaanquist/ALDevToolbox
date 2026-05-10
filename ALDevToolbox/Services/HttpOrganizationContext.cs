@@ -10,6 +10,8 @@ public sealed class HttpOrganizationContext : IOrganizationContext
 {
     public const string OrganizationIdClaim = "org_id";
     public const string UserIdClaim = "user_id";
+    public const string SiteAdminClaim = "site_admin";
+    public const string SiteAdminRole = "SiteAdmin";
 
     private readonly IHttpContextAccessor _http;
 
@@ -20,6 +22,8 @@ public sealed class HttpOrganizationContext : IOrganizationContext
 
     public int? CurrentOrganizationId => GetIntClaim(OrganizationIdClaim);
     public int? CurrentUserId => GetIntClaim(UserIdClaim);
+    public bool IsSiteAdmin =>
+        _http.HttpContext?.User?.FindFirst(SiteAdminClaim)?.Value == "true";
     public int OrganizationIdForFilter => CurrentOrganizationId ?? 0;
 
     private int? GetIntClaim(string type)
@@ -38,5 +42,6 @@ public sealed class AmbientOrganizationContext : IOrganizationContext
 {
     public int? CurrentOrganizationId { get; set; }
     public int? CurrentUserId { get; set; }
+    public bool IsSiteAdmin { get; set; }
     public int OrganizationIdForFilter => CurrentOrganizationId ?? 0;
 }
