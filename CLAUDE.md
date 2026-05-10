@@ -149,6 +149,6 @@ If a milestone introduces a non-obvious algorithm (e.g. ID range allocation with
 
 ## When in doubt
 
-- Smaller is better. The "Deliberately small" list at the bottom of `milestones.md` is the tie-breaker.
+- Smaller is better. The "Deliberately small" list at the bottom of `completed-milestones.md` is the tie-breaker.
 - If you're about to add a feature flag, an interface, a queue, or a config knob "for the future" — don't. Add it when the future arrives.
 - Ask before crossing an architectural fence. Ask before introducing a new dependency. Ask before adding a second way to do something the codebase already does.
