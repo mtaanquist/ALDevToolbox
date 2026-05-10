@@ -16,6 +16,9 @@ public class AppDbContextDesignTimeFactory : IDesignTimeDbContextFactory<AppDbCo
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite("Data Source=designtime.db")
             .Options;
+        // Design-time tooling never opens a connection or executes a query,
+        // so the org context is irrelevant. Pass null to use the parameterless
+        // overload that disables filtering.
         return new AppDbContext(options);
     }
 }

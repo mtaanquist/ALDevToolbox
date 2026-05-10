@@ -30,14 +30,21 @@ public class SeedService
     }
 
     /// <summary>
-    /// Imports the seed files into the database if (and only if) no runtime
-    /// template rows exist. Safe to call on every startup.
+    /// Imports the seed files into <paramref name="organizationId"/> if (and
+    /// only if) the organisation has no runtime template rows yet. Safe to
+    /// call on every startup. Pass the organisation id to seed; pre-M13 this
+    /// was a single global seed step, post-M13 every organisation can be
+    /// seeded independently (the migration marks the Default org as already
+    /// seeded).
     /// </summary>
-    public async Task RunAsync(CancellationToken cancellationToken = default)
+    public async Task RunAsync(int organizationId, CancellationToken cancellationToken = default)
     {
-        if (await _db.RuntimeTemplates.AnyAsync(cancellationToken))
+        var alreadyHas = await _db.RuntimeTemplates
+            .IgnoreQueryFilters()
+            .AnyAsync(t => t.OrganizationId == organizationId, cancellationToken);
+        if (alreadyHas)
         {
-            _logger.LogInformation("Seed skipped — runtime_templates is non-empty.");
+            _logger.LogInformation("Seed skipped — runtime_templates is non-empty for org {OrgId}.", organizationId);
             return;
         }
 
@@ -46,31 +53,22 @@ public class SeedService
         {
             _logger.LogWarning(
                 "Seed path not found (looked at SEED_PATH and parents of the content root). " +
-                "Database will start empty.");
+                "Org {OrgId} will start empty.", organizationId);
             return;
         }
 
-        _logger.LogInformation("Seeding database from {SeedPath}.", seedPath);
+        _logger.LogInformation("Seeding org {OrgId} from {SeedPath}.", organizationId, seedPath);
 
         var now = DateTime.UtcNow;
-        // Modules and application versions are imported before templates so
-        // default-module / default-application-version references on a template
-        // can resolve to already-tracked instances by key. EF's change tracker
-        // fixes the foreign keys up at SaveChanges time, so we never have to
-        // know the assigned ids here.
-        var modulesByKey = await ImportModulesAsync(seedPath, now, cancellationToken);
-        var applicationVersionsByKey = await ImportApplicationVersionsAsync(seedPath, now, cancellationToken);
-        await ImportTemplatesAsync(seedPath, now, modulesByKey, applicationVersionsByKey, cancellationToken);
-        await ImportCatalogAsync(seedPath, now, cancellationToken);
+        var modulesByKey = await ImportModulesAsync(seedPath, organizationId, now, cancellationToken);
+        var applicationVersionsByKey = await ImportApplicationVersionsAsync(seedPath, organizationId, now, cancellationToken);
+        await ImportTemplatesAsync(seedPath, organizationId, now, modulesByKey, applicationVersionsByKey, cancellationToken);
+        await ImportCatalogAsync(seedPath, organizationId, now, cancellationToken);
 
         var written = await _db.SaveChangesAsync(cancellationToken);
         _logger.LogInformation(
-            "Seed complete: {Templates} templates, {Modules} modules, {AppVersions} application versions, {Catalog} catalogue entries ({Rows} rows).",
-            await _db.RuntimeTemplates.CountAsync(cancellationToken),
-            await _db.Modules.CountAsync(cancellationToken),
-            await _db.ApplicationVersions.CountAsync(cancellationToken),
-            await _db.WellKnownDependencies.CountAsync(cancellationToken),
-            written);
+            "Seed complete for org {OrgId}: {Rows} rows.",
+            organizationId, written);
     }
 
     /// <summary>
@@ -100,6 +98,7 @@ public class SeedService
 
     private async Task ImportTemplatesAsync(
         string seedPath,
+        int organizationId,
         DateTime now,
         IReadOnlyDictionary<string, Module> modulesByKey,
         IReadOnlyDictionary<string, ApplicationVersion> applicationVersionsByKey,
@@ -123,6 +122,7 @@ public class SeedService
 
             var template = new RuntimeTemplate
             {
+                OrganizationId = organizationId,
                 Key = seed.Template.Key,
                 Runtime = seed.Template.Runtime,
                 Name = seed.Template.Name,
@@ -140,11 +140,13 @@ public class SeedService
                 UpdatedAt = now,
                 Folders = seed.Folders.Select((f, i) => new TemplateFolder
                 {
+                    OrganizationId = organizationId,
                     Ordering = i,
                     Path = f.Path,
                     Files = f.Files
                         .Select((file, fi) => new TemplateFile
                         {
+                            OrganizationId = organizationId,
                             Ordering = fi,
                             Path = file.Path,
                             Content = file.Content,
@@ -153,11 +155,13 @@ public class SeedService
                 }).ToList(),
                 ModuleFolders = seed.ModuleFolders.Select((f, i) => new TemplateModuleFolder
                 {
+                    OrganizationId = organizationId,
                     Ordering = i,
                     Path = f.Path,
                     Files = f.Files
                         .Select((file, fi) => new TemplateModuleFile
                         {
+                            OrganizationId = organizationId,
                             Ordering = fi,
                             Path = file.Path,
                             Content = file.Content,
@@ -186,6 +190,7 @@ public class SeedService
                 }
                 template.DefaultModules.Add(new RuntimeTemplateDefaultModule
                 {
+                    OrganizationId = organizationId,
                     Module = module,
                     Ordering = ordering++,
                 });
@@ -245,6 +250,7 @@ public class SeedService
     /// </summary>
     private async Task<IReadOnlyDictionary<string, Module>> ImportModulesAsync(
         string seedPath,
+        int organizationId,
         DateTime now,
         CancellationToken ct)
     {
@@ -258,6 +264,7 @@ public class SeedService
             var file = ParseToml<ModuleSeedFile>(await File.ReadAllTextAsync(path, ct), path);
             var module = new Module
             {
+                OrganizationId = organizationId,
                 Key = file.Module.Key,
                 Name = file.Module.Name,
                 IdRangeSize = file.Module.IdRangeSize,
@@ -266,6 +273,7 @@ public class SeedService
                 UpdatedAt = now,
                 Dependencies = file.Module.Dependencies.Select((d, i) => new ModuleDependency
                 {
+                    OrganizationId = organizationId,
                     Ordering = i,
                     DepId = d.DepId,
                     DepName = d.DepName,
@@ -291,6 +299,7 @@ public class SeedService
     /// </summary>
     private async Task<IReadOnlyDictionary<string, ApplicationVersion>> ImportApplicationVersionsAsync(
         string seedPath,
+        int organizationId,
         DateTime now,
         CancellationToken ct)
     {
@@ -314,6 +323,7 @@ public class SeedService
 
             var entry = new ApplicationVersion
             {
+                OrganizationId = organizationId,
                 Key = file.Version.Key,
                 Name = file.Version.Name,
                 Application = file.Version.Application,
@@ -332,7 +342,7 @@ public class SeedService
 
     // ----- catalogue -----
 
-    private async Task ImportCatalogAsync(string seedPath, DateTime now, CancellationToken ct)
+    private async Task ImportCatalogAsync(string seedPath, int organizationId, DateTime now, CancellationToken ct)
     {
         var catalogPath = Path.Combine(seedPath, "catalog", "well-known-deps.toml");
         if (!File.Exists(catalogPath))
@@ -344,6 +354,7 @@ public class SeedService
             var d = file.Dependency[i];
             _db.WellKnownDependencies.Add(new WellKnownDependency
             {
+                OrganizationId = organizationId,
                 DepId = d.DepId,
                 DepName = d.DepName,
                 DepPublisher = d.DepPublisher,

@@ -19,12 +19,17 @@ public class ModuleService
 
     private readonly AppDbContext _db;
     private readonly ILogger<ModuleService> _logger;
+    private readonly IOrganizationContext _orgContext;
 
-    public ModuleService(AppDbContext db, ILogger<ModuleService> logger)
+    public ModuleService(AppDbContext db, ILogger<ModuleService> logger, IOrganizationContext orgContext)
     {
         _db = db;
         _logger = logger;
+        _orgContext = orgContext;
     }
+
+    private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
+        ?? throw new InvalidOperationException("No organization in scope; service mutation called outside an authenticated request.");
 
     /// <summary>
     /// Returns every module, including deprecated and soft-deleted ones, ordered
@@ -66,8 +71,10 @@ public class ModuleService
         await ValidateAsync(input, existingId: null, ct);
 
         var now = DateTime.UtcNow;
+        var orgId = RequireOrganizationId();
         var module = new Module
         {
+            OrganizationId = orgId,
             Key = input.Key.Trim(),
             Name = input.Name.Trim(),
             IdRangeSize = input.IdRangeSize,
@@ -78,6 +85,7 @@ public class ModuleService
             Dependencies = input.Dependencies
                 .Select((d, i) => new ModuleDependency
                 {
+                    OrganizationId = orgId,
                     Ordering = i,
                     DepId = d.DepId.Trim(),
                     DepName = d.DepName.Trim(),
@@ -119,7 +127,7 @@ public class ModuleService
         existing.Deprecated = input.Deprecated;
         existing.UpdatedAt = DateTime.UtcNow;
 
-        ReconcileDependencies(existing, input.Dependencies);
+        ReconcileDependencies(existing, input.Dependencies, existing.OrganizationId);
 
         await _db.SaveChangesAsync(ct);
 
@@ -179,7 +187,7 @@ public class ModuleService
     /// keep stable primary keys for unchanged rows so the audit log only
     /// captures real changes.
     /// </summary>
-    private static void ReconcileDependencies(Module existing, IReadOnlyList<ModuleDependencyInput> inputs)
+    private static void ReconcileDependencies(Module existing, IReadOnlyList<ModuleDependencyInput> inputs, int orgId)
     {
         var existingDeps = existing.Dependencies.OrderBy(d => d.Ordering).ToList();
 
@@ -204,6 +212,7 @@ public class ModuleService
             {
                 existing.Dependencies.Add(new ModuleDependency
                 {
+                    OrganizationId = orgId,
                     Ordering = i,
                     DepId = depId,
                     DepName = depName,

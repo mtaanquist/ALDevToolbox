@@ -9,6 +9,9 @@ public class ModuleDependency
 {
     public int Id { get; set; }
 
+    /// <summary>Denormalised owning organisation; mirrors the module's value.</summary>
+    public int OrganizationId { get; set; }
+
     /// <summary>Owning module. Cascade-deleted with the parent.</summary>
     public int ModuleId { get; set; }
     public Module? Module { get; set; }

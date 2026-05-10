@@ -1,0 +1,118 @@
+@page "/account"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using ALDevToolbox.Data
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Services
+@using Lucide.Blazor.Components
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext Db
+@inject IOrganizationContext Org
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>Your account · AL Dev Toolbox</PageTitle>
+
+<h1>Your account</h1>
+
+@if (_user is null)
+{
+    <p class="muted">Loading…</p>
+}
+else
+{
+    @if (Error is not null && Message is not null)
+    {
+        <p class="form-error" role="alert"><strong>@Error:</strong> @Message</p>
+    }
+    @if (Ok == "password")
+    {
+        <p class="form-success" role="status">Password updated.</p>
+    }
+    else if (Ok == "display-name")
+    {
+        <p class="form-success" role="status">Display name updated.</p>
+    }
+
+    <section class="account-section">
+        <h2>Identity</h2>
+        <p class="muted">Signed in as <strong>@_user.DisplayName</strong> (@_user.Email) — @_user.Role in <strong>@_organization?.Name</strong>.</p>
+
+        <form method="post" action="/auth/account/display-name" class="form-grid">
+            <AntiforgeryToken />
+            <section class="form-section">
+                <label class="section-label" for="ac-display">Display name</label>
+                <input id="ac-display" type="text" name="DisplayName" value="@_user.DisplayName" required minlength="2" maxlength="80" />
+            </section>
+            <button type="submit" class="btn btn--secondary">Update display name</button>
+        </form>
+    </section>
+
+    <section class="account-section">
+        <h2>Change password</h2>
+        <form method="post" action="/auth/account/password" class="form-grid">
+            <AntiforgeryToken />
+            <section class="form-section">
+                <label class="section-label" for="ac-current">Current password</label>
+                <input id="ac-current" type="password" name="CurrentPassword" required autocomplete="current-password" />
+            </section>
+            <section class="form-section">
+                <label class="section-label" for="ac-new">New password</label>
+                <input id="ac-new" type="password" name="NewPassword" required minlength="12" autocomplete="new-password" />
+                <small class="muted">At least 12 characters.</small>
+            </section>
+            <button type="submit" class="btn btn--secondary">Change password</button>
+        </form>
+    </section>
+
+    <section class="account-section danger">
+        <h2>Delete account</h2>
+        @if (_isLastActiveAdmin)
+        {
+            <p class="muted">
+                You're the last active admin in <strong>@_organization?.Name</strong>. Deleting
+                your account will <strong>delete the organisation and all of its content</strong>
+                (templates, modules, catalogue, audit log). Promote another user to admin
+                first if you'd rather keep the organisation alive.
+            </p>
+        }
+        else
+        {
+            <p class="muted">Removes your user row. The organisation keeps running.</p>
+        }
+        <form method="post" action="/auth/account/delete" class="form-grid">
+            <AntiforgeryToken />
+            @if (_isLastActiveAdmin)
+            {
+                <label>
+                    <input type="checkbox" name="AcceptOrgDeletion" value="true" />
+                    I understand the organisation will be deleted.
+                </label>
+            }
+            <button type="submit" class="btn btn--danger">Delete my account</button>
+        </form>
+    </section>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }
+    [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+
+    private User? _user;
+    private Organization? _organization;
+    private bool _isLastActiveAdmin;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var userId = Org.CurrentUserId;
+        if (userId is null) return;
+        _user = await Db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == userId.Value);
+        if (_user is null) return;
+        _organization = await Db.Organizations.IgnoreQueryFilters().FirstOrDefaultAsync(o => o.Id == _user.OrganizationId);
+        var activeAdmins = await Db.Users.IgnoreQueryFilters()
+            .CountAsync(u => u.OrganizationId == _user.OrganizationId
+                             && u.Role == UserRole.Admin
+                             && u.Status == UserStatus.Active);
+        _isLastActiveAdmin = _user.Role == UserRole.Admin && _user.Status == UserStatus.Active && activeAdmins <= 1;
+    }
+}

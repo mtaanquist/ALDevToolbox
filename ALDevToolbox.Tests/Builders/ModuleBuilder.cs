@@ -5,8 +5,11 @@ namespace ALDevToolbox.Tests.Builders;
 /// <summary>Helpers for constructing <see cref="Module"/> rows in tests.</summary>
 public static class ModuleBuilder
 {
-    public static Module Default(string key = "test-module", string name = "Test Module", int? idRangeSize = null) => new()
+    public const int DefaultOrganizationId = 1;
+
+    public static Module Default(string key = "test-module", string name = "Test Module", int? idRangeSize = null, int organizationId = DefaultOrganizationId) => new()
     {
+        OrganizationId = organizationId,
         Key = key,
         Name = name,
         IdRangeSize = idRangeSize,
@@ -18,6 +21,7 @@ public static class ModuleBuilder
     {
         module.Dependencies.Add(new ModuleDependency
         {
+            OrganizationId = module.OrganizationId,
             Ordering = module.Dependencies.Count,
             DepId = id,
             DepName = name,

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using ALDevToolbox.Components;
 using ALDevToolbox.Data;
+using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using Microsoft.AspNetCore.Antiforgery;
@@ -24,10 +25,7 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 // Forwarded-headers — production runs behind a TLS-terminating proxy
-// (Traefik / nginx / Caddy). Without this, Request.IsHttps is false and
-// the auth cookie's Secure flag would never engage. Limiting the trusted
-// proxy set is a follow-up for a hardened deployment; for now we accept
-// X-Forwarded-* from any source on the bridge network.
+// (Traefik / nginx / Caddy). See <c>.design/auth-and-audit.md</c>.
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
@@ -35,20 +33,15 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     options.KnownProxies.Clear();
 });
 
-// Cookie auth — single shared admin password, no user accounts.
-// See .design/auth-and-audit.md. The cookie stores the display name as a
-// single claim; possession of a valid cookie means "this user is an admin".
+// Cookie auth — Milestone P3.13 replaces the single shared password with
+// real accounts. The cookie carries user_id, org_id and the user's role as
+// claims; <c>HttpOrganizationContext</c> reads them to scope EF queries.
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
     {
         options.Cookie.Name = "alwb_auth";
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Lax;
-        // The deployment doc requires Always — production runs behind a TLS
-        // proxy; UseForwardedHeaders below makes Request.IsHttps reflect the
-        // edge, so the cookie reliably gets the Secure flag. Local HTTP dev
-        // (dotnet run on http://localhost:5000) won't issue a cookie until
-        // ASPNETCORE_URLS includes an https:// binding — that's intentional.
         options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
@@ -58,7 +51,8 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
 builder.Services.AddAuthorization();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddSingleton<AuthService>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<IOrganizationContext, HttpOrganizationContext>();
 
 // SQLite connection string. DB_PATH wins, falling back to a file alongside the
 // content root for local `dotnet run` so devs don't need to set anything up.
@@ -79,21 +73,16 @@ builder.Services.AddScoped<SeedService>();
 builder.Services.AddScoped<WorkspaceConfigService>();
 builder.Services.AddScoped<GenerationService>();
 builder.Services.AddScoped<ExportService>();
+builder.Services.AddScoped<AccountService>();
+builder.Services.AddSingleton<IEmailService, SmtpEmailService>();
 
-// Health checks. /health is a liveness probe (always 200 if the process is
-// up); /health/ready exercises the database with a SELECT 1 and is what an
-// orchestrator should poll before sending traffic. Tagged so we can route
-// the same set of checks to both endpoints with different predicates.
+// Health checks. /health is a liveness probe; /health/ready exercises the database.
 builder.Services.AddScoped<DatabaseHealthCheck>();
 builder.Services.AddHealthChecks()
     .AddCheck<DatabaseHealthCheck>("database", tags: new[] { "ready" });
 
 var app = builder.Build();
 
-// Honour X-Forwarded-Proto / X-Forwarded-For from the upstream proxy. Must
-// run before authentication so the cookie's Secure decision and any
-// downstream URL building see the edge scheme, not the http://+:8080 the
-// container actually listens on.
 app.UseForwardedHeaders();
 
 if (!app.Environment.IsDevelopment())
@@ -111,19 +100,14 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-// Liveness: process is up. Readiness: database is reachable. Both are
-// unauthenticated so an external load balancer or compose healthcheck can
-// poll without credentials. See .design/deployment.md.
 app.MapHealthChecks("/health");
 app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("ready"),
 });
 
-// File download endpoint for the New Workspace flow. The form posts here and
-// the response is a ZIP attachment. Validation errors render an inline error
-// page so the user can navigate back; the form fields themselves enforce most
-// of the same rules client-side via HTML attributes.
+// File download endpoint for the New Workspace flow. Now requires a signed-in
+// user — anonymous access to the generators stops with M13.
 app.MapPost("/generate/workspace", async (HttpContext ctx, GenerationService gen, IAntiforgery antiforgery, CancellationToken ct) =>
 {
     if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
@@ -161,11 +145,8 @@ app.MapPost("/generate/workspace", async (HttpContext ctx, GenerationService gen
             + string.Join("\n", ex.Errors.Select(e => $"  - {e.Key}: {e.Value}"));
         await ctx.Response.WriteAsync(body, ct);
     }
-});
+}).RequireAuthorization();
 
-// File download endpoint for the New Extension flow. Same shape as the
-// workspace endpoint above but maps the form to a StandaloneExtensionPlan and
-// reconstructs the dependency list from four parallel hidden-input arrays.
 app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen, IAntiforgery antiforgery, CancellationToken ct) =>
 {
     if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
@@ -198,11 +179,6 @@ app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen
         Publisher: form["Publisher"].ToString().Trim(),
         Dependencies: dependencies);
 
-    // Sibling-extension context: present when the page had a workspace config
-    // imported. The hidden inputs survive the antiforgery + form post round
-    // trip without a session, so the endpoint stays stateless. Folder names
-    // come from the persisted identities so the regenerated .code-workspace
-    // uses the names the user already has on disk.
     var workspaceName = form["WorkspaceName"].ToString().Trim();
     SiblingWorkspaceContext? sibling = null;
     if (!string.IsNullOrEmpty(workspaceName))
@@ -235,11 +211,8 @@ app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen
             + string.Join("\n", ex.Errors.Select(e => $"  - {e.Key}: {e.Value}"));
         await ctx.Response.WriteAsync(body, ct);
     }
-});
+}).RequireAuthorization();
 
-// Admin: export the current database state as a TOML ZIP that mirrors the
-// Templates.seed/ layout. Used as a one-click backup or for diffing the live
-// state outside the app. See .design/templates-and-seeding.md.
 app.MapPost("/admin/export", async (HttpContext ctx, ExportService export, IAntiforgery antiforgery, CancellationToken ct) =>
 {
     if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
@@ -248,60 +221,69 @@ app.MapPost("/admin/export", async (HttpContext ctx, ExportService export, IAnti
     WriteAttachmentHeaders(ctx, archive.FileName);
     archive.Stream.Position = 0;
     await archive.Stream.CopyToAsync(ctx.Response.Body, ct);
-}).RequireAuthorization();
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
-// Login endpoint: validates the submitted password in constant time, captures
-// the honour-system display name, and issues the auth cookie. The Login page
-// posts here directly so the sign-in happens during a real HTTP request (cookie
-// SignIn doesn't work over the SignalR pipe). Failures redirect back to /login
-// with an error code rather than telling the user *why* sign-in failed.
-app.MapPost("/auth/login", async (HttpContext ctx, AuthService auth, IAntiforgery antiforgery, ILoggerFactory loggerFactory, CancellationToken ct) =>
+// /auth/login: validates the email + password, sets the auth cookie with the
+// user_id / org_id / role / email claims, and triggers seeding for orgs
+// being touched by their first admin login.
+app.MapPost("/auth/login", async (
+    HttpContext ctx,
+    AccountService accounts,
+    AppDbContext db,
+    SeedService seed,
+    IAntiforgery antiforgery,
+    ILoggerFactory loggerFactory,
+    CancellationToken ct) =>
 {
     var logger = loggerFactory.CreateLogger("Auth");
     if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
 
     var form = await ctx.Request.ReadFormAsync(ct);
+    var email = form["Email"].ToString();
     var password = form["Password"].ToString();
-    var displayName = form["DisplayName"].ToString().Trim();
     var requestedReturn = form["ReturnUrl"].ToString();
-    // Open-redirect guard: only allow same-site relative paths. Reject anything
-    // that could resolve to a different host, including protocol-relative
-    // forms ("//evil.com/foo").
-    var safeReturn = !string.IsNullOrEmpty(requestedReturn)
-                     && Uri.IsWellFormedUriString(requestedReturn, UriKind.Relative)
-                     && requestedReturn.StartsWith('/')
-                     && !requestedReturn.StartsWith("//", StringComparison.Ordinal)
-                     && !requestedReturn.StartsWith("/\\", StringComparison.Ordinal)
-        ? requestedReturn
-        : "/admin";
+    var safeReturn = ResolveSafeReturn(requestedReturn);
+    var ip = ResolveIp(ctx);
 
-    if (!auth.IsConfigured)
+    var (outcome, user) = await accounts.TryLoginAsync(email, password, ip, ct);
+    if (outcome != LoginOutcome.Success || user is null)
     {
-        logger.LogWarning("Login attempted but no admin password is configured.");
-        ctx.Response.Redirect("/login?err=not-configured");
+        var code = outcome switch
+        {
+            LoginOutcome.Pending => "pending",
+            LoginOutcome.Disabled => "disabled",
+            LoginOutcome.LockedOut => "locked",
+            LoginOutcome.RateLimited => "rate-limited",
+            _ => "invalid",
+        };
+        logger.LogInformation("Login attempt for {Email} from {Ip} resolved {Outcome}.", email, ip, outcome);
+        ctx.Response.Redirect($"/login?err={code}&return={Uri.EscapeDataString(safeReturn)}");
         return;
     }
 
-    if (string.IsNullOrEmpty(displayName) || !auth.Verify(password))
+    // First-admin-login seeding for orgs that were created via signup. We
+    // skip for the Default org which the migration stamps as already seeded.
+    if (user.Role == UserRole.Admin)
     {
-        logger.LogInformation("Failed login attempt.");
-        var qs = $"/login?err=invalid&return={Uri.EscapeDataString(safeReturn)}";
-        ctx.Response.Redirect(qs);
-        return;
+        var org = await db.Organizations.IgnoreQueryFilters().FirstAsync(o => o.Id == user.OrganizationId, ct);
+        if (!org.IsSeeded)
+        {
+            logger.LogInformation("First admin login for org {OrgId}; running seed.", org.Id);
+            await seed.RunAsync(org.Id, ct);
+            org.IsSeeded = true;
+            await db.SaveChangesAsync(ct);
+        }
     }
 
-    var identity = new ClaimsIdentity(
-        new[] { new Claim(ClaimTypes.Name, displayName) },
-        CookieAuthenticationDefaults.AuthenticationScheme);
+    var identity = BuildIdentity(user);
     await ctx.SignInAsync(
         CookieAuthenticationDefaults.AuthenticationScheme,
         new ClaimsPrincipal(identity));
-    logger.LogInformation("Admin signed in as {DisplayName}.", displayName);
+    logger.LogInformation("Signed in {Email} (org {OrgId}, role {Role}).", user.Email, user.OrganizationId, user.Role);
     ctx.Response.Redirect(safeReturn);
 });
 
-// Logout endpoint: clears the cookie and returns to the home page. Posted from
-// the top-bar sign-out button, antiforgery-protected like every other mutation.
+// /auth/logout — clears the cookie. Posted from the top-bar sign-out button.
 app.MapPost("/auth/logout", async (HttpContext ctx, IAntiforgery antiforgery, CancellationToken ct) =>
 {
     if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
@@ -309,27 +291,405 @@ app.MapPost("/auth/logout", async (HttpContext ctx, IAntiforgery antiforgery, Ca
     ctx.Response.Redirect("/");
 });
 
-// Run migrations (creating the database if needed) and then seed from disk if
-// the templates table is empty. Both steps are idempotent on subsequent starts.
-// Honour the host's stop signal so a Ctrl-C during a slow first-run seed
-// doesn't leave a half-populated database.
+// /auth/signup — two paths:
+//  - Existing-org signup: creates a Pending user, emails the org's active
+//    admins, redirects with a "queued" message.
+//  - New-org signup: auto-approves (we have no superuser to do otherwise),
+//    seeds the org from Templates.seed/, signs the user in, and lands them
+//    on the home page as the new org's admin.
+// Email send failures log a warning but never roll back the signup.
+app.MapPost("/auth/signup", async (
+    HttpContext ctx,
+    AccountService accounts,
+    AppDbContext db,
+    SeedService seed,
+    IEmailService email,
+    IAntiforgery antiforgery,
+    ILoggerFactory loggerFactory,
+    CancellationToken ct) =>
+{
+    var logger = loggerFactory.CreateLogger("Signup");
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    var form = await ctx.Request.ReadFormAsync(ct);
+    try
+    {
+        var (outcome, user, org) = await accounts.SignupAsync(
+            email: form["Email"].ToString(),
+            displayName: form["DisplayName"].ToString(),
+            password: form["Password"].ToString(),
+            organizationSlug: form["OrganizationSlug"].ToString(),
+            ct);
+
+        if (outcome == SignupOutcome.EmailAlreadyTaken)
+        {
+            ctx.Response.Redirect("/signup?err=email-taken");
+            return;
+        }
+
+        if (outcome == SignupOutcome.OrganizationProvisioned && user is not null && org is not null)
+        {
+            // Auto-approved: seed the new org's content and sign the user in
+            // so they can use the generator immediately. Re-load the user
+            // with its Organization navigation populated so the cookie
+            // claims include the org name for the top bar.
+            if (!org.IsSeeded)
+            {
+                await seed.RunAsync(org.Id, ct);
+                org.IsSeeded = true;
+                await db.SaveChangesAsync(ct);
+            }
+            user.Organization = org;
+            await ctx.SignInAsync(
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                new ClaimsPrincipal(BuildIdentity(user)));
+            logger.LogInformation("Auto-approved new-org signup {Email} as admin of {OrgSlug}.", user.Email, org.Slug);
+            ctx.Response.Redirect("/");
+            return;
+        }
+
+        // Existing-org signup: notify the org's active admins so they can
+        // approve via /admin/users. SMTP failures don't roll back the signup.
+        if (org is not null && email.IsConfigured)
+        {
+            try
+            {
+                var admins = await db.Users.IgnoreQueryFilters()
+                    .Where(u => u.OrganizationId == org.Id
+                                && u.Role == UserRole.Admin
+                                && u.Status == UserStatus.Active)
+                    .ToListAsync(ct);
+                foreach (var admin in admins)
+                {
+                    var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/admin/users";
+                    var (subject, body) = EmailTemplates.SignupPending(admin.DisplayName, user!.Email, org.Name, url);
+                    await email.SendAsync(admin.Email, subject, body, ct);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to email admins about pending signup {Email}.", user?.Email);
+            }
+        }
+
+        ctx.Response.Redirect("/signup?ok=pending");
+    }
+    catch (PlanValidationException ex)
+    {
+        var qs = ex.Errors.FirstOrDefault();
+        ctx.Response.Redirect($"/signup?err=invalid&field={Uri.EscapeDataString(qs.Key)}&msg={Uri.EscapeDataString(qs.Value)}");
+    }
+});
+
+// /auth/forgot-password — same response regardless of email existence.
+app.MapPost("/auth/forgot-password", async (
+    HttpContext ctx,
+    AccountService accounts,
+    AppDbContext db,
+    IEmailService email,
+    IAntiforgery antiforgery,
+    ILoggerFactory loggerFactory,
+    CancellationToken ct) =>
+{
+    var logger = loggerFactory.CreateLogger("ForgotPassword");
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    if (!email.IsConfigured)
+    {
+        ctx.Response.Redirect("/forgot-password?err=not-configured");
+        return;
+    }
+    var form = await ctx.Request.ReadFormAsync(ct);
+    var addr = form["Email"].ToString();
+    try
+    {
+        var token = await accounts.CreatePasswordResetTokenAsync(addr, ct);
+        if (token is not null)
+        {
+            var user = await db.Users.IgnoreQueryFilters().FirstAsync(u => u.Email == addr.Trim().ToLowerInvariant(), ct);
+            var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/reset-password?token={Uri.EscapeDataString(token)}";
+            var (subject, body) = EmailTemplates.ForgotPassword(user.DisplayName, url);
+            await email.SendAsync(user.Email, subject, body, ct);
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Forgot-password flow failed for {Email}.", addr);
+    }
+    ctx.Response.Redirect("/forgot-password?ok=1");
+});
+
+// /auth/reset-password — consumes the token and applies the new password.
+app.MapPost("/auth/reset-password", async (
+    HttpContext ctx,
+    AccountService accounts,
+    IAntiforgery antiforgery,
+    CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    var form = await ctx.Request.ReadFormAsync(ct);
+    var token = form["Token"].ToString();
+    var password = form["Password"].ToString();
+    try
+    {
+        await accounts.ConsumePasswordResetTokenAsync(token, password, ct);
+        ctx.Response.Redirect("/login?ok=password-reset");
+    }
+    catch (PlanValidationException ex)
+    {
+        var first = ex.Errors.FirstOrDefault();
+        ctx.Response.Redirect(
+            $"/reset-password?token={Uri.EscapeDataString(token)}&err={Uri.EscapeDataString(first.Key)}&msg={Uri.EscapeDataString(first.Value)}");
+    }
+});
+
+// /auth/account/* — self-service. All require [Authorize].
+app.MapPost("/auth/account/password", async (
+    HttpContext ctx, AccountService accounts, IOrganizationContext org, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    var form = await ctx.Request.ReadFormAsync(ct);
+    try
+    {
+        await accounts.ChangePasswordAsync(org.CurrentUserId!.Value,
+            form["CurrentPassword"].ToString(), form["NewPassword"].ToString(), ct);
+        ctx.Response.Redirect("/account?ok=password");
+    }
+    catch (PlanValidationException ex)
+    {
+        var first = ex.Errors.FirstOrDefault();
+        ctx.Response.Redirect($"/account?err={Uri.EscapeDataString(first.Key)}&msg={Uri.EscapeDataString(first.Value)}");
+    }
+}).RequireAuthorization();
+
+app.MapPost("/auth/account/display-name", async (
+    HttpContext ctx, AccountService accounts, IOrganizationContext org, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    var form = await ctx.Request.ReadFormAsync(ct);
+    try
+    {
+        await accounts.ChangeDisplayNameAsync(org.CurrentUserId!.Value, form["DisplayName"].ToString(), ct);
+        ctx.Response.Redirect("/account?ok=display-name");
+    }
+    catch (PlanValidationException ex)
+    {
+        var first = ex.Errors.FirstOrDefault();
+        ctx.Response.Redirect($"/account?err={Uri.EscapeDataString(first.Key)}&msg={Uri.EscapeDataString(first.Value)}");
+    }
+}).RequireAuthorization();
+
+app.MapPost("/auth/account/delete", async (
+    HttpContext ctx, AccountService accounts, IOrganizationContext org, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    var form = await ctx.Request.ReadFormAsync(ct);
+    var accept = form["AcceptOrgDeletion"] == "true" || form["AcceptOrgDeletion"] == "on";
+    try
+    {
+        await accounts.DeleteAccountAsync(org.CurrentUserId!.Value, accept, ct);
+        await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        ctx.Response.Redirect("/login?ok=account-deleted");
+    }
+    catch (PlanValidationException ex)
+    {
+        var first = ex.Errors.FirstOrDefault();
+        ctx.Response.Redirect($"/account?err={Uri.EscapeDataString(first.Key)}&msg={Uri.EscapeDataString(first.Value)}");
+    }
+}).RequireAuthorization();
+
+// /admin/users/* — approve / reject / disable / role change. Admin-only.
+app.MapPost("/admin/users/{id:int}/approve", async (
+    int id, HttpContext ctx, AccountService accounts, AppDbContext db, IEmailService email,
+    IOrganizationContext org, IAntiforgery antiforgery, ILoggerFactory loggerFactory, CancellationToken ct) =>
+{
+    var logger = loggerFactory.CreateLogger("AdminUsers");
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    await accounts.ApproveSignupAsync(id, org.CurrentUserId!.Value, org.CurrentOrganizationId!.Value, ct);
+    if (email.IsConfigured)
+    {
+        try
+        {
+            var req = await db.SignupRequests.IgnoreQueryFilters()
+                .Include(r => r.User).Include(r => r.Organization)
+                .FirstAsync(r => r.Id == id, ct);
+            if (req.User is not null && req.Organization is not null)
+            {
+                var loginUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}/login";
+                var (subject, body) = EmailTemplates.SignupDecided(
+                    req.User.DisplayName, req.Organization.Name, approved: true, loginUrl);
+                await email.SendAsync(req.User.Email, subject, body, ct);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Approval email failed for signup {Id}.", id);
+        }
+    }
+    ctx.Response.Redirect("/admin/users");
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+app.MapPost("/admin/users/{id:int}/reject", async (
+    int id, HttpContext ctx, AccountService accounts, AppDbContext db, IEmailService email,
+    IOrganizationContext org, IAntiforgery antiforgery, ILoggerFactory loggerFactory, CancellationToken ct) =>
+{
+    var logger = loggerFactory.CreateLogger("AdminUsers");
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    var req = await db.SignupRequests.IgnoreQueryFilters()
+        .Include(r => r.User).Include(r => r.Organization)
+        .FirstOrDefaultAsync(r => r.Id == id, ct);
+    var requesterEmail = req?.User?.Email;
+    var requesterDisplay = req?.User?.DisplayName ?? "User";
+    var orgName = req?.Organization?.Name ?? "Unknown organisation";
+
+    await accounts.RejectSignupAsync(id, org.CurrentUserId!.Value, org.CurrentOrganizationId!.Value, ct);
+
+    if (email.IsConfigured && !string.IsNullOrEmpty(requesterEmail))
+    {
+        try
+        {
+            var loginUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}/login";
+            var (subject, body) = EmailTemplates.SignupDecided(requesterDisplay, orgName, approved: false, loginUrl);
+            await email.SendAsync(requesterEmail, subject, body, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Rejection email failed for signup {Id}.", id);
+        }
+    }
+    ctx.Response.Redirect("/admin/users");
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+app.MapPost("/admin/users/{id:int}/disable", async (
+    int id, HttpContext ctx, AccountService accounts, IOrganizationContext org, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    try { await accounts.DisableUserAsync(id, org.CurrentOrganizationId!.Value, ct); }
+    catch (PlanValidationException ex)
+    {
+        var first = ex.Errors.FirstOrDefault();
+        ctx.Response.Redirect($"/admin/users?err={Uri.EscapeDataString(first.Value)}");
+        return;
+    }
+    ctx.Response.Redirect("/admin/users");
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+app.MapPost("/admin/users/{id:int}/enable", async (
+    int id, HttpContext ctx, AccountService accounts, IOrganizationContext org, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    await accounts.EnableUserAsync(id, org.CurrentOrganizationId!.Value, ct);
+    ctx.Response.Redirect("/admin/users");
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+app.MapPost("/admin/users/{id:int}/role", async (
+    int id, HttpContext ctx, AccountService accounts, IOrganizationContext org, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    var form = await ctx.Request.ReadFormAsync(ct);
+    var newRole = form["Role"].ToString() == "Admin" ? UserRole.Admin : UserRole.User;
+    try { await accounts.ChangeRoleAsync(id, newRole, org.CurrentOrganizationId!.Value, ct); }
+    catch (PlanValidationException ex)
+    {
+        var first = ex.Errors.FirstOrDefault();
+        ctx.Response.Redirect($"/admin/users?err={Uri.EscapeDataString(first.Value)}");
+        return;
+    }
+    ctx.Response.Redirect("/admin/users");
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+// Run migrations, then bootstrap the admin account from BOOTSTRAP_ADMIN_*
+// env vars on first boot. The Default organisation is created by the M13
+// migration; SeedService runs against it only if its content is missing
+// (post-migration the Default org is already populated and IsSeeded=true).
 using (var scope = app.Services.CreateScope())
 {
     var stopping = app.Lifetime.ApplicationStopping;
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var seed = scope.ServiceProvider.GetRequiredService<SeedService>();
+    var accounts = scope.ServiceProvider.GetRequiredService<AccountService>();
+    var bootstrapLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     await db.Database.MigrateAsync(stopping);
 
-    var seed = scope.ServiceProvider.GetRequiredService<SeedService>();
-    await seed.RunAsync(stopping);
+    // Ensure the Default org exists (covers EnsureCreated paths in tests).
+    var defaultOrg = await db.Organizations.IgnoreQueryFilters().FirstOrDefaultAsync(o => o.Slug == "default", stopping);
+    if (defaultOrg is null)
+    {
+        defaultOrg = new Organization
+        {
+            Name = "Default",
+            Slug = "default",
+            IsPending = false,
+            IsSeeded = false,
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.Organizations.Add(defaultOrg);
+        await db.SaveChangesAsync(stopping);
+    }
+
+    if (!defaultOrg.IsSeeded)
+    {
+        await seed.RunAsync(defaultOrg.Id, stopping);
+        defaultOrg.IsSeeded = true;
+        await db.SaveChangesAsync(stopping);
+    }
+
+    // Bootstrap admin: only runs once, when there are no users in the
+    // database. After that the env vars are read but ignored (logged).
+    var bootstrapEmail = Environment.GetEnvironmentVariable("BOOTSTRAP_ADMIN_EMAIL");
+    var bootstrapPassword = Environment.GetEnvironmentVariable("BOOTSTRAP_ADMIN_PASSWORD");
+    var anyUsers = await db.Users.IgnoreQueryFilters().AnyAsync(stopping);
+    if (!anyUsers && !string.IsNullOrWhiteSpace(bootstrapEmail) && !string.IsNullOrWhiteSpace(bootstrapPassword))
+    {
+        var hash = accounts.HashPassword(bootstrapPassword);
+        db.Users.Add(new User
+        {
+            OrganizationId = defaultOrg.Id,
+            Email = bootstrapEmail.Trim().ToLowerInvariant(),
+            DisplayName = "Administrator",
+            PasswordHash = hash,
+            Role = UserRole.Admin,
+            Status = UserStatus.Active,
+            CreatedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync(stopping);
+        bootstrapLogger.LogInformation("Bootstrap admin {Email} created in Default organisation.", bootstrapEmail);
+    }
+    else if (anyUsers && (!string.IsNullOrWhiteSpace(bootstrapEmail) || !string.IsNullOrWhiteSpace(bootstrapPassword)))
+    {
+        bootstrapLogger.LogWarning(
+            "BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_PASSWORD are set but at least one user already exists. "
+            + "These environment variables only take effect on a fresh database; remove them once the bootstrap account is in place.");
+    }
 }
 
 app.Run();
 
-// Writes Content-Type + a properly quoted Content-Disposition for a ZIP
-// download. Routes filename through ContentDispositionHeaderValue so a
-// hostile filename can't smuggle CR/LF or embedded quotes into the
-// response headers — today the names are server-built, but doing it
-// once here means future callers get the same treatment for free.
+static ClaimsIdentity BuildIdentity(User user)
+{
+    var claims = new List<Claim>
+    {
+        new(ClaimTypes.Name, user.DisplayName),
+        new(ClaimTypes.Email, user.Email),
+        new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+        new(ClaimTypes.Role, user.Role.ToString()),
+        new(HttpOrganizationContext.UserIdClaim, user.Id.ToString()),
+        new(HttpOrganizationContext.OrganizationIdClaim, user.OrganizationId.ToString()),
+        new("org_name", user.Organization?.Name ?? string.Empty),
+    };
+    return new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+}
+
+// Open-redirect guard: only allow same-site relative paths.
+static string ResolveSafeReturn(string requestedReturn) =>
+    !string.IsNullOrEmpty(requestedReturn)
+        && Uri.IsWellFormedUriString(requestedReturn, UriKind.Relative)
+        && requestedReturn.StartsWith('/')
+        && !requestedReturn.StartsWith("//", StringComparison.Ordinal)
+        && !requestedReturn.StartsWith("/\\", StringComparison.Ordinal)
+            ? requestedReturn
+            : "/";
+
+static string ResolveIp(HttpContext ctx) => ctx.Connection.RemoteIpAddress?.ToString() ?? string.Empty;
+
 static void WriteAttachmentHeaders(HttpContext ctx, string fileName)
 {
     ctx.Response.ContentType = "application/zip";
@@ -338,9 +698,6 @@ static void WriteAttachmentHeaders(HttpContext ctx, string fileName)
     ctx.Response.Headers.ContentDisposition = cd.ToString();
 }
 
-// Antiforgery preamble shared by every mutating endpoint. Returns true when
-// the token is valid; otherwise writes the 400 response inline and returns
-// false so the caller can early-out without nesting another try/catch.
 static async Task<bool> ValidateAntiforgeryAsync(HttpContext ctx, IAntiforgery antiforgery, CancellationToken ct)
 {
     try
@@ -357,10 +714,6 @@ static async Task<bool> ValidateAntiforgeryAsync(HttpContext ctx, IAntiforgery a
     }
 }
 
-// The generate.js companion polls this cookie to know when the matching
-// download response has finished, so the Generate button can drop its
-// loading state. Empty tokens are ignored — the form always includes a
-// freshly-stamped value, but legacy bookmarks or curl callers won't.
 static void SetGenerationCompleteCookie(HttpContext ctx, string token)
 {
     if (string.IsNullOrEmpty(token)) return;
@@ -373,3 +726,5 @@ static void SetGenerationCompleteCookie(HttpContext ctx, string token)
         MaxAge = TimeSpan.FromSeconds(30),
     });
 }
+
+public partial class Program { }

@@ -43,12 +43,23 @@ public class TemplateService
 
     private readonly AppDbContext _db;
     private readonly ILogger<TemplateService> _logger;
+    private readonly IOrganizationContext _orgContext;
 
-    public TemplateService(AppDbContext db, ILogger<TemplateService> logger)
+    public TemplateService(AppDbContext db, ILogger<TemplateService> logger, IOrganizationContext orgContext)
     {
         _db = db;
         _logger = logger;
+        _orgContext = orgContext;
     }
+
+    /// <summary>
+    /// Resolves the acting user's organisation, throwing when no user is
+    /// signed in. Service code that mutates state can never run without an
+    /// org context (the endpoints that reach this service are
+    /// <c>[Authorize]</c>'d).
+    /// </summary>
+    private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
+        ?? throw new InvalidOperationException("No organization in scope; service mutation called outside an authenticated request.");
 
     /// <summary>
     /// Returns every active runtime template (i.e. not soft-deleted), ordered by
@@ -177,8 +188,10 @@ public class TemplateService
             await ValidateAsync(input, existingId: null, ct);
 
         var now = DateTime.UtcNow;
+        var orgId = RequireOrganizationId();
         var template = new RuntimeTemplate
         {
+            OrganizationId = orgId,
             Key = input.Key.Trim(),
             Runtime = input.Runtime.Trim(),
             Name = input.Name.Trim(),
@@ -199,11 +212,13 @@ public class TemplateService
             Folders = input.Folders
                 .Select((f, i) => new TemplateFolder
                 {
+                    OrganizationId = orgId,
                     Ordering = i,
                     Path = f.Path.Trim(),
                     Files = f.Files
                         .Select((file, fi) => new TemplateFile
                         {
+                            OrganizationId = orgId,
                             Ordering = fi,
                             Path = file.Path.Trim(),
                             Content = file.Content ?? string.Empty,
@@ -214,11 +229,13 @@ public class TemplateService
             ModuleFolders = input.ModuleFolders
                 .Select((f, i) => new TemplateModuleFolder
                 {
+                    OrganizationId = orgId,
                     Ordering = i,
                     Path = f.Path.Trim(),
                     Files = f.Files
                         .Select((file, fi) => new TemplateModuleFile
                         {
+                            OrganizationId = orgId,
                             Ordering = fi,
                             Path = file.Path.Trim(),
                             Content = file.Content ?? string.Empty,
@@ -229,6 +246,7 @@ public class TemplateService
             DefaultModules = defaultModuleIds
                 .Select((moduleId, i) => new RuntimeTemplateDefaultModule
                 {
+                    OrganizationId = orgId,
                     ModuleId = moduleId,
                     Ordering = i,
                 })
@@ -284,9 +302,9 @@ public class TemplateService
         existing.DefaultApplicationVersion = null;
         existing.UpdatedAt = DateTime.UtcNow;
 
-        ReconcileFolders(existing, input.Folders);
-        ReconcileModuleFolders(existing, input.ModuleFolders);
-        ReconcileDefaultModules(existing, defaultModuleIds);
+        ReconcileFolders(existing, input.Folders, existing.OrganizationId);
+        ReconcileModuleFolders(existing, input.ModuleFolders, existing.OrganizationId);
+        ReconcileDefaultModules(existing, defaultModuleIds, existing.OrganizationId);
 
         await _db.SaveChangesAsync(ct);
 
@@ -352,7 +370,7 @@ public class TemplateService
     /// primary keys for unchanged rows so the audit log only captures real
     /// changes.
     /// </summary>
-    private static void ReconcileFolders(RuntimeTemplate existing, IReadOnlyList<TemplateFolderInput> inputs)
+    private static void ReconcileFolders(RuntimeTemplate existing, IReadOnlyList<TemplateFolderInput> inputs, int orgId)
     {
         var existingFolders = existing.Folders.OrderBy(f => f.Ordering).ToList();
 
@@ -370,11 +388,11 @@ public class TemplateService
             }
             else
             {
-                folder = new TemplateFolder { Ordering = i, Path = path };
+                folder = new TemplateFolder { OrganizationId = orgId, Ordering = i, Path = path };
                 existing.Folders.Add(folder);
             }
 
-            ReconcileFiles(folder, inputFolder.Files);
+            ReconcileFiles(folder, inputFolder.Files, orgId);
         }
 
         for (var i = inputs.Count; i < existingFolders.Count; i++)
@@ -441,7 +459,7 @@ public class TemplateService
     /// Same incremental update as <see cref="ReconcileFolders"/> but for the
     /// <c>template_module_folders</c> rows that scaffold module extensions.
     /// </summary>
-    private static void ReconcileModuleFolders(RuntimeTemplate existing, IReadOnlyList<TemplateFolderInput> inputs)
+    private static void ReconcileModuleFolders(RuntimeTemplate existing, IReadOnlyList<TemplateFolderInput> inputs, int orgId)
     {
         var existingFolders = existing.ModuleFolders.OrderBy(f => f.Ordering).ToList();
 
@@ -459,11 +477,11 @@ public class TemplateService
             }
             else
             {
-                folder = new TemplateModuleFolder { Ordering = i, Path = path };
+                folder = new TemplateModuleFolder { OrganizationId = orgId, Ordering = i, Path = path };
                 existing.ModuleFolders.Add(folder);
             }
 
-            ReconcileModuleFiles(folder, inputFolder.Files);
+            ReconcileModuleFiles(folder, inputFolder.Files, orgId);
         }
 
         for (var i = inputs.Count; i < existingFolders.Count; i++)
@@ -476,7 +494,7 @@ public class TemplateService
     /// Same incremental update as <see cref="ReconcileFiles"/> but for the
     /// <c>template_module_files</c> rows hung off a module folder.
     /// </summary>
-    private static void ReconcileModuleFiles(TemplateModuleFolder folder, IReadOnlyList<TemplateFileInput> inputs)
+    private static void ReconcileModuleFiles(TemplateModuleFolder folder, IReadOnlyList<TemplateFileInput> inputs, int orgId)
     {
         var existingFiles = folder.Files.OrderBy(f => f.Ordering).ToList();
 
@@ -497,6 +515,7 @@ public class TemplateService
             {
                 folder.Files.Add(new TemplateModuleFile
                 {
+                    OrganizationId = orgId,
                     Ordering = i,
                     Path = path,
                     Content = content,
@@ -516,7 +535,7 @@ public class TemplateService
     /// this mutates existing rows in-order so unchanged join rows keep stable
     /// primary keys and the audit log only captures the rows that really moved.
     /// </summary>
-    private static void ReconcileDefaultModules(RuntimeTemplate existing, IReadOnlyList<int> moduleIds)
+    private static void ReconcileDefaultModules(RuntimeTemplate existing, IReadOnlyList<int> moduleIds, int orgId)
     {
         var existingDefaults = existing.DefaultModules.OrderBy(d => d.Ordering).ToList();
 
@@ -537,6 +556,7 @@ public class TemplateService
             {
                 existing.DefaultModules.Add(new RuntimeTemplateDefaultModule
                 {
+                    OrganizationId = orgId,
                     Ordering = i,
                     ModuleId = moduleId,
                 });
@@ -553,7 +573,7 @@ public class TemplateService
     /// Same incremental update as <see cref="ReconcileFolders"/> but for the
     /// <c>template_files</c> rows hung off a single folder.
     /// </summary>
-    private static void ReconcileFiles(TemplateFolder folder, IReadOnlyList<TemplateFileInput> inputs)
+    private static void ReconcileFiles(TemplateFolder folder, IReadOnlyList<TemplateFileInput> inputs, int orgId)
     {
         var existingFiles = folder.Files.OrderBy(f => f.Ordering).ToList();
 
@@ -574,6 +594,7 @@ public class TemplateService
             {
                 folder.Files.Add(new TemplateFile
                 {
+                    OrganizationId = orgId,
                     Ordering = i,
                     Path = path,
                     Content = content,

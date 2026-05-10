@@ -10,6 +10,9 @@ public class TemplateFile
 {
     public int Id { get; set; }
 
+    /// <summary>Denormalised owning organisation; mirrors the folder's value.</summary>
+    public int OrganizationId { get; set; }
+
     /// <summary>Owning folder. Cascade-deleted when the folder is removed.</summary>
     public int TemplateFolderId { get; set; }
     public TemplateFolder? Folder { get; set; }

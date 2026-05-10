@@ -1,7 +1,9 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -35,6 +37,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         typeof(ModuleDependency),
         typeof(WellKnownDependency),
         typeof(ApplicationVersion),
+        typeof(User),
+        typeof(SignupRequest),
     };
 
     private readonly IHttpContextAccessor _http;
@@ -60,6 +64,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         _pendingAdditions = new List<PendingAddition>();
 
         var changedBy = ResolveChangedBy();
+        var changedByUserId = ResolveUserId();
+        var organizationId = ResolveOrganizationId();
         var timestamp = DateTime.UtcNow;
         var entries = ctx.ChangeTracker.Entries().ToList();
 
@@ -75,7 +81,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                 case EntityState.Added:
                     // We can't write the audit row yet — the primary key hasn't been
                     // assigned. Stash the entry and emit the row in SavedChangesAsync.
-                    _pendingAdditions.Add(new PendingAddition(entry, timestamp, changedBy));
+                    _pendingAdditions.Add(new PendingAddition(entry, timestamp, changedBy, changedByUserId, organizationId));
                     break;
 
                 case EntityState.Modified:
@@ -99,6 +105,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                     {
                         Timestamp = timestamp,
                         ChangedBy = changedBy,
+                        ChangedByUserId = changedByUserId,
+                        OrganizationId = ResolveEntityOrganizationId(entry, organizationId),
                         EntityType = MapEntityType(entry.Entity.GetType()),
                         EntityId = (int)entry.OriginalValues["Id"]!,
                         Action = action,
@@ -139,6 +147,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             {
                 Timestamp = addition.Timestamp,
                 ChangedBy = addition.ChangedBy,
+                ChangedByUserId = addition.ChangedByUserId,
+                OrganizationId = ResolveEntityOrganizationId(addition.Entry, addition.OrganizationId),
                 EntityType = MapEntityType(addition.Entry.Entity.GetType()),
                 EntityId = (int)addition.Entry.CurrentValues["Id"]!,
                 Action = AuditAction.Created,
@@ -284,14 +294,61 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         if (t == typeof(ModuleDependency)) return AuditEntityType.ModuleDependency;
         if (t == typeof(WellKnownDependency)) return AuditEntityType.WellKnownDependency;
         if (t == typeof(ApplicationVersion)) return AuditEntityType.ApplicationVersion;
+        if (t == typeof(User)) return AuditEntityType.User;
+        if (t == typeof(SignupRequest)) return AuditEntityType.SignupRequest;
         throw new InvalidOperationException($"Entity type {t.Name} is not audited.");
     }
 
+    /// <summary>
+    /// Composes <c>"display_name &lt;email&gt;"</c> for the audit row when both
+    /// claims are present, falling back to the display name alone, then to
+    /// <c>"unknown"</c> for seed-time inserts (no HttpContext).
+    /// </summary>
     private string ResolveChangedBy()
     {
-        var name = _http.HttpContext?.User?.Identity?.Name;
+        var principal = _http.HttpContext?.User;
+        var name = principal?.Identity?.Name;
+        var email = principal?.FindFirst(ClaimTypes.Email)?.Value;
+        if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(email))
+        {
+            return $"{name} <{email}>";
+        }
         return string.IsNullOrWhiteSpace(name) ? "unknown" : name;
     }
 
-    private sealed record PendingAddition(EntityEntry Entry, DateTime Timestamp, string ChangedBy);
+    private int? ResolveUserId()
+    {
+        var value = _http.HttpContext?.User?.FindFirst(HttpOrganizationContext.UserIdClaim)?.Value;
+        return int.TryParse(value, out var id) ? id : null;
+    }
+
+    private int? ResolveOrganizationId()
+    {
+        var value = _http.HttpContext?.User?.FindFirst(HttpOrganizationContext.OrganizationIdClaim)?.Value;
+        return int.TryParse(value, out var id) ? id : null;
+    }
+
+    /// <summary>
+    /// Pulls the entity's own <c>OrganizationId</c> if it has one, falling
+    /// back to the request-scoped value. Audited types like
+    /// <see cref="AuditLogEntry"/>'s parent (<c>users</c> or seed-time
+    /// inserts) may not have a column to read.
+    /// </summary>
+    private static int? ResolveEntityOrganizationId(EntityEntry entry, int? fallback)
+    {
+        var values = entry.State == EntityState.Added ? entry.CurrentValues : entry.OriginalValues;
+        if (values.Properties.Any(p => p.Name == "OrganizationId"))
+        {
+            var value = values["OrganizationId"];
+            if (value is int orgId && orgId > 0) return orgId;
+        }
+        return fallback;
+    }
+
+    private sealed record PendingAddition(
+        EntityEntry Entry,
+        DateTime Timestamp,
+        string ChangedBy,
+        int? ChangedByUserId,
+        int? OrganizationId);
 }

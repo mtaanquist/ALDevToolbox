@@ -1,6 +1,6 @@
 @page "/admin/templates/new"
 @page "/admin/templates/{Key}"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @inject TemplateService Templates
 @inject ApplicationVersionService Versions

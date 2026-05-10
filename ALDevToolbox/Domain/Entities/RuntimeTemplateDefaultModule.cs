@@ -11,6 +11,9 @@ public class RuntimeTemplateDefaultModule
 {
     public int Id { get; set; }
 
+    /// <summary>Denormalised owning organisation; mirrors the template's value.</summary>
+    public int OrganizationId { get; set; }
+
     public int RuntimeTemplateId { get; set; }
 
     /// <summary>The owning template. Cascade-deletes with the template.</summary>

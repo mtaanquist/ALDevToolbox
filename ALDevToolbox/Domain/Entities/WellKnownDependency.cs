@@ -9,6 +9,10 @@ public class WellKnownDependency
 {
     public int Id { get; set; }
 
+    /// <summary>Owning organisation. EF query filter scopes reads to it.</summary>
+    public int OrganizationId { get; set; }
+    public Organization? Organization { get; set; }
+
     /// <summary>The dependency app's GUID.</summary>
     public string DepId { get; set; } = string.Empty;
 

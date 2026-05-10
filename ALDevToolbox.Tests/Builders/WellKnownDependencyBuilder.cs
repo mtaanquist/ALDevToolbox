@@ -5,8 +5,11 @@ namespace ALDevToolbox.Tests.Builders;
 /// <summary>Helpers for constructing <see cref="WellKnownDependency"/> rows in tests.</summary>
 public static class WellKnownDependencyBuilder
 {
-    public static WellKnownDependency ForNav(string id, string name, string version = "24.0.0.0", int ordering = 0) => new()
+    public const int DefaultOrganizationId = 1;
+
+    public static WellKnownDependency ForNav(string id, string name, string version = "24.0.0.0", int ordering = 0, int organizationId = DefaultOrganizationId) => new()
     {
+        OrganizationId = organizationId,
         DepId = id,
         DepName = name,
         DepPublisher = "ForNAV",
