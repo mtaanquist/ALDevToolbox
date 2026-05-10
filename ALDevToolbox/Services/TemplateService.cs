@@ -66,7 +66,7 @@ public class TemplateService
     /// runtime version. <paramref name="includeDeprecated"/> is <c>true</c> for
     /// admin views and <c>false</c> for end-user dropdowns.
     /// </summary>
-    public async Task<List<RuntimeTemplate>> GetTemplatesAsync(bool includeDeprecated = true)
+    public async Task<List<RuntimeTemplate>> GetTemplatesAsync(bool includeDeprecated = true, CancellationToken ct = default)
     {
         var query = _db.RuntimeTemplates
             .AsNoTracking()
@@ -86,7 +86,7 @@ public class TemplateService
             .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
                 .ThenInclude(d => d.Module!)
             .Include(t => t.DefaultApplicationVersion)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         return rows
             .OrderBy(t => RuntimeSortKey(t.Runtime))
@@ -98,7 +98,7 @@ public class TemplateService
     /// Returns every template, including deprecated and soft-deleted ones. Drives
     /// the admin list view, where deleted rows are recoverable via "Restore".
     /// </summary>
-    public async Task<List<RuntimeTemplate>> GetAllForAdminAsync(bool includeDeleted)
+    public async Task<List<RuntimeTemplate>> GetAllForAdminAsync(bool includeDeleted, CancellationToken ct = default)
     {
         var query = _db.RuntimeTemplates.AsNoTracking();
         if (!includeDeleted)
@@ -114,7 +114,7 @@ public class TemplateService
             .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
                 .ThenInclude(d => d.Module!)
             .Include(t => t.DefaultApplicationVersion)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         // Same trick as GetTemplatesAsync: keep version-aware ordering
         // client-side because the DB column is now TEXT.
@@ -148,7 +148,7 @@ public class TemplateService
     /// <summary>
     /// Returns every active module, ordered by display name.
     /// </summary>
-    public Task<List<Module>> GetModulesAsync(bool includeDeprecated = true)
+    public Task<List<Module>> GetModulesAsync(bool includeDeprecated = true, CancellationToken ct = default)
     {
         var query = _db.Modules
             .AsNoTracking()
@@ -160,21 +160,21 @@ public class TemplateService
         return query
             .OrderBy(m => m.Name)
             .Include(m => m.Dependencies.OrderBy(d => d.Ordering))
-            .ToListAsync();
+            .ToListAsync(ct);
     }
 
     /// <summary>
     /// Returns every well-known catalogue dependency, in display order. Drives
     /// the catalogue side of the New Extension dependency picker.
     /// </summary>
-    public Task<List<WellKnownDependency>> GetCatalogAsync()
+    public Task<List<WellKnownDependency>> GetCatalogAsync(CancellationToken ct = default)
     {
         return _db.WellKnownDependencies
             .AsNoTracking()
             .OrderBy(w => w.Category)
             .ThenBy(w => w.Ordering)
             .ThenBy(w => w.DepName)
-            .ToListAsync();
+            .ToListAsync(ct);
     }
 
     /// <summary>

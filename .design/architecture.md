@@ -3,11 +3,13 @@
 ## Stack
 
 - **Blazor Server** for the UI. Server-rendered Razor components with SignalR for interactivity. No SPA build pipeline, no separate frontend repo, deployment is a single .NET app.
-- **.NET 9** (or current stable when implementation begins).
-- **EF Core** with the SQLite provider as the data layer. Migrations enabled.
-- **Tomlyn** for parsing TOML — used *only* during the first-run seed import. Templates and catalogue are not read from TOML at runtime.
+- **.NET 10**.
+- **EF Core 10** with the SQLite provider as the data layer. Migrations enabled.
+- **Tomlyn** for parsing TOML — used during the first-run seed import per organisation, by the TOML authoring surface in the admin UI, and by the export/import round-trip. Generation reads from the database, not from TOML.
 - **System.IO.Compression** for building the output ZIP server-side.
-- **Tabler icons** or **Lucide.Blazor** for icons. Either is fine; pick one and use it consistently.
+- **MailKit** for outbound email (signup notifications, password reset).
+- **BCrypt.Net-Next** for password hashing.
+- **Lucide.Blazor** for icons.
 - **No client-side framework beyond Blazor itself.** No React, no JS bundler.
 
 ## Why these choices
@@ -40,17 +42,22 @@
 └──────────────────────────────────────────────┘
 ```
 
-A clean folder structure on disk would mirror this: `Pages/`, `Components/`, `Services/`, `Domain/`, `Data/`. Implementer's discretion.
+The folder structure mirrors this: `Components/`, `Services/`, `Domain/`, `Data/`. See `CLAUDE.md` for what belongs where.
 
 ## Key services
 
 - **`TemplateService`** — read templates and folders, list available templates for the dropdown, get full template detail by key. CRUD operations for the admin UI.
 - **`ModuleService`** — read module catalogue, list available modules, CRUD for admin UI.
 - **`CatalogService`** — read/edit the well-known-dependencies catalogue used by the New Extension flow.
+- **`ApplicationVersionService`** — read/edit the curated AL application versions used to populate the New Workspace and New Extension dropdowns.
 - **`GenerationService`** — given a `ProjectPlan` (workspace + selected modules + options) and a template, produce a ZIP stream. See `generation-engine.md`.
-- **`SeedService`** — runs once on startup if the database is empty. Reads `Templates.seed/` from a configured path and populates the database. Idempotent — does nothing if any templates already exist.
-- **`AuditService`** — writes audit log entries. Implemented as an EF Core `SaveChangesInterceptor` rather than service calls scattered through code; see `auth-and-audit.md`.
-- **`AuthService`** — validates the shared password against the env var, issues the auth cookie, captures the user's display name.
+- **`SeedService`** — populates a single organisation from `Templates.seed/`. Runs against the Default org on first boot, and against newly-created orgs at provision time. Idempotent within an org — does nothing if `organizations.is_seeded` is already true.
+- **`OrganizationConfigService`** — reads and writes per-org settings (default publisher, default ID range, default brief / core description), the org logo, and the always-included files admins want appended to every generated workspace.
+- **`AuditService`** — read side. Mutations to the audit log happen via the `AuditInterceptor` (EF Core `SaveChangesInterceptor`); see `auth-and-audit.md`.
+- **`AccountService`** — sign-in, signup, password reset, role / status changes, login-attempt rate limiting and lockout. Uses `BCrypt.Net-Next` for hashing.
+- **`SmtpEmailService`** — outbound mail for signup notifications and password reset. Disabled-by-default; pages report "Email is not configured" rather than failing silently.
+- **`ExportService`** — builds the TOML export ZIP downloaded from `/admin/configuration`.
+- **`HttpOrganizationContext`** — request-scoped `IOrganizationContext` that pulls `user_id` and `org_id` from the auth cookie's claims; drives EF query filters in `AppDbContext`.
 
 ## Request flow examples
 
@@ -93,9 +100,9 @@ Not needed at runtime — templates live in the database and are read every requ
 
 ## Logging
 
-Standard `ILogger<T>` injection. Log:
+Standard `ILogger<T>` injection with structured (named-placeholder) messages. Log:
 - Each generation event (template key, modules selected, output size, duration).
 - Each authentication attempt (success or failure).
 - Each audit log write (at debug level — it's redundant with the table itself).
 
-Don't log sensitive data; the only thing remotely sensitive is the password and that's only ever compared, never logged.
+Don't log sensitive data; passwords are only ever hashed and compared, never logged.
