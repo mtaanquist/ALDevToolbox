@@ -6,10 +6,12 @@ Guidance for working on this repository. Read this before touching code, especia
 
 - **AL Dev Toolbox** — internal Blazor Server tool that generates AL/BC workspaces and standalone extensions from runtime templates.
 - Stack: .NET 10, Blazor Server, EF Core 10 + SQLite, Tomlyn, Lucide.Blazor.
-- Single project; layered by folder: `Components/`, `Services/`, `Domain/`, `Data/`, `Resources/`, `Templates.seed/`.
+- Two projects: `src/ALDevToolbox/` (the app, layered by folder) and `tests/ALDevToolbox.Tests/` (xUnit + FluentAssertions, established in Milestone 12). The solution file is `ALDevToolbox.slnx` at the repo root.
 - Source of truth for behaviour: documents under `.design/`. If code disagrees with the design doc, fix one of them — don't leave them out of sync.
 
 ## Where things live
+
+App folders are relative to `src/ALDevToolbox/`.
 
 | Folder                       | What goes there                                                              |
 |------------------------------|------------------------------------------------------------------------------|
@@ -25,7 +27,18 @@ Guidance for working on this repository. Read this before touching code, especia
 | `Templates.seed/`            | First-run seed data. Read once when the DB is empty; never at runtime.       |
 | `wwwroot/`                   | Global CSS, favicon.                                                         |
 
-When you add a new file, match the folder. Resist creating top-level folders — the layered split is intentional.
+Test folders are relative to `tests/ALDevToolbox.Tests/`.
+
+| Folder            | What goes there                                                          |
+|-------------------|--------------------------------------------------------------------------|
+| `Builders/`       | Entity / plan builders pre-populated with sane defaults.                 |
+| `Infrastructure/` | Reusable test plumbing (currently `TestDb` — in-memory SQLite fixture).  |
+| `Generation/`     | `GenerationService` tests.                                               |
+| `Audit/`          | `AuditInterceptor` tests.                                                |
+| `Toml/`           | `TemplateTomlMapper` tests.                                              |
+| `Validation/`     | `PlanValidationException` field-key tests.                               |
+
+When you add a new file, match the folder. Resist creating top-level folders — the layered split is intentional. Test patterns are documented in `tests/ALDevToolbox.Tests/README.md`; new service tests should follow them.
 
 ## Development principles
 
@@ -133,14 +146,16 @@ When implementing a milestone:
 
 ## Tests and verification
 
-We don't have automated tests yet, and milestones 4–11 don't require them. Phase 3 changes that — M12 stands up an `ALDevToolbox.Tests` project, backfills tests for the tricky algorithms (ID-range allocation, mustache, audit snapshots, TOML round-trip), and sets the bar that every service method added in M13–M15 ships with tests for happy path and validation rules. The "don't retro-test things that already work" guideline below is superseded by M12 for those specific targets. Until M12 lands:
+Milestone 12 stood up `tests/ALDevToolbox.Tests` (xUnit + FluentAssertions, in-memory SQLite via `Filename=:memory:`) and backfilled tests for the tricky algorithms — ID-range allocation, mustache substitution, audit snapshots, TOML round-trip, and the `PlanValidationException` field-key contract. Patterns are documented in `tests/ALDevToolbox.Tests/README.md`.
 
+The bar from M13 onward: every service method added ships with tests for the happy path and for any validation rule it introduces. Not a coverage metric — a posture. If the code has a rule, the rule has a test.
+
+- `dotnet test` runs locally (no flags needed) and is part of CI (`.github/workflows/build.yml`). A red test run fails the build the same way a red compile does.
 - Verify generation by building a workspace, extracting the ZIP, and opening it in VS Code with the AL extension. The output structure must match `generation-engine.md`.
-- Run the GitHub Actions build on every push — the workflow at `.github/workflows/build.yml` is the floor for "does it compile and start". Don't merge a red build.
 - Manual smoke test the end-user flows after touching shared services (generation, seed). Click through New Workspace, New Extension, Templates Browser.
 - Local Docker run (`docker compose up`) before merging anything that touches startup, env vars, or volumes.
 
-If a milestone introduces a non-obvious algorithm (e.g. ID range allocation with overrides, audit snapshot composition, mustache edge cases), add focused unit tests for it in a new `ALDevToolbox.Tests` project. Don't retro-test things that already work.
+When picking which tests to add for a new feature, prefer tests that go through the public API (the service method, the endpoint, the round-trip) over tests that reach into private helpers. Internals will refactor; the contract shouldn't.
 
 ## Pull request hygiene
 

@@ -8,6 +8,7 @@
 .gitignore
 .github/
 .design/
+tests/
 
 # Local-only artefacts; the image creates its own under /data.
 data/

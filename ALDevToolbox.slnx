@@ -1,3 +1,4 @@
 <Solution>
-  <Project Path="ALDevToolbox.csproj" />
+  <Project Path="src/ALDevToolbox/ALDevToolbox.csproj" />
+  <Project Path="tests/ALDevToolbox.Tests/ALDevToolbox.Tests.csproj" />
 </Solution>
