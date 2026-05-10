@@ -511,8 +511,9 @@ public class OrganizationConfigService
     /// <summary>
     /// Sanitises an uploaded SVG by stripping <c>&lt;script&gt;</c> elements
     /// and <c>on*</c> event-handler attributes. PNGs pass through unchanged.
+    /// Public so the sanitiser can be exercised directly from tests.
     /// </summary>
-    internal static byte[] SanitiseLogo(string contentType, byte[] content)
+    public static byte[] SanitiseLogo(string contentType, byte[] content)
     {
         if (!string.Equals(contentType, "image/svg+xml", StringComparison.OrdinalIgnoreCase))
         {
