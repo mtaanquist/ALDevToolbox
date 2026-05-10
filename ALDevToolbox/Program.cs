@@ -55,17 +55,21 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IOrganizationContext, HttpOrganizationContext>();
 
-// SQLite connection string. DB_PATH wins, falling back to a file alongside the
-// content root for local `dotnet run` so devs don't need to set anything up.
-var dbPath = Environment.GetEnvironmentVariable("DB_PATH")
-    ?? Path.Combine(builder.Environment.ContentRootPath, "app.db");
+// Postgres connection string (M16). `ConnectionStrings__DefaultConnection`
+// is the deployment knob; compose.yml builds it from POSTGRES_* env vars and
+// passes it through. There is no fallback DSN — failing fast surfaces a
+// missing config sooner than discovering it at first query.
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException(
+        "ConnectionStrings:DefaultConnection is not configured. Set ConnectionStrings__DefaultConnection.");
 builder.Services.AddScoped<AuditInterceptor>();
-// Migrations and the model snapshot are maintained by hand here (see the empty
-// `BuildTargetModel` overrides in the M14+ designer files), so EF's pending-
-// changes check is unreliable; real schema drift still surfaces at MigrateAsync.
+// The model snapshot stays a hand-rolled affair (the InitialCreate designer
+// file's BuildTargetModel is intentionally empty), so EF's pending-model-
+// changes guard would fire on every MigrateAsync. Real schema drift still
+// surfaces when the migration itself runs.
 builder.Services.AddDbContext<AppDbContext>((sp, options) =>
     options
-        .UseSqlite($"Data Source={dbPath}", sqlite => sqlite.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery))
+        .UseNpgsql(connectionString, npgsql => npgsql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery))
         .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
         .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
 

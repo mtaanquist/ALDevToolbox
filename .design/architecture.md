@@ -4,7 +4,7 @@
 
 - **Blazor Server** for the UI. Server-rendered Razor components with SignalR for interactivity. No SPA build pipeline, no separate frontend repo, deployment is a single .NET app.
 - **.NET 10**.
-- **EF Core 10** with the SQLite provider as the data layer. Migrations enabled.
+- **EF Core 10** with the Npgsql (PostgreSQL) provider as the data layer. Migrations enabled. PostgreSQL 18 is the only supported database from Milestone P4.16 onward.
 - **Tomlyn** for parsing TOML — used during the first-run seed import per organisation, by the TOML authoring surface in the admin UI, and by the export/import round-trip. Generation reads from the database, not from TOML.
 - **System.IO.Compression** for building the output ZIP server-side.
 - **MailKit** for outbound email (signup notifications, password reset).
@@ -16,9 +16,9 @@
 
 **Blazor Server over Blazor WebAssembly:** This is an internal tool with low concurrency and a tightly scoped audience. Server-side rendering keeps the deploy simple (one binary), avoids WASM payload size issues, and lets the generator run server-side where streaming a ZIP is straightforward. The original tool ran client-side because it had to live on a static page; that constraint is gone.
 
-**SQLite over Postgres or similar:** One file, one volume, no separate database service. Backups are `cp data.db data.db.bak`. For a tool with single-digit concurrent users editing templates rarely, this is all that's needed.
+**PostgreSQL over SQLite (P4.16):** v1 shipped on SQLite for the simplicity of a single file and a single volume. P4.16 swaps that for `postgres:18-alpine` running as a sibling container in compose, sharing a named volume. The change pays off in three places: tests run against the same engine production uses (no SQLite-vs-Postgres semantic gaps for jsonb / timestamptz / DDL), backups go through `pg_dump` (the foundation of the M18 backup tooling), and the M14 SQLite-specific `__ef_temp_*` table rebuilds disappear from the migration history. The "no external services" architectural fence is intentionally relaxed in spirit: still one app container, but now also one db container and a named volume per concern (data, keys, backups). See `migrating-from-sqlite.md` for the upgrade path.
 
-**Templates in the database, not on disk:** Decided after weighing both options. SQLite makes Docker deployment simpler (one volume mount), allows live editing through the admin UI without redeploys, and supports an audit log natively. The cost — losing git history of template edits — is mitigated by the audit log table and an export-to-TOML feature for periodic snapshots. See `templates-and-seeding.md` for the seed strategy that keeps a source-controlled starting point.
+**Templates in the database, not on disk:** Decided after weighing both options. Storing the templates in Postgres makes Docker deployment simpler (one mount per concern), allows live editing through the admin UI without redeploys, and supports an audit log natively. The cost — losing git history of template edits — is mitigated by the audit log table and an export-to-TOML feature for periodic snapshots. See `templates-and-seeding.md` for the seed strategy that keeps a source-controlled starting point.
 
 ## Layers
 
@@ -38,7 +38,8 @@
 │  Persistence (EF Core DbContext)             │  Repositories or direct
 │                                              │  DbContext use
 ├──────────────────────────────────────────────┤
-│  SQLite                                      │  Single .db file
+│  PostgreSQL 18                               │  Sibling compose service,
+│                                              │  named volume `pg-data`
 └──────────────────────────────────────────────┘
 ```
 

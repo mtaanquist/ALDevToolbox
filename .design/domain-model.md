@@ -1,6 +1,11 @@
 # Domain model
 
-This document specifies the entities, their relationships, and the SQLite schema. EF Core code-first migrations are the expected mechanism for creating the schema; the SQL below is the target shape.
+This document specifies the entities, their relationships, and the PostgreSQL schema. EF Core code-first migrations are the expected mechanism for creating the schema; the SQL types below are the target shape.
+
+The schema was a SQLite one through v1 (M1–M15) and switched to PostgreSQL 18 in P4.16. The two changes that matter at this layer are:
+
+- `defaults_json` and `app_source_cop_json` are now `jsonb` columns. The C# value-converter still serialises through a `string` round-trip, so application code is unchanged. No JSONB GIN index yet — add one when a query needs it.
+- All `DateTime` columns are `timestamp with time zone`. Application code is already disciplined about `DateTime.UtcNow` / `DateTimeKind.Utc` literals, and `OnModelCreating` pins the column type so a new column added without an explicit type still lands correctly.
 
 ## Entities
 

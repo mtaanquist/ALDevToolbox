@@ -2,7 +2,7 @@
 
 ## Where templates live
 
-**Persistence:** in the SQLite database. Templates, modules, and catalogue entries are stored as rows in the tables described in `domain-model.md`. The DB is the source of truth at runtime — every read on the user-facing flows hits these tables.
+**Persistence:** in the PostgreSQL database. Templates, modules, and catalogue entries are stored as rows in the tables described in `domain-model.md`. The DB is the source of truth at runtime — every read on the user-facing flows hits these tables.
 
 **Authoring surfaces:** two equal options, both writing through the same `TemplateInput` validation pipeline into the DB.
 
@@ -224,7 +224,8 @@ The admin section should provide a one-click "Export all to TOML" button (under 
 
 - Periodic snapshotting into a backup branch.
 - Quickly grepping/diffing the entire template state outside the app.
-- Disaster recovery if the SQLite file is corrupted (re-seed from the export).
+- Disaster recovery if the database is unrecoverable (re-seed from the export).
+- One-way migration off the v1 SQLite shape onto a fresh P4.16 Postgres deployment — see `migrating-from-sqlite.md`.
 
 Implementation: walk all active rows, serialise each template/module/catalogue back into the TOML shape, ZIP into `Templates.seed.zip`. Use Tomlyn's `Toml.FromModel(...)` for the inverse direction.
 

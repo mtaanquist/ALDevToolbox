@@ -11,11 +11,20 @@ copy rather than reinvent.
 - **FluentAssertions** for the assertion DSL. Prefer `.Should().Be(...)`,
   `.Should().Contain(...)`, etc. over raw `Assert.Equal` so failures read like
   prose.
-- **Microsoft.EntityFrameworkCore.Sqlite** with an in-memory connection
-  (`Filename=:memory:`) for any test that touches the DB. We deliberately do
-  *not* use `Microsoft.EntityFrameworkCore.InMemory` — the SQL semantics
-  diverge from real SQLite (constraint enforcement, JSON column conversions,
-  index behaviour) and the milestone calls out matching production.
+- **Npgsql.EntityFrameworkCore.PostgreSQL** with a real Postgres instance for
+  any test that touches the DB (Milestone P4.16). The test fixture
+  (`TestDb`) creates a unique database per test class against a process-wide
+  shared Postgres host. The host is either:
+  - a runner-provided service container — when
+    `ALDT_TEST_POSTGRES_CONNECTION` is set, `TestDb` reuses it. CI takes this
+    path against a `postgres:18` service container.
+  - a Testcontainers `postgres:18-alpine` started on first use — local-dev
+    path. Requires Docker on the developer's machine.
+
+  We deliberately do *not* use `Microsoft.EntityFrameworkCore.InMemory` — the
+  SQL semantics diverge from real Postgres (constraint enforcement, jsonb
+  conversions, timestamptz handling) and the milestone calls out matching
+  production.
 
 ## Layout
 
@@ -36,10 +45,10 @@ top-level folders for one-off tests — pick the closest existing bucket.
 
 ### Database tests
 
-Use `TestDb`. It opens a single SQLite connection (`Filename=:memory:`),
-runs `EnsureCreated`, and hands out fresh `AppDbContext` instances bound to
-the same in-memory database. Dispose the fixture in the test class's
-`Dispose` method.
+Use `TestDb`. It creates a fresh Postgres database for the test class against
+the shared host, applies migrations, and hands out `AppDbContext` instances
+bound to that database. The fixture drops the database on `Dispose`, so
+each test class is isolated from every other.
 
 ```csharp
 public sealed class MyServiceTests : IDisposable

@@ -68,9 +68,9 @@ public class ExportService
             .Include(t => t.DefaultApplicationVersion)
             .ToListAsync(ct);
 
-        // Sort client-side because Runtime is a TEXT column now and SQLite's
-        // lexicographic order would put "10" before "9". TemplateService
-        // exposes the version-aware tuple comparer.
+        // Sort client-side because Runtime is a text column and lexicographic
+        // order would put "10" before "9". TemplateService exposes the
+        // version-aware tuple comparer.
         var templates = templateRows
             .OrderBy(t => TemplateService.RuntimeSortKey(t.Runtime))
             .ThenBy(t => t.Key, StringComparer.OrdinalIgnoreCase)

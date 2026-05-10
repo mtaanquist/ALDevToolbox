@@ -9,7 +9,7 @@ namespace ALDevToolbox.Domain.Entities;
 /// </summary>
 public class RuntimeTemplate
 {
-    /// <summary>Database identifier. Auto-incremented by SQLite.</summary>
+    /// <summary>Database identifier. Auto-incremented.</summary>
     public int Id { get; set; }
 
     /// <summary>Owning organisation. EF query filter scopes reads to it.</summary>

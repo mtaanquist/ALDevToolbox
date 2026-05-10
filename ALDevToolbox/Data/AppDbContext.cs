@@ -185,12 +185,18 @@ public class AppDbContext : DbContext
             entity.Property(e => e.DefaultApplication).HasColumnName("default_application").IsRequired();
             entity.Property(e => e.DefaultPlatform).HasColumnName("default_platform").IsRequired();
             entity.Property(e => e.DefaultApplicationVersionId).HasColumnName("default_application_version_id");
+            // M16: jsonb. The value-converter still goes through string round-
+            // trips on the C# side; HasColumnType pins the storage shape so EF
+            // doesn't fall back to text. No JSONB GIN index yet — add one when
+            // a query needs it, not before (see .design/milestones.md, M16).
             entity.Property(e => e.Defaults)
                 .HasColumnName("defaults_json")
+                .HasColumnType("jsonb")
                 .HasConversion(defaultsConverter)
                 .IsRequired();
             entity.Property(e => e.AppSourceCop)
                 .HasColumnName("app_source_cop_json")
+                .HasColumnType("jsonb")
                 .HasConversion(appSourceCopConverter)
                 .IsRequired();
             entity.Property(e => e.CoreIdRangeFrom).HasColumnName("core_id_range_from").IsRequired();
@@ -502,6 +508,23 @@ public class AppDbContext : DbContext
             // explicitly) — we don't apply a query filter here because seed
             // and bootstrap inserts can have a null OrganizationId.
         });
+
+        // M16: pin every DateTime column to `timestamp with time zone`. Npgsql
+        // requires DateTime values to have Kind=Utc when targeting timestamptz,
+        // and the codebase is already disciplined about that — every write goes
+        // through DateTime.UtcNow or a `DateTimeKind.Utc` literal in the
+        // builders. Pinning the column type here makes the contract explicit
+        // and rules out timestamp-without-time-zone drift.
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            foreach (var property in entityType.GetProperties())
+            {
+                if (property.ClrType == typeof(DateTime) || property.ClrType == typeof(DateTime?))
+                {
+                    property.SetColumnType("timestamp with time zone");
+                }
+            }
+        }
     }
 
     /// <summary>

@@ -2,102 +2,56 @@
 
 ## Target environment
 
-The app runs as a single Docker container behind whatever ingress the company uses (Traefik, nginx, etc.). One container, one volume, one set of env vars.
+The app runs as two Docker containers (app + Postgres) sitting behind whatever ingress the company uses (Traefik, nginx, etc.). The previous "single container, single volume" posture relaxed in P4.16 — see `architecture.md`. The compose file in the repo (`compose.yml`) is the canonical deployment shape.
 
 ## Dockerfile
 
 A multi-stage build producing a self-contained image:
 
-```dockerfile
-# Build stage
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
-WORKDIR /src
-COPY *.csproj ./
-RUN dotnet restore
-COPY . ./
-RUN dotnet publish -c Release -o /app /p:UseAppHost=false
-
-# Runtime stage
-FROM mcr.microsoft.com/dotnet/aspnet:9.0
-WORKDIR /app
-COPY --from=build /app ./
-COPY Templates.seed ./Templates.seed
-EXPOSE 8080
-ENV ASPNETCORE_URLS=http://+:8080
-ENV SEED_PATH=/app/Templates.seed
-ENV DB_PATH=/data/app.db
-ENTRYPOINT ["dotnet", "AlWorkspaceBuilder.dll"]
-```
-
-Key points:
+The repo ships a working `Dockerfile` at the root; that's the canonical build. Key points:
 
 - `Templates.seed/` is copied into the image. The seed files are part of the build artifact, not provided at runtime.
-- `/data` is the directory the database lives in. It's expected to be a mounted volume.
+- The app reads `ConnectionStrings__DefaultConnection` to find the database. There is no on-disk DB; persistence is the sibling `db` compose service backed by the `pg-data` named volume.
 - Port 8080 inside the container, mapped however the host wants.
 
 ## docker-compose example
 
-```yaml
-services:
-  alwb:
-    image: alwb:latest
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./data:/data
-    environment:
-      ADMIN_PASSWORD_FILE: /run/secrets/admin_password
-      DB_PATH: /data/app.db
-      SEED_PATH: /app/Templates.seed
-    secrets:
-      - admin_password
-    restart: unless-stopped
-
-secrets:
-  admin_password:
-    file: ./secrets/admin_password.txt
-```
-
-The password is read from a file rather than directly from an environment variable so it doesn't end up in `docker inspect` output. The app should support both `ADMIN_PASSWORD` (for local dev) and `ADMIN_PASSWORD_FILE` (for production), preferring the file if both are set.
+The canonical compose file lives at the repo root (`compose.yml`). It defines two services — `aldevtoolbox` (the app) and `db` (`postgres:18-alpine`) — wired together with a healthcheck-gated `depends_on`. The app reads `ConnectionStrings__DefaultConnection`, which compose builds from `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`. See `README.md` for the quick-start invocation.
 
 ## Environment variables
 
 | Variable                  | Purpose                                             | Default                  |
 |---------------------------|-----------------------------------------------------|--------------------------|
-| `ADMIN_PASSWORD`          | The shared admin password (dev / quick start)       | none — required          |
-| `ADMIN_PASSWORD_FILE`     | Path to a file containing the password (production) | none                     |
-| `DB_PATH`                 | Path to the SQLite file                             | `/data/app.db`           |
+| `BOOTSTRAP_ADMIN_EMAIL`   | First admin email (only on a fresh database)       | none                     |
+| `BOOTSTRAP_ADMIN_PASSWORD`| First admin password (only on a fresh database)    | none                     |
+| `ConnectionStrings__DefaultConnection` | Postgres connection string (Npgsql format) | none — required          |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Read by the `db` compose service | `aldevtoolbox` (set `POSTGRES_PASSWORD` for any real deployment) |
 | `SEED_PATH`               | Path to the `Templates.seed/` directory             | `/app/Templates.seed`    |
 | `ASPNETCORE_URLS`         | Standard ASP.NET Core binding                       | `http://+:8080`          |
 | `ASPNETCORE_ENVIRONMENT`  | Standard ASP.NET Core environment                   | `Production`             |
 
-If `ADMIN_PASSWORD` and `ADMIN_PASSWORD_FILE` are both unset, the app should fail to start with a clear error message. Don't silently default to a weak password.
+If `ConnectionStrings__DefaultConnection` is unset the app fails to start with a clear error.
 
 ## First-run behaviour
 
-On first start against an empty `/data` directory:
+On first start against an empty database:
 
-1. The app creates `app.db` at `DB_PATH`.
-2. EF Core migrations run, creating all tables.
-3. `SeedService` runs — reads `Templates.seed/` and populates the tables.
-4. The app starts serving requests.
+1. EF Core migrations run, creating all tables.
+2. The migration seeds the **Default** organisation row.
+3. `SeedService` populates the Default org's templates, modules, catalogue, and organisation defaults from `Templates.seed/`.
+4. The bootstrap admin (from `BOOTSTRAP_ADMIN_*` env vars) is created in the Default org.
+5. The app starts serving requests.
 
-On subsequent starts, the app:
-
-1. Confirms the schema matches (runs any pending migrations).
-2. Skips seeding (database is non-empty).
-3. Starts serving.
+On subsequent starts the app applies any pending migrations, skips seeding for orgs already marked seeded, and starts serving.
 
 ## Backups
 
 The entire state of the app is in two places:
 
-- The SQLite file at `DB_PATH`. Back this up.
+- The Postgres database in the `pg-data` named volume. Back this up.
 - The seed files in the image. Already version-controlled.
 
-Backup is `cp /data/app.db /backups/app.db.$(date +%Y%m%d)`. Or take a volume snapshot. Or use the in-app "Export to TOML" feature periodically and commit the result.
-
-For point-in-time recovery: SQLite supports online backup via the backup API. A small sidecar process running `sqlite3 /data/app.db ".backup /backups/app.db.bak"` on a cron schedule is the simplest robust approach.
+Backup is `pg_dump -Fc` against the `db` service. M18 ships a built-in backup hosted service that runs `pg_dump` on a schedule and writes to `/var/lib/aldevtoolbox/backups`; until then, an external cron job is the simplest robust approach. The in-app "Export to TOML" remains useful for human-readable snapshots of the catalogue, but it does not capture audit history.
 
 ## Upgrades
 
@@ -134,7 +88,7 @@ Recommended log levels:
 
 ## Resource sizing
 
-This is a small tool. 256MB RAM, 0.5 CPU is generous. SQLite scales fine for this — a database with thousands of templates would still respond in milliseconds. The expected steady state is dozens of templates and a few hundred audit log rows.
+This is a small tool. The app container needs ~256MB RAM and 0.5 CPU; the Postgres container at this load is comfortable in 512MB / 0.5 CPU. The expected steady state is dozens of templates per organisation and a few thousand audit log rows.
 
 ## TLS
 
@@ -144,5 +98,4 @@ The container should *not* terminate TLS itself. Run it behind a reverse proxy (
 
 - Multi-tenancy. There's one tenant: your team.
 - Horizontal scaling. Blazor Server's SignalR connections are sticky to the server; one instance is enough for this load.
-- A separate database service. SQLite is the database.
 - A queue or worker process. Generation is synchronous and finishes in under a second.
