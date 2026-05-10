@@ -5,16 +5,6 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace ALDevToolbox.Data.Migrations
 {
-    /// <summary>
-    /// Milestone P4.17 — Site Admin Console v1.
-    ///
-    /// Adds the <c>is_site_admin</c> flag to <c>users</c> (default false; the
-    /// bootstrap admin gets it stamped to true at first-run by Program.cs) and
-    /// introduces the singleton <c>system_settings</c> table that holds the
-    /// hybrid SMTP override, system banner, and default signup approval
-    /// policy. The SMTP password is stored as ciphertext produced by ASP.NET
-    /// Core Data Protection; the audit interceptor redacts the column.
-    /// </summary>
     public partial class SiteAdminConsoleV1 : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)

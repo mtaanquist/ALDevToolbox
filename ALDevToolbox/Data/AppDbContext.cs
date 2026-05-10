@@ -478,9 +478,7 @@ public class AppDbContext : DbContext
         {
             entity.ToTable("system_settings");
             entity.HasKey(e => e.Id);
-            // Singleton: id is pinned to 1 by the migration. We don't want
-            // EF to generate one — explicit ValueGeneratedNever() makes it
-            // obvious the row is special.
+            // The singleton row's id is pinned to 1 by the migration.
             entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
             entity.Property(e => e.SmtpHost).HasColumnName("smtp_host");
             entity.Property(e => e.SmtpPort).HasColumnName("smtp_port");
@@ -491,9 +489,8 @@ public class AppDbContext : DbContext
             entity.Property(e => e.BannerText).HasColumnName("banner_text");
             entity.Property(e => e.DefaultSignupAutoApprove).HasColumnName("default_signup_auto_approve").IsRequired();
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
-            // Cross-org table: no organization_id and no scoping query filter.
-            // Mutations route through SiteAdmin services that call
-            // RequireSiteAdmin() rather than RequireOrganizationId().
+            // Cross-org table: no organization_id and no scoping query filter;
+            // SiteAdminService gates mutations.
         });
 
         modelBuilder.Entity<AuditLogEntry>(entity =>

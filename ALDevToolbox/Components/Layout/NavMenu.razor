@@ -99,9 +99,6 @@
         </Authorized>
     </AuthorizeView>
 
-    @* Site Admin section: hosting-operator surface introduced in M17.
-       Only visible to users carrying the SiteAdmin role claim — the role
-       is added at sign-in time when User.IsSiteAdmin is true. *@
     <AuthorizeView Roles="SiteAdmin">
         <Authorized>
             <div class="nav-section">

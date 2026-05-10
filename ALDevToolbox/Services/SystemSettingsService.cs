@@ -7,11 +7,10 @@ using Microsoft.EntityFrameworkCore;
 namespace ALDevToolbox.Services;
 
 /// <summary>
-/// Plain (decrypted) view of <see cref="SystemSettings"/> handed back to UI
-/// pages. The SMTP password is included verbatim only when the caller
-/// already has SiteAdmin context — services that don't (the public-facing
-/// hybrid SMTP resolver) get a separate <see cref="ResolvedSmtpSettings"/>
-/// instead of this record.
+/// Read-side view of <see cref="SystemSettings"/> for the SiteAdmin form.
+/// Carries <see cref="HasSmtpPassword"/> rather than the password itself —
+/// plaintext is only ever materialised inside <see cref="ResolvedSmtpSettings"/>
+/// for the email sender.
 /// </summary>
 public sealed record SystemSettingsView(
     string? SmtpHost,
@@ -25,17 +24,18 @@ public sealed record SystemSettingsView(
     DateTime UpdatedAt);
 
 /// <summary>
-/// Input for <see cref="SystemSettingsService.SaveAsync"/>. <see cref="SmtpPassword"/>
-/// is interpreted as: <c>null</c> ⇒ leave the existing password as-is;
-/// empty string ⇒ clear the stored password; non-empty ⇒ replace.
-/// The "leave as-is" case is what the form posts when the SiteAdmin doesn't
-/// touch the password field.
+/// Input for <see cref="SystemSettingsService.SaveAsync"/>.
+/// <see cref="SmtpPassword"/> replaces the stored password when non-empty;
+/// a blank value leaves it untouched (the form posts blank when the
+/// SiteAdmin doesn't re-type the password). To clear an existing password,
+/// set <see cref="ClearSmtpPassword"/> instead.
 /// </summary>
 public sealed record SystemSettingsInput(
     string? SmtpHost,
     int? SmtpPort,
     string? SmtpUser,
     string? SmtpPassword,
+    bool ClearSmtpPassword,
     string? SmtpFrom,
     bool? SmtpUseStartTls,
     string? BannerText,
@@ -68,20 +68,16 @@ public sealed record ResolvedSmtpSettings(
 }
 
 /// <summary>
-/// Reads and writes the singleton <see cref="SystemSettings"/> row. SMTP
-/// password ciphertext is produced via ASP.NET Core Data Protection (purpose
-/// string <c>system-settings.smtp-password</c>) and persisted to the
-/// <c>smtp_password_encrypted</c> column. Decryption is contained in this
-/// service — callers receive either a plaintext-bearing
+/// Reads and writes the singleton <see cref="SystemSettings"/> row. The
+/// SMTP password is encrypted via ASP.NET Core Data Protection; decryption
+/// is contained here, so callers see either a plaintext-bearing
 /// <see cref="ResolvedSmtpSettings"/> (for the email sender) or a
 /// <see cref="SystemSettingsView"/> (for the SiteAdmin form).
 ///
 /// <para>
-/// The hybrid SMTP resolver in <see cref="ResolveSmtpAsync"/> prefers DB
-/// values when configured and falls back to <c>SMTP_*</c> env vars
-/// otherwise. The env-var fallback exists so a fresh deployment can fire
-/// signup-approval emails before any SiteAdmin has logged in to fill the
-/// form (see <c>.design/milestones.md</c>, M17).
+/// <see cref="ResolveSmtpAsync"/> prefers DB values and falls back to
+/// <c>SMTP_*</c> env vars — fresh deployments can fire signup-approval
+/// emails before any SiteAdmin has logged in to fill the form.
 /// </para>
 /// </summary>
 public sealed class SystemSettingsService
@@ -158,14 +154,13 @@ public sealed class SystemSettingsService
         row.DefaultSignupAutoApprove = input.DefaultSignupAutoApprove;
         row.UpdatedAt = _clock.GetUtcNow().UtcDateTime;
 
-        // null  → leave alone (form was rendered without re-asking for the password)
-        // ""    → clear the stored password
-        // value → encrypt and replace
-        if (input.SmtpPassword is not null)
+        if (input.ClearSmtpPassword)
         {
-            row.SmtpPasswordEncrypted = input.SmtpPassword.Length == 0
-                ? null
-                : _protector.Protect(input.SmtpPassword);
+            row.SmtpPasswordEncrypted = null;
+        }
+        else if (!string.IsNullOrEmpty(input.SmtpPassword))
+        {
+            row.SmtpPasswordEncrypted = _protector.Protect(input.SmtpPassword);
         }
 
         await _db.SaveChangesAsync(ct);
@@ -180,53 +175,55 @@ public sealed class SystemSettingsService
     /// Returns the SMTP configuration the email sender should use, preferring
     /// the DB-stored override when present and falling back to env vars when
     /// the DB row is unset. Returns <see langword="null"/> when neither path
-    /// yields a host + from. Reads of the singleton row hit the database on
-    /// every send — by design: SiteAdmin updates take effect on the next
-    /// send without a restart, and the row is one indexed lookup.
+    /// yields a host + from.
     /// </summary>
     public async Task<ResolvedSmtpSettings?> ResolveSmtpAsync(CancellationToken ct = default)
     {
         var row = await _db.SystemSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == 1, ct);
+        return TryResolveFromDb(row) ?? ResolveFromEnv();
+    }
 
-        if (row is not null && !string.IsNullOrWhiteSpace(row.SmtpHost) && !string.IsNullOrWhiteSpace(row.SmtpFrom))
+    private ResolvedSmtpSettings? TryResolveFromDb(SystemSettings? row)
+    {
+        if (row is null || string.IsNullOrWhiteSpace(row.SmtpHost) || string.IsNullOrWhiteSpace(row.SmtpFrom))
         {
-            string? plaintext = null;
-            if (!string.IsNullOrEmpty(row.SmtpPasswordEncrypted))
+            return null;
+        }
+
+        string? plaintext = null;
+        if (!string.IsNullOrEmpty(row.SmtpPasswordEncrypted))
+        {
+            try
             {
-                try
-                {
-                    plaintext = _protector.Unprotect(row.SmtpPasswordEncrypted);
-                }
-                catch (System.Security.Cryptography.CryptographicException ex)
-                {
-                    // Surface a loud signal — a key-ring rotation that lost
-                    // the old key would otherwise silently degrade auth.
-                    _logger.LogError(ex, "Failed to decrypt SMTP password from system_settings; falling back to env vars.");
-                    plaintext = null;
-                    row = null;
-                }
+                plaintext = _protector.Unprotect(row.SmtpPasswordEncrypted);
             }
-            if (row is not null)
+            catch (System.Security.Cryptography.CryptographicException ex)
             {
-                return ResolvedSmtpSettings.TryFrom(
-                    host: row.SmtpHost,
-                    port: row.SmtpPort,
-                    user: row.SmtpUser,
-                    password: plaintext,
-                    from: row.SmtpFrom,
-                    useStartTls: row.SmtpUseStartTls);
+                // Loud signal: a key-ring rotation that lost the old key would
+                // otherwise silently degrade outbound mail.
+                _logger.LogError(ex, "Failed to decrypt SMTP password from system_settings; falling back to env vars.");
+                return null;
             }
         }
 
         return ResolvedSmtpSettings.TryFrom(
+            host: row.SmtpHost,
+            port: row.SmtpPort,
+            user: row.SmtpUser,
+            password: plaintext,
+            from: row.SmtpFrom,
+            useStartTls: row.SmtpUseStartTls);
+    }
+
+    private static ResolvedSmtpSettings? ResolveFromEnv() =>
+        ResolvedSmtpSettings.TryFrom(
             host: Environment.GetEnvironmentVariable("SMTP_HOST"),
             port: int.TryParse(Environment.GetEnvironmentVariable("SMTP_PORT"), out var p) ? p : null,
             user: Environment.GetEnvironmentVariable("SMTP_USER"),
             password: ReadSecret("SMTP_PASSWORD_FILE"),
             from: Environment.GetEnvironmentVariable("SMTP_FROM"),
             useStartTls: ParseBool(Environment.GetEnvironmentVariable("SMTP_USE_STARTTLS")));
-    }
 
     /// <summary>
     /// Returns the system banner text, or <see langword="null"/> when none is

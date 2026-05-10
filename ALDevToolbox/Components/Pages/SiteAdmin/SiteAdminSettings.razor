@@ -14,11 +14,9 @@
         path; clear all fields to disable the override entirely.
     </p>
 
-    @if (!string.IsNullOrEmpty(Error))
+    @if (!string.IsNullOrEmpty(Message))
     {
-        <p class="form-error" role="alert">
-            @(string.IsNullOrEmpty(Message) ? Error : Message)
-        </p>
+        <p class="form-error" role="alert">@Message</p>
     }
     @if (Ok == "saved")
     {
@@ -103,7 +101,6 @@
 </div>
 
 @code {
-    [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }
     [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
 

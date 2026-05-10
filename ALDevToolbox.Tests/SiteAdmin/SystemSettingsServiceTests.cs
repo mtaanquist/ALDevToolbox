@@ -1,11 +1,8 @@
-using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.SiteAdmin;
@@ -19,17 +16,6 @@ namespace ALDevToolbox.Tests.SiteAdmin;
 public sealed class SystemSettingsServiceTests : IDisposable
 {
     private readonly TestDb _db = new();
-    private readonly IDataProtectionProvider _protector;
-
-    public SystemSettingsServiceTests()
-    {
-        // In-memory key ring is fine for tests — we never need persistence
-        // across processes. AddDataProtection() registers the default
-        // provider; resolving it gives us a working IDataProtectionProvider.
-        var services = new ServiceCollection();
-        services.AddDataProtection();
-        _protector = services.BuildServiceProvider().GetRequiredService<IDataProtectionProvider>();
-    }
 
     public void Dispose() => _db.Dispose();
 
@@ -56,15 +42,7 @@ public sealed class SystemSettingsServiceTests : IDisposable
     public async Task Save_encrypts_smtp_password_at_rest()
     {
         var svc = NewService();
-        await svc.SaveAsync(new SystemSettingsInput(
-            SmtpHost: "smtp.example.com",
-            SmtpPort: 587,
-            SmtpUser: "noreply",
-            SmtpPassword: "supers3cret",
-            SmtpFrom: "noreply@example.com",
-            SmtpUseStartTls: true,
-            BannerText: null,
-            DefaultSignupAutoApprove: false));
+        await svc.SaveAsync(NewInput(password: "supers3cret"));
 
         await using var read = _db.NewContext();
         var row = await read.SystemSettings.AsNoTracking().FirstAsync(s => s.Id == 1);
@@ -74,14 +52,15 @@ public sealed class SystemSettingsServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Save_with_null_password_leaves_existing_value()
+    public async Task Save_with_blank_password_leaves_existing_value()
     {
         var svc = NewService();
         await svc.SaveAsync(NewInput(password: "first-password"));
 
-        // Second save with SmtpPassword=null shouldn't disturb the existing
-        // ciphertext — the form posts null when the field is left blank.
-        await svc.SaveAsync(NewInput(password: null, host: "different.example.com"));
+        // Blank password field on the second save shouldn't disturb the
+        // existing ciphertext — that's what the form posts when the
+        // SiteAdmin doesn't re-type the password.
+        await svc.SaveAsync(NewInput(password: "", host: "different.example.com"));
 
         var resolved = await svc.ResolveSmtpAsync();
         resolved!.Password.Should().Be("first-password");
@@ -89,11 +68,11 @@ public sealed class SystemSettingsServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Save_with_empty_password_clears_stored_value()
+    public async Task Save_with_clear_flag_drops_stored_value()
     {
         var svc = NewService();
         await svc.SaveAsync(NewInput(password: "to-be-cleared"));
-        await svc.SaveAsync(NewInput(password: ""));
+        await svc.SaveAsync(NewInput(password: "", clear: true));
 
         var view = await svc.GetViewAsync();
         view.HasSmtpPassword.Should().BeFalse();
@@ -160,38 +139,30 @@ public sealed class SystemSettingsServiceTests : IDisposable
     public async Task Save_validates_from_address()
     {
         var svc = NewService();
-        Func<Task> bad = () => svc.SaveAsync(new SystemSettingsInput(
-            SmtpHost: "smtp.example.com",
-            SmtpPort: 587,
-            SmtpUser: null,
-            SmtpPassword: null,
-            SmtpFrom: "not-an-email",
-            SmtpUseStartTls: null,
-            BannerText: null,
-            DefaultSignupAutoApprove: false));
+        Func<Task> bad = () => svc.SaveAsync(NewInput(from: "not-an-email"));
         var ex = await bad.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("SmtpFrom");
     }
 
     private SystemSettingsService NewService()
     {
-        var ctx = _db.NewContextWithAudit(NewAuditInterceptor());
-        return new SystemSettingsService(ctx, _protector, NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
+        var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor());
+        return new SystemSettingsService(ctx, _db.DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
     }
-
-    private static Data.AuditInterceptor NewAuditInterceptor() =>
-        new(new Microsoft.AspNetCore.Http.HttpContextAccessor());
 
     private static SystemSettingsInput NewInput(
         string? password = "p",
         string? host = "smtp.example.com",
-        int? port = 587)
+        int? port = 587,
+        string? from = "noreply@example.com",
+        bool clear = false)
         => new(
             SmtpHost: host,
             SmtpPort: port,
             SmtpUser: "user",
             SmtpPassword: password,
-            SmtpFrom: "noreply@example.com",
+            ClearSmtpPassword: clear,
+            SmtpFrom: from,
             SmtpUseStartTls: true,
             BannerText: null,
             DefaultSignupAutoApprove: false);

@@ -42,10 +42,10 @@ public class User
     public UserStatus Status { get; set; }
 
     /// <summary>
-    /// Hosting-operator flag (Milestone P4.17). Distinct from the per-org
-    /// <see cref="UserRole.Admin"/> role; granted explicitly via the
-    /// <c>/site-admin/users</c> page or by being the bootstrap admin on a
-    /// fresh database. Carried as a separate claim on the auth cookie.
+    /// Hosting-operator flag, distinct from the per-org
+    /// <see cref="UserRole.Admin"/> role. Granted explicitly via
+    /// <c>/site-admin/users</c> (or by being the bootstrap admin on a
+    /// fresh DB) and surfaced as a separate cookie claim.
     /// </summary>
     public bool IsSiteAdmin { get; set; }
 

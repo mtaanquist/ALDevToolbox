@@ -19,10 +19,9 @@ public interface IEmailService
 
 /// <summary>
 /// MailKit-based <see cref="IEmailService"/>. Resolves SMTP settings via
-/// <see cref="SystemSettingsService"/> on every send (hybrid path: DB row
-/// preferred, env vars as fallback). Updates to the SiteAdmin SMTP form
-/// take effect on the next send without a restart — see
-/// <c>.design/milestones.md</c>, M17.
+/// <see cref="SystemSettingsService"/> with a hybrid path (DB row preferred,
+/// env vars as fallback). Updates to the SiteAdmin SMTP form take effect on
+/// the next request without a restart.
 ///
 /// Failures throw and callers decide whether to surface the error to the
 /// user (forgot password) or log a warning and continue (admin notifications).
@@ -32,6 +31,13 @@ public sealed class SmtpEmailService : IEmailService
     private readonly SystemSettingsService _settings;
     private readonly ILogger<SmtpEmailService> _logger;
 
+    // Cache the resolved value for the request lifetime so an
+    // `IsConfiguredAsync()`-then-`SendAsync()` pair doesn't double-hit the
+    // database. The service is registered scoped, so the cache lives exactly
+    // one request — settings updates land on the next request.
+    private bool _resolved;
+    private ResolvedSmtpSettings? _cached;
+
     public SmtpEmailService(SystemSettingsService settings, ILogger<SmtpEmailService> logger)
     {
         _settings = settings;
@@ -39,11 +45,11 @@ public sealed class SmtpEmailService : IEmailService
     }
 
     public async Task<bool> IsConfiguredAsync(CancellationToken ct = default) =>
-        await _settings.ResolveSmtpAsync(ct) is not null;
+        await ResolveOnceAsync(ct) is not null;
 
     public async Task SendAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default)
     {
-        var resolved = await _settings.ResolveSmtpAsync(ct);
+        var resolved = await ResolveOnceAsync(ct);
         if (resolved is null)
         {
             throw new InvalidOperationException(
@@ -67,6 +73,14 @@ public sealed class SmtpEmailService : IEmailService
         await client.DisconnectAsync(quit: true, ct);
 
         _logger.LogInformation("Sent email to {To} subject {Subject}.", toEmail, subject);
+    }
+
+    private async Task<ResolvedSmtpSettings?> ResolveOnceAsync(CancellationToken ct)
+    {
+        if (_resolved) return _cached;
+        _cached = await _settings.ResolveSmtpAsync(ct);
+        _resolved = true;
+        return _cached;
     }
 }
 

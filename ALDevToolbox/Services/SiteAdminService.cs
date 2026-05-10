@@ -39,11 +39,10 @@ public sealed record SiteAdminAuditRow(
     string? SnapshotJson);
 
 /// <summary>
-/// SiteAdmin (hosting-operator) operations that span organisations. Every
-/// method explicitly bypasses EF query filters via <c>IgnoreQueryFilters()</c>
-/// — by design — and guards on a <see cref="RequireSiteAdmin"/> check so
-/// org-scoped admins can't escalate through these calls. See
-/// <c>.design/milestones.md</c>, M17.
+/// SiteAdmin (hosting-operator) operations that span organisations. Reads
+/// bypass the per-org EF query filter via <c>IgnoreQueryFilters()</c>;
+/// mutations call <see cref="RequireSiteAdmin"/> so an org-scoped admin
+/// can't escalate by hitting these methods directly.
 /// </summary>
 public sealed class SiteAdminService
 {
@@ -64,21 +63,21 @@ public sealed class SiteAdminService
     /// empty query returns the most recently signed-in users so the page
     /// has something to show on first load.
     /// </summary>
-    public async Task<List<SiteAdminUserRow>> SearchUsersAsync(string? query, int limit = 100, CancellationToken ct = default)
+    public Task<List<SiteAdminUserRow>> SearchUsersAsync(string? query, int limit = 100, CancellationToken ct = default)
     {
-        var trimmed = (query ?? string.Empty).Trim().ToLowerInvariant();
-        var users = _db.Users.IgnoreQueryFilters()
-            .Include(u => u.Organization)
-            .AsNoTracking();
-
-        if (!string.IsNullOrEmpty(trimmed))
+        var trimmed = (query ?? string.Empty).Trim();
+        // ILike is Postgres-native and pg_trgm-indexable; ToLower().Contains
+        // would force a sequential scan on every email column.
+        var pattern = "%" + trimmed + "%";
+        var users = _db.Users.IgnoreQueryFilters().AsNoTracking();
+        if (trimmed.Length > 0)
         {
             users = users.Where(u =>
-                u.Email.ToLower().Contains(trimmed)
-                || u.DisplayName.ToLower().Contains(trimmed));
+                EF.Functions.ILike(u.Email, pattern)
+                || EF.Functions.ILike(u.DisplayName, pattern));
         }
 
-        var rows = await users
+        return users
             .OrderByDescending(u => u.LastLoginAt ?? u.CreatedAt)
             .ThenBy(u => u.Email)
             .Take(limit)
@@ -94,8 +93,6 @@ public sealed class SiteAdminService
                 u.Organization.Slug,
                 u.LastLoginAt))
             .ToListAsync(ct);
-
-        return rows;
     }
 
     /// <summary>
@@ -103,13 +100,12 @@ public sealed class SiteAdminService
     /// per-user detail rendering on the SiteAdmin users page when an admin
     /// clicks through from the search results.
     /// </summary>
-    public async Task<List<SiteAdminUserRow>> GetMembershipsAsync(string email, CancellationToken ct = default)
+    public Task<List<SiteAdminUserRow>> GetMembershipsAsync(string email, CancellationToken ct = default)
     {
         var normalised = (email ?? string.Empty).Trim().ToLowerInvariant();
-        if (normalised.Length == 0) return new List<SiteAdminUserRow>();
+        if (normalised.Length == 0) return Task.FromResult(new List<SiteAdminUserRow>());
 
-        return await _db.Users.IgnoreQueryFilters()
-            .Include(u => u.Organization)
+        return _db.Users.IgnoreQueryFilters()
             .AsNoTracking()
             .Where(u => u.Email == normalised)
             .OrderBy(u => u.Organization!.Name)
@@ -186,8 +182,8 @@ public sealed class SiteAdminService
         if (organizationId is int oid) q = q.Where(e => e.OrganizationId == oid);
         if (!string.IsNullOrWhiteSpace(actorContains))
         {
-            var needle = actorContains.Trim().ToLowerInvariant();
-            q = q.Where(e => e.ChangedBy.ToLower().Contains(needle));
+            var needle = "%" + actorContains.Trim() + "%";
+            q = q.Where(e => EF.Functions.ILike(e.ChangedBy, needle));
         }
         if (fromUtc is { } from) q = q.Where(e => e.Timestamp >= from);
         if (toUtc is { } to) q = q.Where(e => e.Timestamp <= to);

@@ -112,13 +112,13 @@ public sealed class SiteAdminServiceTests : IDisposable
         // produces audit rows in both — and SearchAuditAsync should return
         // both because it bypasses the per-org query filter.
         _db.OrgContext.CurrentOrganizationId = TestDb.DefaultOrgId;
-        await using (var ctx = _db.NewContextWithAudit(NewAuditInterceptor()))
+        await using (var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor()))
         {
             ctx.RuntimeTemplates.Add(Builders.TemplateBuilder.Default("rt-default", organizationId: TestDb.DefaultOrgId));
             await ctx.SaveChangesAsync();
         }
         _db.OrgContext.CurrentOrganizationId = TestDb.OtherOrgId;
-        await using (var ctx = _db.NewContextWithAudit(NewAuditInterceptor()))
+        await using (var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor()))
         {
             ctx.RuntimeTemplates.Add(Builders.TemplateBuilder.Default("rt-other", organizationId: TestDb.OtherOrgId));
             await ctx.SaveChangesAsync();
@@ -174,7 +174,4 @@ public sealed class SiteAdminServiceTests : IDisposable
         CurrentUserId = 1,
         IsSiteAdmin = true,
     };
-
-    private static Data.AuditInterceptor NewAuditInterceptor() =>
-        new(new Microsoft.AspNetCore.Http.HttpContextAccessor());
 }

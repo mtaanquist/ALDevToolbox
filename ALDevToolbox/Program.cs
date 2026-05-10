@@ -50,31 +50,23 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.LoginPath = "/login";
         options.AccessDeniedPath = "/login";
 
-        // SiteAdmin (M17): the design says /site-admin/* must return 404
-        // for non-SiteAdmins (no information leak — a 403 would tell an
-        // org admin those pages exist). Both the unauthenticated and
-        // forbidden paths short-circuit to 404 + status-code re-execute,
-        // which renders the NotFound page.
-        options.Events.OnRedirectToLogin = ctx =>
+        // /site-admin/* must return 404, never redirect-to-login or 403 —
+        // a 403 would tell an org admin those routes exist. Both events
+        // short-circuit to 404; status-code re-execute renders the
+        // NotFound page.
+        options.Events.OnRedirectToLogin = NotFoundForSiteAdmin;
+        options.Events.OnRedirectToAccessDenied = NotFoundForSiteAdmin;
+
+        static Task NotFoundForSiteAdmin(Microsoft.AspNetCore.Authentication.RedirectContext<CookieAuthenticationOptions> ctx)
         {
-            if (ctx.Request.Path.StartsWithSegments("/site-admin"))
+            if (ctx.Request.Path.StartsWithSegments(HttpOrganizationContext.SiteAdminPathPrefix))
             {
                 ctx.Response.StatusCode = StatusCodes.Status404NotFound;
                 return Task.CompletedTask;
             }
             ctx.Response.Redirect(ctx.RedirectUri);
             return Task.CompletedTask;
-        };
-        options.Events.OnRedirectToAccessDenied = ctx =>
-        {
-            if (ctx.Request.Path.StartsWithSegments("/site-admin"))
-            {
-                ctx.Response.StatusCode = StatusCodes.Status404NotFound;
-                return Task.CompletedTask;
-            }
-            ctx.Response.Redirect(ctx.RedirectUri);
-            return Task.CompletedTask;
-        };
+        }
     });
 builder.Services.AddAuthorization();
 builder.Services.AddCascadingAuthenticationState();
@@ -113,18 +105,16 @@ builder.Services.AddScoped<OrganizationConfigService>();
 builder.Services.AddScoped<AccountService>();
 builder.Services.AddScoped<SystemSettingsService>();
 builder.Services.AddScoped<SiteAdminService>();
-// Email is scoped now (M17): the hybrid SMTP resolver is backed by the
-// scoped AppDbContext + SystemSettingsService, so the sender shares the
-// same lifetime.
+// Email shares the AppDbContext lifetime (Scoped) so it can read the
+// hybrid SMTP override from system_settings.
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
 
-// Data Protection. Used by SystemSettingsService to encrypt the SMTP
-// password column. The same key ring already needs to persist for cookie
-// auth across container restarts, so we direct it at the named compose
-// volume `app-keys` (mounted at /var/lib/aldevtoolbox/dp-keys). Override
-// via DATA_PROTECTION_KEY_DIR for non-Linux dev or tests; if the directory
-// can't be created or written, fall back to in-memory keys with a loud
-// warning rather than crashing on startup.
+// Data Protection key ring. Persisted under DATA_PROTECTION_KEY_DIR
+// (compose mounts the `app-keys` volume there) so cookie auth and the
+// system_settings SMTP password ciphertext both survive container
+// restarts. If the directory isn't writable we keep going with an
+// in-memory key ring rather than crashing — operators see the warning
+// in the startup logs and can fix the volume mount.
 var dpKeyDir = Environment.GetEnvironmentVariable("DATA_PROTECTION_KEY_DIR")
     ?? "/var/lib/aldevtoolbox/dp-keys";
 var dataProtection = builder.Services.AddDataProtection().SetApplicationName("ALDevToolbox");
@@ -763,10 +753,9 @@ app.MapPost("/admin/users/{id:int}/role", async (
     ctx.Response.Redirect("/admin/users");
 }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
-// /site-admin/* — hosting-operator endpoints. Every route guards with
-// RequireRole("SiteAdmin"); the cookie events translate the resulting
-// "redirect to login / access denied" into a 404 so non-SiteAdmins can't
-// even confirm the routes exist.
+// /site-admin/* — hosting-operator endpoints. The cookie events
+// translate auth failures on this prefix into 404 so non-SiteAdmins
+// can't even confirm the routes exist.
 app.MapPost("/site-admin/users/{id:int}/promote", async (
     int id, HttpContext ctx, SiteAdminService siteAdmin, IAntiforgery antiforgery, CancellationToken ct) =>
 {
@@ -800,18 +789,12 @@ app.MapPost("/site-admin/settings", async (
 {
     if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
     var form = await ctx.Request.ReadFormAsync(ct);
-    // SmtpPassword: an empty form field (the default state) means "leave
-    // the existing password alone"; the SiteAdmin clears the password by
-    // ticking the "clear password" checkbox, which sends the sentinel.
-    var rawPassword = form["SmtpPassword"].ToString();
-    var clearPassword = form["ClearSmtpPassword"] == "true" || form["ClearSmtpPassword"] == "on";
-    string? password = clearPassword ? string.Empty : (string.IsNullOrEmpty(rawPassword) ? null : rawPassword);
-
     var input = new SystemSettingsInput(
         SmtpHost: form["SmtpHost"].ToString(),
         SmtpPort: int.TryParse(form["SmtpPort"], out var port) ? port : null,
         SmtpUser: form["SmtpUser"].ToString(),
-        SmtpPassword: password,
+        SmtpPassword: form["SmtpPassword"].ToString(),
+        ClearSmtpPassword: form["ClearSmtpPassword"] == "true" || form["ClearSmtpPassword"] == "on",
         SmtpFrom: form["SmtpFrom"].ToString(),
         SmtpUseStartTls: form.ContainsKey("SmtpUseStartTls")
             ? (form["SmtpUseStartTls"] == "true" || form["SmtpUseStartTls"] == "on")
@@ -827,8 +810,7 @@ app.MapPost("/site-admin/settings", async (
     catch (PlanValidationException ex)
     {
         var first = ex.Errors.First();
-        ctx.Response.Redirect(
-            $"/site-admin/settings?err={Uri.EscapeDataString(first.Key)}&msg={Uri.EscapeDataString(first.Value)}");
+        ctx.Response.Redirect("/site-admin/settings?msg=" + Uri.EscapeDataString(first.Value));
     }
 }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
@@ -840,7 +822,7 @@ app.MapPost("/site-admin/settings/test-email", async (
     if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
     if (!await email.IsConfiguredAsync(ct))
     {
-        ctx.Response.Redirect("/site-admin/settings?err=Email&msg=" + Uri.EscapeDataString("SMTP is not configured."));
+        ctx.Response.Redirect("/site-admin/settings?msg=" + Uri.EscapeDataString("SMTP is not configured."));
         return;
     }
     var userId = orgCtx.CurrentUserId;
@@ -849,17 +831,20 @@ app.MapPost("/site-admin/settings/test-email", async (
         ctx.Response.StatusCode = StatusCodes.Status404NotFound;
         return;
     }
-    var user = await db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId.Value, ct);
+    var recipient = await db.Users.AsNoTracking()
+        .Where(u => u.Id == userId.Value)
+        .Select(u => new { u.Email, u.DisplayName })
+        .FirstAsync(ct);
     try
     {
-        var (subject, body) = EmailTemplates.SiteAdminTest(user.DisplayName);
-        await email.SendAsync(user.Email, subject, body, ct);
+        var (subject, body) = EmailTemplates.SiteAdminTest(recipient.DisplayName);
+        await email.SendAsync(recipient.Email, subject, body, ct);
         ctx.Response.Redirect("/site-admin/settings?ok=test-sent");
     }
     catch (Exception ex)
     {
         logger.LogWarning(ex, "Test email failed for SiteAdmin {Email}.", user.Email);
-        ctx.Response.Redirect("/site-admin/settings?err=Email&msg="
+        ctx.Response.Redirect("/site-admin/settings?msg="
             + Uri.EscapeDataString("Test email failed: " + ex.Message));
     }
 }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
@@ -916,9 +901,8 @@ using (var scope = app.Services.CreateScope())
             PasswordHash = hash,
             Role = UserRole.Admin,
             Status = UserStatus.Active,
-            // SiteAdmin (M17): the bootstrap admin is the first hosting
-            // operator. Subsequent SiteAdmins are promoted from
-            // /site-admin/users; nothing else stamps this flag.
+            // The bootstrap admin is the first hosting operator;
+            // subsequent SiteAdmins are promoted from /site-admin/users.
             IsSiteAdmin = true,
             CreatedAt = DateTime.UtcNow,
         });
@@ -949,11 +933,9 @@ static ClaimsIdentity BuildIdentity(User user)
     };
     if (user.IsSiteAdmin)
     {
-        // Two claims, one purpose: the boolean claim is what
-        // IOrganizationContext.IsSiteAdmin reads; the second role claim
-        // makes [Authorize(Roles = "SiteAdmin")] work without a custom
-        // policy. SiteAdmin is granted on top of the per-org role, not
-        // instead of it.
+        // The boolean claim feeds IOrganizationContext.IsSiteAdmin; the
+        // role claim lets [Authorize(Roles = "SiteAdmin")] work without
+        // a custom policy.
         claims.Add(new Claim(HttpOrganizationContext.SiteAdminClaim, "true"));
         claims.Add(new Claim(ClaimTypes.Role, HttpOrganizationContext.SiteAdminRole));
     }

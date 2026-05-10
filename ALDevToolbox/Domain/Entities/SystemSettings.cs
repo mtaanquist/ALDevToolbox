@@ -2,17 +2,10 @@ namespace ALDevToolbox.Domain.Entities;
 
 /// <summary>
 /// Singleton row (id pinned to <c>1</c>) holding cross-organisation
-/// configuration for the SiteAdmin console (Milestone P4.17). Edited via
-/// <c>/site-admin/settings</c>; read by the hybrid SMTP path in
-/// <see cref="Services.SmtpEmailService"/> with env-var fallback.
-///
-/// <para>
-/// The SMTP password column stores ciphertext produced by ASP.NET Core Data
-/// Protection (key ring persisted on the <c>app-keys</c> volume). The audit
-/// interceptor redacts the column to a fixed sentinel so capturing the
-/// ciphertext history doesn't leak structure — see
-/// <c>.design/milestones.md</c>.
-/// </para>
+/// configuration: SMTP override, system banner, and the default signup
+/// approval policy. The SMTP password is stored as Data-Protection
+/// ciphertext; the audit interceptor redacts the column to a fixed
+/// sentinel rather than capturing ciphertext history.
 /// </summary>
 public class SystemSettings
 {
@@ -27,9 +20,9 @@ public class SystemSettings
     public string? SmtpUser { get; set; }
 
     /// <summary>
-    /// Data-Protection-encrypted SMTP password. Decrypted only inside
-    /// <see cref="Services.SystemSettingsService"/>; the plaintext never
-    /// leaves the service boundary.
+    /// Data-Protection-encrypted SMTP password. Decryption is contained in
+    /// <see cref="Services.SystemSettingsService"/>; plaintext never
+    /// leaves that service boundary.
     /// </summary>
     public string? SmtpPasswordEncrypted { get; set; }
 

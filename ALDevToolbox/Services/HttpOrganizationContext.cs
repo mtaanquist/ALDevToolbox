@@ -12,6 +12,8 @@ public sealed class HttpOrganizationContext : IOrganizationContext
     public const string UserIdClaim = "user_id";
     public const string SiteAdminClaim = "site_admin";
     public const string SiteAdminRole = "SiteAdmin";
+    /// <summary>Path prefix for SiteAdmin pages; auth events match against this to return 404 instead of 403.</summary>
+    public const string SiteAdminPathPrefix = "/site-admin";
 
     private readonly IHttpContextAccessor _http;
 

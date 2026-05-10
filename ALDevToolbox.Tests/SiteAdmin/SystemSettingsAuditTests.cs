@@ -2,9 +2,7 @@ using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.SiteAdmin;
@@ -24,35 +22,19 @@ public sealed class SystemSettingsAuditTests : IDisposable
     [Fact]
     public async Task Save_writes_audit_row_with_redacted_smtp_password()
     {
-        var protector = NewProtector();
-        await using (var ctx = _db.NewContextWithAudit(NewAuditInterceptor()))
+        var protector = _db.DataProtectionProvider;
+        await using (var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor()))
         {
             var svc = new SystemSettingsService(ctx, protector, NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
-            await svc.SaveAsync(new SystemSettingsInput(
-                SmtpHost: "first.example.com",
-                SmtpPort: 587,
-                SmtpUser: "u",
-                SmtpPassword: "first-secret",
-                SmtpFrom: "noreply@example.com",
-                SmtpUseStartTls: true,
-                BannerText: null,
-                DefaultSignupAutoApprove: false));
+            await svc.SaveAsync(NewInput("first.example.com", "first-secret"));
         }
         // Second save: triggers an Updated audit row whose snapshot
         // captures the *previous* row state (which holds ciphertext for
         // first-secret).
-        await using (var ctx = _db.NewContextWithAudit(NewAuditInterceptor()))
+        await using (var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor()))
         {
             var svc = new SystemSettingsService(ctx, protector, NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
-            await svc.SaveAsync(new SystemSettingsInput(
-                SmtpHost: "second.example.com",
-                SmtpPort: 587,
-                SmtpUser: "u",
-                SmtpPassword: "second-secret",
-                SmtpFrom: "noreply@example.com",
-                SmtpUseStartTls: true,
-                BannerText: null,
-                DefaultSignupAutoApprove: false));
+            await svc.SaveAsync(NewInput("second.example.com", "second-secret"));
         }
 
         await using var read = _db.NewContext();
@@ -74,13 +56,14 @@ public sealed class SystemSettingsAuditTests : IDisposable
                 "the SMTP password column is replaced with a fixed sentinel before snapshotting");
     }
 
-    private static IDataProtectionProvider NewProtector()
-    {
-        var services = new ServiceCollection();
-        services.AddDataProtection();
-        return services.BuildServiceProvider().GetRequiredService<IDataProtectionProvider>();
-    }
-
-    private static Data.AuditInterceptor NewAuditInterceptor() =>
-        new(new Microsoft.AspNetCore.Http.HttpContextAccessor());
+    private static SystemSettingsInput NewInput(string host, string password) => new(
+        SmtpHost: host,
+        SmtpPort: 587,
+        SmtpUser: "u",
+        SmtpPassword: password,
+        ClearSmtpPassword: false,
+        SmtpFrom: "noreply@example.com",
+        SmtpUseStartTls: true,
+        BannerText: null,
+        DefaultSignupAutoApprove: false);
 }

@@ -6,18 +6,16 @@
     /// user to /login with a return URL so the post-sign-in redirect can
     /// drop them back where they were trying to go.
     ///
-    /// Exception: <c>/site-admin/*</c> pages must not leak existence to
-    /// non-SiteAdmins (M17). When the user is unauthorized for a route under
-    /// that prefix we navigate to /not-found instead of /login, matching the
-    /// 404 the cookie's <c>OnRedirectToLogin</c> / <c>OnRedirectToAccessDenied</c>
-    /// events return for direct (non-Blazor-routed) hits.
+    /// SiteAdmin pages take the /not-found branch instead so non-SiteAdmins
+    /// can't even confirm those routes exist, matching the 404 the cookie's
+    /// auth events return for direct hits.
     /// </summary>
     protected override void OnInitialized()
     {
         var current = new Uri(Nav.Uri);
         var returnPath = current.PathAndQuery;
 
-        if (returnPath.StartsWith("/site-admin", StringComparison.OrdinalIgnoreCase))
+        if (returnPath.StartsWith(HttpOrganizationContext.SiteAdminPathPrefix, StringComparison.OrdinalIgnoreCase))
         {
             Nav.NavigateTo("/not-found", forceLoad: true);
             return;
