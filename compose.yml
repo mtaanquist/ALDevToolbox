@@ -6,7 +6,10 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aldevtoolbox}
       POSTGRES_DB: ${POSTGRES_DB:-aldevtoolbox}
     volumes:
-      - pg-data:/var/lib/postgresql/data
+      # postgres:18+ places data under /var/lib/postgresql/<major>/docker/ so
+      # in-place pg_upgrade works inside one mount. Mount the parent rather
+      # than .../data — the older path makes the entrypoint refuse to start.
+      - pg-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aldevtoolbox} -d ${POSTGRES_DB:-aldevtoolbox}"]
       interval: 5s
