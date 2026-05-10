@@ -247,23 +247,26 @@ export round-trip; the audit log captures version-table changes.
 
 ## Out of scope for v1
 
-These are mentioned in the design but should not be implemented in the initial build. They're listed here so they don't get pulled in by accident:
+These remain off the table — listed here so they don't get pulled into a current milestone by accident. Phase 4 candidates in `milestones.md` revisit some of these.
 
 - Mobile-friendly layout. Desktop only.
-- Per-user accounts / roles. Single shared password is fine.
 - A structured editor for `defaults_json` and `app_source_cop_json`. Textarea is fine for v1.
 - An in-app diff viewer for audit snapshots. Showing the JSON is fine for v1.
 - Automatic migration testing in CI. Manual is fine for v1.
-- Multi-tenancy.
+- Cross-organisation superuser. There's no support / debugging account that bypasses the org filter.
+- SSO / OIDC, two-factor, magic-link login, invite-by-email. Email + password is the only path.
+- Binary files inside template folders. Text content only.
+
+(Multi-tenancy and per-user accounts moved on-scope and shipped in Phase 3 — M13 added organisations and accounts; M14 added per-org configuration.)
 
 ## Deliberately small
 
 A few decisions throughout the design exist to keep this small. If you find yourself building something that feels disproportionately complex, check that you're not over-engineering one of these:
 
-- Single shared password instead of accounts.
 - SQLite instead of Postgres.
 - One container, one volume.
 - Synchronous generation (no queue).
-- TOML is an authoring format on top of the DB, never a peer persistence path. `Templates.seed/` bootstraps an empty database (templates, modules, catalogue, *and* per-folder file contents); nothing watches it or writes back to it.
+- TOML is an authoring format on top of the DB, never a peer persistence path. `Templates.seed/` bootstraps an empty *organisation* (templates, modules, catalogue, per-folder file contents, organisation defaults, logo, always-included files); nothing watches it or writes back to it.
 - JSON columns for `defaults` and `app_source_cop` instead of normalised tables.
-- Admin UI edits structured data and TOML; AL file contents stay in the repo.
+- Admin UI edits structured data and TOML; AL file contents stay in the repo's seed folder until an admin first edits them.
+- Two roles (`User`, `Admin`); admin-approved signups; no superuser.
