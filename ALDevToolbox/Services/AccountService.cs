@@ -185,8 +185,12 @@ public sealed class AccountService
             Email = normalised,
             PasswordHash = HashPassword(password),
             DisplayName = displayName.Trim(),
+            // New orgs auto-approve their first signup: there's no admin
+            // in-org to do the approving and we deliberately have no superuser
+            // (see .design/auth-and-audit.md). Existing-org signups still
+            // wait on a same-org admin via /admin/users.
             Role = createdNewOrg ? UserRole.Admin : UserRole.User,
-            Status = UserStatus.Pending,
+            Status = createdNewOrg ? UserStatus.Active : UserStatus.Pending,
             CreatedAt = now,
         };
         _db.Users.Add(user);
@@ -198,9 +202,18 @@ public sealed class AccountService
             UserId = user.Id,
             Email = normalised,
             RequestedAt = now,
-            Decision = SignupDecision.Pending,
+            // Auto-approval still writes a SignupRequest so /admin/users keeps
+            // a complete history; the decided fields point back at the user
+            // themselves so the audit log is unambiguous.
+            Decision = createdNewOrg ? SignupDecision.Approved : SignupDecision.Pending,
+            DecidedAt = createdNewOrg ? now : null,
+            DecidedByUserId = createdNewOrg ? user.Id : null,
         };
         _db.SignupRequests.Add(request);
+        if (createdNewOrg)
+        {
+            org.IsPending = false;
+        }
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation("Signup recorded for {Email} into {OrgSlug} (new={New}).",

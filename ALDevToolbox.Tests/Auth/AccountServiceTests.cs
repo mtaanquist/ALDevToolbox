@@ -56,7 +56,7 @@ public sealed class AccountServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Signup_with_blank_slug_creates_a_new_pending_org_with_admin_role()
+    public async Task Signup_with_blank_slug_auto_approves_as_new_org_admin()
     {
         var ctx = _db.NewContext();
         var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
@@ -64,10 +64,19 @@ public sealed class AccountServiceTests : IDisposable
             "bob@example.com", "Bob", "verylongpassword12345", null);
 
         outcome.Should().Be(SignupOutcome.OrganizationProvisioned);
-        org!.IsPending.Should().BeTrue();
-        org.IsSeeded.Should().BeFalse();
+        // Brand-new orgs auto-approve their first user (we have no superuser
+        // to do otherwise — see .design/auth-and-audit.md).
+        org!.IsPending.Should().BeFalse();
+        org.IsSeeded.Should().BeFalse("seeding happens in the /auth/signup endpoint via SeedService");
         user!.Role.Should().Be(UserRole.Admin, "the first user in a brand-new org runs it");
-        user.Status.Should().Be(UserStatus.Pending);
+        user.Status.Should().Be(UserStatus.Active);
+
+        // The audit trail still records the signup; auto-approval points at the user themselves.
+        await using var read = _db.NewContext();
+        var request = await read.SignupRequests.IgnoreQueryFilters().SingleAsync(r => r.UserId == user.Id);
+        request.Decision.Should().Be(SignupDecision.Approved);
+        request.DecidedByUserId.Should().Be(user.Id);
+        request.DecidedAt.Should().NotBeNull();
     }
 
     [Fact]

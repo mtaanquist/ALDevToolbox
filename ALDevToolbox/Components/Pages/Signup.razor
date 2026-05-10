@@ -7,8 +7,9 @@
     <h1>Sign up</h1>
     <p class="caption muted">
         Pick an organisation to join (its admin will approve you), or leave the
-        slug blank to provision a brand-new one. New organisations start empty
-        and get seeded with default content the first time their admin signs in.
+        slug blank to provision a brand-new one. Brand-new organisations are
+        auto-approved — you'll be signed in as the new org's admin and the
+        seed content gets installed in the same step.
     </p>
 
     @if (Error == "email-taken")
@@ -22,14 +23,6 @@
     @if (Ok == "pending")
     {
         <p class="form-success" role="status">Signup recorded. The organisation's admin will be in touch when they approve.</p>
-    }
-    else if (Ok == "new-org")
-    {
-        <p class="form-success" role="status">
-            Organisation queued. We don't auto-approve new organisations — an
-            existing admin (or the bootstrap admin on a fresh deployment) will
-            need to approve you first.
-        </p>
     }
 
     <form method="post" action="/auth/signup" class="form-grid login-form">

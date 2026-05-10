@@ -8,7 +8,9 @@ Email/password accounts scoped to organisations. Two roles: `User` (can use the 
 
 **Bootstrap.** A fresh deployment creates the "Default" organisation through the M13 migration, then seeds it with the standard `Templates.seed/` content. The first admin user is created from `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` env vars on first boot. After at least one user exists those variables are read and warned about (so a stale value in production logs gets surfaced) but never re-applied.
 
-**New organisations.** Signups against an unknown slug create a *pending* organisation. The signup itself is also pending — but because the new org has no admins yet, there's no one in-system to approve it. In practice the bootstrap admin (or, in a hosted multi-org future, a `SiteAdmin` role) does the cross-org approval. Once the first admin signs in, `SeedService.RunAsync(orgId)` runs against that new org and `IsSeeded` flips to true.
+**New organisations.** Signups against a blank or unknown slug **auto-approve**. The new `Organization` is created, the user is stored as `Active Admin` of that org, the seed runs against it (`SeedService.RunAsync(orgId)` populates templates/modules/catalogue from `Templates.seed/`), the cookie is issued, and the user lands on the home page in one step. We deliberately have no superuser (see Phase 4 candidates), so requiring approval here would leave new orgs unreachable. A `SignupRequest` row is still written with `Decision=Approved, DecidedByUserId=<self>` so `/admin/users` retains a complete history. Operators who don't want anyone to provision new orgs should hide the `/signup` route at the proxy or set up their deployment with `BOOTSTRAP_ADMIN_*` and never advertise public signup.
+
+**Existing-org signups** still go through admin approval in `/admin/users` and email notification. Inviting users into your own org via invite link / admin-issued invitation is a Phase 4 candidate; today the path is "ask the user to sign up with your slug and approve them".
 
 ## Pages
 

@@ -291,13 +291,18 @@ app.MapPost("/auth/logout", async (HttpContext ctx, IAntiforgery antiforgery, Ca
     ctx.Response.Redirect("/");
 });
 
-// /auth/signup — creates a Pending user (and optionally a Pending org).
-// On success we email the org's active admins; failures log a warning but
-// don't roll back so a misconfigured SMTP doesn't strand new signups.
+// /auth/signup — two paths:
+//  - Existing-org signup: creates a Pending user, emails the org's active
+//    admins, redirects with a "queued" message.
+//  - New-org signup: auto-approves (we have no superuser to do otherwise),
+//    seeds the org from Templates.seed/, signs the user in, and lands them
+//    on the home page as the new org's admin.
+// Email send failures log a warning but never roll back the signup.
 app.MapPost("/auth/signup", async (
     HttpContext ctx,
     AccountService accounts,
     AppDbContext db,
+    SeedService seed,
     IEmailService email,
     IAntiforgery antiforgery,
     ILoggerFactory loggerFactory,
@@ -321,6 +326,29 @@ app.MapPost("/auth/signup", async (
             return;
         }
 
+        if (outcome == SignupOutcome.OrganizationProvisioned && user is not null && org is not null)
+        {
+            // Auto-approved: seed the new org's content and sign the user in
+            // so they can use the generator immediately. Re-load the user
+            // with its Organization navigation populated so the cookie
+            // claims include the org name for the top bar.
+            if (!org.IsSeeded)
+            {
+                await seed.RunAsync(org.Id, ct);
+                org.IsSeeded = true;
+                await db.SaveChangesAsync(ct);
+            }
+            user.Organization = org;
+            await ctx.SignInAsync(
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                new ClaimsPrincipal(BuildIdentity(user)));
+            logger.LogInformation("Auto-approved new-org signup {Email} as admin of {OrgSlug}.", user.Email, org.Slug);
+            ctx.Response.Redirect("/");
+            return;
+        }
+
+        // Existing-org signup: notify the org's active admins so they can
+        // approve via /admin/users. SMTP failures don't roll back the signup.
         if (org is not null && email.IsConfigured)
         {
             try
@@ -343,7 +371,7 @@ app.MapPost("/auth/signup", async (
             }
         }
 
-        ctx.Response.Redirect("/signup?ok=" + (outcome == SignupOutcome.OrganizationProvisioned ? "new-org" : "pending"));
+        ctx.Response.Redirect("/signup?ok=pending");
     }
     catch (PlanValidationException ex)
     {
