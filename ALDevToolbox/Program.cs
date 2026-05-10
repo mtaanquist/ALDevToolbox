@@ -73,6 +73,7 @@ builder.Services.AddScoped<SeedService>();
 builder.Services.AddScoped<WorkspaceConfigService>();
 builder.Services.AddScoped<GenerationService>();
 builder.Services.AddScoped<ExportService>();
+builder.Services.AddScoped<OrganizationConfigService>();
 builder.Services.AddScoped<AccountService>();
 builder.Services.AddSingleton<IEmailService, SmtpEmailService>();
 
@@ -212,6 +213,108 @@ app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen
         await ctx.Response.WriteAsync(body, ct);
     }
 }).RequireAuthorization();
+
+// /admin/configuration/* — endpoints behind the admin configuration page.
+// Each section posts independently so the user can save Defaults, Logo and
+// Files in isolation; failure on one section doesn't roll back the others.
+app.MapPost("/admin/configuration/settings", async (
+    HttpContext ctx, OrganizationConfigService config, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    var form = await ctx.Request.ReadFormAsync(ct);
+    var input = new OrganizationSettingsInput(
+        DefaultPublisher: form["DefaultPublisher"].ToString().Trim(),
+        DefaultIdRangeFrom: int.TryParse(form["DefaultIdRangeFrom"], out var from) ? from : 0,
+        DefaultIdRangeTo: int.TryParse(form["DefaultIdRangeTo"], out var to) ? to : 0,
+        DefaultBrief: form["DefaultBrief"].ToString().Trim(),
+        DefaultCoreDescription: form["DefaultCoreDescription"].ToString().Trim());
+    try
+    {
+        await config.SaveSettingsAsync(input, ct);
+        ctx.Response.Redirect("/admin/configuration?ok=settings");
+    }
+    catch (PlanValidationException ex)
+    {
+        var first = ex.Errors.First();
+        ctx.Response.Redirect(
+            $"/admin/configuration?err={Uri.EscapeDataString(first.Key)}&msg={Uri.EscapeDataString(first.Value)}");
+    }
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+app.MapPost("/admin/configuration/logo", async (
+    HttpContext ctx, OrganizationConfigService config, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    var form = await ctx.Request.ReadFormAsync(ct);
+    var file = form.Files["Logo"];
+    if (file is null || file.Length == 0)
+    {
+        ctx.Response.Redirect("/admin/configuration?err=Logo&msg=" + Uri.EscapeDataString("Pick a logo file to upload."));
+        return;
+    }
+    using var ms = new MemoryStream();
+    await file.CopyToAsync(ms, ct);
+    try
+    {
+        await config.UploadLogoAsync(file.ContentType ?? string.Empty, ms.ToArray(), ct);
+        ctx.Response.Redirect("/admin/configuration?ok=logo");
+    }
+    catch (PlanValidationException ex)
+    {
+        var first = ex.Errors.First();
+        ctx.Response.Redirect(
+            $"/admin/configuration?err={Uri.EscapeDataString(first.Key)}&msg={Uri.EscapeDataString(first.Value)}");
+    }
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+app.MapPost("/admin/configuration/logo/revert", async (
+    HttpContext ctx, OrganizationConfigService config, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    await config.RevertLogoAsync(ct);
+    ctx.Response.Redirect("/admin/configuration?ok=logo-reverted");
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+app.MapGet("/admin/configuration/logo/preview", async (
+    HttpContext ctx, OrganizationConfigService config, CancellationToken ct) =>
+{
+    var snapshot = await config.GetCurrentAsync(ct);
+    if (snapshot.Logo is null)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    ctx.Response.ContentType = snapshot.Logo.ContentType;
+    // Cache-busting handled by the page (it appends ?t=… to the URL after a save).
+    ctx.Response.Headers.CacheControl = "no-store";
+    await ctx.Response.Body.WriteAsync(snapshot.Logo.Content, ct);
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+app.MapPost("/admin/configuration/import", async (
+    HttpContext ctx, OrganizationConfigService config, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    var form = await ctx.Request.ReadFormAsync(ct);
+    var toml = form["Toml"].ToString();
+    var confirmed = form["Confirm"] == "true" || form["Confirm"] == "on";
+    if (!confirmed)
+    {
+        ctx.Response.Redirect(
+            "/admin/configuration?err=Confirm&msg=" + Uri.EscapeDataString("Tick the confirmation box before importing."));
+        return;
+    }
+    try
+    {
+        await config.ImportFromTomlAsync(toml, ct);
+        ctx.Response.Redirect("/admin/configuration?ok=imported");
+    }
+    catch (PlanValidationException ex)
+    {
+        var first = ex.Errors.First();
+        ctx.Response.Redirect(
+            $"/admin/configuration?err={Uri.EscapeDataString(first.Key)}&msg={Uri.EscapeDataString(first.Value)}");
+    }
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
 app.MapPost("/admin/export", async (HttpContext ctx, ExportService export, IAntiforgery antiforgery, CancellationToken ct) =>
 {

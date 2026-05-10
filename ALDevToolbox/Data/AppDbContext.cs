@@ -61,6 +61,9 @@ public class AppDbContext : DbContext
     public DbSet<ModuleDependency> ModuleDependencies => Set<ModuleDependency>();
     public DbSet<WellKnownDependency> WellKnownDependencies => Set<WellKnownDependency>();
     public DbSet<ApplicationVersion> ApplicationVersions => Set<ApplicationVersion>();
+    public DbSet<OrganizationSettings> OrganizationSettings => Set<OrganizationSettings>();
+    public DbSet<OrganizationAsset> OrganizationAssets => Set<OrganizationAsset>();
+    public DbSet<OrganizationFile> OrganizationFiles => Set<OrganizationFile>();
     public DbSet<AuditLogEntry> AuditLog => Set<AuditLogEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -398,6 +401,64 @@ public class AppDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
             entity.HasIndex(e => new { e.OrganizationId, e.Ordering });
             ScopeToOrganization<WellKnownDependency>(entity);
+        });
+
+        modelBuilder.Entity<OrganizationSettings>(entity =>
+        {
+            entity.ToTable("organization_settings");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
+            entity.Property(e => e.DefaultPublisher).HasColumnName("default_publisher").IsRequired();
+            entity.Property(e => e.DefaultIdRangeFrom).HasColumnName("default_id_range_from").IsRequired();
+            entity.Property(e => e.DefaultIdRangeTo).HasColumnName("default_id_range_to").IsRequired();
+            entity.Property(e => e.DefaultBrief).HasColumnName("default_brief").IsRequired();
+            entity.Property(e => e.DefaultCoreDescription).HasColumnName("default_core_description").IsRequired();
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
+            entity.HasIndex(e => e.OrganizationId).IsUnique();
+            entity.HasOne(e => e.Organization)
+                .WithMany()
+                .HasForeignKey(e => e.OrganizationId)
+                .OnDelete(DeleteBehavior.Cascade);
+            ScopeToOrganization<OrganizationSettings>(entity);
+        });
+
+        modelBuilder.Entity<OrganizationAsset>(entity =>
+        {
+            entity.ToTable("organization_assets");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
+            entity.Property(e => e.Kind).HasColumnName("kind").HasConversion<string>().IsRequired();
+            entity.Property(e => e.ContentType).HasColumnName("content_type").IsRequired();
+            entity.Property(e => e.Content).HasColumnName("content").IsRequired();
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
+            entity.HasIndex(e => new { e.OrganizationId, e.Kind }).IsUnique();
+            entity.HasOne(e => e.Organization)
+                .WithMany()
+                .HasForeignKey(e => e.OrganizationId)
+                .OnDelete(DeleteBehavior.Cascade);
+            ScopeToOrganization<OrganizationAsset>(entity);
+        });
+
+        modelBuilder.Entity<OrganizationFile>(entity =>
+        {
+            entity.ToTable("organization_files");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
+            entity.Property(e => e.Path).HasColumnName("path").IsRequired();
+            entity.Property(e => e.Content).HasColumnName("content").IsRequired();
+            entity.Property(e => e.MustacheEnabled).HasColumnName("mustache_enabled").IsRequired();
+            entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
+            entity.HasIndex(e => new { e.OrganizationId, e.Ordering });
+            entity.HasIndex(e => new { e.OrganizationId, e.Path }).IsUnique();
+            entity.HasOne(e => e.Organization)
+                .WithMany()
+                .HasForeignKey(e => e.OrganizationId)
+                .OnDelete(DeleteBehavior.Cascade);
+            ScopeToOrganization<OrganizationFile>(entity);
         });
 
         modelBuilder.Entity<AuditLogEntry>(entity =>

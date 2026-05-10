@@ -153,6 +153,11 @@ public sealed class PlanValidationTests : IDisposable
     private GenerationService NewService()
     {
         var ctx = _db.NewContext();
-        return new GenerationService(ctx, new WorkspaceConfigService(ctx), NullLogger<GenerationService>.Instance);
+        return new GenerationService(
+            ctx,
+            new WorkspaceConfigService(ctx),
+            _db.NewOrganizationConfigService(ctx),
+            _db.OrgContext,
+            NullLogger<GenerationService>.Instance);
     }
 }

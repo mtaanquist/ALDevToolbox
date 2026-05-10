@@ -32,13 +32,18 @@ public class ExportService
     };
 
     private readonly AppDbContext _db;
+    private readonly IOrganizationContext _orgContext;
     private readonly ILogger<ExportService> _logger;
 
-    public ExportService(AppDbContext db, ILogger<ExportService> logger)
+    public ExportService(AppDbContext db, IOrganizationContext orgContext, ILogger<ExportService> logger)
     {
         _db = db;
+        _orgContext = orgContext;
         _logger = logger;
     }
+
+    private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
+        ?? throw new InvalidOperationException("No organization in scope; export called outside an authenticated request.");
 
     /// <summary>
     /// Produces a ZIP containing the current state of the database serialised
@@ -169,6 +174,12 @@ public class ExportService
                 "catalog/well-known-deps.toml",
                 TomlSerializer.Serialize(catalogSeed, TomlOptions),
                 ct);
+
+            // Per-organisation configuration block (Milestone P3.14): defaults,
+            // always-included files and the logo. The logo's bytes go in as
+            // base64 because TOML has no binary literal — capped at 256 KB
+            // upstream so the resulting text stays small.
+            await WriteOrgConfigAsync(archive, ct);
         }
 
         stream.Position = 0;
@@ -179,6 +190,65 @@ public class ExportService
             templates.Count, modules.Count, applicationVersions.Count, catalog.Count, fileName, stopwatch.ElapsedMilliseconds);
 
         return new GeneratedArchive(stream, fileName);
+    }
+
+    /// <summary>
+    /// Walks the acting org's <c>organization_settings</c>, <c>organization_files</c>
+    /// and <c>organization_assets</c> rows and writes a single
+    /// <c>organization-config.toml</c> entry. The block is omitted if the org
+    /// has no settings row at all (would only happen on a manual wipe — fresh
+    /// orgs always get a row from <see cref="OrganizationConfigService.PopulateDefaultsAsync"/>).
+    /// </summary>
+    private async Task WriteOrgConfigAsync(ZipArchive archive, CancellationToken ct)
+    {
+        var orgId = RequireOrganizationId();
+
+        var settings = await _db.OrganizationSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
+        if (settings is null) return;
+
+        var logo = await _db.OrganizationAssets
+            .AsNoTracking()
+            .FirstOrDefaultAsync(a => a.OrganizationId == orgId
+                                      && a.Kind == ALDevToolbox.Domain.Entities.OrganizationAssetKind.Logo, ct);
+
+        var files = await _db.OrganizationFiles
+            .AsNoTracking()
+            .Where(f => f.OrganizationId == orgId)
+            .OrderBy(f => f.Ordering)
+            .ToListAsync(ct);
+
+        var seed = new OrganizationConfigSeedFile
+        {
+            Settings = new OrganizationSettingsSeed
+            {
+                DefaultPublisher = settings.DefaultPublisher,
+                DefaultIdRangeFrom = settings.DefaultIdRangeFrom,
+                DefaultIdRangeTo = settings.DefaultIdRangeTo,
+                DefaultBrief = settings.DefaultBrief,
+                DefaultCoreDescription = settings.DefaultCoreDescription,
+            },
+            Logo = logo is null ? null : new OrganizationLogoSeed
+            {
+                ContentType = logo.ContentType,
+                ContentBase64 = Convert.ToBase64String(logo.Content),
+            },
+            File = files
+                .Select(f => new OrganizationFileSeed
+                {
+                    Path = f.Path,
+                    Content = f.Content,
+                    MustacheEnabled = f.MustacheEnabled,
+                })
+                .ToList(),
+        };
+
+        await WriteTextEntryAsync(
+            archive,
+            "organization-config.toml",
+            TomlSerializer.Serialize(seed, TomlOptions),
+            ct);
     }
 
     private static async Task WriteTextEntryAsync(ZipArchive archive, string path, string content, CancellationToken ct)

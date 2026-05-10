@@ -153,7 +153,12 @@ public sealed class MustacheSubstitutionTests : IDisposable
     private GenerationService NewService()
     {
         var ctx = _db.NewContext();
-        return new GenerationService(ctx, new WorkspaceConfigService(ctx), NullLogger<GenerationService>.Instance);
+        return new GenerationService(
+            ctx,
+            new WorkspaceConfigService(ctx),
+            _db.NewOrganizationConfigService(ctx),
+            _db.OrgContext,
+            NullLogger<GenerationService>.Instance);
     }
 
     private async Task SeedTemplateAsync(RuntimeTemplate template, params Module[] modules)

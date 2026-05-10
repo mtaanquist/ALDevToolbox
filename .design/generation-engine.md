@@ -97,9 +97,19 @@ AcmeCustomer/
      a. .gitignore (static — see template-and-seeding.md for content; lives as a string constant or embedded resource)
      b. {WorkspaceName}.code-workspace (see below)
      c. README.md (minimal — workspace name + description)
+     d. Per-org always-included files from organization_files (M14). Each row's
+        `path` is workspace-root-relative; mustache substitution runs when
+        `mustache_enabled` is true, using the same context as per-template
+        files. Written before per-extension folders so a per-template file
+        could in principle override on path collision (in practice the paths
+        don't overlap because per-template files live under the extension folder).
 6. Generate .assets:
-     a. images/logo.png — embedded resource shipped with the app
+     a. images/logo.{png|svg} — bytes from organization_assets for the acting
+        org (M14). The file extension matches the asset's `content_type` so a
+        PNG or SVG upload round-trips correctly. Pre-M14 this was an embedded
+        resource shipped with the app; that path is gone.
      b. rulesets/Company.ruleset.json — embedded resource shipped with the app
+        (per-deployment policy, not per-org).
 7. Stream the whole thing as a ZIP.
 ```
 
