@@ -43,7 +43,21 @@
     {
         @if (_saveError is not null)
         {
-            <p class="form-error" role="alert">@_saveError</p>
+            <div class="form-error" role="alert">
+                <p>@_saveError</p>
+                @if (_globalErrors.Count > 0)
+                {
+                    @* Errors that aren't pinned to a specific row — almost
+                       always the in-use guard rejecting a removal. Listed
+                       here so the admin sees what to fix. *@
+                    <ul class="form-error__list">
+                        @foreach (var err in _globalErrors)
+                        {
+                            <li>@err.Value</li>
+                        }
+                    </ul>
+                }
+            </div>
         }
         @if (_saveSuccess is not null)
         {
@@ -105,24 +119,32 @@
                                     </div>
                                     <div>
                                         <input type="text" required placeholder="Application (e.g. 28.0.0.0)"
-                                               pattern="\d+\.\d+\.\d+\.\d+"
-                                               title="Four-part version, e.g. 28.0.0.0."
-                                               @bind="row.Application" @bind:event="oninput" />
+                                               title="Type a number; missing parts auto-pad with .0 on blur."
+                                               @bind="row.Application" @bind:event="oninput"
+                                               @onblur="() => NormaliseApplication(row)" />
                                         <FieldError Field="@($"Entries[{index}].Application")" Errors="_fieldErrors" />
                                     </div>
                                     <div>
                                         <input type="text" required placeholder="Runtime (e.g. 15.2)"
-                                               pattern="\d+(\.\d+)?"
-                                               title="Major or Major.Minor (e.g. 15 or 15.2)."
-                                               @bind="row.Runtime" @bind:event="oninput" />
+                                               title="Type a number; missing parts auto-pad with .0 on blur."
+                                               @bind="row.Runtime" @bind:event="oninput"
+                                               @onblur="() => NormaliseRuntime(row)" />
                                         <FieldError Field="@($"Entries[{index}].Runtime")" Errors="_fieldErrors" />
                                     </div>
                                     <div>
                                         <label class="check-row">
                                             <input type="checkbox" @bind="row.Deprecated" />
-                                            <span>Deprecated — keep linked but hide from the user-facing select.</span>
+                                            <span>Deprecated</span>
                                         </label>
+                                        <FieldError Field="@($"Entries[{index}].Deprecated")" Errors="_fieldErrors" />
                                     </div>
+                                    @if (row.Id is int rowId && _usage.TryGetValue(rowId, out var usingTemplates) && usingTemplates.Count > 0)
+                                    {
+                                        <div class="caption muted">
+                                            In use by @usingTemplates.Count active template@(usingTemplates.Count == 1 ? "" : "s"):
+                                            @string.Join(", ", usingTemplates).
+                                        </div>
+                                    }
                                 </div>
                             </div>
                         }
@@ -157,6 +179,8 @@
     private string? _saveError;
     private string? _saveSuccess;
     private IReadOnlyDictionary<string, string> _fieldErrors = new Dictionary<string, string>();
+    private IReadOnlyDictionary<string, string> _globalErrors = new Dictionary<string, string>();
+    private Dictionary<int, List<string>> _usage = new();
 
     protected override Task OnInitializedAsync() => ReloadAsync();
 
@@ -167,12 +191,39 @@
         _saveError = null;
         _saveSuccess = null;
         _fieldErrors = new Dictionary<string, string>();
+        _globalErrors = new Dictionary<string, string>();
         StateHasChanged();
         // Hide soft-deleted rows from the editor — the service silently
         // soft-deletes anything that isn't in the input list, so showing
         // historical rows here would tempt admins to "fix" them in place.
         var rows = await Versions.GetActiveAsync(includeDeprecated: true);
+        _usage = await Versions.GetActiveUsageAsync();
         _form = FormState.From(rows);
+    }
+
+    private void NormaliseApplication(EntryRow row) =>
+        row.Application = PadVersion(row.Application, 4);
+
+    private void NormaliseRuntime(EntryRow row) =>
+        row.Runtime = PadVersion(row.Runtime, 2);
+
+    private static readonly System.Text.RegularExpressions.Regex VersionShape =
+        new(@"^\d+(\.\d+)*$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Mirror of <c>ApplicationVersionService.PadVersion</c>: pads short
+    /// numeric input up to <paramref name="parts"/> segments. Anything that
+    /// doesn't already look numeric passes through so the regular validators
+    /// can complain about it.
+    /// </summary>
+    private static string PadVersion(string raw, int parts)
+    {
+        var trimmed = (raw ?? string.Empty).Trim();
+        if (trimmed.Length == 0) return trimmed;
+        if (!VersionShape.IsMatch(trimmed)) return trimmed;
+        var segments = trimmed.Split('.').ToList();
+        while (segments.Count < parts) segments.Add("0");
+        return string.Join('.', segments);
     }
 
     private void AddEntry()
@@ -208,6 +259,16 @@
         _saveError = null;
         _saveSuccess = null;
         _fieldErrors = new Dictionary<string, string>();
+        _globalErrors = new Dictionary<string, string>();
+
+        // Apply the same auto-pad the service does so the values shown in the
+        // form match what would be persisted, and so any subsequent client-side
+        // pattern check in the browser doesn't disagree with the server.
+        foreach (var row in _form.Entries)
+        {
+            row.Application = PadVersion(row.Application, 4);
+            row.Runtime = PadVersion(row.Runtime, 2);
+        }
 
         var payload = _form.ToInputs();
 
@@ -215,13 +276,22 @@
         {
             await Versions.SaveAsync(payload);
             var rows = await Versions.GetActiveAsync(includeDeprecated: true);
+            _usage = await Versions.GetActiveUsageAsync();
             _form = FormState.From(rows);
             _saveSuccess = "Saved.";
         }
         catch (PlanValidationException ex)
         {
-            _fieldErrors = ex.Errors;
-            _saveError = $"Couldn't save: {ex.Errors.Count} validation error(s). See messages next to each field.";
+            // Split per-row errors (Entries[N]....) from global errors so the
+            // page can render in-use guard messages above the form rather than
+            // hiding them next to a field that doesn't exist.
+            _fieldErrors = ex.Errors
+                .Where(p => p.Key.StartsWith("Entries[", StringComparison.Ordinal))
+                .ToDictionary(p => p.Key, p => p.Value);
+            _globalErrors = ex.Errors
+                .Where(p => !p.Key.StartsWith("Entries[", StringComparison.Ordinal))
+                .ToDictionary(p => p.Key, p => p.Value);
+            _saveError = $"Couldn't save: {ex.Errors.Count} validation error(s).";
         }
         catch (Exception ex)
         {

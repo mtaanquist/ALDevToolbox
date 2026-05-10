@@ -72,6 +72,32 @@ public class ApplicationVersionService
     }
 
     /// <summary>
+    /// Returns, for every catalogue row that's currently referenced as a
+    /// template's <c>default_application_version</c>, the list of active
+    /// (non-deprecated, non-soft-deleted) template names pointing at it.
+    /// Drives the in-use captions on the admin editor and the deletion /
+    /// deprecation guard in <see cref="SaveAsync"/>. Templates that are
+    /// already deprecated or soft-deleted aren't included — the guard is
+    /// only here to stop admins from quietly orphaning a template that
+    /// end-users still see.
+    /// </summary>
+    public async Task<Dictionary<int, List<string>>> GetActiveUsageAsync(CancellationToken ct = default)
+    {
+        var rows = await _db.RuntimeTemplates
+            .AsNoTracking()
+            .Where(t => t.DeletedAt == null
+                        && !t.Deprecated
+                        && t.DefaultApplicationVersionId != null)
+            .Select(t => new { VersionId = t.DefaultApplicationVersionId!.Value, t.Name })
+            .ToListAsync(ct);
+        return rows
+            .GroupBy(x => x.VersionId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(x => x.Name).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList());
+    }
+
+    /// <summary>
     /// Replaces the catalogue with the supplied list. Existing rows match on
     /// <see cref="ApplicationVersionInput.Id"/>; rows whose id is null are
     /// inserted; rows missing from the input are soft-deleted (so templates
@@ -79,13 +105,61 @@ public class ApplicationVersionService
     /// </summary>
     public async Task SaveAsync(IReadOnlyList<ApplicationVersionInput> inputs, CancellationToken ct = default)
     {
-        await ValidateAsync(inputs, ct);
+        // Pad short application/runtime values up to their canonical shapes
+        // (28 → 28.0.0.0, 16 → 16.0) before validating, so admins can type the
+        // shorthand and the persisted row matches what app.json expects.
+        var normalised = inputs
+            .Select(i => i with
+            {
+                Application = PadVersion(i.Application, 4),
+                Runtime = PadVersion(i.Runtime, 2),
+            })
+            .ToList();
+
+        await ValidateAsync(normalised, ct);
 
         var existing = await _db.ApplicationVersions.ToListAsync(ct);
         var existingById = existing.ToDictionary(e => e.Id);
-        var inputIds = inputs.Where(i => i.Id is not null).Select(i => i.Id!.Value).ToHashSet();
+        var inputIds = normalised.Where(i => i.Id is not null).Select(i => i.Id!.Value).ToHashSet();
+
+        // In-use guard: stop admins from soft-deleting or freshly-deprecating
+        // a row that an active (non-deprecated, non-deleted) template still
+        // points at. Caught here before any mutation so a partial save can't
+        // half-apply the change.
+        var usage = await GetActiveUsageAsync(ct);
+        var guardErrors = new Dictionary<string, string>();
+        foreach (var row in existing)
+        {
+            if (!usage.TryGetValue(row.Id, out var usingTemplates) || usingTemplates.Count == 0)
+            {
+                continue;
+            }
+            var names = string.Join(", ", usingTemplates);
+            if (!inputIds.Contains(row.Id) && row.DeletedAt is null)
+            {
+                guardErrors[$"InUse.{row.Key}"] =
+                    $"Can't remove '{row.Name}': in use by {usingTemplates.Count} active template(s) ({names}). " +
+                    $"Reassign or deprecate the template first.";
+                continue;
+            }
+            for (var i = 0; i < normalised.Count; i++)
+            {
+                var input = normalised[i];
+                if (input.Id == row.Id && input.Deprecated && !row.Deprecated)
+                {
+                    guardErrors[$"Entries[{i}].Deprecated"] =
+                        $"Can't deprecate: in use by {usingTemplates.Count} active template(s) ({names}).";
+                    break;
+                }
+            }
+        }
+        if (guardErrors.Count > 0)
+        {
+            throw new PlanValidationException(guardErrors);
+        }
 
         var now = DateTime.UtcNow;
+        inputs = normalised;
 
         for (var i = 0; i < inputs.Count; i++)
         {
@@ -142,6 +216,23 @@ public class ApplicationVersionService
         _logger.LogInformation(
             "Saved application-version catalogue: {Count} active entries.",
             inputs.Count);
+    }
+
+    /// <summary>
+    /// Pads a short numeric version string up to <paramref name="parts"/>
+    /// segments by appending <c>.0</c> per missing segment. Empty input or
+    /// anything that doesn't already match the
+    /// <c>digits(.digits)*</c> shape is returned unchanged so the regular
+    /// validators can complain about it the same way they always do.
+    /// </summary>
+    private static string PadVersion(string? raw, int parts)
+    {
+        var trimmed = raw?.Trim() ?? string.Empty;
+        if (trimmed.Length == 0) return trimmed;
+        if (!System.Text.RegularExpressions.Regex.IsMatch(trimmed, @"^\d+(\.\d+)*$")) return trimmed;
+        var segments = trimmed.Split('.').ToList();
+        while (segments.Count < parts) segments.Add("0");
+        return string.Join('.', segments);
     }
 
     private async Task ValidateAsync(IReadOnlyList<ApplicationVersionInput> inputs, CancellationToken ct)
