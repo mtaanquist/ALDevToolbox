@@ -27,6 +27,7 @@ public class AppDbContext : DbContext
     public DbSet<Module> Modules => Set<Module>();
     public DbSet<ModuleDependency> ModuleDependencies => Set<ModuleDependency>();
     public DbSet<WellKnownDependency> WellKnownDependencies => Set<WellKnownDependency>();
+    public DbSet<ApplicationVersion> ApplicationVersions => Set<ApplicationVersion>();
     public DbSet<AuditLogEntry> AuditLog => Set<AuditLogEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -54,6 +55,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Description).HasColumnName("description");
             entity.Property(e => e.DefaultApplication).HasColumnName("default_application").IsRequired();
             entity.Property(e => e.DefaultPlatform).HasColumnName("default_platform").IsRequired();
+            entity.Property(e => e.DefaultApplicationVersionId).HasColumnName("default_application_version_id");
             entity.Property(e => e.Defaults)
                 .HasColumnName("defaults_json")
                 .HasConversion(defaultsConverter)
@@ -85,6 +87,32 @@ public class AppDbContext : DbContext
                 .WithOne(d => d.Template!)
                 .HasForeignKey(d => d.RuntimeTemplateId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // FK to the curated application-version catalogue. SetNull on
+            // delete so soft/hard-removing a catalogue entry doesn't cascade
+            // away the template — orphans simply fall back to the free-text
+            // DefaultApplication / Runtime values until an admin re-assigns.
+            entity.HasOne(e => e.DefaultApplicationVersion)
+                .WithMany()
+                .HasForeignKey(e => e.DefaultApplicationVersionId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ApplicationVersion>(entity =>
+        {
+            entity.ToTable("application_versions");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(e => e.Key).HasColumnName("key").IsRequired();
+            entity.HasIndex(e => e.Key).IsUnique();
+            entity.Property(e => e.Name).HasColumnName("name").IsRequired();
+            entity.Property(e => e.Application).HasColumnName("application").IsRequired();
+            entity.Property(e => e.Runtime).HasColumnName("runtime").IsRequired();
+            entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
+            entity.Property(e => e.Deprecated).HasColumnName("deprecated").IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
+            entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
         });
 
         modelBuilder.Entity<RuntimeTemplateDefaultModule>(entity =>

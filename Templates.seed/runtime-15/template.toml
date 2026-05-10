@@ -10,6 +10,7 @@ name = "Runtime 15+"
 description = "Namespace folders (BC v24+)"
 default_application = "24.0.0.0"
 default_platform = "1.0.0.0"
+default_application_version = "bc-v24"
 core_id_range_from = 90000
 core_id_range_to = 90999
 module_id_range_start = 91000

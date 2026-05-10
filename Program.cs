@@ -73,6 +73,7 @@ builder.Services.AddDbContext<AppDbContext>((sp, options) =>
 builder.Services.AddScoped<TemplateService>();
 builder.Services.AddScoped<ModuleService>();
 builder.Services.AddScoped<CatalogService>();
+builder.Services.AddScoped<ApplicationVersionService>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<SeedService>();
 builder.Services.AddScoped<WorkspaceConfigService>();

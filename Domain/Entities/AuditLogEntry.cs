@@ -15,6 +15,7 @@ public enum AuditEntityType
     Module,
     ModuleDependency,
     WellKnownDependency,
+    ApplicationVersion,
 }
 
 /// <summary>The kind of change captured by an audit row.</summary>

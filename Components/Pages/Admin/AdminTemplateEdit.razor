@@ -3,6 +3,7 @@
 @attribute [Authorize]
 @rendermode InteractiveServer
 @inject TemplateService Templates
+@inject ApplicationVersionService Versions
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject ILogger<AdminTemplateEdit> Log
@@ -210,6 +211,25 @@
                            placeholder="e.g. 1.0.0.0" />
                     <FieldError Field="DefaultPlatform" Errors="_fieldErrors" />
                 </div>
+            </section>
+
+            <section class="form-section">
+                <label class="section-label" for="tpl-app-version">Default application version</label>
+                <select id="tpl-app-version" @bind="_form.DefaultApplicationVersionKey">
+                    <option value="">(none — fall back to free-text)</option>
+                    @foreach (var v in _availableApplicationVersions)
+                    {
+                        <option value="@v.Key">
+                            @v.Name (@v.Application / @v.Runtime)@(v.Deprecated ? " — deprecated" : null)
+                        </option>
+                    }
+                </select>
+                <small class="muted">
+                    Picking an entry here preselects it on the New Workspace and
+                    New Extension forms; users can still override per project.
+                    Curate the list at <a href="/admin/application-versions">Application versions</a>.
+                </small>
+                <FieldError Field="DefaultApplicationVersionKey" Errors="_fieldErrors" />
             </section>
 
             <section class="form-section form-section--row">
@@ -602,6 +622,7 @@
     private bool _loadFailed;
     private bool _saving;
     private List<ALDevToolbox.Domain.Entities.Module> _availableModules = new();
+    private List<ApplicationVersion> _availableApplicationVersions = new();
     private ConfirmDialog? _deleteConfirm;
     private ConfirmDialog? _leaveConfirm;
     private IDisposable? _locationChangingRegistration;
@@ -688,6 +709,10 @@
         // templates without losing the reference; the user-facing
         // dropdown filters them out separately.
         _availableModules = await Templates.GetModulesAsync(includeDeprecated: true);
+        // Include deprecated entries so admins can keep templates linked to a
+        // legacy application-version row without losing the reference; the
+        // user-facing select filters them out.
+        _availableApplicationVersions = await Versions.GetActiveAsync(includeDeprecated: true);
 
         if (!IsEdit)
         {
@@ -1248,6 +1273,9 @@
                         Module = new ALDevToolbox.Domain.Entities.Module { Key = k },
                     })
                     .ToList(),
+                DefaultApplicationVersion = string.IsNullOrWhiteSpace(_form.DefaultApplicationVersionKey)
+                    ? null
+                    : new ApplicationVersion { Key = _form.DefaultApplicationVersionKey },
             };
             return TemplateTomlMapper.ToToml(stub);
         }
@@ -1460,6 +1488,13 @@
         /// </summary>
         public List<string> DefaultModuleKeys { get; } = new();
 
+        /// <summary>
+        /// Optional curated application-version key (Milestone P2.4). Empty
+        /// string means "no curated entry"; the form's free-text
+        /// DefaultApplication / runtime values are used at generation time.
+        /// </summary>
+        public string DefaultApplicationVersionKey { get; set; } = string.Empty;
+
         public static FormState Blank() => new()
         {
             DefaultsJson = JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson),
@@ -1487,6 +1522,7 @@
                 ModuleIdRangeStart = template.ModuleIdRangeStart,
                 ModuleIdRangeSize = template.ModuleIdRangeSize,
                 Deprecated = template.Deprecated,
+                DefaultApplicationVersionKey = template.DefaultApplicationVersion?.Key ?? string.Empty,
             };
             foreach (var f in template.Folders.OrderBy(f => f.Ordering))
             {
@@ -1546,6 +1582,7 @@
                 // TOML doesn't carry Deprecated (see TemplateTomlMapper.ToToml);
                 // preserve the structured form's value rather than zeroing it.
                 Deprecated = currentDeprecated,
+                DefaultApplicationVersionKey = input.DefaultApplicationVersionKey ?? string.Empty,
             };
             foreach (var f in input.Folders)
             {
@@ -1610,7 +1647,10 @@
                 f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList(),
             ModuleFolders: ModuleFolders.Select(f => new TemplateFolderInput(
                 f.Path,
-                f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList());
+                f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList(),
+            DefaultApplicationVersionKey: string.IsNullOrWhiteSpace(DefaultApplicationVersionKey)
+                ? null
+                : DefaultApplicationVersionKey);
     }
 
     private sealed class FolderRow

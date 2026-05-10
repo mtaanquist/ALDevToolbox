@@ -60,6 +60,7 @@ public class ExportService
                 .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
             .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
                 .ThenInclude(d => d.Module!)
+            .Include(t => t.DefaultApplicationVersion)
             .ToListAsync(ct);
 
         // Sort client-side because Runtime is a TEXT column now and SQLite's
@@ -82,6 +83,13 @@ public class ExportService
             .OrderBy(w => w.Category)
             .ThenBy(w => w.Ordering)
             .ThenBy(w => w.DepName)
+            .ToListAsync(ct);
+
+        var applicationVersions = await _db.ApplicationVersions
+            .AsNoTracking()
+            .Where(a => a.DeletedAt == null)
+            .OrderBy(a => a.Ordering)
+            .ThenBy(a => a.Key)
             .ToListAsync(ct);
 
         var stream = new MemoryStream();
@@ -123,6 +131,26 @@ public class ExportService
                     ct);
             }
 
+            foreach (var version in applicationVersions)
+            {
+                var seed = new ApplicationVersionSeedFile
+                {
+                    Version = new ApplicationVersionSeed
+                    {
+                        Key = version.Key,
+                        Name = version.Name,
+                        Application = version.Application,
+                        Runtime = version.Runtime,
+                        Ordering = version.Ordering,
+                    },
+                };
+                await WriteTextEntryAsync(
+                    archive,
+                    $"application-versions/{version.Key}.toml",
+                    TomlSerializer.Serialize(seed, TomlOptions),
+                    ct);
+            }
+
             var catalogSeed = new CatalogSeedFile
             {
                 Dependency = catalog
@@ -147,8 +175,8 @@ public class ExportService
         var fileName = $"Templates.seed-{DateTime.UtcNow:yyyyMMdd-HHmmss}.zip";
 
         _logger.LogInformation(
-            "Exported {Templates} template(s), {Modules} module(s), {Catalog} catalogue entry(ies) to {FileName} in {Elapsed}ms.",
-            templates.Count, modules.Count, catalog.Count, fileName, stopwatch.ElapsedMilliseconds);
+            "Exported {Templates} template(s), {Modules} module(s), {AppVersions} application version(s), {Catalog} catalogue entry(ies) to {FileName} in {Elapsed}ms.",
+            templates.Count, modules.Count, applicationVersions.Count, catalog.Count, fileName, stopwatch.ElapsedMilliseconds);
 
         return new GeneratedArchive(stream, fileName);
     }

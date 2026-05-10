@@ -34,6 +34,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         typeof(Module),
         typeof(ModuleDependency),
         typeof(WellKnownDependency),
+        typeof(ApplicationVersion),
     };
 
     private readonly IHttpContextAccessor _http;
@@ -282,6 +283,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         if (t == typeof(Module)) return AuditEntityType.Module;
         if (t == typeof(ModuleDependency)) return AuditEntityType.ModuleDependency;
         if (t == typeof(WellKnownDependency)) return AuditEntityType.WellKnownDependency;
+        if (t == typeof(ApplicationVersion)) return AuditEntityType.ApplicationVersion;
         throw new InvalidOperationException($"Entity type {t.Name} is not audited.");
     }
 

@@ -53,19 +53,22 @@ public class SeedService
         _logger.LogInformation("Seeding database from {SeedPath}.", seedPath);
 
         var now = DateTime.UtcNow;
-        // Modules are imported before templates so default-module references
-        // on a template can resolve to already-tracked Module instances by
-        // key. EF's change tracker fixes the foreign keys up at SaveChanges
-        // time, so we never have to know the assigned module ids here.
+        // Modules and application versions are imported before templates so
+        // default-module / default-application-version references on a template
+        // can resolve to already-tracked instances by key. EF's change tracker
+        // fixes the foreign keys up at SaveChanges time, so we never have to
+        // know the assigned ids here.
         var modulesByKey = await ImportModulesAsync(seedPath, now, cancellationToken);
-        await ImportTemplatesAsync(seedPath, now, modulesByKey, cancellationToken);
+        var applicationVersionsByKey = await ImportApplicationVersionsAsync(seedPath, now, cancellationToken);
+        await ImportTemplatesAsync(seedPath, now, modulesByKey, applicationVersionsByKey, cancellationToken);
         await ImportCatalogAsync(seedPath, now, cancellationToken);
 
         var written = await _db.SaveChangesAsync(cancellationToken);
         _logger.LogInformation(
-            "Seed complete: {Templates} templates, {Modules} modules, {Catalog} catalogue entries ({Rows} rows).",
+            "Seed complete: {Templates} templates, {Modules} modules, {AppVersions} application versions, {Catalog} catalogue entries ({Rows} rows).",
             await _db.RuntimeTemplates.CountAsync(cancellationToken),
             await _db.Modules.CountAsync(cancellationToken),
+            await _db.ApplicationVersions.CountAsync(cancellationToken),
             await _db.WellKnownDependencies.CountAsync(cancellationToken),
             written);
     }
@@ -99,6 +102,7 @@ public class SeedService
         string seedPath,
         DateTime now,
         IReadOnlyDictionary<string, Module> modulesByKey,
+        IReadOnlyDictionary<string, ApplicationVersion> applicationVersionsByKey,
         CancellationToken ct)
     {
         foreach (var dir in Directory.EnumerateDirectories(seedPath, "runtime-*"))
@@ -187,6 +191,25 @@ public class SeedService
                 });
             }
 
+            // Optional default_application_version (Milestone P2.4). Same lenient
+            // resolution rule as default_modules: an unknown key logs a warning
+            // and the template falls back to its free-text default_application
+            // / runtime values rather than failing the seed.
+            var defaultAppVersionKey = seed.Template.DefaultApplicationVersion?.Trim();
+            if (!string.IsNullOrEmpty(defaultAppVersionKey))
+            {
+                if (applicationVersionsByKey.TryGetValue(defaultAppVersionKey, out var version))
+                {
+                    template.DefaultApplicationVersion = version;
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Template '{TemplateKey}' references unknown default application version '{Key}'; using raw default_application/runtime values.",
+                        template.Key, defaultAppVersionKey);
+                }
+            }
+
             _db.RuntimeTemplates.Add(template);
         }
     }
@@ -252,6 +275,57 @@ public class SeedService
             };
             _db.Modules.Add(module);
             byKey[module.Key] = module;
+        }
+        return byKey;
+    }
+
+    // ----- application versions -----
+
+    /// <summary>
+    /// Imports the application-version seed files (Milestone P2.4) and returns
+    /// a key-indexed view so the template importer can resolve
+    /// <c>default_application_version</c> references against the tracked
+    /// instances. Files live one-per-key under
+    /// <c>Templates.seed/application-versions/</c>; missing directory is fine
+    /// and yields an empty catalogue.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, ApplicationVersion>> ImportApplicationVersionsAsync(
+        string seedPath,
+        DateTime now,
+        CancellationToken ct)
+    {
+        var byKey = new Dictionary<string, ApplicationVersion>(StringComparer.Ordinal);
+        var dir = Path.Combine(seedPath, "application-versions");
+        if (!Directory.Exists(dir))
+            return byKey;
+
+        var ordering = 0;
+        // Sort by file path so seed runs are deterministic across filesystems
+        // and the resulting Ordering matches the alphabetical seed file order
+        // when no explicit `ordering` is set.
+        foreach (var path in Directory.EnumerateFiles(dir, "*.toml").OrderBy(p => p, StringComparer.Ordinal))
+        {
+            var file = ParseToml<ApplicationVersionSeedFile>(await File.ReadAllTextAsync(path, ct), path);
+            if (string.IsNullOrWhiteSpace(file.Version.Key))
+            {
+                _logger.LogWarning("Application-version seed at {Path} has no key; skipped.", path);
+                continue;
+            }
+
+            var entry = new ApplicationVersion
+            {
+                Key = file.Version.Key,
+                Name = file.Version.Name,
+                Application = file.Version.Application,
+                Runtime = file.Version.Runtime,
+                Ordering = file.Version.Ordering > 0 ? file.Version.Ordering : ordering,
+                Deprecated = false,
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+            _db.ApplicationVersions.Add(entry);
+            byKey[entry.Key] = entry;
+            ordering++;
         }
         return byKey;
     }
