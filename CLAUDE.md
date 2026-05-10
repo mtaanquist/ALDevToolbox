@@ -61,6 +61,8 @@ When you add a new file, match the folder. Resist creating top-level folders —
 
 These are deliberate constraints from `.design/architecture.md` and `.design/templates-and-seeding.md`. Don't quietly relax them.
 
+> **Phase 3 note.** `milestones.md` explicitly slates three of these fences to move: the single shared admin password (replaced in M13 by per-user accounts, two roles, and admin-approved signups), the multi-tenancy posture (M13 introduces organisations as a real boundary on every editable entity), and the logo as embedded resource (M14 moves it into the DB along with per-org always-included files). The ruleset and `.gitignore` template stay as embedded resources. When you pick up M13 or M14, the relevant fence here gets rewritten in the same PR — don't ask the maintainer to confirm what the milestone document already authorises. All other fences below still hold.
+
 - **The SQLite database is the only persistence layer for templates, modules, the catalogue, and per-folder file contents.** Both authoring surfaces (the structured admin form and the TOML editor) write through the same `TemplateInput` pipeline into the DB. `Templates.seed/` is a one-time bootstrap for an empty DB and an export target — nothing watches it at runtime, nothing writes back to it, and there is no two-way sync. If you find yourself reaching for "re-read the TOML file at runtime" or "re-read the example folder at runtime", stop.
 - **The ruleset, the `.gitignore`, and the logo ship as code.** They live as embedded resources under `Resources/` because they're per-deployment branding/policy rather than per-template content. Per-folder example AL file *contents* live in the `template_files` table and are admin-editable. Binary files inside template folders are out of scope for v1 — text content only.
 - **`defaults_json` and `app_source_cop_json` stay as JSON columns.** Don't normalise them into separate tables — the AL ecosystem changes those shapes too often.
@@ -131,7 +133,7 @@ When implementing a milestone:
 
 ## Tests and verification
 
-We don't have automated tests yet, and milestones 4–11 don't require them. Until that changes:
+We don't have automated tests yet, and milestones 4–11 don't require them. Phase 3 changes that — M12 stands up an `ALDevToolbox.Tests` project, backfills tests for the tricky algorithms (ID-range allocation, mustache, audit snapshots, TOML round-trip), and sets the bar that every service method added in M13–M15 ships with tests for happy path and validation rules. The "don't retro-test things that already work" guideline below is superseded by M12 for those specific targets. Until M12 lands:
 
 - Verify generation by building a workspace, extracting the ZIP, and opening it in VS Code with the AL extension. The output structure must match `generation-engine.md`.
 - Run the GitHub Actions build on every push — the workflow at `.github/workflows/build.yml` is the floor for "does it compile and start". Don't merge a red build.
