@@ -101,7 +101,12 @@ public sealed class IdRangeAllocationTests : IDisposable
     {
         var ctx = _db.NewContext();
         var config = new WorkspaceConfigService(ctx);
-        return new GenerationService(ctx, config, NullLogger<GenerationService>.Instance);
+        return new GenerationService(
+            ctx,
+            config,
+            _db.NewOrganizationConfigService(ctx),
+            _db.OrgContext,
+            NullLogger<GenerationService>.Instance);
     }
 
     private async Task SeedAsync(Func<RuntimeTemplate, RuntimeTemplate> shapeTemplate, params Module[] modules)

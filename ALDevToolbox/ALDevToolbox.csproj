@@ -8,7 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Resources/logo.png" LogicalName="ALDevToolbox.Resources.logo.png" />
+    <!-- The ruleset and .gitignore template stay as embedded resources: they
+         are per-deployment policy rather than per-org config and don't have a
+         clear customisation story yet (see milestones.md). The logo moved into
+         Templates.seed/organization-defaults/ at M14 and is now stored per-org
+         in the organization_assets table. -->
     <EmbeddedResource Include="Resources/Company.ruleset.json" LogicalName="ALDevToolbox.Resources.Company.ruleset.json" />
     <EmbeddedResource Include="Resources/al.gitignore" LogicalName="ALDevToolbox.Resources.al.gitignore" />
   </ItemGroup>

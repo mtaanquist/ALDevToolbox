@@ -39,6 +39,9 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         typeof(ApplicationVersion),
         typeof(User),
         typeof(SignupRequest),
+        typeof(OrganizationSettings),
+        typeof(OrganizationAsset),
+        typeof(OrganizationFile),
     };
 
     private readonly IHttpContextAccessor _http;
@@ -260,7 +263,8 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     private static Dictionary<string, object?> OriginalValuesToDict(EntityEntry entry)
     {
         var dict = new Dictionary<string, object?>();
-        var hashContent = entry.Entity is TemplateFile or TemplateModuleFile;
+        var hashContent = entry.Entity is TemplateFile or TemplateModuleFile or OrganizationFile;
+        var hashAssetBytes = entry.Entity is OrganizationAsset;
         foreach (var property in entry.OriginalValues.Properties)
         {
             var value = entry.OriginalValues[property.Name];
@@ -268,12 +272,22 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             {
                 dict["ContentSha256"] = Sha256(s);
             }
+            else if (hashAssetBytes && property.Name == nameof(OrganizationAsset.Content) && value is byte[] bytes)
+            {
+                dict["ContentSha256"] = Sha256Bytes(bytes);
+            }
             else
             {
                 dict[property.Name] = value;
             }
         }
         return dict;
+    }
+
+    private static string Sha256Bytes(byte[] value)
+    {
+        var bytes = SHA256.HashData(value);
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
     private static string Sha256(string value)
@@ -296,6 +310,9 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         if (t == typeof(ApplicationVersion)) return AuditEntityType.ApplicationVersion;
         if (t == typeof(User)) return AuditEntityType.User;
         if (t == typeof(SignupRequest)) return AuditEntityType.SignupRequest;
+        if (t == typeof(OrganizationSettings)) return AuditEntityType.OrganizationSettings;
+        if (t == typeof(OrganizationAsset)) return AuditEntityType.OrganizationAsset;
+        if (t == typeof(OrganizationFile)) return AuditEntityType.OrganizationFile;
         throw new InvalidOperationException($"Entity type {t.Name} is not audited.");
     }
 

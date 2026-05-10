@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject TemplateService Templates
 @inject ApplicationVersionService Versions
+@inject OrganizationConfigService OrgConfig
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 
@@ -217,11 +218,20 @@
     private bool _includeExamples = true;
     private bool _includeForNav;
 
+    private OrganizationConfig? _orgConfig;
+
     protected override async Task OnInitializedAsync()
     {
         _templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
         _modules = await Templates.GetModulesAsync(includeDeprecated: false);
         _applicationVersions = await Versions.GetActiveAsync(includeDeprecated: false);
+        _orgConfig = await OrgConfig.GetCurrentAsync();
+        // Pre-fill the brief / description from the org's defaults block
+        // (Milestone P3.14). Users can still edit either field; the template's
+        // own fields override the id range below if it specifies one, since
+        // the ID range is a per-template concern.
+        _brief = _orgConfig.Settings.DefaultBrief;
+        _description = _orgConfig.Settings.DefaultCoreDescription;
         // Honour the ?template=<key> hint from the Templates browser when present
         // and the key matches an active template; otherwise fall back to the first.
         _selected = (!string.IsNullOrWhiteSpace(PreselectedTemplate)

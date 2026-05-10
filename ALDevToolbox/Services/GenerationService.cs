@@ -51,14 +51,35 @@ public class GenerationService
 
     private readonly AppDbContext _db;
     private readonly WorkspaceConfigService _config;
+    private readonly OrganizationConfigService _orgConfig;
+    private readonly IOrganizationContext _orgContext;
     private readonly ILogger<GenerationService> _logger;
 
-    public GenerationService(AppDbContext db, WorkspaceConfigService config, ILogger<GenerationService> logger)
+    public GenerationService(
+        AppDbContext db,
+        WorkspaceConfigService config,
+        OrganizationConfigService orgConfig,
+        IOrganizationContext orgContext,
+        ILogger<GenerationService> logger)
     {
         _db = db;
         _config = config;
+        _orgConfig = orgConfig;
+        _orgContext = orgContext;
         _logger = logger;
     }
+
+    /// <summary>
+    /// Resolves the per-org configuration for the acting user. Generation runs
+    /// inside an authenticated request, so a missing organisation is a bug —
+    /// reading without scope is the same kind of mistake as bypassing the EF
+    /// query filter.
+    /// </summary>
+    private Task<OrganizationConfig> GetOrgConfigAsync(CancellationToken ct) =>
+        _orgConfig.GetForAsync(
+            _orgContext.CurrentOrganizationId
+                ?? throw new InvalidOperationException("Generation invoked without an organisation in scope."),
+            ct);
 
     // ===== Workspace flow =====
 
@@ -85,6 +106,7 @@ public class GenerationService
             });
 
         var modules = await LoadSelectedModulesAsync(plan.SelectedModuleKeys, ct);
+        var orgConfig = await GetOrgConfigAsync(ct);
 
         var shortName = StripWhitespace(plan.WorkspaceName);
         var rootFolder = shortName;
@@ -100,10 +122,18 @@ public class GenerationService
 
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
-            // .assets — logo + ruleset
-            await WriteEmbeddedAsync(archive, $"{rootFolder}/.assets/images/logo.png", "ALDevToolbox.Resources.logo.png", ct);
+            // .assets — logo + ruleset. Logo bytes come from the acting user's
+            // organisation_assets row (M14); ruleset is still per-deployment
+            // policy and ships as an embedded resource.
+            fileCount += WriteOrgLogo(archive, $"{rootFolder}/.assets/images", orgConfig.Logo);
             await WriteEmbeddedAsync(archive, $"{rootFolder}/.assets/rulesets/Company.ruleset.json", "ALDevToolbox.Resources.Company.ruleset.json", ct);
-            fileCount += 2;
+            fileCount += 1;
+
+            // Always-included org files (M14): written into the workspace root
+            // before per-extension folders so a per-template file at the same
+            // path could in principle override; in practice the paths don't
+            // overlap because per-template files live under the extension folder.
+            fileCount += WriteOrgFiles(archive, rootFolder, orgConfig.Files, plan, template);
 
             // Core extension uses the Core folder list; modules use the module
             // folder list so Core's per-extension scaffolding (App Install
@@ -209,6 +239,10 @@ public class GenerationService
             ? new List<Module>()
             : await LoadSelectedModulesAsync(sibling.ModuleKeys, ct);
 
+        // Standalone extensions don't carry an .assets/ folder or workspace-
+        // level always-included files: they're a single extension dropping into
+        // a workspace that already has those assets. Pre-M14 the embedded
+        // logo.png wasn't written here either, so behaviour is unchanged.
         var stream = new MemoryStream();
         var fileCount = 0;
         var folderName = StripWhitespace(plan.ExtensionName);
@@ -366,6 +400,63 @@ public class GenerationService
         }
 
         return Task.FromResult(fileCount);
+    }
+
+    /// <summary>
+    /// Writes the acting org's logo (Milestone P3.14) into the given parent
+    /// path. The asset's MIME type drives the file extension so PNG and SVG
+    /// uploads round-trip into <c>.assets/images/logo.png</c> or
+    /// <c>logo.svg</c>. Returns 1 on success and 0 when the org has no logo
+    /// configured (rare — <see cref="OrganizationConfigService.PopulateDefaultsAsync"/>
+    /// installs the seed default for every fresh org).
+    /// </summary>
+    private static int WriteOrgLogo(ZipArchive archive, string parentPath, OrganizationAsset? logo)
+    {
+        if (logo is null) return 0;
+        var ext = logo.ContentType switch
+        {
+            "image/svg+xml" => "svg",
+            _ => "png",
+        };
+        var entry = archive.CreateEntry($"{parentPath}/logo.{ext}", CompressionLevel.Optimal);
+        using var stream = entry.Open();
+        stream.Write(logo.Content, 0, logo.Content.Length);
+        return 1;
+    }
+
+    /// <summary>
+    /// Writes the always-included files configured for the acting org
+    /// (Milestone P3.14) into the workspace root. Mustache substitution runs
+    /// per-row when <see cref="OrganizationFile.MustacheEnabled"/> is true,
+    /// using the same context per-template files use ({{workspaceName}},
+    /// {{publisher}}, {{prefix}}, …). Returns the number of files written so
+    /// the caller can roll up totals for logging.
+    /// </summary>
+    private int WriteOrgFiles(
+        ZipArchive archive,
+        string rootFolder,
+        IReadOnlyList<OrganizationFile> files,
+        ProjectPlan plan,
+        RuntimeTemplate template)
+    {
+        if (files.Count == 0) return 0;
+        var written = 0;
+        foreach (var file in files)
+        {
+            var content = file.MustacheEnabled
+                ? SubstituteMustache(file.Content, new MustacheContext(
+                    Name: plan.WorkspaceName,
+                    WorkspaceName: plan.WorkspaceName,
+                    ShortName: StripWhitespace(plan.WorkspaceName),
+                    ModuleName: plan.WorkspaceName,
+                    Publisher: template.Defaults.Publisher,
+                    Prefix: template.AppSourceCop.MandatoryPrefix,
+                    FolderPath: file.Path))
+                : file.Content;
+            WriteString(archive, $"{rootFolder}/{file.Path}", content);
+            written++;
+        }
+        return written;
     }
 
     /// <summary>

@@ -20,12 +20,18 @@ public class SeedService
 {
     private readonly AppDbContext _db;
     private readonly IWebHostEnvironment _env;
+    private readonly OrganizationConfigService _config;
     private readonly ILogger<SeedService> _logger;
 
-    public SeedService(AppDbContext db, IWebHostEnvironment env, ILogger<SeedService> logger)
+    public SeedService(
+        AppDbContext db,
+        IWebHostEnvironment env,
+        OrganizationConfigService config,
+        ILogger<SeedService> logger)
     {
         _db = db;
         _env = env;
+        _config = config;
         _logger = logger;
     }
 
@@ -69,6 +75,11 @@ public class SeedService
         _logger.LogInformation(
             "Seed complete for org {OrgId}: {Rows} rows.",
             organizationId, written);
+
+        // Populate the per-org configuration row introduced in Milestone P3.14.
+        // Idempotent — does nothing for an org that already has a settings row,
+        // so re-running seed against a partially-configured org is safe.
+        await _config.PopulateDefaultsAsync(organizationId, cancellationToken);
     }
 
     /// <summary>

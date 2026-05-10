@@ -4,6 +4,7 @@
 @inject TemplateService Templates
 @inject ApplicationVersionService Versions
 @inject WorkspaceConfigService Configs
+@inject OrganizationConfigService OrgConfig
 @inject ILogger<NewExtension> Logger
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
@@ -312,16 +313,29 @@
 
     private string WorkspaceFoldersSnippet => $"{{ \"path\": \"{FolderName}\" }}";
 
+    private OrganizationConfig? _orgConfig;
+
     protected override async Task OnInitializedAsync()
     {
         _templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
         _catalog = await Templates.GetCatalogAsync();
         _modules = await Templates.GetModulesAsync(includeDeprecated: false);
         _applicationVersions = await Versions.GetActiveAsync(includeDeprecated: false);
+        _orgConfig = await OrgConfig.GetCurrentAsync();
         _selected = _templates.FirstOrDefault();
         if (_selected is not null)
         {
             ApplyTemplateDefaults(_selected);
+        }
+        // Pre-fill the org-level defaults block (Milestone P3.14). Brief and
+        // description are admin-curated free-text fields; they don't have
+        // template-level overrides, so we always use the org's value when no
+        // sibling-extension import has set them. The id range stays driven by
+        // the template above (per-template id ranges are a deliberate split).
+        if (_workspaceContext is null && _orgConfig is not null)
+        {
+            _brief = _orgConfig.Settings.DefaultBrief;
+            _description = _orgConfig.Settings.DefaultCoreDescription;
         }
     }
 

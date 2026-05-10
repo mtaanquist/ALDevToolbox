@@ -1,8 +1,11 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.Infrastructure;
 
@@ -64,5 +67,30 @@ public sealed class TestDb : IDisposable
         return new AppDbContext(options, OrgContext);
     }
 
-    public void Dispose() => _connection.Dispose();
+    public void Dispose()
+    {
+        // Wipe the org-config cache between fixtures: it's static, so a previous
+        // test's entries would otherwise bleed into the next test's reads.
+        OrganizationConfigService.ClearCache();
+        _connection.Dispose();
+    }
+
+    /// <summary>
+    /// Returns a fresh <see cref="OrganizationConfigService"/> wired against a
+    /// stub <see cref="IWebHostEnvironment"/>. Tests that don't need
+    /// <c>Templates.seed/organization-defaults/</c> can use this directly; tests
+    /// that do should override <c>SEED_PATH</c> via env var inside their scope.
+    /// </summary>
+    public OrganizationConfigService NewOrganizationConfigService(AppDbContext ctx) =>
+        new(ctx, OrgContext, new StubWebHostEnvironment(), NullLogger<OrganizationConfigService>.Instance);
+
+    private sealed class StubWebHostEnvironment : IWebHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = "Test";
+        public string ApplicationName { get; set; } = "ALDevToolbox.Tests";
+        public string WebRootPath { get; set; } = string.Empty;
+        public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
 }

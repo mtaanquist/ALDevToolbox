@@ -18,6 +18,9 @@ public enum AuditEntityType
     ApplicationVersion,
     User,
     SignupRequest,
+    OrganizationSettings,
+    OrganizationAsset,
+    OrganizationFile,
 }
 
 /// <summary>The kind of change captured by an audit row.</summary>
