@@ -27,7 +27,8 @@ public sealed class SiteAdminServiceTests : IDisposable
 
         var ctx = _db.NewContext();
         var svc = new SiteAdminService(ctx, NewSiteAdminContext(), NullLogger<SiteAdminService>.Instance);
-        var rows = await svc.SearchUsersAsync("user");
+        // "example.com" matches every seeded email — both orgs' users appear.
+        var rows = await svc.SearchUsersAsync("example.com");
 
         rows.Select(r => r.OrganizationId).Distinct().Should().HaveCountGreaterOrEqualTo(2,
             "the SiteAdmin search bypasses the per-org query filter");
