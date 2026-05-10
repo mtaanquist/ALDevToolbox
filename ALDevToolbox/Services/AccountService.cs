@@ -233,7 +233,7 @@ public sealed class AccountService
         var req = await LoadSignupRequestAsync(signupRequestId, actingOrgId, ct);
         if (req.Decision != SignupDecision.Pending || req.UserId is null)
         {
-            throw new PlanValidationException(new() { ["Decision"] = "This request has already been decided." });
+            throw new PlanValidationException(new Dictionary<string, string> { ["Decision"] = "This request has already been decided." });
         }
         var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == req.UserId.Value, ct);
         user.Status = UserStatus.Active;
@@ -254,7 +254,7 @@ public sealed class AccountService
         var req = await LoadSignupRequestAsync(signupRequestId, actingOrgId, ct);
         if (req.Decision != SignupDecision.Pending)
         {
-            throw new PlanValidationException(new() { ["Decision"] = "This request has already been decided." });
+            throw new PlanValidationException(new Dictionary<string, string> { ["Decision"] = "This request has already been decided." });
         }
         if (req.UserId is int userId)
         {
@@ -274,7 +274,7 @@ public sealed class AccountService
         if (user.Role == UserRole.Admin && user.Status == UserStatus.Active
             && await CountActiveAdminsAsync(actingOrgId, ct) <= 1)
         {
-            throw new PlanValidationException(new() { ["LastAdmin"] = "You can't disable the last active admin in this organisation." });
+            throw new PlanValidationException(new Dictionary<string, string> { ["LastAdmin"] = "You can't disable the last active admin in this organisation." });
         }
         user.Status = UserStatus.Disabled;
         await _db.SaveChangesAsync(ct);
@@ -296,7 +296,7 @@ public sealed class AccountService
             && user.Status == UserStatus.Active
             && await CountActiveAdminsAsync(actingOrgId, ct) <= 1)
         {
-            throw new PlanValidationException(new() { ["LastAdmin"] = "You can't demote the last active admin in this organisation." });
+            throw new PlanValidationException(new Dictionary<string, string> { ["LastAdmin"] = "You can't demote the last active admin in this organisation." });
         }
         user.Role = newRole;
         await _db.SaveChangesAsync(ct);
@@ -308,7 +308,7 @@ public sealed class AccountService
         var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId, ct);
         if (!VerifyPassword(currentPassword, user.PasswordHash))
         {
-            throw new PlanValidationException(new() { ["CurrentPassword"] = "Current password is incorrect." });
+            throw new PlanValidationException(new Dictionary<string, string> { ["CurrentPassword"] = "Current password is incorrect." });
         }
         var errors = new Dictionary<string, string>();
         ValidatePassword(newPassword, errors, fieldName: "NewPassword");
@@ -348,7 +348,7 @@ public sealed class AccountService
         {
             if (!acceptOrgDeletion)
             {
-                throw new PlanValidationException(new()
+                throw new PlanValidationException(new Dictionary<string, string>
                 {
                     ["LastAdmin"] = "You're the last active admin. Promote another user first or accept that the organisation will be deleted."
                 });
@@ -414,7 +414,7 @@ public sealed class AccountService
             .FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
         if (row is null || row.ConsumedAt is not null || row.ExpiresAt <= now || row.User is null)
         {
-            throw new PlanValidationException(new() { ["Token"] = "This reset link is no longer valid. Request a new one." });
+            throw new PlanValidationException(new Dictionary<string, string> { ["Token"] = "This reset link is no longer valid. Request a new one." });
         }
         row.ConsumedAt = now;
         row.User.PasswordHash = HashPassword(newPassword);
@@ -519,7 +519,7 @@ public sealed class AccountService
             .FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user is null || user.OrganizationId != actingOrgId)
         {
-            throw new PlanValidationException(new() { ["UserId"] = "User not found in this organisation." });
+            throw new PlanValidationException(new Dictionary<string, string> { ["UserId"] = "User not found in this organisation." });
         }
         return user;
     }
@@ -531,7 +531,7 @@ public sealed class AccountService
             .FirstOrDefaultAsync(r => r.Id == id, ct);
         if (req is null || req.OrganizationId != actingOrgId)
         {
-            throw new PlanValidationException(new() { ["RequestId"] = "Request not found in this organisation." });
+            throw new PlanValidationException(new Dictionary<string, string> { ["RequestId"] = "Request not found in this organisation." });
         }
         return req;
     }
