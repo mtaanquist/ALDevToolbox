@@ -14,17 +14,22 @@ The design lives under [`.design/`](./.design/). Read those before non-trivial c
 ## Stack
 
 - .NET 10, Blazor Server (interactive server render mode where needed).
-- EF Core 10 + SQLite. One file, one volume.
+- EF Core 10 + Npgsql against PostgreSQL 18. App + db as sibling compose services, named volumes for data and (later, M17/M18) keys / backups.
 - Tomlyn for the seed format. MailKit for SMTP. Lucide.Blazor for icons.
 - No client-side framework beyond Blazor itself.
 
 ## Run locally
 
-Requires the .NET 10 SDK.
+Requires the .NET 10 SDK and a reachable PostgreSQL 18. The shortest path is the compose stack below; for an out-of-container `dotnet run`, point the connection string at any Postgres you have handy.
 
 ```bash
+# Start a local Postgres (or run `docker compose up db -d` against the
+# repo's compose file).
+docker run -d --name aldt-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:18-alpine
+
 # From the repo root.
 ASPNETCORE_ENVIRONMENT=Development \
+ConnectionStrings__DefaultConnection="Host=localhost;Username=postgres;Password=postgres;Database=postgres" \
 BOOTSTRAP_ADMIN_EMAIL=admin@example.com \
 BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars \
 dotnet run --project ALDevToolbox
@@ -32,16 +37,15 @@ dotnet run --project ALDevToolbox
 
 Then visit <http://localhost:5000> (the port comes from `ALDevToolbox/Properties/launchSettings.json`).
 
-Run the tests with `dotnet test` from the repo root — same workflow CI uses.
+Run the tests with `dotnet test` from the repo root — same workflow CI uses. Tests use Testcontainers locally (Docker required) or the `ALDT_TEST_POSTGRES_CONNECTION` env var when you have a Postgres already running and want to skip container startup.
 
 On first start the app:
 
-1. Creates `app.db` in the content root.
-2. Runs EF Core migrations.
-3. Creates the **Default** organisation and seeds its templates, modules, catalogue, and organisation defaults from `Templates.seed/`.
-4. Creates the bootstrap admin account from `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` (only if no users exist yet).
+1. Runs EF Core migrations against the configured Postgres database.
+2. Creates the **Default** organisation and seeds its templates, modules, catalogue, and organisation defaults from `Templates.seed/`.
+3. Creates the bootstrap admin account from `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` (only if no users exist yet).
 
-Re-runs reuse the same `app.db`. Delete the file to start over.
+Re-runs reuse the same database. Drop the database (or `docker compose down -v`) to start over.
 
 ## Accounts and signup
 
@@ -72,30 +76,34 @@ Email send failures log a warning and never roll back the underlying action — 
 ## Run in Docker
 
 ```bash
-# Build and start the container; data persists in ./data on the host.
+# Build and start the stack; database persists in the named pg-data volume.
 HOST_PORT=8080 \
+POSTGRES_PASSWORD=$(openssl rand -hex 16) \
 BOOTSTRAP_ADMIN_EMAIL=admin@example.com \
 BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars \
 docker compose up --build
 ```
 
-That starts the app on <http://localhost:8080>, with the SQLite file at `./data/app.db` on the host.
+That starts the app on <http://localhost:8080>, with the database in the `pg-data` named volume.
 
 | Variable                                      | Purpose                                                   | Default                |
 |-----------------------------------------------|-----------------------------------------------------------|------------------------|
 | `BOOTSTRAP_ADMIN_EMAIL`                       | First admin email (only on a fresh database)              | none                   |
 | `BOOTSTRAP_ADMIN_PASSWORD`                    | First admin password (only on a fresh database)           | none                   |
-| `DB_PATH`                                     | SQLite file path                                          | `./app.db` / `/data/app.db` in Docker |
+| `ConnectionStrings__DefaultConnection`        | Postgres connection string (Npgsql format). Built from `POSTGRES_*` by compose. | none — required |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Read by the `db` compose service. Set at least `POSTGRES_PASSWORD`. | `aldevtoolbox` |
 | `SEED_PATH`                                   | First-run seed directory                                  | `./Templates.seed` / `/app/Templates.seed` in Docker |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD_FILE` / `SMTP_FROM` / `SMTP_USE_STARTTLS` | SMTP relay used for signup and password-reset emails | none                   |
 | `ASPNETCORE_URLS`                             | Standard ASP.NET Core binding                             | `http://+:8080`        |
 | `ASPNETCORE_ENVIRONMENT`                      | Standard ASP.NET Core environment                         | `Production`           |
 
+Upgrading from a v1 (SQLite) deployment? See [`migrating-from-sqlite.md`](./.design/migrating-from-sqlite.md).
+
 The container terminates HTTP only — run TLS at the reverse proxy. `app.UseForwardedHeaders()` is wired so cookies pick up `Secure` correctly behind a proxy.
 
 ## Backup
 
-Single SQLite file at `DB_PATH`. Back it up by copying the file (`sqlite3 app.db ".backup app.db.bak"` is the safe way under load; a plain `cp` works if the app is stopped). Restore by replacing the file and restarting the app.
+The database lives in the `pg-data` named volume. The portable, point-in-time backup is `pg_dump -Fc` against the `db` service; either run it from outside the stack, or wait for the M18 built-in backup tooling. Built-in scheduled backups land in M18 (`.design/milestones.md`).
 
 For a logical export, signed-in admins can hit **Export to TOML** under `/admin/configuration` to download a ZIP of the org's templates, modules, catalogue, application versions, organisation settings, logo, and always-included files. The same screen accepts the import direction.
 
@@ -104,7 +112,7 @@ For a logical export, signed-in admins can hit **Export to TOML** under `/admin/
 Two unauthenticated endpoints, suitable for a load balancer or `docker compose` healthcheck:
 
 - `GET /health` — liveness. 200 if the process is responding.
-- `GET /health/ready` — readiness. 200 if the SQLite database is reachable.
+- `GET /health/ready` — readiness. 200 if the database is reachable.
 
 The Dockerfile's `HEALTHCHECK` polls `/health/ready`.
 

@@ -8,6 +8,29 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    services:
+      # Service container for the test suite. TestDb reads
+      # ALDT_TEST_POSTGRES_CONNECTION when set and skips spinning up its own
+      # Testcontainers container — faster than booting Docker-inside-Docker on
+      # a runner that already provides Postgres.
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      ALDT_TEST_POSTGRES_CONNECTION: "Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=postgres"
+
     steps:
       - uses: actions/checkout@v4
 

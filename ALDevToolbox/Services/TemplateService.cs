@@ -29,8 +29,8 @@ public class TemplateService
     /// <summary>
     /// Parses a Runtime string (e.g. <c>"15"</c> or <c>"15.2"</c>) into a
     /// sortable tuple so <c>9 &lt; 15 &lt; 15.2 &lt; 16</c> the way an admin
-    /// expects, instead of the lexicographic order SQLite would otherwise
-    /// give us. Unparseable values sort first.
+    /// expects, instead of the lexicographic order a TEXT column would
+    /// otherwise give us. Unparseable values sort first.
     /// </summary>
     public static (int Major, int Minor) RuntimeSortKey(string? runtime)
     {
@@ -76,7 +76,7 @@ public class TemplateService
             query = query.Where(t => !t.Deprecated);
 
         // Sorting on Runtime happens after materialisation now: the column is
-        // TEXT and SQLite's lexicographic ordering would put "10" before "9".
+        // text and lexicographic ordering would put "10" before "9".
         // RuntimeSortKey gives admins the version-aware ordering they expect.
         var rows = await query
             .Include(t => t.Folders.OrderBy(f => f.Ordering))

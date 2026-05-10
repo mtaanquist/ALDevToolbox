@@ -13,8 +13,8 @@ public enum OrganizationAssetKind
 /// <summary>
 /// Per-organisation binary asset (Milestone P3.14). At most one row per
 /// (<see cref="OrganizationId"/>, <see cref="Kind"/>) pair — uploading replaces
-/// the existing row. Stored as a BLOB inside SQLite; size is capped at 256 KB
-/// by <see cref="Services.OrganizationConfigService"/>.
+/// the existing row. Stored as a Postgres <c>bytea</c> column; size is capped
+/// at 256 KB by <see cref="Services.OrganizationConfigService"/>.
 /// </summary>
 public class OrganizationAsset
 {

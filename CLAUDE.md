@@ -5,7 +5,7 @@ Guidance for working on this repository. Read this before touching code, especia
 ## Project at a glance
 
 - **AL Dev Toolbox** — internal Blazor Server tool that generates AL/BC workspaces and standalone extensions from runtime templates.
-- Stack: .NET 10, Blazor Server, EF Core 10 + SQLite, Tomlyn, Lucide.Blazor.
+- Stack: .NET 10, Blazor Server, EF Core 10 + Npgsql against PostgreSQL 18, Tomlyn, Lucide.Blazor.
 - Two projects at the repo root: `ALDevToolbox/` (the app, layered by folder) and `ALDevToolbox.Tests/` (xUnit + FluentAssertions, established in Milestone 12). The solution file is `ALDevToolbox.slnx` at the repo root.
 - Source of truth for behaviour: documents under `.design/`. If code disagrees with the design doc, fix one of them — don't leave them out of sync.
 
@@ -32,7 +32,7 @@ Test folders are relative to `ALDevToolbox.Tests/`.
 | Folder            | What goes there                                                          |
 |-------------------|--------------------------------------------------------------------------|
 | `Builders/`       | Entity / plan builders pre-populated with sane defaults.                 |
-| `Infrastructure/` | Reusable test plumbing (currently `TestDb` — in-memory SQLite fixture).  |
+| `Infrastructure/` | Reusable test plumbing (currently `TestDb` — Testcontainers / service-container Postgres fixture). |
 | `Generation/`     | `GenerationService` tests.                                               |
 | `Audit/`          | `AuditInterceptor` tests.                                                |
 | `Toml/`           | `TemplateTomlMapper` tests.                                              |
@@ -74,12 +74,12 @@ When you add a new file, match the folder. Resist creating top-level folders —
 
 These are deliberate constraints from `.design/architecture.md` and `.design/templates-and-seeding.md`. Don't quietly relax them.
 
-- **The SQLite database is the only persistence layer for templates, modules, the catalogue, per-folder file contents, organisations, users, signup requests, password reset tokens, login attempts, organisation settings, organisation assets, and organisation files.** Both authoring surfaces (the structured admin form and the TOML editor) write through the same `TemplateInput` pipeline into the DB. `Templates.seed/` is a one-time bootstrap for an empty *organisation* and an export target — nothing watches it at runtime, nothing writes back to it, and there is no two-way sync. `Templates.seed/organization-defaults/` carries the first-run logo for fresh orgs.
+- **The PostgreSQL database is the only persistence layer for templates, modules, the catalogue, per-folder file contents, organisations, users, signup requests, password reset tokens, login attempts, organisation settings, organisation assets, and organisation files.** Both authoring surfaces (the structured admin form and the TOML editor) write through the same `TemplateInput` pipeline into the DB. `Templates.seed/` is a one-time bootstrap for an empty *organisation* and an export target — nothing watches it at runtime, nothing writes back to it, and there is no two-way sync. `Templates.seed/organization-defaults/` carries the first-run logo for fresh orgs.
 - **The ruleset and `.gitignore` ship as code.** They live as embedded resources under `Resources/` because they're per-deployment policy. Per-folder example AL file *contents* live in the `template_files` table and are admin-editable. The logo, organisation defaults block, and always-included file list live in the database (`organization_assets`, `organization_settings`, `organization_files`) and are admin-editable. Binary files inside template folders are out of scope for v1 — text content only.
 - **`defaults_json` and `app_source_cop_json` stay as JSON columns.** Don't normalise them into separate tables — the AL ecosystem changes those shapes too often.
 - **Multi-tenant by default.** Every editable entity carries an `organization_id`. EF query filters on `AppDbContext` scope reads to `IOrganizationContext.CurrentOrganizationId`; pre-login flows that genuinely need cross-org reads (login, signup, bootstrap) call `IgnoreQueryFilters()` explicitly. Service code that mutates state must run inside an authenticated request — `RequireOrganizationId()` throws otherwise.
 - **Email/password accounts, two roles (`User`, `Admin`), admin-approved signups.** No external IdP. Bootstrap admin via `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` env vars, applied only on a fresh database.
-- **Single SQLite file, single container, single volume.** No external services, no Redis, no Postgres.
+- **One app container, one db container, named volumes per concern.** From P4.16, the data layer is Postgres in a sibling compose service backed by the `pg-data` named volume. No external services beyond that — no Redis, no S3.
 - **Synchronous generation.** No background workers, no queues. Generation is read-only against the DB and happens in memory.
 - **No client-side framework beyond Blazor itself.** No React, no JS bundler. Tiny `.razor.js` companion files (like `ReconnectModal.razor.js`) are fine when needed.
 
@@ -145,7 +145,7 @@ When implementing a milestone:
 
 ## Tests and verification
 
-Milestone 12 stood up `ALDevToolbox.Tests/` (xUnit + FluentAssertions, in-memory SQLite via `Filename=:memory:`) and backfilled tests for the tricky algorithms — ID-range allocation, mustache substitution, audit snapshots, TOML round-trip, and the `PlanValidationException` field-key contract. Patterns are documented in `ALDevToolbox.Tests/README.md`.
+Milestone 12 stood up `ALDevToolbox.Tests/` (xUnit + FluentAssertions) and backfilled tests for the tricky algorithms — ID-range allocation, mustache substitution, audit snapshots, TOML round-trip, and the `PlanValidationException` field-key contract. Milestone P4.16 swapped the in-memory SQLite fixture for a real Postgres host (Testcontainers locally; service container in CI). Patterns are documented in `ALDevToolbox.Tests/README.md`.
 
 The bar from M13 onward: every service method added ships with tests for the happy path and for any validation rule it introduces. Not a coverage metric — a posture. If the code has a rule, the rule has a test.
 

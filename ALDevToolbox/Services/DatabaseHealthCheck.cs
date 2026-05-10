@@ -4,9 +4,9 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 namespace ALDevToolbox.Services;
 
 /// <summary>
-/// Readiness probe: confirms the SQLite connection is open and the EF context
-/// can issue a query. Used by the <c>/health/ready</c> endpoint, which load
-/// balancers and the Docker HEALTHCHECK should poll before sending traffic.
+/// Readiness probe: confirms the database connection is reachable and the EF
+/// context can issue a query. Used by the <c>/health/ready</c> endpoint, which
+/// load balancers and the Docker HEALTHCHECK should poll before sending traffic.
 /// </summary>
 public class DatabaseHealthCheck : IHealthCheck
 {
@@ -25,8 +25,8 @@ public class DatabaseHealthCheck : IHealthCheck
         {
             var canConnect = await _db.Database.CanConnectAsync(cancellationToken);
             return canConnect
-                ? HealthCheckResult.Healthy("SQLite reachable.")
-                : HealthCheckResult.Unhealthy("SQLite is not reachable.");
+                ? HealthCheckResult.Healthy("Database reachable.")
+                : HealthCheckResult.Unhealthy("Database is not reachable.");
         }
         catch (Exception ex)
         {

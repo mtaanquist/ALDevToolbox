@@ -1,14 +1,38 @@
 services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aldevtoolbox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aldevtoolbox}
+      POSTGRES_DB: ${POSTGRES_DB:-aldevtoolbox}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aldevtoolbox} -d ${POSTGRES_DB:-aldevtoolbox}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
   aldevtoolbox:
     build: .
     image: aldevtoolbox:latest
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "${HOST_PORT:-8080}:8080"
-    volumes:
-      - ./data:/data
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
-      DB_PATH: /data/app.db
+      # Compose builds the connection string from the POSTGRES_* knobs so the
+      # operator only manages credentials in one place. The `db` host name is
+      # the compose service name above.
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:-aldevtoolbox};Username=${POSTGRES_USER:-aldevtoolbox};Password=${POSTGRES_PASSWORD:-aldevtoolbox}"
       SEED_PATH: /app/Templates.seed
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
     restart: unless-stopped
+
+volumes:
+  pg-data:
