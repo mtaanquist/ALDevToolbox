@@ -843,7 +843,7 @@ app.MapPost("/site-admin/settings/test-email", async (
     }
     catch (Exception ex)
     {
-        logger.LogWarning(ex, "Test email failed for SiteAdmin {Email}.", user.Email);
+        logger.LogWarning(ex, "Test email failed for SiteAdmin {Email}.", recipient.Email);
         ctx.Response.Redirect("/site-admin/settings?msg="
             + Uri.EscapeDataString("Test email failed: " + ex.Message));
     }
