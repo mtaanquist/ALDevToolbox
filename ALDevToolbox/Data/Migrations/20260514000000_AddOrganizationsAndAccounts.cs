@@ -270,37 +270,113 @@ namespace ALDevToolbox.Data.Migrations
                 table: "well_known_dependencies",
                 columns: new[] { "organization_id", "ordering" });
 
-            // Foreign keys to organizations on the principal tables. SQLite
-            // rebuilds the table to add an FK; child tables inherit org via
-            // their parent's cascade so we skip FKs there.
-            migrationBuilder.AddForeignKey(
-                name: "FK_runtime_templates_organizations_organization_id",
-                table: "runtime_templates",
-                column: "organization_id",
-                principalTable: "organizations",
-                principalColumn: "id",
-                onDelete: ReferentialAction.Cascade);
-            migrationBuilder.AddForeignKey(
-                name: "FK_modules_organizations_organization_id",
-                table: "modules",
-                column: "organization_id",
-                principalTable: "organizations",
-                principalColumn: "id",
-                onDelete: ReferentialAction.Cascade);
-            migrationBuilder.AddForeignKey(
-                name: "FK_well_known_dependencies_organizations_organization_id",
-                table: "well_known_dependencies",
-                column: "organization_id",
-                principalTable: "organizations",
-                principalColumn: "id",
-                onDelete: ReferentialAction.Cascade);
-            migrationBuilder.AddForeignKey(
-                name: "FK_application_versions_organizations_organization_id",
-                table: "application_versions",
-                column: "organization_id",
-                principalTable: "organizations",
-                principalColumn: "id",
-                onDelete: ReferentialAction.Cascade);
+            // Foreign keys to organizations on the principal tables. SQLite has
+            // no ALTER TABLE ADD CONSTRAINT and EF's auto-rewriter only batches
+            // AddColumn+AddForeignKey when they're adjacent, so each table is
+            // rebuilt by hand: CREATE-COPY-DROP-RENAME with the new FK baked in.
+            // Indexes have to be recreated because they live on the old table.
+            migrationBuilder.Sql("PRAGMA foreign_keys = 0;", suppressTransaction: true);
+
+            migrationBuilder.Sql("""
+                CREATE TABLE "_new_runtime_templates" (
+                    "id" INTEGER NOT NULL CONSTRAINT "PK_runtime_templates" PRIMARY KEY AUTOINCREMENT,
+                    "key" TEXT NOT NULL,
+                    "runtime" TEXT NOT NULL DEFAULT '',
+                    "name" TEXT NOT NULL,
+                    "description" TEXT NULL,
+                    "default_application" TEXT NOT NULL,
+                    "default_platform" TEXT NOT NULL,
+                    "defaults_json" TEXT NOT NULL,
+                    "app_source_cop_json" TEXT NOT NULL,
+                    "core_id_range_from" INTEGER NOT NULL,
+                    "core_id_range_to" INTEGER NOT NULL,
+                    "module_id_range_start" INTEGER NOT NULL,
+                    "module_id_range_size" INTEGER NOT NULL,
+                    "deprecated" INTEGER NOT NULL,
+                    "created_at" TEXT NOT NULL,
+                    "updated_at" TEXT NOT NULL,
+                    "deleted_at" TEXT NULL,
+                    "default_application_version_id" INTEGER NULL,
+                    "organization_id" INTEGER NOT NULL DEFAULT 1,
+                    CONSTRAINT "FK_runtime_templates_application_versions_default_application_version_id" FOREIGN KEY ("default_application_version_id") REFERENCES "application_versions" ("id") ON DELETE SET NULL,
+                    CONSTRAINT "FK_runtime_templates_organizations_organization_id" FOREIGN KEY ("organization_id") REFERENCES "organizations" ("id") ON DELETE CASCADE
+                );
+                INSERT INTO "_new_runtime_templates" ("id", "key", "runtime", "name", "description", "default_application", "default_platform", "defaults_json", "app_source_cop_json", "core_id_range_from", "core_id_range_to", "module_id_range_start", "module_id_range_size", "deprecated", "created_at", "updated_at", "deleted_at", "default_application_version_id", "organization_id")
+                    SELECT "id", "key", "runtime", "name", "description", "default_application", "default_platform", "defaults_json", "app_source_cop_json", "core_id_range_from", "core_id_range_to", "module_id_range_start", "module_id_range_size", "deprecated", "created_at", "updated_at", "deleted_at", "default_application_version_id", "organization_id"
+                    FROM "runtime_templates";
+                DROP TABLE "runtime_templates";
+                ALTER TABLE "_new_runtime_templates" RENAME TO "runtime_templates";
+                CREATE INDEX "IX_runtime_templates_default_application_version_id" ON "runtime_templates" ("default_application_version_id");
+                CREATE UNIQUE INDEX "IX_runtime_templates_organization_id_key" ON "runtime_templates" ("organization_id", "key");
+                """);
+
+            migrationBuilder.Sql("""
+                CREATE TABLE "_new_modules" (
+                    "id" INTEGER NOT NULL CONSTRAINT "PK_modules" PRIMARY KEY AUTOINCREMENT,
+                    "key" TEXT NOT NULL,
+                    "name" TEXT NOT NULL,
+                    "id_range_size" INTEGER NULL,
+                    "deprecated" INTEGER NOT NULL,
+                    "created_at" TEXT NOT NULL,
+                    "updated_at" TEXT NOT NULL,
+                    "deleted_at" TEXT NULL,
+                    "organization_id" INTEGER NOT NULL DEFAULT 1,
+                    CONSTRAINT "FK_modules_organizations_organization_id" FOREIGN KEY ("organization_id") REFERENCES "organizations" ("id") ON DELETE CASCADE
+                );
+                INSERT INTO "_new_modules" ("id", "key", "name", "id_range_size", "deprecated", "created_at", "updated_at", "deleted_at", "organization_id")
+                    SELECT "id", "key", "name", "id_range_size", "deprecated", "created_at", "updated_at", "deleted_at", "organization_id"
+                    FROM "modules";
+                DROP TABLE "modules";
+                ALTER TABLE "_new_modules" RENAME TO "modules";
+                CREATE UNIQUE INDEX "IX_modules_organization_id_key" ON "modules" ("organization_id", "key");
+                """);
+
+            migrationBuilder.Sql("""
+                CREATE TABLE "_new_well_known_dependencies" (
+                    "id" INTEGER NOT NULL CONSTRAINT "PK_well_known_dependencies" PRIMARY KEY AUTOINCREMENT,
+                    "dep_id" TEXT NOT NULL,
+                    "dep_name" TEXT NOT NULL,
+                    "dep_publisher" TEXT NOT NULL,
+                    "dep_version_default" TEXT NOT NULL,
+                    "category" TEXT NULL,
+                    "ordering" INTEGER NOT NULL,
+                    "created_at" TEXT NOT NULL,
+                    "updated_at" TEXT NOT NULL,
+                    "organization_id" INTEGER NOT NULL DEFAULT 1,
+                    CONSTRAINT "FK_well_known_dependencies_organizations_organization_id" FOREIGN KEY ("organization_id") REFERENCES "organizations" ("id") ON DELETE CASCADE
+                );
+                INSERT INTO "_new_well_known_dependencies" ("id", "dep_id", "dep_name", "dep_publisher", "dep_version_default", "category", "ordering", "created_at", "updated_at", "organization_id")
+                    SELECT "id", "dep_id", "dep_name", "dep_publisher", "dep_version_default", "category", "ordering", "created_at", "updated_at", "organization_id"
+                    FROM "well_known_dependencies";
+                DROP TABLE "well_known_dependencies";
+                ALTER TABLE "_new_well_known_dependencies" RENAME TO "well_known_dependencies";
+                CREATE INDEX "IX_well_known_dependencies_organization_id_ordering" ON "well_known_dependencies" ("organization_id", "ordering");
+                """);
+
+            migrationBuilder.Sql("""
+                CREATE TABLE "_new_application_versions" (
+                    "id" INTEGER NOT NULL CONSTRAINT "PK_application_versions" PRIMARY KEY AUTOINCREMENT,
+                    "key" TEXT NOT NULL,
+                    "name" TEXT NOT NULL,
+                    "application" TEXT NOT NULL,
+                    "runtime" TEXT NOT NULL,
+                    "ordering" INTEGER NOT NULL,
+                    "deprecated" INTEGER NOT NULL,
+                    "created_at" TEXT NOT NULL,
+                    "updated_at" TEXT NOT NULL,
+                    "deleted_at" TEXT NULL,
+                    "organization_id" INTEGER NOT NULL DEFAULT 1,
+                    CONSTRAINT "FK_application_versions_organizations_organization_id" FOREIGN KEY ("organization_id") REFERENCES "organizations" ("id") ON DELETE CASCADE
+                );
+                INSERT INTO "_new_application_versions" ("id", "key", "name", "application", "runtime", "ordering", "deprecated", "created_at", "updated_at", "deleted_at", "organization_id")
+                    SELECT "id", "key", "name", "application", "runtime", "ordering", "deprecated", "created_at", "updated_at", "deleted_at", "organization_id"
+                    FROM "application_versions";
+                DROP TABLE "application_versions";
+                ALTER TABLE "_new_application_versions" RENAME TO "application_versions";
+                CREATE UNIQUE INDEX "IX_application_versions_organization_id_key" ON "application_versions" ("organization_id", "key");
+                """);
+
+            migrationBuilder.Sql("PRAGMA foreign_keys = 1;", suppressTransaction: true);
 
             // 5. audit_log gains nullable organization_id + changed_by_user_id
             //    plus an org-scoped timestamp index for /admin/audit.
@@ -324,20 +400,34 @@ namespace ALDevToolbox.Data.Migrations
             // they were written before multi-tenancy existed.
             migrationBuilder.Sql("UPDATE audit_log SET organization_id = 1 WHERE organization_id IS NULL;");
 
-            migrationBuilder.AddForeignKey(
-                name: "FK_audit_log_organizations_organization_id",
-                table: "audit_log",
-                column: "organization_id",
-                principalTable: "organizations",
-                principalColumn: "id",
-                onDelete: ReferentialAction.SetNull);
-            migrationBuilder.AddForeignKey(
-                name: "FK_audit_log_users_changed_by_user_id",
-                table: "audit_log",
-                column: "changed_by_user_id",
-                principalTable: "users",
-                principalColumn: "id",
-                onDelete: ReferentialAction.SetNull);
+            // Same SQLite-rebuild dance for audit_log; both FKs use SetNull so
+            // an org or user delete keeps the historical record but blanks the
+            // pointer.
+            migrationBuilder.Sql("PRAGMA foreign_keys = 0;", suppressTransaction: true);
+            migrationBuilder.Sql("""
+                CREATE TABLE "_new_audit_log" (
+                    "id" INTEGER NOT NULL CONSTRAINT "PK_audit_log" PRIMARY KEY AUTOINCREMENT,
+                    "timestamp" TEXT NOT NULL,
+                    "changed_by" TEXT NOT NULL,
+                    "entity_type" TEXT NOT NULL,
+                    "entity_id" INTEGER NOT NULL,
+                    "action" TEXT NOT NULL,
+                    "snapshot_json" TEXT NULL,
+                    "organization_id" INTEGER NULL,
+                    "changed_by_user_id" INTEGER NULL,
+                    CONSTRAINT "FK_audit_log_organizations_organization_id" FOREIGN KEY ("organization_id") REFERENCES "organizations" ("id") ON DELETE SET NULL,
+                    CONSTRAINT "FK_audit_log_users_changed_by_user_id" FOREIGN KEY ("changed_by_user_id") REFERENCES "users" ("id") ON DELETE SET NULL
+                );
+                INSERT INTO "_new_audit_log" ("id", "timestamp", "changed_by", "entity_type", "entity_id", "action", "snapshot_json", "organization_id", "changed_by_user_id")
+                    SELECT "id", "timestamp", "changed_by", "entity_type", "entity_id", "action", "snapshot_json", "organization_id", "changed_by_user_id"
+                    FROM "audit_log";
+                DROP TABLE "audit_log";
+                ALTER TABLE "_new_audit_log" RENAME TO "audit_log";
+                CREATE INDEX "ix_audit_log_entity_timestamp" ON "audit_log" ("entity_type", "entity_id", "timestamp");
+                CREATE INDEX "ix_audit_log_timestamp" ON "audit_log" ("timestamp");
+                CREATE INDEX "ix_audit_log_org_timestamp" ON "audit_log" ("organization_id", "timestamp");
+                """);
+            migrationBuilder.Sql("PRAGMA foreign_keys = 1;", suppressTransaction: true);
         }
 
         private static void AddOrganizationColumn(MigrationBuilder migrationBuilder, string table)

@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -59,9 +60,13 @@ builder.Services.AddScoped<IOrganizationContext, HttpOrganizationContext>();
 var dbPath = Environment.GetEnvironmentVariable("DB_PATH")
     ?? Path.Combine(builder.Environment.ContentRootPath, "app.db");
 builder.Services.AddScoped<AuditInterceptor>();
+// Migrations and the model snapshot are maintained by hand here (see the empty
+// `BuildTargetModel` overrides in the M14+ designer files), so EF's pending-
+// changes check is unreliable; real schema drift still surfaces at MigrateAsync.
 builder.Services.AddDbContext<AppDbContext>((sp, options) =>
     options
         .UseSqlite($"Data Source={dbPath}", sqlite => sqlite.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery))
+        .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
         .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
 
 builder.Services.AddScoped<TemplateService>();

@@ -57,14 +57,14 @@ public sealed class SmtpEmailService : IEmailService
         }
 
         var message = new MimeMessage();
-        message.From.Add(MailboxAddress.Parse(_from));
+        message.From.Add(MailboxAddress.Parse(_from!));
         message.To.Add(MailboxAddress.Parse(toEmail));
         message.Subject = subject;
         message.Body = new TextPart("html") { Text = htmlBody };
 
         using var client = new SmtpClient();
         var secure = _useStartTls ? SecureSocketOptions.StartTls : SecureSocketOptions.Auto;
-        await client.ConnectAsync(_host, _port, secure, ct);
+        await client.ConnectAsync(_host!, _port, secure, ct);
         if (!string.IsNullOrEmpty(_user))
         {
             await client.AuthenticateAsync(_user, _password ?? string.Empty, ct);

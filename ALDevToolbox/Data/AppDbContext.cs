@@ -150,6 +150,10 @@ public class AppDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+            // Mirror the User principal's org filter so EF's required-nav
+            // model-validation passes; pre-login flows already bypass with
+            // IgnoreQueryFilters().
+            entity.HasQueryFilter(t => t.User!.OrganizationId == _orgContext.OrganizationIdForFilter);
         });
 
         modelBuilder.Entity<LoginAttempt>(entity =>
