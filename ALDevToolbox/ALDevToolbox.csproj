@@ -20,7 +20,9 @@
   <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
     <PackageReference Include="Lucide.Blazor" Version="0.0.38" />
-    <PackageReference Include="MailKit" Version="4.7.1.1" />
+    <!-- 4.* floats over CVE-patched releases (GHSA-9j88-vvj5-vhgr, GHSA-g7hc-96xr-gvvx). -->
+    <PackageReference Include="MailKit" Version="4.*" />
+    <PackageReference Include="MimeKit" Version="4.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.*">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
