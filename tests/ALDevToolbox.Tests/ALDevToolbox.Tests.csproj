@@ -17,6 +17,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- xUnit is universal in this project; pull it into every file's
+         implicit-usings set so individual test files stay focused on what
+         they actually arrange. -->
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!--
       AuditInterceptorTests constructs an IHttpContextAccessor / DefaultHttpContext
       to drive the interceptor. Those types live in the ASP.NET Core shared
