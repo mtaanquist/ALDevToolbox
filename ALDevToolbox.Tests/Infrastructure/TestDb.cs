@@ -66,6 +66,13 @@ public sealed class TestDb : IDisposable
             CreatedAt = DateTime.UtcNow,
         });
         ctx.SaveChanges();
+
+        // Postgres identity sequences don't advance when a row is inserted
+        // with an explicit id; the next nextval() would otherwise collide
+        // with our seeded OtherOrg at id=2. Re-align the sequence to MAX(id)
+        // so SignupAsync-style inserts in tests get a free id.
+        ctx.Database.ExecuteSqlRaw(
+            "SELECT setval(pg_get_serial_sequence('organizations', 'id'), (SELECT MAX(id) FROM organizations))");
     }
 
     private DbContextOptions<AppDbContext> BuildOptions() =>

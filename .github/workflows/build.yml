@@ -63,7 +63,14 @@ jobs:
           POSTGRES_PASSWORD: ci-${{ github.run_id }}
           BOOTSTRAP_ADMIN_EMAIL: admin@example.com
           BOOTSTRAP_ADMIN_PASSWORD: ci-bootstrap-${{ github.run_id }}
-        run: docker compose up -d --build
+        # --wait blocks until every container reports healthy or the timeout
+        # expires; without it, compose only waits ~30s on depends_on before
+        # giving up. The 180s budget covers postgres init + image build.
+        run: docker compose up -d --build --wait --wait-timeout 180
+
+      - name: Dump container logs if start-up failed
+        if: failure()
+        run: docker compose logs --no-color
 
       - name: Wait for /health/ready
         run: |

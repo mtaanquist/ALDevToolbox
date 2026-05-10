@@ -9,10 +9,13 @@ services:
       - pg-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aldevtoolbox} -d ${POSTGRES_DB:-aldevtoolbox}"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
-      start_period: 10s
+      retries: 10
+      # First-boot postgres-alpine spends ~10-15s initialising on a fresh
+      # volume (initdb + role/db creation). A short start_period made
+      # `depends_on: service_healthy` time out on slower CI runners.
+      start_period: 30s
     restart: unless-stopped
 
   aldevtoolbox:
