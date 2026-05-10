@@ -8,7 +8,7 @@
 .gitignore
 .github/
 .design/
-tests/
+ALDevToolbox.Tests/
 
 # Local-only artefacts; the image creates its own under /data.
 data/

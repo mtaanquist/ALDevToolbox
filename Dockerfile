@@ -4,18 +4,18 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY src/ALDevToolbox/ALDevToolbox.csproj src/ALDevToolbox/
-RUN dotnet restore src/ALDevToolbox/ALDevToolbox.csproj
+COPY ALDevToolbox/ALDevToolbox.csproj ALDevToolbox/
+RUN dotnet restore ALDevToolbox/ALDevToolbox.csproj
 
 COPY . ./
-RUN dotnet publish src/ALDevToolbox/ALDevToolbox.csproj -c Release -o /app /p:UseAppHost=false
+RUN dotnet publish ALDevToolbox/ALDevToolbox.csproj -c Release -o /app /p:UseAppHost=false
 
 # ---- Runtime stage ----
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 
 COPY --from=build /app ./
-COPY src/ALDevToolbox/Templates.seed ./Templates.seed
+COPY ALDevToolbox/Templates.seed ./Templates.seed
 
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080 \

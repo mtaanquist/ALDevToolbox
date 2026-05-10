@@ -26,10 +26,10 @@ Requires the .NET 10 SDK.
 # From the repo root.
 ASPNETCORE_ENVIRONMENT=Development \
 ADMIN_PASSWORD=letmein \
-dotnet run --project src/ALDevToolbox
+dotnet run --project ALDevToolbox
 ```
 
-Then visit <http://localhost:5000> (the port comes from `src/ALDevToolbox/Properties/launchSettings.json`).
+Then visit <http://localhost:5000> (the port comes from `ALDevToolbox/Properties/launchSettings.json`).
 
 Run the tests with `dotnet test` from the repo root — same workflow CI uses.
 

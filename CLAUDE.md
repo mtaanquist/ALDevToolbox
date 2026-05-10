@@ -6,12 +6,12 @@ Guidance for working on this repository. Read this before touching code, especia
 
 - **AL Dev Toolbox** — internal Blazor Server tool that generates AL/BC workspaces and standalone extensions from runtime templates.
 - Stack: .NET 10, Blazor Server, EF Core 10 + SQLite, Tomlyn, Lucide.Blazor.
-- Two projects: `src/ALDevToolbox/` (the app, layered by folder) and `tests/ALDevToolbox.Tests/` (xUnit + FluentAssertions, established in Milestone 12). The solution file is `ALDevToolbox.slnx` at the repo root.
+- Two projects at the repo root: `ALDevToolbox/` (the app, layered by folder) and `ALDevToolbox.Tests/` (xUnit + FluentAssertions, established in Milestone 12). The solution file is `ALDevToolbox.slnx` at the repo root.
 - Source of truth for behaviour: documents under `.design/`. If code disagrees with the design doc, fix one of them — don't leave them out of sync.
 
 ## Where things live
 
-App folders are relative to `src/ALDevToolbox/`.
+App folders are relative to `ALDevToolbox/`.
 
 | Folder                       | What goes there                                                              |
 |------------------------------|------------------------------------------------------------------------------|
@@ -27,7 +27,7 @@ App folders are relative to `src/ALDevToolbox/`.
 | `Templates.seed/`            | First-run seed data. Read once when the DB is empty; never at runtime.       |
 | `wwwroot/`                   | Global CSS, favicon.                                                         |
 
-Test folders are relative to `tests/ALDevToolbox.Tests/`.
+Test folders are relative to `ALDevToolbox.Tests/`.
 
 | Folder            | What goes there                                                          |
 |-------------------|--------------------------------------------------------------------------|
@@ -38,7 +38,7 @@ Test folders are relative to `tests/ALDevToolbox.Tests/`.
 | `Toml/`           | `TemplateTomlMapper` tests.                                              |
 | `Validation/`     | `PlanValidationException` field-key tests.                               |
 
-When you add a new file, match the folder. Resist creating top-level folders — the layered split is intentional. Test patterns are documented in `tests/ALDevToolbox.Tests/README.md`; new service tests should follow them.
+When you add a new file, match the folder. Resist creating top-level folders — the layered split is intentional. Test patterns are documented in `ALDevToolbox.Tests/README.md`; new service tests should follow them.
 
 ## Development principles
 
@@ -146,7 +146,7 @@ When implementing a milestone:
 
 ## Tests and verification
 
-Milestone 12 stood up `tests/ALDevToolbox.Tests` (xUnit + FluentAssertions, in-memory SQLite via `Filename=:memory:`) and backfilled tests for the tricky algorithms — ID-range allocation, mustache substitution, audit snapshots, TOML round-trip, and the `PlanValidationException` field-key contract. Patterns are documented in `tests/ALDevToolbox.Tests/README.md`.
+Milestone 12 stood up `ALDevToolbox.Tests/` (xUnit + FluentAssertions, in-memory SQLite via `Filename=:memory:`) and backfilled tests for the tricky algorithms — ID-range allocation, mustache substitution, audit snapshots, TOML round-trip, and the `PlanValidationException` field-key contract. Patterns are documented in `ALDevToolbox.Tests/README.md`.
 
 The bar from M13 onward: every service method added ships with tests for the happy path and for any validation rule it introduces. Not a coverage metric — a posture. If the code has a rule, the rule has a test.
 

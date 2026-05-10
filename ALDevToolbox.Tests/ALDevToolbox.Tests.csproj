@@ -34,7 +34,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ALDevToolbox\ALDevToolbox.csproj" />
+    <ProjectReference Include="..\ALDevToolbox\ALDevToolbox.csproj" />
   </ItemGroup>
 
 </Project>
