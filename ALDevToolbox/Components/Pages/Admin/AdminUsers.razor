@@ -1,0 +1,145 @@
+@page "/admin/users"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@using ALDevToolbox.Data
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Services
+@using Lucide.Blazor.Components
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext Db
+@inject IOrganizationContext Org
+
+<PageTitle>Users · AL Dev Toolbox</PageTitle>
+
+<h1>Users</h1>
+<p class="muted">Approve pending signups, change roles, and disable accounts in your organisation.</p>
+
+@if (!string.IsNullOrEmpty(Error))
+{
+    <p class="form-error" role="alert">@Error</p>
+}
+
+@if (_pending is null || _active is null)
+{
+    <p class="muted">Loading…</p>
+}
+else
+{
+    <section class="admin-section">
+        <h2>Pending signups (@_pending.Count)</h2>
+        @if (_pending.Count == 0)
+        {
+            <p class="muted">No pending signups.</p>
+        }
+        else
+        {
+            <table class="admin-table">
+                <thead>
+                    <tr><th>Email</th><th>Display name</th><th>Requested</th><th></th></tr>
+                </thead>
+                <tbody>
+                @foreach (var (request, user) in _pending)
+                {
+                    <tr>
+                        <td>@request.Email</td>
+                        <td>@(user?.DisplayName ?? "—")</td>
+                        <td class="muted">@request.RequestedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</td>
+                        <td class="row-actions">
+                            <form method="post" action="/admin/users/@request.Id/approve" style="display:inline">
+                                <AntiforgeryToken />
+                                <button type="submit" class="btn btn--small">Approve</button>
+                            </form>
+                            <form method="post" action="/admin/users/@request.Id/reject" style="display:inline">
+                                <AntiforgeryToken />
+                                <button type="submit" class="btn btn--small btn--secondary">Reject</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="admin-section">
+        <h2>Active &amp; disabled (@_active.Count)</h2>
+        <table class="admin-table">
+            <thead>
+                <tr><th>Email</th><th>Display name</th><th>Role</th><th>Status</th><th>Last login</th><th></th></tr>
+            </thead>
+            <tbody>
+            @foreach (var u in _active)
+            {
+                <tr>
+                    <td>@u.Email</td>
+                    <td>@u.DisplayName</td>
+                    <td>@u.Role</td>
+                    <td>@u.Status</td>
+                    <td class="muted">@(u.LastLoginAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
+                    <td class="row-actions">
+                        @if (u.Status == UserStatus.Active)
+                        {
+                            <form method="post" action="/admin/users/@u.Id/disable" style="display:inline">
+                                <AntiforgeryToken />
+                                <button type="submit" class="btn btn--small btn--secondary">Disable</button>
+                            </form>
+                        }
+                        else if (u.Status == UserStatus.Disabled)
+                        {
+                            <form method="post" action="/admin/users/@u.Id/enable" style="display:inline">
+                                <AntiforgeryToken />
+                                <button type="submit" class="btn btn--small">Re-enable</button>
+                            </form>
+                        }
+                        <form method="post" action="/admin/users/@u.Id/role" style="display:inline">
+                            <AntiforgeryToken />
+                            <input type="hidden" name="Role" value="@(u.Role == UserRole.Admin ? "User" : "Admin")" />
+                            <button type="submit" class="btn btn--small btn--secondary">
+                                @(u.Role == UserRole.Admin ? "Demote to User" : "Promote to Admin")
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </section>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }
+
+    private List<(SignupRequest Request, User? User)>? _pending;
+    private List<User>? _active;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var orgId = Org.CurrentOrganizationId;
+        if (orgId is null) return;
+
+        var pendingRows = await Db.SignupRequests
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(r => r.OrganizationId == orgId.Value && r.Decision == SignupDecision.Pending)
+            .OrderBy(r => r.RequestedAt)
+            .ToListAsync();
+        _pending = new();
+        foreach (var req in pendingRows)
+        {
+            User? user = null;
+            if (req.UserId is int uid)
+            {
+                user = await Db.Users.IgnoreQueryFilters().AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.Id == uid);
+            }
+            _pending.Add((req, user));
+        }
+
+        _active = await Db.Users
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(u => u.OrganizationId == orgId.Value && u.Status != UserStatus.Pending)
+            .OrderBy(u => u.Status == UserStatus.Active ? 0 : 1)
+            .ThenBy(u => u.DisplayName)
+            .ToListAsync();
+    }
+}

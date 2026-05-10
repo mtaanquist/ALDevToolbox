@@ -1,5 +1,6 @@
 @inherits LayoutComponentBase
 @using Lucide.Blazor.Components
+@using System.Security.Claims
 
 <div class="app-shell">
     <header class="top-bar">
@@ -11,10 +12,19 @@
             <ThemeToggle />
             <AuthorizeView>
                 <Authorized>
+                    @{
+                        var orgName = context.User.FindFirst("org_name")?.Value;
+                        var role = context.User.FindFirst(ClaimTypes.Role)?.Value;
+                        var name = context.User.Identity?.Name;
+                    }
+                    <a href="/account" class="user-button" title="Manage your account">
+                        <span class="user-button__name">
+                            @name@(string.IsNullOrEmpty(orgName) ? "" : $" ({orgName})")@(string.IsNullOrEmpty(role) ? "" : $" — {role}")
+                        </span>
+                    </a>
                     <form method="post" action="/auth/logout" class="signout-form">
                         <AntiforgeryToken />
                         <button type="submit" class="user-button" title="Sign out">
-                            <span class="user-button__name">@context.User.Identity?.Name</span>
                             <Icon Name="log-out" Width="14" Height="14" Css="user-button__icon" />
                         </button>
                     </form>
@@ -23,6 +33,7 @@
                     <a href="/login" class="signin-link signin-link--icon" aria-label="Sign in" title="Sign in">
                         <Icon Name="log-in" Width="16" Height="16" />
                     </a>
+                    <a href="/signup" class="signin-link" aria-label="Sign up" title="Sign up">Sign up</a>
                 </NotAuthorized>
             </AuthorizeView>
         </div>

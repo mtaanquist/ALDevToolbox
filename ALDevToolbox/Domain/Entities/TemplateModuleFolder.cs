@@ -12,6 +12,9 @@ public class TemplateModuleFolder
 {
     public int Id { get; set; }
 
+    /// <summary>Denormalised owning organisation; mirrors the template's value.</summary>
+    public int OrganizationId { get; set; }
+
     /// <summary>Owning template. Cascade-deleted when the template is removed.</summary>
     public int TemplateId { get; set; }
     public RuntimeTemplate? Template { get; set; }

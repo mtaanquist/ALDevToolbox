@@ -10,6 +10,13 @@ public class TemplateFolder
 {
     public int Id { get; set; }
 
+    /// <summary>
+    /// Denormalised owning organisation. Mirrors <see cref="Template"/>'s
+    /// <c>OrganizationId</c> so cross-org filters can apply at this row's level
+    /// without joining; the service layer keeps the two in sync.
+    /// </summary>
+    public int OrganizationId { get; set; }
+
     /// <summary>Owning template. Cascade-deleted when the template is removed.</summary>
     public int TemplateId { get; set; }
     public RuntimeTemplate? Template { get; set; }

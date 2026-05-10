@@ -12,6 +12,10 @@ public class RuntimeTemplate
     /// <summary>Database identifier. Auto-incremented by SQLite.</summary>
     public int Id { get; set; }
 
+    /// <summary>Owning organisation. EF query filter scopes reads to it.</summary>
+    public int OrganizationId { get; set; }
+    public Organization? Organization { get; set; }
+
     /// <summary>
     /// URL-safe unique key (e.g. <c>runtime-15</c>). Used in admin URLs and as
     /// the stable identifier when the form posts back a chosen template.

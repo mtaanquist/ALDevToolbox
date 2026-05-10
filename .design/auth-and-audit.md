@@ -2,29 +2,28 @@
 
 ## Auth model
 
-A single shared admin password. Anyone who knows it can edit templates, modules, and the catalogue. Anyone without it can use the project generator and view templates read-only.
+Email/password accounts scoped to organisations. Two roles: `User` (can use the project generator) and `Admin` (can manage templates, modules, catalogue, application versions, audit log, and other users in the same organisation). There is no superuser; an admin only ever sees their own organisation.
 
-This is deliberately unsophisticated. The intended audience is a small internal team where 2–3 people are trusted to edit. If user demand for proper accounts ever arrives, the auth abstraction (described below) makes swapping in a real IdP a localised change.
+**Multi-tenancy.** Every editable entity carries an `organization_id`. EF Core query filters on `AppDbContext` scope reads to the acting user's organisation; the only paths that bypass them with `IgnoreQueryFilters()` are the ones that *can't* know an organisation yet (login, signup, password reset, bootstrap). Cross-org reads from a signed-in session return nothing — verified by `CrossOrgIsolationTests`.
 
-## Login flow
+**Bootstrap.** A fresh deployment creates the "Default" organisation through the M13 migration, then seeds it with the standard `Templates.seed/` content. The first admin user is created from `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` env vars on first boot. After at least one user exists those variables are read and warned about (so a stale value in production logs gets surfaced) but never re-applied.
 
-`/login` page presents:
+**New organisations.** Signups against an unknown slug create a *pending* organisation. The signup itself is also pending — but because the new org has no admins yet, there's no one in-system to approve it. In practice the bootstrap admin (or, in a hosted multi-org future, a `SiteAdmin` role) does the cross-org approval. Once the first admin signs in, `SeedService.RunAsync(orgId)` runs against that new org and `IsSeeded` flips to true.
 
-- Password (single field, required, type=password).
-- Display name (text, required) — the honour-system "who am I" capture for the audit log. e.g. "Bob", "Alice — Engineering". No validation beyond non-empty.
-- "Sign in" button.
+## Pages
 
-On submit:
+| Path | Audience | Purpose |
+|------|----------|---------|
+| `/login` | Anonymous | Email + password sign-in. |
+| `/signup` | Anonymous | Email, display name, password, optional org slug. Always lands in `Pending` status. |
+| `/forgot-password` | Anonymous | Email a reset link if SMTP is configured. Always shows the same "if that email exists" message. |
+| `/reset-password?token=…` | Anonymous | Single-use; expires after one hour. |
+| `/account` | User+ | Self-service: change password / display name, delete account. |
+| `/admin/users` | Admin | Approve / reject pending signups, change roles, disable users in the same org. |
 
-1. Validate the password against `ADMIN_PASSWORD` (env variable). Use a constant-time comparison.
-2. If correct, create a signed cookie containing the display name and an expiry (default 8 hours).
-3. Redirect to the page the user was originally trying to reach (or `/admin` if none).
-
-If incorrect, show "Invalid password" and stay on `/login`. Don't reveal whether the password was missing or wrong.
+End-user generator pages (`/projects/new`, `/projects/extension`, `/templates*`) are now `[Authorize]` — anonymous users redirect to `/login` with a `return=` query.
 
 ## Cookie
-
-Use ASP.NET Core's cookie authentication scheme. The cookie payload is just the display name as a single claim; the *fact* of having a valid cookie means the user is the admin. There's no role hierarchy to encode.
 
 ```csharp
 services.AddAuthentication("Cookie")
@@ -39,92 +38,58 @@ services.AddAuthentication("Cookie")
     });
 ```
 
-The cookie is never the password. The password is only ever held in memory long enough to compare. Don't store the password in the cookie even if it would simplify things; it would also expose the password to anyone with browser access.
+The cookie carries the user's id, organisation id, role, display name and email as claims. `HttpOrganizationContext` reads `org_id` and `user_id` to drive EF query filters; the rest are for the top-bar caption ("Bob (Acme) — Admin") and audit attribution.
 
-## Protecting routes
+## Password hashing
 
-In Blazor Server with Razor components, `@attribute [Authorize]` on the admin pages is the simplest approach. Combined with the cookie scheme above, unauthenticated requests are redirected to `/login`.
+BCrypt with a work factor of 12 via `BCrypt.Net-Next`. We picked BCrypt over Argon2id for two reasons: (1) the `BCrypt.Net-Next` package is mature, ships pre-built, and has no native dependencies; (2) at our scale and with cookie-based sessions the BCrypt vs Argon2id practical difference is negligible. If the threat model changes, the swap is local to `AccountService.HashPassword` / `VerifyPassword`.
 
-Apply `[Authorize]` to:
+Password policy: minimum 12 characters; no other rules. Length beats classes.
 
-- All pages under `/admin/*`
-- Any controller endpoints that mutate state (template create/update/delete, module create/update/delete, catalogue mutations, export-to-TOML).
+## Login hardening
 
-The generation endpoints stay unauthenticated — generating workspaces is the main public capability of the tool.
+- **Per-email rate limit**: max 10 attempts per 15 minutes.
+- **Per-IP rate limit**: max 30 attempts per 15 minutes.
+- **Lockout**: five consecutive failures with no intervening success locks the account for 15 minutes. Successful sign-in clears the streak.
+- **Forgot-password rate limit**: same per-email and per-IP windows so the SMTP relay isn't a spam vector. The response is identical regardless of whether the email is known.
+- **Reset tokens** are stored as `sha256(token)`, expire after 1 hour, and are single-use (`consumed_at` is stamped on first use).
+
+Every login attempt — successful or not — writes a row to `login_attempts` keyed on email and IP. That table powers both the rate limit windows and the lockout query, against an injectable `TimeProvider` so tests can advance the clock without sleeping.
+
+## Approvals and emails
+
+When a signup arrives, `EmailService` (MailKit) emails every active admin in the target org. When an admin decides, the requester gets a one-line "approved" or "declined" email. SMTP is configured via env vars: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD_FILE`, `SMTP_FROM`, `SMTP_USE_STARTTLS`. If any of those are missing, the page shows "Email is not configured; ask an admin." rather than swallowing the failure — fail loudly so misconfiguration is visible.
+
+Email send failures log a warning but do not roll back the underlying action. A failed approval email shouldn't unapprove the user.
+
+## Account self-service
+
+`/account`:
+
+- **Change password** — requires the current password.
+- **Change display name** — 2–80 chars.
+- **Delete account** — removes the user row. If the user is the last *active* admin, the confirmation modal asks them to either promote another user first or accept that the organisation will be marked for deletion (which cascades to its content via FK).
 
 ## Audit log
 
-Every mutation to a template, template_folder, module, module_dependency, or well_known_dependency writes an audit log row. The infrastructure is a single `SaveChangesInterceptor`:
+Every mutation to a template, template_folder, template_file, template_module_folder, template_module_file, runtime_template_default_module, module, module_dependency, well_known_dependency, application_version, user or signup_request writes a row through `AuditInterceptor`.
 
-```csharp
-class AuditInterceptor : SaveChangesInterceptor {
-    private readonly IHttpContextAccessor _http;
+`audit_log.changed_by` is now `"display_name <email>"` of the acting user (or `"unknown"` for seed-time inserts that pre-date a signed-in user). `changed_by_user_id` and `organization_id` are stored as separate columns for queryability — `(organization_id, timestamp)` is the index that powers `/admin/audit`.
 
-    public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
-        DbContextEventData eventData,
-        InterceptionResult<int> result,
-        CancellationToken cancellationToken = default)
-    {
-        var ctx = eventData.Context!;
-        var auditedTypes = new[] { typeof(RuntimeTemplate), typeof(TemplateFolder),
-                                    typeof(Module), typeof(ModuleDependency),
-                                    typeof(WellKnownDependency) };
+Snapshot rules unchanged from the original implementation:
 
-        var changedBy = _http.HttpContext?.User?.Identity?.Name ?? "unknown";
-
-        var entriesToAudit = ctx.ChangeTracker.Entries()
-            .Where(e => auditedTypes.Contains(e.Entity.GetType())
-                        && e.State is EntityState.Modified or EntityState.Deleted)
-            .ToList();
-
-        foreach (var entry in entriesToAudit)
-        {
-            var snapshot = SerializeOriginalValues(entry);
-            ctx.Add(new AuditLogEntry {
-                Timestamp = DateTime.UtcNow,
-                ChangedBy = changedBy,
-                EntityType = entry.Entity.GetType().Name,
-                EntityId = (int)entry.Property("Id").CurrentValue!,
-                Action = entry.State == EntityState.Modified ? "updated" : "deleted",
-                SnapshotJson = snapshot
-            });
-        }
-
-        // For added entries, we capture them after they have IDs assigned
-        // (so this needs a second pass — see below)
-
-        return await base.SavingChangesAsync(eventData, result, cancellationToken);
-    }
-}
-```
-
-Notes on the implementation:
-
-- **Modified and deleted entities:** capture `OriginalValues` *before* the save. This is the snapshot of the row as it existed before this change.
-- **Added (created) entities:** capture happens in `SavedChangesAsync` (the post-save callback) so we have the assigned ID. Snapshot is null for created entries — there's nothing "before" to record. The fact of creation is captured by the row itself.
-- The interceptor is registered in DI: `services.AddDbContext<AppDbContext>(opts => opts.AddInterceptors(serviceProvider.GetRequiredService<AuditInterceptor>()))` (or registered on the DbContext directly — implementation detail).
-
-## What gets snapshotted
-
-For each audited entity, the snapshot JSON includes *all* of its persisted columns plus a stable representation of its dependent collections. Specifically:
-
-- A `RuntimeTemplate` snapshot includes its scalar columns plus an inline array of its `template_folders` rows (their state at save time).
-- A `Module` snapshot includes its scalars plus its `module_dependencies`.
-- Standalone child rows (a `template_folder` edited directly without touching its parent template) snapshot just themselves.
-
-This is so an admin investigating "what did Document Capture look like in March" can see the full module with its deps in one snapshot, not piece it together across rows. EF Core change tracking can give you this — walk the principal's owned/related collection state via `entry.Collections`.
-
-## Audit retention
-
-No automatic deletion. The audit log grows forever. For this volume of edits (a few per month, optimistically), a few thousand rows over the app's lifetime is fine. If it ever becomes a problem, a manual cleanup query is acceptable.
+- **Modified / Deleted**: snapshot `OriginalValues`.
+- **Added**: snapshot is null (there's no "before"); written in `SavedChangesAsync` so the assigned id is in the audit row.
+- Principal entities (`RuntimeTemplate`, `TemplateFolder`, `TemplateModuleFolder`, `Module`) inline their child collection's pre-save state.
+- `TemplateFile` / `TemplateModuleFile` content is replaced with a SHA-256 hash to keep the audit log compact.
 
 ## What is *not* audited
 
-- Workspace generations. They don't mutate database state, and their inputs are user-supplied so there's nothing meaningful to recover. `ILogger` records them at Info level, which is enough for "did anyone generate something at 3pm."
-- Login attempts. They go to the standard log. Successful logins create a session; failed logins don't write to any DB table.
-- Reads. No "who viewed what" tracking.
+- Workspace / extension generations — `ILogger` at Info level is enough.
+- Reads.
+- Login attempts (they go to `login_attempts`, which is not the audit log).
 
-## Error handling and integrity
+## Error handling
 
-- If the audit interceptor fails (JSON serialization throws), the entire `SaveChanges` should fail and roll back. The premise is that we'd rather refuse to make a change than make it without a record.
-- If the audit log table itself is corrupted or unreachable, the app should fail loudly at startup, not silently disable auditing.
+- Audit interceptor failure → `SaveChanges` rolls back. We'd rather refuse a change than apply it without a trace.
+- A corrupted audit log table fails the app at startup — `MigrateAsync` tries to apply the schema and surfaces any drift.

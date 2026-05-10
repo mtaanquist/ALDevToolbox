@@ -1,4 +1,6 @@
 using ALDevToolbox.Data;
+using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,11 +13,21 @@ namespace ALDevToolbox.Tests.Infrastructure;
 /// fixture drops the database. The milestone explicitly calls for the SQLite
 /// provider rather than the EF in-memory provider so tests see the same SQL
 /// behaviour the app sees in production — see <c>.design/milestones.md</c>.
+///
+/// M13: <see cref="OrgContext"/> is the ambient organisation scope for tests.
+/// Mutate <see cref="AmbientOrganizationContext.CurrentOrganizationId"/> /
+/// <c>CurrentUserId</c> to switch tenants mid-test. <see cref="DefaultOrgId"/>
+/// is seeded automatically into <c>organizations</c> so foreign-keys resolve.
 /// </summary>
 public sealed class TestDb : IDisposable
 {
+    public const int DefaultOrgId = 1;
+    public const int OtherOrgId = 2;
+
     private readonly SqliteConnection _connection;
     private readonly DbContextOptions<AppDbContext> _options;
+
+    public AmbientOrganizationContext OrgContext { get; } = new() { CurrentOrganizationId = DefaultOrgId };
 
     public TestDb()
     {
@@ -26,12 +38,17 @@ public sealed class TestDb : IDisposable
             .UseSqlite(_connection)
             .Options;
 
-        using var ctx = new AppDbContext(_options);
+        using var ctx = new AppDbContext(_options, OrgContext);
         ctx.Database.EnsureCreated();
+        // Seed the two organisations every test starts with.
+        ctx.Organizations.AddRange(
+            new Organization { Id = DefaultOrgId, Name = "Default", Slug = "default", IsSeeded = true, CreatedAt = DateTime.UtcNow },
+            new Organization { Id = OtherOrgId, Name = "Other", Slug = "other", IsSeeded = true, CreatedAt = DateTime.UtcNow });
+        ctx.SaveChanges();
     }
 
-    /// <summary>Returns a fresh context bound to the same in-memory database.</summary>
-    public AppDbContext NewContext() => new(_options);
+    /// <summary>Returns a fresh context bound to the same in-memory database, scoped to <see cref="OrgContext"/>.</summary>
+    public AppDbContext NewContext() => new(_options, OrgContext);
 
     /// <summary>
     /// Returns a fresh context with the audit interceptor wired up. Lets audit
@@ -44,7 +61,7 @@ public sealed class TestDb : IDisposable
             .UseSqlite(_connection)
             .AddInterceptors(interceptor)
             .Options;
-        return new AppDbContext(options);
+        return new AppDbContext(options, OrgContext);
     }
 
     public void Dispose() => _connection.Dispose();

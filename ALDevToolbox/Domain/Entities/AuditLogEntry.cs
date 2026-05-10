@@ -16,6 +16,8 @@ public enum AuditEntityType
     ModuleDependency,
     WellKnownDependency,
     ApplicationVersion,
+    User,
+    SignupRequest,
 }
 
 /// <summary>The kind of change captured by an audit row.</summary>
@@ -37,8 +39,19 @@ public class AuditLogEntry
     /// <summary>UTC instant the change was committed.</summary>
     public DateTime Timestamp { get; set; }
 
-    /// <summary>The honour-system display name supplied at sign-in.</summary>
+    /// <summary>
+    /// <c>"display_name &lt;email&gt;"</c> of the acting user. <c>"unknown"</c>
+    /// when no signed-in user could be resolved (e.g. seed-time inserts).
+    /// </summary>
     public string ChangedBy { get; set; } = string.Empty;
+
+    /// <summary>FK to <c>users</c>. Null for changes that happen pre-login (seed, bootstrap).</summary>
+    public int? ChangedByUserId { get; set; }
+    public User? ChangedByUser { get; set; }
+
+    /// <summary>Owning organisation. Null for changes that have no org context (seed bootstrap rows).</summary>
+    public int? OrganizationId { get; set; }
+    public Organization? Organization { get; set; }
 
     public AuditEntityType EntityType { get; set; }
 

@@ -10,8 +10,11 @@ namespace ALDevToolbox.Tests.Builders;
 /// </summary>
 public static class TemplateBuilder
 {
-    public static RuntimeTemplate Default(string key = "runtime-test", string runtime = "15") => new()
+    public const int DefaultOrganizationId = 1;
+
+    public static RuntimeTemplate Default(string key = "runtime-test", string runtime = "15", int organizationId = DefaultOrganizationId) => new()
     {
+        OrganizationId = organizationId,
         Key = key,
         Runtime = runtime,
         Name = "Test Runtime",
@@ -42,6 +45,7 @@ public static class TemplateBuilder
     {
         var folder = new TemplateFolder
         {
+            OrganizationId = template.OrganizationId,
             Ordering = template.Folders.Count,
             Path = path,
         };
@@ -49,6 +53,7 @@ public static class TemplateBuilder
         {
             folder.Files.Add(new TemplateFile
             {
+                OrganizationId = template.OrganizationId,
                 Ordering = i,
                 Path = files[i].Path,
                 Content = files[i].Content,
@@ -62,6 +67,7 @@ public static class TemplateBuilder
     {
         var folder = new TemplateModuleFolder
         {
+            OrganizationId = template.OrganizationId,
             Ordering = template.ModuleFolders.Count,
             Path = path,
         };
@@ -69,6 +75,7 @@ public static class TemplateBuilder
         {
             folder.Files.Add(new TemplateModuleFile
             {
+                OrganizationId = template.OrganizationId,
                 Ordering = i,
                 Path = files[i].Path,
                 Content = files[i].Content,

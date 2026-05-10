@@ -6,22 +6,37 @@
 <div class="login-page">
     <h1>Sign in</h1>
     <p class="caption muted">
-        Enter the admin password and pick a display name. The display name appears
-        in the audit log so other admins can see who made which change — there are
-        no individual accounts.
+        Enter the email and password for your AL Dev Toolbox account. Don't
+        have one yet? <a href="/signup">Sign up</a>.
     </p>
 
     @if (Error == "invalid")
     {
-        <p class="form-error" role="alert">Invalid password.</p>
+        <p class="form-error" role="alert">Invalid email or password.</p>
     }
-    else if (Error == "not-configured")
+    else if (Error == "pending")
     {
-        <p class="form-error" role="alert">
-            The admin password isn't configured on this server. Set
-            <code>ADMIN_PASSWORD</code> or <code>ADMIN_PASSWORD_FILE</code>
-            and restart the app.
-        </p>
+        <p class="form-error" role="alert">Your account is still pending admin approval.</p>
+    }
+    else if (Error == "disabled")
+    {
+        <p class="form-error" role="alert">This account has been disabled. Contact your organisation's admin.</p>
+    }
+    else if (Error == "locked")
+    {
+        <p class="form-error" role="alert">Too many failed sign-ins. Try again in 15 minutes or reset your password.</p>
+    }
+    else if (Error == "rate-limited")
+    {
+        <p class="form-error" role="alert">Too many attempts. Slow down and try again later.</p>
+    }
+    @if (Ok == "password-reset")
+    {
+        <p class="form-success" role="status">Password updated. Sign in with your new password.</p>
+    }
+    else if (Ok == "account-deleted")
+    {
+        <p class="form-success" role="status">Your account has been deleted.</p>
     }
 
     <form method="post" action="/auth/login" class="form-grid login-form">
@@ -29,26 +44,31 @@
         <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
 
         <section class="form-section">
-            <label class="section-label" for="lg-name">Display name</label>
-            <input id="lg-name" type="text" name="DisplayName" required autofocus
-                   placeholder="e.g. Bob — Engineering" />
+            <label class="section-label" for="lg-email">Email</label>
+            <input id="lg-email" type="email" name="Email" required autofocus autocomplete="username" />
         </section>
 
         <section class="form-section">
             <label class="section-label" for="lg-password">Password</label>
-            <input id="lg-password" type="password" name="Password" required />
+            <input id="lg-password" type="password" name="Password" required autocomplete="current-password" />
         </section>
 
-        <button type="submit" class="btn">
-            <Icon Name="log-in" Width="16" Height="16" />
-            <span>Sign in</span>
-        </button>
+        <div class="login-form__actions">
+            <button type="submit" class="btn">
+                <Icon Name="log-in" Width="16" Height="16" />
+                <span>Sign in</span>
+            </button>
+            <a href="/forgot-password" class="muted">Forgot password?</a>
+        </div>
     </form>
 </div>
 
 @code {
     [SupplyParameterFromQuery(Name = "err")]
     public string? Error { get; set; }
+
+    [SupplyParameterFromQuery(Name = "ok")]
+    public string? Ok { get; set; }
 
     [SupplyParameterFromQuery(Name = "return")]
     public string? ReturnUrl { get; set; }

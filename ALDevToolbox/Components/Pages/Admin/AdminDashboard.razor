@@ -1,5 +1,5 @@
 @page "/admin"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "Admin")]
 @using Microsoft.AspNetCore.Authorization
 @using Lucide.Blazor.Components
 

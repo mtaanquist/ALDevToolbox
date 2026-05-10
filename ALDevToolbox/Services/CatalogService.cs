@@ -16,12 +16,17 @@ public class CatalogService
 {
     private readonly AppDbContext _db;
     private readonly ILogger<CatalogService> _logger;
+    private readonly IOrganizationContext _orgContext;
 
-    public CatalogService(AppDbContext db, ILogger<CatalogService> logger)
+    public CatalogService(AppDbContext db, ILogger<CatalogService> logger, IOrganizationContext orgContext)
     {
         _db = db;
         _logger = logger;
+        _orgContext = orgContext;
     }
+
+    private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
+        ?? throw new InvalidOperationException("No organization in scope; service mutation called outside an authenticated request.");
 
     /// <summary>
     /// Returns every catalogue row, ordered by category then explicit ordering.
@@ -48,6 +53,7 @@ public class CatalogService
     public async Task SaveAsync(IReadOnlyList<CatalogEntryInput> inputs, CancellationToken ct = default)
     {
         Validate(inputs);
+        var orgId = RequireOrganizationId();
 
         var existing = await _db.WellKnownDependencies.ToListAsync(ct);
         var existingById = existing.ToDictionary(e => e.Id);
@@ -78,6 +84,7 @@ public class CatalogService
             {
                 _db.WellKnownDependencies.Add(new WellKnownDependency
                 {
+                    OrganizationId = orgId,
                     DepId = depId,
                     DepName = depName,
                     DepPublisher = depPublisher,

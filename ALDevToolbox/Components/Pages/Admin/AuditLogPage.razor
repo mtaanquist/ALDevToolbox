@@ -1,5 +1,5 @@
 @page "/admin/audit"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "Admin")]
 @inject AuditService Audit
 @using System.Text.Json
 @using ALDevToolbox.Domain.Entities

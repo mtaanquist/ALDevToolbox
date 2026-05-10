@@ -22,12 +22,17 @@ public class ApplicationVersionService
 
     private readonly AppDbContext _db;
     private readonly ILogger<ApplicationVersionService> _logger;
+    private readonly IOrganizationContext _orgContext;
 
-    public ApplicationVersionService(AppDbContext db, ILogger<ApplicationVersionService> logger)
+    public ApplicationVersionService(AppDbContext db, ILogger<ApplicationVersionService> logger, IOrganizationContext orgContext)
     {
         _db = db;
         _logger = logger;
+        _orgContext = orgContext;
     }
+
+    private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
+        ?? throw new InvalidOperationException("No organization in scope; service mutation called outside an authenticated request.");
 
     /// <summary>
     /// Returns every active (non-deleted) catalogue entry in ordering order.
@@ -159,6 +164,7 @@ public class ApplicationVersionService
         }
 
         var now = DateTime.UtcNow;
+        var orgId = RequireOrganizationId();
         inputs = normalised;
 
         for (var i = 0; i < inputs.Count; i++)
@@ -185,6 +191,7 @@ public class ApplicationVersionService
             {
                 _db.ApplicationVersions.Add(new ApplicationVersion
                 {
+                    OrganizationId = orgId,
                     Key = key,
                     Name = name,
                     Application = application,

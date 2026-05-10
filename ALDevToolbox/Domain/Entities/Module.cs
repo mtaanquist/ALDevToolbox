@@ -9,6 +9,10 @@ public class Module
 {
     public int Id { get; set; }
 
+    /// <summary>Owning organisation. EF query filter scopes reads to it.</summary>
+    public int OrganizationId { get; set; }
+    public Organization? Organization { get; set; }
+
     /// <summary>URL-safe unique key (e.g. <c>document-capture</c>).</summary>
     public string Key { get; set; } = string.Empty;
 

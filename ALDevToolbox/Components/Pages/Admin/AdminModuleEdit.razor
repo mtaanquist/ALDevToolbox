@@ -1,6 +1,6 @@
 @page "/admin/modules/new"
 @page "/admin/modules/{Key}"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @inject ModuleService Modules
 @inject NavigationManager Nav
