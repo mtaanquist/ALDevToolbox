@@ -187,7 +187,7 @@ jobs:
           PGPASSWORD: postgres
         run: |
           psql -h localhost -U postgres -d aldevtoolbox_designtime -c \
-            "INSERT INTO organizations (name, slug, is_pending, is_seeded, created_at) VALUES ('Forward Compat Sentinel', 'forward-compat-sentinel', false, true, NOW());"
+            "INSERT INTO organizations (name, slug, is_pending, is_system, created_at) VALUES ('Forward Compat Sentinel', 'forward-compat-sentinel', false, false, NOW());"
 
       - name: Apply current-branch migrations
         run: |
