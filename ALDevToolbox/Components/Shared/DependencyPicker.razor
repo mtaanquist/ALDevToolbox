@@ -1,0 +1,185 @@
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
+
+@*
+    Catalogue + manual dependency editor used by the New Extension page (and,
+    once they exist, the admin module / catalogue editors). The component owns
+    no state of its own — the parent passes in the current list of selected
+    DependencyEntries plus the catalogue, and receives back the mutated list
+    via <see cref="ValueChanged"/>. See ui-design.md for the visual spec.
+*@
+
+<div class="dep-picker">
+    <div class="dep-picker__group">
+        <div class="section-label">From the catalogue</div>
+        @if (Catalog.Count == 0)
+        {
+            <p class="caption muted">
+                No catalogue entries available. Add manual dependencies below or ask
+                an admin to populate the catalogue.
+            </p>
+        }
+        else
+        {
+            @foreach (var group in Catalog
+                .GroupBy(c => string.IsNullOrWhiteSpace(c.Category) ? "Other" : c.Category!)
+                .OrderBy(g => g.Key, StringComparer.Ordinal))
+            {
+                <div class="dep-picker__category">
+                    <div class="dep-picker__category-name">@group.Key</div>
+                    <div class="dep-picker__rows">
+                        @foreach (var item in group.OrderBy(c => c.Ordering).ThenBy(c => c.DepName))
+                        {
+                            var selected = FindEntry(item.DepId);
+                            <label class="dep-row @(selected is not null ? "dep-row--selected" : null)">
+                                <input type="checkbox" checked="@(selected is not null)"
+                                       @onchange="e => ToggleCatalogEntry(item, (bool)(e.Value ?? false))" />
+                                <span class="dep-row__body">
+                                    <span class="dep-row__name">@item.DepName</span>
+                                    <span class="dep-row__publisher muted">@item.DepPublisher</span>
+                                </span>
+                                @if (selected is not null)
+                                {
+                                    <input type="text" class="dep-row__version"
+                                           value="@selected.DepVersion"
+                                           @onchange="e => UpdateVersion(item.DepId, e.Value?.ToString() ?? string.Empty)"
+                                           aria-label="Version" />
+                                }
+                            </label>
+                        }
+                    </div>
+                </div>
+            }
+        }
+    </div>
+
+    <div class="dep-picker__group">
+        <div class="section-label">Add manual dependency</div>
+        <div class="dep-picker__manual">
+            <input type="text" placeholder="GUID" @bind="_manualId" />
+            <input type="text" placeholder="Name" @bind="_manualName" />
+            <input type="text" placeholder="Publisher" @bind="_manualPublisher" />
+            <input type="text" placeholder="Version" @bind="_manualVersion" />
+            <button type="button" class="btn" @onclick="AddManual">Add</button>
+        </div>
+        @if (_manualError is not null)
+        {
+            <p class="caption dep-picker__error">@_manualError</p>
+        }
+
+        @{
+            var manuals = ManualEntries();
+        }
+        @if (manuals.Count > 0)
+        {
+            <ul class="dep-picker__manual-list">
+                @foreach (var m in manuals)
+                {
+                    <li class="dep-chip">
+                        <span class="dep-chip__body">
+                            <strong>@m.DepName</strong>
+                            <span class="muted"> · @m.DepPublisher · @m.DepVersion</span>
+                            <span class="dep-chip__id muted">@m.DepId</span>
+                        </span>
+                        <button type="button" class="dep-chip__remove" aria-label="Remove dependency"
+                                @onclick="() => RemoveManual(m.DepId)">×</button>
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>The well-known catalogue rows to render checkboxes for.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<WellKnownDependency> Catalog { get; set; } = Array.Empty<WellKnownDependency>();
+
+    /// <summary>Currently-selected dependencies (catalogue + manual).</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<DependencyEntry> Value { get; set; } = Array.Empty<DependencyEntry>();
+
+    /// <summary>Fires whenever the user adds, removes, or edits a dependency.</summary>
+    [Parameter] public EventCallback<List<DependencyEntry>> ValueChanged { get; set; }
+
+    private string _manualId = string.Empty;
+    private string _manualName = string.Empty;
+    private string _manualPublisher = string.Empty;
+    private string _manualVersion = string.Empty;
+    private string? _manualError;
+
+    private DependencyEntry? FindEntry(string depId) =>
+        Value.FirstOrDefault(d => string.Equals(d.DepId, depId, StringComparison.OrdinalIgnoreCase));
+
+    private bool IsCatalogId(string depId) =>
+        Catalog.Any(c => string.Equals(c.DepId, depId, StringComparison.OrdinalIgnoreCase));
+
+    private List<DependencyEntry> ManualEntries() =>
+        Value.Where(e => !IsCatalogId(e.DepId)).ToList();
+
+    private async Task ToggleCatalogEntry(WellKnownDependency item, bool isChecked)
+    {
+        var next = Value.ToList();
+        var existingIndex = next.FindIndex(d => string.Equals(d.DepId, item.DepId, StringComparison.OrdinalIgnoreCase));
+        if (isChecked)
+        {
+            if (existingIndex < 0)
+            {
+                next.Add(new DependencyEntry(item.DepId, item.DepName, item.DepPublisher, item.DepVersionDefault));
+            }
+        }
+        else if (existingIndex >= 0)
+        {
+            next.RemoveAt(existingIndex);
+        }
+        await ValueChanged.InvokeAsync(next);
+    }
+
+    private async Task UpdateVersion(string depId, string newVersion)
+    {
+        var next = Value.ToList();
+        var idx = next.FindIndex(d => string.Equals(d.DepId, depId, StringComparison.OrdinalIgnoreCase));
+        if (idx < 0) return;
+        next[idx] = next[idx] with { DepVersion = newVersion };
+        await ValueChanged.InvokeAsync(next);
+    }
+
+    private async Task AddManual()
+    {
+        _manualError = null;
+        var id = _manualId.Trim();
+        var name = _manualName.Trim();
+        var publisher = _manualPublisher.Trim();
+        var version = _manualVersion.Trim();
+
+        if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(name)
+            || string.IsNullOrEmpty(publisher) || string.IsNullOrEmpty(version))
+        {
+            _manualError = "All four fields are required.";
+            return;
+        }
+        if (!Guid.TryParse(id, out _))
+        {
+            _manualError = "ID must be a GUID.";
+            return;
+        }
+        if (Value.Any(d => string.Equals(d.DepId, id, StringComparison.OrdinalIgnoreCase)))
+        {
+            _manualError = "This dependency is already in the list.";
+            return;
+        }
+
+        var next = Value.ToList();
+        next.Add(new DependencyEntry(id, name, publisher, version));
+        await ValueChanged.InvokeAsync(next);
+
+        _manualId = string.Empty;
+        _manualName = string.Empty;
+        _manualPublisher = string.Empty;
+        _manualVersion = string.Empty;
+    }
+
+    private async Task RemoveManual(string depId)
+    {
+        var next = Value.Where(d => !string.Equals(d.DepId, depId, StringComparison.OrdinalIgnoreCase)).ToList();
+        await ValueChanged.InvokeAsync(next);
+    }
+}

@@ -1,0 +1,76 @@
+@page "/admin"
+@attribute [Authorize(Roles = "Admin")]
+@using Microsoft.AspNetCore.Authorization
+@using Lucide.Blazor.Components
+
+<PageTitle>Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-dashboard">
+    <h1>Admin</h1>
+    <p class="muted">
+        Manage runtime templates, modules, the well-known dependency catalogue,
+        and view the audit log.
+    </p>
+
+    <div class="admin-tiles">
+        <a class="admin-tile admin-tile--link" href="/admin/templates">
+            <Icon Name="layers" Width="20" Height="20" Css="admin-tile__icon" />
+            <div class="admin-tile__body">
+                <div class="admin-tile__title">Templates</div>
+                <div class="admin-tile__caption">Edit runtime templates, their folder layouts, and JSON defaults.</div>
+            </div>
+        </a>
+        <a class="admin-tile admin-tile--link" href="/admin/modules">
+            <Icon Name="package" Width="20" Height="20" Css="admin-tile__icon" />
+            <div class="admin-tile__body">
+                <div class="admin-tile__title">Modules</div>
+                <div class="admin-tile__caption">Edit modules and the dependencies each one contributes to <code>app.json</code>.</div>
+            </div>
+        </a>
+        <a class="admin-tile admin-tile--link" href="/admin/catalog">
+            <Icon Name="book-open" Width="20" Height="20" Css="admin-tile__icon" />
+            <div class="admin-tile__body">
+                <div class="admin-tile__title">Catalogue</div>
+                <div class="admin-tile__caption">Maintain the well-known dependency list users pick from in the New Extension flow.</div>
+            </div>
+        </a>
+        <a class="admin-tile admin-tile--link" href="/admin/application-versions">
+            <Icon Name="tag" Width="20" Height="20" Css="admin-tile__icon" />
+            <div class="admin-tile__body">
+                <div class="admin-tile__title">Application versions</div>
+                <div class="admin-tile__caption">Curate the BC release list users pick on New Workspace and New Extension.</div>
+            </div>
+        </a>
+        <a class="admin-tile admin-tile--link" href="/admin/configuration">
+            <Icon Name="settings" Width="20" Height="20" Css="admin-tile__icon" />
+            <div class="admin-tile__body">
+                <div class="admin-tile__title">Configuration</div>
+                <div class="admin-tile__caption">Edit defaults, the logo, and always-included files for this organisation.</div>
+            </div>
+        </a>
+        <a class="admin-tile admin-tile--link" href="/admin/audit">
+            <Icon Name="history" Width="20" Height="20" Css="admin-tile__icon" />
+            <div class="admin-tile__body">
+                <div class="admin-tile__title">Audit log</div>
+                <div class="admin-tile__caption">Browse recent changes to templates, modules, and the catalogue.</div>
+            </div>
+        </a>
+    </div>
+
+    <section class="admin-section">
+        <h2>Backup</h2>
+        <p class="muted">
+            Download every active template, module, and catalogue entry as a
+            ZIP whose layout matches <code>Templates.seed/</code>. Use it as a
+            point-in-time snapshot, to grep the live state outside the app, or
+            to re-seed a fresh database after a wipe.
+        </p>
+        <form method="post" action="/admin/export">
+            <AntiforgeryToken />
+            <button type="submit" class="btn">
+                <Icon Name="download" Width="16" Height="16" />
+                <span>Export all to TOML</span>
+            </button>
+        </form>
+    </section>
+</div>

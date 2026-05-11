@@ -1,0 +1,264 @@
+@page "/admin/catalog"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject CatalogService Catalog
+@inject ILogger<AdminCatalog> Log
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
+
+@*
+    Flat editor for the well-known dependency catalogue. The whole list is
+    submitted on Save; the service reconciles row by row so unchanged entries
+    keep their primary keys and the audit log only records real changes.
+*@
+
+<PageTitle>Catalogue · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page admin-template-edit">
+    <header class="admin-page__header">
+        <div>
+            <h1>Well-known dependencies</h1>
+            <p class="muted">
+                These rows populate the New Extension dependency picker.
+                Group items into categories (Continia, ForNAV, Other…) so they
+                bucket sensibly in the picker UI.
+            </p>
+        </div>
+        <a class="btn btn--sm" href="/admin">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to admin</span>
+        </a>
+    </header>
+
+    @if (_form is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        @if (_saveError is not null)
+        {
+            <p class="form-error" role="alert">@_saveError</p>
+        }
+        @if (_saveSuccess is not null)
+        {
+            <p class="form-success" role="status">@_saveSuccess</p>
+        }
+
+        <form class="form-grid admin-template-edit__form" @onsubmit="SaveAsync" @onsubmit:preventDefault>
+            <section class="form-section">
+                <div class="folder-editor__header">
+                    <label class="section-label">Catalogue entries</label>
+                    <button type="button" class="btn btn--sm" @onclick="AddEntry">
+                        <Icon Name="plus" Width="14" Height="14" />
+                        <span>Add entry</span>
+                    </button>
+                </div>
+                @if (_form.Entries.Count == 0)
+                {
+                    <p class="muted">
+                        No catalogue entries. Click <strong>Add entry</strong>
+                        to add the dependencies your team commonly references.
+                    </p>
+                }
+                else
+                {
+                    <div class="folder-editor__list">
+                        @for (var i = 0; i < _form.Entries.Count; i++)
+                        {
+                            var index = i;
+                            var row = _form.Entries[index];
+                            <div class="folder-editor__row">
+                                <div class="folder-editor__row-head">
+                                    <div class="folder-editor__order">
+                                        <button type="button" class="btn btn--sm" disabled="@(index == 0)"
+                                                @onclick="() => MoveEntry(index, -1)" title="Move up">
+                                            <Icon Name="arrow-up" Width="12" Height="12" />
+                                        </button>
+                                        <button type="button" class="btn btn--sm" disabled="@(index == _form.Entries.Count - 1)"
+                                                @onclick="() => MoveEntry(index, 1)" title="Move down">
+                                            <Icon Name="arrow-down" Width="12" Height="12" />
+                                        </button>
+                                    </div>
+                                    <div class="folder-editor__path">
+                                        <input type="text" required placeholder="GUID (e.g. 12345678-1234-1234-1234-1234567890ab)"
+                                               pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                                               title="Must be a GUID in 8-4-4-4-12 hex form."
+                                               @bind="row.DepId" @bind:event="oninput" />
+                                        <FieldError Field="@($"Entries[{index}].DepId")" Errors="_fieldErrors" />
+                                    </div>
+                                    <button type="button" class="btn btn--sm" @onclick="() => RemoveEntry(index)" title="Remove entry">
+                                        <Icon Name="trash-2" Width="12" Height="12" />
+                                    </button>
+                                </div>
+                                <div class="dep-editor__fields">
+                                    <div>
+                                        <input type="text" required placeholder="Name"
+                                               @bind="row.DepName" @bind:event="oninput" />
+                                        <FieldError Field="@($"Entries[{index}].DepName")" Errors="_fieldErrors" />
+                                    </div>
+                                    <div>
+                                        <input type="text" required placeholder="Publisher"
+                                               @bind="row.DepPublisher" @bind:event="oninput" />
+                                        <FieldError Field="@($"Entries[{index}].DepPublisher")" Errors="_fieldErrors" />
+                                    </div>
+                                    <div>
+                                        <input type="text" required placeholder="Default version (e.g. 1.0.0.0)"
+                                               @bind="row.DepVersionDefault" @bind:event="oninput" />
+                                        <FieldError Field="@($"Entries[{index}].DepVersionDefault")" Errors="_fieldErrors" />
+                                    </div>
+                                    <div>
+                                        <input type="text" placeholder="Category (e.g. Continia)"
+                                               @bind="row.Category" @bind:event="oninput" />
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    <small class="muted">
+                        The default version pre-fills the picker; users can
+                        override it on a per-extension basis. Category groups
+                        items in the picker UI.
+                    </small>
+                }
+            </section>
+
+            <div class="admin-template-edit__actions">
+                <button type="submit" class="btn btn--primary" disabled="@_saving">
+                    <Icon Name="save" Width="16" Height="16" />
+                    <span>@(_saving ? "Saving…" : "Save catalogue")</span>
+                </button>
+                <button type="button" class="btn" @onclick="ReloadAsync" disabled="@_saving">
+                    <Icon Name="rotate-ccw" Width="16" Height="16" />
+                    <span>Discard changes</span>
+                </button>
+            </div>
+        </form>
+    }
+</div>
+
+@code {
+    private FormState? _form;
+    private bool _saving;
+    private string? _saveError;
+    private string? _saveSuccess;
+    private IReadOnlyDictionary<string, string> _fieldErrors = new Dictionary<string, string>();
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _form = null;
+        _saving = false;
+        _saveError = null;
+        _saveSuccess = null;
+        _fieldErrors = new Dictionary<string, string>();
+        StateHasChanged();
+        var rows = await Catalog.GetAllAsync();
+        _form = FormState.From(rows);
+    }
+
+    private void AddEntry()
+    {
+        _form?.Entries.Add(new EntryRow());
+    }
+
+    private void RemoveEntry(int index)
+    {
+        if (_form is null) return;
+        if (index >= 0 && index < _form.Entries.Count)
+        {
+            _form.Entries.RemoveAt(index);
+        }
+    }
+
+    private void MoveEntry(int index, int delta)
+    {
+        if (_form is null) return;
+        var target = index + delta;
+        if (index < 0 || index >= _form.Entries.Count || target < 0 || target >= _form.Entries.Count)
+        {
+            return;
+        }
+        (_form.Entries[index], _form.Entries[target]) =
+            (_form.Entries[target], _form.Entries[index]);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_form is null || _saving) return;
+        _saving = true;
+        _saveError = null;
+        _saveSuccess = null;
+        _fieldErrors = new Dictionary<string, string>();
+
+        var payload = _form.ToInputs();
+
+        try
+        {
+            await Catalog.SaveAsync(payload);
+            // Round-trip through the DB so newly-added rows pick up their
+            // assigned primary key and ordering reflects the saved state.
+            var rows = await Catalog.GetAllAsync();
+            _form = FormState.From(rows);
+            _saveSuccess = "Saved.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _fieldErrors = ex.Errors;
+            _saveError = $"Couldn't save: {ex.Errors.Count} validation error(s). See messages next to each field.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Unexpected error saving catalogue.");
+            _saveError = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private sealed class FormState
+    {
+        public List<EntryRow> Entries { get; } = new();
+
+        public static FormState From(IReadOnlyList<WellKnownDependency> rows)
+        {
+            var state = new FormState();
+            foreach (var r in rows)
+            {
+                state.Entries.Add(new EntryRow
+                {
+                    Id = r.Id,
+                    DepId = r.DepId,
+                    DepName = r.DepName,
+                    DepPublisher = r.DepPublisher,
+                    DepVersionDefault = r.DepVersionDefault,
+                    Category = r.Category ?? string.Empty,
+                });
+            }
+            return state;
+        }
+
+        public List<CatalogEntryInput> ToInputs() => Entries
+            .Select(e => new CatalogEntryInput(
+                Id: e.Id,
+                DepId: e.DepId,
+                DepName: e.DepName,
+                DepPublisher: e.DepPublisher,
+                DepVersionDefault: e.DepVersionDefault,
+                Category: string.IsNullOrWhiteSpace(e.Category) ? null : e.Category))
+            .ToList();
+    }
+
+    private sealed class EntryRow
+    {
+        public int? Id { get; set; }
+        public string DepId { get; set; } = string.Empty;
+        public string DepName { get; set; } = string.Empty;
+        public string DepPublisher { get; set; } = string.Empty;
+        public string DepVersionDefault { get; set; } = string.Empty;
+        public string Category { get; set; } = string.Empty;
+    }
+}

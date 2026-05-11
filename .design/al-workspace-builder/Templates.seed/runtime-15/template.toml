@@ -1,0 +1,67 @@
+# Runtime 15+ template — namespace folder layout
+# Used by Business Central v24 and later, where AL got first-class
+# namespace support and the recommended folder layout shifted from
+# src/<element-type>/ to Source/<namespace>/.
+
+[template]
+key = "runtime-15"
+runtime = 15
+name = "Runtime 15+"
+description = "Namespace folders (BC v24+)"
+default_application = "24.0.0.0"
+default_platform = "1.0.0.0"
+core_id_range_from = 90000
+core_id_range_to = 90999
+module_id_range_start = 91000
+module_id_range_size = 200
+
+[defaults]
+publisher = "Consortio IT"
+target = "Cloud"
+url = "https://www.consortio.dk/"
+logo = "../.assets/images/logo.png"
+features = ["TranslationFile", "NoImplicitWith"]
+supportedLocales = ["en-US", "da-DK"]
+
+[defaults.resourceExposurePolicy]
+allowDebugging = true
+allowDownloadingSource = false
+includeSourceInSymbolFile = true
+
+[appSourceCop]
+mandatoryPrefix = "CONIT"
+supportedCountries = ["US", "DK"]
+
+# Folder structure modelled on the Core extension layout the team is moving to.
+# Folders with an `example` field will be seeded with files from
+# Templates.seed/runtime-15/examples/<example>/ when the user enables examples.
+
+[[folders]]
+path = "Source/Foundation"
+example = "Foundation"
+
+[[folders]]
+path = "Source/Finance"
+example = "Finance"
+
+[[folders]]
+path = "Source/Sales"
+
+[[folders]]
+path = "Source/Purchases"
+
+[[folders]]
+path = "Source/Inventory"
+
+[[folders]]
+path = "Source/Warehouse"
+
+[[folders]]
+path = "Source/Projects"
+
+[[folders]]
+path = "Source/Security"
+example = "Security"
+
+[[folders]]
+path = "Translations"

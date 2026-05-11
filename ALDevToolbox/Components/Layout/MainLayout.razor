@@ -1,0 +1,55 @@
+@inherits LayoutComponentBase
+@using Lucide.Blazor.Components
+@using System.Security.Claims
+
+<div class="app-shell">
+    <header class="top-bar">
+        <div class="top-bar__brand">
+            <Icon Name="hammer" Css="brand-icon" Width="20" Height="20" />
+            <span class="brand-name">AL Dev Toolbox</span>
+        </div>
+        <div class="top-bar__user">
+            <ThemeToggle />
+            <AuthorizeView>
+                <Authorized>
+                    @{
+                        var orgName = context.User.FindFirst("org_name")?.Value;
+                        var role = context.User.FindFirst(ClaimTypes.Role)?.Value;
+                        var name = context.User.Identity?.Name;
+                    }
+                    <a href="/account" class="user-button" title="Manage your account">
+                        <span class="user-button__name">
+                            @name@(string.IsNullOrEmpty(orgName) ? "" : $" ({orgName})")@(string.IsNullOrEmpty(role) ? "" : $" — {role}")
+                        </span>
+                    </a>
+                    <form method="post" action="/auth/logout" class="signout-form">
+                        <AntiforgeryToken />
+                        <button type="submit" class="user-button" title="Sign out">
+                            <Icon Name="log-out" Width="14" Height="14" Css="user-button__icon" />
+                        </button>
+                    </form>
+                </Authorized>
+                <NotAuthorized>
+                    <a href="/login" class="signin-link signin-link--icon" aria-label="Sign in" title="Sign in">
+                        <Icon Name="log-in" Width="16" Height="16" />
+                    </a>
+                    <a href="/signup" class="signin-link" aria-label="Sign up" title="Sign up">Sign up</a>
+                </NotAuthorized>
+            </AuthorizeView>
+        </div>
+    </header>
+
+    <aside class="sidebar">
+        <NavMenu />
+    </aside>
+
+    <main class="content">
+        @Body
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">×</span>
+</div>

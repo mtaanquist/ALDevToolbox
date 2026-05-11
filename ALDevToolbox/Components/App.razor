@@ -1,0 +1,54 @@
+﻿@inject IHttpContextAccessor Http
+<!DOCTYPE html>
+@* data-theme is rendered server-side from the aldt-theme cookie so Blazor's
+   enhanced-navigation diff sees a value matching what the client already has
+   on <html> and leaves it alone. Without the cookie, the response would have
+   no attribute and the diff would strip it on every nav, visibly flipping
+   the page to the OS default. The inline FOUC script handles cookie-less
+   first visits; theme.js writes the cookie alongside localStorage on click. *@
+<html lang="en" data-theme="@ServerTheme">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <ResourcePreloader />
+    @* Synchronously honour the persisted theme choice before app.css loads,
+       so users who picked dark don't see a light flash on cold loads. *@
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem("aldt-theme");
+                if (t === "light" || t === "dark") {
+                    document.documentElement.setAttribute("data-theme", t);
+                }
+            } catch (e) { /* private mode etc. — fall through to system pref */ }
+        })();
+    </script>
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["ALDevToolbox.styles.css"]" />
+    <ImportMap />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <HeadOutlet />
+</head>
+
+<body>
+    <Routes />
+    <ReconnectModal />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script src="@Assets["theme.js"]"></script>
+    <script src="@Assets["generate.js"]"></script>
+</body>
+
+</html>
+
+@code {
+    private string? ServerTheme
+    {
+        get
+        {
+            var cookie = Http.HttpContext?.Request.Cookies["aldt-theme"];
+            return cookie is "light" or "dark" ? cookie : null;
+        }
+    }
+}

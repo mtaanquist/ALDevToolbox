@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="FluentAssertions" Version="6.12.2" />
+    <!-- Pin EF Core explicitly so it floats to the same patch version the
+         main project compiles against. Npgsql.EntityFrameworkCore.PostgreSQL
+         10.0.1 transitively pulls EF Core 10.0.4, but the main app builds
+         against 10.0.7 (via Microsoft.EntityFrameworkCore.Design 10.*) and
+         the resulting CS1705 mismatch fails the test build. Direct refs
+         take precedence over transitive ones. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.*" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.*" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.*" />
+    <!-- Testcontainers drives the local-dev path; CI bypasses it by setting
+         ALDT_TEST_POSTGRES_CONNECTION to the runner-provided service container,
+         so the package is restored but not exercised on the CI runner. -->
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- xUnit is universal in this project; pull it into every file's
+         implicit-usings set so individual test files stay focused on what
+         they actually arrange. -->
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      AuditInterceptorTests constructs an IHttpContextAccessor / DefaultHttpContext
+      to drive the interceptor. Those types live in the ASP.NET Core shared
+      framework, which a Microsoft.NET.Sdk test project doesn't pick up implicitly
+      from a Microsoft.NET.Sdk.Web project reference.
+    -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ALDevToolbox\ALDevToolbox.csproj" />
+  </ItemGroup>
+
+</Project>

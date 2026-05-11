@@ -1,0 +1,136 @@
+@using Lucide.Blazor.Components
+
+<nav class="sidebar-nav" aria-label="Sidebar">
+    <div class="nav-section">
+        <div class="nav-section__label">Tools</div>
+        <ul class="nav-list">
+            <li>
+                <NavLink class="nav-link" href="/projects/new" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                    <Icon Name="folder-plus" Width="18" Height="18" Css="nav-link__icon" />
+                    <span>Project generator</span>
+                </NavLink>
+            </li>
+        </ul>
+    </div>
+
+    <div class="nav-section">
+        <div class="nav-section__label">Resources</div>
+        <ul class="nav-list">
+            <li>
+                <NavLink class="nav-link" href="/templates" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                    <Icon Name="folder" Width="18" Height="18" Css="nav-link__icon" />
+                    <span>Templates</span>
+                </NavLink>
+            </li>
+            @*
+                Add more resource links here. Use <NavLink> for internal routes
+                (so the active-state highlight works) and a plain <a> for external
+                URLs. Pick an icon from https://lucide.dev/icons. Example:
+
+                <li>
+                    <a class="nav-link" href="https://github.com/your-org/your-repo"
+                       target="_blank" rel="noopener">
+                        <Icon Name="external-link" Width="18" Height="18" Css="nav-link__icon" />
+                        <span>Repo</span>
+                    </a>
+                </li>
+            *@
+        </ul>
+    </div>
+
+    @* Admin section is only visible to users with the Admin role. End-users
+       still see the Tools / Resources sections but not the admin links. *@
+    <AuthorizeView Roles="Admin">
+        <Authorized>
+            <div class="nav-section">
+                <div class="nav-divider"></div>
+                <div class="nav-section__label">Admin</div>
+                <ul class="nav-list">
+                    <li>
+                        <NavLink class="nav-link" href="/admin" Match="NavLinkMatch.All" ActiveClass="active">
+                            <Icon Name="layout-dashboard" Width="18" Height="18" Css="nav-link__icon" />
+                            <span>Dashboard</span>
+                        </NavLink>
+                    </li>
+                    <li>
+                        <NavLink class="nav-link" href="/admin/templates" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <Icon Name="layers" Width="18" Height="18" Css="nav-link__icon" />
+                            <span>Templates</span>
+                        </NavLink>
+                    </li>
+                    <li>
+                        <NavLink class="nav-link" href="/admin/modules" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <Icon Name="package" Width="18" Height="18" Css="nav-link__icon" />
+                            <span>Modules</span>
+                        </NavLink>
+                    </li>
+                    <li>
+                        <NavLink class="nav-link" href="/admin/catalog" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <Icon Name="book-open" Width="18" Height="18" Css="nav-link__icon" />
+                            <span>Catalogue</span>
+                        </NavLink>
+                    </li>
+                    <li>
+                        <NavLink class="nav-link" href="/admin/application-versions" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <Icon Name="tag" Width="18" Height="18" Css="nav-link__icon" />
+                            <span>App versions</span>
+                        </NavLink>
+                    </li>
+                    <li>
+                        <NavLink class="nav-link" href="/admin/users" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <Icon Name="users" Width="18" Height="18" Css="nav-link__icon" />
+                            <span>Users</span>
+                        </NavLink>
+                    </li>
+                    <li>
+                        <NavLink class="nav-link" href="/admin/configuration" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <Icon Name="settings" Width="18" Height="18" Css="nav-link__icon" />
+                            <span>Configuration</span>
+                        </NavLink>
+                    </li>
+                    <li>
+                        <NavLink class="nav-link" href="/admin/audit" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <Icon Name="history" Width="18" Height="18" Css="nav-link__icon" />
+                            <span>Audit log</span>
+                        </NavLink>
+                    </li>
+                </ul>
+            </div>
+        </Authorized>
+    </AuthorizeView>
+
+    <AuthorizeView Roles="SiteAdmin">
+        <Authorized>
+            <div class="nav-section">
+                <div class="nav-divider"></div>
+                <div class="nav-section__label">Site Admin</div>
+                <ul class="nav-list">
+                    <li>
+                        <NavLink class="nav-link" href="/site-admin/users" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <Icon Name="users" Width="18" Height="18" Css="nav-link__icon" />
+                            <span>Users</span>
+                        </NavLink>
+                    </li>
+                    <li>
+                        <NavLink class="nav-link" href="/site-admin/audit" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <Icon Name="history" Width="18" Height="18" Css="nav-link__icon" />
+                            <span>Audit</span>
+                        </NavLink>
+                    </li>
+                    <li>
+                        <NavLink class="nav-link" href="/site-admin/backups" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <Icon Name="database-backup" Width="18" Height="18" Css="nav-link__icon" />
+                            <span>Backups</span>
+                        </NavLink>
+                    </li>
+                    <li>
+                        <NavLink class="nav-link" href="/site-admin/settings" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <Icon Name="server-cog" Width="18" Height="18" Css="nav-link__icon" />
+                            <span>Settings</span>
+                        </NavLink>
+                    </li>
+                </ul>
+            </div>
+        </Authorized>
+    </AuthorizeView>
+</nav>

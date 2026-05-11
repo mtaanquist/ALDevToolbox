@@ -1,0 +1,121 @@
+@page "/admin/audit"
+@attribute [Authorize(Roles = "Admin")]
+@inject AuditService Audit
+@using System.Text.Json
+@using ALDevToolbox.Domain.Entities
+@using Lucide.Blazor.Components
+
+<PageTitle>Audit log · AL Dev Toolbox</PageTitle>
+
+<div class="audit-page">
+    <h1>Audit log</h1>
+    <p class="muted">
+        Most recent changes to runtime templates, modules, and the well-known
+        dependency catalogue. Snapshots show the row's state immediately before the
+        change; created rows have no prior state, so their snapshot is empty.
+    </p>
+
+    @if (_entries is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_entries.Count == 0)
+    {
+        <p class="muted">
+            No changes recorded yet. Once an admin edits a template, module, or
+            catalogue entry, the change will appear here.
+        </p>
+    }
+    else
+    {
+        <table class="data-table audit-table">
+            <thead>
+                <tr>
+                    <th>When (UTC)</th>
+                    <th>Who</th>
+                    <th>Entity</th>
+                    <th>Id</th>
+                    <th>Action</th>
+                    <th>Snapshot</th>
+                    <th class="data-table__actions"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var e in _entries)
+                {
+                    <tr>
+                        <td><time datetime="@e.Timestamp.ToString("O")">@e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
+                        <td>@e.ChangedBy</td>
+                        <td>@FriendlyType(e.EntityType)</td>
+                        <td><code>@e.EntityId</code></td>
+                        <td><span class="audit-action audit-action--@e.Action.ToString().ToLowerInvariant()">@e.Action</span></td>
+                        <td>
+                            @if (string.IsNullOrEmpty(e.SnapshotJson))
+                            {
+                                <span class="muted">—</span>
+                            }
+                            else
+                            {
+                                <details>
+                                    <summary>Show JSON</summary>
+                                    <pre class="audit-snapshot"><code>@PrettyJson(e.SnapshotJson)</code></pre>
+                                </details>
+                            }
+                        </td>
+                        <td class="data-table__actions">
+                            <a class="btn btn--sm" href="@($"/admin/audit/{e.Id}/diff")"
+                               title="Compare this row's snapshot against the next change to the same entity">
+                                <Icon Name="diff" Width="14" Height="14" />
+                                <span>View change</span>
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (_entries.Count >= _limit)
+        {
+            <p class="muted audit-page__limit-note">
+                Showing the @_limit most recent entries. Older entries are still in the
+                database; per-entity history is available from each admin edit page.
+            </p>
+        }
+    }
+</div>
+
+@code {
+    private const int _limit = 200;
+    private List<AuditLogEntry>? _entries;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _entries = await Audit.GetRecentAsync(_limit);
+    }
+
+    private static string FriendlyType(AuditEntityType type) => type switch
+    {
+        AuditEntityType.RuntimeTemplate => "Template",
+        AuditEntityType.TemplateFolder => "Template folder",
+        AuditEntityType.TemplateFile => "Template file",
+        AuditEntityType.TemplateModuleFolder => "Template module folder",
+        AuditEntityType.TemplateModuleFile => "Template module file",
+        AuditEntityType.RuntimeTemplateDefaultModule => "Template default module",
+        AuditEntityType.Module => "Module",
+        AuditEntityType.ModuleDependency => "Module dependency",
+        AuditEntityType.WellKnownDependency => "Catalogue entry",
+        _ => type.ToString()
+    };
+
+    private static string PrettyJson(string raw)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch (JsonException)
+        {
+            return raw;
+        }
+    }
+}

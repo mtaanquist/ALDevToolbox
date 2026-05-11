@@ -1,0 +1,166 @@
+@page "/templates/{Key}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject TemplateService Templates
+@using System.Text.Json
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
+@using Lucide.Blazor.Components
+
+<PageTitle>@PageTitleText · AL Dev Toolbox</PageTitle>
+
+<TabBar Active="TabBar.Tab.Templates" />
+
+<div class="template-detail">
+    <header class="template-detail__header">
+        <div>
+            <h1>@PageTitleText</h1>
+            @if (_template is not null)
+            {
+                <p class="muted">
+                    Read-only view of the template's seeded layout and defaults.
+                    @if (_template.Deprecated)
+                    {
+                        <span> · <strong>Deprecated</strong></span>
+                    }
+                </p>
+            }
+        </div>
+        <a class="btn btn--sm" href="/templates">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to list</span>
+        </a>
+    </header>
+
+    @if (_template is null)
+    {
+        @if (_loadFailed)
+        {
+            <p class="form-error" role="alert">
+                No template with key <code>@Key</code> was found.
+            </p>
+        }
+        else
+        {
+            <p class="muted">Loading…</p>
+        }
+    }
+    else
+    {
+        <section class="template-detail__meta">
+            <dl class="kv-grid">
+                <dt>Key</dt>
+                <dd><code>@_template.Key</code></dd>
+                <dt>Runtime</dt>
+                <dd>@_template.Runtime</dd>
+                <dt>Default application</dt>
+                <dd><code>@_template.DefaultApplication</code></dd>
+                <dt>Default platform</dt>
+                <dd><code>@_template.DefaultPlatform</code></dd>
+                <dt>Core ID range</dt>
+                <dd><code>@_template.CoreIdRangeFrom</code> – <code>@_template.CoreIdRangeTo</code></dd>
+                <dt>Module ID range</dt>
+                <dd>
+                    starts at <code>@_template.ModuleIdRangeStart</code>,
+                    @_template.ModuleIdRangeSize per module
+                </dd>
+            </dl>
+            @if (!string.IsNullOrWhiteSpace(_template.Description))
+            {
+                <p class="caption muted">@_template.Description</p>
+            }
+        </section>
+
+        <section class="template-detail__section">
+            <h2>Folder layout</h2>
+            @if (_template.Folders.Count == 0)
+            {
+                <p class="muted">No folders defined. Generation falls back to the static layout only.</p>
+            }
+            else
+            {
+                <FolderTreePreview Root="_tree" />
+            }
+        </section>
+
+        <section class="template-detail__section">
+            <h2>Defaults</h2>
+            <p class="caption muted">Merged into every generated <code>app.json</code>.</p>
+            <textarea class="json-editor" rows="12" readonly spellcheck="false">@_defaultsJson</textarea>
+        </section>
+
+        <section class="template-detail__section">
+            <h2>AppSourceCop</h2>
+            <p class="caption muted">Written verbatim into each <code>AppSourceCop.json</code>.</p>
+            <textarea class="json-editor" rows="6" readonly spellcheck="false">@_appSourceCopJson</textarea>
+        </section>
+
+        @if (!_template.Deprecated && _template.DeletedAt is null)
+        {
+            <div class="template-detail__actions">
+                <a class="btn btn--primary" href="@($"/projects/new?template={Uri.EscapeDataString(_template.Key)}")">
+                    <Icon Name="folder-plus" Width="16" Height="16" />
+                    <span>New workspace from this template</span>
+                </a>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public string? Key { get; set; }
+
+    private RuntimeTemplate? _template;
+    private bool _loadFailed;
+    private PreviewNode? _tree;
+    private string _defaultsJson = string.Empty;
+    private string _appSourceCopJson = string.Empty;
+
+    private string PageTitleText => _template?.Name ?? (string.IsNullOrEmpty(Key) ? "Template" : Key!);
+
+    private static readonly JsonSerializerOptions PrettyJson = new() { WriteIndented = true };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _template = null;
+        _tree = null;
+        _loadFailed = false;
+        if (string.IsNullOrEmpty(Key)) { _loadFailed = true; return; }
+
+        var template = await Templates.GetByKeyAsync(Key);
+        // Hide soft-deleted templates from anonymous users — admins still see
+        // them via /admin/templates/{key}, where they can restore.
+        if (template is null || template.DeletedAt is not null)
+        {
+            _loadFailed = true;
+            return;
+        }
+
+        _template = template;
+        _defaultsJson = JsonSerializer.Serialize(template.Defaults, PrettyJson);
+        _appSourceCopJson = JsonSerializer.Serialize(template.AppSourceCop, PrettyJson);
+        _tree = BuildTree(template);
+    }
+
+    /// <summary>
+    /// Renders the template's folder list using the same merging rules as the
+    /// live preview (shared prefixes collapse, files attach at the deepest
+    /// segment) and the same Windows-Explorer sort. Files seeded into a folder
+    /// surface as leaves; an empty folder shows the placeholder we'd actually
+    /// emit (<c>.gitkeep</c>).
+    /// </summary>
+    private static PreviewNode BuildTree(RuntimeTemplate template)
+    {
+        var entries = template.Folders
+            .OrderBy(f => f.Ordering)
+            .Select(f =>
+            {
+                IReadOnlyList<PreviewNode> leaves = f.Files.Count > 0
+                    ? f.Files.OrderBy(x => x.Ordering).Select(x => PreviewNode.File(x.Path)).ToList()
+                    : new List<PreviewNode> { PreviewNode.File(".gitkeep") };
+                return (f.Path, leaves);
+            });
+        var children = PreviewTreeBuilder.BuildFolderChildren(entries);
+        var root = PreviewNode.Extension(template.Key, children);
+        return PreviewTreeBuilder.SortForDisplay(root);
+    }
+}

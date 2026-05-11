@@ -1,0 +1,26 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.idea/
+**/.vscode/
+
+.git/
+.gitignore
+.github/
+.design/
+ALDevToolbox.Tests/
+
+# Local-only artefacts; the image creates its own under /data.
+data/
+*.db
+*.db-shm
+*.db-wal
+
+.env
+.env.*
+!.env-sample
+
+Dockerfile
+compose.yml
+.dockerignore
+README.md

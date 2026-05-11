@@ -1,0 +1,147 @@
+@page "/site-admin/audit"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using System.Text.Json
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Services
+@inject SiteAdminService SiteAdmin
+
+<PageTitle>Site Admin · Audit · AL Dev Toolbox</PageTitle>
+
+<div class="audit-page">
+    <h1>Site Admin · Audit</h1>
+    <p class="muted">
+        Cross-organisation audit search. Filters are optional; an unfiltered
+        search returns the most recent activity across every organisation.
+    </p>
+
+    <form method="get" action="/site-admin/audit" class="admin-filter-form">
+        <label>
+            Entity type
+            <select name="entityType">
+                <option value="">Any</option>
+                @foreach (var type in Enum.GetValues<AuditEntityType>())
+                {
+                    <option value="@type" selected="@(EntityType == type.ToString())">@type</option>
+                }
+            </select>
+        </label>
+        <label>
+            Organisation
+            <select name="organizationId">
+                <option value="">Any</option>
+                @if (_orgs is not null)
+                {
+                    @foreach (var o in _orgs)
+                    {
+                        <option value="@o.Id" selected="@(OrganizationId == o.Id)">@o.Name</option>
+                    }
+                }
+            </select>
+        </label>
+        <label>
+            Actor contains
+            <input type="text" name="actor" value="@Actor" placeholder="email or display name" />
+        </label>
+        <label>
+            From (UTC)
+            <input type="datetime-local" name="from" value="@FromUtc" />
+        </label>
+        <label>
+            To (UTC)
+            <input type="datetime-local" name="to" value="@ToUtc" />
+        </label>
+        <button type="submit" class="btn btn--secondary">Search</button>
+    </form>
+
+    @if (_rows is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_rows.Count == 0)
+    {
+        <p class="muted">No audit entries match the current filters.</p>
+    }
+    else
+    {
+        <table class="data-table audit-table">
+            <thead>
+                <tr>
+                    <th>When (UTC)</th>
+                    <th>Who</th>
+                    <th>Org</th>
+                    <th>Entity</th>
+                    <th>Id</th>
+                    <th>Action</th>
+                    <th>Snapshot</th>
+                    <th class="data-table__actions"></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var e in _rows)
+            {
+                <tr>
+                    <td><time datetime="@e.Timestamp.ToString("O")">@e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
+                    <td>@e.ChangedBy</td>
+                    <td>@(e.OrganizationName ?? "—")</td>
+                    <td>@e.EntityType</td>
+                    <td><code>@e.EntityId</code></td>
+                    <td><span class="audit-action audit-action--@e.Action.ToString().ToLowerInvariant()">@e.Action</span></td>
+                    <td>
+                        @if (string.IsNullOrEmpty(e.SnapshotJson))
+                        {
+                            <span class="muted">—</span>
+                        }
+                        else
+                        {
+                            <details>
+                                <summary>Show JSON</summary>
+                                <pre class="audit-snapshot"><code>@PrettyJson(e.SnapshotJson)</code></pre>
+                            </details>
+                        }
+                    </td>
+                    <td class="data-table__actions">
+                        <a class="btn btn--sm" href="@($"/site-admin/audit/{e.Id}/diff")"
+                           title="Compare this row's snapshot against the next change to the same entity">
+                            <Icon Name="diff" Width="14" Height="14" />
+                            <span>View change</span>
+                        </a>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "entityType")] public string? EntityType { get; set; }
+    [SupplyParameterFromQuery(Name = "organizationId")] public int? OrganizationId { get; set; }
+    [SupplyParameterFromQuery(Name = "actor")] public string? Actor { get; set; }
+    [SupplyParameterFromQuery(Name = "from")] public string? FromUtc { get; set; }
+    [SupplyParameterFromQuery(Name = "to")] public string? ToUtc { get; set; }
+
+    private List<SiteAdminAuditRow>? _rows;
+    private List<Organization>? _orgs;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _orgs = await SiteAdmin.ListOrganizationsAsync();
+        AuditEntityType? entity = Enum.TryParse<AuditEntityType>(EntityType, out var et) ? et : null;
+        DateTime? from = DateTime.TryParse(FromUtc, out var f) ? DateTime.SpecifyKind(f, DateTimeKind.Utc) : null;
+        DateTime? to = DateTime.TryParse(ToUtc, out var t) ? DateTime.SpecifyKind(t, DateTimeKind.Utc) : null;
+        _rows = await SiteAdmin.SearchAuditAsync(entity, OrganizationId, Actor, from, to);
+    }
+
+    private static string PrettyJson(string raw)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch (JsonException)
+        {
+            return raw;
+        }
+    }
+}

@@ -1,0 +1,157 @@
+@page "/site-admin/backups"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Services
+@inject BackupService Backups
+@inject SystemSettingsService Settings
+
+<PageTitle>Site Admin · Backups · AL Dev Toolbox</PageTitle>
+
+<div class="admin-section">
+    <h1>Site Admin · Backups</h1>
+    <p class="muted">
+        Database backups written by <code>pg_dump -Fc</code> to the
+        <code>app-backups</code> volume. Scheduled backups run daily;
+        ad-hoc backups can be triggered below. Pinned backups are exempt
+        from retention pruning.
+    </p>
+
+    @if (!string.IsNullOrEmpty(Message))
+    {
+        <p class="form-error" role="alert">@Message</p>
+    }
+    @if (Ok == "created")
+    {
+        <p class="form-info" role="status">Backup created.</p>
+    }
+    else if (Ok == "pinned")
+    {
+        <p class="form-info" role="status">Backup pinned.</p>
+    }
+    else if (Ok == "unpinned")
+    {
+        <p class="form-info" role="status">Backup unpinned.</p>
+    }
+    else if (Ok == "deleted")
+    {
+        <p class="form-info" role="status">Backup deleted.</p>
+    }
+    else if (Ok == "restored")
+    {
+        <p class="form-info" role="status">Restore complete — the application is back online.</p>
+    }
+
+    @if (_view is not null)
+    {
+        <p class="muted">
+            Retention: keep the @_view.BackupRetentionCount most recent unpinned backups.
+            @if (_view.BackupScheduleEnabled)
+            {
+                <text>Scheduled daily at @_view.BackupScheduleTimeUtc.ToString("HH:mm") UTC.</text>
+            }
+            else
+            {
+                <text>Scheduled backups are paused.</text>
+            }
+        </p>
+    }
+
+    <form method="post" action="/site-admin/backups/create" class="admin-form admin-form--inline">
+        <AntiforgeryToken />
+        <button type="submit" class="btn">Take a backup now</button>
+        <span class="muted">Runs <code>pg_dump</code> against the live database and stores the file in the backups volume.</span>
+    </form>
+
+    @if (_rows is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_rows.Count == 0)
+    {
+        <p class="muted">No backups yet. Take one above, or wait for the next scheduled run.</p>
+    }
+    else
+    {
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th>File</th>
+                    <th>Created (UTC)</th>
+                    <th>Kind</th>
+                    <th>Size</th>
+                    <th>Triggered by</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _rows)
+                {
+                    <tr>
+                        <td><code>@row.FileName</code></td>
+                        <td>@row.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td>@row.Kind</td>
+                        <td>@FormatSize(row.FileSizeBytes)</td>
+                        <td>@(row.CreatedByEmail ?? "scheduler")</td>
+                        <td>@(row.IsPinned ? "Pinned" : "")</td>
+                        <td class="row-actions">
+                            <a class="btn btn--small" href="@($"/site-admin/backups/{row.Id}/download")">Download</a>
+                            @if (row.IsPinned)
+                            {
+                                <form method="post" action="@($"/site-admin/backups/{row.Id}/unpin")" style="display:inline">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="btn btn--small">Unpin</button>
+                                </form>
+                            }
+                            else
+                            {
+                                <form method="post" action="@($"/site-admin/backups/{row.Id}/pin")" style="display:inline">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="btn btn--small">Pin</button>
+                                </form>
+                            }
+                            <form method="post" action="@($"/site-admin/backups/{row.Id}/restore")"
+                                  style="display:inline"
+                                  onsubmit="return confirm('Restoring will overwrite the entire database with this backup. Continue?');">
+                                <AntiforgeryToken />
+                                <input type="hidden" name="Confirm" value="true" />
+                                <button type="submit" class="btn btn--small btn--danger">Restore</button>
+                            </form>
+                            @if (!row.IsPinned)
+                            {
+                                <form method="post" action="@($"/site-admin/backups/{row.Id}/delete")"
+                                      style="display:inline"
+                                      onsubmit="return confirm('Delete this backup permanently?');">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="btn btn--small btn--danger">Delete</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+
+    private List<BackupRow>? _rows;
+    private SystemSettingsView? _view;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _view = await Settings.GetViewAsync();
+        _rows = await Backups.ListAsync();
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024):F1} MB";
+        return $"{bytes / (1024.0 * 1024 * 1024):F2} GB";
+    }
+}

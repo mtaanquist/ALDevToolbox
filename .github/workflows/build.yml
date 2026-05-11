@@ -1,0 +1,208 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      # Service container for the test suite. TestDb reads
+      # ALDT_TEST_POSTGRES_CONNECTION when set and skips spinning up its own
+      # Testcontainers container — faster than booting Docker-inside-Docker on
+      # a runner that already provides Postgres.
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      ALDT_TEST_POSTGRES_CONNECTION: "Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=postgres"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # Ubuntu 24.04 runners ship postgresql-client (currently v16) on PATH, so
+      # BackupServiceTests can probe pg_dump / pg_restore without an apt step.
+      # PgToolAvailability skips the tests when the major version is below 18 —
+      # the dump format the postgres:18 server emits — so the suite stays
+      # green on the runner image without needing the upstream pgdg repo here.
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test --configuration Release --no-build --logger "console;verbosity=normal"
+
+  compose-smoke:
+    # Boots the published image against a real `db` container to lock in the
+    # M16 done-when criterion: `docker compose up` brings up Postgres + app
+    # cleanly against an empty volume. Catches Dockerfile / compose / startup
+    # regressions the dotnet-test job can't see (those run against a service
+    # container, not the published app image).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start the stack
+        env:
+          # Random password each run so a leak in workflow logs isn't reusable.
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}
+          BOOTSTRAP_ADMIN_EMAIL: admin@example.com
+          BOOTSTRAP_ADMIN_PASSWORD: ci-bootstrap-${{ github.run_id }}
+        # --wait blocks until every container reports healthy or the timeout
+        # expires; without it, compose only waits ~30s on depends_on before
+        # giving up. The 180s budget covers postgres init + image build.
+        run: docker compose up -d --build --wait --wait-timeout 180
+
+      - name: Dump container logs if start-up failed
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Wait for /readyz
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error http://localhost:8080/readyz; then
+              echo
+              echo "App reported ready after ${attempt} attempt(s)."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "App did not become ready within ~120s." >&2
+          exit 1
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
+  migration-forward-compat:
+    # M18: catches accidental data-loss migrations (column drops without a
+    # backfill, type changes that fail on real data). Applies the base ref's
+    # migrations to a fresh Postgres, drops a sentinel row, then checks out
+    # the current commit and reapplies — the sentinel must still be there.
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Match the design-time factory's hardcoded database name so the
+      # base-ref run (which pre-dates the env-var fallback in the factory)
+      # targets the same physical database the current-branch step does.
+      ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=aldevtoolbox_designtime"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install dotnet-ef
+        # Ubuntu 24.04 runners ship psql on PATH (postgresql-client-16);
+        # only the EF design-time tool needs explicit installation.
+        run: |
+          dotnet tool install --global dotnet-ef --version 10.*
+          echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
+
+      - name: Create migration database
+        env:
+          PGPASSWORD: postgres
+        run: psql -h localhost -U postgres -d postgres -c "CREATE DATABASE aldevtoolbox_designtime;"
+
+      - name: Apply base-ref migrations
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$BASE_SHA" ]; then
+            echo "No base ref; nothing to compare against."
+            echo "BASE_HAS_MIGRATIONS=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          git worktree add ../base-ref "$BASE_SHA"
+          # The base ref may pre-date the project itself (e.g. the first PR
+          # into main). With no csproj or Migrations directory there's nothing
+          # to forward-compat against, so skip the base-ref apply and let the
+          # current-branch step still run as a smoke test.
+          if [ ! -f ../base-ref/ALDevToolbox/ALDevToolbox.csproj ] \
+             || [ ! -d ../base-ref/ALDevToolbox/Data/Migrations ]; then
+            echo "Base ref has no project or migrations; skipping base-ref apply."
+            echo "BASE_HAS_MIGRATIONS=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          # Carry the current-branch design-time factory back to the base ref
+          # so its `dotnet ef database update` doesn't trip the
+          # PendingModelChangesWarning. The factory's behaviour at the base
+          # ref is otherwise functionally identical; only the warning
+          # suppression matters here, and it's been added on this branch.
+          cp ALDevToolbox/Data/AppDbContextDesignTimeFactory.cs \
+             ../base-ref/ALDevToolbox/Data/AppDbContextDesignTimeFactory.cs
+          pushd ../base-ref >/dev/null
+          dotnet restore ALDevToolbox/ALDevToolbox.csproj
+          dotnet ef database update --project ALDevToolbox/ALDevToolbox.csproj
+          popd >/dev/null
+          echo "BASE_HAS_MIGRATIONS=true" >> "$GITHUB_ENV"
+
+      - name: Drop sentinel row
+        if: env.BASE_HAS_MIGRATIONS == 'true'
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d aldevtoolbox_designtime -c \
+            "INSERT INTO organizations (name, slug, is_pending, is_seeded, created_at) VALUES ('Forward Compat Sentinel', 'forward-compat-sentinel', false, true, NOW());"
+
+      - name: Apply current-branch migrations
+        run: |
+          dotnet restore ALDevToolbox/ALDevToolbox.csproj
+          dotnet ef database update --project ALDevToolbox/ALDevToolbox.csproj
+
+      - name: Assert sentinel survived
+        if: env.BASE_HAS_MIGRATIONS == 'true'
+        env:
+          PGPASSWORD: postgres
+        run: |
+          count=$(psql -h localhost -U postgres -d aldevtoolbox_designtime -tA -c \
+            "SELECT COUNT(*) FROM organizations WHERE slug = 'forward-compat-sentinel';")
+          if [ "$count" != "1" ]; then
+            echo "Sentinel row was lost across the migration step (count=$count)." >&2
+            exit 1
+          fi
+          echo "Sentinel survived the migration step."

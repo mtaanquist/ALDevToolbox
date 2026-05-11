@@ -1,0 +1,91 @@
+@using ALDevToolbox.Domain.ValueObjects
+@using Lucide.Blazor.Components
+
+@*
+    One row of <FolderTreePreview>'s tree. Recursively renders its own children
+    inside a nested <ul>. Kept as a separate component because Razor cannot
+    inline a recursive RenderFragment with markup in a single .razor file.
+
+    Folders are click-to-collapse. Component instance state (_expanded) survives
+    re-renders triggered by parent inputs because the parent rebuilds the tree
+    in the same shape — Blazor preserves the matching component instances.
+*@
+
+<li class="@NodeClass" role="treeitem" aria-expanded="@(IsFolder ? (IsExpanded ? "true" : "false") : null)">
+    @if (IsFolder && Node.Children.Count > 0)
+    {
+        <button type="button" class="ftp__row ftp__row--toggle"
+                @onclick="Toggle" aria-label="@(IsExpanded ? "Collapse" : "Expand")">
+            <span class="ftp__chevron">
+                <Icon Name="@(IsExpanded ? "chevron-down" : "chevron-right")" Width="12" Height="12" />
+            </span>
+            <span class="ftp__icon">
+                <Icon Name="@(IsExpanded ? "folder-open" : "folder")" Width="14" Height="14" />
+            </span>
+            <span class="ftp__name">@Node.Name/</span>
+            @if (Node.IsNew)
+            {
+                <span class="ftp__badge ftp__badge--new" aria-label="newly added">new</span>
+            }
+        </button>
+    }
+    else
+    {
+        <span class="ftp__row">
+            <span class="ftp__chevron ftp__chevron--placeholder"></span>
+            <span class="ftp__icon">
+                @if (Node.Kind == PreviewNodeKind.File)
+                {
+                    <Icon Name="file" Width="14" Height="14" />
+                }
+                else
+                {
+                    <Icon Name="folder" Width="14" Height="14" />
+                }
+            </span>
+            <span class="ftp__name">@Node.Name@(Node.Kind == PreviewNodeKind.File ? "" : "/")</span>
+            @if (Node.IsNew)
+            {
+                <span class="ftp__badge ftp__badge--new" aria-label="newly added">new</span>
+            }
+        </span>
+    }
+    @if (IsFolder && Node.Children.Count > 0 && IsExpanded)
+    {
+        <ul class="ftp__children">
+            @foreach (var child in Node.Children)
+            {
+                <FolderTreeNode Node="child" />
+            }
+        </ul>
+    }
+</li>
+
+@code {
+    [Parameter, EditorRequired] public PreviewNode Node { get; set; } = default!;
+
+    // null = follow the default (collapsed when the only child is .gitkeep,
+    // otherwise expanded). Once the user clicks, we lock to their choice so
+    // subsequent re-renders (caused by typing in the form) don't override it.
+    private bool? _userExpanded;
+
+    private bool IsFolder => Node.Kind != PreviewNodeKind.File;
+
+    private bool IsExpanded => _userExpanded ?? !IsGitkeepOnly;
+
+    private bool IsGitkeepOnly =>
+        Node.Children.Count == 1
+        && Node.Children[0].Kind == PreviewNodeKind.File
+        && Node.Children[0].Name == ".gitkeep";
+
+    private void Toggle() => _userExpanded = !IsExpanded;
+
+    private string NodeClass => Node.Kind switch
+    {
+        PreviewNodeKind.Workspace => "ftp__node ftp__node--workspace",
+        PreviewNodeKind.Extension => "ftp__node ftp__node--extension",
+        PreviewNodeKind.Folder => "ftp__node ftp__node--folder",
+        PreviewNodeKind.File => "ftp__node ftp__node--file",
+        _ => "ftp__node",
+    };
+}

@@ -1,0 +1,76 @@
+@page "/login"
+@using Lucide.Blazor.Components
+
+<PageTitle>Sign in · AL Dev Toolbox</PageTitle>
+
+<div class="login-page">
+    <h1>Sign in</h1>
+    <p class="caption muted">
+        Enter the email and password for your AL Dev Toolbox account. Don't
+        have one yet? <a href="/signup">Sign up</a>.
+    </p>
+
+    @if (Error == "invalid")
+    {
+        <p class="form-error" role="alert">Invalid email or password.</p>
+    }
+    else if (Error == "pending")
+    {
+        <p class="form-error" role="alert">Your account is still pending admin approval.</p>
+    }
+    else if (Error == "disabled")
+    {
+        <p class="form-error" role="alert">This account has been disabled. Contact your organisation's admin.</p>
+    }
+    else if (Error == "locked")
+    {
+        <p class="form-error" role="alert">Too many failed sign-ins. Try again in 15 minutes or reset your password.</p>
+    }
+    else if (Error == "rate-limited")
+    {
+        <p class="form-error" role="alert">Too many attempts. Slow down and try again later.</p>
+    }
+    @if (Ok == "password-reset")
+    {
+        <p class="form-success" role="status">Password updated. Sign in with your new password.</p>
+    }
+    else if (Ok == "account-deleted")
+    {
+        <p class="form-success" role="status">Your account has been deleted.</p>
+    }
+
+    <form method="post" action="/auth/login" class="form-grid login-form">
+        <AntiforgeryToken />
+        <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+
+        <section class="form-section">
+            <label class="section-label" for="lg-email">Email</label>
+            <input id="lg-email" type="email" name="Email" required autofocus autocomplete="username" />
+        </section>
+
+        <section class="form-section">
+            <label class="section-label" for="lg-password">Password</label>
+            <input id="lg-password" type="password" name="Password" required autocomplete="current-password" />
+        </section>
+
+        <div class="login-form__actions">
+            <button type="submit" class="btn">
+                <Icon Name="log-in" Width="16" Height="16" />
+                <span>Sign in</span>
+            </button>
+            <a href="/login/magic" class="muted">Sign in with a magic link instead</a>
+            <a href="/forgot-password" class="muted">Forgot password?</a>
+        </div>
+    </form>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "err")]
+    public string? Error { get; set; }
+
+    [SupplyParameterFromQuery(Name = "ok")]
+    public string? Ok { get; set; }
+
+    [SupplyParameterFromQuery(Name = "return")]
+    public string? ReturnUrl { get; set; }
+}

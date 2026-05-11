@@ -1,0 +1,1552 @@
+/* AL Dev Toolbox — global styles */
+
+:root {
+    --color-bg: #fafafa;
+    --color-surface: #ffffff;
+    --color-border: #e6e6e8;
+    --color-border-strong: #d2d3d8;
+    --color-text: #1f2024;
+    --color-text-muted: #6b6f76;
+    --color-text-secondary: #8a8e96;
+    --color-accent: #0066ff;
+    --color-accent-soft: #e8f0ff;
+    --color-info: #2563eb;
+    --color-danger: #b32121;
+    --color-error-text: #e50000;
+    --color-valid: #26b050;
+    --color-accent-hover: #0052cc;
+    --color-shadow: rgba(0, 0, 0, 0.1);
+    --sidebar-width: 220px;
+    --top-bar-height: 52px;
+    --radius: 6px;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+/* Dark-theme variables. Variables only — no per-rule overrides — so component
+   styles don't need to know which theme is active.
+
+   The same dark variables are applied in two situations: when the OS prefers
+   dark and the user hasn't explicitly chosen light, and when the user has
+   explicitly chosen dark from the toggle. Duplicating the block is simpler
+   than doing CSS gymnastics with multi-selector @media rules. */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --color-bg: #16181c;
+        --color-surface: #1d2024;
+        --color-border: #2c2f36;
+        --color-border-strong: #3a3e47;
+        --color-text: #e6e7ea;
+        --color-text-muted: #9aa0aa;
+        --color-text-secondary: #777c86;
+        --color-accent: #4b8bff;
+        --color-accent-soft: #1a2742;
+        --color-accent-hover: #6ba0ff;
+        --color-info: #6ba3ff;
+        --color-danger: #ef6464;
+        --color-error-text: #ff6b6b;
+        --color-valid: #4cc972;
+        --color-shadow: rgba(0, 0, 0, 0.5);
+    }
+}
+
+:root[data-theme="dark"] {
+    --color-bg: #16181c;
+    --color-surface: #1d2024;
+    --color-border: #2c2f36;
+    --color-border-strong: #3a3e47;
+    --color-text: #e6e7ea;
+    --color-text-muted: #9aa0aa;
+    --color-text-secondary: #777c86;
+    --color-accent: #4b8bff;
+    --color-accent-soft: #1a2742;
+    --color-accent-hover: #6ba0ff;
+    --color-info: #6ba3ff;
+    --color-danger: #ef6464;
+    --color-error-text: #ff6b6b;
+    --color-valid: #4cc972;
+    --color-shadow: rgba(0, 0, 0, 0.5);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--color-text);
+    background: var(--color-bg);
+}
+
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+h1 { font-size: 22px; font-weight: 600; margin: 0 0 12px; }
+h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
+.muted { color: var(--color-text-muted); }
+
+/* ---------- Shell ---------- */
+
+.app-shell {
+    display: grid;
+    grid-template-columns: var(--sidebar-width) 1fr;
+    grid-template-rows: var(--top-bar-height) 1fr;
+    grid-template-areas:
+        "topbar topbar"
+        "sidebar content";
+    min-height: 100vh;
+}
+
+.top-bar {
+    grid-area: topbar;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.top-bar__brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+}
+
+.brand-icon { color: var(--color-accent); }
+.brand-name { font-size: 15px; }
+
+/* Muted, low-emphasis affordance in the top bar. The admin section is
+   secondary to the generator flows, so the entry point shouldn't compete
+   visually with anything on the page. */
+.signin-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: 12.5px;
+    text-decoration: none;
+}
+
+.signin-link:hover {
+    color: var(--color-text);
+    background: var(--color-bg);
+    text-decoration: none;
+}
+
+/* Icon-only variant used for the anonymous "Sign in" affordance — square
+   with no text so it stays visually quiet next to the theme toggle. */
+.signin-link--icon {
+    padding: 4px;
+    width: 28px;
+    height: 28px;
+    justify-content: center;
+}
+
+.sidebar {
+    grid-area: sidebar;
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+    padding: 20px 12px;
+    overflow-y: auto;
+}
+
+.content {
+    grid-area: content;
+    padding: 24px 32px;
+    overflow-y: auto;
+}
+
+/* ---------- Sidebar nav ---------- */
+
+.sidebar-nav { display: flex; flex-direction: column; gap: 18px; }
+
+.nav-section__label {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    padding: 0 10px 6px;
+}
+
+.nav-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+
+.nav-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: var(--radius);
+    color: var(--color-text);
+    font-size: 13.5px;
+}
+
+.nav-link:hover { background: var(--color-bg); text-decoration: none; }
+.nav-link.active { background: var(--color-accent-soft); color: var(--color-accent); font-weight: 500; }
+.nav-link__icon { color: var(--color-text-secondary); flex: 0 0 auto; }
+.nav-link.active .nav-link__icon { color: var(--color-accent); }
+.nav-link--muted { color: var(--color-text-muted); }
+
+.nav-divider {
+    height: 1px;
+    background: var(--color-border);
+    margin: 10px 6px 10px;
+}
+
+/* ---------- Tab bar (page-level) ---------- */
+
+.tab-bar {
+    display: flex;
+    gap: 6px;
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: 24px;
+}
+
+.tab {
+    padding: 8px 14px;
+    color: var(--color-text-muted);
+    font-size: 13.5px;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+}
+
+.tab:hover { color: var(--color-text); text-decoration: none; }
+
+.tab.active {
+    color: var(--color-text);
+    border-bottom-color: var(--color-accent);
+    font-weight: 500;
+}
+
+/* ---------- Page stub ---------- */
+
+.page-stub { max-width: 720px; }
+.page-stub p { margin: 0; }
+
+/* ---------- Templates browser ---------- */
+
+.templates-browser h2 { margin-top: 28px; }
+.templates-browser h2:first-of-type { margin-top: 16px; }
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    font-size: 13px;
+}
+.data-table th, .data-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--color-border);
+}
+.data-table th {
+    background: var(--color-bg);
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+.data-table tr:last-child td { border-bottom: 0; }
+.data-table code { font-family: var(--font-mono); font-size: 12.5px; }
+
+/* ---------- Workspace form ---------- */
+
+.workspace-form { max-width: 640px; }
+
+/* Two-column shell for the New Workspace / New Extension pages: the form
+   scrolls on the left, the preview sticks to the top of the viewport on the
+   right so it stays visible while the user works through a long modules list. */
+.workspace-page { max-width: 1100px; }
+
+.workspace-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 32px;
+    align-items: start;
+}
+
+.workspace-layout__form { min-width: 0; }
+
+.workspace-layout__generate { align-self: flex-start; }
+
+.workspace-layout__preview {
+    position: sticky;
+    top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.preview-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    max-height: calc(100vh - 120px);
+    overflow: auto;
+}
+
+.preview-card .section-label { margin-bottom: 8px; display: block; }
+
+/* Import-config card on the New Workspace / New Extension pages. Lives at
+   the top of the right-hand column and reuses .preview-card for chrome. */
+.import-card {
+    max-height: none;
+    overflow: visible;
+}
+
+.import-card__row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.import-card__button {
+    cursor: pointer;
+    margin: 0;
+}
+
+/* Native <input type="file"> is awkward to style cross-browser, so we hide
+   it visually and let the surrounding label trigger it. The accessible
+   name comes from the label's text content. */
+.import-card__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.import-card__filename {
+    font-size: 12.5px;
+    color: var(--color-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.import-card__hint { margin-top: 8px; }
+
+.preview-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.stat-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.stat-card__value {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.stat-card__label {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+}
+
+/* ---------- Folder tree preview ---------- */
+
+.ftp,
+.ftp__children {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.ftp.ftp--root {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--color-text-secondary);
+}
+
+.ftp__children {
+    padding-left: 18px;
+    border-left: 1px dashed var(--color-border);
+    margin-left: 6px;
+}
+
+.ftp__row {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Folder rows render as a button so the whole label is clickable to toggle. */
+.ftp__row--toggle {
+    background: none;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+}
+
+.ftp__row--toggle:hover .ftp__name { color: var(--color-text); }
+
+.ftp__chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    color: var(--color-text-secondary);
+    flex: 0 0 auto;
+}
+
+.ftp__chevron--placeholder { visibility: hidden; }
+
+.ftp__icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--color-text-secondary);
+    flex: 0 0 auto;
+}
+
+.ftp__name { white-space: nowrap; }
+
+/* The workspace root and module/Core folders get the accent treatment so
+   users can distinguish "things that will be generated" from grouping or
+   static folders. */
+.ftp__node--workspace > .ftp__row > .ftp__icon,
+.ftp__node--workspace > .ftp__row > .ftp__name,
+.ftp__node--extension > .ftp__row > .ftp__icon,
+.ftp__node--extension > .ftp__row > .ftp__name {
+    color: var(--color-info);
+}
+
+.ftp__node--workspace > .ftp__row > .ftp__name,
+.ftp__node--extension > .ftp__row > .ftp__name {
+    font-weight: 500;
+}
+
+.ftp__node--file > .ftp__row > .ftp__name { color: var(--color-text-muted); }
+
+/* Marker pinned next to a node that's been added relative to an existing
+   workspace — used by New Extension's sibling-extension preview. */
+.ftp__badge {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: 999px;
+    line-height: 1.4;
+    margin-left: 6px;
+}
+
+.ftp__badge--new {
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+}
+
+.form-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+}
+
+.form-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.form-section--row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.form-section--row > div { display: flex; flex-direction: column; gap: 6px; }
+
+.section-label {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+}
+
+.form-section input[type="text"],
+.form-section input[type="email"],
+.form-section input[type="number"],
+.form-section input[type="password"],
+.form-section input[type="search"],
+.form-section input[type="time"],
+.form-section input[type="datetime-local"],
+.form-section textarea,
+.form-section select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    font-family: inherit;
+    font-size: 13.5px;
+    background: var(--color-surface);
+    color: var(--color-text);
+}
+
+.form-section textarea { resize: vertical; min-height: 70px; }
+
+.form-section input:disabled,
+.form-section textarea:disabled,
+.form-section select:disabled {
+    background: var(--color-bg);
+    color: var(--color-text-secondary);
+    cursor: not-allowed;
+}
+
+.form-section input:focus,
+.form-section textarea:focus,
+.form-section select:focus {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -1px;
+    border-color: var(--color-accent);
+}
+
+/* Browsers (Chrome / Safari) repaint autofilled fields with their own
+   light-yellow background, which clashes badly with dark mode. Pin the
+   colour and use the inset-shadow trick to mask the agent default. */
+.form-section input:-webkit-autofill,
+.form-section input:-webkit-autofill:hover,
+.form-section input:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--color-text);
+    -webkit-box-shadow: 0 0 0 1000px var(--color-surface) inset;
+    caret-color: var(--color-text);
+    transition: background-color 9999s ease-in-out 0s;
+}
+
+.caption { font-size: 12px; margin: 0; }
+
+.module-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.module-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.1s ease;
+}
+
+.module-card:hover { background: var(--color-bg); }
+.module-card:has(input:checked) { background: var(--color-accent-soft); border-color: var(--color-accent); }
+
+.module-card__body { display: flex; flex-direction: column; gap: 2px; }
+.module-card__name { font-weight: 500; }
+.module-card__caption { font-size: 12px; }
+
+.check-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
+    border-radius: var(--radius);
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: 13.5px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    text-decoration: none;
+}
+
+.btn:hover { text-decoration: none; }
+
+.btn:hover { background: var(--color-bg); }
+
+.btn--primary {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: white;
+}
+
+.btn--primary:hover { background: var(--color-accent-hover); }
+
+/* Compact button used inside table rows (e.g. quick actions in the templates
+   browser). Renders inline-flex so an Icon + label sit on one line. */
+.btn--sm {
+    padding: 4px 10px;
+    font-size: 12.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.btn--sm:hover { text-decoration: none; }
+
+.data-table__actions {
+    width: 1%;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.data-table__actions .btn + .btn { margin-left: 8px; }
+
+/* ---------- Dependency picker ---------- */
+
+.dep-picker { display: flex; flex-direction: column; gap: 16px; }
+
+.dep-picker__group { display: flex; flex-direction: column; gap: 8px; }
+
+.dep-picker__category { display: flex; flex-direction: column; gap: 4px; }
+
+.dep-picker__category-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text-muted);
+    padding: 4px 0 2px;
+}
+
+.dep-picker__rows { display: flex; flex-direction: column; gap: 4px; }
+
+.dep-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.1s ease;
+}
+
+.dep-row:hover { background: var(--color-bg); }
+.dep-row--selected { background: var(--color-accent-soft); border-color: var(--color-accent); }
+
+.dep-row__body { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.dep-row__name { font-weight: 500; }
+.dep-row__publisher { font-size: 12px; }
+
+.dep-row__version {
+    flex: 0 0 110px;
+    padding: 5px 8px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--color-surface);
+}
+
+.dep-picker__manual {
+    display: grid;
+    grid-template-columns: 2fr 1.5fr 1.5fr 1fr auto;
+    gap: 6px;
+    align-items: center;
+}
+
+.dep-picker__manual input {
+    padding: 7px 9px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    font-size: 13px;
+    background: var(--color-surface);
+    min-width: 0;
+}
+
+.dep-picker__error { color: var(--color-danger); margin: 0; }
+
+.dep-picker__manual-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+
+.dep-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-size: 13px;
+}
+
+.dep-chip__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.dep-chip__id { font-family: var(--font-mono); font-size: 11px; }
+
+.dep-chip__remove {
+    border: 0;
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+}
+
+.dep-chip__remove:hover { color: var(--color-danger); }
+
+/* ---------- Success tip (New Extension) ---------- */
+
+.success-tip {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.success-tip p { margin: 0; }
+
+.success-tip code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--color-bg);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.success-tip__snippet {
+    margin: 0;
+    padding: 8px 10px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    overflow-x: auto;
+}
+
+/* ---------- Errors ---------- */
+
+#blazor-error-ui {
+    background: var(--color-danger);
+    color: white;
+    padding: 0.6rem 1rem;
+    box-shadow: 0 -1px 2px var(--color-shadow);
+    display: none;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 1000;
+}
+#blazor-error-ui .reload, #blazor-error-ui .dismiss {
+    color: white;
+    margin-left: 12px;
+    cursor: pointer;
+}
+
+.valid.modified:not([type=checkbox]) { outline: 1px solid var(--color-valid); }
+.invalid { outline: 1px solid var(--color-error-text); }
+.validation-message { color: var(--color-error-text); }
+
+/* ---------- Theme toggle ---------- */
+
+.theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    padding: 2px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    background: var(--color-bg);
+    margin-right: 12px;
+}
+
+.theme-toggle__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+}
+
+.theme-toggle__btn:hover { color: var(--color-text); }
+
+.theme-toggle__btn--active {
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow: 0 1px 2px var(--color-shadow);
+}
+
+.top-bar__user {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.top-bar__user .theme-toggle { margin-right: 0; }
+
+.signout-form { margin: 0; display: inline-flex; }
+
+.user-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--color-text);
+    font: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+
+.user-button:hover {
+    background: var(--color-bg);
+    border-color: var(--color-accent);
+}
+
+.user-button__name { font-weight: 500; }
+
+.user-button__icon { color: var(--color-text-muted); flex: 0 0 auto; }
+
+.user-button:hover .user-button__icon { color: var(--color-accent); }
+
+/* ---------- Login page ---------- */
+
+.login-page {
+    max-width: 360px;
+    margin: 32px auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.login-form { gap: 18px; }
+
+.login-form .btn {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.form-error {
+    color: var(--color-error-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-error-text);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    margin: 0 0 16px;
+    font-size: 13px;
+}
+
+.form-error code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+.form-error > p {
+    margin: 0;
+}
+
+.form-error > p + .form-error__list {
+    margin-top: 8px;
+}
+
+/* ---------- Admin dashboard ---------- */
+
+.admin-dashboard { max-width: 880px; }
+
+.admin-tiles {
+    margin-top: 20px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.admin-tile {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+}
+
+.admin-tile__icon { color: var(--color-text-secondary); flex: 0 0 auto; }
+
+.admin-tile__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+.admin-tile__title { font-weight: 500; }
+
+.admin-tile__caption {
+    font-size: 12px;
+    color: var(--color-text-muted);
+}
+
+.admin-tile--placeholder { opacity: 0.7; }
+
+.admin-tile--link {
+    color: inherit;
+    text-decoration: none;
+    transition: border-color 0.1s ease, background-color 0.1s ease;
+}
+
+.admin-tile--link:hover {
+    border-color: var(--color-accent);
+    background: var(--color-surface-hover, var(--color-surface));
+    text-decoration: none;
+}
+
+.admin-section {
+    margin-top: 32px;
+    padding-top: 20px;
+    border-top: 1px solid var(--color-border);
+}
+
+.admin-section h2 {
+    margin: 0 0 6px;
+    font-size: 16px;
+}
+
+.admin-section p {
+    margin: 0 0 12px;
+}
+
+/* ---------- Audit log ---------- */
+
+.audit-page { max-width: 1100px; }
+
+.audit-page__limit-note { margin-top: 12px; font-size: 12.5px; }
+
+.audit-panel { margin-top: 28px; }
+
+.audit-panel__header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.audit-panel__icon { color: var(--color-text-secondary); }
+
+.audit-panel__title {
+    font-size: 16px;
+    font-weight: 500;
+    margin: 0;
+}
+
+.audit-table summary {
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    font-size: 12.5px;
+}
+
+.audit-table summary:hover { color: var(--color-text); }
+
+.audit-snapshot {
+    margin: 6px 0 0;
+    padding: 10px 12px;
+    background: var(--color-surface-alt, var(--color-surface));
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-width: 720px;
+    max-height: 400px;
+    overflow: auto;
+}
+
+.audit-action {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 500;
+    text-transform: lowercase;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+}
+
+.audit-action--created { color: #1a7f37; border-color: rgba(26, 127, 55, 0.4); }
+
+.audit-action--updated { color: #9a6700; border-color: rgba(154, 103, 0, 0.4); }
+
+.audit-action--deleted { color: #cf222e; border-color: rgba(207, 34, 46, 0.4); }
+
+.audit-diff { margin-top: 16px; }
+
+.audit-diff__header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.audit-diff__title { margin: 0; font-size: 16px; font-weight: 500; }
+
+.audit-diff__icon { color: var(--color-text-secondary); }
+
+.audit-diff__labels { margin: 0; display: inline-flex; gap: 8px; font-size: 12.5px; }
+
+.audit-diff__meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 4px 24px;
+    margin: 12px 0 18px;
+}
+
+.audit-diff__meta div { display: flex; gap: 8px; align-items: baseline; }
+
+.audit-diff__meta dt { color: var(--color-text-secondary); font-size: 12.5px; margin: 0; }
+
+.audit-diff__meta dd { margin: 0; font-size: 13px; }
+
+.audit-diff__table { table-layout: fixed; width: 100%; }
+
+.audit-diff__cell {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    word-break: break-word;
+    vertical-align: top;
+}
+
+.audit-diff__kind {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 500;
+    text-transform: lowercase;
+    border: 1px solid var(--color-border);
+}
+
+.audit-diff__kind--added { color: #1a7f37; border-color: rgba(26, 127, 55, 0.4); }
+.audit-diff__kind--removed { color: #cf222e; border-color: rgba(207, 34, 46, 0.4); }
+.audit-diff__kind--changed { color: #9a6700; border-color: rgba(154, 103, 0, 0.4); }
+
+.audit-diff__redacted {
+    color: var(--color-text-secondary);
+    font-style: italic;
+}
+
+.audit-diff__row--added .audit-diff__cell--after { background: rgba(26, 127, 55, 0.08); }
+.audit-diff__row--removed .audit-diff__cell--before { background: rgba(207, 34, 46, 0.08); }
+.audit-diff__row--changed .audit-diff__cell--before { background: rgba(207, 34, 46, 0.05); }
+.audit-diff__row--changed .audit-diff__cell--after { background: rgba(26, 127, 55, 0.05); }
+
+/* ---------- Bulk action toolbar ---------- */
+
+.bulk-bar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.bulk-bar__summary { font-size: 13px; }
+
+.bulk-bar__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+
+.bulk-bar__error {
+    width: 100%;
+    margin: 0;
+    color: #cf222e;
+    font-size: 12.5px;
+}
+
+.bulk-bar__success {
+    width: 100%;
+    margin: 0;
+    color: #1a7f37;
+    font-size: 12.5px;
+}
+
+.bulk-failures {
+    margin-top: 10px;
+    border: 1px solid rgba(207, 34, 46, 0.4);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    background: rgba(207, 34, 46, 0.05);
+}
+
+.bulk-failures h3 { margin: 0 0 6px; font-size: 13px; }
+
+.bulk-failures ul { margin: 0; padding-left: 18px; font-size: 12.5px; }
+
+.bulk-checkbox { width: 32px; text-align: center; }
+
+/* ---------- Admin pages (templates list + edit) ---------- */
+
+.admin-page { max-width: 1100px; }
+
+.admin-page__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.admin-page__header h1 { margin: 0 0 6px; }
+
+.admin-page__header p { margin: 0; }
+
+.admin-page__toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.data-table__row--muted td { opacity: 0.65; }
+
+.btn--danger {
+    background: #cf222e;
+    border-color: #cf222e;
+    color: white;
+}
+
+.btn--danger:hover { background: #a40e26; }
+
+.form-success {
+    color: var(--color-valid);
+    background: var(--color-surface);
+    border: 1px solid var(--color-valid);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    /* Separate the toast from the form below — without bottom margin the
+       success message sat flush against the next section header. */
+    margin: 0 0 16px;
+    font-size: 13px;
+}
+
+.form-field-error {
+    display: block;
+    color: var(--color-error-text);
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+/* Used by the "Import config" section on the builder pages — keeps the
+   field-keyed validation errors visible without obscuring the rest of the
+   form. */
+ul.form-field-error {
+    margin: 4px 0 0;
+    padding-left: 20px;
+    list-style: disc;
+}
+
+.form-section textarea.json-editor {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.5;
+}
+
+/* ---------- Template detail (read-only /templates/{key}) ---------- */
+
+.template-detail { max-width: 1100px; }
+
+.template-detail__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.template-detail__header h1 { margin: 0 0 6px; }
+
+.template-detail__header p { margin: 0; }
+
+.template-detail__meta { margin-bottom: 24px; }
+
+.template-detail__section { margin-bottom: 24px; }
+
+.template-detail__section h2 {
+    font-size: 16px;
+    margin: 0 0 8px;
+}
+
+.template-detail__section textarea.json-editor {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.5;
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-text);
+    resize: vertical;
+}
+
+.template-detail__actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.kv-grid {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px 16px;
+    margin: 0 0 8px;
+    font-size: 13px;
+}
+
+.kv-grid dt {
+    color: var(--color-text-muted, #57606a);
+    font-weight: 500;
+}
+
+.kv-grid dd { margin: 0; }
+
+/* Two-column layout: editor on the left, live preview on the right.
+   Same shape as the New Workspace page's workspace-layout grid so the
+   admin and end-user surfaces feel related. */
+.admin-template-edit__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 32px;
+    align-items: start;
+    max-width: 1240px;
+}
+
+.admin-template-edit__editor { min-width: 0; }
+
+.admin-template-edit__preview {
+    position: sticky;
+    top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.preview-card__hint {
+    margin: 0 0 8px;
+    font-size: 12px;
+}
+
+.admin-template-edit__form { max-width: 880px; }
+
+.admin-template-edit__mode {
+    display: inline-flex;
+    gap: 0;
+    margin-bottom: 16px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 2px;
+    background: var(--color-surface);
+}
+
+.admin-template-edit__mode-btn {
+    border: 1px solid transparent;
+    background: transparent;
+}
+
+.admin-template-edit__mode-btn--active {
+    background: var(--color-bg);
+    border-color: var(--color-border);
+}
+
+.admin-template-edit__toml-form { max-width: 880px; }
+
+/* The CodeMirror 6 editor mounts into this div. We give it a fixed height
+   so the gutter and content area share a stable scroll context, and let
+   the inner .cm-editor fill it. Theme colours come from the CodeMirror
+   extension in AdminTemplateEdit.razor.js — we only frame the box. */
+.admin-template-edit__toml {
+    height: 540px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--color-surface);
+}
+
+.admin-template-edit__toml .cm-editor {
+    height: 100%;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+}
+
+.admin-template-edit__toml .cm-scroller {
+    line-height: 1.5;
+}
+
+.admin-template-edit__toml-issues {
+    margin-top: 8px;
+}
+
+.admin-template-edit__actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+}
+
+.folder-editor__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.folder-editor__table input[type="text"] {
+    width: 100%;
+    padding: 6px 8px;
+    font-size: 13px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-text);
+}
+
+.folder-editor__handle { width: 1%; white-space: nowrap; }
+
+.folder-editor__order { display: flex; gap: 4px; }
+
+.folder-editor__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.folder-editor__row {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+}
+
+.folder-editor__row-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px;
+}
+
+.folder-editor__path {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.folder-editor__path input[type="text"] {
+    width: 100%;
+    padding: 6px 8px;
+    font-size: 13px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-bg);
+    color: var(--color-text);
+}
+
+.folder-editor__files {
+    border-top: 1px solid var(--color-border);
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--color-bg);
+}
+
+.folder-editor__files-empty { margin: 0; }
+
+.folder-editor__file {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.folder-editor__file-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.folder-editor__file-content {
+    width: 100%;
+    min-height: 160px;
+}
+
+/* Per-row field grid used by the module dependency editor and the catalogue
+   editor. Sits inside a .folder-editor__row beneath the GUID/order/remove
+   header so the four metadata fields wrap predictably on narrow viewports. */
+.dep-editor__fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px;
+    padding: 0 8px 8px;
+}
+
+.dep-editor__fields input[type="text"] {
+    width: 100%;
+    padding: 6px 8px;
+    font-size: 13px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-bg);
+    color: var(--color-text);
+}
+
+/* ---------- Generate button loading state ---------- */
+
+/* The default state hides the spinner and the busy label. Toggling the
+   modifier class swaps which span is visible; the wrapper's width is
+   stable because both labels are display:inline-block of similar length. */
+.btn__spinner,
+.btn__label-busy { display: none; }
+
+.btn--loading .btn__label { display: none; }
+.btn--loading .btn__label-busy { display: inline-flex; align-items: center; gap: 6px; }
+
+.btn--loading .btn__spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    animation: spin 0.8s linear infinite;
+    margin-right: 6px;
+}
+
+.btn--loading {
+    cursor: wait;
+    opacity: 0.85;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Confirmation modal ---------- */
+
+.confirm-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.confirm-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.confirm-modal__panel {
+    position: relative;
+    max-width: 420px;
+    width: 100%;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: 0 12px 32px var(--color-shadow);
+}
+
+.confirm-modal__title {
+    font-size: 16px;
+    margin: 0 0 8px;
+}
+
+.confirm-modal__message {
+    margin: 0 0 16px;
+    color: var(--color-text-muted);
+    font-size: 13px;
+}
+
+.confirm-modal__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+/* ---------- Bulleted form-error list ---------- */
+
+.form-error__list {
+    margin: 6px 0 0;
+    padding-left: 20px;
+    font-size: 12.5px;
+}
+
+.form-error__list code { font-family: var(--font-mono); }
+
+
+/* ---------- Accessibility helpers (M21) ---------- */
+
+/* Visually hide an element but keep it readable to screen readers. Used for
+   table captions and inline ARIA labels that would clutter the rendered UI. */
+.visually-hidden {
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+

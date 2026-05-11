@@ -1,0 +1,23 @@
+# Continia Document Output — outbound document delivery (email, EDI, etc).
+
+[module]
+key = "document-output"
+name = "Document Output"
+
+[[module.dependencies]]
+dep_id = "4b915d7e-c02a-435f-85ab-649086c1e002"
+dep_name = "Continia Core"
+dep_publisher = "Continia Software"
+dep_version = "1.0.0.0"
+
+[[module.dependencies]]
+dep_id = "0745e76d-0b72-4641-87c2-ee45db5d2c32"
+dep_name = "Continia Delivery Network"
+dep_publisher = "Continia Software"
+dep_version = "1.0.0.0"
+
+[[module.dependencies]]
+dep_id = "f4b69b55-c90d-4937-8f53-2742898fa948"
+dep_name = "Continia Document Output"
+dep_publisher = "Continia Software"
+dep_version = "1.0.0.0"

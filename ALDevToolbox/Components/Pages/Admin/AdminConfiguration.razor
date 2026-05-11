@@ -1,0 +1,390 @@
+@page "/admin/configuration"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject OrganizationConfigService Config
+@inject NavigationManager Nav
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
+@using Lucide.Blazor.Components
+
+@*
+    Per-organisation configuration page (Milestone P3.14). Three independently-
+    saving sections — defaults, logo and always-included files — plus an import
+    panel for re-applying a snapshot. Each section's save runs server-side
+    validation and reports errors back via the ?err=&msg= query string.
+*@
+
+<PageTitle>Configuration · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page admin-configuration">
+    <header class="admin-page__header">
+        <div>
+            <h1>Organisation configuration</h1>
+            <p class="muted">
+                Defaults that pre-fill the New Workspace and New Extension forms,
+                the logo bundled into every generated workspace, and any always-
+                included text files admins want emitted at the workspace root.
+            </p>
+        </div>
+        <a class="btn btn--sm" href="/admin">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to dashboard</span>
+        </a>
+    </header>
+
+    @if (_config is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(_okMessage))
+        {
+            <p class="form-success" role="status">@_okMessage</p>
+        }
+        @if (!string.IsNullOrEmpty(_errMessage))
+        {
+            <div class="form-error" role="alert">
+                <p>@_errMessage</p>
+            </div>
+        }
+
+        <section class="admin-section">
+            <h2>Defaults</h2>
+            <p class="muted">
+                Pre-filled into the New Workspace and New Extension forms. Users
+                can still edit on the form — these are defaults, not locks.
+            </p>
+            <form method="post" action="/admin/configuration/settings" class="form-grid">
+                <AntiforgeryToken />
+                <label class="section-label" for="cfg-publisher">Publisher</label>
+                <input id="cfg-publisher" type="text" name="DefaultPublisher" required
+                       value="@_config.Settings.DefaultPublisher" />
+                <small class="muted">Used as the <code>publisher</code> for every generated <code>app.json</code>.</small>
+
+                <div class="form-section--row">
+                    <div>
+                        <label class="section-label" for="cfg-from">Default ID range — from</label>
+                        <input id="cfg-from" type="number" name="DefaultIdRangeFrom" required min="1"
+                               value="@_config.Settings.DefaultIdRangeFrom" />
+                    </div>
+                    <div>
+                        <label class="section-label" for="cfg-to">Default ID range — to</label>
+                        <input id="cfg-to" type="number" name="DefaultIdRangeTo" required min="1"
+                               value="@_config.Settings.DefaultIdRangeTo" />
+                    </div>
+                </div>
+
+                <label class="section-label" for="cfg-brief">Default brief</label>
+                <input id="cfg-brief" type="text" name="DefaultBrief"
+                       placeholder="e.g. Customisations and reports for Acme."
+                       value="@_config.Settings.DefaultBrief" />
+
+                <label class="section-label" for="cfg-desc">Default core description</label>
+                <textarea id="cfg-desc" name="DefaultCoreDescription" rows="3"
+                          placeholder="Longer description prefilled into the New Workspace form.">@_config.Settings.DefaultCoreDescription</textarea>
+
+                <button type="submit" class="btn">
+                    <Icon Name="save" Width="14" Height="14" />
+                    <span>Save defaults</span>
+                </button>
+            </form>
+        </section>
+
+        <section class="admin-section">
+            <h2>Logo</h2>
+            <p class="muted">
+                Bundled into every generated workspace under
+                <code>.assets/images/logo.&lt;ext&gt;</code>. SVG and PNG only;
+                max @(OrganizationConfigService.MaxLogoBytes / 1024) KB. SVG
+                uploads have <code>&lt;script&gt;</code> tags and <code>on*</code>
+                attributes stripped on save.
+            </p>
+
+            <div class="logo-preview">
+                @if (_config.Logo is not null)
+                {
+                    <img src="/admin/configuration/logo/preview?t=@_logoCacheBust" alt="Current logo" class="logo-preview__img" />
+                }
+                else
+                {
+                    <p class="muted">No logo configured. Generated workspaces will ship without one.</p>
+                }
+            </div>
+
+            <form method="post" action="/admin/configuration/logo" enctype="multipart/form-data" class="form-grid">
+                <AntiforgeryToken />
+                <label class="section-label" for="cfg-logo">Replace logo</label>
+                <input id="cfg-logo" type="file" name="Logo" accept="image/png,image/svg+xml" required />
+                <button type="submit" class="btn">
+                    <Icon Name="upload" Width="14" Height="14" />
+                    <span>Upload logo</span>
+                </button>
+            </form>
+
+            <form method="post" action="/admin/configuration/logo/revert">
+                <AntiforgeryToken />
+                <button type="submit" class="btn">
+                    <Icon Name="rotate-ccw" Width="14" Height="14" />
+                    <span>Revert to seed default</span>
+                </button>
+            </form>
+        </section>
+
+        <section class="admin-section">
+            <h2>Always-included files</h2>
+            <p class="muted">
+                Text files written into every generated workspace at the root.
+                Mustache substitution applies the same context as per-template
+                files when enabled.
+            </p>
+            @if (_files.Count == 0)
+            {
+                <p class="muted">No files configured. Add <code>.editorconfig</code>, a per-org <code>README.md</code>, or anything else admins want shipped on every generation.</p>
+            }
+            else
+            {
+                <ul class="org-file-list">
+                    @foreach (var file in _files.OrderBy(f => f.Ordering))
+                    {
+                        <li class="org-file-row">
+                            <div class="org-file-row__head">
+                                <span><code>@file.Path</code></span>
+                                <span class="muted">
+                                    @(file.MustacheEnabled ? "mustache on" : "mustache off")
+                                </span>
+                            </div>
+                            <div class="org-file-row__body">
+                                <pre class="org-file-row__content">@TruncateForPreview(file.Content)</pre>
+                            </div>
+                            <div class="org-file-row__actions">
+                                <button type="button" class="btn btn--sm" @onclick="() => StartEdit(file)">
+                                    <Icon Name="pencil" Width="12" Height="12" />
+                                    <span>Edit</span>
+                                </button>
+                                <button type="button" class="btn btn--sm" @onclick="() => RemoveFile(file)">
+                                    <Icon Name="trash-2" Width="12" Height="12" />
+                                    <span>Remove</span>
+                                </button>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+
+            <h3>@(_editing is null ? "Add a file" : $"Editing {_editing.Path}")</h3>
+            <div class="form-grid">
+                <label class="section-label" for="cfg-file-path">Path</label>
+                <input id="cfg-file-path" type="text" placeholder=".editorconfig"
+                       @bind="_editPath" @bind:event="oninput" />
+                <label class="section-label" for="cfg-file-content">Content</label>
+                <textarea id="cfg-file-content" rows="6" @bind="_editContent" @bind:event="oninput"></textarea>
+                <label class="check-row">
+                    <input type="checkbox" @bind="_editMustache" />
+                    <span>Substitute mustache variables when generating</span>
+                </label>
+                <div class="form-section--row">
+                    <button type="button" class="btn" @onclick="ApplyEdit">
+                        <Icon Name="check" Width="12" Height="12" />
+                        <span>@(_editing is null ? "Add to list" : "Apply changes")</span>
+                    </button>
+                    @if (_editing is not null)
+                    {
+                        <button type="button" class="btn btn--sm" @onclick="CancelEdit">Cancel</button>
+                    }
+                </div>
+                @if (!string.IsNullOrEmpty(_localError))
+                {
+                    <span class="form-field-error" role="alert">@_localError</span>
+                }
+            </div>
+
+            <div class="org-file-save-row">
+                <button type="button" class="btn btn--primary" @onclick="SaveFilesAsync" disabled="@_savingFiles">
+                    <Icon Name="save" Width="14" Height="14" />
+                    <span>@(_savingFiles ? "Saving…" : "Save file list")</span>
+                </button>
+            </div>
+        </section>
+
+        <section class="admin-section admin-configuration__danger">
+            <h2>Import configuration</h2>
+            <p class="muted">
+                Pastes an <code>organization-config.toml</code> from an export
+                ZIP and replaces this organisation's defaults, logo and file list.
+                Existing values are wiped — confirm before submitting.
+            </p>
+            <form method="post" action="/admin/configuration/import" class="form-grid">
+                <AntiforgeryToken />
+                <label class="section-label" for="cfg-import-toml">TOML</label>
+                <textarea id="cfg-import-toml" name="Toml" rows="6"
+                          placeholder="[settings]&#10;default_publisher = …"></textarea>
+                <label class="check-row">
+                    <input type="checkbox" name="Confirm" value="true" />
+                    <span>I understand this overwrites the current configuration.</span>
+                </label>
+                <button type="submit" class="btn">
+                    <Icon Name="upload" Width="14" Height="14" />
+                    <span>Import</span>
+                </button>
+            </form>
+        </section>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "ok")] public string? OkParam { get; set; }
+    [SupplyParameterFromQuery(Name = "err")] public string? ErrParam { get; set; }
+    [SupplyParameterFromQuery(Name = "msg")] public string? MsgParam { get; set; }
+
+    private OrganizationConfig? _config;
+    private List<FileRow> _files = new();
+    private bool _savingFiles;
+    private string? _okMessage;
+    private string? _errMessage;
+    private string? _localError;
+    private long _logoCacheBust = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+    private FileRow? _editing;
+    private string _editPath = string.Empty;
+    private string _editContent = string.Empty;
+    private bool _editMustache;
+
+    /// <summary>
+    /// Editor-side row: tracks the persisted <see cref="OrganizationFile.Id"/>
+    /// (null for newly-added entries) so the bulk save can route inserts vs
+    /// updates correctly. Stays a class so Up/Down operations mutate ordering
+    /// in place without re-allocating the list.
+    /// </summary>
+    private sealed class FileRow
+    {
+        public int? Id { get; set; }
+        public string Path { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
+        public bool MustacheEnabled { get; set; }
+        public int Ordering { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _config = await Config.GetCurrentAsync();
+        _files = _config.Files
+            .Select(f => new FileRow
+            {
+                Id = f.Id,
+                Path = f.Path,
+                Content = f.Content,
+                MustacheEnabled = f.MustacheEnabled,
+                Ordering = f.Ordering,
+            })
+            .ToList();
+        _okMessage = OkParam switch
+        {
+            "settings" => "Defaults saved.",
+            "logo" => "Logo uploaded.",
+            "logo-reverted" => "Logo reverted to the seed default.",
+            "files" => "Always-included files saved.",
+            "imported" => "Configuration imported.",
+            _ => null,
+        };
+        _errMessage = string.IsNullOrEmpty(ErrParam) ? null : (MsgParam ?? ErrParam);
+    }
+
+    private void StartEdit(FileRow row)
+    {
+        _editing = row;
+        _editPath = row.Path;
+        _editContent = row.Content;
+        _editMustache = row.MustacheEnabled;
+        _localError = null;
+    }
+
+    private void CancelEdit()
+    {
+        _editing = null;
+        _editPath = string.Empty;
+        _editContent = string.Empty;
+        _editMustache = false;
+        _localError = null;
+    }
+
+    private void ApplyEdit()
+    {
+        var path = _editPath.Trim();
+        if (string.IsNullOrEmpty(path))
+        {
+            _localError = "Path is required.";
+            return;
+        }
+        if (path.Contains(".."))
+        {
+            _localError = "Path must not contain '..' segments.";
+            return;
+        }
+        var conflict = _files.Any(f => f != _editing && string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase));
+        if (conflict)
+        {
+            _localError = $"Another file already uses path '{path}'.";
+            return;
+        }
+
+        if (_editing is null)
+        {
+            _files.Add(new FileRow
+            {
+                Path = path,
+                Content = _editContent,
+                MustacheEnabled = _editMustache,
+                Ordering = _files.Count,
+            });
+        }
+        else
+        {
+            _editing.Path = path;
+            _editing.Content = _editContent;
+            _editing.MustacheEnabled = _editMustache;
+        }
+        CancelEdit();
+    }
+
+    private void RemoveFile(FileRow row)
+    {
+        _files.Remove(row);
+        for (var i = 0; i < _files.Count; i++) _files[i].Ordering = i;
+        if (_editing == row) CancelEdit();
+    }
+
+    private async Task SaveFilesAsync()
+    {
+        _savingFiles = true;
+        StateHasChanged();
+        try
+        {
+            for (var i = 0; i < _files.Count; i++) _files[i].Ordering = i;
+            var inputs = _files
+                .Select(f => new OrganizationFileInput(
+                    Id: f.Id,
+                    Path: f.Path,
+                    Content: f.Content,
+                    MustacheEnabled: f.MustacheEnabled))
+                .ToList();
+            await Config.SaveFilesAsync(inputs);
+            Nav.NavigateTo("/admin/configuration?ok=files", forceLoad: true);
+        }
+        catch (PlanValidationException ex)
+        {
+            _errMessage = ex.Errors.FirstOrDefault().Value ?? "Failed to save.";
+        }
+        finally
+        {
+            _savingFiles = false;
+        }
+    }
+
+    private static string TruncateForPreview(string content)
+    {
+        if (string.IsNullOrEmpty(content)) return string.Empty;
+        const int max = 240;
+        return content.Length <= max ? content : content.Substring(0, max) + "…";
+    }
+}

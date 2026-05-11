@@ -1,0 +1,29 @@
+@inject NavigationManager Nav
+
+@code {
+    /// <summary>
+    /// Used by <see cref="Routes"/>'s <c>NotAuthorized</c> slot. Sends the
+    /// user to /login with a return URL so the post-sign-in redirect can
+    /// drop them back where they were trying to go.
+    ///
+    /// SiteAdmin pages take the /not-found branch instead so non-SiteAdmins
+    /// can't even confirm those routes exist, matching the 404 the cookie's
+    /// auth events return for direct hits.
+    /// </summary>
+    protected override void OnInitialized()
+    {
+        var current = new Uri(Nav.Uri);
+        var returnPath = current.PathAndQuery;
+
+        if (returnPath.StartsWith(HttpOrganizationContext.SiteAdminPathPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            Nav.NavigateTo("/not-found", forceLoad: true);
+            return;
+        }
+
+        var qs = string.IsNullOrEmpty(returnPath) || returnPath == "/"
+            ? string.Empty
+            : $"?return={Uri.EscapeDataString(returnPath)}";
+        Nav.NavigateTo($"/login{qs}", forceLoad: true);
+    }
+}

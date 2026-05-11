@@ -1,0 +1,88 @@
+# AL Dev Toolbox stack. Two services: Postgres (`db`) and the app
+# (`aldevtoolbox`). Three named volumes — see the `volumes` block at the
+# bottom for the layout reference.
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aldevtoolbox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aldevtoolbox}
+      POSTGRES_DB: ${POSTGRES_DB:-aldevtoolbox}
+    volumes:
+      # postgres:18+ places data under /var/lib/postgresql/<major>/docker/ so
+      # in-place pg_upgrade works inside one mount. Mount the parent rather
+      # than .../data — the older path makes the entrypoint refuse to start.
+      - pg-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aldevtoolbox} -d ${POSTGRES_DB:-aldevtoolbox}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      # First-boot postgres-alpine spends ~10-15s initialising on a fresh
+      # volume (initdb + role/db creation). A short start_period made
+      # `depends_on: service_healthy` time out on slower CI runners.
+      start_period: 30s
+    restart: unless-stopped
+    # Resource ceilings (M21). Postgres scales linearly with shared_buffers
+    # and work_mem; both default to sane values for ~1 GiB. Operators with
+    # bigger boxes should raise the limit *and* tune postgresql.conf —
+    # raising the cgroup alone leaves the defaults on the table.
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
+        reservations:
+          memory: 256m
+
+  aldevtoolbox:
+    build: .
+    image: aldevtoolbox:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      # Compose builds the connection string from the POSTGRES_* knobs so the
+      # operator only manages credentials in one place. The `db` host name is
+      # the compose service name above.
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:-aldevtoolbox};Username=${POSTGRES_USER:-aldevtoolbox};Password=${POSTGRES_PASSWORD:-aldevtoolbox}"
+      SEED_PATH: /app/Templates.seed
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      # Data Protection key ring (M17). Persists cookie auth keys and the
+      # SMTP-password ciphertext key across container restarts. Override
+      # via DATA_PROTECTION_KEY_DIR if your volume layout differs.
+      DATA_PROTECTION_KEY_DIR: /var/lib/aldevtoolbox/dp-keys
+      # M18: BackupService writes pg_dump files here. Override via BACKUPS_DIR
+      # if your volume layout differs; the app-backups named volume is the
+      # only place backups live in the supported deployment shape.
+      BACKUPS_DIR: /var/lib/aldevtoolbox/backups
+    volumes:
+      - app-keys:/var/lib/aldevtoolbox/dp-keys
+      - app-backups:/var/lib/aldevtoolbox/backups
+    # The Dockerfile already declares a HEALTHCHECK against /healthz. Compose
+    # picks it up automatically; we don't restate it here to avoid the two
+    # drifting.
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
+        reservations:
+          memory: 256m
+
+# Volume layout (M21).
+# - pg-data:     Postgres data files. The only thing that needs a real backup
+#                if you're not relying on app-backups.
+# - app-keys:    ASP.NET Data Protection key ring. Loss invalidates all login
+#                cookies and decrypts of stored SMTP passwords.
+# - app-backups: pg_dump output written by BackupService (M18). Pinned files
+#                survive retention sweeps; everything else rolls off.
+volumes:
+  pg-data:
+  app-keys:
+  app-backups:

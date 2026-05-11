@@ -1,0 +1,415 @@
+@page "/admin/modules/new"
+@page "/admin/modules/{Key}"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject ModuleService Modules
+@inject NavigationManager Nav
+@inject ILogger<AdminModuleEdit> Log
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
+
+@*
+    Combined create/edit page for modules. Dependency rows are reordered with
+    Up/Down buttons (no drag-and-drop in v1, matching AdminTemplateEdit).
+*@
+
+<PageTitle>@PageTitleText · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page admin-template-edit">
+    <header class="admin-page__header">
+        <div>
+            <h1>@PageTitleText</h1>
+            <p class="muted">
+                @if (IsEdit)
+                {
+                    <span>Editing module <code>@Key</code>. Changes apply on the next generation.</span>
+                }
+                else
+                {
+                    <span>Create a new module. Dependencies and the optional ID range size override can be edited later.</span>
+                }
+            </p>
+        </div>
+        <a class="btn btn--sm" href="/admin/modules">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to list</span>
+        </a>
+    </header>
+
+    @if (IsEdit && _loadFailed)
+    {
+        <p class="form-error" role="alert">
+            No module with key <code>@Key</code> was found. It may have been
+            renamed or hard-deleted.
+        </p>
+    }
+    else if (_form is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        @if (_saveError is not null)
+        {
+            <p class="form-error" role="alert">@_saveError</p>
+        }
+        @if (_saveSuccess is not null)
+        {
+            <p class="form-success" role="status">@_saveSuccess</p>
+        }
+
+        <form class="form-grid admin-template-edit__form" @onsubmit="SaveAsync" @onsubmit:preventDefault>
+            <section class="form-section">
+                <label class="section-label" for="mod-key">Key</label>
+                <input id="mod-key" type="text" @bind="_form.Key" @bind:event="oninput"
+                       readonly="@IsEdit" pattern="[a-z0-9-]+" required
+                       placeholder="e.g. document-capture" />
+                <small class="muted">
+                    @(IsEdit ? "The key is fixed once a module is created." : "Lowercase letters, digits, hyphens. Used in admin URLs.")
+                </small>
+                <FieldError Field="Key" Errors="_fieldErrors" />
+            </section>
+
+            <section class="form-section">
+                <label class="section-label" for="mod-name">Name</label>
+                <input id="mod-name" type="text" required
+                       @bind="_form.Name" @bind:event="oninput"
+                       placeholder="e.g. Document Capture" />
+                <FieldError Field="Name" Errors="_fieldErrors" />
+            </section>
+
+            <section class="form-section">
+                <label class="section-label" for="mod-id-range-size">ID range size override</label>
+                <input id="mod-id-range-size" type="number" min="1"
+                       @bind="_form.IdRangeSize" @bind:event="oninput"
+                       placeholder="(inherit from template)" />
+                <small class="muted">
+                    Optional. Leave blank to inherit the runtime template's
+                    <code>module_id_range_size</code> at generation time.
+                </small>
+                <FieldError Field="IdRangeSize" Errors="_fieldErrors" />
+            </section>
+
+            <section class="form-section">
+                <label class="check-row">
+                    <input type="checkbox" @bind="_form.Deprecated" />
+                    <span>Deprecated — hide from the user-facing module picker but keep available for admin regeneration.</span>
+                </label>
+            </section>
+
+            <section class="form-section">
+                <div class="folder-editor__header">
+                    <label class="section-label">Dependencies</label>
+                    <button type="button" class="btn btn--sm" @onclick="AddDependency">
+                        <Icon Name="plus" Width="14" Height="14" />
+                        <span>Add dependency</span>
+                    </button>
+                </div>
+                @if (_form.Dependencies.Count == 0)
+                {
+                    <p class="muted">
+                        No dependencies yet. The generator emits this module's
+                        extension with whatever you list here in the same order.
+                    </p>
+                }
+                else
+                {
+                    <div class="folder-editor__list">
+                        @for (var i = 0; i < _form.Dependencies.Count; i++)
+                        {
+                            var index = i;
+                            var row = _form.Dependencies[index];
+                            <div class="folder-editor__row">
+                                <div class="folder-editor__row-head">
+                                    <div class="folder-editor__order">
+                                        <button type="button" class="btn btn--sm" disabled="@(index == 0)"
+                                                @onclick="() => MoveDependency(index, -1)" title="Move up">
+                                            <Icon Name="arrow-up" Width="12" Height="12" />
+                                        </button>
+                                        <button type="button" class="btn btn--sm" disabled="@(index == _form.Dependencies.Count - 1)"
+                                                @onclick="() => MoveDependency(index, 1)" title="Move down">
+                                            <Icon Name="arrow-down" Width="12" Height="12" />
+                                        </button>
+                                    </div>
+                                    <div class="folder-editor__path">
+                                        <input type="text" required placeholder="GUID"
+                                               @bind="row.DepId" @bind:event="oninput" />
+                                        <FieldError Field="@($"Dependencies[{index}].DepId")" Errors="_fieldErrors" />
+                                    </div>
+                                    <button type="button" class="btn btn--sm" @onclick="() => RemoveDependency(index)" title="Remove dependency">
+                                        <Icon Name="trash-2" Width="12" Height="12" />
+                                    </button>
+                                </div>
+                                <div class="dep-editor__fields">
+                                    <div>
+                                        <input type="text" required placeholder="Name"
+                                               @bind="row.DepName" @bind:event="oninput" />
+                                        <FieldError Field="@($"Dependencies[{index}].DepName")" Errors="_fieldErrors" />
+                                    </div>
+                                    <div>
+                                        <input type="text" required placeholder="Publisher"
+                                               @bind="row.DepPublisher" @bind:event="oninput" />
+                                        <FieldError Field="@($"Dependencies[{index}].DepPublisher")" Errors="_fieldErrors" />
+                                    </div>
+                                    <div>
+                                        <input type="text" required placeholder="Version (e.g. 1.0.0.0)"
+                                               @bind="row.DepVersion" @bind:event="oninput" />
+                                        <FieldError Field="@($"Dependencies[{index}].DepVersion")" Errors="_fieldErrors" />
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    <small class="muted">
+                        Each dependency becomes a row in the module's generated
+                        <code>app.json</code>. The GUID is the AL extension's
+                        <code>id</code>; the version is written verbatim.
+                    </small>
+                }
+            </section>
+
+            <div class="admin-template-edit__actions">
+                <button type="submit" class="btn btn--primary" disabled="@_saving">
+                    <Icon Name="save" Width="16" Height="16" />
+                    <span>@(_saving ? "Saving…" : (IsEdit ? "Save changes" : "Create module"))</span>
+                </button>
+                @if (IsEdit && _existingId is not null)
+                {
+                    @if (_isDeleted)
+                    {
+                        <button type="button" class="btn" @onclick="RestoreAsync" disabled="@_saving">
+                            <Icon Name="rotate-ccw" Width="16" Height="16" />
+                            <span>Restore</span>
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn" @onclick="ConfirmDeleteAsync" disabled="@_saving">
+                            <Icon Name="trash-2" Width="16" Height="16" />
+                            <span>Soft-delete</span>
+                        </button>
+                    }
+                }
+            </div>
+        </form>
+    }
+
+    @if (_form is not null && IsEdit && _existingId is not null)
+    {
+        <AuditHistoryPanel EntityType="AuditEntityType.Module" EntityId="_existingId.Value" Title="Module history" />
+    }
+</div>
+
+<ConfirmDialog @ref="_deleteConfirm"
+               Title="Soft-delete this module?"
+               Message="It will disappear from the user-facing module picker. You can restore it from this page; the audit log keeps the change either way."
+               ConfirmLabel="Soft-delete"
+               ConfirmIcon="trash-2" />
+
+@code {
+    [Parameter] public string? Key { get; set; }
+
+    private bool IsEdit => !string.IsNullOrEmpty(Key);
+    private string PageTitleText => IsEdit ? "Edit module" : "New module";
+
+    private FormState? _form;
+    private int? _existingId;
+    private bool _isDeleted;
+    private bool _loadFailed;
+    private bool _saving;
+    private ConfirmDialog? _deleteConfirm;
+    private string? _saveError;
+    private string? _saveSuccess;
+    private IReadOnlyDictionary<string, string> _fieldErrors = new Dictionary<string, string>();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _saveError = null;
+        _saveSuccess = null;
+        _fieldErrors = new Dictionary<string, string>();
+
+        if (!IsEdit)
+        {
+            _form ??= FormState.Blank();
+            _existingId = null;
+            _isDeleted = false;
+            _loadFailed = false;
+            return;
+        }
+
+        var existing = await Modules.GetByKeyAsync(Key!);
+        if (existing is null)
+        {
+            _loadFailed = true;
+            _form = null;
+            return;
+        }
+
+        _loadFailed = false;
+        _existingId = existing.Id;
+        _isDeleted = existing.DeletedAt is not null;
+        _form = FormState.From(existing);
+    }
+
+    private void AddDependency()
+    {
+        _form?.Dependencies.Add(new DependencyRow());
+    }
+
+    private void RemoveDependency(int index)
+    {
+        if (_form is null) return;
+        if (index >= 0 && index < _form.Dependencies.Count)
+        {
+            _form.Dependencies.RemoveAt(index);
+        }
+    }
+
+    private void MoveDependency(int index, int delta)
+    {
+        if (_form is null) return;
+        var target = index + delta;
+        if (index < 0 || index >= _form.Dependencies.Count || target < 0 || target >= _form.Dependencies.Count)
+        {
+            return;
+        }
+        (_form.Dependencies[index], _form.Dependencies[target]) =
+            (_form.Dependencies[target], _form.Dependencies[index]);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_form is null || _saving) return;
+        _saving = true;
+        _saveError = null;
+        _saveSuccess = null;
+        _fieldErrors = new Dictionary<string, string>();
+
+        var payload = _form.ToInput();
+
+        try
+        {
+            if (IsEdit && _existingId is not null)
+            {
+                await Modules.UpdateAsync(_existingId.Value, payload);
+                _saveSuccess = "Saved.";
+            }
+            else
+            {
+                await Modules.CreateAsync(payload);
+                // Land back on the list so admins can see the new row in
+                // context. Editing it further is one click away.
+                Nav.NavigateTo("/admin/modules");
+                return;
+            }
+        }
+        catch (PlanValidationException ex)
+        {
+            _fieldErrors = ex.Errors;
+            _saveError = $"Couldn't save: {ex.Errors.Count} validation error(s). See messages next to each field.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Unexpected error saving module '{Key}'.", payload.Key);
+            _saveError = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (_existingId is null || _saving || _deleteConfirm is null) return;
+        if (!await _deleteConfirm.OpenAsync()) return;
+        _saving = true;
+        try
+        {
+            await Modules.SoftDeleteAsync(_existingId.Value);
+            Nav.NavigateTo("/admin/modules");
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to soft-delete module id={Id}.", _existingId);
+            _saveError = "Couldn't delete the module. Check the logs.";
+            _saving = false;
+        }
+    }
+
+    private async Task RestoreAsync()
+    {
+        if (_existingId is null || _saving) return;
+        _saving = true;
+        try
+        {
+            await Modules.RestoreAsync(_existingId.Value);
+            _isDeleted = false;
+            _saveSuccess = "Module restored.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to restore module id={Id}.", _existingId);
+            _saveError = "Couldn't restore the module. Check the logs.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    /// <summary>
+    /// Mutable form-state mirror of <see cref="ModuleInput"/>. Lives in the
+    /// page so Razor's <c>@bind</c> can write into individual fields without
+    /// the per-keystroke record allocations a record-based form would need.
+    /// </summary>
+    private sealed class FormState
+    {
+        public string Key { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public int? IdRangeSize { get; set; }
+        public bool Deprecated { get; set; }
+        public List<DependencyRow> Dependencies { get; } = new();
+
+        public static FormState Blank() => new();
+
+        public static FormState From(Module module)
+        {
+            var state = new FormState
+            {
+                Key = module.Key,
+                Name = module.Name,
+                IdRangeSize = module.IdRangeSize,
+                Deprecated = module.Deprecated,
+            };
+            foreach (var d in module.Dependencies.OrderBy(d => d.Ordering))
+            {
+                state.Dependencies.Add(new DependencyRow
+                {
+                    DepId = d.DepId,
+                    DepName = d.DepName,
+                    DepPublisher = d.DepPublisher,
+                    DepVersion = d.DepVersion,
+                });
+            }
+            return state;
+        }
+
+        public ModuleInput ToInput() => new(
+            Key: Key,
+            Name: Name,
+            IdRangeSize: IdRangeSize,
+            Deprecated: Deprecated,
+            Dependencies: Dependencies
+                .Select(d => new ModuleDependencyInput(d.DepId, d.DepName, d.DepPublisher, d.DepVersion))
+                .ToList());
+    }
+
+    private sealed class DependencyRow
+    {
+        public string DepId { get; set; } = string.Empty;
+        public string DepName { get; set; } = string.Empty;
+        public string DepPublisher { get; set; } = string.Empty;
+        public string DepVersion { get; set; } = string.Empty;
+    }
+}

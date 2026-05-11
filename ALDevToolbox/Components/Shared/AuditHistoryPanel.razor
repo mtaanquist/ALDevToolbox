@@ -1,0 +1,130 @@
+@inject AuditService Audit
+@using System.Text.Json
+@using ALDevToolbox.Domain.Entities
+@using Lucide.Blazor.Components
+
+@*
+    Embeddable audit history panel. Drop it on an admin edit page and it'll show
+    the change log for a single entity. The snapshot column is the row's state
+    *before* the change — see .design/auth-and-audit.md for the contract.
+*@
+
+<section class="audit-panel">
+    <header class="audit-panel__header">
+        <Icon Name="history" Width="18" Height="18" Css="audit-panel__icon" />
+        <h3 class="audit-panel__title">@Title</h3>
+    </header>
+
+    @if (_entries is null)
+    {
+        <p class="muted">Loading history…</p>
+    }
+    else if (_entries.Count == 0)
+    {
+        <p class="muted">No changes recorded for this @FriendlyEntityName().</p>
+    }
+    else
+    {
+        @if (_entries.Count >= _limit)
+        {
+            <p class="muted audit-panel__limit-note">
+                Showing the @_limit most recent changes. Older entries are still
+                in the database and visible from <a href="/admin/audit">the global audit log</a>.
+            </p>
+        }
+        <table class="data-table audit-table">
+            <thead>
+                <tr>
+                    <th>When (UTC)</th>
+                    <th>Who</th>
+                    <th>Action</th>
+                    <th>Snapshot</th>
+                    <th class="data-table__actions"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var e in _entries)
+                {
+                    <tr>
+                        <td><time datetime="@e.Timestamp.ToString("O")">@e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
+                        <td>@e.ChangedBy</td>
+                        <td><span class="audit-action audit-action--@e.Action.ToString().ToLowerInvariant()">@e.Action</span></td>
+                        <td>
+                            @if (string.IsNullOrEmpty(e.SnapshotJson))
+                            {
+                                <span class="muted">—</span>
+                            }
+                            else
+                            {
+                                <details>
+                                    <summary>Show JSON</summary>
+                                    <pre class="audit-snapshot"><code>@PrettyJson(e.SnapshotJson)</code></pre>
+                                </details>
+                            }
+                        </td>
+                        <td class="data-table__actions">
+                            <a class="btn btn--sm" href="@($"/admin/audit/{e.Id}/diff")"
+                               title="Compare this row's snapshot against the next change to the same entity">
+                                <Icon Name="diff" Width="14" Height="14" />
+                                <span>View change</span>
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    /// <summary>The audited entity to show history for.</summary>
+    [Parameter, EditorRequired]
+    public AuditEntityType EntityType { get; set; }
+
+    /// <summary>Primary key of the audited entity.</summary>
+    [Parameter, EditorRequired]
+    public int EntityId { get; set; }
+
+    /// <summary>Optional override for the panel heading.</summary>
+    [Parameter]
+    public string Title { get; set; } = "History";
+
+    private const int _limit = 200;
+    private List<AuditLogEntry>? _entries;
+    private (AuditEntityType type, int id)? _loadedKey;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var currentKey = (EntityType, EntityId);
+        if (_loadedKey == currentKey)
+        {
+            return;
+        }
+        _entries = null;
+        _entries = await Audit.GetForEntityAsync(EntityType, EntityId, _limit);
+        _loadedKey = currentKey;
+    }
+
+    private string FriendlyEntityName() => EntityType switch
+    {
+        AuditEntityType.RuntimeTemplate => "template",
+        AuditEntityType.TemplateFolder => "folder",
+        AuditEntityType.Module => "module",
+        AuditEntityType.ModuleDependency => "dependency",
+        AuditEntityType.WellKnownDependency => "catalogue entry",
+        _ => "entity"
+    };
+
+    private static string PrettyJson(string raw)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch (JsonException)
+        {
+            return raw;
+        }
+    }
+}

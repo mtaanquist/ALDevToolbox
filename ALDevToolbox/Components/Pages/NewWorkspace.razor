@@ -1,0 +1,457 @@
+@page "/projects/new"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@inject TemplateService Templates
+@inject ApplicationVersionService Versions
+@inject OrganizationConfigService OrgConfig
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
+
+<PageTitle>New workspace · AL Dev Toolbox</PageTitle>
+
+<TabBar Active="TabBar.Tab.NewWorkspace" />
+
+<div class="workspace-page">
+    @if (_templates is null || _modules is null || _applicationVersions is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_templates.Count == 0)
+    {
+        <p class="muted">
+            No active runtime templates are available. Seed the database or add one
+            through the admin section before generating a workspace.
+        </p>
+    }
+    else
+    {
+        <div class="workspace-layout">
+            <form method="post" action="/generate/workspace" class="form-grid workspace-layout__form" data-loading-form>
+                <AntiforgeryToken />
+                <input type="hidden" name="GenToken" value="" />
+
+                <section class="form-section">
+                    <label class="section-label" for="ws-template">Runtime template</label>
+                    <select id="ws-template" name="TemplateKey" required
+                            @bind="_templateKey" @bind:after="OnTemplateChanged">
+                        @foreach (var t in _templates)
+                        {
+                            <option value="@t.Key">@t.Name</option>
+                        }
+                    </select>
+                    <p class="caption muted">
+                        @_selected!.Description
+                        <span> · Default application: <code>@_selected.DefaultApplication</code></span>
+                    </p>
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label">Project</label>
+                    <input type="text" name="WorkspaceName" placeholder="e.g. Acme Customer"
+                           pattern="^[A-Za-z][A-Za-z0-9 ]*$" required
+                           title="Letters, digits and spaces only; must start with a letter."
+                           @bind="_workspaceName" @bind:event="oninput" />
+                    <small class="muted">Workspace name. Letters, digits and spaces only; must start with a letter.</small>
+                    <input type="text" name="Brief" placeholder="One-line description (optional)"
+                           @bind="_brief" @bind:event="oninput" />
+                    <textarea name="Description" rows="3" placeholder="Longer description (optional)"
+                              @bind="_description" @bind:event="oninput"></textarea>
+                </section>
+
+                <section class="form-section form-section--row">
+                    <div>
+                        <label class="section-label" for="ws-core-from">Core ID range — from</label>
+                        <input id="ws-core-from" type="number" name="CoreIdRangeFrom" required min="1"
+                               @bind="_coreIdRangeFrom" @bind:event="oninput" />
+                        @if (_coreIdRangeFrom <= 0)
+                        {
+                            <span class="form-field-error" role="alert">Must be greater than zero.</span>
+                        }
+                    </div>
+                    <div>
+                        <label class="section-label" for="ws-core-to">Core ID range — to</label>
+                        <input id="ws-core-to" type="number" name="CoreIdRangeTo" required min="1"
+                               @bind="_coreIdRangeTo" @bind:event="oninput" />
+                        @if (_coreIdRangeTo <= _coreIdRangeFrom)
+                        {
+                            <span class="form-field-error" role="alert">Must be greater than the 'from' value.</span>
+                        }
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label" for="ws-app-version">Application version</label>
+                    @if (_applicationVersions is null || _applicationVersions.Count == 0)
+                    {
+                        @* Fallback when the catalogue is empty — keep the form
+                           submittable using the free-text values lifted from
+                           the picked template's defaults. Admins can curate the
+                           list under /admin/application-versions. *@
+                        <input id="ws-app-version" type="text" name="ApplicationVersion" required
+                               @bind="_applicationVersion" @bind:event="oninput" />
+                        <input type="hidden" name="RuntimeVersion" value="@_runtimeVersion" />
+                        <small class="muted">
+                            No application-version catalogue has been seeded.
+                            Add entries under <a href="/admin/application-versions">Application versions</a>
+                            to switch this to a curated select.
+                        </small>
+                    }
+                    else
+                    {
+                        <select id="ws-app-version" name="ApplicationVersion"
+                                @bind="_applicationVersion" @bind:after="OnApplicationVersionChanged">
+                            @* Orphan templates carry a free-text default
+                               that doesn't necessarily appear in the curated
+                               catalogue; render a synthetic option so the
+                               browser keeps the orphan value selectable
+                               until an admin assigns a real entry. *@
+                            @if (!_applicationVersions.Any(v => v.Application == _applicationVersion))
+                            {
+                                <option value="@_applicationVersion">@_applicationVersion (template default — not in catalogue)</option>
+                            }
+                            @foreach (var v in _applicationVersions)
+                            {
+                                <option value="@v.Application">@v.Name</option>
+                            }
+                        </select>
+                        @* The runtime is derived from the picked entry; ship
+                           it as a hidden input so the existing endpoint shape
+                           (separate ApplicationVersion + RuntimeVersion fields)
+                           keeps working. *@
+                        <input type="hidden" name="RuntimeVersion" value="@_runtimeVersion" />
+                        <p class="caption muted">
+                            application <code>@_applicationVersion</code> · runtime <code>@_runtimeVersion</code>
+                        </p>
+                    }
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label">Modules</label>
+                    @if (_modules.Count == 0)
+                    {
+                        <p class="muted">No modules available.</p>
+                    }
+                    else
+                    {
+                        <div class="module-list">
+                            @foreach (var m in _modules)
+                            {
+                                <label class="module-card">
+                                    <input type="checkbox" name="SelectedModuleKeys" value="@m.Key"
+                                           checked="@_selectedModuleKeys.Contains(m.Key)"
+                                           @onchange="e => OnModuleToggled(m.Key, (bool)(e.Value ?? false))" />
+                                    <span class="module-card__body">
+                                        <span class="module-card__name">@m.Name</span>
+                                        <span class="module-card__caption muted">
+                                            + @m.Dependencies.Count
+                                            @(m.Dependencies.Count == 1 ? "dependency" : "dependencies")
+                                        </span>
+                                    </span>
+                                </label>
+                            }
+                        </div>
+                    }
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label">Options</label>
+                    <label class="check-row">
+                        <input type="checkbox" name="IncludeExamples" value="true"
+                               @bind="_includeExamples" />
+                        <span>Include example AL files</span>
+                    </label>
+                    <label class="check-row">
+                        <input type="checkbox" name="IncludeForNav" value="true"
+                               @bind="_includeForNav" />
+                        <span>Include ForNAV in Core</span>
+                    </label>
+                </section>
+
+                <button type="submit" class="btn btn--primary workspace-layout__generate" data-loading-button>
+                    <span class="btn__spinner" aria-hidden="true"></span>
+                    <span class="btn__label">Generate</span>
+                    <span class="btn__label-busy">Generating…</span>
+                </button>
+            </form>
+
+            <aside class="workspace-layout__preview">
+                <section class="preview-card">
+                    <div class="section-label">Preview</div>
+                    <FolderTreePreview Root="BuildPreview()" />
+                </section>
+
+                <section class="preview-stats">
+                    <div class="stat-card">
+                        <div class="stat-card__value">@(1 + _selectedModuleKeys.Count)</div>
+                        <div class="stat-card__label">Extensions</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card__value">@CountDependencies()</div>
+                        <div class="stat-card__label">Dependencies</div>
+                    </div>
+                </section>
+            </aside>
+        </div>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "template")] public string? PreselectedTemplate { get; set; }
+
+    private List<RuntimeTemplate>? _templates;
+    private List<ALDevToolbox.Domain.Entities.Module>? _modules;
+    private List<ApplicationVersion>? _applicationVersions;
+    private RuntimeTemplate? _selected;
+
+    // Form state. Mirrors what the form posts to /generate/workspace; the live
+    // preview reads from these same fields so it always reflects the user's
+    // current input.
+    private string _templateKey = string.Empty;
+    private string _workspaceName = string.Empty;
+    private string _brief = string.Empty;
+    private string _description = string.Empty;
+    private int _coreIdRangeFrom;
+    private int _coreIdRangeTo;
+    private string _applicationVersion = string.Empty;
+    private string _runtimeVersion = string.Empty;
+    private readonly HashSet<string> _selectedModuleKeys = new(StringComparer.Ordinal);
+    private bool _includeExamples = true;
+    private bool _includeForNav;
+
+    private OrganizationConfig? _orgConfig;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
+        _modules = await Templates.GetModulesAsync(includeDeprecated: false);
+        _applicationVersions = await Versions.GetActiveAsync(includeDeprecated: false);
+        _orgConfig = await OrgConfig.GetCurrentAsync();
+        // Pre-fill the brief / description from the org's defaults block
+        // (Milestone P3.14). Users can still edit either field; the template's
+        // own fields override the id range below if it specifies one, since
+        // the ID range is a per-template concern.
+        _brief = _orgConfig.Settings.DefaultBrief;
+        _description = _orgConfig.Settings.DefaultCoreDescription;
+        // Honour the ?template=<key> hint from the Templates browser when present
+        // and the key matches an active template; otherwise fall back to the first.
+        _selected = (!string.IsNullOrWhiteSpace(PreselectedTemplate)
+            ? _templates.FirstOrDefault(t => t.Key == PreselectedTemplate)
+            : null) ?? _templates.FirstOrDefault();
+        if (_selected is not null)
+        {
+            ApplyTemplateDefaults(_selected);
+        }
+    }
+
+    private void OnApplicationVersionChanged()
+    {
+        // Picking an entry on the select fills both ApplicationVersion and
+        // RuntimeVersion atomically (Milestone P2.4). The select's value is
+        // the four-part Application string; we look the row up to recover the
+        // matching runtime so the hidden RuntimeVersion input stays correct.
+        if (_applicationVersions is null) return;
+        var match = _applicationVersions.FirstOrDefault(v => v.Application == _applicationVersion);
+        if (match is not null)
+        {
+            _runtimeVersion = match.Runtime;
+        }
+    }
+
+    private void OnTemplateChanged()
+    {
+        var picked = _templates?.FirstOrDefault(t => t.Key == _templateKey);
+        if (picked is null) return;
+        _selected = picked;
+        ApplyTemplateDefaults(picked);
+    }
+
+    private void ApplyTemplateDefaults(RuntimeTemplate template)
+    {
+        _templateKey = template.Key;
+        _coreIdRangeFrom = template.CoreIdRangeFrom;
+        _coreIdRangeTo = template.CoreIdRangeTo;
+        // Prefer the curated application-version catalogue (Milestone P2.4)
+        // when the template points at a live entry — both fields snap to it
+        // atomically. Otherwise fall back to the template's free-text
+        // default_application + runtime values.
+        var curated = ResolveCuratedVersion(template);
+        if (curated is not null)
+        {
+            _applicationVersion = curated.Application;
+            _runtimeVersion = curated.Runtime;
+        }
+        else
+        {
+            _applicationVersion = template.DefaultApplication;
+            // Runtime is a string in the entity (Major or Major.Minor). The
+            // app.json runtime field always wants Major.Minor, so append ".0"
+            // when only a major was supplied.
+            _runtimeVersion = template.Runtime.Contains('.') ? template.Runtime : $"{template.Runtime}.0";
+        }
+
+        // Pre-select the modules this template ships with (Milestone P2.1).
+        // Switching templates retunes the selection; the user's subsequent
+        // toggles after that are honoured unchanged. We only consider modules
+        // that are still in the active list — soft-deleted or filtered-out
+        // entries silently drop off the default set.
+        _selectedModuleKeys.Clear();
+        if (_modules is null) return;
+        var availableKeys = _modules.Select(m => m.Key).ToHashSet(StringComparer.Ordinal);
+        foreach (var d in template.DefaultModules.OrderBy(d => d.Ordering))
+        {
+            var key = d.Module?.Key;
+            if (!string.IsNullOrEmpty(key) && availableKeys.Contains(key))
+            {
+                _selectedModuleKeys.Add(key);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Returns the curated <see cref="ApplicationVersion"/> the template
+    /// should preselect, or <c>null</c> when the template has no FK or the
+    /// referenced entry is no longer in the active catalogue.
+    /// </summary>
+    private ApplicationVersion? ResolveCuratedVersion(RuntimeTemplate template)
+    {
+        if (template.DefaultApplicationVersion is null || _applicationVersions is null) return null;
+        var key = template.DefaultApplicationVersion.Key;
+        return _applicationVersions.FirstOrDefault(v => v.Key == key);
+    }
+
+    private void OnModuleToggled(string key, bool isChecked)
+    {
+        if (isChecked) _selectedModuleKeys.Add(key);
+        else _selectedModuleKeys.Remove(key);
+    }
+
+    private int CountDependencies()
+    {
+        if (_modules is null) return 0;
+        // One self-reference to Core per module, plus each module's own
+        // dependencies. Core itself has no dependencies unless ForNAV is on,
+        // in which case we just call out a non-zero count without looking up
+        // catalogue rows for the preview.
+        var total = 0;
+        foreach (var key in _selectedModuleKeys)
+        {
+            var module = _modules.FirstOrDefault(m => m.Key == key);
+            if (module is null) continue;
+            total += 1 + module.Dependencies.Count;
+        }
+        if (_includeForNav) total += 1;
+        return total;
+    }
+
+    /// <summary>
+    /// Builds the <see cref="PreviewNode"/> tree displayed in the right column.
+    /// Mirrors the structure documented in <c>generation-engine.md</c>: the
+    /// workspace root contains <c>.assets</c>, the Core extension, one folder
+    /// per selected module, and three workspace-level files. Per-extension
+    /// folders are populated from the active template; <c>.gitkeep</c> stand-ins
+    /// are shown when examples are off or the example folder is missing.
+    /// </summary>
+    private PreviewNode BuildPreview()
+    {
+        var rootName = string.IsNullOrWhiteSpace(_workspaceName)
+            ? "Workspace"
+            : StripWhitespace(_workspaceName);
+
+        var children = new List<PreviewNode>
+        {
+            PreviewNode.Folder(".assets", new[]
+            {
+                PreviewNode.Folder("images", new[] { PreviewNode.File("logo.png") }),
+                PreviewNode.Folder("rulesets", new[] { PreviewNode.File("Company.ruleset.json") }),
+            }),
+            BuildExtensionNode("Core", isCore: true),
+        };
+
+        if (_modules is not null)
+        {
+            foreach (var key in _selectedModuleKeys)
+            {
+                var module = _modules.FirstOrDefault(m => m.Key == key);
+                if (module is null) continue;
+                children.Add(BuildExtensionNode(StripWhitespace(module.Name), isCore: false));
+            }
+        }
+
+        children.Add(PreviewNode.File($"{rootName}.code-workspace"));
+        children.Add(PreviewNode.File(".gitignore"));
+        children.Add(PreviewNode.File("README.md"));
+
+        return PreviewTreeBuilder.SortForDisplay(
+            new PreviewNode(rootName, PreviewNodeKind.Workspace, children));
+    }
+
+    private PreviewNode BuildExtensionNode(string folderName, bool isCore)
+    {
+        var contents = new List<PreviewNode>
+        {
+            PreviewNode.File("app.json"),
+            PreviewNode.File("AppSourceCop.json"),
+        };
+
+        if (_selected is not null)
+        {
+            // Core uses Folders; modules use ModuleFolders. The split exists
+            // so per-Core scaffolding (App Install codeunits, setup tables)
+            // doesn't bleed into every module preview.
+            var entries = isCore
+                ? _selected.Folders
+                    .OrderBy(f => f.Ordering)
+                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromFiles(f.Files)))
+                : _selected.ModuleFolders
+                    .OrderBy(f => f.Ordering)
+                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromFiles(f.Files)));
+            contents.AddRange(PreviewTreeBuilder.BuildFolderChildren(entries));
+        }
+
+        // Hardcoded fallback folders. Each one only goes in if the template
+        // didn't already declare a folder with the same case-insensitive name —
+        // Windows would treat 'translations' and 'Translations' as the same
+        // folder, so emitting both would collide on extraction and look
+        // duplicated in the preview.
+        AddFallbackFolder(contents, "libs");
+        AddFallbackFolder(contents, "permissionsets");
+        AddFallbackFolder(contents, "Translations");
+
+        return PreviewNode.Extension(folderName, contents);
+    }
+
+    private static void AddFallbackFolder(List<PreviewNode> contents, string name)
+    {
+        if (contents.Any(n => n.Kind != PreviewNodeKind.File
+                              && string.Equals(n.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+        contents.Add(PreviewNode.Folder(name, new[] { PreviewNode.File(".gitkeep") }));
+    }
+
+    private List<PreviewNode> LeafFilesFromFiles(IEnumerable<TemplateFile> files) =>
+        LeafFilesByPaths(files.OrderBy(f => f.Ordering).Select(f => f.Path));
+
+    private List<PreviewNode> LeafFilesFromFiles(IEnumerable<TemplateModuleFile> files) =>
+        LeafFilesByPaths(files.OrderBy(f => f.Ordering).Select(f => f.Path));
+
+    /// <summary>
+    /// Shared tail for the two <see cref="LeafFilesFromFiles(IEnumerable{TemplateFile})"/>
+    /// overloads above. Same rule as the generator: when examples are off or the
+    /// folder has no files, the preview shows a single <c>.gitkeep</c>; otherwise
+    /// it shows one node per file in the order the admin set.
+    /// </summary>
+    private List<PreviewNode> LeafFilesByPaths(IEnumerable<string> paths)
+    {
+        var list = paths.ToList();
+        if (_includeExamples && list.Count > 0)
+        {
+            return list.Select(PreviewNode.File).ToList();
+        }
+        return new List<PreviewNode> { PreviewNode.File(".gitkeep") };
+    }
+
+    private static string StripWhitespace(string value) =>
+        new(value.Where(c => !char.IsWhiteSpace(c)).ToArray());
+}

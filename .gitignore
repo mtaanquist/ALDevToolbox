@@ -55,3 +55,8 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# Local SQLite databases produced by `dotnet run` and `dotnet ef` design-time tooling
+*.db
+*.db-shm
+*.db-wal

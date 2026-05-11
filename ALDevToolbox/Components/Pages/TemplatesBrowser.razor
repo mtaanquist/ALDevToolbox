@@ -1,0 +1,112 @@
+@page "/templates"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject TemplateService Templates
+@using Lucide.Blazor.Components
+
+<PageTitle>Templates · AL Dev Toolbox</PageTitle>
+
+<TabBar Active="TabBar.Tab.Templates" />
+
+<div class="templates-browser">
+    <p class="muted">
+        Read-only browser for the runtime templates and modules available in this instance.
+        Edits happen through the admin section.
+    </p>
+
+    <h2>Runtime templates</h2>
+    @if (_templates is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_templates.Count == 0)
+    {
+        <p class="muted">No templates found. The database is empty — check that <code>SEED_PATH</code> points at a populated <code>Templates.seed/</code> directory.</p>
+    }
+    else
+    {
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Key</th>
+                    <th>Runtime</th>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Folders</th>
+                    <th>Status</th>
+                    <th class="data-table__actions"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var t in _templates)
+                {
+                    <tr>
+                        <td><code>@t.Key</code></td>
+                        <td>@t.Runtime</td>
+                        <td>@t.Name</td>
+                        <td class="muted">@t.Description</td>
+                        <td>@t.Folders.Count</td>
+                        <td>@(t.Deprecated ? "Deprecated" : "Active")</td>
+                        <td class="data-table__actions">
+                            <a class="btn btn--sm" href="@($"/templates/{Uri.EscapeDataString(t.Key)}")">
+                                <Icon Name="eye" Width="14" Height="14" />
+                                <span>View</span>
+                            </a>
+                            @if (!t.Deprecated)
+                            {
+                                <a class="btn btn--sm" href="@($"/projects/new?template={Uri.EscapeDataString(t.Key)}")">
+                                    <Icon Name="folder-plus" Width="14" Height="14" />
+                                    <span>New workspace</span>
+                                </a>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <h2>Modules</h2>
+    @if (_modules is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_modules.Count == 0)
+    {
+        <p class="muted">No modules found.</p>
+    }
+    else
+    {
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Key</th>
+                    <th>Name</th>
+                    <th>Dependencies</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var m in _modules)
+                {
+                    <tr>
+                        <td><code>@m.Key</code></td>
+                        <td>@m.Name</td>
+                        <td>@m.Dependencies.Count</td>
+                        <td>@(m.Deprecated ? "Deprecated" : "Active")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private List<ALDevToolbox.Domain.Entities.RuntimeTemplate>? _templates;
+    private List<ALDevToolbox.Domain.Entities.Module>? _modules;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _templates = await Templates.GetTemplatesAsync(includeDeprecated: true);
+        _modules = await Templates.GetModulesAsync(includeDeprecated: true);
+    }
+}

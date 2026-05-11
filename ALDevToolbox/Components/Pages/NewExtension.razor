@@ -1,0 +1,702 @@
+@page "/projects/extension"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@inject TemplateService Templates
+@inject ApplicationVersionService Versions
+@inject WorkspaceConfigService Configs
+@inject OrganizationConfigService OrgConfig
+@inject ILogger<NewExtension> Logger
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
+
+<PageTitle>New extension · AL Dev Toolbox</PageTitle>
+
+<TabBar Active="TabBar.Tab.NewExtension" />
+
+<div class="workspace-page">
+    @if (_templates is null || _catalog is null || _modules is null || _applicationVersions is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_templates.Count == 0)
+    {
+        <p class="muted">
+            No active runtime templates are available. Seed the database or add one
+            through the admin section before generating an extension.
+        </p>
+    }
+    else
+    {
+        <div class="workspace-layout">
+            <form method="post" action="/generate/extension" class="form-grid workspace-layout__form" data-loading-form>
+                <AntiforgeryToken />
+                <input type="hidden" name="GenToken" value="" />
+
+                @* Sibling-extension flow: when a workspace config is loaded, ship
+                   the workspace's identity through to the generation endpoint so
+                   the ZIP can include an updated <Workspace>.code-workspace file
+                   listing Core + every imported module + the new extension. The
+                   folder names come from the persisted identities so renames in
+                   the DB since the workspace was generated don't bleed into the
+                   regenerated workspace file. *@
+                @if (_workspaceContext is not null)
+                {
+                    <input type="hidden" name="WorkspaceName" value="@_workspaceContext.WorkspaceName" />
+                    @foreach (var key in _workspaceContext.ModuleKeys)
+                    {
+                        <input type="hidden" name="WorkspaceModuleKeys" value="@key" />
+                    }
+                    @foreach (var ext in _workspaceContext.Extensions)
+                    {
+                        <input type="hidden" name="WorkspaceFolders" value="@ext.Folder" />
+                    }
+                }
+
+                <section class="form-section">
+                    <label class="section-label" for="ext-template">Runtime template</label>
+                    <select id="ext-template" name="TemplateKey" required
+                            disabled="@(_workspaceContext is not null)"
+                            @bind="_templateKey" @bind:after="OnTemplateChanged">
+                        @foreach (var t in _templates)
+                        {
+                            <option value="@t.Key">@t.Name</option>
+                        }
+                    </select>
+                    @* When the field is disabled the browser drops it from the
+                       form post, so mirror the value into a hidden input — the
+                       generation endpoint expects TemplateKey on every submit. *@
+                    @if (_workspaceContext is not null)
+                    {
+                        <input type="hidden" name="TemplateKey" value="@_templateKey" />
+                        <p class="caption muted">
+                            Locked to <strong>@_selected!.Name</strong> from the imported
+                            workspace. Clear the imported config in the right column to switch
+                            templates.
+                        </p>
+                    }
+                    else
+                    {
+                        <p class="caption muted">
+                            @_selected!.Description
+                            <span> · Default application: <code>@_selected.DefaultApplication</code></span>
+                        </p>
+                    }
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label">Extension</label>
+                    <input type="text" name="ExtensionName" placeholder="e.g. MyCustomFeature"
+                           pattern="^[A-Za-z][A-Za-z0-9]*$" required
+                           title="Letters and digits only, no spaces; must start with a letter."
+                           @bind="_extensionName" @bind:event="oninput" />
+                    <small class="muted">Folder and AL extension name. Letters and digits only, no spaces; must start with a letter.</small>
+                    <input type="text" name="Brief" placeholder="One-line description (optional)"
+                           @bind="_brief" @bind:event="oninput" />
+                    <textarea name="Description" rows="3" placeholder="Longer description (optional)"
+                              @bind="_description" @bind:event="oninput"></textarea>
+                    <input type="text" name="Publisher" placeholder="Publisher" required
+                           title="Required." @bind="_publisher" @bind:event="oninput" />
+                </section>
+
+                <section class="form-section form-section--row">
+                    <div>
+                        <label class="section-label" for="ext-id-from">ID range — from</label>
+                        <input id="ext-id-from" type="number" name="IdRangeFrom" required min="1"
+                               @bind="_idRangeFrom" @bind:event="oninput" />
+                        @if (_idRangeFrom <= 0)
+                        {
+                            <span class="form-field-error" role="alert">Must be greater than zero.</span>
+                        }
+                    </div>
+                    <div>
+                        <label class="section-label" for="ext-id-to">ID range — to</label>
+                        <input id="ext-id-to" type="number" name="IdRangeTo" required min="1"
+                               @bind="_idRangeTo" @bind:event="oninput" />
+                        @if (_idRangeTo <= _idRangeFrom)
+                        {
+                            <span class="form-field-error" role="alert">Must be greater than the 'from' value.</span>
+                        }
+                    </div>
+                </section>
+                <p class="caption muted">
+                    You're responsible for choosing a range that doesn't collide with the rest of your workspace.
+                </p>
+
+                <section class="form-section">
+                    <label class="section-label" for="ext-app-version">Application version</label>
+                    @if (_applicationVersions is null || _applicationVersions.Count == 0)
+                    {
+                        <input id="ext-app-version" type="text" name="ApplicationVersion" required
+                               @bind="_applicationVersion" @bind:event="oninput" />
+                        <input type="hidden" name="RuntimeVersion" value="@_runtimeVersion" />
+                        <small class="muted">
+                            No application-version catalogue has been seeded.
+                            Add entries under <a href="/admin/application-versions">Application versions</a>
+                            to switch this to a curated select.
+                        </small>
+                    }
+                    else
+                    {
+                        <select id="ext-app-version" name="ApplicationVersion"
+                                @bind="_applicationVersion" @bind:after="OnApplicationVersionChanged">
+                            @if (!_applicationVersions.Any(v => v.Application == _applicationVersion))
+                            {
+                                <option value="@_applicationVersion">@_applicationVersion (template default — not in catalogue)</option>
+                            }
+                            @foreach (var v in _applicationVersions)
+                            {
+                                <option value="@v.Application">@v.Name</option>
+                            }
+                        </select>
+                        <input type="hidden" name="RuntimeVersion" value="@_runtimeVersion" />
+                        <p class="caption muted">
+                            application <code>@_applicationVersion</code> · runtime <code>@_runtimeVersion</code>
+                        </p>
+                    }
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label">Dependencies</label>
+                    <DependencyPicker Catalog="_catalog!" Value="_dependencies" ValueChanged="OnDependenciesChanged" />
+                    @* Hidden inputs serialise the picker's state into the form post.
+                       The endpoint reads them as four parallel string arrays. *@
+                    @foreach (var d in _dependencies)
+                    {
+                        <input type="hidden" name="DependencyIds" value="@d.DepId" />
+                        <input type="hidden" name="DependencyNames" value="@d.DepName" />
+                        <input type="hidden" name="DependencyPublishers" value="@d.DepPublisher" />
+                        <input type="hidden" name="DependencyVersions" value="@d.DepVersion" />
+                    }
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label">Options</label>
+                    <label class="check-row">
+                        <input type="checkbox" name="IncludeExamples" value="true"
+                               @bind="_includeExamples" />
+                        <span>Include example AL files</span>
+                    </label>
+                </section>
+
+                <button type="submit" class="btn btn--primary workspace-layout__generate" data-loading-button>
+                    <span class="btn__spinner" aria-hidden="true"></span>
+                    <span class="btn__label">Generate</span>
+                    <span class="btn__label-busy">Generating…</span>
+                </button>
+            </form>
+
+            <aside class="workspace-layout__preview">
+                <section class="preview-card import-card">
+                    <div class="section-label">Import config</div>
+                    <div class="import-card__row">
+                        <label class="btn btn--sm import-card__button">
+                            <Icon Name="upload" Width="14" Height="14" />
+                            <span>Choose file…</span>
+                            <InputFile OnChange="OnImportFileChosen" accept=".toml" class="import-card__input" />
+                        </label>
+                        @if (!string.IsNullOrEmpty(_importFileName))
+                        {
+                            <span class="import-card__filename" title="@_importFileName">@_importFileName</span>
+                        }
+                        @if (_workspaceContext is not null)
+                        {
+                            <button type="button" class="btn btn--sm" @onclick="ClearImportedWorkspace">Clear</button>
+                        }
+                    </div>
+                    <p class="caption muted import-card__hint">
+                        Restore this form from a previously saved <code>@WorkspaceConfigService.FileName</code>.
+                        A workspace config locks the template and scaffolds a sibling extension;
+                        an extension config restores every field.
+                    </p>
+                    @if (!string.IsNullOrEmpty(_importMessage))
+                    {
+                        <p class="caption muted">@_importMessage</p>
+                    }
+                    @if (_importErrors.Count > 0)
+                    {
+                        <ul class="form-field-error" role="alert">
+                            @foreach (var err in _importErrors)
+                            {
+                                <li>@err.Key: @err.Value</li>
+                            }
+                        </ul>
+                    }
+                </section>
+
+                <section class="preview-card">
+                    <div class="section-label">Preview</div>
+                    <FolderTreePreview Root="BuildPreview()" />
+                </section>
+
+                <section class="preview-stats">
+                    <div class="stat-card">
+                        <div class="stat-card__value">1</div>
+                        <div class="stat-card__label">Extensions</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card__value">@_dependencies.Count</div>
+                        <div class="stat-card__label">Dependencies</div>
+                    </div>
+                </section>
+
+                <section class="success-tip">
+                    <div class="section-label">After downloading</div>
+                    @if (_workspaceContext is not null)
+                    {
+                        <p class="caption">
+                            Drop the <code>@FolderName/</code> folder and the regenerated
+                            <code>@($"{_workspaceContext.WorkspaceName}.code-workspace")</code>
+                            file into your existing workspace, replacing the old workspace
+                            file. The new <code>folders</code> array already lists every
+                            extension plus the new one.
+                        </p>
+                    }
+                    else
+                    {
+                        <p class="caption">
+                            Drop <code>@FolderName/</code> into your existing workspace folder, then add this
+                            line to the <code>folders</code> array in your <code>.code-workspace</code>:
+                        </p>
+                        <pre class="success-tip__snippet"><code>@WorkspaceFoldersSnippet</code></pre>
+                    }
+                </section>
+            </aside>
+        </div>
+    }
+</div>
+
+@code {
+    private List<RuntimeTemplate>? _templates;
+    private List<WellKnownDependency>? _catalog;
+    // Loaded once at init so the sibling-extension preview can resolve folder
+    // names from imported module keys without an extra DB round-trip.
+    private List<ALDevToolbox.Domain.Entities.Module>? _modules;
+    private List<ApplicationVersion>? _applicationVersions;
+    private RuntimeTemplate? _selected;
+
+    // Form state. Mirrors the fields posted to /generate/extension; the live
+    // preview and the post-generation snippet read from the same source so
+    // they always reflect the user's current input.
+    private string _templateKey = string.Empty;
+    private string _extensionName = string.Empty;
+    private string _brief = string.Empty;
+    private string _description = string.Empty;
+    private string _publisher = string.Empty;
+    private int _idRangeFrom = 90000;
+    private int _idRangeTo = 90999;
+    private string _applicationVersion = string.Empty;
+    private string _runtimeVersion = string.Empty;
+    private bool _includeExamples = true;
+    private List<DependencyEntry> _dependencies = new();
+
+    // Sibling-extension state. Non-null when the user imported a workspace
+    // config; locks the template select, drives the full-workspace preview,
+    // and tells the generation endpoint to emit an updated .code-workspace
+    // alongside the new extension folder.
+    private WorkspaceImportContext? _workspaceContext;
+
+    private record WorkspaceImportContext(
+        string WorkspaceName,
+        IReadOnlyList<string> ModuleKeys,
+        IReadOnlyList<WorkspaceExtensionIdentity> Extensions);
+
+    // Import-config feedback. _importFileName labels the picked file next to
+    // the button; _importMessage is the success/seed line shown underneath;
+    // _importErrors carries field-keyed validation messages when a file was
+    // rejected. See the workspace-page comments for the same shape.
+    private string _importFileName = string.Empty;
+    private string _importMessage = string.Empty;
+    private Dictionary<string, string> _importErrors = new();
+    private const long MaxImportSize = 1 * 1024 * 1024;
+
+    private string FolderName => string.IsNullOrWhiteSpace(_extensionName) ? "MyExtension" : _extensionName;
+
+    private string WorkspaceFoldersSnippet => $"{{ \"path\": \"{FolderName}\" }}";
+
+    private OrganizationConfig? _orgConfig;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
+        _catalog = await Templates.GetCatalogAsync();
+        _modules = await Templates.GetModulesAsync(includeDeprecated: false);
+        _applicationVersions = await Versions.GetActiveAsync(includeDeprecated: false);
+        _orgConfig = await OrgConfig.GetCurrentAsync();
+        _selected = _templates.FirstOrDefault();
+        if (_selected is not null)
+        {
+            ApplyTemplateDefaults(_selected);
+        }
+        // Pre-fill the org-level defaults block (Milestone P3.14). Brief and
+        // description are admin-curated free-text fields; they don't have
+        // template-level overrides, so we always use the org's value when no
+        // sibling-extension import has set them. The id range stays driven by
+        // the template above (per-template id ranges are a deliberate split).
+        if (_workspaceContext is null && _orgConfig is not null)
+        {
+            _brief = _orgConfig.Settings.DefaultBrief;
+            _description = _orgConfig.Settings.DefaultCoreDescription;
+        }
+    }
+
+    private void OnApplicationVersionChanged()
+    {
+        if (_applicationVersions is null) return;
+        var match = _applicationVersions.FirstOrDefault(v => v.Application == _applicationVersion);
+        if (match is not null)
+        {
+            _runtimeVersion = match.Runtime;
+        }
+    }
+
+    private void OnTemplateChanged()
+    {
+        var picked = _templates?.FirstOrDefault(t => t.Key == _templateKey);
+        if (picked is null) return;
+        _selected = picked;
+        ApplyTemplateDefaults(picked);
+    }
+
+    private void ApplyTemplateDefaults(RuntimeTemplate template)
+    {
+        _templateKey = template.Key;
+        _publisher = template.Defaults.Publisher;
+        // Prefer the curated application-version catalogue (Milestone P2.4)
+        // when the template points at a live entry — both fields snap to it
+        // atomically. Fall back to the template's free-text default otherwise.
+        var curated = ResolveCuratedVersion(template);
+        if (curated is not null)
+        {
+            _applicationVersion = curated.Application;
+            _runtimeVersion = curated.Runtime;
+        }
+        else
+        {
+            _applicationVersion = template.DefaultApplication;
+            // Runtime is a string (Major or Major.Minor). app.json wants
+            // Major.Minor; append ".0" when the template only has a major.
+            _runtimeVersion = template.Runtime.Contains('.') ? template.Runtime : $"{template.Runtime}.0";
+        }
+    }
+
+    private ApplicationVersion? ResolveCuratedVersion(RuntimeTemplate template)
+    {
+        if (template.DefaultApplicationVersion is null || _applicationVersions is null) return null;
+        var key = template.DefaultApplicationVersion.Key;
+        return _applicationVersions.FirstOrDefault(v => v.Key == key);
+    }
+
+    private void OnDependenciesChanged(List<DependencyEntry> next)
+    {
+        _dependencies = next;
+    }
+
+    /// <summary>
+    /// Builds the <see cref="PreviewNode"/> tree displayed in the right column.
+    /// In standalone mode it's a single extension root (matches
+    /// <c>generation-engine.md</c>); in sibling-extension mode (a workspace
+    /// config has been imported) it renders the full workspace with the new
+    /// extension slotted in and tagged "new" so the user sees where it lands.
+    /// </summary>
+    private PreviewNode BuildPreview() =>
+        _workspaceContext is null ? BuildExtensionPreview() : BuildSiblingWorkspacePreview(_workspaceContext);
+
+    private PreviewNode BuildExtensionPreview()
+    {
+        return PreviewTreeBuilder.SortForDisplay(BuildExtensionNode(FolderName, isCore: false, isNew: false));
+    }
+
+    private PreviewNode BuildSiblingWorkspacePreview(WorkspaceImportContext context)
+    {
+        var rootName = string.IsNullOrWhiteSpace(context.WorkspaceName)
+            ? "Workspace"
+            : StripWhitespace(context.WorkspaceName);
+
+        var children = new List<PreviewNode>
+        {
+            PreviewNode.Folder(".assets", new[]
+            {
+                PreviewNode.Folder("images", new[] { PreviewNode.File("logo.png") }),
+                PreviewNode.Folder("rulesets", new[] { PreviewNode.File("Company.ruleset.json") }),
+            }),
+            BuildExtensionNode("Core", isCore: true, isNew: false),
+        };
+
+        // Modules from the imported workspace, in the order they were saved.
+        // Unknown / soft-deleted module keys silently drop off — same rule as
+        // the workspace builder applies on its own form.
+        if (_modules is not null)
+        {
+            foreach (var key in context.ModuleKeys)
+            {
+                var module = _modules.FirstOrDefault(m => m.Key == key);
+                if (module is null) continue;
+                children.Add(BuildExtensionNode(StripWhitespace(module.Name), isCore: false, isNew: false));
+            }
+        }
+
+        // The new sibling extension we're about to generate, marked so the
+        // renderer can label it.
+        children.Add(BuildExtensionNode(FolderName, isCore: false, isNew: true));
+
+        children.Add(PreviewNode.File($"{rootName}.code-workspace"));
+        children.Add(PreviewNode.File(".gitignore"));
+        children.Add(PreviewNode.File("README.md"));
+
+        return PreviewTreeBuilder.SortForDisplay(
+            new PreviewNode(rootName, PreviewNodeKind.Workspace, children));
+    }
+
+    /// <summary>
+    /// Builds one extension folder for the preview. Core extensions reuse the
+    /// template's <see cref="RuntimeTemplate.Folders"/>; modules and standalone
+    /// extensions use the same list (modules use <c>ModuleFolders</c> which we
+    /// reach for explicitly). Marking <paramref name="isNew"/> tags the rendered
+    /// node so the tree component can decorate it.
+    /// </summary>
+    private PreviewNode BuildExtensionNode(string folderName, bool isCore, bool isNew)
+    {
+        var contents = new List<PreviewNode>
+        {
+            PreviewNode.File("app.json"),
+            PreviewNode.File("AppSourceCop.json"),
+        };
+
+        if (_selected is not null)
+        {
+            var entries = isCore
+                ? _selected.Folders
+                    .OrderBy(f => f.Ordering)
+                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromFiles(f.Files)))
+                : _selected.Folders
+                    .OrderBy(f => f.Ordering)
+                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromFiles(f.Files)));
+            // Module folders for non-Core extensions inside a workspace come
+            // from ModuleFolders rather than Folders. Override the entries
+            // when we're rendering a workspace module.
+            if (!isCore && _workspaceContext is not null && !isNew)
+            {
+                entries = _selected.ModuleFolders
+                    .OrderBy(f => f.Ordering)
+                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromModuleFiles(f.Files)));
+            }
+            contents.AddRange(PreviewTreeBuilder.BuildFolderChildren(entries));
+        }
+
+        AddFallbackFolder(contents, "libs");
+        AddFallbackFolder(contents, "permissionsets");
+        AddFallbackFolder(contents, "Translations");
+
+        var node = PreviewNode.Extension(folderName, contents);
+        return isNew ? node with { IsNew = true } : node;
+    }
+
+    /// <summary>
+    /// Adds <paramref name="name"/> as a placeholder folder unless the template
+    /// already contributed a folder whose top-level segment matches case-
+    /// insensitively. See <c>NewWorkspace.razor</c> for the same comment.
+    /// </summary>
+    private static void AddFallbackFolder(List<PreviewNode> contents, string name)
+    {
+        if (contents.Any(n => n.Kind != PreviewNodeKind.File
+                              && string.Equals(n.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+        contents.Add(PreviewNode.Folder(name, new[] { PreviewNode.File(".gitkeep") }));
+    }
+
+    private List<PreviewNode> LeafFilesFromFiles(IEnumerable<TemplateFile> files) =>
+        LeafFilesByPaths(files.OrderBy(f => f.Ordering).Select(f => f.Path));
+
+    private List<PreviewNode> LeafFilesFromModuleFiles(IEnumerable<TemplateModuleFile> files) =>
+        LeafFilesByPaths(files.OrderBy(f => f.Ordering).Select(f => f.Path));
+
+    private List<PreviewNode> LeafFilesByPaths(IEnumerable<string> paths)
+    {
+        var list = paths.ToList();
+        if (_includeExamples && list.Count > 0)
+        {
+            return list.Select(PreviewNode.File).ToList();
+        }
+        return new List<PreviewNode> { PreviewNode.File(".gitkeep") };
+    }
+
+    private static string StripWhitespace(string value) =>
+        new(value.Where(c => !char.IsWhiteSpace(c)).ToArray());
+
+    /// <summary>
+    /// Reads a saved <c>workspace.aldt.toml</c> and hydrates the form from it.
+    /// Per Milestone P2.3, this page accepts both kinds: an extension config
+    /// restores every field including dependencies; a workspace config seeds
+    /// the shared subset (template, versions, publisher from the template's
+    /// defaults) so the user can scaffold a sibling extension that lines up
+    /// with the original workspace.
+    /// </summary>
+    private async Task OnImportFileChosen(InputFileChangeEventArgs e)
+    {
+        _importMessage = string.Empty;
+        _importErrors = new();
+
+        var file = e.File;
+        if (file is null) return;
+
+        _importFileName = file.Name;
+
+        if (file.Size > MaxImportSize)
+        {
+            _importErrors["File"] = $"File is larger than {MaxImportSize / 1024} KiB.";
+            return;
+        }
+
+        string toml;
+        try
+        {
+            await using var stream = file.OpenReadStream(MaxImportSize);
+            using var reader = new StreamReader(stream);
+            toml = await reader.ReadToEndAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to read uploaded config '{Name}'.", file.Name);
+            _importErrors["File"] = $"Could not read the file: {ex.Message}";
+            return;
+        }
+
+        WorkspaceConfigImport import;
+        try
+        {
+            import = await Configs.ParseAsync(toml);
+        }
+        catch (PlanValidationException ex)
+        {
+            _importErrors = ex.Errors.ToDictionary(p => p.Key, p => p.Value);
+            return;
+        }
+
+        switch (import.Kind)
+        {
+            case WorkspaceConfigService.ExtensionKind when import.Extension is not null:
+                ApplyImportedExtension(import.Extension);
+                _importMessage = "Form restored from this extension config.";
+                break;
+            case WorkspaceConfigService.WorkspaceKind when import.Workspace is not null:
+                ApplyImportedWorkspace(import.Workspace, import.Extensions);
+                _importMessage = import.Extensions.Count > 0
+                    ? $"Loaded workspace with {import.Extensions.Count - 1} module(s). "
+                        + "Pick an extension name; dependencies and ID range are pre-filled."
+                    : "Loaded workspace settings. Pick an extension name and ID range "
+                        + "before generating (older config — no extension identities to pre-fill).";
+                break;
+            default:
+                _importErrors["Kind"] = $"Unsupported config kind '{import.Kind}'.";
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Restores every extension form field from an extension-shaped config.
+    /// Standalone extensions have no enclosing workspace, so the workspace
+    /// context (if previously set) is wiped — the page reverts to the plain
+    /// New Extension behaviour.
+    /// </summary>
+    private void ApplyImportedExtension(StandaloneExtensionPlan plan)
+    {
+        var template = _templates?.FirstOrDefault(t => t.Key == plan.TemplateKey);
+        _selected = template ?? _selected;
+        _templateKey = plan.TemplateKey;
+        _extensionName = plan.ExtensionName;
+        _brief = plan.Brief;
+        _description = plan.Description;
+        _publisher = plan.Publisher;
+        _applicationVersion = plan.ApplicationVersion;
+        _runtimeVersion = plan.RuntimeVersion;
+        _idRangeFrom = plan.IdRangeFrom;
+        _idRangeTo = plan.IdRangeTo;
+        _includeExamples = plan.IncludeExamples;
+        _dependencies = plan.Dependencies.ToList();
+        _workspaceContext = null;
+    }
+
+    /// <summary>
+    /// Hydrates the shared subset of fields from a workspace config so the user
+    /// can scaffold a sibling extension that drops into the same workspace.
+    /// Publisher comes from the picked template's defaults (the workspace
+    /// config doesn't carry a publisher of its own). When <paramref name="extensions"/>
+    /// is non-empty (the workspace was generated by a recent enough toolbox to
+    /// stamp identities into the config), the new extension's id-range slots
+    /// in directly after the highest existing range and the dependency picker
+    /// is pre-filled with real GUIDs for Core and every module — saves the
+    /// user transcribing them from the workspace's app.json files. With an
+    /// empty identities list (older configs), we fall back to estimating the
+    /// next slot from the template's defaults.
+    /// </summary>
+    private void ApplyImportedWorkspace(ProjectPlan plan, IReadOnlyList<WorkspaceExtensionIdentity> extensions)
+    {
+        var template = _templates?.FirstOrDefault(t => t.Key == plan.TemplateKey);
+        _selected = template ?? _selected;
+        _templateKey = plan.TemplateKey;
+        _brief = plan.Brief;
+        _description = plan.Description;
+        _applicationVersion = plan.ApplicationVersion;
+        _runtimeVersion = plan.RuntimeVersion;
+        _includeExamples = plan.IncludeExamples;
+        if (template is not null)
+        {
+            _publisher = template.Defaults.Publisher;
+        }
+
+        if (extensions.Count > 0)
+        {
+            // Real identities — version is the workspace generator's hardcoded
+            // 0.0.0.1 (see GenerationService.BuildCoreAppJsonAsync); the user
+            // can untick anything they don't want to depend on.
+            _dependencies = extensions
+                .Select(e => new DependencyEntry(
+                    DepId: e.Id.ToString(),
+                    DepName: e.Name,
+                    DepPublisher: e.Publisher,
+                    DepVersion: "0.0.0.1"))
+                .ToList();
+
+            var maxTo = extensions.Max(e => e.IdRangeTo);
+            var size = Math.Max(1, template?.ModuleIdRangeSize ?? 1000);
+            _idRangeFrom = maxTo + 1;
+            _idRangeTo = _idRangeFrom + size - 1;
+        }
+        else
+        {
+            // Older workspace config — no identities. Best-effort id-range
+            // estimate from template defaults; dependencies can't be wired
+            // because we don't have the GUIDs.
+            _dependencies = new();
+            if (template is not null)
+            {
+                var moduleCount = plan.SelectedModuleKeys.Count;
+                var size = Math.Max(1, template.ModuleIdRangeSize);
+                _idRangeFrom = template.ModuleIdRangeStart + moduleCount * size;
+                _idRangeTo = _idRangeFrom + size - 1;
+            }
+        }
+
+        _workspaceContext = new WorkspaceImportContext(
+            plan.WorkspaceName,
+            plan.SelectedModuleKeys.ToList(),
+            extensions);
+    }
+
+    /// <summary>
+    /// Wipes the imported workspace context and re-enables the template
+    /// select. The other form fields keep whatever values the user has set;
+    /// only the sibling-specific assumptions (locked template, auto-allocated
+    /// ID range, full-workspace preview, updated .code-workspace on output)
+    /// go away.
+    /// </summary>
+    private void ClearImportedWorkspace()
+    {
+        _workspaceContext = null;
+        _importFileName = string.Empty;
+        _importMessage = string.Empty;
+        _importErrors = new();
+    }
+}

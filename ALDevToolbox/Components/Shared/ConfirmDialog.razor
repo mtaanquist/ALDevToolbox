@@ -1,0 +1,145 @@
+@*
+    Two-button modal that resolves a Task<bool> when the user picks. Use it via:
+
+      <ConfirmDialog @ref="_confirm" Title="Delete X?" Message="..." ConfirmLabel="Delete" />
+      ...
+      if (await _confirm.OpenAsync()) { ... }
+
+    Built as a plain CSS overlay rather than the native <dialog> element so it
+    works without a JS interop hop and renders consistently inside the
+    InteractiveServer pages we use it from.
+*@
+
+@if (_open)
+{
+    <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="@_titleId"
+         @onkeydown="OnKeyDown" @onkeydown:stopPropagation tabindex="-1">
+        <div class="confirm-modal__backdrop" @onclick="Cancel" aria-hidden="true"></div>
+        <div class="confirm-modal__panel" @onclick:stopPropagation>
+            <h2 id="@_titleId" class="confirm-modal__title">@_title</h2>
+            @if (!string.IsNullOrEmpty(_message))
+            {
+                <p class="confirm-modal__message">@_message</p>
+            }
+            <div class="confirm-modal__actions">
+                @* Focus sentinels close the focus cycle (Tab from the last
+                   button wraps back to the first, Shift+Tab from the first
+                   button wraps to the last). Cheap focus trap without a JS
+                   interop hop. *@
+                <span tabindex="0" class="visually-hidden"
+                      @onfocus="FocusLastAction" aria-hidden="true"></span>
+                <button type="button" class="btn" @onclick="Cancel" @ref="_cancelButton">@CancelLabel</button>
+                <button type="button" class="btn @_confirmButtonClass" @onclick="Confirm" autofocus @ref="_confirmButton">
+                    @if (!string.IsNullOrEmpty(_confirmIcon))
+                    {
+                        <Icon Name="@_confirmIcon" Width="14" Height="14" />
+                    }
+                    <span>@_confirmLabel</span>
+                </button>
+                <span tabindex="0" class="visually-hidden"
+                      @onfocus="FocusFirstAction" aria-hidden="true"></span>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>Default title used when <see cref="OpenAsync"/> is called without an override.</summary>
+    [Parameter] public string Title { get; set; } = "Are you sure?";
+    /// <summary>Default message used when <see cref="OpenAsync"/> is called without an override.</summary>
+    [Parameter] public string Message { get; set; } = string.Empty;
+    /// <summary>Default confirm label used when <see cref="OpenAsync"/> is called without an override.</summary>
+    [Parameter] public string ConfirmLabel { get; set; } = "Confirm";
+    [Parameter] public string CancelLabel { get; set; } = "Cancel";
+    /// <summary>Default confirm-button class used when <see cref="OpenAsync"/> is called without an override.</summary>
+    [Parameter] public string ConfirmButtonClass { get; set; } = "btn--danger";
+    /// <summary>Default confirm icon used when <see cref="OpenAsync"/> is called without an override.</summary>
+    [Parameter] public string? ConfirmIcon { get; set; }
+
+    private readonly string _titleId = $"confirm-{Guid.NewGuid():N}";
+    private bool _open;
+    private TaskCompletionSource<bool>? _tcs;
+    private string _title = string.Empty;
+    private string _message = string.Empty;
+    private string _confirmLabel = "Confirm";
+    private string _confirmButtonClass = "btn--danger";
+    private string? _confirmIcon;
+    private ElementReference _confirmButton;
+    private ElementReference _cancelButton;
+
+    protected override void OnParametersSet()
+    {
+        // Mirror the parameter defaults onto the runtime fields so callers that
+        // never invoke the overload get the values from the markup.
+        if (!_open)
+        {
+            _title = Title;
+            _message = Message;
+            _confirmLabel = ConfirmLabel;
+            _confirmButtonClass = ConfirmButtonClass;
+            _confirmIcon = ConfirmIcon;
+        }
+    }
+
+    /// <summary>Opens the dialog with the current default parameters.</summary>
+    public Task<bool> OpenAsync() => OpenAsync(Title, Message, ConfirmLabel, ConfirmButtonClass, ConfirmIcon);
+
+    /// <summary>
+    /// Opens the dialog with per-invocation overrides. Lets a single dialog
+    /// instance serve multiple call sites (e.g. one bulk-action bar with
+    /// several action types) without mutating component parameters directly,
+    /// which trips BL0005.
+    /// </summary>
+    public Task<bool> OpenAsync(string title, string message, string confirmLabel, string confirmButtonClass = "btn--danger", string? confirmIcon = null)
+    {
+        _title = title;
+        _message = message;
+        _confirmLabel = confirmLabel;
+        _confirmButtonClass = confirmButtonClass;
+        _confirmIcon = confirmIcon;
+        // Replace any previous unresolved task with a fresh one so re-opening
+        // the same dialog doesn't leak the prior caller's continuation.
+        _tcs?.TrySetResult(false);
+        _tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _open = true;
+        StateHasChanged();
+        return _tcs.Task;
+    }
+
+    private void Confirm()
+    {
+        _open = false;
+        _tcs?.TrySetResult(true);
+        _tcs = null;
+    }
+
+    private void Cancel()
+    {
+        _open = false;
+        _tcs?.TrySetResult(false);
+        _tcs = null;
+    }
+
+    // Esc cancels — standard dialog affordance. The keydown handler is on the
+    // root .confirm-modal element so it fires while any descendant has focus.
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" || e.Key == "Esc")
+        {
+            Cancel();
+        }
+    }
+
+    // Focus-cycle sentinels — see the spans flanking the action buttons.
+    private async Task FocusFirstAction()
+    {
+        try { await _cancelButton.FocusAsync(); }
+        catch { /* element already detached after Confirm/Cancel */ }
+    }
+
+    private async Task FocusLastAction()
+    {
+        try { await _confirmButton.FocusAsync(); }
+        catch { /* element already detached after Confirm/Cancel */ }
+    }
+}

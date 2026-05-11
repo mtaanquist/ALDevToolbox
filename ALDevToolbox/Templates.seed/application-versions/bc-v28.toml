@@ -1,0 +1,6 @@
+[version]
+key = "bc-v28"
+name = "Business Central 2026 Release Wave 1 (v28)"
+application = "28.0.0.0"
+runtime = "17.0"
+ordering = 700
