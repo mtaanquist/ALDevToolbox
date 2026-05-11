@@ -15,8 +15,19 @@
 <PageTitle>Users · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page">
-<h1>Users</h1>
-<p class="muted">Approve pending signups, invite new users, change roles, and disable accounts in your organisation.</p>
+    <header class="admin-page__header">
+        <div>
+            <h1>Users</h1>
+            <p class="muted">
+                Approve pending signups, invite new users, change roles, and
+                disable accounts in your organisation.
+            </p>
+        </div>
+        <a class="btn btn--sm" href="/admin">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to admin</span>
+        </a>
+    </header>
 
 @if (!string.IsNullOrEmpty(Error))
 {
@@ -87,7 +98,7 @@ else
                         <td class="row-actions">
                             <form method="post" action="/admin/users/invites/@invite.Id/revoke" style="display:inline">
                                 <AntiforgeryToken />
-                                <button type="submit" class="btn btn--small btn--secondary">Revoke</button>
+                                <button type="submit" class="btn btn--sm">Revoke</button>
                             </form>
                         </td>
                     </tr>
@@ -119,11 +130,11 @@ else
                         <td class="row-actions">
                             <form method="post" action="/admin/users/@request.Id/approve" style="display:inline">
                                 <AntiforgeryToken />
-                                <button type="submit" class="btn btn--small">Approve</button>
+                                <button type="submit" class="btn btn--sm btn--primary">Approve</button>
                             </form>
                             <form method="post" action="/admin/users/@request.Id/reject" style="display:inline">
                                 <AntiforgeryToken />
-                                <button type="submit" class="btn btn--small btn--secondary">Reject</button>
+                                <button type="submit" class="btn btn--sm">Reject</button>
                             </form>
                         </td>
                     </tr>
@@ -212,7 +223,17 @@ else
                     </td>
                     <td>@u.Email</td>
                     <td>@u.DisplayName</td>
-                    <td><span class="status-pill @(u.Role == UserRole.Admin ? "" : "status-pill--muted")">@u.Role</span></td>
+                    <td>
+                        <select class="row-role-select" aria-label="@($"Role for {u.DisplayName}")"
+                                value="@u.Role"
+                                disabled="@_busy"
+                                @onchange="(e) => ChangeRoleAsync(u, e)">
+                            @foreach (var role in Enum.GetValues<UserRole>())
+                            {
+                                <option value="@role">@role</option>
+                            }
+                        </select>
+                    </td>
                     <td><span class="status-pill @(u.Status == UserStatus.Active ? "" : "status-pill--warn")">@u.Status</span></td>
                     <td class="muted">@(u.LastLoginAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
                     <td class="row-actions">
@@ -220,23 +241,16 @@ else
                         {
                             <form method="post" action="/admin/users/@u.Id/disable" style="display:inline">
                                 <AntiforgeryToken />
-                                <button type="submit" class="btn btn--small btn--secondary">Disable</button>
+                                <button type="submit" class="btn btn--sm">Disable</button>
                             </form>
                         }
                         else if (u.Status == UserStatus.Disabled)
                         {
                             <form method="post" action="/admin/users/@u.Id/enable" style="display:inline">
                                 <AntiforgeryToken />
-                                <button type="submit" class="btn btn--small">Re-enable</button>
+                                <button type="submit" class="btn btn--sm">Re-enable</button>
                             </form>
                         }
-                        <form method="post" action="/admin/users/@u.Id/role" style="display:inline">
-                            <AntiforgeryToken />
-                            <input type="hidden" name="Role" value="@(u.Role == UserRole.Admin ? "User" : "Admin")" />
-                            <button type="submit" class="btn btn--small btn--secondary">
-                                @(u.Role == UserRole.Admin ? "Demote to User" : "Promote to Admin")
-                            </button>
-                        </form>
                     </td>
                 </tr>
             }
@@ -340,6 +354,58 @@ else
         _lastError = null;
         _lastSuccess = null;
         _lastFailures = Array.Empty<BulkActionFailure>();
+    }
+
+    private async Task ChangeRoleAsync(User user, ChangeEventArgs e)
+    {
+        if (_busy || _active is null) return;
+        var orgId = Org.CurrentOrganizationId;
+        if (orgId is null) return;
+        var raw = e.Value?.ToString();
+        if (string.IsNullOrEmpty(raw) || !Enum.TryParse<UserRole>(raw, out var newRole) || newRole == user.Role)
+        {
+            return;
+        }
+
+        if (_confirm is not null)
+        {
+            var confirmed = await _confirm.OpenAsync(
+                title: $"Change {user.DisplayName}'s role?",
+                message: $"Set role to {newRole}. The change applies immediately.",
+                confirmLabel: "Change role",
+                confirmButtonClass: newRole == UserRole.User ? "btn--danger" : "btn--primary");
+            if (!confirmed)
+            {
+                // The select's bound value already changed; reload restores it.
+                await LoadAsync();
+                return;
+            }
+        }
+
+        _busy = true;
+        _lastError = null;
+        _lastSuccess = null;
+        try
+        {
+            await Accounts.ChangeRoleAsync(user.Id, newRole, orgId.Value);
+            _lastSuccess = $"{user.DisplayName} is now a {newRole}.";
+            await LoadAsync();
+        }
+        catch (PlanValidationException ex)
+        {
+            _lastError = ex.Errors.FirstOrDefault().Value ?? "The role change was rejected.";
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to change role for user {Id}.", user.Id);
+            _lastError = "An unexpected error occurred. The role was not changed.";
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
     }
 
     private async Task RequestBulkAsync(BulkAction action)

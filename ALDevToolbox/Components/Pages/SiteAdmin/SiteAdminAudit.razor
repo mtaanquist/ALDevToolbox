@@ -7,12 +7,17 @@
 
 <PageTitle>Site Admin · Audit · AL Dev Toolbox</PageTitle>
 
-<div class="audit-page">
-    <h1>Site Admin · Audit</h1>
-    <p class="muted">
-        Cross-organisation audit search. Filters are optional; an unfiltered
-        search returns the most recent activity across every organisation.
-    </p>
+<div class="admin-page audit-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Site Admin · Audit</h1>
+            <p class="muted">
+                Cross-organisation audit search. Filters are optional; an
+                unfiltered search returns the most recent activity across
+                every organisation.
+            </p>
+        </div>
+    </header>
 
     <form method="get" action="/site-admin/audit" class="admin-filter-form">
         <label>
@@ -50,7 +55,7 @@
             To (UTC)
             <input type="datetime-local" name="to" value="@ToUtc" />
         </label>
-        <button type="submit" class="btn btn--secondary">Search</button>
+        <button type="submit" class="btn btn--sm">Search</button>
     </form>
 
     @if (_rows is null)

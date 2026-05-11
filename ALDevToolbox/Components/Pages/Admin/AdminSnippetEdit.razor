@@ -20,10 +20,19 @@
                     : "Add a new snippet to the published library for this organisation.")
             </p>
         </div>
-        <a class="btn btn--sm" href="/admin/snippets">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to snippets</span>
-        </a>
+        <div class="admin-page__header-actions">
+            <a class="btn btn--sm" href="/admin/snippets">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to snippets</span>
+            </a>
+            @if (!IsEdit || !_loadFailed)
+            {
+                <button type="button" class="btn btn--sm btn--primary" @onclick="SaveAsync" disabled="@_busy">
+                    <Icon Name="save" Width="14" Height="14" />
+                    <span>@(_busy ? "Saving…" : IsEdit ? "Save changes" : "Create snippet")</span>
+                </button>
+            }
+        </div>
     </header>
 
     @if (IsEdit && _loadFailed)
@@ -79,14 +88,6 @@
         {
             <p class="form-error" role="alert">@_lastError</p>
         }
-
-        <div class="form-actions">
-            <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_busy">
-                <Icon Name="save" Width="16" Height="16" />
-                <span>@(IsEdit ? "Save changes" : "Create snippet")</span>
-            </button>
-            <a class="btn" href="/admin/snippets">Cancel</a>
-        </div>
     }
 </div>
 

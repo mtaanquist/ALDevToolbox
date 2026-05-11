@@ -19,10 +19,19 @@
                 AL object).
             </p>
         </div>
-        <a class="btn btn--sm" href="/snippets">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to snippets</span>
-        </a>
+        <div class="admin-page__header-actions">
+            <a class="btn btn--sm" href="/snippets">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to snippets</span>
+            </a>
+            @if (!_submitted)
+            {
+                <button type="button" class="btn btn--sm btn--primary" @onclick="SubmitAsync" disabled="@_busy">
+                    <Icon Name="send" Width="14" Height="14" />
+                    <span>@(_busy ? "Submitting…" : "Submit for review")</span>
+                </button>
+            }
+        </div>
     </header>
 
     @if (_submitted)
@@ -79,13 +88,6 @@
         {
             <p class="form-error" role="alert">@_lastError</p>
         }
-
-        <div class="form-actions">
-            <button type="button" class="btn btn--primary" @onclick="SubmitAsync" disabled="@_busy">
-                <Icon Name="send" Width="16" Height="16" />
-                <span>Submit for review</span>
-            </button>
-        </div>
     }
 </div>
 

@@ -841,6 +841,17 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .btn--sm:hover { text-decoration: none; }
 
+/* Square icon-only variant. Used in tight row-action cells where a row of
+   icons reads better than a row of full text buttons (Backups list, etc.).
+   Title/aria-label on the element carry the accessible name. */
+.btn--icon {
+    padding: 4px;
+    width: 28px;
+    height: 28px;
+    justify-content: center;
+    gap: 0;
+}
+
 .data-table__actions {
     width: 1%;
     text-align: right;
@@ -1586,6 +1597,19 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     margin-bottom: 12px;
 }
 
+/* Compact inline select used inside data-table rows (e.g. role picker on the
+   Users page). Standard form-section padding makes the control overpower
+   the rest of the row; this tightens it without losing the focus ring. */
+.row-role-select {
+    padding: 4px 8px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: inherit;
+    font-size: 12.5px;
+}
+
 /* Trailing action row for "content creation" buttons that sit at the bottom
    of the list they relate to (e.g. New template, New module, New snippet).
    The top-right corner is reserved for navigation (Back to admin); creation
@@ -2155,6 +2179,13 @@ ul.form-field-error {
 
 .snippet-file__name input {
     width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    font-family: inherit;
+    font-size: 13.5px;
+    background: var(--color-surface);
+    color: var(--color-text);
 }
 
 .snippet-file__actions {
@@ -2171,8 +2202,14 @@ ul.form-field-error {
 
 .snippet-file__content textarea {
     width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-text);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.85em;
+    resize: vertical;
 }
 
 .snippet-suggestion-list {
