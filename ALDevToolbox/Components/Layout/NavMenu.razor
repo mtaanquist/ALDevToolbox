@@ -1,4 +1,15 @@
 @using Lucide.Blazor.Components
+@using ALDevToolbox.Services
+@inject IOrganizationContext OrgContext
+
+@*
+    Sidebar navigation. The Admin section is a single merged list — when the
+    signed-in user is a SiteAdmin, the cross-org tools (Audit, Backups,
+    Settings, cross-org Users) live alongside the per-org tools rather than
+    in their own section. In the singleton system org we hide the per-org
+    pages that don't apply (Configuration, per-org Users, per-org Backup),
+    and SiteAdmin's Audit always replaces the per-org one.
+*@
 
 <nav class="sidebar-nav" aria-label="Sidebar">
     <div class="nav-section">
@@ -38,10 +49,12 @@
         </ul>
     </div>
 
-    @* Admin section is only visible to users with the Admin role. End-users
-       still see the Tools / Resources sections but not the admin links. *@
     <AuthorizeView Roles="Admin">
-        <Authorized>
+        <Authorized Context="adminCtx">
+            @{
+                var isSiteAdmin = adminCtx.User.IsInRole(HttpOrganizationContext.SiteAdminRole);
+                var isSystemOrg = OrgContext.IsSystemOrganization;
+            }
             <div class="nav-section">
                 <div class="nav-divider"></div>
                 <div class="nav-section__label">Admin</div>
@@ -82,71 +95,77 @@
                             <span>App versions</span>
                         </NavLink>
                     </li>
-                    <li>
-                        <NavLink class="nav-link" href="/admin/users" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                            <Icon Name="users" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>Users</span>
-                        </NavLink>
-                    </li>
-                    <li>
-                        <NavLink class="nav-link" href="/admin/configuration" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                            <Icon Name="settings" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>Configuration</span>
-                        </NavLink>
-                    </li>
-                    <li>
-                        <NavLink class="nav-link" href="/admin/audit" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                            <Icon Name="history" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>Audit log</span>
-                        </NavLink>
-                    </li>
-                    <li>
-                        <NavLink class="nav-link" href="/admin/backup" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                            <Icon Name="database-backup" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>Backup &amp; restore</span>
-                        </NavLink>
-                    </li>
-                </ul>
-            </div>
-        </Authorized>
-    </AuthorizeView>
 
-    <AuthorizeView Roles="SiteAdmin">
-        <Authorized>
-            <div class="nav-section">
-                <div class="nav-divider"></div>
-                <div class="nav-section__label">Site Admin</div>
-                <ul class="nav-list">
+                    @if (!isSystemOrg)
+                    {
+                        <li>
+                            <NavLink class="nav-link" href="/admin/users" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                <Icon Name="users" Width="18" Height="18" Css="nav-link__icon" />
+                                <span>Users</span>
+                            </NavLink>
+                        </li>
+                    }
+                    @if (isSiteAdmin)
+                    {
+                        <li>
+                            <NavLink class="nav-link" href="/site-admin/users" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                <Icon Name="users-round" Width="18" Height="18" Css="nav-link__icon" />
+                                <span>@(isSystemOrg ? "Users" : "All users")</span>
+                            </NavLink>
+                        </li>
+                    }
+
+                    @if (!isSystemOrg)
+                    {
+                        <li>
+                            <NavLink class="nav-link" href="/admin/configuration" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                <Icon Name="settings" Width="18" Height="18" Css="nav-link__icon" />
+                                <span>Configuration</span>
+                            </NavLink>
+                        </li>
+                    }
+
                     <li>
-                        <NavLink class="nav-link" href="/site-admin" Match="NavLinkMatch.All" ActiveClass="active">
-                            <Icon Name="layout-dashboard" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>Dashboard</span>
-                        </NavLink>
+                        @if (isSiteAdmin)
+                        {
+                            <NavLink class="nav-link" href="/site-admin/audit" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                <Icon Name="history" Width="18" Height="18" Css="nav-link__icon" />
+                                <span>Audit log</span>
+                            </NavLink>
+                        }
+                        else
+                        {
+                            <NavLink class="nav-link" href="/admin/audit" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                <Icon Name="history" Width="18" Height="18" Css="nav-link__icon" />
+                                <span>Audit log</span>
+                            </NavLink>
+                        }
                     </li>
-                    <li>
-                        <NavLink class="nav-link" href="/site-admin/users" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                            <Icon Name="users" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>Users</span>
-                        </NavLink>
-                    </li>
-                    <li>
-                        <NavLink class="nav-link" href="/site-admin/audit" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                            <Icon Name="history" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>Audit</span>
-                        </NavLink>
-                    </li>
-                    <li>
-                        <NavLink class="nav-link" href="/site-admin/backups" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                            <Icon Name="database-backup" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>Backups</span>
-                        </NavLink>
-                    </li>
-                    <li>
-                        <NavLink class="nav-link" href="/site-admin/settings" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                            <Icon Name="server-cog" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>Settings</span>
-                        </NavLink>
-                    </li>
+
+                    @if (!isSystemOrg)
+                    {
+                        <li>
+                            <NavLink class="nav-link" href="/admin/backup" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                <Icon Name="archive" Width="18" Height="18" Css="nav-link__icon" />
+                                <span>Backup &amp; restore</span>
+                            </NavLink>
+                        </li>
+                    }
+                    @if (isSiteAdmin)
+                    {
+                        <li>
+                            <NavLink class="nav-link" href="/site-admin/backups" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                <Icon Name="database-backup" Width="18" Height="18" Css="nav-link__icon" />
+                                <span>@(isSystemOrg ? "Backups" : "Database backups")</span>
+                            </NavLink>
+                        </li>
+                        <li>
+                            <NavLink class="nav-link" href="/site-admin/settings" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                <Icon Name="server-cog" Width="18" Height="18" Css="nav-link__icon" />
+                                <span>Settings</span>
+                            </NavLink>
+                        </li>
+                    }
                 </ul>
             </div>
         </Authorized>
