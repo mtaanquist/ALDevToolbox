@@ -2245,6 +2245,13 @@ ul.form-field-error {
     padding: 16px;
 }
 
+/* Applied when /admin/snippets/suggestions?focus={id} matches this row, so
+   the admin lands directly on the suggestion the Review link pointed at. */
+.snippet-suggestion--focused {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 2px var(--color-accent-soft);
+}
+
 .snippet-suggestion__header {
     display: flex;
     justify-content: space-between;

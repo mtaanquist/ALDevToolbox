@@ -19,13 +19,19 @@
                 exempt from retention pruning.
             </p>
         </div>
-        <form method="post" action="/site-admin/backups/create" class="admin-page__header-actions">
-            <AntiforgeryToken />
-            <button type="submit" class="btn btn--sm btn--primary" title="Run pg_dump against the live database">
-                <Icon Name="database-backup" Width="14" Height="14" />
-                <span>Take a backup now</span>
-            </button>
-        </form>
+        <div class="admin-page__header-actions">
+            <a class="btn btn--sm" href="/site-admin">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to site admin</span>
+            </a>
+            <form method="post" action="/site-admin/backups/create" style="display:inline">
+                <AntiforgeryToken />
+                <button type="submit" class="btn btn--sm btn--primary" title="Run pg_dump against the live database">
+                    <Icon Name="database-backup" Width="14" Height="14" />
+                    <span>Take a backup now</span>
+                </button>
+            </form>
+        </div>
     </header>
 
     @if (!string.IsNullOrEmpty(Message))

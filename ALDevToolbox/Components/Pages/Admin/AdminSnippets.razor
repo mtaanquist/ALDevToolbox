@@ -144,7 +144,7 @@
                             <td>@s.Files.Count</td>
                             <td><time datetime="@s.RequestedAt.ToString("O")">@s.RequestedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                             <td class="data-table__actions">
-                                <a class="btn btn--sm" href="@($"/admin/snippets/suggestions#suggestion-{s.Id}")">
+                                <a class="btn btn--sm" href="@($"/admin/snippets/suggestions?focus={s.Id}")">
                                     <Icon Name="inbox" Width="14" Height="14" />
                                     <span>Review</span>
                                 </a>

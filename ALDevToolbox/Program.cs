@@ -771,7 +771,9 @@ app.MapPost("/auth/account/delete", async (
     }
 }).RequireAuthorization();
 
-// /admin/users/* — approve / reject / disable / role change. Admin-only.
+// /admin/users/* — approve / reject / disable / enable / invite. Admin-only.
+// Role changes run inside the Blazor circuit (interactive role dropdown on
+// AdminUsers.razor) and call AccountService.ChangeRoleAsync directly.
 app.MapPost("/admin/users/{id:int}/approve", async (
     int id, HttpContext ctx, AccountService accounts, AppDbContext db, IEmailService email,
     IOrganizationContext org, IAntiforgery antiforgery, ILoggerFactory loggerFactory, CancellationToken ct) =>
@@ -918,22 +920,6 @@ app.MapPost("/admin/users/invites/{id:int}/revoke", async (
         return;
     }
     ctx.Response.Redirect("/admin/users?ok=invite-revoked");
-}).RequireAuthorization(policy => policy.RequireRole("Admin"));
-
-app.MapPost("/admin/users/{id:int}/role", async (
-    int id, HttpContext ctx, AccountService accounts, IOrganizationContext org, IAntiforgery antiforgery, CancellationToken ct) =>
-{
-    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
-    var form = await ctx.Request.ReadFormAsync(ct);
-    var newRole = form["Role"].ToString() == "Admin" ? UserRole.Admin : UserRole.User;
-    try { await accounts.ChangeRoleAsync(id, newRole, org.CurrentOrganizationId!.Value, ct); }
-    catch (PlanValidationException ex)
-    {
-        var first = ex.Errors.FirstOrDefault();
-        ctx.Response.Redirect($"/admin/users?err={Uri.EscapeDataString(first.Value)}");
-        return;
-    }
-    ctx.Response.Redirect("/admin/users");
 }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
 // /site-admin/* — hosting-operator endpoints. The cookie events

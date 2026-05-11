@@ -3,6 +3,7 @@
 @using System.Text.Json
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Services
+@using Lucide.Blazor.Components
 @inject SiteAdminService SiteAdmin
 
 <PageTitle>Site Admin · Audit · AL Dev Toolbox</PageTitle>
@@ -17,6 +18,10 @@
                 every organisation.
             </p>
         </div>
+        <a class="btn btn--sm" href="/site-admin">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to site admin</span>
+        </a>
     </header>
 
     @*

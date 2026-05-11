@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject SnippetSuggestionService Suggestions
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @inject ILogger<AdminSnippetSuggestions> Log
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
@@ -43,7 +44,9 @@
         <ul class="snippet-suggestion-list">
             @foreach (var s in _pending)
             {
-                <li class="snippet-suggestion" id="suggestion-@s.Id">
+                <li class="snippet-suggestion @(Focus == s.Id ? "snippet-suggestion--focused" : null)"
+                    id="suggestion-@s.Id"
+                    data-suggestion-id="@s.Id">
                     <header class="snippet-suggestion__header">
                         <h2>@s.Title</h2>
                         <span class="muted">
@@ -109,14 +112,35 @@
 </div>
 
 @code {
+    /// <summary>
+    /// Id of the suggestion to scroll into view and highlight on first render
+    /// after navigation. Set by the `/admin/snippets` Review link via
+    /// <c>?focus={id}</c>; falling back to the lookup-by-data-attribute means
+    /// the link survives DOM restructuring as long as each rendered row
+    /// continues to carry <c>data-suggestion-id</c>.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "focus")] public int? Focus { get; set; }
+
     private List<SnippetSuggestion>? _pending;
     private bool _busy;
     private string? _lastError;
     private string? _lastSuccess;
     private int? _rejecting;
     private string _rejectNote = string.Empty;
+    private bool _focusScrolled;
 
     protected override Task OnInitializedAsync() => ReloadAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusScrolled || Focus is null || _pending is null) return;
+        if (!_pending.Any(s => s.Id == Focus.Value)) return;
+        _focusScrolled = true;
+        var module = await JS.InvokeAsync<IJSObjectReference>(
+            "import", "./Components/Pages/Admin/AdminSnippetSuggestions.razor.js");
+        await module.InvokeVoidAsync("focusSuggestion", Focus.Value);
+        await module.DisposeAsync();
+    }
 
     private async Task ReloadAsync()
     {
