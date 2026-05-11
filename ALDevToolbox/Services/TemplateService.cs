@@ -361,15 +361,24 @@ public class TemplateService
             return;
         }
 
-        // Clear the previous default (if any) before flipping the new one to
-        // satisfy the filtered unique index on (organization_id, is_default).
+        // Postgres enforces the filtered unique index per statement (partial
+        // unique indexes can't be DEFERRABLE), and EF doesn't guarantee the
+        // order of the two UPDATEs inside a single SaveChanges. Clear the
+        // previous default in its own round-trip first, then flip the new
+        // one — so we can never have two true rows visible to the constraint
+        // at the same time.
         var previous = await _db.RuntimeTemplates
             .Where(t => t.OrganizationId == orgId && t.IsDefault)
             .ToListAsync(ct);
-        foreach (var row in previous)
+        if (previous.Count > 0)
         {
-            row.IsDefault = false;
-            row.UpdatedAt = DateTime.UtcNow;
+            var now = DateTime.UtcNow;
+            foreach (var row in previous)
+            {
+                row.IsDefault = false;
+                row.UpdatedAt = now;
+            }
+            await _db.SaveChangesAsync(ct);
         }
 
         target.IsDefault = true;
