@@ -71,7 +71,7 @@ else
         }
         else
         {
-            <table class="admin-table">
+            <table class="data-table">
                 <thead>
                     <tr><th>Email</th><th>Role</th><th>Invited by</th><th>Expires</th><th></th></tr>
                 </thead>
@@ -80,7 +80,7 @@ else
                 {
                     <tr>
                         <td>@invite.Email</td>
-                        <td>@invite.Role</td>
+                        <td><span class="status-pill @(invite.Role == UserRole.Admin ? "" : "status-pill--muted")">@invite.Role</span></td>
                         <td>@(invitedBy?.DisplayName ?? "—")</td>
                         <td class="muted">@invite.ExpiresAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</td>
                         <td class="row-actions">
@@ -104,7 +104,7 @@ else
         }
         else
         {
-            <table class="admin-table">
+            <table class="data-table">
                 <thead>
                     <tr><th>Email</th><th>Display name</th><th>Requested</th><th></th></tr>
                 </thead>
@@ -185,7 +185,7 @@ else
             </div>
         }
 
-        <table class="admin-table">
+        <table class="data-table">
             <thead>
                 <tr>
                     <th class="bulk-checkbox">
@@ -211,8 +211,8 @@ else
                     </td>
                     <td>@u.Email</td>
                     <td>@u.DisplayName</td>
-                    <td>@u.Role</td>
-                    <td>@u.Status</td>
+                    <td><span class="status-pill @(u.Role == UserRole.Admin ? "" : "status-pill--muted")">@u.Role</span></td>
+                    <td><span class="status-pill @(u.Status == UserStatus.Active ? "" : "status-pill--warn")">@u.Status</span></td>
                     <td class="muted">@(u.LastLoginAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
                     <td class="row-actions">
                         @if (u.Status == UserStatus.Active)

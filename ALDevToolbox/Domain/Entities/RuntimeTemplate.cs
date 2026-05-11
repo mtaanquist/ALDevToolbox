@@ -91,6 +91,16 @@ public class RuntimeTemplate
     /// </summary>
     public bool Deprecated { get; set; }
 
+    /// <summary>
+    /// Marks this template as the per-organisation default selected on the New
+    /// Workspace and New Extension forms when the user lands without an explicit
+    /// ?template= hint. Exactly one active template per organisation should
+    /// carry this flag — enforced by a filtered unique index in the DB. Toggled
+    /// via <c>TemplateService.SetDefaultAsync</c>; not editable from the
+    /// Create/Edit form directly.
+    /// </summary>
+    public bool IsDefault { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 

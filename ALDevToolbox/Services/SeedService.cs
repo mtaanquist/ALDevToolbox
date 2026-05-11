@@ -68,8 +68,20 @@ public class SeedService
         var now = DateTime.UtcNow;
         var modulesByKey = await ImportModulesAsync(seedPath, organizationId, now, cancellationToken);
         var applicationVersionsByKey = await ImportApplicationVersionsAsync(seedPath, organizationId, now, cancellationToken);
-        await ImportTemplatesAsync(seedPath, organizationId, now, modulesByKey, applicationVersionsByKey, cancellationToken);
+        var seededTemplates = await ImportTemplatesAsync(seedPath, organizationId, now, modulesByKey, applicationVersionsByKey, cancellationToken);
         await ImportCatalogAsync(seedPath, organizationId, now, cancellationToken);
+
+        // Pick the highest-runtime seeded template as the per-org default so
+        // fresh organisations land on the newest layout on New Workspace
+        // without an admin having to flip the flag manually.
+        if (seededTemplates.Count > 0)
+        {
+            var pick = seededTemplates
+                .OrderByDescending(t => TemplateService.RuntimeSortKey(t.Runtime))
+                .ThenBy(t => t.Key, StringComparer.Ordinal)
+                .First();
+            pick.IsDefault = true;
+        }
 
         var written = await _db.SaveChangesAsync(cancellationToken);
         _logger.LogInformation(
@@ -107,7 +119,7 @@ public class SeedService
 
     // ----- templates -----
 
-    private async Task ImportTemplatesAsync(
+    private async Task<List<RuntimeTemplate>> ImportTemplatesAsync(
         string seedPath,
         int organizationId,
         DateTime now,
@@ -115,6 +127,7 @@ public class SeedService
         IReadOnlyDictionary<string, ApplicationVersion> applicationVersionsByKey,
         CancellationToken ct)
     {
+        var added = new List<RuntimeTemplate>();
         foreach (var dir in Directory.EnumerateDirectories(seedPath, "runtime-*"))
         {
             var tomlPath = Path.Combine(dir, "template.toml");
@@ -227,7 +240,9 @@ public class SeedService
             }
 
             _db.RuntimeTemplates.Add(template);
+            added.Add(template);
         }
+        return added;
     }
 
     private static TemplateDefaults MapDefaults(DefaultsSeed s) => new()

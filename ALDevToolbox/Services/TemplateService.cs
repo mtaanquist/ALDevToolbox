@@ -124,6 +124,20 @@ public class TemplateService
     }
 
     /// <summary>
+    /// Returns the org's default template if one is flagged and the row is
+    /// still active and non-deprecated. The user-facing New Workspace / New
+    /// Extension forms call this to preselect the dropdown when no explicit
+    /// ?template= hint is supplied.
+    /// </summary>
+    public Task<RuntimeTemplate?> GetDefaultAsync(CancellationToken ct = default)
+    {
+        return _db.RuntimeTemplates
+            .AsNoTracking()
+            .Where(t => t.IsDefault && t.DeletedAt == null && !t.Deprecated)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    /// <summary>
     /// Returns a single template by its <see cref="RuntimeTemplate.Key"/>, including
     /// soft-deleted rows so admin pages can render them. Returns <c>null</c> if no
     /// template has that key.
@@ -312,6 +326,62 @@ public class TemplateService
     }
 
     /// <summary>
+    /// Marks <paramref name="id"/> as the per-organisation default template. The
+    /// previous default (if any) is cleared in the same SaveChanges so the
+    /// filtered unique index never sees two true values at once. Throws when
+    /// the target is missing, soft-deleted, or deprecated — only an active,
+    /// visible template should preselect itself on the user-facing forms.
+    /// </summary>
+    public async Task SetDefaultAsync(int id, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        var target = await _db.RuntimeTemplates.FirstOrDefaultAsync(t => t.Id == id, ct)
+            ?? throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Id"] = $"Template with id {id} was not found.",
+            });
+
+        if (target.DeletedAt is not null)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Id"] = "A soft-deleted template cannot be the default. Restore it first.",
+            });
+        }
+        if (target.Deprecated)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Id"] = "A deprecated template cannot be the default. Un-deprecate it first.",
+            });
+        }
+
+        if (target.IsDefault)
+        {
+            return;
+        }
+
+        // Clear the previous default (if any) before flipping the new one to
+        // satisfy the filtered unique index on (organization_id, is_default).
+        var previous = await _db.RuntimeTemplates
+            .Where(t => t.OrganizationId == orgId && t.IsDefault)
+            .ToListAsync(ct);
+        foreach (var row in previous)
+        {
+            row.IsDefault = false;
+            row.UpdatedAt = DateTime.UtcNow;
+        }
+
+        target.IsDefault = true;
+        target.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Set default runtime template to '{Key}' (id={Id}) for org {OrgId}.",
+            target.Key, target.Id, orgId);
+    }
+
+    /// <summary>
     /// Soft-deletes a template by setting <see cref="RuntimeTemplate.DeletedAt"/>.
     /// The row remains in the database so the admin can later <see cref="RestoreAsync"/>
     /// it. End-user dropdowns and the templates browser hide soft-deleted rows.
@@ -331,6 +401,10 @@ public class TemplateService
 
         existing.DeletedAt = DateTime.UtcNow;
         existing.UpdatedAt = existing.DeletedAt.Value;
+        // A soft-deleted template can never be the org default; the filtered
+        // unique index requires it explicitly and the user-facing dropdown
+        // hides deleted rows anyway.
+        existing.IsDefault = false;
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation("Soft-deleted runtime template '{Key}' (id={Id}).", existing.Key, existing.Id);
@@ -373,6 +447,9 @@ public class TemplateService
             if (t.DeletedAt is not null) return false;
             t.DeletedAt = DateTime.UtcNow;
             t.UpdatedAt = t.DeletedAt.Value;
+            // Mirrors SoftDeleteAsync — a deleted template can't carry the
+            // per-org default flag (filtered unique index requires it).
+            t.IsDefault = false;
             return true;
         }, "soft-delete", ct);
 
@@ -393,6 +470,10 @@ public class TemplateService
             if (t.Deprecated) return false;
             t.Deprecated = true;
             t.UpdatedAt = DateTime.UtcNow;
+            // Deprecated templates aren't user-selectable, so they shouldn't
+            // carry the org default — clearing it here lets the admin set a
+            // new default without first un-deprecating the old one.
+            t.IsDefault = false;
             return true;
         }, "deprecate", ct);
 
