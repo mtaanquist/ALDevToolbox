@@ -1,4 +1,5 @@
 using ALDevToolbox.Data;
+using ALDevToolbox.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services;
@@ -84,7 +85,7 @@ public sealed class BackupScheduler : BackgroundService
         if (nowUtc < todayWindow) return;
 
         var lastScheduled = await db.Backups.AsNoTracking()
-            .Where(b => b.Kind == Domain.Entities.BackupKind.Scheduled)
+            .Where(b => b.Kind == BackupKind.Scheduled)
             .OrderByDescending(b => b.CreatedAt)
             .Select(b => (DateTime?)b.CreatedAt)
             .FirstOrDefaultAsync(ct);
@@ -95,7 +96,7 @@ public sealed class BackupScheduler : BackgroundService
             todayWindow, nowUtc);
         try
         {
-            await backups.CreateAsync(Domain.Entities.BackupKind.Scheduled, ct);
+            await backups.CreateAsync(BackupKind.Scheduled, ct);
         }
         catch (Exception ex)
         {

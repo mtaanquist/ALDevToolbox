@@ -907,7 +907,7 @@ app.MapPost("/site-admin/backups/create", async (
     if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
     try
     {
-        await backups.CreateAsync(Domain.Entities.BackupKind.AdHoc, ct);
+        await backups.CreateAsync(BackupKind.AdHoc, ct);
         ctx.Response.Redirect("/site-admin/backups?ok=created");
     }
     catch (Exception ex) when (ex is InvalidOperationException or IOException)
