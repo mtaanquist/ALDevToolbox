@@ -163,6 +163,17 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     overflow-y: auto;
 }
 
+/* Centre every page's top-level wrapper inside the content column. Pages
+   set their own max-width (.admin-page, .workspace-page, .audit-page,
+   etc.); margin-inline:auto is a no-op for elements with no max-width
+   so this also leaves naturally-full-width content alone. */
+.content > * { margin-inline: auto; }
+
+/* SiteAdmin pages place a bare .admin-section at the root; give it the
+   same reading width as .admin-page so the work area stays consistent
+   across the app. */
+.content > .admin-section { max-width: 1100px; }
+
 /* ---------- Sidebar nav ---------- */
 
 .sidebar-nav { display: flex; flex-direction: column; gap: 18px; }
