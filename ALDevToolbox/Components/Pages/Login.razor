@@ -10,6 +10,11 @@
         have one yet? <a href="/signup">Sign up</a>.
     </p>
 
+    <nav class="tab-bar tab-bar--auth" aria-label="Sign-in method">
+        <a href="/login" class="tab active">Password</a>
+        <a href="/login/magic" class="tab">Magic link</a>
+    </nav>
+
     @if (Error == "invalid")
     {
         <p class="form-error" role="alert">Invalid email or password.</p>
@@ -51,15 +56,14 @@
         <section class="form-section">
             <label class="section-label" for="lg-password">Password</label>
             <input id="lg-password" type="password" name="Password" required autocomplete="current-password" />
+            <a href="/forgot-password" class="login-form__inline-link">Forgot password?</a>
         </section>
 
         <div class="login-form__actions">
-            <button type="submit" class="btn">
+            <button type="submit" class="btn btn--primary">
                 <Icon Name="log-in" Width="16" Height="16" />
                 <span>Sign in</span>
             </button>
-            <a href="/login/magic" class="muted">Sign in with a magic link instead</a>
-            <a href="/forgot-password" class="muted">Forgot password?</a>
         </div>
     </form>
 </div>

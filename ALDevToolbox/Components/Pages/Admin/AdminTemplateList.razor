@@ -21,9 +21,9 @@
                 in the audit log for every change.
             </p>
         </div>
-        <a class="btn btn--primary" href="/admin/templates/new">
-            <Icon Name="folder-plus" Width="16" Height="16" />
-            <span>New template</span>
+        <a class="btn btn--sm" href="/admin">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to admin</span>
         </a>
     </header>
 
@@ -250,6 +250,13 @@
             </tbody>
         </table>
     }
+
+    <div class="admin-page__footer-actions">
+        <a class="btn btn--primary" href="/admin/templates/new">
+            <Icon Name="folder-plus" Width="16" Height="16" />
+            <span>New template</span>
+        </a>
+    </div>
 </div>
 
 <ConfirmDialog @ref="_confirm" />

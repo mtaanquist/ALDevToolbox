@@ -16,20 +16,14 @@
             <h1>Snippets</h1>
             <p class="muted">
                 Curate the snippet library for this organisation. End users see
-                the published list at <code>/snippets</code>; you can also
-                approve user suggestions from the queue.
+                the published list at <code>/snippets</code>; user-submitted
+                suggestions appear in the queue below.
             </p>
         </div>
-        <div class="admin-page__header-actions">
-            <a class="btn" href="/admin/snippets/suggestions">
-                <Icon Name="inbox" Width="16" Height="16" />
-                <span>Suggestions @(_pendingCount > 0 ? $"({_pendingCount})" : "")</span>
-            </a>
-            <a class="btn btn--primary" href="/admin/snippets/new">
-                <Icon Name="plus" Width="16" Height="16" />
-                <span>New snippet</span>
-            </a>
-        </div>
+        <a class="btn btn--sm" href="/admin">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to admin</span>
+        </a>
     </header>
 
     <div class="admin-page__toolbar">
@@ -54,7 +48,7 @@
     }
     else if (_rows.Count == 0)
     {
-        <p class="muted">No snippets yet. Click <strong>New snippet</strong> to create one.</p>
+        <p class="muted">No snippets yet. Click <strong>New snippet</strong> below to create one.</p>
     }
     else
     {
@@ -107,12 +101,66 @@
             </tbody>
         </table>
     }
+
+    <div class="admin-page__footer-actions">
+        <a class="btn btn--primary" href="/admin/snippets/new">
+            <Icon Name="plus" Width="16" Height="16" />
+            <span>New snippet</span>
+        </a>
+    </div>
+
+    <section class="admin-section">
+        <h2>Suggestions</h2>
+        <p class="muted">
+            Drafts submitted by users awaiting review. Open one to approve or
+            reject it.
+        </p>
+        @if (_suggestions is null)
+        {
+            <p class="muted">Loading…</p>
+        }
+        else if (_suggestions.Count == 0)
+        {
+            <p class="muted">No pending suggestions.</p>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Title</th>
+                        <th>Submitted by</th>
+                        <th>Files</th>
+                        <th>Submitted (UTC)</th>
+                        <th class="data-table__actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var s in _suggestions)
+                    {
+                        <tr>
+                            <td>@s.Title</td>
+                            <td class="muted">@(s.SuggestedByUser?.DisplayName ?? "unknown user")</td>
+                            <td>@s.Files.Count</td>
+                            <td><time datetime="@s.RequestedAt.ToString("O")">@s.RequestedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
+                            <td class="data-table__actions">
+                                <a class="btn btn--sm" href="@($"/admin/snippets/suggestions#suggestion-{s.Id}")">
+                                    <Icon Name="inbox" Width="14" Height="14" />
+                                    <span>Review</span>
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
 </div>
 
 @code {
     private bool _showDeleted;
     private List<Snippet>? _rows;
-    private int _pendingCount;
+    private List<SnippetSuggestion>? _suggestions;
     private bool _busy;
     private string? _lastError;
     private string? _lastSuccess;
@@ -122,7 +170,7 @@
     private async Task ReloadAsync()
     {
         _rows = await Snippets.GetAllForAdminAsync(includeDeleted: _showDeleted);
-        _pendingCount = (await Suggestions.GetPendingAsync()).Count;
+        _suggestions = await Suggestions.GetPendingAsync();
     }
 
     private async Task SoftDeleteAsync(Snippet s)

@@ -3,15 +3,18 @@
 @rendermode InteractiveServer
 @inject OrganizationConfigService Config
 @inject NavigationManager Nav
+@inject ILogger<AdminConfiguration> Log
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
+@using Microsoft.AspNetCore.Components.Forms
 @using Lucide.Blazor.Components
 
 @*
-    Per-organisation configuration page (Milestone P3.14). Three independently-
-    saving sections — defaults, logo and always-included files — plus an import
-    panel for re-applying a snapshot. Each section's save runs server-side
-    validation and reports errors back via the ?err=&msg= query string.
+    Per-organisation configuration page. All three sections (defaults, logo,
+    always-included files) commit through a single Save action at the top of
+    the page so admins don't have to remember which sub-form persisted what.
+    The TOML import/export lives on its own /admin/backup page; this page is
+    the day-to-day editing surface.
 *@
 
 <PageTitle>Configuration · Admin · AL Dev Toolbox</PageTitle>
@@ -26,10 +29,18 @@
                 included text files admins want emitted at the workspace root.
             </p>
         </div>
-        <a class="btn btn--sm" href="/admin">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to dashboard</span>
-        </a>
+        <div class="admin-page__header-actions">
+            <a class="btn btn--sm" href="/admin">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to admin</span>
+            </a>
+            <button type="button" class="btn btn--primary"
+                    @onclick="SaveAllAsync"
+                    disabled="@(_saving || !IsDirty)">
+                <Icon Name="save" Width="14" Height="14" />
+                <span>@(_saving ? "Saving…" : "Save changes")</span>
+            </button>
+        </div>
     </header>
 
     @if (_config is null)
@@ -55,46 +66,41 @@
                 Pre-filled into the New Workspace and New Extension forms. Users
                 can still edit on the form — these are defaults, not locks.
             </p>
-            <form method="post" action="/admin/configuration/settings" class="form-grid">
-                <AntiforgeryToken />
+            <div class="form-grid form-grid--narrow">
                 <section class="form-section">
                     <label class="section-label" for="cfg-publisher">Publisher</label>
-                    <input id="cfg-publisher" type="text" name="DefaultPublisher" required
-                           value="@_config.Settings.DefaultPublisher" />
+                    <input id="cfg-publisher" type="text" required
+                           @bind="_publisher" @bind:event="oninput" />
                     <small class="muted">Used as the <code>publisher</code> for every generated <code>app.json</code>.</small>
                 </section>
 
                 <section class="form-section--row">
-                    <div>
+                    <div class="form-section form-section--id">
                         <label class="section-label" for="cfg-from">Default ID range — from</label>
-                        <input id="cfg-from" type="number" name="DefaultIdRangeFrom" required min="1"
-                               value="@_config.Settings.DefaultIdRangeFrom" />
+                        <input id="cfg-from" type="number" required min="1"
+                               @bind="_idFrom" @bind:event="oninput" />
                     </div>
-                    <div>
+                    <div class="form-section form-section--id">
                         <label class="section-label" for="cfg-to">Default ID range — to</label>
-                        <input id="cfg-to" type="number" name="DefaultIdRangeTo" required min="1"
-                               value="@_config.Settings.DefaultIdRangeTo" />
+                        <input id="cfg-to" type="number" required min="1"
+                               @bind="_idTo" @bind:event="oninput" />
                     </div>
                 </section>
 
                 <section class="form-section">
                     <label class="section-label" for="cfg-brief">Default brief</label>
-                    <input id="cfg-brief" type="text" name="DefaultBrief"
+                    <input id="cfg-brief" type="text"
                            placeholder="e.g. Customisations and reports for Acme."
-                           value="@_config.Settings.DefaultBrief" />
+                           @bind="_brief" @bind:event="oninput" />
                 </section>
 
                 <section class="form-section">
                     <label class="section-label" for="cfg-desc">Default core description</label>
-                    <textarea id="cfg-desc" name="DefaultCoreDescription" rows="3"
-                              placeholder="Longer description prefilled into the New Workspace form.">@_config.Settings.DefaultCoreDescription</textarea>
+                    <textarea id="cfg-desc" rows="3"
+                              placeholder="Longer description prefilled into the New Workspace form."
+                              @bind="_description" @bind:event="oninput"></textarea>
                 </section>
-
-                <button type="submit" class="btn">
-                    <Icon Name="save" Width="14" Height="14" />
-                    <span>Save defaults</span>
-                </button>
-            </form>
+            </div>
         </section>
 
         <section class="admin-section">
@@ -108,7 +114,15 @@
             </p>
 
             <div class="logo-preview">
-                @if (_config.Logo is not null)
+                @if (_pendingLogoBytes is not null)
+                {
+                    <p class="muted">New logo selected (@_pendingLogoFileName). Click <strong>Save changes</strong> to apply.</p>
+                }
+                else if (_removeLogo)
+                {
+                    <p class="muted">Logo will be removed on save.</p>
+                }
+                else if (_config.Logo is not null)
                 {
                     <img src="/admin/configuration/logo/preview?t=@_logoCacheBust" alt="Current logo" class="logo-preview__img" />
                 }
@@ -118,25 +132,32 @@
                 }
             </div>
 
-            <form method="post" action="/admin/configuration/logo" enctype="multipart/form-data" class="form-grid">
-                <AntiforgeryToken />
+            <div class="form-grid form-grid--narrow">
                 <section class="form-section">
                     <label class="section-label" for="cfg-logo">Replace logo</label>
-                    <input id="cfg-logo" type="file" name="Logo" accept="image/png,image/svg+xml" required />
+                    <label class="btn btn--sm logo-upload__button">
+                        <Icon Name="upload" Width="14" Height="14" />
+                        <span>Choose file…</span>
+                        <InputFile id="cfg-logo" OnChange="OnLogoChosen" accept="image/png,image/svg+xml" class="logo-upload__input" />
+                    </label>
                 </section>
-                <button type="submit" class="btn">
-                    <Icon Name="upload" Width="14" Height="14" />
-                    <span>Upload logo</span>
-                </button>
-            </form>
-
-            <form method="post" action="/admin/configuration/logo/revert">
-                <AntiforgeryToken />
-                <button type="submit" class="btn">
-                    <Icon Name="trash-2" Width="14" Height="14" />
-                    <span>Remove logo</span>
-                </button>
-            </form>
+                @if (_config.Logo is not null || _pendingLogoBytes is not null)
+                {
+                    <div class="form-actions">
+                        <button type="button" class="btn btn--sm" @onclick="MarkLogoForRemoval" disabled="@_removeLogo">
+                            <Icon Name="trash-2" Width="14" Height="14" />
+                            <span>Remove logo</span>
+                        </button>
+                        @if (_pendingLogoBytes is not null || _removeLogo)
+                        {
+                            <button type="button" class="btn btn--sm" @onclick="ResetLogoChanges">
+                                <Icon Name="rotate-ccw" Width="14" Height="14" />
+                                <span>Revert pending logo change</span>
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
         </section>
 
         <section class="admin-section">
@@ -210,38 +231,6 @@
                     <span class="form-field-error" role="alert">@_localError</span>
                 }
             </div>
-
-            <div class="org-file-save-row">
-                <button type="button" class="btn btn--primary" @onclick="SaveFilesAsync" disabled="@_savingFiles">
-                    <Icon Name="save" Width="14" Height="14" />
-                    <span>@(_savingFiles ? "Saving…" : "Save file list")</span>
-                </button>
-            </div>
-        </section>
-
-        <section class="admin-section admin-configuration__danger">
-            <h2>Import configuration</h2>
-            <p class="muted">
-                Pastes an <code>organization-config.toml</code> from an export
-                ZIP and replaces this organisation's defaults, logo and file list.
-                Existing values are wiped — confirm before submitting.
-            </p>
-            <form method="post" action="/admin/configuration/import" class="form-grid">
-                <AntiforgeryToken />
-                <section class="form-section">
-                    <label class="section-label" for="cfg-import-toml">TOML</label>
-                    <textarea id="cfg-import-toml" name="Toml" rows="6"
-                              placeholder="[settings]&#10;default_publisher = …"></textarea>
-                </section>
-                <label class="check-row">
-                    <input type="checkbox" name="Confirm" value="true" />
-                    <span>I understand this overwrites the current configuration.</span>
-                </label>
-                <button type="submit" class="btn">
-                    <Icon Name="upload" Width="14" Height="14" />
-                    <span>Import</span>
-                </button>
-            </form>
         </section>
     }
 </div>
@@ -252,24 +241,40 @@
     [SupplyParameterFromQuery(Name = "msg")] public string? MsgParam { get; set; }
 
     private OrganizationConfig? _config;
+
+    // Settings (bound to the form, baseline kept for dirty detection).
+    private string _publisher = string.Empty;
+    private int _idFrom;
+    private int _idTo;
+    private string _brief = string.Empty;
+    private string _description = string.Empty;
+    private string _basePublisher = string.Empty;
+    private int _baseIdFrom;
+    private int _baseIdTo;
+    private string _baseBrief = string.Empty;
+    private string _baseDescription = string.Empty;
+
+    // Files list — same FileRow shape as the previous implementation.
     private List<FileRow> _files = new();
-    private bool _savingFiles;
-    private string? _okMessage;
-    private string? _errMessage;
-    private string? _localError;
-    private long _logoCacheBust = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    private List<FileRow> _baseFiles = new();
+
+    // Logo: a pending upload OR a pending removal stays in memory until Save.
+    private byte[]? _pendingLogoBytes;
+    private string? _pendingLogoContentType;
+    private string? _pendingLogoFileName;
+    private bool _removeLogo;
 
     private FileRow? _editing;
     private string _editPath = string.Empty;
     private string _editContent = string.Empty;
     private bool _editMustache;
+    private string? _localError;
 
-    /// <summary>
-    /// Editor-side row: tracks the persisted <see cref="OrganizationFile.Id"/>
-    /// (null for newly-added entries) so the bulk save can route inserts vs
-    /// updates correctly. Stays a class so Up/Down operations mutate ordering
-    /// in place without re-allocating the list.
-    /// </summary>
+    private bool _saving;
+    private string? _okMessage;
+    private string? _errMessage;
+    private long _logoCacheBust = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
     private sealed class FileRow
     {
         public int? Id { get; set; }
@@ -277,31 +282,116 @@
         public string Content { get; set; } = string.Empty;
         public bool MustacheEnabled { get; set; }
         public int Ordering { get; set; }
+
+        public FileRow Clone() => new()
+        {
+            Id = Id, Path = Path, Content = Content,
+            MustacheEnabled = MustacheEnabled, Ordering = Ordering,
+        };
+    }
+
+    private bool IsDirty
+    {
+        get
+        {
+            if (_publisher != _basePublisher) return true;
+            if (_idFrom != _baseIdFrom) return true;
+            if (_idTo != _baseIdTo) return true;
+            if (_brief != _baseBrief) return true;
+            if (_description != _baseDescription) return true;
+            if (_pendingLogoBytes is not null || _removeLogo) return true;
+            if (_files.Count != _baseFiles.Count) return true;
+            for (var i = 0; i < _files.Count; i++)
+            {
+                var a = _files[i]; var b = _baseFiles[i];
+                if (a.Id != b.Id || a.Path != b.Path || a.Content != b.Content
+                    || a.MustacheEnabled != b.MustacheEnabled || a.Ordering != b.Ordering)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
     }
 
     protected override async Task OnInitializedAsync()
     {
-        _config = await Config.GetCurrentAsync();
-        _files = _config.Files
-            .Select(f => new FileRow
-            {
-                Id = f.Id,
-                Path = f.Path,
-                Content = f.Content,
-                MustacheEnabled = f.MustacheEnabled,
-                Ordering = f.Ordering,
-            })
-            .ToList();
+        await LoadAsync();
         _okMessage = OkParam switch
         {
-            "settings" => "Defaults saved.",
-            "logo" => "Logo uploaded.",
-            "logo-reverted" => "Logo removed.",
-            "files" => "Always-included files saved.",
-            "imported" => "Configuration imported.",
+            "saved" => "Configuration saved.",
             _ => null,
         };
         _errMessage = string.IsNullOrEmpty(ErrParam) ? null : (MsgParam ?? ErrParam);
+    }
+
+    private async Task LoadAsync()
+    {
+        _config = await Config.GetCurrentAsync();
+
+        _publisher = _basePublisher = _config.Settings.DefaultPublisher;
+        _idFrom = _baseIdFrom = _config.Settings.DefaultIdRangeFrom;
+        _idTo = _baseIdTo = _config.Settings.DefaultIdRangeTo;
+        _brief = _baseBrief = _config.Settings.DefaultBrief;
+        _description = _baseDescription = _config.Settings.DefaultCoreDescription;
+
+        _files = _config.Files
+            .Select(f => new FileRow
+            {
+                Id = f.Id, Path = f.Path, Content = f.Content,
+                MustacheEnabled = f.MustacheEnabled, Ordering = f.Ordering,
+            })
+            .ToList();
+        _baseFiles = _files.Select(f => f.Clone()).ToList();
+
+        _pendingLogoBytes = null;
+        _pendingLogoContentType = null;
+        _pendingLogoFileName = null;
+        _removeLogo = false;
+        _logoCacheBust = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    }
+
+    private async Task OnLogoChosen(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+        if (file.Size > OrganizationConfigService.MaxLogoBytes)
+        {
+            _errMessage = $"Logo must be {OrganizationConfigService.MaxLogoBytes / 1024} KB or smaller.";
+            return;
+        }
+        try
+        {
+            await using var stream = file.OpenReadStream(OrganizationConfigService.MaxLogoBytes);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            _pendingLogoBytes = ms.ToArray();
+            _pendingLogoContentType = file.ContentType;
+            _pendingLogoFileName = file.Name;
+            _removeLogo = false;
+            _errMessage = null;
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning(ex, "Failed to read uploaded logo '{Name}'.", file.Name);
+            _errMessage = $"Could not read the file: {ex.Message}";
+        }
+    }
+
+    private void MarkLogoForRemoval()
+    {
+        _removeLogo = true;
+        _pendingLogoBytes = null;
+        _pendingLogoContentType = null;
+        _pendingLogoFileName = null;
+    }
+
+    private void ResetLogoChanges()
+    {
+        _pendingLogoBytes = null;
+        _pendingLogoContentType = null;
+        _pendingLogoFileName = null;
+        _removeLogo = false;
     }
 
     private void StartEdit(FileRow row)
@@ -368,30 +458,65 @@
         if (_editing == row) CancelEdit();
     }
 
-    private async Task SaveFilesAsync()
+    private async Task SaveAllAsync()
     {
-        _savingFiles = true;
-        StateHasChanged();
+        if (_saving || !IsDirty) return;
+        _saving = true;
+        _errMessage = null;
+        _okMessage = null;
         try
         {
+            var settingsDirty = _publisher != _basePublisher
+                || _idFrom != _baseIdFrom || _idTo != _baseIdTo
+                || _brief != _baseBrief || _description != _baseDescription;
+            if (settingsDirty)
+            {
+                await Config.SaveSettingsAsync(new OrganizationSettingsInput(
+                    DefaultPublisher: _publisher.Trim(),
+                    DefaultIdRangeFrom: _idFrom,
+                    DefaultIdRangeTo: _idTo,
+                    DefaultBrief: _brief,
+                    DefaultCoreDescription: _description));
+            }
+
+            if (_removeLogo)
+            {
+                await Config.RevertLogoAsync();
+            }
+            else if (_pendingLogoBytes is not null)
+            {
+                await Config.UploadLogoAsync(_pendingLogoContentType ?? string.Empty, _pendingLogoBytes);
+            }
+
             for (var i = 0; i < _files.Count; i++) _files[i].Ordering = i;
-            var inputs = _files
-                .Select(f => new OrganizationFileInput(
-                    Id: f.Id,
-                    Path: f.Path,
-                    Content: f.Content,
-                    MustacheEnabled: f.MustacheEnabled))
-                .ToList();
-            await Config.SaveFilesAsync(inputs);
-            Nav.NavigateTo("/admin/configuration?ok=files", forceLoad: true);
+            var filesDirty = _files.Count != _baseFiles.Count
+                || _files.Zip(_baseFiles, (a, b) => a.Id != b.Id || a.Path != b.Path
+                    || a.Content != b.Content || a.MustacheEnabled != b.MustacheEnabled
+                    || a.Ordering != b.Ordering).Any(diff => diff);
+            if (filesDirty)
+            {
+                var inputs = _files
+                    .Select(f => new OrganizationFileInput(
+                        Id: f.Id, Path: f.Path, Content: f.Content,
+                        MustacheEnabled: f.MustacheEnabled))
+                    .ToList();
+                await Config.SaveFilesAsync(inputs);
+            }
+
+            Nav.NavigateTo("/admin/configuration?ok=saved", forceLoad: true);
         }
         catch (PlanValidationException ex)
         {
-            _errMessage = ex.Errors.FirstOrDefault().Value ?? "Failed to save.";
+            _errMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save organisation configuration.");
+            _errMessage = "An unexpected error occurred. The change was not saved.";
         }
         finally
         {
-            _savingFiles = false;
+            _saving = false;
         }
     }
 

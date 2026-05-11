@@ -43,7 +43,7 @@
         <ul class="snippet-suggestion-list">
             @foreach (var s in _pending)
             {
-                <li class="snippet-suggestion">
+                <li class="snippet-suggestion" id="suggestion-@s.Id">
                     <header class="snippet-suggestion__header">
                         <h2>@s.Title</h2>
                         <span class="muted">

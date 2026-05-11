@@ -205,6 +205,36 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .nav-link.active .nav-link__icon { color: var(--color-accent); }
 .nav-link--muted { color: var(--color-text-muted); }
 
+.nav-group { display: flex; flex-direction: column; gap: 2px; }
+
+.nav-link--group {
+    color: var(--color-text);
+    cursor: default;
+}
+
+.nav-link--group:hover { background: transparent; }
+
+.nav-sublist {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.nav-link--sub {
+    padding: 5px 10px;
+    font-size: 13px;
+    color: var(--color-text-secondary);
+}
+
+.nav-link--sub.active {
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+    font-weight: 500;
+}
+
 .nav-divider {
     height: 1px;
     background: var(--color-border);
@@ -213,6 +243,10 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 /* ---------- Tab bar (page-level) ---------- */
 
+/* The .tab-bar / .tab classes drive the auth sign-in tabs (password vs magic
+   link). The in-page tab strip on the generator pages was removed once the
+   sidebar gained sub-items, but the styles are kept here so the auth surface
+   stays consistent with the rest of the chrome. */
 .tab-bar {
     display: flex;
     gap: 6px;
@@ -324,15 +358,18 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     flex-wrap: wrap;
 }
 
-.import-card__button {
+.import-card__button,
+.logo-upload__button {
     cursor: pointer;
     margin: 0;
+    align-self: flex-start;
 }
 
 /* Native <input type="file"> is awkward to style cross-browser, so we hide
    it visually and let the surrounding label trigger it. The accessible
    name comes from the label's text content. */
-.import-card__input {
+.import-card__input,
+.logo-upload__input {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -501,6 +538,13 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 }
 
 .form-section--row > div { display: flex; flex-direction: column; gap: 6px; }
+
+/* Narrower form grid for forms where 100%-wide inputs feel wider than they
+   need to be (the Configuration page being the main culprit). Keeps the
+   eye-line shorter without forcing each field to declare its own max-width. */
+.form-grid--narrow { max-width: 560px; }
+.form-grid--narrow .form-section--row { max-width: 360px; }
+.form-grid--narrow .form-section--id { max-width: 180px; }
 
 .section-label {
     font-size: 11px;
@@ -1033,7 +1077,11 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .user-button:hover {
     background: var(--color-bg);
     border-color: var(--color-accent);
+    text-decoration: none;
 }
+
+.user-button:hover .user-button__name,
+.user-button:hover .user-button__org { text-decoration: none; }
 
 .user-button__name { font-weight: 500; }
 
@@ -1076,6 +1124,16 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     align-items: center;
     gap: 6px;
 }
+
+.tab-bar--auth { margin-bottom: 0; }
+
+.login-form__inline-link {
+    align-self: flex-start;
+    font-size: 12.5px;
+    color: var(--color-text-muted);
+}
+
+.login-form__inline-link:hover { color: var(--color-accent); }
 
 .form-error {
     color: var(--color-error-text);
@@ -1248,12 +1306,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .org-file-row__actions {
     display: flex;
     gap: 8px;
-}
-
-.org-file-save-row {
-    display: flex;
-    justify-content: flex-start;
-    margin-top: 12px;
 }
 
 .admin-configuration__danger {
@@ -1453,11 +1505,31 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .admin-page__header p { margin: 0; }
 
+.admin-page__header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
 .admin-page__toolbar {
     display: flex;
     align-items: center;
     gap: 12px;
     margin-bottom: 12px;
+}
+
+/* Trailing action row for "content creation" buttons that sit at the bottom
+   of the list they relate to (e.g. New template, New module, New snippet).
+   The top-right corner is reserved for navigation (Back to admin); creation
+   actions live with the data they create. */
+.admin-page__footer-actions {
+    display: flex;
+    justify-content: flex-start;
+    gap: 8px;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--color-border);
 }
 
 .data-table__row--muted td { opacity: 0.65; }

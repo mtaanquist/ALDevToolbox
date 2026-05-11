@@ -62,21 +62,12 @@
                 <div class="admin-tile__caption">Browse recent changes to templates, modules, and the catalogue.</div>
             </div>
         </a>
+        <a class="admin-tile admin-tile--link" href="/admin/backup">
+            <Icon Name="database-backup" Width="20" Height="20" Css="admin-tile__icon" />
+            <div class="admin-tile__body">
+                <div class="admin-tile__title">Backup &amp; restore</div>
+                <div class="admin-tile__caption">Export this organisation's templates, modules and catalogue, or restore configuration from a TOML snapshot.</div>
+            </div>
+        </a>
     </div>
-
-    <section class="admin-section">
-        <h2>Backup</h2>
-        <p class="muted">
-            Download every active template, module, and catalogue entry as a
-            TOML ZIP. Use it as a point-in-time snapshot or to grep the live
-            state outside the app.
-        </p>
-        <form method="post" action="/admin/export">
-            <AntiforgeryToken />
-            <button type="submit" class="btn">
-                <Icon Name="download" Width="16" Height="16" />
-                <span>Export all to TOML</span>
-            </button>
-        </form>
-    </section>
 </div>
