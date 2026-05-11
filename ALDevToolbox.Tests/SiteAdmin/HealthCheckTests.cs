@@ -1,6 +1,7 @@
 using ALDevToolbox.Services;
 using FluentAssertions;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace ALDevToolbox.Tests.SiteAdmin;
@@ -16,7 +17,7 @@ public sealed class HealthCheckTests
     [Fact]
     public async Task DataProtectionHealthCheck_returns_healthy_with_a_working_provider()
     {
-        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+        var services = new ServiceCollection();
         services.AddDataProtection().SetApplicationName("ALDevToolbox.Tests");
         var sp = services.BuildServiceProvider();
         var check = new DataProtectionHealthCheck(
