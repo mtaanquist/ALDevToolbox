@@ -161,6 +161,13 @@ jobs:
             exit 0
           fi
           git worktree add ../base-ref "$BASE_SHA"
+          # Carry the current-branch design-time factory back to the base ref
+          # so its `dotnet ef database update` doesn't trip the
+          # PendingModelChangesWarning. The factory's behaviour at the base
+          # ref is otherwise functionally identical; only the warning
+          # suppression matters here, and it's been added on this branch.
+          cp ALDevToolbox/Data/AppDbContextDesignTimeFactory.cs \
+             ../base-ref/ALDevToolbox/Data/AppDbContextDesignTimeFactory.cs
           pushd ../base-ref >/dev/null
           dotnet restore ALDevToolbox/ALDevToolbox.csproj
           dotnet ef database update --project ALDevToolbox/ALDevToolbox.csproj
