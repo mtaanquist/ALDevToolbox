@@ -1381,6 +1381,17 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     border-bottom-left-radius: 0;
 }
 
+/* When an icon-only button lives in the search input-group it should match
+   the input's height (stretched by the form's align-items: stretch) rather
+   than its own 28px square. Aspect-ratio keeps it square against whatever
+   height the surrounding input ends up at. */
+.admin-search-form > .btn--icon {
+    width: auto;
+    height: auto;
+    padding: 0 10px;
+    aspect-ratio: 1 / 1;
+}
+
 .admin-filter-form {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
