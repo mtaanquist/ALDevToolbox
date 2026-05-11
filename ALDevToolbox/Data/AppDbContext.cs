@@ -137,6 +137,10 @@ public class AppDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.UserId)
                 .OnDelete(DeleteBehavior.SetNull);
+            // Defense in depth: pre-login flows (Program.cs decide endpoints)
+            // already call IgnoreQueryFilters explicitly; this filter catches
+            // any post-login read that forgets to scope by org.
+            ScopeToOrganization<SignupRequest>(entity);
         });
 
         modelBuilder.Entity<PasswordResetToken>(entity =>
