@@ -51,6 +51,7 @@ public class AppDbContext : DbContext
     public DbSet<SignupRequest> SignupRequests => Set<SignupRequest>();
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<LoginAttempt> LoginAttempts => Set<LoginAttempt>();
+    public DbSet<Invite> Invites => Set<Invite>();
 
     public DbSet<RuntimeTemplate> RuntimeTemplates => Set<RuntimeTemplate>();
     public DbSet<TemplateFolder> TemplateFolders => Set<TemplateFolder>();
@@ -145,6 +146,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
             entity.Property(e => e.UserId).HasColumnName("user_id").IsRequired();
             entity.Property(e => e.TokenHash).HasColumnName("token_hash").IsRequired();
+            entity.Property(e => e.Purpose).HasColumnName("purpose").HasConversion<string>().IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
             entity.Property(e => e.ExpiresAt).HasColumnName("expires_at").IsRequired();
             entity.Property(e => e.ConsumedAt).HasColumnName("consumed_at");
@@ -171,6 +173,37 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Timestamp).HasColumnName("timestamp").IsRequired();
             entity.HasIndex(e => new { e.Email, e.Timestamp });
             entity.HasIndex(e => new { e.Ip, e.Timestamp });
+        });
+
+        modelBuilder.Entity<Invite>(entity =>
+        {
+            entity.ToTable("invites");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
+            entity.Property(e => e.Email).HasColumnName("email").IsRequired();
+            entity.Property(e => e.Role).HasColumnName("role").HasConversion<string>().IsRequired();
+            entity.Property(e => e.WelcomeMessage).HasColumnName("welcome_message");
+            entity.Property(e => e.TokenHash).HasColumnName("token_hash").IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+            entity.Property(e => e.ExpiresAt).HasColumnName("expires_at").IsRequired();
+            entity.Property(e => e.AcceptedAt).HasColumnName("accepted_at");
+            entity.Property(e => e.RevokedAt).HasColumnName("revoked_at");
+            entity.Property(e => e.InvitedByUserId).HasColumnName("invited_by_user_id").IsRequired();
+            entity.HasIndex(e => e.TokenHash).IsUnique();
+            entity.HasIndex(e => new { e.OrganizationId, e.Email });
+            entity.HasOne(e => e.Organization)
+                .WithMany()
+                .HasForeignKey(e => e.OrganizationId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.InvitedByUser)
+                .WithMany()
+                .HasForeignKey(e => e.InvitedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            // Token lookups (accept-invite) bypass org filter; admin listings
+            // explicitly filter by OrganizationId. Apply a query filter that
+            // mirrors User's so admin-facing reads stay org-scoped.
+            entity.HasQueryFilter(i => i.OrganizationId == _orgContext.OrganizationIdForFilter);
         });
 
         modelBuilder.Entity<RuntimeTemplate>(entity =>

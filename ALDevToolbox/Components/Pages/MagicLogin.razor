@@ -1,0 +1,46 @@
+@page "/login/magic"
+@using Lucide.Blazor.Components
+
+<PageTitle>Sign in with a magic link · AL Dev Toolbox</PageTitle>
+
+<div class="login-page">
+    <h1>Sign in with a magic link</h1>
+    <p class="caption muted">
+        Enter your email and we'll send you a single-use sign-in link, valid
+        for 15 minutes. No password needed. We always show the same
+        confirmation regardless of whether the email is in our database.
+    </p>
+
+    @if (Error == "not-configured")
+    {
+        <p class="form-error" role="alert">
+            Email is not configured on this server, so magic-link sign-in
+            isn't currently working. Use your password instead, or ask an
+            admin to set up SMTP.
+        </p>
+    }
+    @if (Ok == "1")
+    {
+        <p class="form-success" role="status">If that email exists in our database, you'll receive a sign-in link shortly.</p>
+    }
+
+    <form method="post" action="/auth/login/magic" class="form-grid login-form">
+        <AntiforgeryToken />
+        <section class="form-section">
+            <label class="section-label" for="ml-email">Email</label>
+            <input id="ml-email" type="email" name="Email" required autofocus autocomplete="username" />
+        </section>
+        <div class="login-form__actions">
+            <button type="submit" class="btn">
+                <Icon Name="mail" Width="16" Height="16" />
+                <span>Send sign-in link</span>
+            </button>
+            <a href="/login" class="muted">Sign in with a password instead</a>
+        </div>
+    </form>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+}

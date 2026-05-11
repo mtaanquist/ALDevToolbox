@@ -51,6 +51,7 @@ public sealed class AccountService
     public static readonly TimeSpan RateWindow = TimeSpan.FromMinutes(15);
     public static readonly TimeSpan LockoutWindow = TimeSpan.FromMinutes(15);
     public static readonly TimeSpan ResetTokenLifetime = TimeSpan.FromHours(1);
+    public static readonly TimeSpan MagicLinkTokenLifetime = TimeSpan.FromMinutes(15);
     public const int MinPasswordLength = 12;
     public const int BcryptWorkFactor = 12;
 
@@ -388,6 +389,7 @@ public sealed class AccountService
         {
             UserId = user.Id,
             TokenHash = hash,
+            Purpose = TokenPurpose.PasswordReset,
             CreatedAt = now,
             ExpiresAt = now + ResetTokenLifetime,
         });
@@ -411,7 +413,7 @@ public sealed class AccountService
         var now = _clock.GetUtcNow().UtcDateTime;
         var row = await _db.PasswordResetTokens.IgnoreQueryFilters()
             .Include(t => t.User)
-            .FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
+            .FirstOrDefaultAsync(t => t.TokenHash == hash && t.Purpose == TokenPurpose.PasswordReset, ct);
         if (row is null || row.ConsumedAt is not null || row.ExpiresAt <= now || row.User is null)
         {
             throw new PlanValidationException(new Dictionary<string, string> { ["Token"] = "This reset link is no longer valid. Request a new one." });
@@ -419,6 +421,82 @@ public sealed class AccountService
         row.ConsumedAt = now;
         row.User.PasswordHash = HashPassword(newPassword);
         await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Generates a single-use magic-link token for the user with the given
+    /// email. Returns the plaintext token — the caller emails it. Returns
+    /// <c>null</c> for unknown / disabled / pending users so the
+    /// <c>/login/magic</c> page can render the same opaque "if that email
+    /// exists" response regardless of outcome (no email-enumeration leak).
+    /// 15-minute expiry, with the same per-email / per-IP rate-limit as
+    /// password sign-in (10 per email, 30 per IP, per 15-minute window)
+    /// per <c>.design/milestones.md</c> P4.19. Records every attempt — issued
+    /// or not — in <c>login_attempts</c> so the rate counter is honest.
+    /// </summary>
+    public async Task<string?> CreateMagicLoginTokenAsync(string email, string ip, CancellationToken ct = default)
+    {
+        var normalised = NormaliseEmail(email);
+        var now = _clock.GetUtcNow().UtcDateTime;
+
+        if (await IsRateLimitedAsync(normalised, ip, now, ct))
+        {
+            await RecordAttemptAsync(normalised, ip, succeeded: false, now, ct);
+            return null;
+        }
+
+        var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Email == normalised, ct);
+        if (user is null || user.Status != UserStatus.Active)
+        {
+            await RecordAttemptAsync(normalised, ip, succeeded: false, now, ct);
+            return null;
+        }
+
+        var rawBytes = RandomNumberGenerator.GetBytes(32);
+        var raw = Convert.ToHexString(rawBytes).ToLowerInvariant();
+        var hash = Sha256Hex(raw);
+        _db.PasswordResetTokens.Add(new PasswordResetToken
+        {
+            UserId = user.Id,
+            TokenHash = hash,
+            Purpose = TokenPurpose.MagicLogin,
+            CreatedAt = now,
+            ExpiresAt = now + MagicLinkTokenLifetime,
+        });
+        await _db.SaveChangesAsync(ct);
+        await RecordAttemptAsync(normalised, ip, succeeded: true, now, ct);
+        return raw;
+    }
+
+    /// <summary>
+    /// Consumes a magic-link token and returns the signed-in user. The token
+    /// row is stamped with <c>ConsumedAt</c> on success so it can't be
+    /// reused. Throws <see cref="PlanValidationException"/> for expired,
+    /// missing, wrong-purpose or already-consumed tokens. The user's
+    /// <c>LastLoginAt</c> is stamped so the magic-link path doesn't
+    /// look like a stale account in <c>/admin/users</c>.
+    /// </summary>
+    public async Task<User> ConsumeMagicLoginTokenAsync(string token, CancellationToken ct = default)
+    {
+        var hash = Sha256Hex(token);
+        var now = _clock.GetUtcNow().UtcDateTime;
+        var row = await _db.PasswordResetTokens.IgnoreQueryFilters()
+            .Include(t => t.User)
+                .ThenInclude(u => u!.Organization)
+            .FirstOrDefaultAsync(t => t.TokenHash == hash && t.Purpose == TokenPurpose.MagicLogin, ct);
+        if (row is null || row.ConsumedAt is not null || row.ExpiresAt <= now || row.User is null)
+        {
+            throw new PlanValidationException(new Dictionary<string, string> { ["Token"] = "This sign-in link is no longer valid. Request a new one." });
+        }
+        if (row.User.Status != UserStatus.Active)
+        {
+            // Defensive: status may have changed between issue and consume.
+            throw new PlanValidationException(new Dictionary<string, string> { ["Token"] = "This sign-in link is no longer valid. Request a new one." });
+        }
+        row.ConsumedAt = now;
+        row.User.LastLoginAt = now;
+        await _db.SaveChangesAsync(ct);
+        return row.User;
     }
 
     public string HashPassword(string password) => BCrypt.Net.BCrypt.HashPassword(password, BcryptWorkFactor);

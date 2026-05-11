@@ -1,0 +1,89 @@
+@page "/accept-invite"
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Services
+@using Lucide.Blazor.Components
+@inject InviteService Invites
+
+<PageTitle>Accept invite · AL Dev Toolbox</PageTitle>
+
+<div class="login-page">
+    <h1>Accept your invite</h1>
+
+    @if (string.IsNullOrEmpty(Token))
+    {
+        <p class="form-error" role="alert">This page needs a token. Use the link from your invitation email.</p>
+    }
+    else if (_invite is null)
+    {
+        @if (_loaded)
+        {
+            <p class="form-error" role="alert">
+                This invite link is no longer valid. It may have expired, been
+                revoked, or already been used. Ask the admin who invited you
+                for a new one.
+            </p>
+        }
+        else
+        {
+            <p class="muted">Loading…</p>
+        }
+    }
+    else
+    {
+        <p class="caption muted">
+            You've been invited to join <strong>@_invite.Organization?.Name</strong>
+            as a <strong>@(_invite.Role == UserRole.Admin ? "Administrator" : "User")</strong>.
+            Pick a display name and password to activate your account.
+        </p>
+
+        @if (Error is not null && Message is not null)
+        {
+            <p class="form-error" role="alert"><strong>@Error:</strong> @Message</p>
+        }
+
+        <form method="post" action="/auth/accept-invite" class="form-grid login-form">
+            <AntiforgeryToken />
+            <input type="hidden" name="Token" value="@Token" />
+
+            <section class="form-section">
+                <label class="section-label">Email</label>
+                <input type="email" value="@_invite.Email" disabled />
+                <small class="muted">The invite was issued to this address.</small>
+            </section>
+
+            <section class="form-section">
+                <label class="section-label" for="ai-name">Display name</label>
+                <input id="ai-name" type="text" name="DisplayName" required minlength="2" maxlength="80" autofocus />
+            </section>
+
+            <section class="form-section">
+                <label class="section-label" for="ai-password">Password</label>
+                <input id="ai-password" type="password" name="Password" required minlength="12" autocomplete="new-password" />
+                <small class="muted">At least 12 characters.</small>
+            </section>
+
+            <button type="submit" class="btn">
+                <Icon Name="user-plus" Width="16" Height="16" />
+                <span>Activate account</span>
+            </button>
+        </form>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "token")] public string? Token { get; set; }
+    [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }
+    [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
+
+    private Invite? _invite;
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrEmpty(Token))
+        {
+            _invite = await Invites.FindValidByTokenAsync(Token);
+        }
+        _loaded = true;
+    }
+}

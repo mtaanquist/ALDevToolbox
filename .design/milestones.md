@@ -379,7 +379,7 @@ Goal: lower onboarding and login friction. Admin-issued invites alongside self-s
 
 ### Email templates
 
-- Two new transactional templates under `Components/Email/`: `InviteEmail.razor` and `MagicLinkEmail.razor`. Same Razor partial pattern as M13's reset-password template.
+- Two new transactional bodies added to `EmailTemplates` in `Services/EmailService.cs`: `Invite(...)` and `MagicLink(...)`. Same shape as the existing `ForgotPassword`, `SignupPending`, and `SignupDecided` helpers — static methods returning `(Subject, HtmlBody)` rather than Razor partials. (M13 ships its templates this way too; the milestone doc previously hinted at Razor partials but the codebase never grew them. Worth revisiting only when an email genuinely needs rich layout.)
 - All email-driven flows now route through the M17 hybrid SMTP resolver — operators can rotate credentials self-service when invite / magic-link volume changes.
 
 ### Audit

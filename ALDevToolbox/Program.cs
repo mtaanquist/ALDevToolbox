@@ -103,6 +103,7 @@ builder.Services.AddScoped<GenerationService>();
 builder.Services.AddScoped<ExportService>();
 builder.Services.AddScoped<OrganizationConfigService>();
 builder.Services.AddScoped<AccountService>();
+builder.Services.AddScoped<InviteService>();
 builder.Services.AddScoped<SystemSettingsService>();
 builder.Services.AddScoped<SiteAdminService>();
 builder.Services.AddScoped<BackupService>();
@@ -621,6 +622,145 @@ app.MapPost("/auth/forgot-password", async (
     ctx.Response.Redirect("/forgot-password?ok=1");
 });
 
+// /auth/login/magic — issues a single-use magic-link sign-in token. Always
+// redirects to "ok=1" so the response is identical for known and unknown
+// emails (no enumeration). Per-email and per-IP rate limits are applied
+// inside AccountService.CreateMagicLoginTokenAsync — see .design/milestones.md P4.19.
+app.MapPost("/auth/login/magic", async (
+    HttpContext ctx,
+    AccountService accounts,
+    AppDbContext db,
+    IEmailService email,
+    IAntiforgery antiforgery,
+    ILoggerFactory loggerFactory,
+    CancellationToken ct) =>
+{
+    var logger = loggerFactory.CreateLogger("MagicLogin");
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    if (!await email.IsConfiguredAsync(ct))
+    {
+        ctx.Response.Redirect("/login/magic?err=not-configured");
+        return;
+    }
+    var form = await ctx.Request.ReadFormAsync(ct);
+    var addr = form["Email"].ToString();
+    try
+    {
+        var token = await accounts.CreateMagicLoginTokenAsync(addr, ResolveIp(ctx), ct);
+        if (token is not null)
+        {
+            var user = await db.Users.IgnoreQueryFilters()
+                .FirstAsync(u => u.Email == addr.Trim().ToLowerInvariant(), ct);
+            var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/auth/login/magic/consume?token={Uri.EscapeDataString(token)}";
+            var (subject, body) = EmailTemplates.MagicLink(user.DisplayName, url);
+            await email.SendAsync(user.Email, subject, body, ct);
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Magic-link flow failed for {Email}.", addr);
+    }
+    ctx.Response.Redirect("/login/magic?ok=1");
+});
+
+// /auth/login/magic/consume — single-use; the link goes here directly. On
+// success we sign the user in and bounce them to the home page; on failure
+// we send them back to /login/magic with the error.
+app.MapGet("/auth/login/magic/consume", async (
+    HttpContext ctx,
+    AccountService accounts,
+    AppDbContext db,
+    SeedService seed,
+    ILoggerFactory loggerFactory,
+    CancellationToken ct) =>
+{
+    var logger = loggerFactory.CreateLogger("MagicLogin");
+    var token = ctx.Request.Query["token"].ToString();
+    if (string.IsNullOrEmpty(token))
+    {
+        ctx.Response.Redirect("/login/magic");
+        return;
+    }
+    try
+    {
+        var user = await accounts.ConsumeMagicLoginTokenAsync(token, ct);
+
+        // Mirror /auth/login's first-admin seeding so a magic-link admin
+        // doesn't end up in an unseeded org.
+        if (user.Role == UserRole.Admin)
+        {
+            var org = await db.Organizations.IgnoreQueryFilters().FirstAsync(o => o.Id == user.OrganizationId, ct);
+            if (!org.IsSeeded)
+            {
+                logger.LogInformation("First admin (magic-link) for org {OrgId}; running seed.", org.Id);
+                await seed.RunAsync(org.Id, ct);
+                org.IsSeeded = true;
+                await db.SaveChangesAsync(ct);
+            }
+        }
+
+        await ctx.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            new ClaimsPrincipal(BuildIdentity(user)));
+        logger.LogInformation("Magic-link sign-in for {Email} (org {OrgId}).", user.Email, user.OrganizationId);
+        ctx.Response.Redirect("/");
+    }
+    catch (PlanValidationException ex)
+    {
+        var first = ex.Errors.FirstOrDefault();
+        ctx.Response.Redirect($"/login/magic?err=invalid&msg={Uri.EscapeDataString(first.Value)}");
+    }
+});
+
+// /auth/accept-invite — invitee submits display name + password. Activates
+// the user directly into the inviting organisation and signs them in.
+app.MapPost("/auth/accept-invite", async (
+    HttpContext ctx,
+    InviteService invites,
+    AppDbContext db,
+    SeedService seed,
+    IAntiforgery antiforgery,
+    ILoggerFactory loggerFactory,
+    CancellationToken ct) =>
+{
+    var logger = loggerFactory.CreateLogger("AcceptInvite");
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    var form = await ctx.Request.ReadFormAsync(ct);
+    var token = form["Token"].ToString();
+    try
+    {
+        var user = await invites.AcceptAsync(
+            token,
+            form["DisplayName"].ToString(),
+            form["Password"].ToString(),
+            ct);
+
+        // Mirror first-admin seeding for the rare case where an invite drops
+        // an Admin into an org whose content hasn't been seeded yet (the
+        // inviting admin's first login already seeded existing orgs, so this
+        // only fires on pathological setups).
+        if (user.Role == UserRole.Admin && user.Organization is { IsSeeded: false } org)
+        {
+            await seed.RunAsync(org.Id, ct);
+            org.IsSeeded = true;
+            await db.SaveChangesAsync(ct);
+        }
+
+        await ctx.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            new ClaimsPrincipal(BuildIdentity(user)));
+        logger.LogInformation("Invite accepted; {Email} signed in to org {OrgId}.",
+            user.Email, user.OrganizationId);
+        ctx.Response.Redirect("/");
+    }
+    catch (PlanValidationException ex)
+    {
+        var first = ex.Errors.FirstOrDefault();
+        ctx.Response.Redirect(
+            $"/accept-invite?token={Uri.EscapeDataString(token)}&err={Uri.EscapeDataString(first.Key)}&msg={Uri.EscapeDataString(first.Value)}");
+    }
+});
+
 // /auth/reset-password — consumes the token and applies the new password.
 app.MapPost("/auth/reset-password", async (
     HttpContext ctx,
@@ -782,6 +922,71 @@ app.MapPost("/admin/users/{id:int}/enable", async (
     if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
     await accounts.EnableUserAsync(id, org.CurrentOrganizationId!.Value, ct);
     ctx.Response.Redirect("/admin/users");
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+app.MapPost("/admin/users/invite", async (
+    HttpContext ctx,
+    InviteService invites,
+    AppDbContext db,
+    IEmailService email,
+    IOrganizationContext orgCtx,
+    IAntiforgery antiforgery,
+    ILoggerFactory loggerFactory,
+    CancellationToken ct) =>
+{
+    var logger = loggerFactory.CreateLogger("AdminInvite");
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    if (!await email.IsConfiguredAsync(ct))
+    {
+        ctx.Response.Redirect("/admin/users?err="
+            + Uri.EscapeDataString("Email isn't configured. Set up SMTP via /site-admin/settings before inviting users."));
+        return;
+    }
+    var form = await ctx.Request.ReadFormAsync(ct);
+    var emailAddr = form["Email"].ToString();
+    var role = form["Role"].ToString() == "Admin" ? UserRole.Admin : UserRole.User;
+    var message = form["WelcomeMessage"].ToString();
+    try
+    {
+        var (token, inviteId) = await invites.CreateAsync(emailAddr, role, message, ct);
+        var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/accept-invite?token={Uri.EscapeDataString(token)}";
+        var inviter = await db.Users.IgnoreQueryFilters().AsNoTracking()
+            .Include(u => u.Organization)
+            .FirstAsync(u => u.Id == orgCtx.CurrentUserId!.Value, ct);
+        var orgName = inviter.Organization?.Name ?? "your organisation";
+        var roleLabel = role == UserRole.Admin ? "Administrator" : "User";
+        var (subject, body) = EmailTemplates.Invite(inviter.DisplayName, orgName, roleLabel, message, url);
+        try
+        {
+            await email.SendAsync(emailAddr.Trim(), subject, body, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Invite email failed for invite {InviteId} to {Email}.", inviteId, emailAddr);
+            ctx.Response.Redirect("/admin/users?err="
+                + Uri.EscapeDataString("Invite created but the email failed to send: " + ex.Message));
+            return;
+        }
+        ctx.Response.Redirect("/admin/users?ok=invited");
+    }
+    catch (PlanValidationException ex)
+    {
+        var first = ex.Errors.First();
+        ctx.Response.Redirect($"/admin/users?err={Uri.EscapeDataString(first.Value)}");
+    }
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+app.MapPost("/admin/users/invites/{id:int}/revoke", async (
+    int id, HttpContext ctx, InviteService invites, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    try { await invites.RevokeAsync(id, ct); }
+    catch (PlanValidationException ex)
+    {
+        ctx.Response.Redirect($"/admin/users?err={Uri.EscapeDataString(ex.Errors.First().Value)}");
+        return;
+    }
+    ctx.Response.Redirect("/admin/users?ok=invite-revoked");
 }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
 app.MapPost("/admin/users/{id:int}/role", async (

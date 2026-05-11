@@ -11,19 +11,87 @@
 <PageTitle>Users · AL Dev Toolbox</PageTitle>
 
 <h1>Users</h1>
-<p class="muted">Approve pending signups, change roles, and disable accounts in your organisation.</p>
+<p class="muted">Approve pending signups, invite new users, change roles, and disable accounts in your organisation.</p>
 
 @if (!string.IsNullOrEmpty(Error))
 {
     <p class="form-error" role="alert">@Error</p>
 }
+@if (Ok == "invited")
+{
+    <p class="form-success" role="status">Invite sent. The link is valid for 7 days.</p>
+}
+else if (Ok == "invite-revoked")
+{
+    <p class="form-success" role="status">Invite revoked.</p>
+}
 
-@if (_pending is null || _active is null)
+@if (_pending is null || _active is null || _invites is null)
 {
     <p class="muted">Loading…</p>
 }
 else
 {
+    <section class="admin-section">
+        <h2>Invite a user</h2>
+        <p class="muted">Send a single-use invite link by email. The invitee picks a display name and password — no further approval required.</p>
+        <form method="post" action="/admin/users/invite" class="form-grid">
+            <AntiforgeryToken />
+            <section class="form-section">
+                <label class="section-label" for="inv-email">Email</label>
+                <input id="inv-email" type="email" name="Email" required maxlength="254" placeholder="e.g. alice@example.com" />
+            </section>
+            <section class="form-section">
+                <label class="section-label" for="inv-role">Role</label>
+                <select id="inv-role" name="Role">
+                    <option value="User" selected>User</option>
+                    <option value="Admin">Administrator</option>
+                </select>
+            </section>
+            <section class="form-section">
+                <label class="section-label" for="inv-message">Welcome message (optional)</label>
+                <textarea id="inv-message" name="WelcomeMessage" rows="3" maxlength="2000" placeholder="A short note shown in the invite email."></textarea>
+            </section>
+            <button type="submit" class="btn">
+                <Icon Name="mail-plus" Width="16" Height="16" />
+                <span>Send invite</span>
+            </button>
+        </form>
+    </section>
+
+    <section class="admin-section">
+        <h2>Pending invites (@_invites.Count)</h2>
+        @if (_invites.Count == 0)
+        {
+            <p class="muted">No pending invites.</p>
+        }
+        else
+        {
+            <table class="admin-table">
+                <thead>
+                    <tr><th>Email</th><th>Role</th><th>Invited by</th><th>Expires</th><th></th></tr>
+                </thead>
+                <tbody>
+                @foreach (var (invite, invitedBy) in _invites)
+                {
+                    <tr>
+                        <td>@invite.Email</td>
+                        <td>@invite.Role</td>
+                        <td>@(invitedBy?.DisplayName ?? "—")</td>
+                        <td class="muted">@invite.ExpiresAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</td>
+                        <td class="row-actions">
+                            <form method="post" action="/admin/users/invites/@invite.Id/revoke" style="display:inline">
+                                <AntiforgeryToken />
+                                <button type="submit" class="btn btn--small btn--secondary">Revoke</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </section>
+
     <section class="admin-section">
         <h2>Pending signups (@_pending.Count)</h2>
         @if (_pending.Count == 0)
@@ -107,9 +175,11 @@ else
 
 @code {
     [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
 
     private List<(SignupRequest Request, User? User)>? _pending;
     private List<User>? _active;
+    private List<(Invite Invite, User? InvitedBy)>? _invites;
 
     protected override async Task OnInitializedAsync()
     {
@@ -141,5 +211,19 @@ else
             .OrderBy(u => u.Status == UserStatus.Active ? 0 : 1)
             .ThenBy(u => u.DisplayName)
             .ToListAsync();
+
+        var now = DateTime.UtcNow;
+        var pendingInvites = await Db.Invites
+            .AsNoTracking()
+            .Where(i => i.AcceptedAt == null && i.RevokedAt == null && i.ExpiresAt > now)
+            .OrderBy(i => i.ExpiresAt)
+            .ToListAsync();
+        _invites = new();
+        foreach (var inv in pendingInvites)
+        {
+            var by = await Db.Users.IgnoreQueryFilters().AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == inv.InvitedByUserId);
+            _invites.Add((inv, by));
+        }
     }
 }

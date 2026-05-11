@@ -44,6 +44,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         typeof(OrganizationFile),
         typeof(SystemSettings),
         typeof(Backup),
+        typeof(Invite),
     };
 
     private readonly IHttpContextAccessor _http;
@@ -325,6 +326,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         if (t == typeof(OrganizationFile)) return AuditEntityType.OrganizationFile;
         if (t == typeof(SystemSettings)) return AuditEntityType.SystemSettings;
         if (t == typeof(Backup)) return AuditEntityType.Backup;
+        if (t == typeof(Invite)) return AuditEntityType.Invite;
         throw new InvalidOperationException($"Entity type {t.Name} is not audited.");
     }
 

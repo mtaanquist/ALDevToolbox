@@ -117,6 +117,30 @@ public static class EmailTemplates
                 + $"<p>Your signup request for <strong>{Html(orgName)}</strong> has been declined. "
                 + "If you think this is a mistake, please reach out to the organisation's administrator directly.</p>");
 
+    public static (string Subject, string HtmlBody) Invite(
+        string invitingAdminName, string orgName, string roleLabel, string? welcomeMessage, string acceptUrl)
+    {
+        var welcomeBlock = string.IsNullOrWhiteSpace(welcomeMessage)
+            ? string.Empty
+            : $"<blockquote style=\"border-left: 3px solid #ccc; padding-left: 0.75em; margin: 1em 0; color: #444;\">{Html(welcomeMessage)}</blockquote>";
+        return ($"You're invited to {orgName} on AL Dev Toolbox",
+            $"<p>Hi,</p>"
+            + $"<p><strong>{Html(invitingAdminName)}</strong> has invited you to join "
+            + $"<strong>{Html(orgName)}</strong> on AL Dev Toolbox as a <strong>{Html(roleLabel)}</strong>.</p>"
+            + welcomeBlock
+            + $"<p>Use this link within the next 7 days to set a display name and password:</p>"
+            + $"<p><a href=\"{Html(acceptUrl)}\">{Html(acceptUrl)}</a></p>"
+            + $"<p>If you weren't expecting this invitation, you can ignore this message.</p>");
+    }
+
+    public static (string Subject, string HtmlBody) MagicLink(string displayName, string magicUrl)
+        => ("Your AL Dev Toolbox sign-in link",
+            $"<p>Hi {Html(displayName)},</p>"
+            + "<p>Use this single-use link to sign in to AL Dev Toolbox. "
+            + "It's valid for the next 15 minutes:</p>"
+            + $"<p><a href=\"{Html(magicUrl)}\">{Html(magicUrl)}</a></p>"
+            + "<p>If you didn't request this link, you can ignore this email.</p>");
+
     public static (string Subject, string HtmlBody) SiteAdminTest(string displayName)
         => ("AL Dev Toolbox SMTP test",
             $"<p>Hi {Html(displayName)},</p>"
