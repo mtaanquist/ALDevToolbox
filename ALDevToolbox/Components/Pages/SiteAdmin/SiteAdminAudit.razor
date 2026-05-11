@@ -19,7 +19,14 @@
         </div>
     </header>
 
-    <form method="get" action="/site-admin/audit" class="admin-filter-form">
+    @*
+        Filters apply on change rather than waiting for a submit button:
+        selects and date pickers fire change events synchronously, and the
+        Actor text input submits on Enter or when it loses focus. Keeping
+        the form GET-based preserves bookmarkable URLs and uses the same
+        SupplyParameterFromQuery wiring as before.
+    *@
+    <form method="get" action="/site-admin/audit" class="admin-filter-form" onchange="this.submit()">
         <label>
             Entity type
             <select name="entityType">
@@ -55,7 +62,6 @@
             To (UTC)
             <input type="datetime-local" name="to" value="@ToUtc" />
         </label>
-        <button type="submit" class="btn btn--sm">Search</button>
     </form>
 
     @if (_rows is null)

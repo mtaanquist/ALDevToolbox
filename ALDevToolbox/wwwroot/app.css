@@ -1357,17 +1357,29 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .audit-page__limit-note { margin-top: 12px; font-size: 12.5px; }
 
 /* Search and filter toolbars used by the SiteAdmin pages. The wider filter
-   form wraps onto multiple rows on narrower screens; the search form stays
-   inline because it's only an input + a Search button. */
+   form wraps onto multiple rows on narrower screens; the search form is an
+   input-group: input and button share an edge with no gap so they read as
+   a single control. */
 .admin-search-form {
     display: flex;
-    align-items: center;
-    gap: 8px;
+    align-items: stretch;
     margin: 16px 0 20px;
     max-width: 560px;
 }
 
-.admin-search-form .admin-search-input { flex: 1; }
+.admin-search-form .admin-search-input {
+    flex: 1;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right-width: 0;
+}
+
+.admin-search-form .admin-search-input:focus { border-right-width: 1px; }
+
+.admin-search-form > .btn {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
 
 .admin-filter-form {
     display: grid;
@@ -1392,10 +1404,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     text-transform: uppercase;
 }
 
-.admin-filter-form > button {
-    align-self: end;
-    justify-self: start;
-}
 
 .audit-panel { margin-top: 28px; }
 
