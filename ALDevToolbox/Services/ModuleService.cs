@@ -179,6 +179,66 @@ public class ModuleService
         _logger.LogInformation("Restored module '{Key}' (id={Id}).", existing.Key, existing.Id);
     }
 
+    /// <summary>Bulk variant of <see cref="SoftDeleteAsync"/>.</summary>
+    public Task<BulkActionResult> BulkSoftDeleteAsync(IReadOnlyList<int> ids, CancellationToken ct = default)
+        => BulkMutateAsync(ids, m =>
+        {
+            if (m.DeletedAt is not null) return false;
+            m.DeletedAt = DateTime.UtcNow;
+            m.UpdatedAt = m.DeletedAt.Value;
+            return true;
+        }, "soft-delete", ct);
+
+    /// <summary>Bulk variant of <see cref="RestoreAsync"/>.</summary>
+    public Task<BulkActionResult> BulkRestoreAsync(IReadOnlyList<int> ids, CancellationToken ct = default)
+        => BulkMutateAsync(ids, m =>
+        {
+            if (m.DeletedAt is null) return false;
+            m.DeletedAt = null;
+            m.UpdatedAt = DateTime.UtcNow;
+            return true;
+        }, "restore", ct);
+
+    private async Task<BulkActionResult> BulkMutateAsync(
+        IReadOnlyList<int> ids,
+        Func<Module, bool> mutate,
+        string actionLabel,
+        CancellationToken ct)
+    {
+        RequireOrganizationId();
+        var succeeded = new List<int>();
+        var failures = new List<BulkActionFailure>();
+        foreach (var id in ids.Distinct())
+        {
+            var row = await _db.Modules.FirstOrDefaultAsync(m => m.Id == id, ct);
+            if (row is null)
+            {
+                failures.Add(new BulkActionFailure(id, $"#{id}", "Not found in this organisation."));
+                continue;
+            }
+            try
+            {
+                if (!mutate(row))
+                {
+                    succeeded.Add(id);
+                    continue;
+                }
+                await _db.SaveChangesAsync(ct);
+                succeeded.Add(id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Bulk {Action} failed for module id={Id}.", actionLabel, id);
+                failures.Add(new BulkActionFailure(id, row.Name, ex.Message));
+                _db.Entry(row).State = EntityState.Detached;
+            }
+        }
+        _logger.LogInformation(
+            "Bulk {Action} on modules: {Ok}/{Total} succeeded.",
+            actionLabel, succeeded.Count, ids.Count);
+        return new BulkActionResult(ids.Count, succeeded, failures);
+    }
+
     /// <summary>
     /// Same incremental-update pattern used by <see cref="TemplateService"/>:
     /// keep stable primary keys for unchanged rows so the audit log only

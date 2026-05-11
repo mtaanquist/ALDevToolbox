@@ -3,7 +3,9 @@
 @rendermode InteractiveServer
 @inject TemplateService Templates
 @inject NavigationManager Nav
+@inject ILogger<AdminTemplateList> Log
 @using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
 
 <PageTitle>Templates · Admin · AL Dev Toolbox</PageTitle>
 
@@ -58,9 +60,63 @@
     }
     else
     {
+        @if (_selected.Count > 0)
+        {
+            <div class="bulk-bar" role="region" aria-label="Bulk actions">
+                <span class="bulk-bar__summary">@_selected.Count selected</span>
+                <div class="bulk-bar__actions">
+                    <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.SoftDelete)" disabled="@_busy">
+                        <Icon Name="trash-2" Width="14" Height="14" />
+                        <span>Soft-delete</span>
+                    </button>
+                    <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.Restore)" disabled="@_busy">
+                        <Icon Name="rotate-ccw" Width="14" Height="14" />
+                        <span>Restore</span>
+                    </button>
+                    <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.Deprecate)" disabled="@_busy">
+                        <Icon Name="archive" Width="14" Height="14" />
+                        <span>Deprecate</span>
+                    </button>
+                    <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.UnDeprecate)" disabled="@_busy">
+                        <Icon Name="archive-restore" Width="14" Height="14" />
+                        <span>Un-deprecate</span>
+                    </button>
+                    <button type="button" class="btn btn--sm" @onclick="ClearSelection" disabled="@_busy">
+                        <Icon Name="x" Width="14" Height="14" />
+                        <span>Clear</span>
+                    </button>
+                </div>
+                @if (_lastError is not null)
+                {
+                    <p class="bulk-bar__error" role="alert">@_lastError</p>
+                }
+                @if (_lastSuccess is not null)
+                {
+                    <p class="bulk-bar__success" role="status">@_lastSuccess</p>
+                }
+            </div>
+        }
+
+        @if (_lastFailures.Count > 0)
+        {
+            <div class="bulk-failures">
+                <h3>Some entries couldn't be processed</h3>
+                <ul>
+                    @foreach (var f in _lastFailures)
+                    {
+                        <li><strong>@f.DisplayName</strong> (id @f.Id): @f.Reason</li>
+                    }
+                </ul>
+            </div>
+        }
+
         <table class="data-table">
             <thead>
                 <tr>
+                    <th class="bulk-checkbox">
+                        <input type="checkbox" aria-label="Select all visible"
+                               checked="@AllVisibleSelected" @onchange="ToggleSelectAllVisible" />
+                    </th>
                     <th>Key</th>
                     <th>Runtime</th>
                     <th>Name</th>
@@ -74,6 +130,11 @@
                 @foreach (var t in FilteredRows)
                 {
                     <tr class="@(t.DeletedAt is not null ? "data-table__row--muted" : null)">
+                        <td class="bulk-checkbox">
+                            <input type="checkbox" aria-label="@($"Select {t.Name}")"
+                                   checked="@_selected.Contains(t.Id)"
+                                   @onchange="(e) => ToggleRow(t.Id, e)" />
+                        </td>
                         <td><code>@t.Key</code></td>
                         <td>@t.Runtime</td>
                         <td>@t.Name</td>
@@ -98,14 +159,27 @@
     }
 </div>
 
+<ConfirmDialog @ref="_confirm" />
+
 @code {
     private bool _showDeleted;
     private bool _hideDeprecated;
     private List<RuntimeTemplate>? _rows;
+    private readonly HashSet<int> _selected = new();
+    private bool _busy;
+    private string? _lastError;
+    private string? _lastSuccess;
+    private IReadOnlyList<BulkActionFailure> _lastFailures = Array.Empty<BulkActionFailure>();
+    private ConfirmDialog? _confirm;
+
+    private enum BulkAction { SoftDelete, Restore, Deprecate, UnDeprecate }
 
     private List<RuntimeTemplate> FilteredRows => _rows is null
         ? new()
         : (_hideDeprecated ? _rows.Where(t => !t.Deprecated).ToList() : _rows);
+
+    private bool AllVisibleSelected =>
+        FilteredRows.Count > 0 && FilteredRows.All(t => _selected.Contains(t.Id));
 
     protected override Task OnInitializedAsync() => ReloadAsync();
 
@@ -114,7 +188,102 @@
         _rows = null;
         StateHasChanged();
         _rows = await Templates.GetAllForAdminAsync(includeDeleted: _showDeleted);
+        // Drop selections for rows that no longer match the filter so the
+        // bulk bar count stays honest.
+        _selected.RemoveWhere(id => !_rows.Any(r => r.Id == id));
     }
+
+    private void ToggleRow(int id, ChangeEventArgs e)
+    {
+        if (e.Value is bool checkedNow && checkedNow) _selected.Add(id);
+        else _selected.Remove(id);
+    }
+
+    private void ToggleSelectAllVisible(ChangeEventArgs e)
+    {
+        var checkedNow = e.Value is bool b && b;
+        foreach (var t in FilteredRows)
+        {
+            if (checkedNow) _selected.Add(t.Id);
+            else _selected.Remove(t.Id);
+        }
+    }
+
+    private void ClearSelection()
+    {
+        _selected.Clear();
+        _lastError = null;
+        _lastSuccess = null;
+        _lastFailures = Array.Empty<BulkActionFailure>();
+    }
+
+    private async Task RequestBulkAsync(BulkAction action)
+    {
+        if (_selected.Count == 0 || _busy || _rows is null) return;
+        var ids = _selected.ToList();
+        var affected = _rows.Where(r => ids.Contains(r.Id)).ToList();
+        var label = action switch
+        {
+            BulkAction.SoftDelete => "soft-delete",
+            BulkAction.Restore => "restore",
+            BulkAction.Deprecate => "deprecate",
+            BulkAction.UnDeprecate => "un-deprecate",
+            _ => action.ToString(),
+        };
+        if (_confirm is not null)
+        {
+            var names = string.Join(", ", affected.Take(8).Select(t => t.Name));
+            if (affected.Count > 8) names += $", and {affected.Count - 8} more";
+            var confirmed = await _confirm.OpenAsync(
+                title: $"{Capitalize(label)} {affected.Count} template(s)?",
+                message: $"This will {label}: {names}.",
+                confirmLabel: Capitalize(label),
+                confirmButtonClass: action == BulkAction.SoftDelete ? "btn--danger" : "btn--primary");
+            if (!confirmed) return;
+        }
+
+        _busy = true;
+        _lastError = null;
+        _lastSuccess = null;
+        _lastFailures = Array.Empty<BulkActionFailure>();
+        try
+        {
+            BulkActionResult result = action switch
+            {
+                BulkAction.SoftDelete => await Templates.BulkSoftDeleteAsync(ids),
+                BulkAction.Restore => await Templates.BulkRestoreAsync(ids),
+                BulkAction.Deprecate => await Templates.BulkDeprecateAsync(ids),
+                BulkAction.UnDeprecate => await Templates.BulkUnDeprecateAsync(ids),
+                _ => throw new InvalidOperationException($"Unknown action {action}"),
+            };
+            _lastFailures = result.Failures;
+            if (result.AllSucceeded)
+            {
+                _lastSuccess = $"Bulk {label} applied to {result.SucceededCount} template(s).";
+            }
+            else if (result.SucceededCount == 0)
+            {
+                _lastError = $"Bulk {label} failed for all {result.FailedCount} selected row(s). See details below.";
+            }
+            else
+            {
+                _lastSuccess = $"Bulk {label} applied to {result.SucceededCount} of {result.TotalRequested} template(s).";
+            }
+            _selected.Clear();
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Bulk {Action} on templates raised an unexpected error.", label);
+            _lastError = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string Capitalize(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpperInvariant(s[0]) + s[1..];
 
     private static string StatusFor(RuntimeTemplate t)
     {

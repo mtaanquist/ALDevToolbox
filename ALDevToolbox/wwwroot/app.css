@@ -1018,6 +1018,118 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .audit-action--deleted { color: #cf222e; border-color: rgba(207, 34, 46, 0.4); }
 
+.audit-diff { margin-top: 16px; }
+
+.audit-diff__header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.audit-diff__title { margin: 0; font-size: 16px; font-weight: 500; }
+
+.audit-diff__icon { color: var(--color-text-secondary); }
+
+.audit-diff__labels { margin: 0; display: inline-flex; gap: 8px; font-size: 12.5px; }
+
+.audit-diff__meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 4px 24px;
+    margin: 12px 0 18px;
+}
+
+.audit-diff__meta div { display: flex; gap: 8px; align-items: baseline; }
+
+.audit-diff__meta dt { color: var(--color-text-secondary); font-size: 12.5px; margin: 0; }
+
+.audit-diff__meta dd { margin: 0; font-size: 13px; }
+
+.audit-diff__table { table-layout: fixed; width: 100%; }
+
+.audit-diff__cell {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    word-break: break-word;
+    vertical-align: top;
+}
+
+.audit-diff__kind {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 500;
+    text-transform: lowercase;
+    border: 1px solid var(--color-border);
+}
+
+.audit-diff__kind--added { color: #1a7f37; border-color: rgba(26, 127, 55, 0.4); }
+.audit-diff__kind--removed { color: #cf222e; border-color: rgba(207, 34, 46, 0.4); }
+.audit-diff__kind--changed { color: #9a6700; border-color: rgba(154, 103, 0, 0.4); }
+
+.audit-diff__redacted {
+    color: var(--color-text-secondary);
+    font-style: italic;
+}
+
+.audit-diff__row--added .audit-diff__cell--after { background: rgba(26, 127, 55, 0.08); }
+.audit-diff__row--removed .audit-diff__cell--before { background: rgba(207, 34, 46, 0.08); }
+.audit-diff__row--changed .audit-diff__cell--before { background: rgba(207, 34, 46, 0.05); }
+.audit-diff__row--changed .audit-diff__cell--after { background: rgba(26, 127, 55, 0.05); }
+
+/* ---------- Bulk action toolbar ---------- */
+
+.bulk-bar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.bulk-bar__summary { font-size: 13px; }
+
+.bulk-bar__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+
+.bulk-bar__error {
+    width: 100%;
+    margin: 0;
+    color: #cf222e;
+    font-size: 12.5px;
+}
+
+.bulk-bar__success {
+    width: 100%;
+    margin: 0;
+    color: #1a7f37;
+    font-size: 12.5px;
+}
+
+.bulk-failures {
+    margin-top: 10px;
+    border: 1px solid rgba(207, 34, 46, 0.4);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    background: rgba(207, 34, 46, 0.05);
+}
+
+.bulk-failures h3 { margin: 0 0 6px; font-size: 13px; }
+
+.bulk-failures ul { margin: 0; padding-left: 18px; font-size: 12.5px; }
+
+.bulk-checkbox { width: 32px; text-align: center; }
+
 /* ---------- Admin pages (templates list + edit) ---------- */
 
 .admin-page { max-width: 1100px; }

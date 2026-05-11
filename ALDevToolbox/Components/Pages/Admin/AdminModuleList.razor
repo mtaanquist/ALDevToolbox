@@ -2,7 +2,9 @@
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @inject ModuleService Modules
+@inject ILogger<AdminModuleList> Log
 @using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
 
 <PageTitle>Modules · Admin · AL Dev Toolbox</PageTitle>
 
@@ -58,9 +60,55 @@
     }
     else
     {
+        @if (_selected.Count > 0)
+        {
+            <div class="bulk-bar" role="region" aria-label="Bulk actions">
+                <span class="bulk-bar__summary">@_selected.Count selected</span>
+                <div class="bulk-bar__actions">
+                    <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.SoftDelete)" disabled="@_busy">
+                        <Icon Name="trash-2" Width="14" Height="14" />
+                        <span>Soft-delete</span>
+                    </button>
+                    <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.Restore)" disabled="@_busy">
+                        <Icon Name="rotate-ccw" Width="14" Height="14" />
+                        <span>Restore</span>
+                    </button>
+                    <button type="button" class="btn btn--sm" @onclick="ClearSelection" disabled="@_busy">
+                        <Icon Name="x" Width="14" Height="14" />
+                        <span>Clear</span>
+                    </button>
+                </div>
+                @if (_lastError is not null)
+                {
+                    <p class="bulk-bar__error" role="alert">@_lastError</p>
+                }
+                @if (_lastSuccess is not null)
+                {
+                    <p class="bulk-bar__success" role="status">@_lastSuccess</p>
+                }
+            </div>
+        }
+
+        @if (_lastFailures.Count > 0)
+        {
+            <div class="bulk-failures">
+                <h3>Some entries couldn't be processed</h3>
+                <ul>
+                    @foreach (var f in _lastFailures)
+                    {
+                        <li><strong>@f.DisplayName</strong> (id @f.Id): @f.Reason</li>
+                    }
+                </ul>
+            </div>
+        }
+
         <table class="data-table">
             <thead>
                 <tr>
+                    <th class="bulk-checkbox">
+                        <input type="checkbox" aria-label="Select all visible"
+                               checked="@AllVisibleSelected" @onchange="ToggleSelectAllVisible" />
+                    </th>
                     <th>Key</th>
                     <th>Name</th>
                     <th>Dependencies</th>
@@ -74,6 +122,11 @@
                 @foreach (var m in FilteredRows)
                 {
                     <tr class="@(m.DeletedAt is not null ? "data-table__row--muted" : null)">
+                        <td class="bulk-checkbox">
+                            <input type="checkbox" aria-label="@($"Select {m.Name}")"
+                                   checked="@_selected.Contains(m.Id)"
+                                   @onchange="(e) => ToggleRow(m.Id, e)" />
+                        </td>
                         <td><code>@m.Key</code></td>
                         <td>@m.Name</td>
                         <td>@m.Dependencies.Count</td>
@@ -93,14 +146,27 @@
     }
 </div>
 
+<ConfirmDialog @ref="_confirm" />
+
 @code {
     private bool _showDeleted;
     private bool _hideDeprecated;
     private List<Module>? _rows;
+    private readonly HashSet<int> _selected = new();
+    private bool _busy;
+    private string? _lastError;
+    private string? _lastSuccess;
+    private IReadOnlyList<BulkActionFailure> _lastFailures = Array.Empty<BulkActionFailure>();
+    private ConfirmDialog? _confirm;
+
+    private enum BulkAction { SoftDelete, Restore }
 
     private List<Module> FilteredRows => _rows is null
         ? new()
         : (_hideDeprecated ? _rows.Where(m => !m.Deprecated).ToList() : _rows);
+
+    private bool AllVisibleSelected =>
+        FilteredRows.Count > 0 && FilteredRows.All(m => _selected.Contains(m.Id));
 
     protected override Task OnInitializedAsync() => ReloadAsync();
 
@@ -109,7 +175,96 @@
         _rows = null;
         StateHasChanged();
         _rows = await Modules.GetAllForAdminAsync(includeDeleted: _showDeleted);
+        _selected.RemoveWhere(id => !_rows.Any(r => r.Id == id));
     }
+
+    private void ToggleRow(int id, ChangeEventArgs e)
+    {
+        if (e.Value is bool checkedNow && checkedNow) _selected.Add(id);
+        else _selected.Remove(id);
+    }
+
+    private void ToggleSelectAllVisible(ChangeEventArgs e)
+    {
+        var checkedNow = e.Value is bool b && b;
+        foreach (var m in FilteredRows)
+        {
+            if (checkedNow) _selected.Add(m.Id);
+            else _selected.Remove(m.Id);
+        }
+    }
+
+    private void ClearSelection()
+    {
+        _selected.Clear();
+        _lastError = null;
+        _lastSuccess = null;
+        _lastFailures = Array.Empty<BulkActionFailure>();
+    }
+
+    private async Task RequestBulkAsync(BulkAction action)
+    {
+        if (_selected.Count == 0 || _busy || _rows is null) return;
+        var ids = _selected.ToList();
+        var affected = _rows.Where(r => ids.Contains(r.Id)).ToList();
+        var label = action switch
+        {
+            BulkAction.SoftDelete => "soft-delete",
+            BulkAction.Restore => "restore",
+            _ => action.ToString(),
+        };
+        if (_confirm is not null)
+        {
+            var names = string.Join(", ", affected.Take(8).Select(m => m.Name));
+            if (affected.Count > 8) names += $", and {affected.Count - 8} more";
+            var confirmed = await _confirm.OpenAsync(
+                title: $"{Capitalize(label)} {affected.Count} module(s)?",
+                message: $"This will {label}: {names}.",
+                confirmLabel: Capitalize(label),
+                confirmButtonClass: action == BulkAction.SoftDelete ? "btn--danger" : "btn--primary");
+            if (!confirmed) return;
+        }
+
+        _busy = true;
+        _lastError = null;
+        _lastSuccess = null;
+        _lastFailures = Array.Empty<BulkActionFailure>();
+        try
+        {
+            BulkActionResult result = action switch
+            {
+                BulkAction.SoftDelete => await Modules.BulkSoftDeleteAsync(ids),
+                BulkAction.Restore => await Modules.BulkRestoreAsync(ids),
+                _ => throw new InvalidOperationException($"Unknown action {action}"),
+            };
+            _lastFailures = result.Failures;
+            if (result.AllSucceeded)
+            {
+                _lastSuccess = $"Bulk {label} applied to {result.SucceededCount} module(s).";
+            }
+            else if (result.SucceededCount == 0)
+            {
+                _lastError = $"Bulk {label} failed for all {result.FailedCount} selected row(s). See details below.";
+            }
+            else
+            {
+                _lastSuccess = $"Bulk {label} applied to {result.SucceededCount} of {result.TotalRequested} module(s).";
+            }
+            _selected.Clear();
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Bulk {Action} on modules raised an unexpected error.", label);
+            _lastError = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string Capitalize(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpperInvariant(s[0]) + s[1..];
 
     private static string StatusFor(Module m)
     {

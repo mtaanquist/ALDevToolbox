@@ -303,6 +303,85 @@ public sealed class AccountService
         await _db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Bulk variant of <see cref="DisableUserAsync"/>. Each user is processed
+    /// in turn — a last-admin guard on one row surfaces as a per-row failure
+    /// instead of halting the whole batch. See <c>.design/milestones.md</c>
+    /// Milestone 20.
+    /// </summary>
+    public async Task<BulkActionResult> BulkDisableUsersAsync(IReadOnlyList<int> userIds, int actingOrgId, CancellationToken ct = default)
+    {
+        var succeeded = new List<int>();
+        var failures = new List<BulkActionFailure>();
+        foreach (var id in userIds.Distinct())
+        {
+            try
+            {
+                await DisableUserAsync(id, actingOrgId, ct);
+                succeeded.Add(id);
+            }
+            catch (PlanValidationException ex)
+            {
+                failures.Add(new BulkActionFailure(id, await LookupDisplayNameAsync(id, ct), ex.Errors.First().Value));
+            }
+        }
+        return new BulkActionResult(userIds.Count, succeeded, failures);
+    }
+
+    /// <summary>Bulk variant of <see cref="EnableUserAsync"/>.</summary>
+    public async Task<BulkActionResult> BulkEnableUsersAsync(IReadOnlyList<int> userIds, int actingOrgId, CancellationToken ct = default)
+    {
+        var succeeded = new List<int>();
+        var failures = new List<BulkActionFailure>();
+        foreach (var id in userIds.Distinct())
+        {
+            try
+            {
+                await EnableUserAsync(id, actingOrgId, ct);
+                succeeded.Add(id);
+            }
+            catch (PlanValidationException ex)
+            {
+                failures.Add(new BulkActionFailure(id, await LookupDisplayNameAsync(id, ct), ex.Errors.First().Value));
+            }
+        }
+        return new BulkActionResult(userIds.Count, succeeded, failures);
+    }
+
+    /// <summary>
+    /// Bulk variant of <see cref="ChangeRoleAsync"/>. Each role flip carries
+    /// the same last-admin guard — failures bubble up per user so an admin can
+    /// see exactly which row blocked the operation. See
+    /// <c>.design/milestones.md</c> Milestone 20.
+    /// </summary>
+    public async Task<BulkActionResult> BulkChangeRoleAsync(IReadOnlyList<int> userIds, UserRole newRole, int actingOrgId, CancellationToken ct = default)
+    {
+        var succeeded = new List<int>();
+        var failures = new List<BulkActionFailure>();
+        foreach (var id in userIds.Distinct())
+        {
+            try
+            {
+                await ChangeRoleAsync(id, newRole, actingOrgId, ct);
+                succeeded.Add(id);
+            }
+            catch (PlanValidationException ex)
+            {
+                failures.Add(new BulkActionFailure(id, await LookupDisplayNameAsync(id, ct), ex.Errors.First().Value));
+            }
+        }
+        return new BulkActionResult(userIds.Count, succeeded, failures);
+    }
+
+    private async Task<string> LookupDisplayNameAsync(int userId, CancellationToken ct)
+    {
+        var name = await _db.Users.IgnoreQueryFilters().AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => u.DisplayName)
+            .FirstOrDefaultAsync(ct);
+        return name ?? $"#{userId}";
+    }
+
     /// <summary>Self-service password change. Verifies the current password before applying the new one.</summary>
     public async Task ChangePasswordAsync(int userId, string currentPassword, string newPassword, CancellationToken ct = default)
     {
