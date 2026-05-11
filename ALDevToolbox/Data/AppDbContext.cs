@@ -68,6 +68,10 @@ public class AppDbContext : DbContext
     public DbSet<OrganizationFile> OrganizationFiles => Set<OrganizationFile>();
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
     public DbSet<Backup> Backups => Set<Backup>();
+    public DbSet<Snippet> Snippets => Set<Snippet>();
+    public DbSet<SnippetFile> SnippetFiles => Set<SnippetFile>();
+    public DbSet<SnippetSuggestion> SnippetSuggestions => Set<SnippetSuggestion>();
+    public DbSet<SnippetSuggestionFile> SnippetSuggestionFiles => Set<SnippetSuggestionFile>();
     public DbSet<AuditLogEntry> AuditLog => Set<AuditLogEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -591,6 +595,99 @@ public class AppDbContext : DbContext
             // AuditLog scoping is service-layer (AuditService filters by org
             // explicitly) — we don't apply a query filter here because seed
             // and bootstrap inserts can have a null OrganizationId.
+        });
+
+        modelBuilder.Entity<Snippet>(entity =>
+        {
+            entity.ToTable("snippets");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
+            entity.Property(e => e.Title).HasColumnName("title").IsRequired();
+            entity.Property(e => e.Description).HasColumnName("description").IsRequired();
+            entity.Property(e => e.Keywords).HasColumnName("keywords").IsRequired();
+            entity.Property(e => e.Deprecated).HasColumnName("deprecated").IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
+            entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
+            entity.HasIndex(e => new { e.OrganizationId, e.Title }).IsUnique();
+            entity.HasOne(e => e.Organization)
+                .WithMany()
+                .HasForeignKey(e => e.OrganizationId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasMany(e => e.Files)
+                .WithOne(f => f.Snippet!)
+                .HasForeignKey(f => f.SnippetId)
+                .OnDelete(DeleteBehavior.Cascade);
+            ScopeToOrganization<Snippet>(entity);
+        });
+
+        modelBuilder.Entity<SnippetFile>(entity =>
+        {
+            entity.ToTable("snippet_files");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
+            entity.Property(e => e.SnippetId).HasColumnName("snippet_id").IsRequired();
+            entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
+            entity.Property(e => e.FileName).HasColumnName("file_name").IsRequired();
+            entity.Property(e => e.Content).HasColumnName("content").IsRequired();
+            entity.HasIndex(e => new { e.OrganizationId, e.SnippetId, e.Ordering });
+            ScopeToOrganization<SnippetFile>(entity);
+        });
+
+        modelBuilder.Entity<SnippetSuggestion>(entity =>
+        {
+            entity.ToTable("snippet_suggestions");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
+            entity.Property(e => e.SuggestedByUserId).HasColumnName("suggested_by_user_id");
+            entity.Property(e => e.Title).HasColumnName("title").IsRequired();
+            entity.Property(e => e.Description).HasColumnName("description").IsRequired();
+            entity.Property(e => e.Keywords).HasColumnName("keywords").IsRequired();
+            entity.Property(e => e.Decision).HasColumnName("decision").HasConversion<string>().IsRequired();
+            entity.Property(e => e.RequestedAt).HasColumnName("requested_at").IsRequired();
+            entity.Property(e => e.DecidedAt).HasColumnName("decided_at");
+            entity.Property(e => e.DecidedByUserId).HasColumnName("decided_by_user_id");
+            entity.Property(e => e.DecisionNote).HasColumnName("decision_note");
+            entity.Property(e => e.ApprovedSnippetId).HasColumnName("approved_snippet_id");
+            entity.HasIndex(e => new { e.OrganizationId, e.Decision });
+            entity.HasOne(e => e.Organization)
+                .WithMany()
+                .HasForeignKey(e => e.OrganizationId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.SuggestedByUser)
+                .WithMany()
+                .HasForeignKey(e => e.SuggestedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.DecidedByUser)
+                .WithMany()
+                .HasForeignKey(e => e.DecidedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.ApprovedSnippet)
+                .WithMany()
+                .HasForeignKey(e => e.ApprovedSnippetId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasMany(e => e.Files)
+                .WithOne(f => f.Suggestion!)
+                .HasForeignKey(f => f.SnippetSuggestionId)
+                .OnDelete(DeleteBehavior.Cascade);
+            ScopeToOrganization<SnippetSuggestion>(entity);
+        });
+
+        modelBuilder.Entity<SnippetSuggestionFile>(entity =>
+        {
+            entity.ToTable("snippet_suggestion_files");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
+            entity.Property(e => e.SnippetSuggestionId).HasColumnName("snippet_suggestion_id").IsRequired();
+            entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
+            entity.Property(e => e.FileName).HasColumnName("file_name").IsRequired();
+            entity.Property(e => e.Content).HasColumnName("content").IsRequired();
+            entity.HasIndex(e => new { e.OrganizationId, e.SnippetSuggestionId, e.Ordering });
+            ScopeToOrganization<SnippetSuggestionFile>(entity);
         });
 
         // M16: pin every DateTime column to `timestamp with time zone`. Npgsql

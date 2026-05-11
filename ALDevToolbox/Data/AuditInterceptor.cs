@@ -48,6 +48,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         typeof(SystemSettings),
         typeof(Backup),
         typeof(Invite),
+        typeof(Snippet),
+        typeof(SnippetFile),
+        typeof(SnippetSuggestion),
+        typeof(SnippetSuggestionFile),
     };
 
     private readonly IHttpContextAccessor _http;
@@ -257,6 +261,28 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                 .Select(OriginalValuesToDict)
                 .ToList();
         }
+        else if (entry.Entity is Snippet)
+        {
+            var snippetId = (int)entry.OriginalValues["Id"]!;
+            snapshot["files"] = allEntries
+                .Where(e => e.Entity is SnippetFile
+                            && e.State != EntityState.Added
+                            && (int)e.OriginalValues["SnippetId"]! == snippetId)
+                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
+                .Select(OriginalValuesToDict)
+                .ToList();
+        }
+        else if (entry.Entity is SnippetSuggestion)
+        {
+            var suggestionId = (int)entry.OriginalValues["Id"]!;
+            snapshot["files"] = allEntries
+                .Where(e => e.Entity is SnippetSuggestionFile
+                            && e.State != EntityState.Added
+                            && (int)e.OriginalValues["SnippetSuggestionId"]! == suggestionId)
+                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
+                .Select(OriginalValuesToDict)
+                .ToList();
+        }
 
         return JsonSerializer.Serialize(snapshot, JsonOptions);
     }
@@ -273,6 +299,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     {
         var dict = new Dictionary<string, object?>();
         var hashContent = entry.Entity is TemplateFile or TemplateModuleFile or OrganizationFile;
+        var hashSnippetContent = entry.Entity is SnippetFile or SnippetSuggestionFile;
         var hashAssetBytes = entry.Entity is OrganizationAsset;
         var redactSmtpPassword = entry.Entity is SystemSettings;
         foreach (var property in entry.OriginalValues.Properties)
@@ -281,6 +308,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             if (hashContent && property.Name == nameof(TemplateFile.Content) && value is string s)
             {
                 dict["ContentSha256"] = Sha256(s);
+            }
+            else if (hashSnippetContent && property.Name == nameof(SnippetFile.Content) && value is string sc)
+            {
+                dict["ContentSha256"] = Sha256(sc);
             }
             else if (hashAssetBytes && property.Name == nameof(OrganizationAsset.Content) && value is byte[] bytes)
             {
@@ -330,6 +361,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         if (t == typeof(SystemSettings)) return AuditEntityType.SystemSettings;
         if (t == typeof(Backup)) return AuditEntityType.Backup;
         if (t == typeof(Invite)) return AuditEntityType.Invite;
+        if (t == typeof(Snippet)) return AuditEntityType.Snippet;
+        if (t == typeof(SnippetFile)) return AuditEntityType.SnippetFile;
+        if (t == typeof(SnippetSuggestion)) return AuditEntityType.SnippetSuggestion;
+        if (t == typeof(SnippetSuggestionFile)) return AuditEntityType.SnippetSuggestionFile;
         throw new InvalidOperationException($"Entity type {t.Name} is not audited.");
     }
 

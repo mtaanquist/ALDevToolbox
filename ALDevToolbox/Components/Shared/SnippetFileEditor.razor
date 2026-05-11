@@ -1,0 +1,96 @@
+@using Lucide.Blazor.Components
+
+@*
+    Reusable file-list editor for the snippet admin form and the suggest-a-snippet
+    page. Two-way binds the file list passed in; both surfaces own a list of
+    EditableFile rows so they can pass it straight to the service input record
+    on submit.
+
+    Reorder uses up/down buttons (same reason as the template editor: HTML5
+    drag-and-drop would need .razor.js plumbing for v1).
+*@
+
+<div class="snippet-files">
+    @if (Files.Count == 0)
+    {
+        <p class="muted">No files yet. Click <strong>Add file</strong> to start.</p>
+    }
+
+    @for (var idx = 0; idx < Files.Count; idx++)
+    {
+        var i = idx;
+        var file = Files[i];
+        <div class="snippet-file" role="group" aria-label="@($"File {i + 1}")">
+            <div class="snippet-file__row">
+                <label class="snippet-file__name">
+                    <span class="section-label">File name</span>
+                    <input type="text" value="@file.FileName"
+                           @oninput="e => file.FileName = e.Value?.ToString() ?? string.Empty"
+                           maxlength="260"
+                           placeholder="e.g. DocAttachListFactboxSub.Codeunit.al" />
+                    <FieldError Field="@($"Files[{i}].FileName")" Errors="Errors" />
+                </label>
+                <div class="snippet-file__actions">
+                    <button type="button" class="btn btn--sm" disabled="@(i == 0)" @onclick="() => Move(i, -1)" title="Move up">
+                        <Icon Name="arrow-up" Width="14" Height="14" />
+                    </button>
+                    <button type="button" class="btn btn--sm" disabled="@(i == Files.Count - 1)" @onclick="() => Move(i, 1)" title="Move down">
+                        <Icon Name="arrow-down" Width="14" Height="14" />
+                    </button>
+                    <button type="button" class="btn btn--sm btn--danger" @onclick="() => Remove(i)" title="Remove file">
+                        <Icon Name="trash-2" Width="14" Height="14" />
+                    </button>
+                </div>
+            </div>
+            <label class="snippet-file__content">
+                <span class="section-label">Content</span>
+                <textarea rows="12" spellcheck="false" wrap="off"
+                          @oninput="e => file.Content = e.Value?.ToString() ?? string.Empty">@file.Content</textarea>
+                <FieldError Field="@($"Files[{i}].Content")" Errors="Errors" />
+            </label>
+        </div>
+    }
+
+    <FieldError Field="Files" Errors="Errors" />
+
+    <button type="button" class="btn" @onclick="AddFile">
+        <Icon Name="file-plus" Width="14" Height="14" />
+        <span>Add file</span>
+    </button>
+</div>
+
+@code {
+    /// <summary>Editable file row used by both authoring surfaces.</summary>
+    public class EditableFile
+    {
+        public string FileName { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
+    }
+
+    [Parameter, EditorRequired] public List<EditableFile> Files { get; set; } = new();
+    [Parameter] public IReadOnlyDictionary<string, string>? Errors { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private async Task AddFile()
+    {
+        Files.Add(new EditableFile());
+        await NotifyChanged();
+    }
+
+    private async Task Remove(int index)
+    {
+        if (index < 0 || index >= Files.Count) return;
+        Files.RemoveAt(index);
+        await NotifyChanged();
+    }
+
+    private async Task Move(int index, int delta)
+    {
+        var target = index + delta;
+        if (target < 0 || target >= Files.Count) return;
+        (Files[index], Files[target]) = (Files[target], Files[index]);
+        await NotifyChanged();
+    }
+
+    private Task NotifyChanged() => OnChanged.HasDelegate ? OnChanged.InvokeAsync() : Task.CompletedTask;
+}

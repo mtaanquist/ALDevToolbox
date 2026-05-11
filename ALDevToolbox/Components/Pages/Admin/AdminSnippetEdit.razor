@@ -1,0 +1,154 @@
+@page "/admin/snippets/new"
+@page "/admin/snippets/{Id:int}"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject SnippetService Snippets
+@inject NavigationManager Nav
+@inject ILogger<AdminSnippetEdit> Log
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
+
+<PageTitle>@(IsEdit ? "Edit snippet" : "New snippet") · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <a class="btn btn--sm" href="/admin/snippets">
+        <Icon Name="arrow-left" Width="14" Height="14" />
+        <span>Back to list</span>
+    </a>
+
+    <h1>@(IsEdit ? "Edit snippet" : "New snippet")</h1>
+
+    @if (IsEdit && _loadFailed)
+    {
+        <p class="form-error" role="alert">Snippet @Id was not found.</p>
+    }
+    else
+    {
+        <section class="form-section">
+            <label class="section-label" for="snippet-title">Title</label>
+            <input id="snippet-title" type="text" maxlength="200"
+                   @bind="_title" @bind:event="oninput"
+                   placeholder="e.g. Doc. Attachment List Factbox for an unsupported table" />
+            <FieldError Field="Title" Errors="_errors" />
+        </section>
+
+        <section class="form-section">
+            <label class="section-label" for="snippet-description">Description</label>
+            <textarea id="snippet-description" rows="4" maxlength="2000"
+                      @bind="_description" @bind:event="oninput"
+                      placeholder="What does this snippet do, and when would you use it?"></textarea>
+            <FieldError Field="Description" Errors="_errors" />
+        </section>
+
+        <section class="form-section">
+            <label class="section-label" for="snippet-keywords">Keywords</label>
+            <input id="snippet-keywords" type="text" maxlength="500"
+                   @bind="_keywords" @bind:event="oninput"
+                   placeholder="space-separated, e.g. factbox attachment subscriber" />
+            <FieldError Field="Keywords" Errors="_errors" />
+        </section>
+
+        <section class="form-section">
+            <label class="check-row">
+                <input type="checkbox" @bind="_deprecated" />
+                <span>Deprecated (hidden from the user-facing browser)</span>
+            </label>
+        </section>
+
+        <section class="form-section">
+            <h2>Files</h2>
+            <SnippetFileEditor Files="_files" Errors="_errors" />
+        </section>
+
+        @if (_lastError is not null)
+        {
+            <p class="form-error" role="alert">@_lastError</p>
+        }
+
+        <div class="form-actions">
+            <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_busy">
+                <Icon Name="save" Width="16" Height="16" />
+                <span>@(IsEdit ? "Save changes" : "Create snippet")</span>
+            </button>
+            <a class="btn" href="/admin/snippets">Cancel</a>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private bool IsEdit => Id is not null;
+    private string _title = string.Empty;
+    private string _description = string.Empty;
+    private string _keywords = string.Empty;
+    private bool _deprecated;
+    private List<SnippetFileEditor.EditableFile> _files = new() { new SnippetFileEditor.EditableFile() };
+    private IReadOnlyDictionary<string, string>? _errors;
+    private string? _lastError;
+    private bool _busy;
+    private bool _loadFailed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id is null) return;
+        var existing = await Snippets.GetAsync(Id.Value);
+        if (existing is null)
+        {
+            _loadFailed = true;
+            return;
+        }
+        _title = existing.Title;
+        _description = existing.Description;
+        _keywords = existing.Keywords;
+        _deprecated = existing.Deprecated;
+        _files = existing.Files
+            .OrderBy(f => f.Ordering)
+            .Select(f => new SnippetFileEditor.EditableFile { FileName = f.FileName, Content = f.Content })
+            .ToList();
+        if (_files.Count == 0)
+        {
+            _files.Add(new SnippetFileEditor.EditableFile());
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _errors = null;
+        _lastError = null;
+        try
+        {
+            var input = new SnippetInput(
+                _title,
+                _description,
+                _keywords,
+                _deprecated,
+                _files.Select(f => new SnippetFileInput(f.FileName, f.Content)).ToList());
+            if (Id is null)
+            {
+                var created = await Snippets.CreateAsync(input);
+                Nav.NavigateTo($"/admin/snippets/{created.Id}");
+            }
+            else
+            {
+                await Snippets.UpdateAsync(Id.Value, input);
+                Nav.NavigateTo("/admin/snippets");
+            }
+        }
+        catch (PlanValidationException ex)
+        {
+            _errors = ex.Errors;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save snippet.");
+            _lastError = "An unexpected error occurred. The snippet was not saved.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

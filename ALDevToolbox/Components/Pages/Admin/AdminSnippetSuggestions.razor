@@ -1,0 +1,192 @@
+@page "/admin/snippets/suggestions"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject SnippetSuggestionService Suggestions
+@inject NavigationManager Nav
+@inject ILogger<AdminSnippetSuggestions> Log
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
+
+<PageTitle>Snippet suggestions · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <a class="btn btn--sm" href="/admin/snippets">
+        <Icon Name="arrow-left" Width="14" Height="14" />
+        <span>Back to snippets</span>
+    </a>
+
+    <h1>Snippet suggestions</h1>
+    <p class="muted">
+        Drafts submitted by users. Approving promotes the suggestion into the
+        published snippet library; rejecting closes it with an optional note.
+    </p>
+
+    @if (!string.IsNullOrEmpty(_lastError))
+    {
+        <p class="form-error" role="alert">@_lastError</p>
+    }
+    @if (!string.IsNullOrEmpty(_lastSuccess))
+    {
+        <p class="form-success" role="status">@_lastSuccess</p>
+    }
+
+    @if (_pending is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_pending.Count == 0)
+    {
+        <p class="muted">No pending suggestions.</p>
+    }
+    else
+    {
+        <ul class="snippet-suggestion-list">
+            @foreach (var s in _pending)
+            {
+                <li class="snippet-suggestion">
+                    <header class="snippet-suggestion__header">
+                        <h2>@s.Title</h2>
+                        <span class="muted">
+                            from @(s.SuggestedByUser?.DisplayName ?? "unknown user")
+                            on @s.RequestedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")
+                        </span>
+                    </header>
+                    <p>@s.Description</p>
+                    @if (!string.IsNullOrWhiteSpace(s.Keywords))
+                    {
+                        <div class="snippet-card__keywords">
+                            @foreach (var kw in s.Keywords.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                            {
+                                <span class="snippet-card__keyword">@kw</span>
+                            }
+                        </div>
+                    }
+
+                    <details>
+                        <summary>@s.Files.Count file(s)</summary>
+                        <ol class="snippet-detail__files">
+                            @foreach (var f in s.Files.OrderBy(f => f.Ordering))
+                            {
+                                <li class="snippet-file-view">
+                                    <div class="snippet-file-view__header">
+                                        <code>@f.FileName</code>
+                                    </div>
+                                    <pre class="snippet-file-view__content"><code>@f.Content</code></pre>
+                                </li>
+                            }
+                        </ol>
+                    </details>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn--primary" @onclick="() => ApproveAsync(s)" disabled="@_busy">
+                            <Icon Name="check" Width="14" Height="14" />
+                            <span>Approve</span>
+                        </button>
+                        @if (_rejecting == s.Id)
+                        {
+                            <input type="text" class="snippet-suggestion__note"
+                                   placeholder="Reason (optional)"
+                                   @bind="_rejectNote" @bind:event="oninput"
+                                   maxlength="500" />
+                            <button type="button" class="btn btn--danger" @onclick="() => RejectAsync(s)" disabled="@_busy">
+                                <Icon Name="x" Width="14" Height="14" />
+                                <span>Confirm reject</span>
+                            </button>
+                            <button type="button" class="btn" @onclick="CancelReject" disabled="@_busy">Cancel</button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn" @onclick="() => StartReject(s)" disabled="@_busy">
+                                <Icon Name="x" Width="14" Height="14" />
+                                <span>Reject</span>
+                            </button>
+                        }
+                    </div>
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    private List<SnippetSuggestion>? _pending;
+    private bool _busy;
+    private string? _lastError;
+    private string? _lastSuccess;
+    private int? _rejecting;
+    private string _rejectNote = string.Empty;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _pending = await Suggestions.GetPendingAsync();
+    }
+
+    private async Task ApproveAsync(SnippetSuggestion s)
+    {
+        if (_busy) return;
+        _busy = true;
+        _lastError = null;
+        _lastSuccess = null;
+        try
+        {
+            var snippet = await Suggestions.ApproveAsync(s.Id);
+            Nav.NavigateTo($"/admin/snippets/{snippet.Id}");
+        }
+        catch (PlanValidationException ex)
+        {
+            _lastError = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to approve snippet suggestion {Id}.", s.Id);
+            _lastError = "An unexpected error occurred. The suggestion was not approved.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void StartReject(SnippetSuggestion s)
+    {
+        _rejecting = s.Id;
+        _rejectNote = string.Empty;
+    }
+
+    private void CancelReject()
+    {
+        _rejecting = null;
+        _rejectNote = string.Empty;
+    }
+
+    private async Task RejectAsync(SnippetSuggestion s)
+    {
+        if (_busy) return;
+        _busy = true;
+        _lastError = null;
+        _lastSuccess = null;
+        try
+        {
+            await Suggestions.RejectAsync(s.Id, _rejectNote);
+            _lastSuccess = $"Rejected '{s.Title}'.";
+            _rejecting = null;
+            _rejectNote = string.Empty;
+            await ReloadAsync();
+        }
+        catch (PlanValidationException ex)
+        {
+            _lastError = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to reject snippet suggestion {Id}.", s.Id);
+            _lastError = "An unexpected error occurred. The suggestion was not rejected.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
