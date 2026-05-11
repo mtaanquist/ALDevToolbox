@@ -25,17 +25,15 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app ./
-COPY ALDevToolbox/Templates.seed ./Templates.seed
 
 EXPOSE 8080
-ENV ASPNETCORE_URLS=http://+:8080 \
-    SEED_PATH=/app/Templates.seed
+ENV ASPNETCORE_URLS=http://+:8080
 
 # /healthz exercises both the Postgres connection and the Data Protection key
-# ring; /readyz only flips green once startup work (migrations + seed) has
-# finished. The container HEALTHCHECK is liveness-oriented, so it polls
-# /healthz — a node that loses Postgres or its DP keys should drop out of
-# rotation regardless of startup state.
+# ring; /readyz only flips green once startup work (migrations + bootstrap
+# admin) has finished. The container HEALTHCHECK is liveness-oriented, so it
+# polls /healthz — a node that loses Postgres or its DP keys should drop out
+# of rotation regardless of startup state.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl --fail --silent --show-error http://localhost:8080/healthz || exit 1
 
