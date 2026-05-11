@@ -132,7 +132,10 @@ jobs:
           --health-retries 5
 
     env:
-      ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=migration_check"
+      # Match the design-time factory's hardcoded database name so the
+      # base-ref run (which pre-dates the env-var fallback in the factory)
+      # targets the same physical database the current-branch step does.
+      ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=aldevtoolbox_designtime"
 
     steps:
       - uses: actions/checkout@v4
@@ -155,10 +158,10 @@ jobs:
           dotnet tool install --global dotnet-ef --version 10.*
           echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
 
-      - name: Create migration_check database
+      - name: Create migration database
         env:
           PGPASSWORD: postgres
-        run: psql -h localhost -U postgres -d postgres -c "CREATE DATABASE migration_check;"
+        run: psql -h localhost -U postgres -d postgres -c "CREATE DATABASE aldevtoolbox_designtime;"
 
       - name: Apply base-ref migrations
         run: |
@@ -177,7 +180,7 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
-          psql -h localhost -U postgres -d migration_check -c \
+          psql -h localhost -U postgres -d aldevtoolbox_designtime -c \
             "INSERT INTO organizations (name, slug, is_pending, is_seeded, created_at) VALUES ('Forward Compat Sentinel', 'forward-compat-sentinel', false, true, NOW());"
 
       - name: Apply current-branch migrations
@@ -189,7 +192,7 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
-          count=$(psql -h localhost -U postgres -d migration_check -tA -c \
+          count=$(psql -h localhost -U postgres -d aldevtoolbox_designtime -tA -c \
             "SELECT COUNT(*) FROM organizations WHERE slug = 'forward-compat-sentinel';")
           if [ "$count" != "1" ]; then
             echo "Sentinel row was lost across the migration step (count=$count)." >&2

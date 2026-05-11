@@ -338,8 +338,8 @@ public sealed class BackupService
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException($"Failed to start {fileName}.");
 
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(ct).AsTask();
-        var stderrTask = process.StandardError.ReadToEndAsync(ct).AsTask();
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
+        var stderrTask = process.StandardError.ReadToEndAsync(ct);
         await process.WaitForExitAsync(ct);
         var stderr = await stderrTask;
         _ = await stdoutTask;
