@@ -12,7 +12,8 @@ One-line summary per EF Core migration in `ALDevToolbox/Data/Migrations/`. Read 
 | 20260512 000000  | `RuntimeColumnAsString`           | `runtime_templates.runtime` becomes TEXT so it can carry dotted versions (`"15.2"`) alongside bare majors. |
 | 20260513 000000  | `AddApplicationVersions`          | Curated `application_versions` catalogue + `default_application_version_id` FK on `runtime_templates` (P2.4). Replaces free-text Application/Runtime fields with a select. |
 | 20260514 000000  | `AddOrganizationsAndAccounts`     | Multi-tenancy + accounts (P3.13). Adds `organizations`, `users`, `signup_requests`, `password_reset_tokens`, `login_attempts`. Stamps every editable row with `organization_id` (Default org = 1). Replaces the shared admin password. |
-| 20260515 000000  | `AddOrganizationConfiguration`    | Per-org config (P3.14). Adds `organization_settings`, `organization_assets` (logo BLOB), `organization_files` (always-included files). Backfills the Default org from `Templates.seed/organization-defaults/`. |
+| 20260515 000000  | `AddOrganizationConfiguration`    | Per-org config (P3.14). Adds `organization_settings`, `organization_assets` (logo BLOB), `organization_files` (always-included files). |
+| 20260513 000000  | `MoveSeedToSystemOrg`             | Retires the on-disk `Templates.seed/` bootstrap. Renames `organizations.is_seeded` to `is_system`, stamps the Default org as the singleton system org other orgs fork from via `TemplateImportService`, and adds a partial unique index that refuses a second system org per deployment. |
 
 ## Conventions
 

@@ -1,10 +1,9 @@
 namespace ALDevToolbox.Domain.Seed;
 
 /// <summary>
-/// In-memory representation of a
-/// <c>Templates.seed/application-versions/&lt;key&gt;.toml</c> file. The shape
-/// mirrors the TOML directly; the <c>SeedService</c> maps it onto the EF
-/// <see cref="Domain.Entities.ApplicationVersion"/> entity.
+/// In-memory representation of a single application-version TOML document.
+/// Used by the export pipeline to serialise <see cref="Domain.Entities.ApplicationVersion"/>
+/// rows for off-site storage.
 /// </summary>
 public class ApplicationVersionSeedFile
 {

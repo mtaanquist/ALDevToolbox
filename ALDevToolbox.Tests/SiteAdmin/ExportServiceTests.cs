@@ -10,12 +10,12 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace ALDevToolbox.Tests.SiteAdmin;
 
 /// <summary>
-/// Smoke coverage for <see cref="ExportService"/>: ZIP layout matches the
-/// <c>Templates.seed/</c> contract (templates under their key, modules under
-/// <c>modules/</c>, application versions under <c>application-versions/</c>,
-/// catalogue at <c>catalog/well-known-deps.toml</c>) and soft-deleted rows
-/// are excluded from the archive. The org-config block is covered separately
-/// in <see cref="ALDevToolbox.Tests.Configuration.ConfigExportImportRoundTripTests"/>.
+/// Smoke coverage for <see cref="ExportService"/>: ZIP layout (templates
+/// under their key, modules under <c>modules/</c>, application versions
+/// under <c>application-versions/</c>, catalogue at
+/// <c>catalog/well-known-deps.toml</c>) and soft-deleted rows are excluded
+/// from the archive. The org-config block is covered separately in
+/// <see cref="ALDevToolbox.Tests.Configuration.ConfigExportImportRoundTripTests"/>.
 /// </summary>
 public sealed class ExportServiceTests : IDisposable
 {

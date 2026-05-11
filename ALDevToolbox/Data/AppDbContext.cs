@@ -43,6 +43,7 @@ public class AppDbContext : DbContext
         public int? CurrentOrganizationId => null;
         public int? CurrentUserId => null;
         public bool IsSiteAdmin => false;
+        public bool IsSystemOrganization => false;
         public int OrganizationIdForFilter => 0;
     }
 
@@ -93,8 +94,15 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Slug).HasColumnName("slug").IsRequired();
             entity.HasIndex(e => e.Slug).IsUnique();
             entity.Property(e => e.IsPending).HasColumnName("is_pending").IsRequired();
-            entity.Property(e => e.IsSeeded).HasColumnName("is_seeded").IsRequired();
+            entity.Property(e => e.IsSystem).HasColumnName("is_system").IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+            // Partial unique index on is_system=true: at most one system org
+            // exists per deployment. Regular orgs aren't subject to the
+            // constraint because Postgres ignores them in the partial index.
+            entity.HasIndex(e => e.IsSystem)
+                .IsUnique()
+                .HasFilter("is_system = true")
+                .HasDatabaseName("ix_organizations_is_system_singleton");
         });
 
         modelBuilder.Entity<User>(entity =>

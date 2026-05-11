@@ -52,7 +52,7 @@ The folder structure mirrors this: `Components/`, `Services/`, `Domain/`, `Data/
 - **`CatalogService`** — read/edit the well-known-dependencies catalogue used by the New Extension flow.
 - **`ApplicationVersionService`** — read/edit the curated AL application versions used to populate the New Workspace and New Extension dropdowns.
 - **`GenerationService`** — given a `ProjectPlan` (workspace + selected modules + options) and a template, produce a ZIP stream. See `generation-engine.md`.
-- **`SeedService`** — populates a single organisation from `Templates.seed/`. Runs against the Default org on first boot, and against newly-created orgs at provision time. Idempotent within an org — does nothing if `organizations.is_seeded` is already true.
+- **`TemplateImportService`** — fork pipeline: copies a template (plus its referenced modules and default application version) from the singleton system org into the acting org. Wired to the "From the site catalogue" section of `/admin/templates`. The on-disk `Templates.seed/` bootstrap was retired in favour of this — fresh orgs start empty and import on demand.
 - **`OrganizationConfigService`** — reads and writes per-org settings (default publisher, default ID range, default brief / core description), the org logo, and the always-included files admins want appended to every generated workspace.
 - **`AuditService`** — read side. Mutations to the audit log happen via the `AuditInterceptor` (EF Core `SaveChangesInterceptor`); see `auth-and-audit.md`.
 - **`AccountService`** — sign-in, signup, password reset, role / status changes, login-attempt rate limiting and lockout. Uses `BCrypt.Net-Next` for hashing.

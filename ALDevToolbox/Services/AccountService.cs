@@ -708,7 +708,7 @@ public sealed class AccountService
             Name = string.IsNullOrWhiteSpace(displayName) ? candidate : displayName,
             Slug = candidate,
             IsPending = true,
-            IsSeeded = false,
+            IsSystem = false,
             CreatedAt = now,
         };
         _db.Organizations.Add(org);

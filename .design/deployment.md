@@ -10,7 +10,7 @@ A multi-stage build producing a self-contained image:
 
 The repo ships a working `Dockerfile` at the root; that's the canonical build. Key points:
 
-- `Templates.seed/` is copied into the image. The seed files are part of the build artifact, not provided at runtime.
+- The image carries the application binaries and embedded `Resources/` only. There is no on-disk seed directory — the singleton system org owns the canonical templates at runtime.
 - The app reads `ConnectionStrings__DefaultConnection` to find the database. There is no on-disk DB; persistence is the sibling `db` compose service backed by the `pg-data` named volume.
 - Port 8080 inside the container, mapped however the host wants.
 
@@ -26,7 +26,6 @@ The canonical compose file lives at the repo root (`compose.yml`). It defines tw
 | `BOOTSTRAP_ADMIN_PASSWORD`| First admin password (only on a fresh database)    | none                     |
 | `ConnectionStrings__DefaultConnection` | Postgres connection string (Npgsql format) | none — required          |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Read by the `db` compose service | `aldevtoolbox` (set `POSTGRES_PASSWORD` for any real deployment) |
-| `SEED_PATH`               | Path to the `Templates.seed/` directory             | `/app/Templates.seed`    |
 | `ASPNETCORE_URLS`         | Standard ASP.NET Core binding                       | `http://+:8080`          |
 | `ASPNETCORE_ENVIRONMENT`  | Standard ASP.NET Core environment                   | `Production`             |
 
@@ -37,19 +36,17 @@ If `ConnectionStrings__DefaultConnection` is unset the app fails to start with a
 On first start against an empty database:
 
 1. EF Core migrations run, creating all tables.
-2. The migration seeds the **Default** organisation row.
-3. `SeedService` populates the Default org's templates, modules, catalogue, and organisation defaults from `Templates.seed/`.
-4. The bootstrap admin (from `BOOTSTRAP_ADMIN_*` env vars) is created in the Default org.
-5. The app starts serving requests.
+2. The migration seeds the **Default** organisation row and stamps it with `is_system = true` — making it the singleton system org other organisations fork from.
+3. The bootstrap admin (from `BOOTSTRAP_ADMIN_*` env vars) is created in the Default org with `is_site_admin = true`.
+4. The app starts serving requests.
 
-On subsequent starts the app applies any pending migrations, skips seeding for orgs already marked seeded, and starts serving.
+The Default org's template catalogue starts empty. SiteAdmins author canonical templates via the regular `/admin/templates` pages; other organisations fork them at import time via `TemplateImportService` (wired to the "From the site catalogue" section of `/admin/templates`).
+
+On subsequent starts the app applies any pending migrations and starts serving.
 
 ## Backups
 
-The entire state of the app is in two places:
-
-- The Postgres database in the `pg-data` named volume. Back this up.
-- The seed files in the image. Already version-controlled.
+The entire state of the app is in the Postgres database in the `pg-data` named volume. Back this up.
 
 Backup is `pg_dump -Fc` against the `db` service. M18 ships a built-in backup hosted service that runs `pg_dump` on a schedule and writes to `/var/lib/aldevtoolbox/backups`; until then, an external cron job is the simplest robust approach. The in-app "Export to TOML" remains useful for human-readable snapshots of the catalogue, but it does not capture audit history.
 

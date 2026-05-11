@@ -407,8 +407,8 @@ public class GenerationService
     /// path. The asset's MIME type drives the file extension so PNG and SVG
     /// uploads round-trip into <c>.assets/images/logo.png</c> or
     /// <c>logo.svg</c>. Returns 1 on success and 0 when the org has no logo
-    /// configured (rare — <see cref="OrganizationConfigService.PopulateDefaultsAsync"/>
-    /// installs the seed default for every fresh org).
+    /// configured — fresh orgs start without one and the layout falls back
+    /// to a placeholder until an admin uploads via <c>/admin/configuration</c>.
     /// </summary>
     private static int WriteOrgLogo(ZipArchive archive, string parentPath, OrganizationAsset? logo)
     {
