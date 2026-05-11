@@ -16,7 +16,6 @@ namespace ALDevToolbox.Services;
 /// </summary>
 public class ApplicationVersionService
 {
-    private static readonly Regex KeyRegex = new("^[a-z0-9-]+$", RegexOptions.Compiled);
     private static readonly Regex ApplicationVersionRegex = new(@"^\d+\.\d+\.\d+\.\d+$", RegexOptions.Compiled);
     private static readonly Regex RuntimeFormatRegex = new(@"^\d+(\.\d+)?$", RegexOptions.Compiled);
 
@@ -270,7 +269,7 @@ public class ApplicationVersionService
             {
                 errors[$"Entries[{i}].Key"] = "Key is required.";
             }
-            else if (!KeyRegex.IsMatch(key))
+            else if (!ValidationPatterns.Key.IsMatch(key))
             {
                 errors[$"Entries[{i}].Key"] = "Key must contain only lowercase letters, digits, and hyphens.";
             }

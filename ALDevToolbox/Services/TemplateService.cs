@@ -15,8 +15,6 @@ namespace ALDevToolbox.Services;
 /// </summary>
 public class TemplateService
 {
-    private static readonly Regex KeyRegex = new("^[a-z0-9-]+$", RegexOptions.Compiled);
-
     /// <summary>
     /// Accepts BC's runtime formats: bare major (<c>15</c>) or
     /// Major.Minor (<c>15.2</c>). The seed schema and the admin form both
@@ -626,7 +624,7 @@ public class TemplateService
         {
             errors[nameof(input.Key)] = "Key is required.";
         }
-        else if (!KeyRegex.IsMatch(key))
+        else if (!ValidationPatterns.Key.IsMatch(key))
         {
             errors[nameof(input.Key)] = "Key must contain only lowercase letters, digits, and hyphens.";
         }
