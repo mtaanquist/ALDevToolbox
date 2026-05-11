@@ -1,0 +1,98 @@
+@page "/admin/audit/{id:int}/diff"
+@attribute [Authorize(Roles = "Admin")]
+@inject AuditService Audit
+@inject NavigationManager Nav
+@using ALDevToolbox.Domain.Entities
+@using Lucide.Blazor.Components
+
+<PageTitle>Audit change · AL Dev Toolbox</PageTitle>
+
+<div class="audit-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Audit change</h1>
+            <p class="muted">
+                Side-by-side comparison of the row's state before and after this
+                audit entry. The "after" snapshot comes from the next change to
+                the same entity; the most recent change has no later snapshot
+                yet.
+            </p>
+        </div>
+        <a class="btn btn--sm" href="/admin/audit">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to audit log</span>
+        </a>
+    </header>
+
+    @if (_entry is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_notFound)
+    {
+        <p class="muted">No audit entry with id <code>@Id</code> in this organisation.</p>
+    }
+    else
+    {
+        <dl class="audit-diff__meta">
+            <div><dt>When (UTC)</dt><dd>@_entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</dd></div>
+            <div><dt>Who</dt><dd>@_entry.ChangedBy</dd></div>
+            <div><dt>Entity</dt><dd>@_entry.EntityType <code>#@_entry.EntityId</code></dd></div>
+            <div><dt>Action</dt><dd><span class="audit-action audit-action--@_entry.Action.ToString().ToLowerInvariant()">@_entry.Action</span></dd></div>
+        </dl>
+
+        <AuditDiffViewer
+            BeforeJson="@_beforeJson"
+            AfterJson="@_afterJson"
+            BeforeLabel="@_beforeLabel"
+            AfterLabel="@_afterLabel" />
+    }
+</div>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private AuditLogEntry? _entry;
+    private bool _notFound;
+    private string? _beforeJson;
+    private string? _afterJson;
+    private string? _beforeLabel;
+    private string? _afterLabel;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var entry = await Audit.GetByIdAsync(Id);
+        if (entry is null)
+        {
+            _notFound = true;
+            _entry = new AuditLogEntry();
+            return;
+        }
+        _entry = entry;
+        // The audit-log snapshot is the state *before* the change captured by
+        // this row. To produce a sensible "after", grab the snapshot of the
+        // next-newer audit row for the same entity. None means we hit either
+        // the entity's current state (no later change yet) or a deletion.
+        _beforeJson = entry.SnapshotJson;
+        _beforeLabel = entry.Action == AuditAction.Created
+            ? "no prior state (created)"
+            : entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
+
+        var next = await Audit.GetNextForEntityAsync(entry);
+        if (next is not null)
+        {
+            _afterJson = next.SnapshotJson;
+            _afterLabel = next.Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
+        }
+        else if (entry.Action == AuditAction.Deleted)
+        {
+            _afterJson = null;
+            _afterLabel = "deleted (no later state)";
+        }
+        else
+        {
+            _afterJson = null;
+            _afterLabel = "no later audit entry recorded yet";
+        }
+    }
+}

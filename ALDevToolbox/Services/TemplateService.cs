@@ -361,6 +361,101 @@ public class TemplateService
     }
 
     /// <summary>
+    /// Bulk variant of <see cref="SoftDeleteAsync"/>: loops the supplied ids,
+    /// soft-deleting each in turn and persisting between rows so the audit
+    /// interceptor writes one row per entity (per
+    /// <c>.design/milestones.md</c> Milestone 20). Failures are surfaced per
+    /// row so a single tampered id can't halt the rest.
+    /// </summary>
+    public Task<BulkActionResult> BulkSoftDeleteAsync(IReadOnlyList<int> ids, CancellationToken ct = default)
+        => BulkMutateAsync(ids, t =>
+        {
+            if (t.DeletedAt is not null) return false;
+            t.DeletedAt = DateTime.UtcNow;
+            t.UpdatedAt = t.DeletedAt.Value;
+            return true;
+        }, "soft-delete", ct);
+
+    /// <summary>Bulk variant of <see cref="RestoreAsync"/>.</summary>
+    public Task<BulkActionResult> BulkRestoreAsync(IReadOnlyList<int> ids, CancellationToken ct = default)
+        => BulkMutateAsync(ids, t =>
+        {
+            if (t.DeletedAt is null) return false;
+            t.DeletedAt = null;
+            t.UpdatedAt = DateTime.UtcNow;
+            return true;
+        }, "restore", ct);
+
+    /// <summary>Bulk deprecate: flips <see cref="RuntimeTemplate.Deprecated"/> true.</summary>
+    public Task<BulkActionResult> BulkDeprecateAsync(IReadOnlyList<int> ids, CancellationToken ct = default)
+        => BulkMutateAsync(ids, t =>
+        {
+            if (t.Deprecated) return false;
+            t.Deprecated = true;
+            t.UpdatedAt = DateTime.UtcNow;
+            return true;
+        }, "deprecate", ct);
+
+    /// <summary>Bulk un-deprecate: clears <see cref="RuntimeTemplate.Deprecated"/>.</summary>
+    public Task<BulkActionResult> BulkUnDeprecateAsync(IReadOnlyList<int> ids, CancellationToken ct = default)
+        => BulkMutateAsync(ids, t =>
+        {
+            if (!t.Deprecated) return false;
+            t.Deprecated = false;
+            t.UpdatedAt = DateTime.UtcNow;
+            return true;
+        }, "un-deprecate", ct);
+
+    private async Task<BulkActionResult> BulkMutateAsync(
+        IReadOnlyList<int> ids,
+        Func<RuntimeTemplate, bool> mutate,
+        string actionLabel,
+        CancellationToken ct)
+    {
+        // Touching the EF query filter is implicit: _db.RuntimeTemplates is
+        // already scoped to the acting organisation, so an id from another
+        // org just doesn't resolve.
+        RequireOrganizationId();
+        var succeeded = new List<int>();
+        var failures = new List<BulkActionFailure>();
+        foreach (var id in ids.Distinct())
+        {
+            var row = await _db.RuntimeTemplates.FirstOrDefaultAsync(t => t.Id == id, ct);
+            if (row is null)
+            {
+                failures.Add(new BulkActionFailure(id, $"#{id}", "Not found in this organisation."));
+                continue;
+            }
+            try
+            {
+                if (!mutate(row))
+                {
+                    // No-op — already in the target state. Treat as success
+                    // so an admin re-running a bulk action sees a clean
+                    // outcome instead of a noisy "nothing happened".
+                    succeeded.Add(id);
+                    continue;
+                }
+                await _db.SaveChangesAsync(ct);
+                succeeded.Add(id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Bulk {Action} failed for template id={Id}.", actionLabel, id);
+                failures.Add(new BulkActionFailure(id, row.Name, ex.Message));
+                // Detach the now-poisoned entry so the next iteration's
+                // SaveChanges doesn't try to flush an aborted mutation.
+                _db.Entry(row).State = EntityState.Detached;
+            }
+        }
+        _logger.LogInformation(
+            "Bulk {Action} on templates: {Ok}/{Total} succeeded.",
+            actionLabel, succeeded.Count, ids.Count);
+        return new BulkActionResult(ids.Count, succeeded, failures);
+    }
+
+    /// <summary>
     /// Walks the input folder list against the persisted folder list and applies
     /// the minimum set of mutations: update existing rows in-order, append new
     /// rows for any extras, remove rows that fell off the end. Per-folder

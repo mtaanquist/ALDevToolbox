@@ -251,7 +251,6 @@ These remain off the table — listed here so they don't get pulled into a curre
 
 - Mobile-friendly layout. Desktop only.
 - A structured editor for `defaults_json` and `app_source_cop_json`. Textarea is fine for v1.
-- An in-app diff viewer for audit snapshots. Showing the JSON is fine for v1.
 - Automatic migration testing in CI. Manual is fine for v1.
 - Cross-organisation superuser. There's no support / debugging account that bypasses the org filter.
 - SSO / OIDC, two-factor, magic-link login, invite-by-email. Email + password is the only path.

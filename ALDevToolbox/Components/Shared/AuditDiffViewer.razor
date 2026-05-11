@@ -1,0 +1,141 @@
+@using System.Text.Json
+@using ALDevToolbox.Domain.ValueObjects
+@using Lucide.Blazor.Components
+
+@*
+    Renders a flat field-level diff between two audit-log snapshots. The diff
+    itself is computed by .Domain.ValueObjects.AuditDiff so the rule lives in
+    one tested place; this file is the rendering surface. Drop it on a row of
+    the audit page (see .design/milestones.md Milestone 20). The component is
+    parameter-driven — give it BeforeJson / AfterJson and it figures out the
+    rest, including the redaction placeholders for SMTP and file-content
+    fields.
+*@
+
+<section class="audit-diff">
+    <header class="audit-diff__header">
+        <Icon Name="diff" Width="18" Height="18" Css="audit-diff__icon" />
+        <h3 class="audit-diff__title">@Title</h3>
+        @if (!string.IsNullOrEmpty(BeforeLabel) || !string.IsNullOrEmpty(AfterLabel))
+        {
+            <p class="muted audit-diff__labels">
+                <span>Before: <strong>@BeforeLabel</strong></span>
+                <span>·</span>
+                <span>After: <strong>@AfterLabel</strong></span>
+            </p>
+        }
+    </header>
+
+    @if (_parseError is not null)
+    {
+        <p class="form-error" role="alert">@_parseError</p>
+    }
+    else if (_diff.Count == 0)
+    {
+        <p class="muted">No changes between these two snapshots.</p>
+    }
+    else
+    {
+        <table class="data-table audit-diff__table">
+            <thead>
+                <tr>
+                    <th>Field</th>
+                    <th>Change</th>
+                    <th>Before</th>
+                    <th>After</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in _diff)
+                {
+                    <tr class="audit-diff__row audit-diff__row--@entry.Kind.ToString().ToLowerInvariant()">
+                        <td class="audit-diff__path"><code>@entry.Path</code></td>
+                        <td>
+                            <span class="audit-diff__kind audit-diff__kind--@entry.Kind.ToString().ToLowerInvariant()">@entry.Kind</span>
+                        </td>
+                        <td class="audit-diff__cell audit-diff__cell--before">
+                            @RenderCell(entry.BeforeDisplay, entry.BeforeRedacted, entry.Kind == AuditDiffKind.Added)
+                        </td>
+                        <td class="audit-diff__cell audit-diff__cell--after">
+                            @RenderCell(entry.AfterDisplay, entry.AfterRedacted, entry.Kind == AuditDiffKind.Removed)
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    /// <summary>JSON snapshot of the row's state *before* the change. Null / empty
+    /// means "no prior state" (e.g. a Created audit row).</summary>
+    [Parameter]
+    public string? BeforeJson { get; set; }
+
+    /// <summary>JSON snapshot of the row's state *after* the change. Null / empty
+    /// means "no later state" (e.g. a Deleted audit row, or the most recent
+    /// change with nothing after it yet).</summary>
+    [Parameter]
+    public string? AfterJson { get; set; }
+
+    /// <summary>Optional override for the panel heading.</summary>
+    [Parameter]
+    public string Title { get; set; } = "What changed";
+
+    /// <summary>Optional label for the before column (e.g. timestamp of the prior change).</summary>
+    [Parameter]
+    public string? BeforeLabel { get; set; }
+
+    /// <summary>Optional label for the after column (e.g. timestamp of the next change).</summary>
+    [Parameter]
+    public string? AfterLabel { get; set; }
+
+    private IReadOnlyList<AuditDiffEntry> _diff = Array.Empty<AuditDiffEntry>();
+    private string? _parseError;
+
+    protected override void OnParametersSet()
+    {
+        _parseError = null;
+        try
+        {
+            _diff = AuditDiff.Compute(BeforeJson, AfterJson);
+        }
+        catch (JsonException ex)
+        {
+            _diff = Array.Empty<AuditDiffEntry>();
+            _parseError = $"Couldn't parse one of the snapshots: {ex.Message}";
+        }
+    }
+
+    private static RenderFragment RenderCell(string? display, bool redacted, bool absent) => builder =>
+    {
+        if (absent)
+        {
+            builder.OpenElement(0, "span");
+            builder.AddAttribute(1, "class", "muted");
+            builder.AddContent(2, "<empty>");
+            builder.CloseElement();
+            return;
+        }
+        if (redacted)
+        {
+            builder.OpenElement(0, "span");
+            builder.AddAttribute(1, "class", "audit-diff__redacted");
+            builder.AddContent(2, "<redacted>");
+            builder.CloseElement();
+            return;
+        }
+        if (display is null)
+        {
+            builder.OpenElement(0, "span");
+            builder.AddAttribute(1, "class", "muted");
+            builder.AddContent(2, "<null>");
+            builder.CloseElement();
+            return;
+        }
+        builder.OpenElement(0, "code");
+        builder.AddAttribute(1, "class", "audit-diff__value");
+        builder.AddContent(2, display);
+        builder.CloseElement();
+    };
+}

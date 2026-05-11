@@ -1,12 +1,16 @@
 @page "/admin/users"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
 @using ALDevToolbox.Data
 @using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
 @using ALDevToolbox.Services
 @using Lucide.Blazor.Components
 @using Microsoft.EntityFrameworkCore
 @inject AppDbContext Db
 @inject IOrganizationContext Org
+@inject AccountService Accounts
+@inject ILogger<AdminUsers> Log
 
 <PageTitle>Users · AL Dev Toolbox</PageTitle>
 
@@ -130,14 +134,81 @@ else
 
     <section class="admin-section">
         <h2>Active &amp; disabled (@_active.Count)</h2>
+
+        @if (_selected.Count > 0)
+        {
+            <div class="bulk-bar" role="region" aria-label="Bulk actions">
+                <span class="bulk-bar__summary">@_selected.Count selected</span>
+                <div class="bulk-bar__actions">
+                    <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.Disable)" disabled="@_busy">
+                        <Icon Name="user-x" Width="14" Height="14" />
+                        <span>Disable</span>
+                    </button>
+                    <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.Enable)" disabled="@_busy">
+                        <Icon Name="user-check" Width="14" Height="14" />
+                        <span>Re-enable</span>
+                    </button>
+                    <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.PromoteAdmin)" disabled="@_busy">
+                        <Icon Name="shield" Width="14" Height="14" />
+                        <span>Promote to Admin</span>
+                    </button>
+                    <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.DemoteUser)" disabled="@_busy">
+                        <Icon Name="shield-off" Width="14" Height="14" />
+                        <span>Demote to User</span>
+                    </button>
+                    <button type="button" class="btn btn--sm" @onclick="ClearSelection" disabled="@_busy">
+                        <Icon Name="x" Width="14" Height="14" />
+                        <span>Clear</span>
+                    </button>
+                </div>
+                @if (_lastError is not null)
+                {
+                    <p class="bulk-bar__error" role="alert">@_lastError</p>
+                }
+                @if (_lastSuccess is not null)
+                {
+                    <p class="bulk-bar__success" role="status">@_lastSuccess</p>
+                }
+            </div>
+        }
+
+        @if (_lastFailures.Count > 0)
+        {
+            <div class="bulk-failures">
+                <h3>Some users couldn't be updated</h3>
+                <ul>
+                    @foreach (var f in _lastFailures)
+                    {
+                        <li><strong>@f.DisplayName</strong> (id @f.Id): @f.Reason</li>
+                    }
+                </ul>
+            </div>
+        }
+
         <table class="admin-table">
             <thead>
-                <tr><th>Email</th><th>Display name</th><th>Role</th><th>Status</th><th>Last login</th><th></th></tr>
+                <tr>
+                    <th class="bulk-checkbox">
+                        <input type="checkbox" aria-label="Select all visible"
+                               checked="@AllVisibleSelected" @onchange="ToggleSelectAllVisible" />
+                    </th>
+                    <th>Email</th>
+                    <th>Display name</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Last login</th>
+                    <th></th>
+                </tr>
             </thead>
             <tbody>
             @foreach (var u in _active)
             {
                 <tr>
+                    <td class="bulk-checkbox">
+                        <input type="checkbox" aria-label="@($"Select {u.DisplayName}")"
+                               checked="@_selected.Contains(u.Id)"
+                               @onchange="(e) => ToggleRow(u.Id, e)" />
+                    </td>
                     <td>@u.Email</td>
                     <td>@u.DisplayName</td>
                     <td>@u.Role</td>
@@ -173,6 +244,8 @@ else
     </section>
 }
 
+<ConfirmDialog @ref="_confirm" />
+
 @code {
     [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
@@ -181,7 +254,21 @@ else
     private List<User>? _active;
     private List<(Invite Invite, User? InvitedBy)>? _invites;
 
-    protected override async Task OnInitializedAsync()
+    private readonly HashSet<int> _selected = new();
+    private bool _busy;
+    private string? _lastError;
+    private string? _lastSuccess;
+    private IReadOnlyList<BulkActionFailure> _lastFailures = Array.Empty<BulkActionFailure>();
+    private ConfirmDialog? _confirm;
+
+    private enum BulkAction { Disable, Enable, PromoteAdmin, DemoteUser }
+
+    private bool AllVisibleSelected =>
+        _active is { Count: > 0 } && _active.All(u => _selected.Contains(u.Id));
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
     {
         var orgId = Org.CurrentOrganizationId;
         if (orgId is null) return;
@@ -211,6 +298,7 @@ else
             .OrderBy(u => u.Status == UserStatus.Active ? 0 : 1)
             .ThenBy(u => u.DisplayName)
             .ToListAsync();
+        _selected.RemoveWhere(id => !_active.Any(u => u.Id == id));
 
         var now = DateTime.UtcNow;
         var pendingInvites = await Db.Invites
@@ -226,4 +314,100 @@ else
             _invites.Add((inv, by));
         }
     }
+
+    private void ToggleRow(int id, ChangeEventArgs e)
+    {
+        if (e.Value is bool checkedNow && checkedNow) _selected.Add(id);
+        else _selected.Remove(id);
+    }
+
+    private void ToggleSelectAllVisible(ChangeEventArgs e)
+    {
+        var checkedNow = e.Value is bool b && b;
+        if (_active is null) return;
+        foreach (var u in _active)
+        {
+            if (checkedNow) _selected.Add(u.Id);
+            else _selected.Remove(u.Id);
+        }
+    }
+
+    private void ClearSelection()
+    {
+        _selected.Clear();
+        _lastError = null;
+        _lastSuccess = null;
+        _lastFailures = Array.Empty<BulkActionFailure>();
+    }
+
+    private async Task RequestBulkAsync(BulkAction action)
+    {
+        if (_selected.Count == 0 || _busy || _active is null) return;
+        var orgId = Org.CurrentOrganizationId;
+        if (orgId is null) return;
+
+        var ids = _selected.ToList();
+        var affected = _active.Where(u => ids.Contains(u.Id)).ToList();
+        var label = action switch
+        {
+            BulkAction.Disable => "disable",
+            BulkAction.Enable => "re-enable",
+            BulkAction.PromoteAdmin => "promote to Admin",
+            BulkAction.DemoteUser => "demote to User",
+            _ => action.ToString(),
+        };
+        if (_confirm is not null)
+        {
+            var names = string.Join(", ", affected.Take(8).Select(u => u.DisplayName));
+            if (affected.Count > 8) names += $", and {affected.Count - 8} more";
+            var confirmed = await _confirm.OpenAsync(
+                title: $"{Capitalize(label)} {affected.Count} user(s)?",
+                message: $"This will {label}: {names}.",
+                confirmLabel: Capitalize(label),
+                confirmButtonClass: action == BulkAction.Disable ? "btn--danger" : "btn--primary");
+            if (!confirmed) return;
+        }
+
+        _busy = true;
+        _lastError = null;
+        _lastSuccess = null;
+        _lastFailures = Array.Empty<BulkActionFailure>();
+        try
+        {
+            BulkActionResult result = action switch
+            {
+                BulkAction.Disable => await Accounts.BulkDisableUsersAsync(ids, orgId.Value),
+                BulkAction.Enable => await Accounts.BulkEnableUsersAsync(ids, orgId.Value),
+                BulkAction.PromoteAdmin => await Accounts.BulkChangeRoleAsync(ids, UserRole.Admin, orgId.Value),
+                BulkAction.DemoteUser => await Accounts.BulkChangeRoleAsync(ids, UserRole.User, orgId.Value),
+                _ => throw new InvalidOperationException($"Unknown action {action}"),
+            };
+            _lastFailures = result.Failures;
+            if (result.AllSucceeded)
+            {
+                _lastSuccess = $"Bulk {label} applied to {result.SucceededCount} user(s).";
+            }
+            else if (result.SucceededCount == 0)
+            {
+                _lastError = $"Bulk {label} failed for all {result.FailedCount} selected user(s). See details below.";
+            }
+            else
+            {
+                _lastSuccess = $"Bulk {label} applied to {result.SucceededCount} of {result.TotalRequested} user(s).";
+            }
+            _selected.Clear();
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Bulk {Action} on users raised an unexpected error.", label);
+            _lastError = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string Capitalize(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpperInvariant(s[0]) + s[1..];
 }

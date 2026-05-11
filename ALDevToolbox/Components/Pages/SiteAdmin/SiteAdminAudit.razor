@@ -73,6 +73,7 @@
                     <th>Id</th>
                     <th>Action</th>
                     <th>Snapshot</th>
+                    <th class="data-table__actions"></th>
                 </tr>
             </thead>
             <tbody>
@@ -97,6 +98,13 @@
                                 <pre class="audit-snapshot"><code>@PrettyJson(e.SnapshotJson)</code></pre>
                             </details>
                         }
+                    </td>
+                    <td class="data-table__actions">
+                        <a class="btn btn--sm" href="@($"/site-admin/audit/{e.Id}/diff")"
+                           title="Compare this row's snapshot against the next change to the same entity">
+                            <Icon Name="diff" Width="14" Height="14" />
+                            <span>View change</span>
+                        </a>
                     </td>
                 </tr>
             }
