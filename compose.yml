@@ -1,3 +1,6 @@
+# AL Dev Toolbox stack. Two services: Postgres (`db`) and the app
+# (`aldevtoolbox`). Three named volumes — see the `volumes` block at the
+# bottom for the layout reference.
 services:
   db:
     image: postgres:18-alpine
@@ -12,14 +15,25 @@ services:
       - pg-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aldevtoolbox} -d ${POSTGRES_DB:-aldevtoolbox}"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 6
       # First-boot postgres-alpine spends ~10-15s initialising on a fresh
       # volume (initdb + role/db creation). A short start_period made
       # `depends_on: service_healthy` time out on slower CI runners.
       start_period: 30s
     restart: unless-stopped
+    # Resource ceilings (M21). Postgres scales linearly with shared_buffers
+    # and work_mem; both default to sane values for ~1 GiB. Operators with
+    # bigger boxes should raise the limit *and* tune postgresql.conf —
+    # raising the cgroup alone leaves the defaults on the table.
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
+        reservations:
+          memory: 256m
 
   aldevtoolbox:
     build: .
@@ -49,8 +63,25 @@ services:
     volumes:
       - app-keys:/var/lib/aldevtoolbox/dp-keys
       - app-backups:/var/lib/aldevtoolbox/backups
+    # The Dockerfile already declares a HEALTHCHECK against /healthz. Compose
+    # picks it up automatically; we don't restate it here to avoid the two
+    # drifting.
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
+        reservations:
+          memory: 256m
 
+# Volume layout (M21).
+# - pg-data:     Postgres data files. The only thing that needs a real backup
+#                if you're not relying on app-backups.
+# - app-keys:    ASP.NET Data Protection key ring. Loss invalidates all login
+#                cookies and decrypts of stored SMTP passwords.
+# - app-backups: pg_dump output written by BackupService (M18). Pinned files
+#                survive retention sweeps; everything else rolls off.
 volumes:
   pg-data:
   app-keys:

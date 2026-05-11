@@ -18,9 +18,24 @@ The design lives under [`.design/`](./.design/). Read those before non-trivial c
 - Tomlyn for the seed format. MailKit for SMTP. Lucide.Blazor for icons.
 - No client-side framework beyond Blazor itself.
 
-## Run locally
+## Quickstart
 
-Requires the .NET 10 SDK and a reachable PostgreSQL 18. The shortest path is the compose stack below; for an out-of-container `dotnet run`, point the connection string at any Postgres you have handy.
+The shortest path is the compose stack:
+
+```bash
+# From the repo root.
+BOOTSTRAP_ADMIN_EMAIL=admin@example.com \
+BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars \
+docker compose up --build
+```
+
+This brings up Postgres and the app, runs migrations, seeds the Default organisation, and creates the bootstrap admin on a fresh database. Visit <http://localhost:8080> and sign in with the bootstrap credentials.
+
+Run the operator runbook in [`docs/operator-runbook.md`](./docs/operator-runbook.md) for every other deployment flow — fresh deploy, backup and restore, SMTP rotation, SiteAdmin promotion, key-ring recovery.
+
+## Run locally without Docker
+
+Requires the .NET 10 SDK and a reachable PostgreSQL 18. The shortest path is the compose stack above; for an out-of-container `dotnet run`, point the connection string at any Postgres you have handy.
 
 ```bash
 # Start a local Postgres (or run `docker compose up db -d` against the
@@ -134,10 +149,10 @@ For a logical export, signed-in admins can hit **Export to TOML** under `/admin/
 
 Two unauthenticated endpoints, suitable for a load balancer or `docker compose` healthcheck:
 
-- `GET /health` — liveness. 200 if the process is responding.
-- `GET /health/ready` — readiness. 200 if the database is reachable.
+- `GET /healthz` — liveness. 200 if the database is reachable **and** the Data Protection key ring round-trips. A node that loses either should drop out of rotation.
+- `GET /readyz` — readiness. 200 once startup work (EF migrations + first-run seed + bootstrap admin) has finished. Until then it returns 503 so reverse proxies don't send traffic to a half-initialised container.
 
-The Dockerfile's `HEALTHCHECK` polls `/health/ready`.
+The Dockerfile's `HEALTHCHECK` polls `/healthz`. The container is whole as long as it can reach the database and decrypt cookies; readiness gating lives in the reverse proxy.
 
 ## Project layout
 

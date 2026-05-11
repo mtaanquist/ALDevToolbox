@@ -152,6 +152,71 @@ public sealed class BackupServiceTests : IDisposable
         ex.Which.Errors.Should().ContainKey("BackupId");
     }
 
+    /// <summary>
+    /// Failure-path coverage for the in-place restore (M21 test gap-fill).
+    /// A non-existent ID must fail validation *before* maintenance mode flips
+    /// — otherwise an operator's typo would 503 the app for nothing.
+    /// </summary>
+    [Fact]
+    public async Task RestoreAsync_with_unknown_id_throws_without_entering_maintenance()
+    {
+        // No pg tools required — this path never reaches the shell-out.
+        var svc = NewService();
+
+        Func<Task> act = () => svc.RestoreAsync(id: 99_999);
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("BackupId");
+        _maintenance.IsActive.Should().BeFalse(
+            "validation refusal must not leave the app stuck in maintenance mode");
+    }
+
+    /// <summary>
+    /// A row that exists in the DB but whose file has been deleted from disk
+    /// (operator wiped the volume, file got truncated) must also fail before
+    /// maintenance flips.
+    /// </summary>
+    [PgToolFact]
+    public async Task RestoreAsync_when_file_missing_throws_without_entering_maintenance()
+    {
+        var svc = NewService();
+        var backup = await svc.CreateAsync(BackupKind.AdHoc);
+        // Simulate the on-disk file disappearing while the row stayed in the DB.
+        File.Delete(Path.Combine(_backupsDir, backup.FileName));
+
+        Func<Task> act = () => svc.RestoreAsync(backup.Id);
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("BackupId");
+        ex.Which.Errors["BackupId"].Should().Contain("missing");
+        _maintenance.IsActive.Should().BeFalse(
+            "the missing-file refusal must short-circuit before maintenance flips");
+    }
+
+    /// <summary>
+    /// Even when pg_restore blows up mid-flight, the <c>finally</c> in
+    /// <see cref="BackupService.RestoreAsync"/> must lift maintenance mode —
+    /// otherwise the app stays 503 for non-SiteAdmin until someone restarts
+    /// the container.
+    /// </summary>
+    [PgToolFact]
+    public async Task RestoreAsync_lifts_maintenance_when_pg_restore_fails()
+    {
+        var svc = NewService();
+        var backup = await svc.CreateAsync(BackupKind.AdHoc);
+        // Replace the dump file with garbage. pg_restore will read the header,
+        // refuse, and exit non-zero — BackupService should surface that and
+        // still leave maintenance mode lifted.
+        var path = Path.Combine(_backupsDir, backup.FileName);
+        await File.WriteAllBytesAsync(path, new byte[] { 0x00, 0x01, 0x02, 0x03 });
+
+        Func<Task> act = () => svc.RestoreAsync(backup.Id);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        _maintenance.IsActive.Should().BeFalse(
+            "maintenance mode must be lifted even when pg_restore fails");
+    }
+
     private BackupService NewService()
     {
         var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor());

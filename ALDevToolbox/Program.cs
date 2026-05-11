@@ -143,10 +143,18 @@ catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
     Console.Error.WriteLine($"WARN: Data Protection key dir '{dpKeyDir}' not writable ({ex.Message}). Keys will not persist.");
 }
 
-// Health checks. /health is a liveness probe; /health/ready exercises the database.
+// Health checks (M21). /healthz is the live probe — green when the database
+// is reachable and the Data Protection key ring round-trips. /readyz is
+// distinct: it stays red until startup work (migrations + seed) has finished,
+// so reverse proxies don't send traffic mid-migration.
+builder.Services.AddSingleton<StartupReadinessState>();
 builder.Services.AddScoped<DatabaseHealthCheck>();
+builder.Services.AddSingleton<DataProtectionHealthCheck>();
+builder.Services.AddSingleton<StartupReadinessHealthCheck>();
 builder.Services.AddHealthChecks()
-    .AddCheck<DatabaseHealthCheck>("database", tags: new[] { "ready" });
+    .AddCheck<DatabaseHealthCheck>("database", tags: new[] { "healthz" })
+    .AddCheck<DataProtectionHealthCheck>("data-protection", tags: new[] { "healthz" })
+    .AddCheck<StartupReadinessHealthCheck>("startup", tags: new[] { "readyz" });
 
 var app = builder.Build();
 
@@ -177,7 +185,9 @@ app.Use(async (ctx, next) =>
         return;
     }
     var path = ctx.Request.Path;
-    if (path.StartsWithSegments("/health") || path.StartsWithSegments("/site-admin"))
+    if (path.StartsWithSegments("/healthz")
+        || path.StartsWithSegments("/readyz")
+        || path.StartsWithSegments("/site-admin"))
     {
         await next();
         return;
@@ -203,10 +213,18 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-app.MapHealthChecks("/health");
-app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+// /healthz is the liveness/health probe — green when the database is
+// reachable and the Data Protection key ring round-trips. The reverse proxy
+// should pull a node out of rotation when this goes red. /readyz is the
+// readiness probe — only green once startup work (migrations + seed) has
+// finished, so traffic doesn't hit a half-initialised container.
+app.MapHealthChecks("/healthz", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
-    Predicate = check => check.Tags.Contains("ready"),
+    Predicate = check => check.Tags.Contains("healthz"),
+});
+app.MapHealthChecks("/readyz", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("readyz"),
 });
 
 // File download endpoint for the New Workspace flow. Now requires a signed-in
@@ -1281,6 +1299,12 @@ using (var scope = app.Services.CreateScope())
             "BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_PASSWORD are set but at least one user already exists. "
             + "These environment variables only take effect on a fresh database; remove them once the bootstrap account is in place.");
     }
+
+    // Flip /readyz to green now that migrations, seed and bootstrap have all
+    // run. Resolved from the root service provider so the flag survives the
+    // scope's disposal.
+    app.Services.GetRequiredService<StartupReadinessState>().MarkReady();
+    bootstrapLogger.LogInformation("Startup complete; /readyz is now green.");
 }
 
 app.Run();

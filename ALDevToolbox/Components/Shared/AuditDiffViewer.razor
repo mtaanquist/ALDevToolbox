@@ -12,10 +12,10 @@
     fields.
 *@
 
-<section class="audit-diff">
+<section class="audit-diff" aria-labelledby="@_titleId">
     <header class="audit-diff__header">
         <Icon Name="diff" Width="18" Height="18" Css="audit-diff__icon" />
-        <h3 class="audit-diff__title">@Title</h3>
+        <h3 id="@_titleId" class="audit-diff__title">@Title</h3>
         @if (!string.IsNullOrEmpty(BeforeLabel) || !string.IsNullOrEmpty(AfterLabel))
         {
             <p class="muted audit-diff__labels">
@@ -36,22 +36,29 @@
     }
     else
     {
-        <table class="data-table audit-diff__table">
+        <table class="data-table audit-diff__table" aria-describedby="@_captionId">
+            <caption id="@_captionId" class="visually-hidden">
+                @_diff.Count change@(_diff.Count == 1 ? "" : "s")
+                between @(string.IsNullOrEmpty(BeforeLabel) ? "the prior snapshot" : BeforeLabel)
+                and @(string.IsNullOrEmpty(AfterLabel) ? "this snapshot" : AfterLabel).
+            </caption>
             <thead>
                 <tr>
-                    <th>Field</th>
-                    <th>Change</th>
-                    <th>Before</th>
-                    <th>After</th>
+                    <th scope="col">Field</th>
+                    <th scope="col">Change</th>
+                    <th scope="col">Before</th>
+                    <th scope="col">After</th>
                 </tr>
             </thead>
             <tbody>
                 @foreach (var entry in _diff)
                 {
-                    <tr class="audit-diff__row audit-diff__row--@entry.Kind.ToString().ToLowerInvariant()">
+                    var kindClass = entry.Kind.ToString().ToLowerInvariant();
+                    <tr class="audit-diff__row audit-diff__row--@kindClass"
+                        aria-label="@entry.Kind @entry.Path">
                         <td class="audit-diff__path"><code>@entry.Path</code></td>
                         <td>
-                            <span class="audit-diff__kind audit-diff__kind--@entry.Kind.ToString().ToLowerInvariant()">@entry.Kind</span>
+                            <span class="audit-diff__kind audit-diff__kind--@kindClass">@entry.Kind</span>
                         </td>
                         <td class="audit-diff__cell audit-diff__cell--before">
                             @RenderCell(entry.BeforeDisplay, entry.BeforeRedacted, entry.Kind == AuditDiffKind.Added)
@@ -92,6 +99,8 @@
 
     private IReadOnlyList<AuditDiffEntry> _diff = Array.Empty<AuditDiffEntry>();
     private string? _parseError;
+    private readonly string _titleId = $"audit-diff-title-{Guid.NewGuid():N}";
+    private readonly string _captionId = $"audit-diff-caption-{Guid.NewGuid():N}";
 
     protected override void OnParametersSet()
     {
