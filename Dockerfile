@@ -15,15 +15,13 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 
 # curl is needed for the HEALTHCHECK below; the slim aspnet image no longer
-# ships it. postgresql-client-18 carries pg_dump / pg_restore, which the M18
-# BackupService shells out to — the major version must match the db image
-# (compose pins postgres:18), so install from the upstream PostgreSQL repo
-# via the canonical bootstrap script. Keep the install lean so the image
-# size doesn't drift up.
+# ships it. postgresql-client supplies pg_dump / pg_restore, which the M18
+# BackupService shells out to. The Debian default major may differ from the
+# compose db image (postgres:18) — operators who run scheduled backups in
+# production should override this RUN with postgresql-client-18 from the
+# pgdg repo to match. Keep the install lean so the image size doesn't drift.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates gnupg postgresql-common \
-    && /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y \
-    && apt-get install -y --no-install-recommends postgresql-client-18 \
+    && apt-get install -y --no-install-recommends curl postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app ./

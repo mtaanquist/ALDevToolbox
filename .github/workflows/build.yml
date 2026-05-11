@@ -38,17 +38,15 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Install postgresql-client-18
+      - name: Install postgresql-client
         # BackupService tests shell out to pg_dump / pg_restore against the
-        # service-container Postgres (postgres:18-alpine). The major versions
-        # have to match — pg_restore 16 can't replay a pg_dump 18 archive —
-        # so install postgresql-client-18 from the upstream PostgreSQL repo
-        # via the canonical bootstrap script.
+        # service-container Postgres. Use the runner's default client; the
+        # tests are tagged with PgToolFact and skip cleanly if the binaries
+        # aren't on PATH, but the default install gives us psql + pg_dump
+        # for the happy path.
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends curl ca-certificates gnupg postgresql-common
-          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
-          sudo apt-get install -y --no-install-recommends postgresql-client-18
+          sudo apt-get install -y --no-install-recommends postgresql-client
 
       - name: Restore
         run: dotnet restore
@@ -143,12 +141,10 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Install dotnet-ef and postgresql-client-18
+      - name: Install dotnet-ef and postgresql-client
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends curl ca-certificates gnupg postgresql-common
-          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
-          sudo apt-get install -y --no-install-recommends postgresql-client-18
+          sudo apt-get install -y --no-install-recommends postgresql-client
           dotnet tool install --global dotnet-ef --version 10.*
           echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
 
