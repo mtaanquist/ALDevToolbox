@@ -3,7 +3,6 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ALDevToolbox.Tests.Routing;
@@ -25,9 +24,19 @@ public class EndpointAmbiguityTests : IClassFixture<TestDb>
     [Fact]
     public void No_two_endpoints_match_the_same_method_and_route()
     {
+        // ConnectionStrings:DefaultConnection is read inside
+        // WebApplication.CreateBuilder(args), which runs *before* any
+        // WithWebHostBuilder hook gets a chance to inject configuration —
+        // minimal hosting's DeferredHostBuilder doesn't propagate
+        // ConfigureAppConfiguration back into the WebApplicationBuilder.
+        // Setting the env var up front is the supported workaround; it
+        // also flows into the EnvironmentVariablesConfigurationProvider that
+        // Program.cs already relies on in production.
+        var previousConnection = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+        var previousScheduler = Environment.GetEnvironmentVariable("DISABLE_BACKUP_SCHEDULER");
+        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", _db.ConnectionString);
         // BackupScheduler chases pg_dump on a 1-minute timer; suppress it so a
         // throwaway test DB doesn't trigger a background restore loop.
-        var previousScheduler = Environment.GetEnvironmentVariable("DISABLE_BACKUP_SCHEDULER");
         Environment.SetEnvironmentVariable("DISABLE_BACKUP_SCHEDULER", "1");
         try
         {
@@ -41,13 +50,6 @@ public class EndpointAmbiguityTests : IClassFixture<TestDb>
                     // test bin folder drifting from the project layout.
                     builder.UseContentRoot(LocateProjectFolder());
                     builder.UseEnvironment("Test");
-                    builder.ConfigureAppConfiguration((_, config) =>
-                    {
-                        config.AddInMemoryCollection(new Dictionary<string, string?>
-                        {
-                            ["ConnectionStrings:DefaultConnection"] = _db.ConnectionString,
-                        });
-                    });
                 });
 
             // CreateClient triggers the host build, which is when endpoints get
@@ -86,6 +88,7 @@ public class EndpointAmbiguityTests : IClassFixture<TestDb>
         }
         finally
         {
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", previousConnection);
             Environment.SetEnvironmentVariable("DISABLE_BACKUP_SCHEDULER", previousScheduler);
         }
     }
