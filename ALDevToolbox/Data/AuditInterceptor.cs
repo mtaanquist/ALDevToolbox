@@ -25,6 +25,9 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
 {
     private static readonly JsonSerializerOptions JsonOptions = PersistenceJson.Options;
 
+    // LoginAttempt is intentionally excluded: it's append-only telemetry written
+    // on every login/forgot-password attempt and is already its own record. An
+    // audit row for each insert would just duplicate the table.
     private static readonly HashSet<Type> AuditedTypes = new()
     {
         typeof(RuntimeTemplate),
