@@ -446,6 +446,26 @@ app.MapPost("/admin/export", async (HttpContext ctx, ExportService export, IAnti
     await archive.Stream.CopyToAsync(ctx.Response.Body, ct);
 }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
+// Marks a single runtime template as the per-organisation default. The
+// service enforces the "active and non-deprecated" rule and clears the
+// previous default in the same SaveChanges.
+app.MapPost("/admin/templates/{id:int}/default", async (
+    int id, HttpContext ctx, TemplateService templates, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    try
+    {
+        await templates.SetDefaultAsync(id, ct);
+        ctx.Response.Redirect("/admin/templates?ok=default-set");
+    }
+    catch (PlanValidationException ex)
+    {
+        var first = ex.Errors.First();
+        ctx.Response.Redirect(
+            $"/admin/templates?err={Uri.EscapeDataString(first.Key)}&msg={Uri.EscapeDataString(first.Value)}");
+    }
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
 // /auth/login: validates the email + password, sets the auth cookie with the
 // user_id / org_id / role / email claims, and triggers seeding for orgs
 // being touched by their first admin login.

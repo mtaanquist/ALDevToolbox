@@ -14,13 +14,22 @@
                 <Authorized>
                     @{
                         var orgName = context.User.FindFirst("org_name")?.Value;
-                        var role = context.User.FindFirst(ClaimTypes.Role)?.Value;
+                        var roles = context.User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
+                        var role = roles.Contains("SiteAdmin") ? "Site admin"
+                            : roles.Contains("Admin") ? "Admin"
+                            : roles.FirstOrDefault();
                         var name = context.User.Identity?.Name;
                     }
                     <a href="/account" class="user-button" title="Manage your account">
-                        <span class="user-button__name">
-                            @name@(string.IsNullOrEmpty(orgName) ? "" : $" ({orgName})")@(string.IsNullOrEmpty(role) ? "" : $" — {role}")
-                        </span>
+                        <span class="user-button__name">@name</span>
+                        @if (!string.IsNullOrEmpty(orgName))
+                        {
+                            <span class="user-button__org">(@orgName)</span>
+                        }
+                        @if (!string.IsNullOrEmpty(role))
+                        {
+                            <span class="user-button__role" title="@role">@role</span>
+                        }
                     </a>
                     <form method="post" action="/auth/logout" class="signout-form">
                         <AntiforgeryToken />

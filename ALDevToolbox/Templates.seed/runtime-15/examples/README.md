@@ -18,7 +18,7 @@ See `docs/templates-and-seeding.md` for the full list. Common ones:
 
 - `{{name}}` — full extension name e.g. "Acme Customer Core"
 - `{{shortName}}` — workspace name without spaces e.g. "AcmeCustomer"
-- `{{prefix}}` — the AppSourceCop mandatoryPrefix e.g. "CONIT"
+- `{{prefix}}` — the AppSourceCop mandatoryPrefix e.g. "EXMPL"
 - `{{namespace}}` — the folder path dot-separated e.g. "Source.Foundation"
 
 ## What goes here

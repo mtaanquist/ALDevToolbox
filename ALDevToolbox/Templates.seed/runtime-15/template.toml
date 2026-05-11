@@ -17,12 +17,12 @@ module_id_range_start = 91000
 module_id_range_size = 200
 
 [defaults]
-publisher = "Consortio IT"
+publisher = "Example Publisher"
 target = "Cloud"
-url = "https://www.consortio.dk/"
+url = "https://example.com/"
 logo = "../.assets/images/logo.png"
 features = ["TranslationFile", "NoImplicitWith"]
-supportedLocales = ["en-US", "da-DK"]
+supportedLocales = ["en-US"]
 
 [defaults.resourceExposurePolicy]
 allowDebugging = true
@@ -30,8 +30,8 @@ allowDownloadingSource = false
 includeSourceInSymbolFile = true
 
 [appSourceCop]
-mandatoryPrefix = "CONIT"
-supportedCountries = ["US", "DK"]
+mandatoryPrefix = "EXMPL"
+supportedCountries = ["US"]
 
 # Folder structure modelled on the Core extension layout the team is moving to.
 # Each [[folders.files]] block seeds one file into the parent folder; the

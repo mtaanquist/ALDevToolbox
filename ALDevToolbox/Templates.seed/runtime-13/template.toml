@@ -16,12 +16,12 @@ module_id_range_start = 91000
 module_id_range_size = 200
 
 [defaults]
-publisher = "Consortio IT"
+publisher = "Example Publisher"
 target = "Cloud"
-url = "https://www.consortio.dk/"
+url = "https://example.com/"
 logo = "../.assets/images/logo.png"
 features = ["TranslationFile", "NoImplicitWith"]
-supportedLocales = ["en-US", "da-DK"]
+supportedLocales = ["en-US"]
 
 [defaults.resourceExposurePolicy]
 allowDebugging = true
@@ -29,8 +29,8 @@ allowDownloadingSource = false
 includeSourceInSymbolFile = true
 
 [appSourceCop]
-mandatoryPrefix = "CONIT"
-supportedCountries = ["US", "DK"]
+mandatoryPrefix = "EXMPL"
+supportedCountries = ["US"]
 
 # Element-type folders, matching the existing static tool's output.
 # Note: reportextensions and reports also need a layouts/ subfolder. The

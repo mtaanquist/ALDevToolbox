@@ -163,6 +163,17 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     overflow-y: auto;
 }
 
+/* Centre every page's top-level wrapper inside the content column. Pages
+   set their own max-width (.admin-page, .workspace-page, .audit-page,
+   etc.); margin-inline:auto is a no-op for elements with no max-width
+   so this also leaves naturally-full-width content alone. */
+.content > * { margin-inline: auto; }
+
+/* SiteAdmin pages place a bare .admin-section at the root; give it the
+   same reading width as .admin-page so the work area stays consistent
+   across the app. */
+.content > .admin-section { max-width: 1100px; }
+
 /* ---------- Sidebar nav ---------- */
 
 .sidebar-nav { display: flex; flex-direction: column; gap: 18px; }
@@ -506,8 +517,29 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .form-section input[type="search"],
 .form-section input[type="time"],
 .form-section input[type="datetime-local"],
+.form-section input[type="file"],
 .form-section textarea,
-.form-section select {
+.form-section select,
+.form-grid > input[type="text"],
+.form-grid > input[type="email"],
+.form-grid > input[type="number"],
+.form-grid > input[type="password"],
+.form-grid > input[type="search"],
+.form-grid > input[type="time"],
+.form-grid > input[type="datetime-local"],
+.form-grid > input[type="file"],
+.form-grid > textarea,
+.form-grid > select,
+.admin-form input[type="text"],
+.admin-form input[type="email"],
+.admin-form input[type="number"],
+.admin-form input[type="password"],
+.admin-form input[type="search"],
+.admin-form input[type="time"],
+.admin-form input[type="datetime-local"],
+.admin-form input[type="file"],
+.admin-form textarea,
+.admin-form select {
     width: 100%;
     padding: 8px 10px;
     border: 1px solid var(--color-border-strong);
@@ -518,11 +550,19 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     color: var(--color-text);
 }
 
-.form-section textarea { resize: vertical; min-height: 70px; }
+.form-section textarea,
+.form-grid > textarea,
+.admin-form textarea { resize: vertical; min-height: 70px; }
 
 .form-section input:disabled,
 .form-section textarea:disabled,
-.form-section select:disabled {
+.form-section select:disabled,
+.form-grid > input:disabled,
+.form-grid > textarea:disabled,
+.form-grid > select:disabled,
+.admin-form input:disabled,
+.admin-form textarea:disabled,
+.admin-form select:disabled {
     background: var(--color-bg);
     color: var(--color-text-secondary);
     cursor: not-allowed;
@@ -530,7 +570,13 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .form-section input:focus,
 .form-section textarea:focus,
-.form-section select:focus {
+.form-section select:focus,
+.form-grid > input:focus,
+.form-grid > textarea:focus,
+.form-grid > select:focus,
+.admin-form input:focus,
+.admin-form textarea:focus,
+.admin-form select:focus {
     outline: 2px solid var(--color-accent);
     outline-offset: -1px;
     border-color: var(--color-accent);
@@ -541,11 +587,112 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
    colour and use the inset-shadow trick to mask the agent default. */
 .form-section input:-webkit-autofill,
 .form-section input:-webkit-autofill:hover,
-.form-section input:-webkit-autofill:focus {
+.form-section input:-webkit-autofill:focus,
+.form-grid > input:-webkit-autofill,
+.form-grid > input:-webkit-autofill:hover,
+.form-grid > input:-webkit-autofill:focus,
+.admin-form input:-webkit-autofill,
+.admin-form input:-webkit-autofill:hover,
+.admin-form input:-webkit-autofill:focus {
     -webkit-text-fill-color: var(--color-text);
     -webkit-box-shadow: 0 0 0 1000px var(--color-surface) inset;
     caret-color: var(--color-text);
     transition: background-color 9999s ease-in-out 0s;
+}
+
+/* Sections inside .admin-form / .form-grid that pair a label with an
+   input. SiteAdminSettings wraps both inside the same <label> element;
+   AdminConfiguration places the .section-label and the input as sibling
+   children of .form-grid. Both layouts need the same vertical rhythm. */
+.admin-form > label,
+.admin-form > .form-row > label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+}
+
+.admin-form > label > input,
+.admin-form > label > textarea,
+.admin-form > label > select,
+.admin-form > .form-row > label > input,
+.admin-form > .form-row > label > textarea,
+.admin-form > .form-row > label > select {
+    /* Reset the inherited uppercase from the label so the typed text
+       reads at normal case. */
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: 13.5px;
+    font-weight: 400;
+    color: var(--color-text);
+}
+
+.admin-form .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.admin-form .checkbox-label,
+.admin-form label.checkbox-label {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: normal;
+    text-transform: none;
+    color: var(--color-text);
+}
+
+.admin-form .checkbox-label input[type="checkbox"] {
+    margin: 0;
+}
+
+.admin-form > h2 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 8px 0 4px;
+    color: var(--color-text);
+}
+
+.admin-form > h2:first-child { margin-top: 0; }
+
+.admin-form,
+.admin-form--inline {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.admin-form--inline {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+}
+
+.admin-form .form-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 6px;
+}
+
+/* `.form-info` is referenced by SiteAdminSettings for success toasts;
+   match the form-success rule's visual chrome but keep the original
+   class so the page renders consistently. */
+.form-info {
+    color: var(--color-valid);
+    background: var(--color-surface);
+    border: 1px solid var(--color-valid);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    margin: 0 0 16px;
+    font-size: 13px;
 }
 
 .caption { font-size: 12px; margin: 0; }
@@ -631,6 +778,50 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 }
 
 .data-table__actions .btn + .btn { margin-left: 8px; }
+
+/* Inline action cell used on the Users / Invites tables. Lays out the
+   per-row form buttons on a single line and gives them a consistent gap
+   regardless of whether each <form> is rendered as inline-block. */
+.row-actions {
+    width: 1%;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.row-actions form { display: inline-block; }
+.row-actions form + form,
+.row-actions form + .btn,
+.row-actions .btn + form,
+.row-actions .btn + .btn { margin-left: 6px; }
+
+/* Small status pills for table cells (e.g. user Active/Disabled, role
+   Admin/User). Same look as .user-button__role so the chrome is
+   consistent across the app. */
+.status-pill {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    line-height: 1.6;
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+    white-space: nowrap;
+}
+
+.status-pill--muted {
+    background: var(--color-bg);
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+}
+
+.status-pill--warn {
+    background: rgba(207, 34, 46, 0.08);
+    color: #cf222e;
+}
+
+.status-pill--inline { margin-left: 6px; }
 
 /* ---------- Dependency picker ---------- */
 
@@ -846,6 +1037,23 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .user-button__name { font-weight: 500; }
 
+.user-button__org {
+    color: var(--color-text-secondary);
+    font-weight: 400;
+}
+
+.user-button__role {
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+
 .user-button__icon { color: var(--color-text-muted); flex: 0 0 auto; }
 
 .user-button:hover .user-button__icon { color: var(--color-accent); }
@@ -951,6 +1159,105 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .admin-section p {
     margin: 0 0 12px;
+}
+
+/* Stacked form-style sections — keep a consistent gap between siblings
+   so configuration pages don't render their forms flush against
+   following sections. */
+.admin-section > form,
+.admin-section > .form-grid {
+    margin-bottom: 12px;
+}
+
+.admin-section > form + form { margin-top: 12px; }
+
+.admin-section h3 {
+    font-size: 13px;
+    font-weight: 600;
+    margin: 16px 0 8px;
+    color: var(--color-text);
+}
+
+/* ---------- Configuration page ---------- */
+
+.logo-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: var(--color-bg);
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius);
+    margin-bottom: 12px;
+    min-height: 120px;
+}
+
+.logo-preview__img {
+    max-width: 220px;
+    max-height: 120px;
+    display: block;
+}
+
+.org-file-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.org-file-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+}
+
+.org-file-row__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+}
+
+.org-file-row__head code {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+}
+
+.org-file-row__body { margin: 0; }
+
+.org-file-row__content {
+    margin: 0;
+    padding: 8px 10px;
+    background: var(--color-bg);
+    border-radius: var(--radius);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 180px;
+    overflow: auto;
+}
+
+.org-file-row__actions {
+    display: flex;
+    gap: 8px;
+}
+
+.org-file-save-row {
+    display: flex;
+    justify-content: flex-start;
+    margin-top: 12px;
+}
+
+.admin-configuration__danger {
+    border-top-color: rgba(207, 34, 46, 0.4);
 }
 
 /* ---------- Audit log ---------- */

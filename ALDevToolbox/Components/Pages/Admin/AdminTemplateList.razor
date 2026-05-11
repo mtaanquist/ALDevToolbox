@@ -25,6 +25,15 @@
         </a>
     </header>
 
+    @if (Ok == "default-set")
+    {
+        <p class="form-success" role="status">Default template updated.</p>
+    }
+    @if (!string.IsNullOrEmpty(Msg))
+    {
+        <p class="form-error" role="alert">@Msg</p>
+    }
+
     <div class="admin-page__toolbar">
         <label class="check-row">
             <input type="checkbox" @bind="_showDeleted" @bind:after="ReloadAsync" />
@@ -135,13 +144,29 @@
                                    checked="@_selected.Contains(t.Id)"
                                    @onchange="(e) => ToggleRow(t.Id, e)" />
                         </td>
-                        <td><code>@t.Key</code></td>
+                        <td>
+                            <code>@t.Key</code>
+                            @if (t.IsDefault)
+                            {
+                                <span class="status-pill status-pill--inline" title="Selected by default on New Workspace / New Extension">Default</span>
+                            }
+                        </td>
                         <td>@t.Runtime</td>
                         <td>@t.Name</td>
                         <td>@t.Folders.Count</td>
                         <td>@StatusFor(t)</td>
                         <td><time datetime="@t.UpdatedAt.ToString("O")">@t.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                         <td class="data-table__actions">
+                            @if (!t.IsDefault && t.DeletedAt is null && !t.Deprecated)
+                            {
+                                <form method="post" action="@($"/admin/templates/{t.Id}/default")" style="display:inline">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="btn btn--sm" title="Use this template by default on New Workspace / New Extension">
+                                        <Icon Name="star" Width="14" Height="14" />
+                                        <span>Set default</span>
+                                    </button>
+                                </form>
+                            }
                             <a class="btn btn--sm" href="@($"/admin/templates/{Uri.EscapeDataString(t.Key)}")">
                                 <Icon Name="pencil" Width="14" Height="14" />
                                 <span>Edit</span>
@@ -162,6 +187,9 @@
 <ConfirmDialog @ref="_confirm" />
 
 @code {
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+    [SupplyParameterFromQuery(Name = "msg")] public string? Msg { get; set; }
+
     private bool _showDeleted;
     private bool _hideDeprecated;
     private List<RuntimeTemplate>? _rows;

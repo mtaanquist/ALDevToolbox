@@ -322,7 +322,10 @@
         _modules = await Templates.GetModulesAsync(includeDeprecated: false);
         _applicationVersions = await Versions.GetActiveAsync(includeDeprecated: false);
         _orgConfig = await OrgConfig.GetCurrentAsync();
-        _selected = _templates.FirstOrDefault();
+        // Prefer the per-org default template; fall back to the first row so
+        // a fresh organisation without a default still gets a sensible
+        // initial selection.
+        _selected = _templates.FirstOrDefault(t => t.IsDefault) ?? _templates.FirstOrDefault();
         if (_selected is not null)
         {
             ApplyTemplateDefaults(_selected);
