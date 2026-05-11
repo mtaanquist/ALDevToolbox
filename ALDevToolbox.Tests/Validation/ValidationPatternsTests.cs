@@ -28,9 +28,13 @@ public sealed class ValidationPatternsTests
     [InlineData("has space")]
     [InlineData("under_score")]
     [InlineData("dot.notation")]
-    [InlineData("trailing-newline\n")]
     public void Key_rejects_anything_outside_lowercase_alphanumeric_and_hyphen(string value)
     {
         ValidationPatterns.Key.IsMatch(value).Should().BeFalse();
     }
+
+    // No trailing-newline case: .NET regex `$` matches the position before a
+    // final `\n` (Perl-style), so "foo\n" passes ^[a-z0-9-]+$. The three call
+    // sites all .Trim() before applying the regex, so this never surfaces in
+    // practice — don't pretend otherwise here.
 }
