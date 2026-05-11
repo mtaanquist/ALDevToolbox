@@ -60,6 +60,7 @@ public class EndpointAmbiguityTests : IClassFixture<TestDb>
                 .GetRequiredService<EndpointDataSource>()
                 .Endpoints
                 .OfType<RouteEndpoint>()
+                .Where(e => !IsStaticAssetEndpoint(e))
                 .ToList();
 
             var conflicts = new List<string>();
@@ -106,6 +107,25 @@ public class EndpointAmbiguityTests : IClassFixture<TestDb>
         return meta is null || meta.HttpMethods.Count == 0
             ? CanonicalMethods
             : meta.HttpMethods;
+    }
+
+    // MapStaticAssets registers multiple endpoints per asset (fingerprinted +
+    // unfingerprinted, compressed + uncompressed) that share a route pattern.
+    // Its matcher disambiguates them via content negotiation, not by URL, so
+    // they never raise AmbiguousMatchException — they'd only produce false
+    // positives here. Identify them by their static-assets metadata rather
+    // than by pattern shape so future framework changes don't slip past.
+    private static bool IsStaticAssetEndpoint(RouteEndpoint endpoint)
+    {
+        foreach (var metadata in endpoint.Metadata)
+        {
+            if (metadata?.GetType().FullName is { } name
+                && name.StartsWith("Microsoft.AspNetCore.StaticAssets", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static string LocateProjectFolder()
