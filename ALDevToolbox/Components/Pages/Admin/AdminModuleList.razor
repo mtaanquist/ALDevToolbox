@@ -62,7 +62,7 @@
     {
         @if (_selected.Count > 0)
         {
-            <div class="bulk-bar" role="region" aria-label="Bulk actions">
+            <div class="bulk-bar" role="region" aria-label="Bulk actions" aria-live="polite">
                 <span class="bulk-bar__summary">@_selected.Count selected</span>
                 <div class="bulk-bar__actions">
                     <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.SoftDelete)" disabled="@_busy">

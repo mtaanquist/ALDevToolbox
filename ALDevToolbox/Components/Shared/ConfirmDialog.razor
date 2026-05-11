@@ -12,8 +12,9 @@
 
 @if (_open)
 {
-    <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="@_titleId">
-        <div class="confirm-modal__backdrop" @onclick="Cancel"></div>
+    <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="@_titleId"
+         @onkeydown="OnKeyDown" @onkeydown:stopPropagation tabindex="-1">
+        <div class="confirm-modal__backdrop" @onclick="Cancel" aria-hidden="true"></div>
         <div class="confirm-modal__panel" @onclick:stopPropagation>
             <h2 id="@_titleId" class="confirm-modal__title">@_title</h2>
             @if (!string.IsNullOrEmpty(_message))
@@ -21,14 +22,22 @@
                 <p class="confirm-modal__message">@_message</p>
             }
             <div class="confirm-modal__actions">
-                <button type="button" class="btn" @onclick="Cancel">@CancelLabel</button>
-                <button type="button" class="btn @_confirmButtonClass" @onclick="Confirm" autofocus>
+                @* Focus sentinels close the focus cycle (Tab from the last
+                   button wraps back to the first, Shift+Tab from the first
+                   button wraps to the last). Cheap focus trap without a JS
+                   interop hop. *@
+                <span tabindex="0" class="visually-hidden"
+                      @onfocus="FocusLastAction" aria-hidden="true"></span>
+                <button type="button" class="btn" @onclick="Cancel" @ref="_cancelButton">@CancelLabel</button>
+                <button type="button" class="btn @_confirmButtonClass" @onclick="Confirm" autofocus @ref="_confirmButton">
                     @if (!string.IsNullOrEmpty(_confirmIcon))
                     {
                         <Icon Name="@_confirmIcon" Width="14" Height="14" />
                     }
                     <span>@_confirmLabel</span>
                 </button>
+                <span tabindex="0" class="visually-hidden"
+                      @onfocus="FocusFirstAction" aria-hidden="true"></span>
             </div>
         </div>
     </div>
@@ -55,6 +64,8 @@
     private string _confirmLabel = "Confirm";
     private string _confirmButtonClass = "btn--danger";
     private string? _confirmIcon;
+    private ElementReference _confirmButton;
+    private ElementReference _cancelButton;
 
     protected override void OnParametersSet()
     {
@@ -107,5 +118,28 @@
         _open = false;
         _tcs?.TrySetResult(false);
         _tcs = null;
+    }
+
+    // Esc cancels — standard dialog affordance. The keydown handler is on the
+    // root .confirm-modal element so it fires while any descendant has focus.
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" || e.Key == "Esc")
+        {
+            Cancel();
+        }
+    }
+
+    // Focus-cycle sentinels — see the spans flanking the action buttons.
+    private async Task FocusFirstAction()
+    {
+        try { await _cancelButton.FocusAsync(); }
+        catch { /* element already detached after Confirm/Cancel */ }
+    }
+
+    private async Task FocusLastAction()
+    {
+        try { await _confirmButton.FocusAsync(); }
+        catch { /* element already detached after Confirm/Cancel */ }
     }
 }
