@@ -37,6 +37,9 @@ copy rather than reinvent.
 | `Audit/`          | `AuditInterceptor` snapshot tests.                                 |
 | `Toml/`           | `TemplateTomlMapper` round-trip tests.                             |
 | `Validation/`     | `PlanValidationException` field-key surface tests.                 |
+| `Routing/`        | End-to-end endpoint inspection — boots the app via                  |
+|                   | `WebApplicationFactory<Program>` and asserts the endpoint map is    |
+|                   | unambiguous (catches `MapPost` / `@page` collisions at build time). |
 
 When you add a new test file, match the folder. Resist creating new
 top-level folders for one-off tests — pick the closest existing bucket.

@@ -40,6 +40,13 @@ public sealed class TestDb : IDisposable
     private readonly string _connectionString;
     private readonly DbContextOptions<AppDbContext> _options;
 
+    /// <summary>
+    /// Connection string to the per-fixture database. Exposed for tests that
+    /// boot the real app pipeline (e.g. via <c>WebApplicationFactory&lt;Program&gt;</c>)
+    /// and need to point startup at the same scratch database the fixture set up.
+    /// </summary>
+    public string ConnectionString => _connectionString;
+
     public AmbientOrganizationContext OrgContext { get; } = new() { CurrentOrganizationId = DefaultOrgId };
 
     public TestDb()
