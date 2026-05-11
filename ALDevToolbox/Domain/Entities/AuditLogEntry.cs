@@ -23,6 +23,7 @@ public enum AuditEntityType
     OrganizationFile,
     SystemSettings,
     Backup,
+    Invite,
 }
 
 /// <summary>The kind of change captured by an audit row.</summary>
