@@ -12,6 +12,14 @@
 <PageTitle>New extension · AL Dev Toolbox</PageTitle>
 
 <div class="workspace-page">
+    <header class="page-header">
+        <h1>New extension</h1>
+        <p class="muted">
+            Generate a standalone extension that drops into an existing AL
+            workspace. Pick a template and the modules it should reference.
+        </p>
+    </header>
+
     @if (_templates is null || _catalog is null || _modules is null || _applicationVersions is null)
     {
         <p class="muted">Loading…</p>
