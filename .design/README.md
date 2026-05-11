@@ -9,7 +9,7 @@ Living specification for the AL Dev Toolbox. The code in `ALDevToolbox/` is the 
 | `architecture.md` | Stack, layers, request flow, services. |
 | `domain-model.md` | Tables, columns, validation rules. |
 | `generation-engine.md` | Generated ZIP layout, mustache substitution, ID-range allocation. |
-| `templates-and-seeding.md` | Template TOML schema; how `Templates.seed/` bootstraps an empty organisation. |
+| `templates-and-seeding.md` | Template TOML schema; how the system org seeds other organisations via `TemplateImportService`. |
 | `auth-and-audit.md` | Email/password accounts, organisations, signup approval, audit interceptor. |
 | `ui-design.md` | Page layout, copy, components in `Components/Shared/`. |
 | `deployment.md` | Docker, env vars, health checks, backups. |

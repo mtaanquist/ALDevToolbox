@@ -39,18 +39,15 @@ public class OrganizationConfigService
 
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
-    private readonly IWebHostEnvironment _env;
     private readonly ILogger<OrganizationConfigService> _logger;
 
     public OrganizationConfigService(
         AppDbContext db,
         IOrganizationContext orgContext,
-        IWebHostEnvironment env,
         ILogger<OrganizationConfigService> logger)
     {
         _db = db;
         _orgContext = orgContext;
-        _env = env;
         _logger = logger;
     }
 
@@ -194,40 +191,19 @@ public class OrganizationConfigService
     }
 
     /// <summary>
-    /// Re-installs the logo from <c>Templates.seed/organization-defaults/</c>.
-    /// Drops the row entirely if no defaults file is on disk; the
-    /// <see cref="GenerationService"/> writes a fallback in that case.
+    /// Removes the per-org logo. With the on-disk seed retired, there is no
+    /// "default" logo to revert to; <see cref="GenerationService"/> falls back
+    /// to its built-in placeholder when no row is present.
     /// </summary>
     public async Task RevertLogoAsync(CancellationToken ct = default)
     {
         var orgId = RequireOrganizationId();
         var row = await _db.OrganizationAssets
             .FirstOrDefaultAsync(a => a.OrganizationId == orgId && a.Kind == OrganizationAssetKind.Logo, ct);
-
-        var (defaultBytes, defaultContentType) = ReadDefaultLogoFromDisk();
-        if (defaultBytes is null)
-        {
-            if (row is not null) _db.OrganizationAssets.Remove(row);
-        }
-        else
-        {
-            if (row is null)
-            {
-                row = new OrganizationAsset
-                {
-                    OrganizationId = orgId,
-                    Kind = OrganizationAssetKind.Logo,
-                };
-                _db.OrganizationAssets.Add(row);
-            }
-            row.ContentType = defaultContentType!;
-            row.Content = defaultBytes;
-            row.UpdatedAt = DateTime.UtcNow;
-        }
-
+        if (row is not null) _db.OrganizationAssets.Remove(row);
         await _db.SaveChangesAsync(ct);
         InvalidateCache(orgId);
-        _logger.LogInformation("Reverted logo for org {OrgId} to seed default.", orgId);
+        _logger.LogInformation("Removed logo for org {OrgId}.", orgId);
     }
 
     /// <summary>
@@ -284,71 +260,6 @@ public class OrganizationConfigService
 
         _logger.LogInformation(
             "Saved {Count} always-included file(s) for org {OrgId}.", inputs.Count, orgId);
-    }
-
-    /// <summary>
-    /// Idempotent first-run populate: writes the seed-default settings, logo
-    /// and files for an organisation that has none. Called by
-    /// <see cref="SeedService"/> and by the import path.
-    /// </summary>
-    public async Task PopulateDefaultsAsync(int organizationId, CancellationToken ct = default)
-    {
-        var now = DateTime.UtcNow;
-
-        var hasSettings = await _db.OrganizationSettings
-            .IgnoreQueryFilters()
-            .AnyAsync(s => s.OrganizationId == organizationId, ct);
-        if (!hasSettings)
-        {
-            // Pull a sane default publisher off the org's first runtime template
-            // when one is in scope (a fresh seed has just inserted them); fall
-            // back to empty otherwise so the form caption nudges the admin to
-            // fill it in. <c>Defaults</c> is JSON-backed so we can't project the
-            // nested field in the SQL — pull the row first.
-            var firstTemplate = await _db.RuntimeTemplates
-                .IgnoreQueryFilters()
-                .AsNoTracking()
-                .Where(t => t.OrganizationId == organizationId && t.DeletedAt == null)
-                .OrderBy(t => t.Id)
-                .FirstOrDefaultAsync(ct);
-            var publisher = firstTemplate?.Defaults.Publisher;
-
-            _db.OrganizationSettings.Add(new OrganizationSettings
-            {
-                OrganizationId = organizationId,
-                DefaultPublisher = publisher ?? string.Empty,
-                DefaultIdRangeFrom = 90000,
-                DefaultIdRangeTo = 90999,
-                DefaultBrief = string.Empty,
-                DefaultCoreDescription = string.Empty,
-                UpdatedAt = now,
-            });
-        }
-
-        var hasLogo = await _db.OrganizationAssets
-            .IgnoreQueryFilters()
-            .AnyAsync(a => a.OrganizationId == organizationId && a.Kind == OrganizationAssetKind.Logo, ct);
-        if (!hasLogo)
-        {
-            var (bytes, contentType) = ReadDefaultLogoFromDisk();
-            if (bytes is not null)
-            {
-                _db.OrganizationAssets.Add(new OrganizationAsset
-                {
-                    OrganizationId = organizationId,
-                    Kind = OrganizationAssetKind.Logo,
-                    ContentType = contentType!,
-                    Content = bytes,
-                    UpdatedAt = now,
-                });
-            }
-        }
-
-        // Files start empty: the seed defaults dir doesn't ship any
-        // always-included text file in v1 — admins add their own
-        // `.editorconfig` / per-org `README.md` through the admin UI.
-        await _db.SaveChangesAsync(ct);
-        InvalidateCache(organizationId);
     }
 
     /// <summary>
@@ -501,7 +412,7 @@ public class OrganizationConfigService
             orgId, fileInputs.Count, logoBytes is null ? string.Empty : " + logo");
     }
 
-    /// <summary>Mirrors <see cref="SeedService"/>'s TOML options.</summary>
+    /// <summary>TOML deserialiser options used by the per-org config import.</summary>
     private static readonly TomlSerializerOptions TomlImportOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
@@ -523,44 +434,6 @@ public class OrganizationConfigService
         text = SvgScriptTagRegex.Replace(text, string.Empty);
         text = SvgEventAttrRegex.Replace(text, string.Empty);
         return Encoding.UTF8.GetBytes(text);
-    }
-
-    private (byte[]? Bytes, string? ContentType) ReadDefaultLogoFromDisk()
-    {
-        var seedRoot = ResolveSeedPath();
-        if (seedRoot is null) return (null, null);
-        var defaults = Path.Combine(seedRoot, "organization-defaults");
-        var pngPath = Path.Combine(defaults, "logo.png");
-        if (File.Exists(pngPath))
-        {
-            return (File.ReadAllBytes(pngPath), "image/png");
-        }
-        var svgPath = Path.Combine(defaults, "logo.svg");
-        if (File.Exists(svgPath))
-        {
-            return (File.ReadAllBytes(svgPath), "image/svg+xml");
-        }
-        return (null, null);
-    }
-
-    /// <summary>
-    /// Mirrors <see cref="SeedService.ResolveSeedPath"/>: SEED_PATH env var
-    /// wins, then walks upward from the content root looking for
-    /// <c>Templates.seed/</c>.
-    /// </summary>
-    private string? ResolveSeedPath()
-    {
-        var fromEnv = Environment.GetEnvironmentVariable("SEED_PATH");
-        if (!string.IsNullOrWhiteSpace(fromEnv))
-            return Path.GetFullPath(fromEnv);
-        var dir = new DirectoryInfo(_env.ContentRootPath);
-        while (dir is not null)
-        {
-            var candidate = Path.Combine(dir.FullName, "Templates.seed");
-            if (Directory.Exists(candidate)) return candidate;
-            dir = dir.Parent;
-        }
-        return null;
     }
 
     private static void Validate(OrganizationSettingsInput input)

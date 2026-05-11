@@ -69,7 +69,7 @@ public sealed class BackupServiceTests : IDisposable
             ctx.Organizations.Add(new Organization
             {
                 Name = "Marker", Slug = "marker-pre-backup",
-                IsPending = false, IsSeeded = true, CreatedAt = DateTime.UtcNow,
+                IsPending = false, CreatedAt = DateTime.UtcNow,
             });
             await ctx.SaveChangesAsync();
         }
@@ -84,7 +84,7 @@ public sealed class BackupServiceTests : IDisposable
             ctx.Organizations.Add(new Organization
             {
                 Name = "Replacement", Slug = "marker-post-backup",
-                IsPending = false, IsSeeded = true, CreatedAt = DateTime.UtcNow,
+                IsPending = false, CreatedAt = DateTime.UtcNow,
             });
             await ctx.SaveChangesAsync();
         }

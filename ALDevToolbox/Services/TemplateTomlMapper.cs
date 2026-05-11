@@ -9,12 +9,11 @@ namespace ALDevToolbox.Services;
 
 /// <summary>
 /// Bridge between the persisted <see cref="RuntimeTemplate"/> shape and the
-/// <c>template.toml</c> seed format. Lets the admin edit page render and parse
-/// a template in its TOML representation as an alternative to the structured
-/// form. The DB remains the source of truth — this class exists purely as an
-/// editor serialisation, not a sync mechanism. The TOML schema is documented
-/// in <c>.design/templates-and-seeding.md</c> and mirrors
-/// <c>Templates.seed/runtime-*/template.toml</c>.
+/// <c>template.toml</c> document format. Lets the admin edit page render and
+/// parse a template in its TOML representation as an alternative to the
+/// structured form. The DB remains the source of truth — this class exists
+/// purely as an editor serialisation, not a sync mechanism. The TOML schema
+/// is documented in <c>.design/templates-and-seeding.md</c>.
 /// </summary>
 public static class TemplateTomlMapper
 {

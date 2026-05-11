@@ -61,9 +61,8 @@
         <h2>Backup</h2>
         <p class="muted">
             Download every active template, module, and catalogue entry as a
-            ZIP whose layout matches <code>Templates.seed/</code>. Use it as a
-            point-in-time snapshot, to grep the live state outside the app, or
-            to re-seed a fresh database after a wipe.
+            TOML ZIP. Use it as a point-in-time snapshot or to grep the live
+            state outside the app.
         </p>
         <form method="post" action="/admin/export">
             <AntiforgeryToken />

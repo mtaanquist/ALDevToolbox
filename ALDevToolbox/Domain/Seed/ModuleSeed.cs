@@ -1,9 +1,8 @@
 namespace ALDevToolbox.Domain.Seed;
 
 /// <summary>
-/// In-memory representation of a <c>Templates.seed/modules/&lt;key&gt;.toml</c>
-/// file. The shape mirrors the TOML directly; the <c>SeedService</c> maps it
-/// onto the EF entities.
+/// In-memory representation of a single module TOML document. Used by the
+/// export pipeline to serialise module rows for off-site storage.
 /// </summary>
 public class ModuleSeedFile
 {

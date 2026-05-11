@@ -2,12 +2,10 @@ using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Testcontainers.PostgreSql;
@@ -54,18 +52,14 @@ public sealed class TestDb : IDisposable
         using var ctx = new AppDbContext(_options, OrgContext);
         ctx.Database.Migrate();
 
-        // Migration seeds the Default organisation; flip IsSeeded=true so test
-        // bootstrap paths that branch on it don't kick off seed runs they
-        // didn't ask for. Add the Other organisation tests use to verify
-        // cross-org isolation.
-        var defaultOrg = ctx.Organizations.IgnoreQueryFilters().Single(o => o.Id == DefaultOrgId);
-        defaultOrg.IsSeeded = true;
+        // Migration seeds the Default organisation and stamps it as the
+        // singleton system org. Add the Other organisation tests use to
+        // verify cross-org isolation; it stays a regular org.
         ctx.Organizations.Add(new Organization
         {
             Id = OtherOrgId,
             Name = "Other",
             Slug = "other",
-            IsSeeded = true,
             CreatedAt = DateTime.UtcNow,
         });
         ctx.SaveChanges();
@@ -114,13 +108,12 @@ public sealed class TestDb : IDisposable
     }
 
     /// <summary>
-    /// Returns a fresh <see cref="OrganizationConfigService"/> wired against a
-    /// stub <see cref="IWebHostEnvironment"/>. Tests that don't need
-    /// <c>Templates.seed/organization-defaults/</c> can use this directly; tests
-    /// that do should override <c>SEED_PATH</c> via env var inside their scope.
+    /// Returns a fresh <see cref="OrganizationConfigService"/> for tests that
+    /// don't need the live DI graph. The on-disk seed has been retired; the
+    /// service no longer touches the filesystem.
     /// </summary>
     public OrganizationConfigService NewOrganizationConfigService(AppDbContext ctx) =>
-        new(ctx, OrgContext, new StubWebHostEnvironment(), NullLogger<OrganizationConfigService>.Instance);
+        new(ctx, OrgContext, NullLogger<OrganizationConfigService>.Instance);
 
     /// <summary>
     /// Returns an <see cref="AuditInterceptor"/> wired to an empty
@@ -144,15 +137,6 @@ public sealed class TestDb : IDisposable
         return services.BuildServiceProvider().GetRequiredService<IDataProtectionProvider>();
     });
 
-    private sealed class StubWebHostEnvironment : IWebHostEnvironment
-    {
-        public string EnvironmentName { get; set; } = "Test";
-        public string ApplicationName { get; set; } = "ALDevToolbox.Tests";
-        public string WebRootPath { get; set; } = string.Empty;
-        public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
-        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
-        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
-    }
 }
 
 /// <summary>

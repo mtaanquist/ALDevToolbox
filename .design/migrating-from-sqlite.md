@@ -14,7 +14,7 @@ The procedure assumes you control both the old and the new deployment. If the ne
 
 1. **On the old (SQLite) deployment** — sign in as an admin in each organisation that needs to carry over and click **Export to TOML** under `/admin/configuration`. Save the resulting ZIP per-organisation; export is per-org. (If the old deployment is the single-tenant pre-M13 layout, you only have the one export to take.)
 
-2. **Provision the new deployment** — start the new compose stack. The `db` service comes up empty; the app applies the M16 `InitialCreate` migration; the bootstrap admin (from `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD`) lands in the **Default** organisation. The Default org is seeded from `Templates.seed/` on first admin login.
+2. **Provision the new deployment** — start the new compose stack. The `db` service comes up empty; the app applies the `InitialCreate` migration and the follow-on `MoveSeedToSystemOrg` migration; the bootstrap admin (from `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD`) lands in the **Default** organisation, which is now the singleton system org other organisations fork from. The Default org's template catalogue starts empty — the SiteAdmin authors canonical templates via `/admin/templates` (use the TOML editor to paste templates exported from the SQLite deployment).
 
 3. **For each organisation** — sign in as that org's admin and use the **Import** button under `/admin/configuration` to upload the TOML ZIP exported in step 1. Import is idempotent; re-uploading the same ZIP into the same org is safe.
 
