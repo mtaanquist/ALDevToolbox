@@ -42,10 +42,16 @@ services:
       # SMTP-password ciphertext key across container restarts. Override
       # via DATA_PROTECTION_KEY_DIR if your volume layout differs.
       DATA_PROTECTION_KEY_DIR: /var/lib/aldevtoolbox/dp-keys
+      # M18: BackupService writes pg_dump files here. Override via BACKUPS_DIR
+      # if your volume layout differs; the app-backups named volume is the
+      # only place backups live in the supported deployment shape.
+      BACKUPS_DIR: /var/lib/aldevtoolbox/backups
     volumes:
       - app-keys:/var/lib/aldevtoolbox/dp-keys
+      - app-backups:/var/lib/aldevtoolbox/backups
     restart: unless-stopped
 
 volumes:
   pg-data:
   app-keys:
+  app-backups:

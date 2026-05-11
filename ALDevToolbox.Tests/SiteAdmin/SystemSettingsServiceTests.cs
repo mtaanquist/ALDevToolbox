@@ -144,6 +144,32 @@ public sealed class SystemSettingsServiceTests : IDisposable
         ex.Which.Errors.Should().ContainKey("SmtpFrom");
     }
 
+    [Fact]
+    public async Task Save_validates_backup_retention_range()
+    {
+        var svc = NewService();
+        Func<Task> bad = () => svc.SaveAsync(NewInput() with { BackupRetentionCount = 0 });
+        var ex = await bad.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("BackupRetentionCount");
+    }
+
+    [Fact]
+    public async Task Save_persists_backup_schedule_fields()
+    {
+        var svc = NewService();
+        await svc.SaveAsync(NewInput() with
+        {
+            BackupScheduleEnabled = false,
+            BackupScheduleTimeUtc = new TimeOnly(3, 15),
+            BackupRetentionCount = 7,
+        });
+
+        var view = await svc.GetViewAsync();
+        view.BackupScheduleEnabled.Should().BeFalse();
+        view.BackupScheduleTimeUtc.Should().Be(new TimeOnly(3, 15));
+        view.BackupRetentionCount.Should().Be(7);
+    }
+
     private SystemSettingsService NewService()
     {
         var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor());
@@ -165,5 +191,8 @@ public sealed class SystemSettingsServiceTests : IDisposable
             SmtpFrom: from,
             SmtpUseStartTls: true,
             BannerText: null,
-            DefaultSignupAutoApprove: false);
+            DefaultSignupAutoApprove: false,
+            BackupScheduleEnabled: true,
+            BackupScheduleTimeUtc: new TimeOnly(2, 0),
+            BackupRetentionCount: 14);
 }

@@ -15,9 +15,13 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 
 # curl is needed for the HEALTHCHECK below; the slim aspnet image no longer
-# ships it. Keep the install lean so the image size doesn't drift up.
+# ships it. postgresql-client supplies pg_dump / pg_restore, which the M18
+# BackupService shells out to. The Debian default major may differ from the
+# compose db image (postgres:18) — operators who run scheduled backups in
+# production should override this RUN with postgresql-client-18 from the
+# pgdg repo to match. Keep the install lean so the image size doesn't drift.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends curl postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app ./

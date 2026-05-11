@@ -66,6 +66,7 @@ public class AppDbContext : DbContext
     public DbSet<OrganizationAsset> OrganizationAssets => Set<OrganizationAsset>();
     public DbSet<OrganizationFile> OrganizationFiles => Set<OrganizationFile>();
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
+    public DbSet<Backup> Backups => Set<Backup>();
     public DbSet<AuditLogEntry> AuditLog => Set<AuditLogEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -488,9 +489,33 @@ public class AppDbContext : DbContext
             entity.Property(e => e.SmtpUseStartTls).HasColumnName("smtp_use_starttls");
             entity.Property(e => e.BannerText).HasColumnName("banner_text");
             entity.Property(e => e.DefaultSignupAutoApprove).HasColumnName("default_signup_auto_approve").IsRequired();
+            entity.Property(e => e.BackupScheduleEnabled).HasColumnName("backup_schedule_enabled").IsRequired();
+            entity.Property(e => e.BackupScheduleTimeUtc).HasColumnName("backup_schedule_time_utc")
+                .HasColumnType("time without time zone").IsRequired();
+            entity.Property(e => e.BackupRetentionCount).HasColumnName("backup_retention_count").IsRequired();
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
             // Cross-org table: no organization_id and no scoping query filter;
             // SiteAdminService gates mutations.
+        });
+
+        modelBuilder.Entity<Backup>(entity =>
+        {
+            entity.ToTable("backups");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(e => e.FileName).HasColumnName("file_name").IsRequired();
+            entity.Property(e => e.FileSizeBytes).HasColumnName("file_size_bytes").IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+            entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id");
+            entity.Property(e => e.Kind).HasColumnName("kind").HasConversion<string>().IsRequired();
+            entity.Property(e => e.IsPinned).HasColumnName("is_pinned").IsRequired();
+            entity.HasIndex(e => e.FileName).IsUnique();
+            entity.HasIndex(e => e.CreatedAt);
+            entity.HasOne(e => e.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(e => e.CreatedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            // Cross-org table — SiteAdminService gates mutations.
         });
 
         modelBuilder.Entity<AuditLogEntry>(entity =>

@@ -21,6 +21,9 @@ public sealed record SystemSettingsView(
     bool? SmtpUseStartTls,
     string? BannerText,
     bool DefaultSignupAutoApprove,
+    bool BackupScheduleEnabled,
+    TimeOnly BackupScheduleTimeUtc,
+    int BackupRetentionCount,
     DateTime UpdatedAt);
 
 /// <summary>
@@ -39,7 +42,10 @@ public sealed record SystemSettingsInput(
     string? SmtpFrom,
     bool? SmtpUseStartTls,
     string? BannerText,
-    bool DefaultSignupAutoApprove);
+    bool DefaultSignupAutoApprove,
+    bool BackupScheduleEnabled,
+    TimeOnly BackupScheduleTimeUtc,
+    int BackupRetentionCount);
 
 /// <summary>
 /// Resolved SMTP configuration. Either fully populated (host + from set) or
@@ -115,6 +121,9 @@ public sealed class SystemSettingsService
             SmtpUseStartTls: row.SmtpUseStartTls,
             BannerText: row.BannerText,
             DefaultSignupAutoApprove: row.DefaultSignupAutoApprove,
+            BackupScheduleEnabled: row.BackupScheduleEnabled,
+            BackupScheduleTimeUtc: row.BackupScheduleTimeUtc,
+            BackupRetentionCount: row.BackupRetentionCount,
             UpdatedAt: row.UpdatedAt);
     }
 
@@ -141,6 +150,10 @@ public sealed class SystemSettingsService
         {
             errors["BannerText"] = "Banner text must be 500 characters or fewer.";
         }
+        if (input.BackupRetentionCount < 1 || input.BackupRetentionCount > 365)
+        {
+            errors["BackupRetentionCount"] = "Retention count must be between 1 and 365.";
+        }
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
         var row = await LoadAsync(ct);
@@ -152,6 +165,9 @@ public sealed class SystemSettingsService
         row.SmtpUseStartTls = input.SmtpUseStartTls;
         row.BannerText = NullIfBlank(input.BannerText);
         row.DefaultSignupAutoApprove = input.DefaultSignupAutoApprove;
+        row.BackupScheduleEnabled = input.BackupScheduleEnabled;
+        row.BackupScheduleTimeUtc = input.BackupScheduleTimeUtc;
+        row.BackupRetentionCount = input.BackupRetentionCount;
         row.UpdatedAt = _clock.GetUtcNow().UtcDateTime;
 
         if (input.ClearSmtpPassword)

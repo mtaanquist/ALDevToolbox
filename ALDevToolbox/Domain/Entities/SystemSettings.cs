@@ -40,5 +40,27 @@ public class SystemSettings
     /// </summary>
     public bool DefaultSignupAutoApprove { get; set; }
 
+    /// <summary>
+    /// When <see langword="true"/>, <c>BackupScheduler</c> takes a daily
+    /// backup at <see cref="BackupScheduleTimeUtc"/>. Operators can pause
+    /// the schedule without losing the time-of-day setting.
+    /// </summary>
+    public bool BackupScheduleEnabled { get; set; } = true;
+
+    /// <summary>
+    /// UTC time-of-day for the daily backup. Stored as
+    /// <see cref="TimeOnly"/> so the column type is <c>time</c>, which
+    /// drops the timezone-aware drift that plagued the original
+    /// timestamp-with-time-zone shape during prototyping.
+    /// </summary>
+    public TimeOnly BackupScheduleTimeUtc { get; set; } = new(2, 0);
+
+    /// <summary>
+    /// Number of unpinned backups retained on disk. Older unpinned files
+    /// are pruned after each successful backup. Pinned backups are
+    /// exempt and never counted toward this cap.
+    /// </summary>
+    public int BackupRetentionCount { get; set; } = 14;
+
     public DateTime UpdatedAt { get; set; }
 }
