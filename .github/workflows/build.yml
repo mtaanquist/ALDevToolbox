@@ -43,14 +43,11 @@ jobs:
         # service-container Postgres (postgres:18-alpine). The major versions
         # have to match — pg_restore 16 can't replay a pg_dump 18 archive —
         # so install postgresql-client-18 from the upstream PostgreSQL repo
-        # rather than the distro default.
+        # via the canonical bootstrap script.
         run: |
-          sudo apt-get install -y --no-install-recommends curl ca-certificates gnupg lsb-release
-          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-            | sudo gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
-          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
-            | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
+          sudo apt-get install -y --no-install-recommends curl ca-certificates gnupg postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y --no-install-recommends postgresql-client-18
 
       - name: Restore
@@ -148,12 +145,9 @@ jobs:
 
       - name: Install dotnet-ef and postgresql-client-18
         run: |
-          sudo apt-get install -y --no-install-recommends curl ca-certificates gnupg lsb-release
-          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-            | sudo gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
-          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
-            | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
+          sudo apt-get install -y --no-install-recommends curl ca-certificates gnupg postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y --no-install-recommends postgresql-client-18
           dotnet tool install --global dotnet-ef --version 10.*
           echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
