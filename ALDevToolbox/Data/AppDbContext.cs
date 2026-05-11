@@ -257,9 +257,17 @@ public class AppDbContext : DbContext
             entity.Property(e => e.ModuleIdRangeStart).HasColumnName("module_id_range_start").IsRequired();
             entity.Property(e => e.ModuleIdRangeSize).HasColumnName("module_id_range_size").IsRequired();
             entity.Property(e => e.Deprecated).HasColumnName("deprecated").IsRequired();
+            entity.Property(e => e.IsDefault).HasColumnName("is_default").IsRequired().HasDefaultValue(false);
             entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
             entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
+
+            // Filtered unique index: at most one active default template per
+            // organisation. The WHERE clause excludes both soft-deleted and
+            // non-default rows so swapping the default is a single UPDATE.
+            entity.HasIndex(e => new { e.OrganizationId, e.IsDefault })
+                .IsUnique()
+                .HasFilter("is_default = true AND deleted_at IS NULL");
 
             entity.HasOne(e => e.Organization)
                 .WithMany()

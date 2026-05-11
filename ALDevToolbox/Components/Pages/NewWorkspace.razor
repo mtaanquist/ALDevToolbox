@@ -233,10 +233,13 @@
         _brief = _orgConfig.Settings.DefaultBrief;
         _description = _orgConfig.Settings.DefaultCoreDescription;
         // Honour the ?template=<key> hint from the Templates browser when present
-        // and the key matches an active template; otherwise fall back to the first.
+        // and the key matches an active template; otherwise fall back to the
+        // per-org default flagged in admin, then the first row in the list.
         _selected = (!string.IsNullOrWhiteSpace(PreselectedTemplate)
             ? _templates.FirstOrDefault(t => t.Key == PreselectedTemplate)
-            : null) ?? _templates.FirstOrDefault();
+            : null)
+            ?? _templates.FirstOrDefault(t => t.IsDefault)
+            ?? _templates.FirstOrDefault();
         if (_selected is not null)
         {
             ApplyTemplateDefaults(_selected);

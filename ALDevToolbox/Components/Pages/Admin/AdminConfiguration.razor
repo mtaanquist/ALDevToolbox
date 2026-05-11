@@ -57,12 +57,14 @@
             </p>
             <form method="post" action="/admin/configuration/settings" class="form-grid">
                 <AntiforgeryToken />
-                <label class="section-label" for="cfg-publisher">Publisher</label>
-                <input id="cfg-publisher" type="text" name="DefaultPublisher" required
-                       value="@_config.Settings.DefaultPublisher" />
-                <small class="muted">Used as the <code>publisher</code> for every generated <code>app.json</code>.</small>
+                <section class="form-section">
+                    <label class="section-label" for="cfg-publisher">Publisher</label>
+                    <input id="cfg-publisher" type="text" name="DefaultPublisher" required
+                           value="@_config.Settings.DefaultPublisher" />
+                    <small class="muted">Used as the <code>publisher</code> for every generated <code>app.json</code>.</small>
+                </section>
 
-                <div class="form-section--row">
+                <section class="form-section--row">
                     <div>
                         <label class="section-label" for="cfg-from">Default ID range — from</label>
                         <input id="cfg-from" type="number" name="DefaultIdRangeFrom" required min="1"
@@ -73,16 +75,20 @@
                         <input id="cfg-to" type="number" name="DefaultIdRangeTo" required min="1"
                                value="@_config.Settings.DefaultIdRangeTo" />
                     </div>
-                </div>
+                </section>
 
-                <label class="section-label" for="cfg-brief">Default brief</label>
-                <input id="cfg-brief" type="text" name="DefaultBrief"
-                       placeholder="e.g. Customisations and reports for Acme."
-                       value="@_config.Settings.DefaultBrief" />
+                <section class="form-section">
+                    <label class="section-label" for="cfg-brief">Default brief</label>
+                    <input id="cfg-brief" type="text" name="DefaultBrief"
+                           placeholder="e.g. Customisations and reports for Acme."
+                           value="@_config.Settings.DefaultBrief" />
+                </section>
 
-                <label class="section-label" for="cfg-desc">Default core description</label>
-                <textarea id="cfg-desc" name="DefaultCoreDescription" rows="3"
-                          placeholder="Longer description prefilled into the New Workspace form.">@_config.Settings.DefaultCoreDescription</textarea>
+                <section class="form-section">
+                    <label class="section-label" for="cfg-desc">Default core description</label>
+                    <textarea id="cfg-desc" name="DefaultCoreDescription" rows="3"
+                              placeholder="Longer description prefilled into the New Workspace form.">@_config.Settings.DefaultCoreDescription</textarea>
+                </section>
 
                 <button type="submit" class="btn">
                     <Icon Name="save" Width="14" Height="14" />
@@ -114,8 +120,10 @@
 
             <form method="post" action="/admin/configuration/logo" enctype="multipart/form-data" class="form-grid">
                 <AntiforgeryToken />
-                <label class="section-label" for="cfg-logo">Replace logo</label>
-                <input id="cfg-logo" type="file" name="Logo" accept="image/png,image/svg+xml" required />
+                <section class="form-section">
+                    <label class="section-label" for="cfg-logo">Replace logo</label>
+                    <input id="cfg-logo" type="file" name="Logo" accept="image/png,image/svg+xml" required />
+                </section>
                 <button type="submit" class="btn">
                     <Icon Name="upload" Width="14" Height="14" />
                     <span>Upload logo</span>
@@ -174,16 +182,20 @@
 
             <h3>@(_editing is null ? "Add a file" : $"Editing {_editing.Path}")</h3>
             <div class="form-grid">
-                <label class="section-label" for="cfg-file-path">Path</label>
-                <input id="cfg-file-path" type="text" placeholder=".editorconfig"
-                       @bind="_editPath" @bind:event="oninput" />
-                <label class="section-label" for="cfg-file-content">Content</label>
-                <textarea id="cfg-file-content" rows="6" @bind="_editContent" @bind:event="oninput"></textarea>
+                <section class="form-section">
+                    <label class="section-label" for="cfg-file-path">Path</label>
+                    <input id="cfg-file-path" type="text" placeholder=".editorconfig"
+                           @bind="_editPath" @bind:event="oninput" />
+                </section>
+                <section class="form-section">
+                    <label class="section-label" for="cfg-file-content">Content</label>
+                    <textarea id="cfg-file-content" rows="6" @bind="_editContent" @bind:event="oninput"></textarea>
+                </section>
                 <label class="check-row">
                     <input type="checkbox" @bind="_editMustache" />
                     <span>Substitute mustache variables when generating</span>
                 </label>
-                <div class="form-section--row">
+                <div class="form-actions">
                     <button type="button" class="btn" @onclick="ApplyEdit">
                         <Icon Name="check" Width="12" Height="12" />
                         <span>@(_editing is null ? "Add to list" : "Apply changes")</span>
@@ -216,9 +228,11 @@
             </p>
             <form method="post" action="/admin/configuration/import" class="form-grid">
                 <AntiforgeryToken />
-                <label class="section-label" for="cfg-import-toml">TOML</label>
-                <textarea id="cfg-import-toml" name="Toml" rows="6"
-                          placeholder="[settings]&#10;default_publisher = …"></textarea>
+                <section class="form-section">
+                    <label class="section-label" for="cfg-import-toml">TOML</label>
+                    <textarea id="cfg-import-toml" name="Toml" rows="6"
+                              placeholder="[settings]&#10;default_publisher = …"></textarea>
+                </section>
                 <label class="check-row">
                     <input type="checkbox" name="Confirm" value="true" />
                     <span>I understand this overwrites the current configuration.</span>
