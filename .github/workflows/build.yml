@@ -153,10 +153,21 @@ jobs:
         run: |
           BASE_SHA="${{ github.event.pull_request.base.sha }}"
           if [ -z "$BASE_SHA" ]; then
-            echo "No base ref; nothing to compare against." >&2
+            echo "No base ref; nothing to compare against."
+            echo "BASE_HAS_MIGRATIONS=false" >> "$GITHUB_ENV"
             exit 0
           fi
           git worktree add ../base-ref "$BASE_SHA"
+          # The base ref may pre-date the project itself (e.g. the first PR
+          # into main). With no csproj or Migrations directory there's nothing
+          # to forward-compat against, so skip the base-ref apply and let the
+          # current-branch step still run as a smoke test.
+          if [ ! -f ../base-ref/ALDevToolbox/ALDevToolbox.csproj ] \
+             || [ ! -d ../base-ref/ALDevToolbox/Data/Migrations ]; then
+            echo "Base ref has no project or migrations; skipping base-ref apply."
+            echo "BASE_HAS_MIGRATIONS=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
           # Carry the current-branch design-time factory back to the base ref
           # so its `dotnet ef database update` doesn't trip the
           # PendingModelChangesWarning. The factory's behaviour at the base
@@ -168,8 +179,10 @@ jobs:
           dotnet restore ALDevToolbox/ALDevToolbox.csproj
           dotnet ef database update --project ALDevToolbox/ALDevToolbox.csproj
           popd >/dev/null
+          echo "BASE_HAS_MIGRATIONS=true" >> "$GITHUB_ENV"
 
       - name: Drop sentinel row
+        if: env.BASE_HAS_MIGRATIONS == 'true'
         env:
           PGPASSWORD: postgres
         run: |
@@ -182,6 +195,7 @@ jobs:
           dotnet ef database update --project ALDevToolbox/ALDevToolbox.csproj
 
       - name: Assert sentinel survived
+        if: env.BASE_HAS_MIGRATIONS == 'true'
         env:
           PGPASSWORD: postgres
         run: |
