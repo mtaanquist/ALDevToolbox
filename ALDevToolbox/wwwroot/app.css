@@ -291,6 +291,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 /* ---------- Templates browser ---------- */
 
+.templates-browser { max-width: 1100px; }
 .templates-browser h2 { margin-top: 28px; }
 .templates-browser h2:first-of-type { margin-top: 16px; }
 
@@ -1197,7 +1198,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 /* ---------- Admin dashboard ---------- */
 
-.admin-dashboard { max-width: 880px; }
+.admin-dashboard { max-width: 1100px; }
 
 .admin-tiles {
     margin-top: 20px;
