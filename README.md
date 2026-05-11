@@ -93,6 +93,8 @@ That starts the app on <http://localhost:8080>, with the database in the `pg-dat
 | `ConnectionStrings__DefaultConnection`        | Postgres connection string (Npgsql format). Built from `POSTGRES_*` by compose. | none — required |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Read by the `db` compose service. Set at least `POSTGRES_PASSWORD`. | `aldevtoolbox` |
 | `SEED_PATH`                                   | First-run seed directory                                  | `./Templates.seed` / `/app/Templates.seed` in Docker |
+| `BACKUPS_DIR`                                 | Where `pg_dump` files land (mounted on the `app-backups` volume) | `/var/lib/aldevtoolbox/backups` |
+| `DISABLE_BACKUP_SCHEDULER`                    | `1` to disable the daily backup scheduler (tests / CI)    | unset                  |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD_FILE` / `SMTP_FROM` / `SMTP_USE_STARTTLS` | SMTP relay used for signup and password-reset emails | none                   |
 | `ASPNETCORE_URLS`                             | Standard ASP.NET Core binding                             | `http://+:8080`        |
 | `ASPNETCORE_ENVIRONMENT`                      | Standard ASP.NET Core environment                         | `Production`           |
@@ -103,7 +105,28 @@ The container terminates HTTP only — run TLS at the reverse proxy. `app.UseFor
 
 ## Backup
 
-The database lives in the `pg-data` named volume. The portable, point-in-time backup is `pg_dump -Fc` against the `db` service; either run it from outside the stack, or wait for the M18 built-in backup tooling. Built-in scheduled backups land in M18 (`.design/milestones.md`).
+The database lives in the `pg-data` named volume. Backups live in `app-backups` (mounted at `/var/lib/aldevtoolbox/backups`); both are managed by the compose stack.
+
+SiteAdmins drive backup tooling from `/site-admin/backups`:
+
+- **Ad-hoc backup.** Click *Take a backup now* to run `pg_dump -Fc` against the live database and write a file to the backups volume.
+- **Scheduled backup.** A background hosted service polls every minute and triggers a daily backup at the configured UTC time (default 02:00). Toggle the schedule and edit the time-of-day on `/site-admin/settings` under the **Backups** section. To see the schedule fire without waiting overnight, set the time a minute or two ahead of now.
+- **Retention.** Configurable on the same settings page (default 14). After each backup, the service prunes the oldest *unpinned* files past the retention count. Pinned backups are exempt — pin a backup to keep it indefinitely.
+- **Download / restore.** Per-row actions on the backups page. *Restore* drops the `public` schema and replays the dump in place; the app enters maintenance mode (503 for non-SiteAdmin) for the duration. Restores are audited.
+
+`pg_dump` / `pg_restore` ship inside the runtime image via `postgresql-client` (Debian default, currently v16). The compose db service runs `postgres:18`, so the default tools warn or refuse on the version mismatch — if you actually run scheduled backups in production, swap the Dockerfile's `postgresql-client` for `postgresql-client-18` from pgdg. For local UI/UX testing, ad-hoc backups against the v18 server will not succeed with v16 tools, but the list / pin / unpin / delete UI all work against the row metadata regardless.
+
+To test the full surface end-to-end:
+
+```bash
+HOST_PORT=8080 \
+POSTGRES_PASSWORD=$(openssl rand -hex 16) \
+BOOTSTRAP_ADMIN_EMAIL=admin@example.com \
+BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars \
+docker compose up --build
+```
+
+Sign in as `admin@example.com` (the bootstrap path stamps `is_site_admin = true`, so the **Site Admin** section appears in the sidebar), then visit `Site Admin → Backups`. `docker compose down -v` wipes both volumes; `docker compose down` preserves them.
 
 For a logical export, signed-in admins can hit **Export to TOML** under `/admin/configuration` to download a ZIP of the org's templates, modules, catalogue, application versions, organisation settings, logo, and always-included files. The same screen accepts the import direction.
 
