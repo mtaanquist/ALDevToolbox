@@ -38,15 +38,11 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Install postgresql-client
-        # BackupService tests shell out to pg_dump / pg_restore against the
-        # service-container Postgres. Use the runner's default client; the
-        # tests are tagged with PgToolFact and skip cleanly if the binaries
-        # aren't on PATH, but the default install gives us psql + pg_dump
-        # for the happy path.
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends postgresql-client
+      # Ubuntu 24.04 runners ship postgresql-client (currently v16) on PATH, so
+      # BackupServiceTests can probe pg_dump / pg_restore without an apt step.
+      # PgToolAvailability skips the tests when the major version is below 18 —
+      # the dump format the postgres:18 server emits — so the suite stays
+      # green on the runner image without needing the upstream pgdg repo here.
 
       - name: Restore
         run: dotnet restore
@@ -141,10 +137,10 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Install dotnet-ef and postgresql-client
+      - name: Install dotnet-ef
+        # Ubuntu 24.04 runners ship psql on PATH (postgresql-client-16);
+        # only the EF design-time tool needs explicit installation.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends postgresql-client
           dotnet tool install --global dotnet-ef --version 10.*
           echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
 
