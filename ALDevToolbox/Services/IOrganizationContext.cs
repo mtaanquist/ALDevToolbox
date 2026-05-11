@@ -20,6 +20,13 @@ public interface IOrganizationContext
     int? CurrentUserId { get; }
 
     /// <summary>
+    /// True when the acting user has the hosting-operator <c>site_admin</c>
+    /// claim. Distinct from the per-organisation <see cref="Domain.Entities.UserRole.Admin"/>
+    /// role; granted via the SiteAdmin users page or the bootstrap admin path.
+    /// </summary>
+    bool IsSiteAdmin { get; }
+
+    /// <summary>
     /// Sentinel for the EF query filter — returns the current org id, or
     /// <c>0</c> when no user is signed in. Real organisation ids start at 1
     /// so filtering by this value matches nothing pre-login.

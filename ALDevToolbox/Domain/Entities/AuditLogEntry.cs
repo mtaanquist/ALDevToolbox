@@ -21,6 +21,7 @@ public enum AuditEntityType
     OrganizationSettings,
     OrganizationAsset,
     OrganizationFile,
+    SystemSettings,
 }
 
 /// <summary>The kind of change captured by an audit row.</summary>

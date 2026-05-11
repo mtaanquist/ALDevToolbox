@@ -1,9 +1,12 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -118,6 +121,28 @@ public sealed class TestDb : IDisposable
     /// </summary>
     public OrganizationConfigService NewOrganizationConfigService(AppDbContext ctx) =>
         new(ctx, OrgContext, new StubWebHostEnvironment(), NullLogger<OrganizationConfigService>.Instance);
+
+    /// <summary>
+    /// Returns an <see cref="AuditInterceptor"/> wired to an empty
+    /// <see cref="IHttpContextAccessor"/>. Audit rows attribute changes to
+    /// "unknown" unless the test installs a principal on the accessor first.
+    /// </summary>
+    public static AuditInterceptor NewAuditInterceptor() =>
+        new(new HttpContextAccessor());
+
+    /// <summary>
+    /// In-memory <see cref="IDataProtectionProvider"/> for tests that need to
+    /// encrypt / decrypt round-trip — e.g. <c>SystemSettingsService</c>'s
+    /// SMTP password. Lazy-initialised once per fixture.
+    /// </summary>
+    public IDataProtectionProvider DataProtectionProvider => _dpProvider.Value;
+
+    private readonly Lazy<IDataProtectionProvider> _dpProvider = new(() =>
+    {
+        var services = new ServiceCollection();
+        services.AddDataProtection();
+        return services.BuildServiceProvider().GetRequiredService<IDataProtectionProvider>();
+    });
 
     private sealed class StubWebHostEnvironment : IWebHostEnvironment
     {

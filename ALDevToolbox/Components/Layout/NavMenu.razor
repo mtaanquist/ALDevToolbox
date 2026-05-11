@@ -98,4 +98,33 @@
             </div>
         </Authorized>
     </AuthorizeView>
+
+    <AuthorizeView Roles="SiteAdmin">
+        <Authorized>
+            <div class="nav-section">
+                <div class="nav-divider"></div>
+                <div class="nav-section__label">Site Admin</div>
+                <ul class="nav-list">
+                    <li>
+                        <NavLink class="nav-link" href="/site-admin/users" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <Icon Name="users" Width="18" Height="18" Css="nav-link__icon" />
+                            <span>Users</span>
+                        </NavLink>
+                    </li>
+                    <li>
+                        <NavLink class="nav-link" href="/site-admin/audit" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <Icon Name="history" Width="18" Height="18" Css="nav-link__icon" />
+                            <span>Audit</span>
+                        </NavLink>
+                    </li>
+                    <li>
+                        <NavLink class="nav-link" href="/site-admin/settings" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <Icon Name="server-cog" Width="18" Height="18" Css="nav-link__icon" />
+                            <span>Settings</span>
+                        </NavLink>
+                    </li>
+                </ul>
+            </div>
+        </Authorized>
+    </AuthorizeView>
 </nav>

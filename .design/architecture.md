@@ -56,7 +56,9 @@ The folder structure mirrors this: `Components/`, `Services/`, `Domain/`, `Data/
 - **`OrganizationConfigService`** — reads and writes per-org settings (default publisher, default ID range, default brief / core description), the org logo, and the always-included files admins want appended to every generated workspace.
 - **`AuditService`** — read side. Mutations to the audit log happen via the `AuditInterceptor` (EF Core `SaveChangesInterceptor`); see `auth-and-audit.md`.
 - **`AccountService`** — sign-in, signup, password reset, role / status changes, login-attempt rate limiting and lockout. Uses `BCrypt.Net-Next` for hashing.
-- **`SmtpEmailService`** — outbound mail for signup notifications and password reset. Disabled-by-default; pages report "Email is not configured" rather than failing silently.
+- **`SmtpEmailService`** — outbound mail for signup notifications and password reset. Resolves SMTP from `SystemSettingsService` first, falls back to `SMTP_*` env vars; pages report "Email is not configured" rather than failing silently.
+- **`SystemSettingsService`** — reads and writes the singleton `system_settings` row (SMTP override, system banner, default signup approval policy). SMTP password is encrypted at rest via ASP.NET Core Data Protection; the audit interceptor redacts the column.
+- **`SiteAdminService`** — cross-organisation operations for hosting operators: search users by email, promote/demote SiteAdmin, audit search across orgs. Uses `IgnoreQueryFilters()` explicitly; mutations guard on `RequireSiteAdmin()`.
 - **`ExportService`** — builds the TOML export ZIP downloaded from `/admin/configuration`.
 - **`HttpOrganizationContext`** — request-scoped `IOrganizationContext` that pulls `user_id` and `org_id` from the auth cookie's claims; drives EF query filters in `AppDbContext`.
 

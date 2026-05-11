@@ -7,8 +7,8 @@ namespace ALDevToolbox.Services;
 /// <summary>Outbound email primitive used for password reset and signup workflows.</summary>
 public interface IEmailService
 {
-    /// <summary>True when SMTP env vars are populated. Pages can use this to render a "ask an admin" hint.</summary>
-    bool IsConfigured { get; }
+    /// <summary>True when SMTP can be resolved (either via system_settings or env vars). Pages can use this to render a "ask an admin" hint.</summary>
+    Task<bool> IsConfiguredAsync(CancellationToken ct = default);
 
     /// <summary>
     /// Sends an email. Throws when SMTP is not configured so misconfiguration
@@ -18,56 +18,56 @@ public interface IEmailService
 }
 
 /// <summary>
-/// MailKit-based <see cref="IEmailService"/>. Reads SMTP_HOST, SMTP_PORT,
-/// SMTP_USER, SMTP_PASSWORD_FILE, SMTP_FROM, SMTP_USE_STARTTLS from the env.
-/// See <c>.design/auth-and-audit.md</c> for the contract: failures throw and
-/// callers decide whether to surface the error to the user (forgot password)
-/// or log a warning and continue (admin notifications).
+/// MailKit-based <see cref="IEmailService"/>. Resolves SMTP settings via
+/// <see cref="SystemSettingsService"/> with a hybrid path (DB row preferred,
+/// env vars as fallback). Updates to the SiteAdmin SMTP form take effect on
+/// the next request without a restart.
+///
+/// Failures throw and callers decide whether to surface the error to the
+/// user (forgot password) or log a warning and continue (admin notifications).
 /// </summary>
 public sealed class SmtpEmailService : IEmailService
 {
+    private readonly SystemSettingsService _settings;
     private readonly ILogger<SmtpEmailService> _logger;
-    private readonly string? _host;
-    private readonly int _port;
-    private readonly string? _user;
-    private readonly string? _password;
-    private readonly string? _from;
-    private readonly bool _useStartTls;
 
-    public SmtpEmailService(ILogger<SmtpEmailService> logger)
+    // Cache the resolved value for the request lifetime so an
+    // `IsConfiguredAsync()`-then-`SendAsync()` pair doesn't double-hit the
+    // database. The service is registered scoped, so the cache lives exactly
+    // one request — settings updates land on the next request.
+    private bool _resolved;
+    private ResolvedSmtpSettings? _cached;
+
+    public SmtpEmailService(SystemSettingsService settings, ILogger<SmtpEmailService> logger)
     {
+        _settings = settings;
         _logger = logger;
-        _host = Environment.GetEnvironmentVariable("SMTP_HOST");
-        _port = int.TryParse(Environment.GetEnvironmentVariable("SMTP_PORT"), out var p) ? p : 587;
-        _user = Environment.GetEnvironmentVariable("SMTP_USER");
-        _password = ReadSecret("SMTP_PASSWORD_FILE");
-        _from = Environment.GetEnvironmentVariable("SMTP_FROM");
-        _useStartTls = (Environment.GetEnvironmentVariable("SMTP_USE_STARTTLS") ?? "true")
-            .Equals("true", StringComparison.OrdinalIgnoreCase);
     }
 
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(_host) && !string.IsNullOrWhiteSpace(_from);
+    public async Task<bool> IsConfiguredAsync(CancellationToken ct = default) =>
+        await ResolveOnceAsync(ct) is not null;
 
     public async Task SendAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default)
     {
-        if (!IsConfigured)
+        var resolved = await ResolveOnceAsync(ct);
+        if (resolved is null)
         {
             throw new InvalidOperationException(
-                "Email is not configured. Set SMTP_HOST, SMTP_FROM and credentials before triggering email-driven flows.");
+                "Email is not configured. Set SMTP via /site-admin/settings or the SMTP_* env vars before triggering email-driven flows.");
         }
 
         var message = new MimeMessage();
-        message.From.Add(MailboxAddress.Parse(_from!));
+        message.From.Add(MailboxAddress.Parse(resolved.From));
         message.To.Add(MailboxAddress.Parse(toEmail));
         message.Subject = subject;
         message.Body = new TextPart("html") { Text = htmlBody };
 
         using var client = new SmtpClient();
-        var secure = _useStartTls ? SecureSocketOptions.StartTls : SecureSocketOptions.Auto;
-        await client.ConnectAsync(_host!, _port, secure, ct);
-        if (!string.IsNullOrEmpty(_user))
+        var secure = resolved.UseStartTls ? SecureSocketOptions.StartTls : SecureSocketOptions.Auto;
+        await client.ConnectAsync(resolved.Host, resolved.Port, secure, ct);
+        if (!string.IsNullOrEmpty(resolved.User))
         {
-            await client.AuthenticateAsync(_user, _password ?? string.Empty, ct);
+            await client.AuthenticateAsync(resolved.User, resolved.Password ?? string.Empty, ct);
         }
         await client.SendAsync(message, ct);
         await client.DisconnectAsync(quit: true, ct);
@@ -75,11 +75,12 @@ public sealed class SmtpEmailService : IEmailService
         _logger.LogInformation("Sent email to {To} subject {Subject}.", toEmail, subject);
     }
 
-    private static string? ReadSecret(string envVarName)
+    private async Task<ResolvedSmtpSettings?> ResolveOnceAsync(CancellationToken ct)
     {
-        var path = Environment.GetEnvironmentVariable(envVarName);
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return null;
-        return File.ReadAllText(path).Trim();
+        if (_resolved) return _cached;
+        _cached = await _settings.ResolveSmtpAsync(ct);
+        _resolved = true;
+        return _cached;
     }
 }
 
@@ -115,6 +116,11 @@ public static class EmailTemplates
                 $"<p>Hi {Html(displayName)},</p>"
                 + $"<p>Your signup request for <strong>{Html(orgName)}</strong> has been declined. "
                 + "If you think this is a mistake, please reach out to the organisation's administrator directly.</p>");
+
+    public static (string Subject, string HtmlBody) SiteAdminTest(string displayName)
+        => ("AL Dev Toolbox SMTP test",
+            $"<p>Hi {Html(displayName)},</p>"
+            + "<p>This is a test from /site-admin/settings. If you're reading it, the SMTP configuration is working.</p>");
 
     private static string Html(string value)
         => System.Net.WebUtility.HtmlEncode(value ?? string.Empty);

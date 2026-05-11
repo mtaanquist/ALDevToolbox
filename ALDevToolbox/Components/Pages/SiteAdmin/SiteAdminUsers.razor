@@ -1,0 +1,111 @@
+@page "/site-admin/users"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Services
+@using Lucide.Blazor.Components
+@inject SiteAdminService SiteAdmin
+@inject NavigationManager Navigation
+
+<PageTitle>Site Admin · Users · AL Dev Toolbox</PageTitle>
+
+<div class="admin-section">
+    <h1>Site Admin · Users</h1>
+    <p class="muted">
+        Search across every organisation by email or display name. Use this
+        page to grant or revoke the SiteAdmin (hosting-operator) flag.
+        Per-organisation Admin status is managed by each org's own
+        <a href="/admin/users">Users</a> page.
+    </p>
+
+    @if (!string.IsNullOrEmpty(Error))
+    {
+        <p class="form-error" role="alert">@Error</p>
+    }
+    @if (Ok == "promoted")
+    {
+        <p class="form-info" role="status">Promoted to SiteAdmin.</p>
+    }
+    else if (Ok == "demoted")
+    {
+        <p class="form-info" role="status">Removed SiteAdmin.</p>
+    }
+
+    <form method="get" action="/site-admin/users" class="admin-search-form">
+        <label for="q" class="visually-hidden">Search by email or name</label>
+        <input id="q" name="q" type="search" value="@Query"
+               placeholder="Search by email or display name…" class="admin-search-input" />
+        <button type="submit" class="btn btn--secondary">Search</button>
+    </form>
+
+    @if (_rows is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_rows.Count == 0)
+    {
+        <p class="muted">
+            @(string.IsNullOrEmpty(Query)
+                ? "No users yet. Once people sign up, they'll appear here."
+                : "No users matched that search.")
+        </p>
+    }
+    else
+    {
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th>Email</th>
+                    <th>Display name</th>
+                    <th>Organisation</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>SiteAdmin</th>
+                    <th>Last login</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var u in _rows)
+            {
+                <tr>
+                    <td>@u.Email</td>
+                    <td>@u.DisplayName</td>
+                    <td>@u.OrganizationName <span class="muted">(@u.OrganizationSlug)</span></td>
+                    <td>@u.Role</td>
+                    <td>@u.Status</td>
+                    <td>@(u.IsSiteAdmin ? "Yes" : "—")</td>
+                    <td class="muted">@(u.LastLoginAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
+                    <td class="row-actions">
+                        @if (u.IsSiteAdmin)
+                        {
+                            <form method="post" action="/site-admin/users/@u.UserId/demote" style="display:inline">
+                                <AntiforgeryToken />
+                                <button type="submit" class="btn btn--small btn--secondary">Remove SiteAdmin</button>
+                            </form>
+                        }
+                        else
+                        {
+                            <form method="post" action="/site-admin/users/@u.UserId/promote" style="display:inline">
+                                <AntiforgeryToken />
+                                <button type="submit" class="btn btn--small">Make SiteAdmin</button>
+                            </form>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "q")] public string? Query { get; set; }
+    [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+
+    private List<SiteAdminUserRow>? _rows;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _rows = await SiteAdmin.SearchUsersAsync(Query);
+    }
+}

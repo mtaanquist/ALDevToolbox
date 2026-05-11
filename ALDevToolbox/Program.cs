@@ -7,6 +7,7 @@ using ALDevToolbox.Services;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -48,6 +49,24 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.SlidingExpiration = true;
         options.LoginPath = "/login";
         options.AccessDeniedPath = "/login";
+
+        // /site-admin/* must return 404, never redirect-to-login or 403 —
+        // a 403 would tell an org admin those routes exist. Both events
+        // short-circuit to 404; status-code re-execute renders the
+        // NotFound page.
+        options.Events.OnRedirectToLogin = NotFoundForSiteAdmin;
+        options.Events.OnRedirectToAccessDenied = NotFoundForSiteAdmin;
+
+        static Task NotFoundForSiteAdmin(Microsoft.AspNetCore.Authentication.RedirectContext<CookieAuthenticationOptions> ctx)
+        {
+            if (ctx.Request.Path.StartsWithSegments(HttpOrganizationContext.SiteAdminPathPrefix))
+            {
+                ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+                return Task.CompletedTask;
+            }
+            ctx.Response.Redirect(ctx.RedirectUri);
+            return Task.CompletedTask;
+        }
     });
 builder.Services.AddAuthorization();
 builder.Services.AddCascadingAuthenticationState();
@@ -84,7 +103,33 @@ builder.Services.AddScoped<GenerationService>();
 builder.Services.AddScoped<ExportService>();
 builder.Services.AddScoped<OrganizationConfigService>();
 builder.Services.AddScoped<AccountService>();
-builder.Services.AddSingleton<IEmailService, SmtpEmailService>();
+builder.Services.AddScoped<SystemSettingsService>();
+builder.Services.AddScoped<SiteAdminService>();
+// Email shares the AppDbContext lifetime (Scoped) so it can read the
+// hybrid SMTP override from system_settings.
+builder.Services.AddScoped<IEmailService, SmtpEmailService>();
+
+// Data Protection key ring. Persisted under DATA_PROTECTION_KEY_DIR
+// (compose mounts the `app-keys` volume there) so cookie auth and the
+// system_settings SMTP password ciphertext both survive container
+// restarts. If the directory isn't writable we keep going with an
+// in-memory key ring rather than crashing — operators see the warning
+// in the startup logs and can fix the volume mount.
+var dpKeyDir = Environment.GetEnvironmentVariable("DATA_PROTECTION_KEY_DIR")
+    ?? "/var/lib/aldevtoolbox/dp-keys";
+var dataProtection = builder.Services.AddDataProtection().SetApplicationName("ALDevToolbox");
+try
+{
+    Directory.CreateDirectory(dpKeyDir);
+    dataProtection.PersistKeysToFileSystem(new DirectoryInfo(dpKeyDir));
+}
+catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+{
+    // Surfaces in startup logs; the cookie ring still works (in-memory),
+    // but cookies and SMTP ciphertext won't survive a restart. Operators
+    // see this immediately and can fix the volume mount.
+    Console.Error.WriteLine($"WARN: Data Protection key dir '{dpKeyDir}' not writable ({ex.Message}). Keys will not persist.");
+}
 
 // Health checks. /health is a liveness probe; /health/ready exercises the database.
 builder.Services.AddScoped<DatabaseHealthCheck>();
@@ -461,7 +506,7 @@ app.MapPost("/auth/signup", async (
 
         // Existing-org signup: notify the org's active admins so they can
         // approve via /admin/users. SMTP failures don't roll back the signup.
-        if (org is not null && email.IsConfigured)
+        if (org is not null && await email.IsConfiguredAsync(ct))
         {
             try
             {
@@ -504,7 +549,7 @@ app.MapPost("/auth/forgot-password", async (
 {
     var logger = loggerFactory.CreateLogger("ForgotPassword");
     if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
-    if (!email.IsConfigured)
+    if (!await email.IsConfiguredAsync(ct))
     {
         ctx.Response.Redirect("/forgot-password?err=not-configured");
         return;
@@ -616,7 +661,7 @@ app.MapPost("/admin/users/{id:int}/approve", async (
     var logger = loggerFactory.CreateLogger("AdminUsers");
     if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
     await accounts.ApproveSignupAsync(id, org.CurrentUserId!.Value, org.CurrentOrganizationId!.Value, ct);
-    if (email.IsConfigured)
+    if (await email.IsConfiguredAsync(ct))
     {
         try
         {
@@ -654,7 +699,7 @@ app.MapPost("/admin/users/{id:int}/reject", async (
 
     await accounts.RejectSignupAsync(id, org.CurrentUserId!.Value, org.CurrentOrganizationId!.Value, ct);
 
-    if (email.IsConfigured && !string.IsNullOrEmpty(requesterEmail))
+    if (await email.IsConfiguredAsync(ct) && !string.IsNullOrEmpty(requesterEmail))
     {
         try
         {
@@ -708,6 +753,102 @@ app.MapPost("/admin/users/{id:int}/role", async (
     ctx.Response.Redirect("/admin/users");
 }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
+// /site-admin/* — hosting-operator endpoints. The cookie events
+// translate auth failures on this prefix into 404 so non-SiteAdmins
+// can't even confirm the routes exist.
+app.MapPost("/site-admin/users/{id:int}/promote", async (
+    int id, HttpContext ctx, SiteAdminService siteAdmin, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    try { await siteAdmin.PromoteAsync(id, ct); }
+    catch (PlanValidationException ex)
+    {
+        var first = ex.Errors.FirstOrDefault();
+        ctx.Response.Redirect($"/site-admin/users?err={Uri.EscapeDataString(first.Value)}");
+        return;
+    }
+    ctx.Response.Redirect("/site-admin/users?ok=promoted");
+}).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+app.MapPost("/site-admin/users/{id:int}/demote", async (
+    int id, HttpContext ctx, SiteAdminService siteAdmin, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    try { await siteAdmin.DemoteAsync(id, ct); }
+    catch (PlanValidationException ex)
+    {
+        var first = ex.Errors.FirstOrDefault();
+        ctx.Response.Redirect($"/site-admin/users?err={Uri.EscapeDataString(first.Value)}");
+        return;
+    }
+    ctx.Response.Redirect("/site-admin/users?ok=demoted");
+}).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+app.MapPost("/site-admin/settings", async (
+    HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    var form = await ctx.Request.ReadFormAsync(ct);
+    var input = new SystemSettingsInput(
+        SmtpHost: form["SmtpHost"].ToString(),
+        SmtpPort: int.TryParse(form["SmtpPort"], out var port) ? port : null,
+        SmtpUser: form["SmtpUser"].ToString(),
+        SmtpPassword: form["SmtpPassword"].ToString(),
+        ClearSmtpPassword: form["ClearSmtpPassword"] == "true" || form["ClearSmtpPassword"] == "on",
+        SmtpFrom: form["SmtpFrom"].ToString(),
+        SmtpUseStartTls: form.ContainsKey("SmtpUseStartTls")
+            ? (form["SmtpUseStartTls"] == "true" || form["SmtpUseStartTls"] == "on")
+            : null,
+        BannerText: form["BannerText"].ToString(),
+        DefaultSignupAutoApprove: form["DefaultSignupAutoApprove"] == "true" || form["DefaultSignupAutoApprove"] == "on");
+
+    try
+    {
+        await settings.SaveAsync(input, ct);
+        ctx.Response.Redirect("/site-admin/settings?ok=saved");
+    }
+    catch (PlanValidationException ex)
+    {
+        var first = ex.Errors.First();
+        ctx.Response.Redirect("/site-admin/settings?msg=" + Uri.EscapeDataString(first.Value));
+    }
+}).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+app.MapPost("/site-admin/settings/test-email", async (
+    HttpContext ctx, IEmailService email, AppDbContext db, IOrganizationContext orgCtx,
+    IAntiforgery antiforgery, ILoggerFactory loggerFactory, CancellationToken ct) =>
+{
+    var logger = loggerFactory.CreateLogger("SiteAdminTestEmail");
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    if (!await email.IsConfiguredAsync(ct))
+    {
+        ctx.Response.Redirect("/site-admin/settings?msg=" + Uri.EscapeDataString("SMTP is not configured."));
+        return;
+    }
+    var userId = orgCtx.CurrentUserId;
+    if (userId is null)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    var recipient = await db.Users.AsNoTracking()
+        .Where(u => u.Id == userId.Value)
+        .Select(u => new { u.Email, u.DisplayName })
+        .FirstAsync(ct);
+    try
+    {
+        var (subject, body) = EmailTemplates.SiteAdminTest(recipient.DisplayName);
+        await email.SendAsync(recipient.Email, subject, body, ct);
+        ctx.Response.Redirect("/site-admin/settings?ok=test-sent");
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Test email failed for SiteAdmin {Email}.", recipient.Email);
+        ctx.Response.Redirect("/site-admin/settings?msg="
+            + Uri.EscapeDataString("Test email failed: " + ex.Message));
+    }
+}).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
 // Run migrations, then bootstrap the admin account from BOOTSTRAP_ADMIN_*
 // env vars on first boot. The Default organisation is created by the M13
 // migration; SeedService runs against it only if its content is missing
@@ -760,10 +901,13 @@ using (var scope = app.Services.CreateScope())
             PasswordHash = hash,
             Role = UserRole.Admin,
             Status = UserStatus.Active,
+            // The bootstrap admin is the first hosting operator;
+            // subsequent SiteAdmins are promoted from /site-admin/users.
+            IsSiteAdmin = true,
             CreatedAt = DateTime.UtcNow,
         });
         await db.SaveChangesAsync(stopping);
-        bootstrapLogger.LogInformation("Bootstrap admin {Email} created in Default organisation.", bootstrapEmail);
+        bootstrapLogger.LogInformation("Bootstrap SiteAdmin {Email} created in Default organisation.", bootstrapEmail);
     }
     else if (anyUsers && (!string.IsNullOrWhiteSpace(bootstrapEmail) || !string.IsNullOrWhiteSpace(bootstrapPassword)))
     {
@@ -787,6 +931,14 @@ static ClaimsIdentity BuildIdentity(User user)
         new(HttpOrganizationContext.OrganizationIdClaim, user.OrganizationId.ToString()),
         new("org_name", user.Organization?.Name ?? string.Empty),
     };
+    if (user.IsSiteAdmin)
+    {
+        // The boolean claim feeds IOrganizationContext.IsSiteAdmin; the
+        // role claim lets [Authorize(Roles = "SiteAdmin")] work without
+        // a custom policy.
+        claims.Add(new Claim(HttpOrganizationContext.SiteAdminClaim, "true"));
+        claims.Add(new Claim(ClaimTypes.Role, HttpOrganizationContext.SiteAdminRole));
+    }
     return new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
 }
 

@@ -41,6 +41,14 @@ public class User
     public UserRole Role { get; set; }
     public UserStatus Status { get; set; }
 
+    /// <summary>
+    /// Hosting-operator flag, distinct from the per-org
+    /// <see cref="UserRole.Admin"/> role. Granted explicitly via
+    /// <c>/site-admin/users</c> (or by being the bootstrap admin on a
+    /// fresh DB) and surfaced as a separate cookie claim.
+    /// </summary>
+    public bool IsSiteAdmin { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime? LastLoginAt { get; set; }
 }

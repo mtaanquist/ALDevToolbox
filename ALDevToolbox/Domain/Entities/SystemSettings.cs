@@ -1,0 +1,44 @@
+namespace ALDevToolbox.Domain.Entities;
+
+/// <summary>
+/// Singleton row (id pinned to <c>1</c>) holding cross-organisation
+/// configuration: SMTP override, system banner, and the default signup
+/// approval policy. The SMTP password is stored as Data-Protection
+/// ciphertext; the audit interceptor redacts the column to a fixed
+/// sentinel rather than capturing ciphertext history.
+/// </summary>
+public class SystemSettings
+{
+    /// <summary>Pinned to <c>1</c>. The migration inserts the row; nothing else creates one.</summary>
+    public int Id { get; set; }
+
+    /// <summary>SMTP host override. Empty/null means "fall back to <c>SMTP_HOST</c> env var".</summary>
+    public string? SmtpHost { get; set; }
+
+    public int? SmtpPort { get; set; }
+
+    public string? SmtpUser { get; set; }
+
+    /// <summary>
+    /// Data-Protection-encrypted SMTP password. Decryption is contained in
+    /// <see cref="Services.SystemSettingsService"/>; plaintext never
+    /// leaves that service boundary.
+    /// </summary>
+    public string? SmtpPasswordEncrypted { get; set; }
+
+    public string? SmtpFrom { get; set; }
+
+    public bool? SmtpUseStartTls { get; set; }
+
+    /// <summary>Free-text banner displayed at the top of every page when set.</summary>
+    public string? BannerText { get; set; }
+
+    /// <summary>
+    /// When <see langword="true"/>, signups into existing organisations are
+    /// auto-approved without an org admin's review. Defaults to
+    /// <see langword="false"/> — admin approval is the safer default for v1.
+    /// </summary>
+    public bool DefaultSignupAutoApprove { get; set; }
+
+    public DateTime UpdatedAt { get; set; }
+}
