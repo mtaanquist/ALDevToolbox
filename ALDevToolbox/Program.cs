@@ -93,6 +93,8 @@ builder.Services.AddDbContext<AppDbContext>((sp, options) =>
         .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
 
 builder.Services.AddScoped<TemplateService>();
+builder.Services.AddScoped<SnippetService>();
+builder.Services.AddScoped<SnippetSuggestionService>();
 builder.Services.AddScoped<ModuleService>();
 builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<ApplicationVersionService>();
