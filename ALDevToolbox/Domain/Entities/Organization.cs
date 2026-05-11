@@ -22,17 +22,19 @@ public class Organization
     /// <summary>
     /// Pending organisations exist while their first signup is awaiting
     /// approval. They have no users until the bootstrap admin (or another
-    /// admin in another org, in a future flow) approves the signup. The org's
-    /// content is seeded the first time an admin signs in.
+    /// admin in another org, in a future flow) approves the signup.
     /// </summary>
     public bool IsPending { get; set; }
 
     /// <summary>
-    /// True after <see cref="Services.SeedService"/> has populated this org's
-    /// content. Stays false for orgs created via approved signup until an
-    /// admin first signs in; then we seed and flip the flag.
+    /// True for the singleton "system" organisation that hosts the canonical
+    /// templates, modules and application versions other orgs fork from via
+    /// <see cref="Services.TemplateImportService"/>. The Default org is
+    /// stamped <c>IsSystem = true</c> by the migration; the partial unique
+    /// index on this column refuses a second system org. Regular orgs start
+    /// empty and pull from the system catalogue on demand.
     /// </summary>
-    public bool IsSeeded { get; set; }
+    public bool IsSystem { get; set; }
 
     public DateTime CreatedAt { get; set; }
 }

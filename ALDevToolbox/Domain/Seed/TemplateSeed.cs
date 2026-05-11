@@ -3,9 +3,10 @@ using Tomlyn.Serialization;
 namespace ALDevToolbox.Domain.Seed;
 
 /// <summary>
-/// In-memory representation of a <c>Templates.seed/runtime-*/template.toml</c>
-/// file. Tomlyn deserialises directly into this graph; the
-/// <c>SeedService</c> then maps it onto the EF entities.
+/// In-memory representation of a <c>template.toml</c> document. Used by the
+/// admin TOML editor (<see cref="Services.TemplateTomlMapper"/>) and by the
+/// export pipeline (<see cref="Services.ExportService"/>) so admins can paste
+/// or download templates in a stable text format.
 /// </summary>
 /// <remarks>
 /// The TOML files mix conventions: <c>[template]</c> / <c>[[folders]]</c> use
@@ -39,9 +40,10 @@ public class TemplateMetaSeed
     public string Key { get; set; } = string.Empty;
 
     /// <summary>
-    /// Runtime version, e.g. <c>"15"</c> or <c>"15.2"</c>. Older seed files
-    /// have it as a bare integer; <c>SeedService</c> normalises both forms
-    /// before deserialisation so the schema stays welcoming.
+    /// Runtime version, e.g. <c>"15"</c> or <c>"15.2"</c>. Older TOML
+    /// documents have it as a bare integer; the admin TOML pipeline
+    /// normalises both forms before deserialisation so the schema stays
+    /// welcoming.
     /// </summary>
     public string Runtime { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;

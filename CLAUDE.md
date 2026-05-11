@@ -18,13 +18,12 @@ App folders are relative to `ALDevToolbox/`.
 | `Components/Pages/`          | Routable pages (one `.razor` per route).                                     |
 | `Components/Layout/`         | Shell layout, sidebar, top bar, reconnect modal.                             |
 | `Components/Shared/`         | Reusable components (`TabBar`, future `FolderTreePreview`, `DependencyPicker`). |
-| `Services/`                  | Application services (`GenerationService`, `SeedService`, `TemplateService`, …). |
+| `Services/`                  | Application services (`GenerationService`, `TemplateImportService`, `TemplateService`, …). |
 | `Domain/Entities/`           | EF Core entity classes (mutable, persisted).                                 |
 | `Domain/ValueObjects/`       | Immutable records / JSON-mapped value objects, exceptions, plans.            |
-| `Domain/Seed/`               | Tomlyn POCOs that mirror the seed TOML schema. Used at startup only.         |
+| `Domain/Seed/`               | Tomlyn POCOs that mirror the TOML schema for the admin editor and export.   |
 | `Data/`                      | `AppDbContext`, design-time factory, migrations.                             |
-| `Resources/`                 | Embedded static assets (logo, ruleset, `.gitignore` template).               |
-| `Templates.seed/`            | First-run seed data. Read once when the DB is empty; never at runtime.       |
+| `Resources/`                 | Embedded static assets (ruleset, `.gitignore` template).                     |
 | `wwwroot/`                   | Global CSS, favicon.                                                         |
 
 Test folders are relative to `ALDevToolbox.Tests/`.
@@ -74,7 +73,7 @@ When you add a new file, match the folder. Resist creating top-level folders —
 
 These are deliberate constraints from `.design/architecture.md` and `.design/templates-and-seeding.md`. Don't quietly relax them.
 
-- **The PostgreSQL database is the only persistence layer for templates, modules, the catalogue, per-folder file contents, organisations, users, signup requests, password reset tokens, login attempts, organisation settings, organisation assets, and organisation files.** Both authoring surfaces (the structured admin form and the TOML editor) write through the same `TemplateInput` pipeline into the DB. `Templates.seed/` is a one-time bootstrap for an empty *organisation* and an export target — nothing watches it at runtime, nothing writes back to it, and there is no two-way sync. `Templates.seed/organization-defaults/` carries the first-run logo for fresh orgs.
+- **The PostgreSQL database is the only persistence layer for templates, modules, the catalogue, per-folder file contents, organisations, users, signup requests, password reset tokens, login attempts, organisation settings, organisation assets, and organisation files.** Both authoring surfaces (the structured admin form and the TOML editor) write through the same `TemplateInput` pipeline into the DB. The on-disk `Templates.seed/` bootstrap was retired: the singleton **system org** (`organizations.is_system = true`, stamped on the Default org by migration `20260513000000_MoveSeedToSystemOrg`) holds the canonical templates that other orgs fork via `TemplateImportService`. New orgs start empty; admins import on demand from `/admin/templates`.
 - **The ruleset and `.gitignore` ship as code.** They live as embedded resources under `Resources/` because they're per-deployment policy. Per-folder example AL file *contents* live in the `template_files` table and are admin-editable. The logo, organisation defaults block, and always-included file list live in the database (`organization_assets`, `organization_settings`, `organization_files`) and are admin-editable. Binary files inside template folders are out of scope for v1 — text content only.
 - **`defaults_json` and `app_source_cop_json` stay as JSON columns.** Don't normalise them into separate tables — the AL ecosystem changes those shapes too often.
 - **Multi-tenant by default.** Every editable entity carries an `organization_id`. EF query filters on `AppDbContext` scope reads to `IOrganizationContext.CurrentOrganizationId`; pre-login flows that genuinely need cross-org reads (login, signup, bootstrap) call `IgnoreQueryFilters()` explicitly. Service code that mutates state must run inside an authenticated request — `RequireOrganizationId()` throws otherwise.
@@ -112,7 +111,7 @@ These are the patterns the existing code has settled on. New code should match u
 - JSON value-object conversions use `HasConversion<JsonValueConverter>` with a single shared `JsonSerializerOptions`. Keep read and write options identical; otherwise round-trips drift.
 - Indexes are declared in `OnModelCreating` (`(template_id, ordering)`, audit `(entity_type, entity_id, timestamp)`). Add new ones the same way.
 - Migrations are committed to the repo. Run `dotnet ef migrations add <Name>` for every schema change; never edit a migration after it's been merged.
-- Startup runs `MigrateAsync()` then `SeedService.RunAsync()`. Both must remain idempotent — assume the app restarts often.
+- Startup runs `MigrateAsync()` and ensures the Default org exists with `IsSystem = true` (it's the singleton system org other orgs fork from). Both steps must remain idempotent — assume the app restarts often.
 
 ### Pages and components
 

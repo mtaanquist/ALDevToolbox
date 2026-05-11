@@ -24,6 +24,10 @@ public enum AuditEntityType
     SystemSettings,
     Backup,
     Invite,
+    Snippet,
+    SnippetFile,
+    SnippetSuggestion,
+    SnippetSuggestionFile,
 }
 
 /// <summary>The kind of change captured by an audit row.</summary>

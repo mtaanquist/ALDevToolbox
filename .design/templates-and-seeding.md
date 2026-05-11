@@ -9,44 +9,52 @@
 1. **The structured admin form.** Field-by-field editing on `/admin/templates/{key}`. Best for incremental tweaks, single-flag changes, and folder reordering.
 2. **TOML.** A textarea on the same admin page (toggle in the header) that round-trips a `template.toml` document. Best for authoring a new template from scratch, bulk folder edits, and copy-pasting a template from one environment to another. New templates default to TOML mode because that's the workflow this is optimised for.
 
-**Bootstrap:** `Templates.seed/` is the source-controlled starting point for any *organisation* — not the database as a whole. On first contact with an empty org (the Default org on first boot, or a freshly-provisioned org from new-org signup), every TOML file under `Templates.seed/` is imported, the example AL files alongside each `template.toml` are slurped into `template_files` rows, and `Templates.seed/organization-defaults/` populates the org's defaults block, logo, and always-included files. After that, the seed files are ignored for that org — neither a fallback, nor a sync source. Edits made through either authoring surface live in the DB only; nothing rewrites `Templates.seed/`. The same content runs once per org because each tenant gets its own copy on signup.
+**Bootstrap:** the singleton **system organisation** is the canonical source other orgs fork from. The Default org carries `organizations.is_system = true` (stamped by migration `20260513000000_MoveSeedToSystemOrg`); a partial unique index refuses a second system org per deployment. SiteAdmins author templates, modules and application versions there via the regular `/admin/templates*` pages — the system org is otherwise a normal org from the data model's point of view.
+
+Every other organisation starts **empty**. New-org signup (auto-approved or admin-approved) no longer triggers any seed step; the admin lands on `/admin/templates` with two ways to populate it:
+
+1. **Import from site.** `/admin/templates` renders a "From the site catalogue" section listing the system org's published templates. Clicking **Import** copies the chosen template (plus its referenced modules and default application version) into the local org via `TemplateImportService.ImportTemplateAsync`. Imports are one-way clones — once a template is in the local org, system-side edits no longer propagate.
+2. **Author from scratch.** The structured form and TOML editor work exactly as before; the org simply doesn't have any starting content until the admin adds some.
+
+The retired on-disk `Templates.seed/` directory is gone, along with `SeedService`. The `OrganizationConfigService.PopulateDefaultsAsync` pipeline and the disk-default logo are also gone — new orgs start with no logo and no settings row; admins fill them in via `/admin/configuration`.
 
 This split exists so:
-- The repo has a sensible "starting point" for fresh deployments that's source-controlled and reviewable.
+- The deployment has exactly one canonical catalogue that SiteAdmins curate at runtime, instead of a per-PR file-system bootstrap.
+- New orgs come up empty and pull only the templates they care about, rather than the entire historical seed snapshot.
 - Day-to-day edits — and authoring entire new templates — don't require a PR + redeploy.
 - Admins comfortable with TOML can stay in TOML; admins who prefer forms can stay in forms.
-- Backups / snapshots can be exported back to TOML if anyone wants the source-control workflow back temporarily.
 
-## Seed strategy
+## Import strategy
 
-`SeedService.RunAsync(orgId)` populates one organisation. It runs against the Default org on first boot and against newly-created orgs at signup time. Pseudocode:
+`TemplateImportService.ImportTemplateAsync(systemTemplateId)` clones one template into the acting organisation. Pseudocode:
 
 ```
-SeedService.RunAsync(orgId):
-    for each subfolder of Templates.seed/runtime-* :
-        parse template.toml
-        insert runtime_template row (organization_id = orgId)
-        for each [[folders]] entry:
-            insert template_folder row
-            for each [[folders.files]] entry:
-                insert template_file row with the relative path + UTF-8 content
-    for each file in Templates.seed/modules/*.toml :
-        parse the file
-        insert module row + module_dependency rows
-    for each entry in Templates.seed/catalog/well-known-deps.toml :
-        insert well_known_dependency row
-    populate the org's defaults / logo / always-included files from
-        Templates.seed/organization-defaults/
-    set organizations.is_seeded = true
+TemplateImportService.ImportTemplateAsync(systemTemplateId):
+    require an authenticated org context
+    refuse if the acting org IS the system org (would import from itself)
+    resolve the system org via IsSystem = true (bypassing query filters)
+    load the source template with all children (folders, module folders,
+        default modules + their dependencies, default application version)
+    refuse if the local org already has a template with the same key
+    for each referenced Module:
+        reuse the local module that shares the key, otherwise clone it
+        (with its module_dependencies) into the local org
+    for the default application version:
+        reuse the local row that shares the key, otherwise clone it
+    insert a fresh runtime_template row (organization_id = acting org)
+        plus cloned folder + file rows
+    return the new template
 ```
 
-The walk is text-only: every file the seeder picks up is read as UTF-8 and stored verbatim in `template_files.content`. Mustache substitution does **not** happen at seed time — it stays at generation time, where the per-extension context exists.
+The full graph commits in a single `SaveChangesAsync`. The audit interceptor records every insert, so the importing org's audit log carries the operation in full.
 
-Idempotency is per-org via `organizations.is_seeded`. If you ever want to re-seed an org, clear that flag (and the relevant rows) deliberately. The `SEED_PATH` env var picks the source folder; it defaults to the on-disk `Templates.seed/` next to the binary.
+`ListSystemTemplatesAsync()` is the read-side counterpart — it returns the system org's active templates with an `AlreadyImported` flag so the UI can render "Already imported" instead of an Import button on rows the local org already has.
+
+Idempotency is per-template-key per-org: a second click on the same row throws `PlanValidationException("Key", …)` rather than silently overwriting.
 
 ## Tomlyn usage
 
-Tomlyn deserialises directly into POCOs. Define mirrored types under `Domain/Seed/`:
+Tomlyn deserialises directly into POCOs. `Domain/Seed/` carries the mirrored types used by the admin TOML editor and the export pipeline (it is no longer wired to any on-disk bootstrap):
 
 ```csharp
 class TemplateSeed {
@@ -70,7 +78,7 @@ class FolderFileSeed {
 
 ## Template TOML schema
 
-Each `Templates.seed/runtime-*/template.toml` follows this shape:
+A `template.toml` document — pasted into the admin TOML editor or produced by the export pipeline — follows this shape:
 
 ```toml
 # Required: template metadata
@@ -148,7 +156,7 @@ path = "Source"
 
 ## Module TOML schema
 
-Each `Templates.seed/modules/<key>.toml`:
+Each module's TOML document:
 
 ```toml
 [module]
@@ -173,7 +181,7 @@ Order of `[[module.dependencies]]` blocks is preserved.
 
 ## Catalogue TOML schema
 
-`Templates.seed/catalog/well-known-deps.toml` is a single file with all well-known deps:
+The catalogue TOML document carries every well-known dep in one file:
 
 ```toml
 [[dependency]]
@@ -210,24 +218,23 @@ These are the variables available when seeding example AL files into a generated
 
 Both `/admin/templates/new` and `/admin/templates/{key}` expose a TOML editor next to the structured form via a header toggle. The new-template flow opens in TOML mode by default because pasting in a `template.toml` is usually the fastest way to get a fresh template going; the edit flow opens in the structured form because surgical tweaks are what people do most often there.
 
-Saving from TOML mode parses the textarea via Tomlyn, maps it onto the same `TemplateInput` payload the structured form produces, and runs through identical validation. There is no separate code path on the way to the database. The on-disk files under `Templates.seed/` are not touched — that directory is a one-time bootstrap, not a peer store.
+Saving from TOML mode parses the textarea via Tomlyn, maps it onto the same `TemplateInput` payload the structured form produces, and runs through identical validation. There is no separate code path on the way to the database.
 
-The mapper (`Services/TemplateTomlMapper.cs`) is now load-bearing infrastructure rather than seed-time-only glue: schema changes there affect admins directly. Two things to keep in mind when touching it:
+The mapper (`Services/TemplateTomlMapper.cs`) is load-bearing infrastructure for the admin editor and the export pipeline. Two things to keep in mind when touching it:
 
-- The TOML schema admins type into is the same schema the seed files ship with. Don't fork it.
-- A few fields are deliberately not represented in the TOML view: `deprecated` (seed TOML doesn't carry it — flip it from the structured form's checkbox), and per-row folder reordering by drag (express the order by writing the `[[folders]]` blocks in that order; array order is preserved as `ordering`).
+- One TOML schema covers the admin editor, the export ZIP, and any future import-from-TOML affordance. Don't fork it.
+- A few fields are deliberately not represented in the TOML view: `deprecated` (flip it from the structured form's checkbox), and per-row folder reordering by drag (express the order by writing the `[[folders]]` blocks in that order; array order is preserved as `ordering`).
 - `[[folders.files]]` blocks make the TOML lossless even when folders carry file content. For larger files this gets noisy; the structured editor is usually the more comfortable surface for editing AL source. Both write through the same pipeline, so neither is "more correct" than the other.
 
 ## Export to TOML
 
-The admin section should provide a one-click "Export all to TOML" button (under `/admin` or `/admin/templates`) that produces a ZIP containing the current state of the database serialised back into the same TOML structure as the seed folder. This is the safety hatch for:
+`/admin` exposes a one-click "Export all to TOML" button that produces a ZIP containing the current state of the database serialised into TOML. This is the safety hatch for:
 
 - Periodic snapshotting into a backup branch.
 - Quickly grepping/diffing the entire template state outside the app.
-- Disaster recovery if the database is unrecoverable (re-seed from the export).
-- One-way migration off the v1 SQLite shape onto a fresh P4.16 Postgres deployment — see `migrating-from-sqlite.md`.
+- Disaster recovery if the database is unrecoverable (paste the templates back via the admin TOML editor).
 
-Implementation: walk all active rows, serialise each template/module/catalogue back into the TOML shape, ZIP into `Templates.seed.zip`. Use Tomlyn's `Toml.FromModel(...)` for the inverse direction.
+Implementation: walk all active rows, serialise each template/module/catalogue back into the TOML shape, ZIP into `aldt-export-<datestamp>.zip`. Use Tomlyn's `Toml.FromModel(...)` for the inverse direction.
 
 ## What is *not* admin-editable
 
@@ -235,4 +242,4 @@ Implementation: walk all active rows, serialise each template/module/catalogue b
 - The `README.md` boilerplate written into a generated workspace — it's emitted by `GenerationService` and shaped by template metadata, not edited directly.
 - Binary files inside template folders. v1 stores file content as UTF-8 text only; PNGs, ZIPs, or anything else non-text don't have a place in `template_files`. If we need binary template assets later, the likely shape is a separate `template_file_blobs` table or a URL-fetched asset; defer until there's a real ask.
 
-The org logo, default publisher / ID range / brief / core description, and the always-included files appended to every generated workspace **are** admin-editable from `/admin/configuration` and live in the database (`organization_assets`, `organization_settings`, `organization_files`).
+The org logo, default publisher / ID range / brief / core description, and the always-included files appended to every generated workspace **are** admin-editable from `/admin/configuration` and live in the database (`organization_assets`, `organization_settings`, `organization_files`). Fresh orgs start without any of these rows — admins fill them in once they need them.

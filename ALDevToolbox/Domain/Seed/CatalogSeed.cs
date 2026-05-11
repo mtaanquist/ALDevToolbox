@@ -1,8 +1,9 @@
 namespace ALDevToolbox.Domain.Seed;
 
 /// <summary>
-/// In-memory representation of <c>Templates.seed/catalog/well-known-deps.toml</c>.
-/// Each entry becomes a row in the <c>well_known_dependencies</c> table.
+/// In-memory representation of the well-known-dependency catalogue TOML
+/// document. Used by the export pipeline to serialise
+/// <c>well_known_dependencies</c> rows for off-site storage.
 /// </summary>
 public class CatalogSeedFile
 {

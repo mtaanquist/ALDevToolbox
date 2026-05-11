@@ -133,8 +133,8 @@
             <form method="post" action="/admin/configuration/logo/revert">
                 <AntiforgeryToken />
                 <button type="submit" class="btn">
-                    <Icon Name="rotate-ccw" Width="14" Height="14" />
-                    <span>Revert to seed default</span>
+                    <Icon Name="trash-2" Width="14" Height="14" />
+                    <span>Remove logo</span>
                 </button>
             </form>
         </section>
@@ -296,7 +296,7 @@
         {
             "settings" => "Defaults saved.",
             "logo" => "Logo uploaded.",
-            "logo-reverted" => "Logo reverted to the seed default.",
+            "logo-reverted" => "Logo removed.",
             "files" => "Always-included files saved.",
             "imported" => "Configuration imported.",
             _ => null,

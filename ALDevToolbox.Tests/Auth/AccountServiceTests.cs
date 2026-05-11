@@ -38,7 +38,7 @@ public sealed class AccountServiceTests : IDisposable
             seed.Organizations.Add(new Organization
             {
                 Id = 99, Name = "Acme", Slug = "acme",
-                IsPending = false, IsSeeded = true, CreatedAt = _clock.GetUtcNow().UtcDateTime,
+                IsPending = false, CreatedAt = _clock.GetUtcNow().UtcDateTime,
             });
             await seed.SaveChangesAsync();
         }
@@ -67,7 +67,7 @@ public sealed class AccountServiceTests : IDisposable
         // Brand-new orgs auto-approve their first user (we have no superuser
         // to do otherwise — see .design/auth-and-audit.md).
         org!.IsPending.Should().BeFalse();
-        org.IsSeeded.Should().BeFalse("seeding happens in the /auth/signup endpoint via SeedService");
+        org.IsSystem.Should().BeFalse("new orgs are regular orgs; the system org is the singleton Default");
         user!.Role.Should().Be(UserRole.Admin, "the first user in a brand-new org runs it");
         user.Status.Should().Be(UserStatus.Active);
 

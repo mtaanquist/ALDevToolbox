@@ -1,0 +1,116 @@
+@page "/snippets/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject SnippetService Snippets
+@inject IJSRuntime JS
+@using ALDevToolbox.Domain.Entities
+
+<PageTitle>@(_snippet?.Title ?? "Snippet") · AL Dev Toolbox</PageTitle>
+
+<div class="snippet-detail">
+    <a class="btn btn--sm" href="/snippets">
+        <Icon Name="arrow-left" Width="14" Height="14" />
+        <span>Back to snippets</span>
+    </a>
+
+    @if (_loaded && _snippet is null)
+    {
+        <p class="form-error" role="alert">Snippet not found.</p>
+    }
+    else if (_snippet is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        <header class="snippet-detail__header">
+            <h1>@_snippet.Title</h1>
+            @if (_snippet.Deprecated)
+            {
+                <span class="snippet-card__badge">Deprecated</span>
+            }
+        </header>
+        <p class="snippet-detail__description">@_snippet.Description</p>
+        @if (!string.IsNullOrWhiteSpace(_snippet.Keywords))
+        {
+            <div class="snippet-card__keywords">
+                @foreach (var kw in _snippet.Keywords.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    <span class="snippet-card__keyword">@kw</span>
+                }
+            </div>
+        }
+
+        <h2>Files</h2>
+        @if (_snippet.Files.Count == 0)
+        {
+            <p class="muted">No files attached.</p>
+        }
+        else
+        {
+            <ol class="snippet-detail__files">
+                @foreach (var file in _snippet.Files)
+                {
+                    <li class="snippet-file-view">
+                        <div class="snippet-file-view__header">
+                            <code>@file.FileName</code>
+                            <button type="button" class="btn btn--sm" @onclick="() => CopyAsync(file.Content, file.FileName)">
+                                <Icon Name="copy" Width="14" Height="14" />
+                                <span>@(IsJustCopied(file.FileName) ? "Copied!" : "Copy")</span>
+                            </button>
+                        </div>
+                        <pre class="snippet-file-view__content"><code>@file.Content</code></pre>
+                    </li>
+                }
+            </ol>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Snippet? _snippet;
+    private bool _loaded;
+    private string? _justCopied;
+    private CancellationTokenSource? _copyTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _snippet = await Snippets.GetAsync(Id);
+        _loaded = true;
+    }
+
+    private bool IsJustCopied(string fileName) => _justCopied == fileName;
+
+    private async Task CopyAsync(string content, string fileName)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", content);
+            _justCopied = fileName;
+            _copyTimer?.Cancel();
+            _copyTimer = new CancellationTokenSource();
+            var token = _copyTimer.Token;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(1500, token);
+                    if (token.IsCancellationRequested) return;
+                    await InvokeAsync(() =>
+                    {
+                        _justCopied = null;
+                        StateHasChanged();
+                    });
+                }
+                catch (TaskCanceledException) { }
+            });
+        }
+        catch
+        {
+            // Clipboard write can fail (insecure context, denied permission).
+            // Surface nothing — the textarea is still selectable.
+        }
+    }
+}

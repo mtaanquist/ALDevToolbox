@@ -93,11 +93,13 @@ builder.Services.AddDbContext<AppDbContext>((sp, options) =>
         .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
 
 builder.Services.AddScoped<TemplateService>();
+builder.Services.AddScoped<SnippetService>();
+builder.Services.AddScoped<SnippetSuggestionService>();
 builder.Services.AddScoped<ModuleService>();
 builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<ApplicationVersionService>();
 builder.Services.AddScoped<AuditService>();
-builder.Services.AddScoped<SeedService>();
+builder.Services.AddScoped<TemplateImportService>();
 builder.Services.AddScoped<WorkspaceConfigService>();
 builder.Services.AddScoped<GenerationService>();
 builder.Services.AddScoped<ExportService>();
@@ -472,8 +474,6 @@ app.MapPost("/admin/templates/{id:int}/default", async (
 app.MapPost("/auth/login", async (
     HttpContext ctx,
     AccountService accounts,
-    AppDbContext db,
-    SeedService seed,
     IAntiforgery antiforgery,
     ILoggerFactory loggerFactory,
     CancellationToken ct) =>
@@ -504,20 +504,6 @@ app.MapPost("/auth/login", async (
         return;
     }
 
-    // First-admin-login seeding for orgs that were created via signup. We
-    // skip for the Default org which the migration stamps as already seeded.
-    if (user.Role == UserRole.Admin)
-    {
-        var org = await db.Organizations.IgnoreQueryFilters().FirstAsync(o => o.Id == user.OrganizationId, ct);
-        if (!org.IsSeeded)
-        {
-            logger.LogInformation("First admin login for org {OrgId}; running seed.", org.Id);
-            await seed.RunAsync(org.Id, ct);
-            org.IsSeeded = true;
-            await db.SaveChangesAsync(ct);
-        }
-    }
-
     var identity = BuildIdentity(user);
     await ctx.SignInAsync(
         CookieAuthenticationDefaults.AuthenticationScheme,
@@ -538,14 +524,14 @@ app.MapPost("/auth/logout", async (HttpContext ctx, IAntiforgery antiforgery, Ca
 //  - Existing-org signup: creates a Pending user, emails the org's active
 //    admins, redirects with a "queued" message.
 //  - New-org signup: auto-approves (we have no superuser to do otherwise),
-//    seeds the org from Templates.seed/, signs the user in, and lands them
-//    on the home page as the new org's admin.
+//    signs the user in, and lands them on the home page as the new org's
+//    admin. The new org starts empty; admins fork templates from the system
+//    catalogue via /admin/templates.
 // Email send failures log a warning but never roll back the signup.
 app.MapPost("/auth/signup", async (
     HttpContext ctx,
     AccountService accounts,
     AppDbContext db,
-    SeedService seed,
     IEmailService email,
     IAntiforgery antiforgery,
     ILoggerFactory loggerFactory,
@@ -571,16 +557,8 @@ app.MapPost("/auth/signup", async (
 
         if (outcome == SignupOutcome.OrganizationProvisioned && user is not null && org is not null)
         {
-            // Auto-approved: seed the new org's content and sign the user in
-            // so they can use the generator immediately. Re-load the user
-            // with its Organization navigation populated so the cookie
-            // claims include the org name for the top bar.
-            if (!org.IsSeeded)
-            {
-                await seed.RunAsync(org.Id, ct);
-                org.IsSeeded = true;
-                await db.SaveChangesAsync(ct);
-            }
+            // Auto-approved: sign the user in. New orgs start empty; admins
+            // fork templates from the system catalogue via /admin/templates.
             user.Organization = org;
             await ctx.SignInAsync(
                 CookieAuthenticationDefaults.AuthenticationScheme,
@@ -707,8 +685,6 @@ app.MapPost("/auth/login/magic", async (
 app.MapGet("/auth/login/magic/consume", async (
     HttpContext ctx,
     AccountService accounts,
-    AppDbContext db,
-    SeedService seed,
     ILoggerFactory loggerFactory,
     CancellationToken ct) =>
 {
@@ -722,21 +698,6 @@ app.MapGet("/auth/login/magic/consume", async (
     try
     {
         var user = await accounts.ConsumeMagicLoginTokenAsync(token, ct);
-
-        // Mirror /auth/login's first-admin seeding so a magic-link admin
-        // doesn't end up in an unseeded org.
-        if (user.Role == UserRole.Admin)
-        {
-            var org = await db.Organizations.IgnoreQueryFilters().FirstAsync(o => o.Id == user.OrganizationId, ct);
-            if (!org.IsSeeded)
-            {
-                logger.LogInformation("First admin (magic-link) for org {OrgId}; running seed.", org.Id);
-                await seed.RunAsync(org.Id, ct);
-                org.IsSeeded = true;
-                await db.SaveChangesAsync(ct);
-            }
-        }
-
         await ctx.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
             new ClaimsPrincipal(BuildIdentity(user)));
@@ -755,8 +716,6 @@ app.MapGet("/auth/login/magic/consume", async (
 app.MapPost("/auth/accept-invite", async (
     HttpContext ctx,
     InviteService invites,
-    AppDbContext db,
-    SeedService seed,
     IAntiforgery antiforgery,
     ILoggerFactory loggerFactory,
     CancellationToken ct) =>
@@ -772,17 +731,6 @@ app.MapPost("/auth/accept-invite", async (
             form["DisplayName"].ToString(),
             form["Password"].ToString(),
             ct);
-
-        // Mirror first-admin seeding for the rare case where an invite drops
-        // an Admin into an org whose content hasn't been seeded yet (the
-        // inviting admin's first login already seeded existing orgs, so this
-        // only fires on pathological setups).
-        if (user.Role == UserRole.Admin && user.Organization is { IsSeeded: false } org)
-        {
-            await seed.RunAsync(org.Id, ct);
-            org.IsSeeded = true;
-            await db.SaveChangesAsync(ct);
-        }
 
         await ctx.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
@@ -1260,18 +1208,20 @@ app.MapGet("/site-admin/backups/{id:int}/download", async (
 
 // Run migrations, then bootstrap the admin account from BOOTSTRAP_ADMIN_*
 // env vars on first boot. The Default organisation is created by the M13
-// migration; SeedService runs against it only if its content is missing
-// (post-migration the Default org is already populated and IsSeeded=true).
+// migration and stamped as the singleton system org — SiteAdmins author
+// canonical templates there via /admin/templates and regular orgs fork via
+// TemplateImportService.
 using (var scope = app.Services.CreateScope())
 {
     var stopping = app.Lifetime.ApplicationStopping;
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var seed = scope.ServiceProvider.GetRequiredService<SeedService>();
     var accounts = scope.ServiceProvider.GetRequiredService<AccountService>();
     var bootstrapLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     await db.Database.MigrateAsync(stopping);
 
-    // Ensure the Default org exists (covers EnsureCreated paths in tests).
+    // Ensure the Default org exists (covers EnsureCreated paths in tests) and
+    // that it carries the IsSystem flag — the migration stamps it for normal
+    // boots, but a freshly-created row from the test path still needs it.
     var defaultOrg = await db.Organizations.IgnoreQueryFilters().FirstOrDefaultAsync(o => o.Slug == "default", stopping);
     if (defaultOrg is null)
     {
@@ -1280,17 +1230,15 @@ using (var scope = app.Services.CreateScope())
             Name = "Default",
             Slug = "default",
             IsPending = false,
-            IsSeeded = false,
+            IsSystem = true,
             CreatedAt = DateTime.UtcNow,
         };
         db.Organizations.Add(defaultOrg);
         await db.SaveChangesAsync(stopping);
     }
-
-    if (!defaultOrg.IsSeeded)
+    else if (!defaultOrg.IsSystem)
     {
-        await seed.RunAsync(defaultOrg.Id, stopping);
-        defaultOrg.IsSeeded = true;
+        defaultOrg.IsSystem = true;
         await db.SaveChangesAsync(stopping);
     }
 
@@ -1353,6 +1301,14 @@ static ClaimsIdentity BuildIdentity(User user)
         // a custom policy.
         claims.Add(new Claim(HttpOrganizationContext.SiteAdminClaim, "true"));
         claims.Add(new Claim(ClaimTypes.Role, HttpOrganizationContext.SiteAdminRole));
+    }
+    // Tags the cookie when the signed-in user belongs to the singleton
+    // system org so IOrganizationContext.IsSystemOrganization resolves
+    // without a per-request DB lookup. Sign-in paths Include the org nav
+    // already (see AccountService.TryLoginAsync and friends).
+    if (user.Organization?.IsSystem == true)
+    {
+        claims.Add(new Claim(HttpOrganizationContext.SystemOrgClaim, "true"));
     }
     return new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
 }

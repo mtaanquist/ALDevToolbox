@@ -1,6 +1,0 @@
-[version]
-key = "bc-v27"
-name = "Business Central 2025 Release Wave 2 (v27)"
-application = "27.0.0.0"
-runtime = "16.0"
-ordering = 600

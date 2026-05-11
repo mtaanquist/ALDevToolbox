@@ -2,6 +2,8 @@
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @inject TemplateService Templates
+@inject TemplateImportService Imports
+@inject IOrganizationContext OrgContext
 @inject NavigationManager Nav
 @inject ILogger<AdminTemplateList> Log
 @using ALDevToolbox.Domain.Entities
@@ -45,6 +47,73 @@
         </label>
     </div>
 
+    @if (!OrgContext.IsSystemOrganization)
+    {
+        <section class="admin-section">
+            <h2>From the site catalogue</h2>
+            <p class="muted">
+                Templates published by the site. Importing copies the template
+                (with its referenced modules and application version) into this
+                organisation; later edits in either copy are independent.
+            </p>
+            @if (_systemTemplates is null)
+            {
+                <p class="muted">Loading…</p>
+            }
+            else if (_systemTemplates.Count == 0)
+            {
+                <p class="muted">The site catalogue is empty.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Key</th>
+                            <th>Runtime</th>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th class="data-table__actions"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in _systemTemplates)
+                        {
+                            <tr>
+                                <td><code>@t.Key</code></td>
+                                <td>@t.Runtime</td>
+                                <td>@t.Name</td>
+                                <td class="muted">@t.Description</td>
+                                <td class="data-table__actions">
+                                    @if (t.AlreadyImported)
+                                    {
+                                        <span class="muted">Already imported</span>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="btn btn--sm"
+                                                @onclick="() => ImportFromSiteAsync(t.Id)" disabled="@_importBusy">
+                                            <Icon Name="download" Width="14" Height="14" />
+                                            <span>Import</span>
+                                        </button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            @if (_importError is not null)
+            {
+                <p class="form-error" role="alert">@_importError</p>
+            }
+            @if (_importSuccess is not null)
+            {
+                <p class="form-success" role="status">@_importSuccess</p>
+            }
+        </section>
+    }
+
     @if (_rows is null)
     {
         <p class="muted">Loading…</p>
@@ -54,9 +123,8 @@
         @if (_rows.Count == 0)
         {
             <p class="muted">
-                No templates yet. Click <strong>New template</strong> to add one, or
-                populate <code>Templates.seed/</code> and restart the app to seed
-                from TOML.
+                No templates yet. Click <strong>New template</strong> to add
+                one — or import one from the site catalogue below.
             </p>
         }
         else
@@ -200,6 +268,11 @@
     private IReadOnlyList<BulkActionFailure> _lastFailures = Array.Empty<BulkActionFailure>();
     private ConfirmDialog? _confirm;
 
+    private List<SystemTemplateSummary>? _systemTemplates;
+    private bool _importBusy;
+    private string? _importError;
+    private string? _importSuccess;
+
     private enum BulkAction { SoftDelete, Restore, Deprecate, UnDeprecate }
 
     private List<RuntimeTemplate> FilteredRows => _rows is null
@@ -209,7 +282,14 @@
     private bool AllVisibleSelected =>
         FilteredRows.Count > 0 && FilteredRows.All(t => _selected.Contains(t.Id));
 
-    protected override Task OnInitializedAsync() => ReloadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+        if (!OrgContext.IsSystemOrganization)
+        {
+            await ReloadSystemTemplatesAsync();
+        }
+    }
 
     private async Task ReloadAsync()
     {
@@ -219,6 +299,39 @@
         // Drop selections for rows that no longer match the filter so the
         // bulk bar count stays honest.
         _selected.RemoveWhere(id => !_rows.Any(r => r.Id == id));
+    }
+
+    private async Task ReloadSystemTemplatesAsync()
+    {
+        _systemTemplates = await Imports.ListSystemTemplatesAsync();
+    }
+
+    private async Task ImportFromSiteAsync(int systemTemplateId)
+    {
+        if (_importBusy) return;
+        _importBusy = true;
+        _importError = null;
+        _importSuccess = null;
+        try
+        {
+            var imported = await Imports.ImportTemplateAsync(systemTemplateId);
+            _importSuccess = $"Imported template '{imported.Key}'.";
+            await ReloadAsync();
+            await ReloadSystemTemplatesAsync();
+        }
+        catch (PlanValidationException ex)
+        {
+            _importError = ex.Errors.FirstOrDefault().Value ?? "Import failed.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Import-from-site failed for system template {Id}.", systemTemplateId);
+            _importError = "An unexpected error occurred. The import was not applied.";
+        }
+        finally
+        {
+            _importBusy = false;
+        }
     }
 
     private void ToggleRow(int id, ChangeEventArgs e)

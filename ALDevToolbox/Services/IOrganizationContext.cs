@@ -27,6 +27,14 @@ public interface IOrganizationContext
     bool IsSiteAdmin { get; }
 
     /// <summary>
+    /// True when the acting user's organisation is the singleton system org
+    /// (the one stamped <c>IsSystem = true</c>). SiteAdmins editing canonical
+    /// templates work there; the "Import from site" affordance hides itself
+    /// for this org because it would be importing from itself.
+    /// </summary>
+    bool IsSystemOrganization { get; }
+
+    /// <summary>
     /// Sentinel for the EF query filter — returns the current org id, or
     /// <c>0</c> when no user is signed in. Real organisation ids start at 1
     /// so filtering by this value matches nothing pre-login.

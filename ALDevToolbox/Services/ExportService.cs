@@ -10,20 +10,18 @@ using Tomlyn;
 namespace ALDevToolbox.Services;
 
 /// <summary>
-/// Backup / snapshot service: walks the active rows in the database and emits a
-/// ZIP whose layout matches <c>Templates.seed/</c>. The output is the inverse
-/// direction of <see cref="SeedService"/> — feeding the unzipped archive into a
-/// fresh empty database via the seed pipeline reproduces the same row contents
-/// modulo timestamps. See <c>.design/templates-and-seeding.md</c>.
+/// Backup / snapshot service: walks the active rows in the database and emits
+/// a TOML ZIP for off-site storage or migration to a fresh deployment.
+/// See <c>.design/templates-and-seeding.md</c>.
 /// </summary>
 public class ExportService
 {
     /// <summary>
-    /// Mirrors <see cref="SeedService"/> and <see cref="TemplateTomlMapper"/>: a
-    /// global <c>snake_case</c> policy with per-property TOML name overrides on
-    /// the camelCase outliers (defaults / appSourceCop) handled inside the seed
-    /// POCOs themselves. Keeping the options identical across read and write
-    /// paths is what makes round-tripping reliable.
+    /// Mirrors <see cref="TemplateTomlMapper"/>: a global <c>snake_case</c>
+    /// policy with per-property TOML name overrides on the camelCase outliers
+    /// (defaults / appSourceCop) handled inside the seed POCOs themselves.
+    /// Keeping the options identical across read and write paths is what
+    /// makes round-tripping reliable.
     /// </summary>
     private static readonly TomlSerializerOptions TomlOptions = new()
     {
@@ -47,10 +45,9 @@ public class ExportService
 
     /// <summary>
     /// Produces a ZIP containing the current state of the database serialised
-    /// back into the same TOML structure as <c>Templates.seed/</c>. Soft-deleted
-    /// rows are excluded so the export reflects the live, useful state. The
-    /// returned stream is a rewound <see cref="MemoryStream"/> ready to be
-    /// copied to the HTTP body.
+    /// as TOML for off-site storage. Soft-deleted rows are excluded so the
+    /// export reflects the live, useful state. The returned stream is a
+    /// rewound <see cref="MemoryStream"/> ready to be copied to the HTTP body.
     /// </summary>
     public async Task<GeneratedArchive> ExportAllAsync(CancellationToken ct = default)
     {
@@ -183,7 +180,7 @@ public class ExportService
         }
 
         stream.Position = 0;
-        var fileName = $"Templates.seed-{DateTime.UtcNow:yyyyMMdd-HHmmss}.zip";
+        var fileName = $"aldt-export-{DateTime.UtcNow:yyyyMMdd-HHmmss}.zip";
 
         _logger.LogInformation(
             "Exported {Templates} template(s), {Modules} module(s), {AppVersions} application version(s), {Catalog} catalogue entry(ies) to {FileName} in {Elapsed}ms.",
@@ -196,8 +193,8 @@ public class ExportService
     /// Walks the acting org's <c>organization_settings</c>, <c>organization_files</c>
     /// and <c>organization_assets</c> rows and writes a single
     /// <c>organization-config.toml</c> entry. The block is omitted if the org
-    /// has no settings row at all (would only happen on a manual wipe — fresh
-    /// orgs always get a row from <see cref="OrganizationConfigService.PopulateDefaultsAsync"/>).
+    /// has no settings row at all — fresh orgs start without one and the
+    /// admin fills it in via <c>/admin/configuration</c>.
     /// </summary>
     private async Task WriteOrgConfigAsync(ZipArchive archive, CancellationToken ct)
     {

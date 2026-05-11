@@ -25,5 +25,6 @@ public sealed class MigrateAsyncSmokeTests : IDisposable
         var defaultOrg = await ctx.Organizations.IgnoreQueryFilters()
             .SingleOrDefaultAsync(o => o.Slug == "default");
         defaultOrg.Should().NotBeNull();
+        defaultOrg!.IsSystem.Should().BeTrue("the Default org is the singleton system org other orgs fork from");
     }
 }
