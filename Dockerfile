@@ -15,13 +15,21 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 
 # curl is needed for the HEALTHCHECK below; the slim aspnet image no longer
-# ships it. postgresql-client supplies pg_dump / pg_restore, which the M18
-# BackupService shells out to. The Debian default major may differ from the
-# compose db image (postgres:18) — operators who run scheduled backups in
-# production should override this RUN with postgresql-client-18 from the
-# pgdg repo to match. Keep the install lean so the image size doesn't drift.
+# ships it. postgresql-client-18 supplies pg_dump / pg_restore, which the M18
+# BackupService shells out to. pg_dump refuses to dump a server newer than
+# itself, so the client major must match the compose db image (postgres:18).
+# Debian's default postgresql-client is older than 18, so we install from the
+# PGDG apt repo to keep client and server in lockstep.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl postgresql-client \
+    && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+        -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo $VERSION_CODENAME)-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-18 \
+    && apt-get purge -y --auto-remove gnupg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app ./
