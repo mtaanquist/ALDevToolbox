@@ -105,6 +105,17 @@ builder.Services.AddScoped<OrganizationConfigService>();
 builder.Services.AddScoped<AccountService>();
 builder.Services.AddScoped<SystemSettingsService>();
 builder.Services.AddScoped<SiteAdminService>();
+builder.Services.AddScoped<BackupService>();
+// MaintenanceModeState is a process-local flag — singleton lifetime so the
+// middleware and BackupService share the same instance.
+builder.Services.AddSingleton<MaintenanceModeState>();
+// The scheduler runs in the background; opt-out via DISABLE_BACKUP_SCHEDULER=1
+// for environments (tests, CI) that don't want a background timer to start
+// chasing pg_dump.
+if (Environment.GetEnvironmentVariable("DISABLE_BACKUP_SCHEDULER") != "1")
+{
+    builder.Services.AddHostedService<BackupScheduler>();
+}
 // Email shares the AppDbContext lifetime (Scoped) so it can read the
 // hybrid SMTP override from system_settings.
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
@@ -150,6 +161,42 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
+
+// Maintenance mode (M18). While BackupService.RestoreAsync is mid-flight,
+// every non-SiteAdmin request gets 503 + a tiny static body. SiteAdmin
+// requests still go through so the operator can watch the restore page.
+// Health-check endpoints also remain reachable so reverse proxies don't
+// flap the container during a long restore.
+app.Use(async (ctx, next) =>
+{
+    var maintenance = ctx.RequestServices.GetRequiredService<MaintenanceModeState>();
+    if (!maintenance.IsActive)
+    {
+        await next();
+        return;
+    }
+    var path = ctx.Request.Path;
+    if (path.StartsWithSegments("/health") || path.StartsWithSegments("/site-admin"))
+    {
+        await next();
+        return;
+    }
+    if (ctx.User?.FindFirst(HttpOrganizationContext.SiteAdminClaim)?.Value == "true")
+    {
+        await next();
+        return;
+    }
+    ctx.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+    ctx.Response.Headers.RetryAfter = "30";
+    ctx.Response.ContentType = "text/html; charset=utf-8";
+    await ctx.Response.WriteAsync(
+        $"<!doctype html><html><head><title>Maintenance · AL Dev Toolbox</title></head>"
+        + $"<body style=\"font-family: system-ui, sans-serif; padding: 2rem;\">"
+        + $"<h1>Maintenance in progress</h1>"
+        + $"<p>{System.Net.WebUtility.HtmlEncode(maintenance.Reason ?? "The application is restoring from a backup.")}</p>"
+        + $"<p>Started: {maintenance.StartedAtUtc:yyyy-MM-dd HH:mm 'UTC'}. The service will return shortly.</p>"
+        + $"</body></html>");
+});
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
@@ -800,7 +847,10 @@ app.MapPost("/site-admin/settings", async (
             ? (form["SmtpUseStartTls"] == "true" || form["SmtpUseStartTls"] == "on")
             : null,
         BannerText: form["BannerText"].ToString(),
-        DefaultSignupAutoApprove: form["DefaultSignupAutoApprove"] == "true" || form["DefaultSignupAutoApprove"] == "on");
+        DefaultSignupAutoApprove: form["DefaultSignupAutoApprove"] == "true" || form["DefaultSignupAutoApprove"] == "on",
+        BackupScheduleEnabled: form["BackupScheduleEnabled"] == "true" || form["BackupScheduleEnabled"] == "on",
+        BackupScheduleTimeUtc: TimeOnly.TryParse(form["BackupScheduleTimeUtc"], out var bst) ? bst : new TimeOnly(2, 0),
+        BackupRetentionCount: int.TryParse(form["BackupRetentionCount"], out var brc) ? brc : 14);
 
     try
     {
@@ -846,6 +896,117 @@ app.MapPost("/site-admin/settings/test-email", async (
         logger.LogWarning(ex, "Test email failed for SiteAdmin {Email}.", recipient.Email);
         ctx.Response.Redirect("/site-admin/settings?msg="
             + Uri.EscapeDataString("Test email failed: " + ex.Message));
+    }
+}).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+// /site-admin/backups/* — backup tooling (M18). Ad-hoc create, pin/unpin,
+// delete, download, and the destructive in-place restore.
+app.MapPost("/site-admin/backups/create", async (
+    HttpContext ctx, BackupService backups, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    try
+    {
+        await backups.CreateAsync(Domain.Entities.BackupKind.AdHoc, ct);
+        ctx.Response.Redirect("/site-admin/backups?ok=created");
+    }
+    catch (Exception ex) when (ex is InvalidOperationException or IOException)
+    {
+        ctx.Response.Redirect("/site-admin/backups?msg=" + Uri.EscapeDataString(ex.Message));
+    }
+}).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+app.MapPost("/site-admin/backups/{id:int}/pin", async (
+    int id, HttpContext ctx, BackupService backups, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    try { await backups.SetPinnedAsync(id, pinned: true, ct); }
+    catch (PlanValidationException ex)
+    {
+        ctx.Response.Redirect("/site-admin/backups?msg=" + Uri.EscapeDataString(ex.Errors.First().Value));
+        return;
+    }
+    ctx.Response.Redirect("/site-admin/backups?ok=pinned");
+}).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+app.MapPost("/site-admin/backups/{id:int}/unpin", async (
+    int id, HttpContext ctx, BackupService backups, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    try { await backups.SetPinnedAsync(id, pinned: false, ct); }
+    catch (PlanValidationException ex)
+    {
+        ctx.Response.Redirect("/site-admin/backups?msg=" + Uri.EscapeDataString(ex.Errors.First().Value));
+        return;
+    }
+    ctx.Response.Redirect("/site-admin/backups?ok=unpinned");
+}).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+app.MapPost("/site-admin/backups/{id:int}/delete", async (
+    int id, HttpContext ctx, BackupService backups, IAntiforgery antiforgery, CancellationToken ct) =>
+{
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    try { await backups.DeleteAsync(id, ct); }
+    catch (PlanValidationException ex)
+    {
+        ctx.Response.Redirect("/site-admin/backups?msg=" + Uri.EscapeDataString(ex.Errors.First().Value));
+        return;
+    }
+    ctx.Response.Redirect("/site-admin/backups?ok=deleted");
+}).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+app.MapPost("/site-admin/backups/{id:int}/restore", async (
+    int id, HttpContext ctx, BackupService backups, IAntiforgery antiforgery,
+    ILoggerFactory loggerFactory, CancellationToken ct) =>
+{
+    var logger = loggerFactory.CreateLogger("RestoreEndpoint");
+    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+    var form = await ctx.Request.ReadFormAsync(ct);
+    var confirmed = form["Confirm"] == "true" || form["Confirm"] == "on";
+    if (!confirmed)
+    {
+        ctx.Response.Redirect("/site-admin/backups?msg="
+            + Uri.EscapeDataString("Tick the confirmation box before restoring."));
+        return;
+    }
+    try
+    {
+        await backups.RestoreAsync(id, ct);
+        ctx.Response.Redirect("/site-admin/backups?ok=restored");
+    }
+    catch (PlanValidationException ex)
+    {
+        ctx.Response.Redirect("/site-admin/backups?msg=" + Uri.EscapeDataString(ex.Errors.First().Value));
+    }
+    catch (Exception ex) when (ex is InvalidOperationException or IOException)
+    {
+        logger.LogError(ex, "Restore failed for backup {Id}.", id);
+        ctx.Response.Redirect("/site-admin/backups?msg=" + Uri.EscapeDataString("Restore failed: " + ex.Message));
+    }
+}).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+app.MapGet("/site-admin/backups/{id:int}/download", async (
+    int id, HttpContext ctx, BackupService backups, CancellationToken ct) =>
+{
+    var opened = await backups.OpenForDownloadAsync(id, ct);
+    if (opened is null)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    var (row, stream) = opened.Value;
+    try
+    {
+        ctx.Response.ContentType = "application/octet-stream";
+        var cd = new Microsoft.Net.Http.Headers.ContentDispositionHeaderValue("attachment");
+        cd.SetHttpFileName(row.FileName);
+        ctx.Response.Headers.ContentDisposition = cd.ToString();
+        ctx.Response.ContentLength = row.FileSizeBytes;
+        await stream.CopyToAsync(ctx.Response.Body, ct);
+    }
+    finally
+    {
+        await stream.DisposeAsync();
     }
 }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 

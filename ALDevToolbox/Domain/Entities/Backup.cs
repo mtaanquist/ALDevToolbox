@@ -1,0 +1,52 @@
+namespace ALDevToolbox.Domain.Entities;
+
+/// <summary>
+/// Origin of a backup row — distinguishes scheduled (background) runs from
+/// SiteAdmin-triggered ad-hoc ones in the audit log and on the backups page.
+/// </summary>
+public enum BackupKind
+{
+    Scheduled,
+    AdHoc,
+}
+
+/// <summary>
+/// One row per <c>pg_dump</c> file under the backups directory. The file on
+/// disk is the source of truth for restorability; the DB row carries the
+/// metadata the <c>/site-admin/backups</c> page renders without stat-ing
+/// every file on every load.
+/// </summary>
+public class Backup
+{
+    public int Id { get; set; }
+
+    /// <summary>
+    /// Filename inside the backups directory — no path separators. Format
+    /// is <c>aldevtoolbox-YYYYMMDDTHHMMSSZ-{adhoc|scheduled}.dump</c>; the
+    /// service generates the name and validates that the filename never
+    /// escapes the backups directory.
+    /// </summary>
+    public string FileName { get; set; } = string.Empty;
+
+    /// <summary>Size of the <c>pg_dump</c> file in bytes at write time.</summary>
+    public long FileSizeBytes { get; set; }
+
+    /// <summary>UTC instant the backup was written.</summary>
+    public DateTime CreatedAt { get; set; }
+
+    /// <summary>
+    /// FK to the <c>users</c> row that triggered an ad-hoc backup. Null for
+    /// scheduled backups — the scheduler runs without an HTTP context.
+    /// </summary>
+    public int? CreatedByUserId { get; set; }
+    public User? CreatedByUser { get; set; }
+
+    public BackupKind Kind { get; set; }
+
+    /// <summary>
+    /// When <see langword="true"/>, retention pruning skips this backup. The
+    /// flag is the only customer-facing way to keep a backup beyond the
+    /// retention window.
+    /// </summary>
+    public bool IsPinned { get; set; }
+}

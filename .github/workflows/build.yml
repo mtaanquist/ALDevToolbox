@@ -38,6 +38,21 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Install postgresql-client-18
+        # BackupService tests shell out to pg_dump / pg_restore against the
+        # service-container Postgres (postgres:18-alpine). The major versions
+        # have to match — pg_restore 16 can't replay a pg_dump 18 archive —
+        # so install postgresql-client-18 from the upstream PostgreSQL repo
+        # rather than the distro default.
+        run: |
+          sudo apt-get install -y --no-install-recommends curl ca-certificates gnupg lsb-release
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
+          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-18
+
       - name: Restore
         run: dotnet restore
 
@@ -92,3 +107,92 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v
+
+  migration-forward-compat:
+    # M18: catches accidental data-loss migrations (column drops without a
+    # backfill, type changes that fail on real data). Applies the base ref's
+    # migrations to a fresh Postgres, drops a sentinel row, then checks out
+    # the current commit and reapplies — the sentinel must still be there.
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=migration_check"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install dotnet-ef and postgresql-client-18
+        run: |
+          sudo apt-get install -y --no-install-recommends curl ca-certificates gnupg lsb-release
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
+          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-18
+          dotnet tool install --global dotnet-ef --version 10.*
+          echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
+
+      - name: Create migration_check database
+        env:
+          PGPASSWORD: postgres
+        run: psql -h localhost -U postgres -d postgres -c "CREATE DATABASE migration_check;"
+
+      - name: Apply base-ref migrations
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$BASE_SHA" ]; then
+            echo "No base ref; nothing to compare against." >&2
+            exit 0
+          fi
+          git worktree add ../base-ref "$BASE_SHA"
+          pushd ../base-ref >/dev/null
+          dotnet restore ALDevToolbox/ALDevToolbox.csproj
+          dotnet ef database update --project ALDevToolbox/ALDevToolbox.csproj
+          popd >/dev/null
+
+      - name: Drop sentinel row
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d migration_check -c \
+            "INSERT INTO organizations (name, slug, is_pending, is_seeded, created_at) VALUES ('Forward Compat Sentinel', 'forward-compat-sentinel', false, true, NOW());"
+
+      - name: Apply current-branch migrations
+        run: |
+          dotnet restore ALDevToolbox/ALDevToolbox.csproj
+          dotnet ef database update --project ALDevToolbox/ALDevToolbox.csproj
+
+      - name: Assert sentinel survived
+        env:
+          PGPASSWORD: postgres
+        run: |
+          count=$(psql -h localhost -U postgres -d migration_check -tA -c \
+            "SELECT COUNT(*) FROM organizations WHERE slug = 'forward-compat-sentinel';")
+          if [ "$count" != "1" ]; then
+            echo "Sentinel row was lost across the migration step (count=$count)." >&2
+            exit 1
+          fi
+          echo "Sentinel survived the migration step."

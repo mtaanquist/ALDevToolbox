@@ -1,0 +1,371 @@
+using System.Diagnostics;
+using ALDevToolbox.Data;
+using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.ValueObjects;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
+
+namespace ALDevToolbox.Services;
+
+/// <summary>
+/// Row view returned by <see cref="BackupService.ListAsync"/>. Carries the
+/// metadata the <c>/site-admin/backups</c> page renders without re-reading
+/// disk on every request.
+/// </summary>
+public sealed record BackupRow(
+    int Id,
+    string FileName,
+    long FileSizeBytes,
+    DateTime CreatedAt,
+    int? CreatedByUserId,
+    string? CreatedByEmail,
+    BackupKind Kind,
+    bool IsPinned);
+
+/// <summary>
+/// Shells out to <c>pg_dump</c> / <c>pg_restore</c> against the application
+/// database. The connection metadata comes from the <see cref="AppDbContext"/>
+/// connection string so operators only configure credentials once.
+///
+/// <para>
+/// Restores run in-place: the service flips
+/// <see cref="MaintenanceModeState"/> on, drops every object in the
+/// <c>public</c> schema, runs <c>pg_restore</c>, and lifts maintenance mode
+/// in a <c>finally</c>. See <c>.design/milestones.md</c> M18.
+/// </para>
+/// </summary>
+public sealed class BackupService
+{
+    /// <summary>Filename suffix every backup carries — kept stable so manual recovery is straightforward.</summary>
+    public const string BackupFileSuffix = ".dump";
+
+    private readonly AppDbContext _db;
+    private readonly IOrganizationContext _orgContext;
+    private readonly MaintenanceModeState _maintenance;
+    private readonly ILogger<BackupService> _logger;
+    private readonly TimeProvider _clock;
+    private readonly string _connectionString;
+    private readonly string _backupsDirectory;
+    private readonly string _pgDumpPath;
+    private readonly string _pgRestorePath;
+
+    public BackupService(
+        AppDbContext db,
+        IOrganizationContext orgContext,
+        MaintenanceModeState maintenance,
+        IConfiguration configuration,
+        ILogger<BackupService> logger,
+        TimeProvider clock)
+    {
+        _db = db;
+        _orgContext = orgContext;
+        _maintenance = maintenance;
+        _logger = logger;
+        _clock = clock;
+        _connectionString = configuration.GetConnectionString("DefaultConnection")
+            ?? throw new InvalidOperationException(
+                "ConnectionStrings:DefaultConnection is required for BackupService.");
+        _backupsDirectory = Environment.GetEnvironmentVariable("BACKUPS_DIR")
+            ?? "/var/lib/aldevtoolbox/backups";
+        _pgDumpPath = Environment.GetEnvironmentVariable("PG_DUMP_PATH") ?? "pg_dump";
+        _pgRestorePath = Environment.GetEnvironmentVariable("PG_RESTORE_PATH") ?? "pg_restore";
+    }
+
+    /// <summary>Absolute path to the backups directory. Created on demand.</summary>
+    public string BackupsDirectory => _backupsDirectory;
+
+    /// <summary>
+    /// Cross-org listing of every backup row, newest first. The
+    /// <c>/site-admin/backups</c> page calls this on load and after every
+    /// pin / unpin / delete action.
+    /// </summary>
+    public async Task<List<BackupRow>> ListAsync(CancellationToken ct = default)
+    {
+        RequireSiteAdmin();
+        return await _db.Backups.AsNoTracking()
+            .OrderByDescending(b => b.CreatedAt)
+            .Select(b => new BackupRow(
+                b.Id,
+                b.FileName,
+                b.FileSizeBytes,
+                b.CreatedAt,
+                b.CreatedByUserId,
+                b.CreatedByUser == null ? null : b.CreatedByUser.Email,
+                b.Kind,
+                b.IsPinned))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Streams a backup's content to the caller. Returns <c>null</c> when the
+    /// row is missing or the file on disk has been removed out-of-band.
+    /// </summary>
+    public async Task<(Backup Row, FileStream Stream)?> OpenForDownloadAsync(int id, CancellationToken ct = default)
+    {
+        RequireSiteAdmin();
+        var row = await _db.Backups.AsNoTracking().FirstOrDefaultAsync(b => b.Id == id, ct);
+        if (row is null) return null;
+        var path = ResolveFilePath(row.FileName);
+        if (!File.Exists(path)) return null;
+        return (row, new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true));
+    }
+
+    /// <summary>
+    /// Runs <c>pg_dump</c> in custom format (<c>-Fc</c>) against the
+    /// application database, writes the file under <see cref="BackupsDirectory"/>,
+    /// inserts a row in the <c>backups</c> table, then prunes the oldest
+    /// unpinned files past the retention count.
+    /// </summary>
+    public async Task<Backup> CreateAsync(BackupKind kind, CancellationToken ct = default)
+    {
+        if (kind == BackupKind.AdHoc)
+        {
+            RequireSiteAdmin();
+        }
+
+        Directory.CreateDirectory(_backupsDirectory);
+
+        var timestamp = _clock.GetUtcNow().UtcDateTime;
+        var label = kind == BackupKind.Scheduled ? "scheduled" : "adhoc";
+        var fileName = $"aldevtoolbox-{timestamp:yyyyMMddTHHmmssZ}-{label}{BackupFileSuffix}";
+        var targetPath = ResolveFilePath(fileName);
+
+        var sw = Stopwatch.StartNew();
+        await RunPgToolAsync(
+            _pgDumpPath,
+            new[] { "-Fc", "--no-owner", "--no-privileges", "-f", targetPath },
+            ct);
+        sw.Stop();
+
+        var size = new FileInfo(targetPath).Length;
+        var row = new Backup
+        {
+            FileName = fileName,
+            FileSizeBytes = size,
+            CreatedAt = timestamp,
+            CreatedByUserId = kind == BackupKind.AdHoc ? _orgContext.CurrentUserId : null,
+            Kind = kind,
+            IsPinned = false,
+        };
+        _db.Backups.Add(row);
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Backup {FileName} written in {ElapsedMs} ms ({SizeBytes} bytes, kind={Kind}).",
+            fileName, sw.ElapsedMilliseconds, size, kind);
+
+        await PruneRetentionAsync(ct);
+        return row;
+    }
+
+    /// <summary>
+    /// Pins or unpins a backup so retention pruning skips (or stops skipping)
+    /// it. Idempotent; an already-pinned row that's pinned again is a no-op.
+    /// </summary>
+    public async Task SetPinnedAsync(int id, bool pinned, CancellationToken ct = default)
+    {
+        RequireSiteAdmin();
+        var row = await _db.Backups.FirstOrDefaultAsync(b => b.Id == id, ct);
+        if (row is null)
+        {
+            throw new PlanValidationException(new Dictionary<string, string> { ["BackupId"] = "Backup not found." });
+        }
+        if (row.IsPinned == pinned) return;
+        row.IsPinned = pinned;
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("Backup {FileName} pinned={Pinned}.", row.FileName, pinned);
+    }
+
+    /// <summary>
+    /// Deletes a backup file and its DB row. Pinned backups must be
+    /// unpinned first — pinning is the customer-facing way to opt out of
+    /// deletion, and a single click shouldn't bypass it.
+    /// </summary>
+    public async Task DeleteAsync(int id, CancellationToken ct = default)
+    {
+        RequireSiteAdmin();
+        var row = await _db.Backups.FirstOrDefaultAsync(b => b.Id == id, ct);
+        if (row is null) return;
+        if (row.IsPinned)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["BackupId"] = "Unpin the backup before deleting it.",
+            });
+        }
+        TryDeleteFile(row.FileName);
+        _db.Backups.Remove(row);
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("Backup {FileName} deleted by SiteAdmin {UserId}.", row.FileName, _orgContext.CurrentUserId);
+    }
+
+    /// <summary>
+    /// In-place restore: flips maintenance mode on, drops every object in
+    /// the <c>public</c> schema, runs <c>pg_restore</c>, lifts maintenance
+    /// mode. The <c>backups</c> row stays in place after restore so the
+    /// audit log retains the link to the file that was restored.
+    /// </summary>
+    public async Task RestoreAsync(int id, CancellationToken ct = default)
+    {
+        RequireSiteAdmin();
+        var row = await _db.Backups.AsNoTracking().FirstOrDefaultAsync(b => b.Id == id, ct);
+        if (row is null)
+        {
+            throw new PlanValidationException(new Dictionary<string, string> { ["BackupId"] = "Backup not found." });
+        }
+        var path = ResolveFilePath(row.FileName);
+        if (!File.Exists(path))
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["BackupId"] = "Backup file is missing from the backups directory.",
+            });
+        }
+
+        _maintenance.Enter($"Restoring backup {row.FileName}");
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            // Drop everything in `public` so pg_restore lays the schema down on
+            // a clean slate. The dump itself doesn't drop the schema (only the
+            // owned objects) because that gives partial restores room to fail
+            // mid-flight without nuking unrelated state.
+            await ExecuteSqlAsync(
+                "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;",
+                ct);
+
+            var builder = new NpgsqlConnectionStringBuilder(_connectionString);
+            await RunPgToolAsync(
+                _pgRestorePath,
+                new[]
+                {
+                    "--no-owner",
+                    "--no-privileges",
+                    "--clean",
+                    "--if-exists",
+                    "-d", builder.Database ?? string.Empty,
+                    path,
+                },
+                ct);
+            sw.Stop();
+            _logger.LogInformation(
+                "Restored backup {FileName} in {ElapsedMs} ms.", row.FileName, sw.ElapsedMilliseconds);
+        }
+        finally
+        {
+            _maintenance.Exit();
+        }
+    }
+
+    /// <summary>
+    /// Removes the oldest unpinned files past the retention count, writing
+    /// one log line per deletion. Called automatically at the end of every
+    /// successful backup.
+    /// </summary>
+    public async Task PruneRetentionAsync(CancellationToken ct = default)
+    {
+        var retention = await _db.SystemSettings.AsNoTracking()
+            .Where(s => s.Id == 1)
+            .Select(s => (int?)s.BackupRetentionCount)
+            .FirstOrDefaultAsync(ct) ?? 14;
+        if (retention < 1) retention = 1;
+
+        // Order by oldest first, skip retention count of unpinned rows that
+        // we want to keep, delete the remainder. Pinned rows never enter
+        // the candidate set at all.
+        var unpinned = await _db.Backups
+            .Where(b => !b.IsPinned)
+            .OrderByDescending(b => b.CreatedAt)
+            .ToListAsync(ct);
+        if (unpinned.Count <= retention) return;
+
+        var toDelete = unpinned.Skip(retention).ToList();
+        foreach (var row in toDelete)
+        {
+            TryDeleteFile(row.FileName);
+            _db.Backups.Remove(row);
+            _logger.LogInformation("Pruned backup {FileName} (retention={Retention}).", row.FileName, retention);
+        }
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private string ResolveFilePath(string fileName)
+    {
+        // Defence against a tampered DB row: a path-separator or
+        // .. component would let a delete or download escape the
+        // backups directory.
+        if (fileName.Contains('/') || fileName.Contains('\\') || fileName.Contains("..", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Refusing to handle suspicious backup file name: {fileName}");
+        }
+        return Path.Combine(_backupsDirectory, fileName);
+    }
+
+    private void TryDeleteFile(string fileName)
+    {
+        try
+        {
+            var path = ResolveFilePath(fileName);
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Failed to delete backup file {FileName}; row will be removed regardless.", fileName);
+        }
+    }
+
+    private async Task RunPgToolAsync(string fileName, IReadOnlyList<string> argv, CancellationToken ct)
+    {
+        var builder = new NpgsqlConnectionStringBuilder(_connectionString);
+        var psi = new ProcessStartInfo
+        {
+            FileName = fileName,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        // pg_dump prefers libpq-style env vars over command-line args so
+        // the password never lands in `/proc/<pid>/cmdline`. pg_restore
+        // also accepts a libpq connection URI via -d, which we use below.
+        psi.Environment["PGHOST"] = builder.Host ?? "localhost";
+        psi.Environment["PGPORT"] = builder.Port.ToString();
+        psi.Environment["PGUSER"] = builder.Username ?? string.Empty;
+        psi.Environment["PGPASSWORD"] = builder.Password ?? string.Empty;
+        psi.Environment["PGDATABASE"] = builder.Database ?? string.Empty;
+        foreach (var arg in argv) psi.ArgumentList.Add(arg);
+
+        using var process = Process.Start(psi)
+            ?? throw new InvalidOperationException($"Failed to start {fileName}.");
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(ct).AsTask();
+        var stderrTask = process.StandardError.ReadToEndAsync(ct).AsTask();
+        await process.WaitForExitAsync(ct);
+        var stderr = await stderrTask;
+        _ = await stdoutTask;
+
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"{fileName} exited {process.ExitCode}: {stderr}".Trim());
+        }
+    }
+
+    private async Task ExecuteSqlAsync(string sql, CancellationToken ct)
+    {
+        await using var conn = new NpgsqlConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private void RequireSiteAdmin()
+    {
+        if (!_orgContext.IsSiteAdmin)
+        {
+            throw new InvalidOperationException(
+                "SiteAdmin context is required for this operation. The endpoint should already be 404-guarded.");
+        }
+    }
+}

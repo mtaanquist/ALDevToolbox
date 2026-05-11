@@ -65,5 +65,8 @@ public sealed class SystemSettingsAuditTests : IDisposable
         SmtpFrom: "noreply@example.com",
         SmtpUseStartTls: true,
         BannerText: null,
-        DefaultSignupAutoApprove: false);
+        DefaultSignupAutoApprove: false,
+        BackupScheduleEnabled: true,
+        BackupScheduleTimeUtc: new TimeOnly(2, 0),
+        BackupRetentionCount: 14);
 }
