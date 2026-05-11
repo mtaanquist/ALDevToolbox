@@ -1054,7 +1054,12 @@ app.MapPost("/site-admin/users/{id:int}/demote", async (
     ctx.Response.Redirect("/site-admin/users?ok=demoted");
 }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
-app.MapPost("/site-admin/settings", async (
+// Post to a distinct sub-path so we don't collide with the Razor Components
+// endpoint that MapRazorComponents registers for the `/site-admin/settings`
+// page route — overlapping the two raises AmbiguousMatchException at request
+// time. Every other form in the app already follows this pattern
+// (`/site-admin/backups/create`, `/admin/configuration/settings`, …).
+app.MapPost("/site-admin/settings/save", async (
     HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
 {
     if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
