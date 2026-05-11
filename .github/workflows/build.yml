@@ -185,9 +185,27 @@ jobs:
         if: env.BASE_HAS_MIGRATIONS == 'true'
         env:
           PGPASSWORD: postgres
+        # The base ref may still call the column is_seeded (renamed to
+        # is_system by 20260513000000_MoveSeedToSystemOrg). Pick the column
+        # name that actually exists so the sentinel inserts cleanly against
+        # either schema. is_seeded/is_system is NOT NULL with no default in
+        # InitialCreate, so we can't just omit it.
         run: |
-          psql -h localhost -U postgres -d aldevtoolbox_designtime -c \
-            "INSERT INTO organizations (name, slug, is_pending, is_system, created_at) VALUES ('Forward Compat Sentinel', 'forward-compat-sentinel', false, false, NOW());"
+          psql -h localhost -U postgres -d aldevtoolbox_designtime -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'organizations' AND column_name = 'is_system'
+            ) THEN
+              INSERT INTO organizations (name, slug, is_pending, is_system, created_at)
+              VALUES ('Forward Compat Sentinel', 'forward-compat-sentinel', false, false, NOW());
+            ELSE
+              INSERT INTO organizations (name, slug, is_pending, is_seeded, created_at)
+              VALUES ('Forward Compat Sentinel', 'forward-compat-sentinel', false, false, NOW());
+            END IF;
+          END $$;
+          SQL
 
       - name: Apply current-branch migrations
         run: |
