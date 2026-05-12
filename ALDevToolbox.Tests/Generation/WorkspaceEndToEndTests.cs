@@ -190,11 +190,12 @@ path = "codeunits"
         moduleDepIds.Should().BeEquivalentTo(new[] { coreId, hotfixId, docCaptureId });
 
         // 8) Folder layout + mustache substitution in file content. The Core
-        //    template carries one AL file under src/codeunits; it should ship
-        //    with {{affix}} substituted to the per-workspace prefix.
+        //    template carries one AL file under src/codeunits; {{affix}}
+        //    substitutes from defaults.affix ("TEST" here), distinct from the
+        //    plan's extension_prefix ("ACME" — that drives extension names).
         var alEntry = zip.GetEntry("AcmeCustomer/Core/src/codeunits/AppInstall.Codeunit.al");
         alEntry.Should().NotBeNull();
-        ReadEntry(alEntry!).Should().Contain("codeunit 90000 \"ACME App Install\"");
+        ReadEntry(alEntry!).Should().Contain("codeunit 90000 \"TEST App Install\"");
     }
 
     // ===== helpers =====

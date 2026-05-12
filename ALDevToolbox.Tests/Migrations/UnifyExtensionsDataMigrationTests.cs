@@ -101,8 +101,8 @@ public sealed class UnifyExtensionsDataMigrationTests : IDisposable
             ("org", orgId));
 
         var moduleId = await ScalarIntAsync("""
-            INSERT INTO modules (organization_id, key, name, created_at, updated_at)
-            VALUES (@org, 'preunified-module', 'Pre-Unified Module', NOW(), NOW())
+            INSERT INTO modules (organization_id, key, name, deprecated, created_at, updated_at)
+            VALUES (@org, 'preunified-module', 'Pre-Unified Module', FALSE, NOW(), NOW())
             RETURNING id;
             """,
             ("org", orgId));
