@@ -3,6 +3,7 @@
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @inject ModuleService Modules
+@inject CatalogService Catalog
 @inject NavigationManager Nav
 @inject ILogger<AdminModuleEdit> Log
 @using ALDevToolbox.Domain.Entities
@@ -100,11 +101,50 @@
             <section class="form-section">
                 <div class="folder-editor__header">
                     <label class="section-label">Dependencies</label>
-                    <button type="button" class="btn btn--sm" @onclick="AddDependency">
-                        <Icon Name="plus" Width="14" Height="14" />
-                        <span>Add dependency</span>
-                    </button>
                 </div>
+                @{
+                    var unusedCatalog = _catalog
+                        .Where(c => !_form.Dependencies.Any(d => string.Equals(d.DepId, c.DepId, StringComparison.OrdinalIgnoreCase)))
+                        .OrderBy(c => c.Category ?? string.Empty, StringComparer.Ordinal)
+                        .ThenBy(c => c.DepName)
+                        .ToList();
+                }
+                @if (_catalog.Count == 0)
+                {
+                    <p class="muted">
+                        The catalogue is empty. Add entries under
+                        <a href="/admin/catalog">Catalogue</a> before composing
+                        modules — module dependencies are picked from the catalogue.
+                    </p>
+                }
+                else
+                {
+                    <div class="mod-dep-add">
+                        <select @bind="_pickerDepId" disabled="@(unusedCatalog.Count == 0)">
+                            <option value="">
+                                @(unusedCatalog.Count == 0 ? "All catalogue entries are already in this module." : "Pick a catalogue entry…")
+                            </option>
+                            @foreach (var group in unusedCatalog
+                                .GroupBy(c => string.IsNullOrWhiteSpace(c.Category) ? "Other" : c.Category!)
+                                .OrderBy(g => g.Key, StringComparer.Ordinal))
+                            {
+                                <optgroup label="@group.Key">
+                                    @foreach (var item in group)
+                                    {
+                                        <option value="@item.DepId">@item.DepName · @item.DepPublisher</option>
+                                    }
+                                </optgroup>
+                            }
+                        </select>
+                        <button type="button" class="btn btn--sm"
+                                disabled="@(string.IsNullOrEmpty(_pickerDepId))"
+                                @onclick="AddFromCatalogue">
+                            <Icon Name="plus" Width="14" Height="14" />
+                            <span>Add</span>
+                        </button>
+                    </div>
+                }
+
                 @if (_form.Dependencies.Count == 0)
                 {
                     <p class="muted">
@@ -119,6 +159,7 @@
                         {
                             var index = i;
                             var row = _form.Dependencies[index];
+                            var legacy = !_catalog.Any(c => string.Equals(c.DepId, row.DepId, StringComparison.OrdinalIgnoreCase));
                             <div class="folder-editor__row">
                                 <div class="folder-editor__row-head">
                                     <div class="folder-editor__order">
@@ -131,29 +172,30 @@
                                             <Icon Name="arrow-down" Width="12" Height="12" />
                                         </button>
                                     </div>
-                                    <div class="folder-editor__path">
-                                        <input type="text" required placeholder="GUID"
-                                               @bind="row.DepId" @bind:event="oninput" />
-                                        <FieldError Field="@($"Dependencies[{index}].DepId")" Errors="_fieldErrors" />
+                                    <div class="mod-dep-row__heading">
+                                        <span class="mod-dep-row__name">@row.DepName</span>
+                                        <span class="mod-dep-row__publisher muted"> · @row.DepPublisher</span>
+                                        @if (legacy)
+                                        {
+                                            <span class="mod-dep-row__legacy" title="This dependency's GUID is not in the catalogue. Remove it and pick a catalogue entry to replace it.">Not in catalogue</span>
+                                        }
                                     </div>
                                     <button type="button" class="btn btn--sm" @onclick="() => RemoveDependency(index)" title="Remove dependency">
                                         <Icon Name="trash-2" Width="12" Height="12" />
                                     </button>
                                 </div>
-                                <div class="dep-editor__fields">
-                                    <div>
-                                        <input type="text" required placeholder="Name"
-                                               @bind="row.DepName" @bind:event="oninput" />
-                                        <FieldError Field="@($"Dependencies[{index}].DepName")" Errors="_fieldErrors" />
+                                <div class="mod-dep-row__fields">
+                                    <div class="mod-dep-row__id">
+                                        <span class="caption muted">GUID</span>
+                                        <code>@row.DepId</code>
+                                        <FieldError Field="@($"Dependencies[{index}].DepId")" Errors="_fieldErrors" />
                                     </div>
-                                    <div>
-                                        <input type="text" required placeholder="Publisher"
-                                               @bind="row.DepPublisher" @bind:event="oninput" />
-                                        <FieldError Field="@($"Dependencies[{index}].DepPublisher")" Errors="_fieldErrors" />
-                                    </div>
-                                    <div>
-                                        <input type="text" required placeholder="Version (e.g. 1.0.0.0)"
-                                               @bind="row.DepVersion" @bind:event="oninput" />
+                                    <div class="mod-dep-row__version">
+                                        <label>
+                                            <span class="caption muted">Version</span>
+                                            <input type="text" required placeholder="e.g. 1.0.0.0"
+                                                   @bind="row.DepVersion" @bind:event="oninput" />
+                                        </label>
                                         <FieldError Field="@($"Dependencies[{index}].DepVersion")" Errors="_fieldErrors" />
                                     </div>
                                 </div>
@@ -162,8 +204,11 @@
                     </div>
                     <small class="muted">
                         Each dependency becomes a row in the module's generated
-                        <code>app.json</code>. The GUID is the AL extension's
-                        <code>id</code>; the version is written verbatim.
+                        <code>app.json</code> in the order shown. GUID, name, and
+                        publisher are snapshot copies from the catalogue at the
+                        time you added the row — editing a catalogue entry later
+                        won't change existing modules. Version is editable per
+                        module.
                     </small>
                 }
             </section>
@@ -221,12 +266,16 @@
     private string? _saveError;
     private string? _saveSuccess;
     private IReadOnlyDictionary<string, string> _fieldErrors = new Dictionary<string, string>();
+    private List<WellKnownDependency> _catalog = new();
+    private string _pickerDepId = string.Empty;
 
     protected override async Task OnParametersSetAsync()
     {
         _saveError = null;
         _saveSuccess = null;
         _fieldErrors = new Dictionary<string, string>();
+        _pickerDepId = string.Empty;
+        _catalog = await Catalog.GetAllAsync();
 
         if (!IsEdit)
         {
@@ -251,9 +300,24 @@
         _form = FormState.From(existing);
     }
 
-    private void AddDependency()
+    private void AddFromCatalogue()
     {
-        _form?.Dependencies.Add(new DependencyRow());
+        if (_form is null || string.IsNullOrEmpty(_pickerDepId)) return;
+        var entry = _catalog.FirstOrDefault(c =>
+            string.Equals(c.DepId, _pickerDepId, StringComparison.OrdinalIgnoreCase));
+        if (entry is null) return;
+        if (_form.Dependencies.Any(d => string.Equals(d.DepId, entry.DepId, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+        _form.Dependencies.Add(new DependencyRow
+        {
+            DepId = entry.DepId,
+            DepName = entry.DepName,
+            DepPublisher = entry.DepPublisher,
+            DepVersion = entry.DepVersionDefault,
+        });
+        _pickerDepId = string.Empty;
     }
 
     private void RemoveDependency(int index)

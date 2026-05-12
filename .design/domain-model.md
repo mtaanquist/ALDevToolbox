@@ -163,9 +163,11 @@ Modules are not tied to a specific runtime — they declare dependencies that wo
 
 Index: `(module_id, ordering)`.
 
+The admin module editor sources dependencies from `well_known_dependencies`: picking a catalogue entry inserts a `module_dependencies` row with the GUID, name, publisher, and the catalogue's default version copied in. The columns are intentionally a snapshot — once added, editing or deleting the source catalogue entry does not change existing modules, so generation stays stable across catalogue maintenance. `dep_version` is the only field admins edit per-module (to pin a specific version that differs from the catalogue default). Rows whose GUID no longer matches any catalogue entry (legacy data, or entries deleted from the catalogue) are still rendered in the editor with a "Not in catalogue" hint and remain removable.
+
 ### `well_known_dependencies`
 
-Used by the New Extension flow's dependency picker. This is the catalogue of "things you might depend on without us knowing in advance," and it's deliberately separate from `module_dependencies` because:
+The catalogue of "things you might depend on without us knowing in advance." It's the single source admins pick from when composing modules (above) **and** when adding dependencies to a standalone extension from the New Extension page. The table is kept deliberately separate from `module_dependencies` because:
 
 - Modules group dependencies into sets. Well-known deps are flat.
 - The same dependency might appear in multiple modules' lists (Continia Core appears in three).
