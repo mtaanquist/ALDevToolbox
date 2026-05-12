@@ -809,11 +809,14 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     border: 1px solid var(--color-border-strong);
     background: var(--color-surface);
     color: var(--color-text);
+    font-family: inherit;
     font-size: 13.5px;
     font-weight: 500;
+    line-height: 1.2;
     cursor: pointer;
     white-space: nowrap;
     text-decoration: none;
+    box-sizing: border-box;
 }
 
 .btn:hover { text-decoration: none; }
@@ -824,6 +827,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     background: var(--color-accent);
     border-color: var(--color-accent);
     color: white;
+    font-weight: 600;
 }
 
 .btn--primary:hover { background: var(--color-accent-hover); }
@@ -2274,27 +2278,29 @@ ul.form-field-error {
     font-size: 0.75em;
     padding: 1px 6px;
     border-radius: 8px;
-    background: #f6f8fa;
-    color: #6e7681;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-muted);
 }
 
 .snippet-card__description {
     margin: 8px 0;
-    color: var(--color-muted, #57606a);
+    color: var(--color-text-muted);
 }
 
 .snippet-card__keywords {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 6px;
 }
 
 .snippet-card__keyword {
     font-size: 0.75em;
-    padding: 2px 6px;
+    padding: 2px 8px;
     border-radius: 8px;
-    background: #f6f8fa;
-    color: #57606a;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-muted);
 }
 
 .snippet-detail__header {
@@ -2309,6 +2315,14 @@ ul.form-field-error {
     margin: 8px 0 16px;
 }
 
+.snippet-detail .snippet-card__keywords {
+    margin-bottom: 20px;
+}
+
+.snippet-detail h2 {
+    margin-top: 8px;
+}
+
 .snippet-detail__files {
     list-style: none;
     padding: 0;
@@ -2317,9 +2331,10 @@ ul.form-field-error {
 }
 
 .snippet-file-view {
-    border: 1px solid var(--color-border, #d0d7de);
+    border: 1px solid var(--color-border);
     border-radius: 6px;
     overflow: hidden;
+    background: var(--color-surface);
 }
 
 .snippet-file-view__header {
@@ -2327,8 +2342,15 @@ ul.form-field-error {
     justify-content: space-between;
     align-items: center;
     padding: 6px 12px;
-    background: #f6f8fa;
-    border-bottom: 1px solid var(--color-border, #d0d7de);
+    background: var(--color-bg);
+    color: var(--color-text);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.snippet-file-view__header code {
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
 }
 
 .snippet-file-view__content {
@@ -2405,6 +2427,11 @@ ul.form-field-error {
     display: flex;
     gap: 4px;
     flex: 0 0 auto;
+}
+
+.snippet-file__actions .btn {
+    height: 34px;
+    padding: 0 10px;
 }
 
 .snippet-file__content {
