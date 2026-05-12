@@ -37,6 +37,223 @@ namespace ALDevToolbox.Data.Migrations
     /// </remarks>
     public partial class UnifyExtensions : Migration
     {
+        /// <summary>
+        /// The PL/pgSQL block that rewrites pre-unified rows into the
+        /// unified-extensions tables (workspace_extensions + recursive folders/
+        /// files, module_extension_* mirrors, defaults_json patch, mustache
+        /// rewrite). Exposed as a const so the migration-data-shape test
+        /// (<c>UnifyExtensionsDataMigrationTests</c>) can replay it against an
+        /// in-test pre-unified fixture without duplicating the SQL. The
+        /// production <see cref="Up"/> path invokes it verbatim from inside the
+        /// migration.
+        /// </summary>
+        public const string DataRewriteSql = @"
+DO $unify$
+DECLARE
+    tmpl RECORD;
+    fld  RECORD;
+    f    RECORD;
+    seg  TEXT;
+    segs TEXT[];
+    parent_id INT;
+    leaf_id   INT;
+    ext_id    INT;
+    next_ord  INT;
+    mod_row   RECORD;
+    mod_fld   RECORD;
+    mod_file  RECORD;
+    mod_parent INT;
+    mod_leaf   INT;
+BEGIN
+    -- Per-template: create the Core workspace_extension, walk template_folders
+    -- into the recursive tree, copy template_files into the leaf folders.
+    FOR tmpl IN SELECT id, organization_id FROM runtime_templates LOOP
+        INSERT INTO workspace_extensions
+            (organization_id, template_id, ordering, path, name_template, required,
+             application, runtime, id_range_from, id_range_to)
+        VALUES
+            (tmpl.organization_id, tmpl.id, 0, 'Core',
+             '{{extension_prefix}} Core', TRUE, NULL, NULL, NULL, NULL)
+        RETURNING id INTO ext_id;
+
+        FOR fld IN
+            SELECT id, organization_id, ordering, path
+            FROM template_folders
+            WHERE template_id = tmpl.id
+            ORDER BY ordering
+        LOOP
+            segs := string_to_array(fld.path, '/');
+            parent_id := NULL;
+            next_ord := fld.ordering;
+            FOR i IN 1 .. array_length(segs, 1) LOOP
+                seg := segs[i];
+                IF seg IS NULL OR seg = '' THEN CONTINUE; END IF;
+
+                -- Reuse an existing sibling folder with the same name. The
+                -- ordering for newly-created intermediate rows follows the
+                -- triggering top-level folder's ordering; collisions resolve
+                -- to the earliest insertion.
+                IF parent_id IS NULL THEN
+                    SELECT id INTO leaf_id FROM workspace_extension_folders
+                    WHERE workspace_extension_id = ext_id
+                      AND parent_folder_id IS NULL
+                      AND path = seg
+                    LIMIT 1;
+                ELSE
+                    SELECT id INTO leaf_id FROM workspace_extension_folders
+                    WHERE parent_folder_id = parent_id
+                      AND path = seg
+                    LIMIT 1;
+                END IF;
+
+                IF leaf_id IS NULL THEN
+                    INSERT INTO workspace_extension_folders
+                        (organization_id, workspace_extension_id, parent_folder_id, ordering, path)
+                    VALUES
+                        (fld.organization_id, ext_id, parent_id, next_ord, seg)
+                    RETURNING id INTO leaf_id;
+                END IF;
+                parent_id := leaf_id;
+            END LOOP;
+
+            -- Files for this row attach to the leaf produced above.
+            FOR f IN
+                SELECT organization_id, ordering, path, content
+                FROM template_files
+                WHERE template_folder_id = fld.id
+                ORDER BY ordering
+            LOOP
+                INSERT INTO workspace_extension_files
+                    (organization_id, workspace_extension_folder_id, ordering, path, content, is_example)
+                VALUES
+                    (f.organization_id, leaf_id, f.ordering, f.path, f.content, FALSE);
+            END LOOP;
+        END LOOP;
+    END LOOP;
+
+    -- Modules: today's template_module_folders are shared per template across
+    -- every module the template default-selects. Lossy step: we duplicate the
+    -- folder/file rows onto every module in each template's default_modules
+    -- list. Modules that aren't in any default list end up empty — admins
+    -- fix them up afterwards.
+    FOR mod_row IN
+        SELECT DISTINCT m.id AS module_id, m.organization_id, dm.runtime_template_id
+        FROM modules m
+        JOIN runtime_template_default_modules dm ON dm.module_id = m.id
+    LOOP
+        FOR mod_fld IN
+            SELECT id, organization_id, ordering, path
+            FROM template_module_folders
+            WHERE template_id = mod_row.runtime_template_id
+            ORDER BY ordering
+        LOOP
+            segs := string_to_array(mod_fld.path, '/');
+            mod_parent := NULL;
+            next_ord := mod_fld.ordering;
+            FOR i IN 1 .. array_length(segs, 1) LOOP
+                seg := segs[i];
+                IF seg IS NULL OR seg = '' THEN CONTINUE; END IF;
+
+                IF mod_parent IS NULL THEN
+                    SELECT id INTO mod_leaf FROM module_extension_folders
+                    WHERE module_id = mod_row.module_id
+                      AND parent_folder_id IS NULL
+                      AND path = seg
+                    LIMIT 1;
+                ELSE
+                    SELECT id INTO mod_leaf FROM module_extension_folders
+                    WHERE parent_folder_id = mod_parent
+                      AND path = seg
+                    LIMIT 1;
+                END IF;
+
+                IF mod_leaf IS NULL THEN
+                    INSERT INTO module_extension_folders
+                        (organization_id, module_id, parent_folder_id, ordering, path)
+                    VALUES
+                        (mod_fld.organization_id, mod_row.module_id, mod_parent, next_ord, seg)
+                    RETURNING id INTO mod_leaf;
+                END IF;
+                mod_parent := mod_leaf;
+            END LOOP;
+
+            FOR mod_file IN
+                SELECT organization_id, ordering, path, content
+                FROM template_module_files
+                WHERE template_module_folder_id = mod_fld.id
+                ORDER BY ordering
+            LOOP
+                INSERT INTO module_extension_files
+                    (organization_id, module_extension_folder_id, ordering, path, content, is_example)
+                VALUES
+                    (mod_file.organization_id, mod_leaf, mod_file.ordering, mod_file.path, mod_file.content, FALSE)
+                -- A module can be default-selected by two templates with
+                -- overlapping module-folder paths; the unique index would
+                -- complain on a collision. Newer rows lose.
+                ON CONFLICT (module_extension_folder_id, path) DO NOTHING;
+            END LOOP;
+        END LOOP;
+    END LOOP;
+
+    -- Defaults: fold the free-text default_application / default_platform
+    -- columns into the jsonb defaults blob. Empty/null values become empty
+    -- strings so the typed value object's required-string contract is
+    -- satisfied.
+    UPDATE runtime_templates
+    SET defaults_json = jsonb_set(
+        jsonb_set(
+            jsonb_set(
+                jsonb_set(
+                    COALESCE(defaults_json, '{}'::jsonb),
+                    '{application}', to_jsonb(COALESCE(default_application, '')), TRUE),
+                '{platform}', to_jsonb(COALESCE(default_platform, '')), TRUE),
+            '{extension_prefix}',
+            -- Carry the existing AppSourceCop mandatoryPrefix as the default
+            -- extension prefix when the template had one; pre-unified models
+            -- effectively conflated the two anyway. Empty string when missing.
+            to_jsonb(COALESCE(app_source_cop_json->>'mandatoryPrefix', '')),
+            TRUE),
+        '{affix}',
+        to_jsonb(COALESCE(app_source_cop_json->>'mandatoryPrefix', '')),
+        TRUE);
+
+    -- Set affixType to ""Prefix"" when the mandatoryPrefix was non-empty, ""None"" otherwise.
+    UPDATE runtime_templates
+    SET defaults_json = jsonb_set(
+        defaults_json,
+        '{affixType}',
+        CASE
+            WHEN COALESCE(app_source_cop_json->>'mandatoryPrefix', '') = '' THEN to_jsonb('None'::text)
+            ELSE to_jsonb('Prefix'::text)
+        END,
+        TRUE);
+
+    -- Mustache rewrite: {{prefix}} / {{suffix}} → {{affix}}. Pre-unified
+    -- templates used {{prefix}} for AL object name prefixes; the unified
+    -- model collapses both to {{affix}}.
+    UPDATE workspace_extension_files
+    SET content = regexp_replace(
+            regexp_replace(content, '\{\{prefix\}\}',  '{{affix}}', 'g'),
+            '\{\{suffix\}\}', '{{affix}}', 'g')
+    WHERE content LIKE '%{{prefix}}%' OR content LIKE '%{{suffix}}%';
+
+    UPDATE module_extension_files
+    SET content = regexp_replace(
+            regexp_replace(content, '\{\{prefix\}\}',  '{{affix}}', 'g'),
+            '\{\{suffix\}\}', '{{affix}}', 'g')
+    WHERE content LIKE '%{{prefix}}%' OR content LIKE '%{{suffix}}%';
+
+    -- Organisation files are mustache-substituted by the generator too; rewrite
+    -- their content for the same reason.
+    UPDATE organization_files
+    SET content = regexp_replace(
+            regexp_replace(content, '\{\{prefix\}\}',  '{{affix}}', 'g'),
+            '\{\{suffix\}\}', '{{affix}}', 'g')
+    WHERE content LIKE '%{{prefix}}%' OR content LIKE '%{{suffix}}%';
+END
+$unify$;
+";
+
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             // 1) New tables.
@@ -280,214 +497,11 @@ namespace ALDevToolbox.Data.Migrations
             // 2) Data migration. PL/pgSQL block: per-template Core extension,
             //    folder-tree split on '/', file copy, then per-template-module
             //    fan-out into module_extension_folders. The function is local
-            //    to this transaction.
+            //    to this transaction. SQL lives in <see cref="DataRewriteSql"/>
+            //    so tests can replay it without copy-pasting.
 
-            migrationBuilder.Sql(@"
-DO $unify$
-DECLARE
-    tmpl RECORD;
-    fld  RECORD;
-    f    RECORD;
-    seg  TEXT;
-    segs TEXT[];
-    parent_id INT;
-    leaf_id   INT;
-    ext_id    INT;
-    next_ord  INT;
-    mod_row   RECORD;
-    mod_fld   RECORD;
-    mod_file  RECORD;
-    mod_parent INT;
-    mod_leaf   INT;
-BEGIN
-    -- Per-template: create the Core workspace_extension, walk template_folders
-    -- into the recursive tree, copy template_files into the leaf folders.
-    FOR tmpl IN SELECT id, organization_id FROM runtime_templates LOOP
-        INSERT INTO workspace_extensions
-            (organization_id, template_id, ordering, path, name_template, required,
-             application, runtime, id_range_from, id_range_to)
-        VALUES
-            (tmpl.organization_id, tmpl.id, 0, 'Core',
-             '{{extension_prefix}} Core', TRUE, NULL, NULL, NULL, NULL)
-        RETURNING id INTO ext_id;
+            migrationBuilder.Sql(DataRewriteSql);
 
-        FOR fld IN
-            SELECT id, organization_id, ordering, path
-            FROM template_folders
-            WHERE template_id = tmpl.id
-            ORDER BY ordering
-        LOOP
-            segs := string_to_array(fld.path, '/');
-            parent_id := NULL;
-            next_ord := fld.ordering;
-            FOR i IN 1 .. array_length(segs, 1) LOOP
-                seg := segs[i];
-                IF seg IS NULL OR seg = '' THEN CONTINUE; END IF;
-
-                -- Reuse an existing sibling folder with the same name. The
-                -- ordering for newly-created intermediate rows follows the
-                -- triggering top-level folder's ordering; collisions resolve
-                -- to the earliest insertion.
-                IF parent_id IS NULL THEN
-                    SELECT id INTO leaf_id FROM workspace_extension_folders
-                    WHERE workspace_extension_id = ext_id
-                      AND parent_folder_id IS NULL
-                      AND path = seg
-                    LIMIT 1;
-                ELSE
-                    SELECT id INTO leaf_id FROM workspace_extension_folders
-                    WHERE parent_folder_id = parent_id
-                      AND path = seg
-                    LIMIT 1;
-                END IF;
-
-                IF leaf_id IS NULL THEN
-                    INSERT INTO workspace_extension_folders
-                        (organization_id, workspace_extension_id, parent_folder_id, ordering, path)
-                    VALUES
-                        (fld.organization_id, ext_id, parent_id, next_ord, seg)
-                    RETURNING id INTO leaf_id;
-                END IF;
-                parent_id := leaf_id;
-            END LOOP;
-
-            -- Files for this row attach to the leaf produced above.
-            FOR f IN
-                SELECT organization_id, ordering, path, content
-                FROM template_files
-                WHERE template_folder_id = fld.id
-                ORDER BY ordering
-            LOOP
-                INSERT INTO workspace_extension_files
-                    (organization_id, workspace_extension_folder_id, ordering, path, content, is_example)
-                VALUES
-                    (f.organization_id, leaf_id, f.ordering, f.path, f.content, FALSE);
-            END LOOP;
-        END LOOP;
-    END LOOP;
-
-    -- Modules: today's template_module_folders are shared per template across
-    -- every module the template default-selects. Lossy step: we duplicate the
-    -- folder/file rows onto every module in each template's default_modules
-    -- list. Modules that aren't in any default list end up empty — admins
-    -- fix them up afterwards.
-    FOR mod_row IN
-        SELECT DISTINCT m.id AS module_id, m.organization_id, dm.runtime_template_id
-        FROM modules m
-        JOIN runtime_template_default_modules dm ON dm.module_id = m.id
-    LOOP
-        FOR mod_fld IN
-            SELECT id, organization_id, ordering, path
-            FROM template_module_folders
-            WHERE template_id = mod_row.runtime_template_id
-            ORDER BY ordering
-        LOOP
-            segs := string_to_array(mod_fld.path, '/');
-            mod_parent := NULL;
-            next_ord := mod_fld.ordering;
-            FOR i IN 1 .. array_length(segs, 1) LOOP
-                seg := segs[i];
-                IF seg IS NULL OR seg = '' THEN CONTINUE; END IF;
-
-                IF mod_parent IS NULL THEN
-                    SELECT id INTO mod_leaf FROM module_extension_folders
-                    WHERE module_id = mod_row.module_id
-                      AND parent_folder_id IS NULL
-                      AND path = seg
-                    LIMIT 1;
-                ELSE
-                    SELECT id INTO mod_leaf FROM module_extension_folders
-                    WHERE parent_folder_id = mod_parent
-                      AND path = seg
-                    LIMIT 1;
-                END IF;
-
-                IF mod_leaf IS NULL THEN
-                    INSERT INTO module_extension_folders
-                        (organization_id, module_id, parent_folder_id, ordering, path)
-                    VALUES
-                        (mod_fld.organization_id, mod_row.module_id, mod_parent, next_ord, seg)
-                    RETURNING id INTO mod_leaf;
-                END IF;
-                mod_parent := mod_leaf;
-            END LOOP;
-
-            FOR mod_file IN
-                SELECT organization_id, ordering, path, content
-                FROM template_module_files
-                WHERE template_module_folder_id = mod_fld.id
-                ORDER BY ordering
-            LOOP
-                INSERT INTO module_extension_files
-                    (organization_id, module_extension_folder_id, ordering, path, content, is_example)
-                VALUES
-                    (mod_file.organization_id, mod_leaf, mod_file.ordering, mod_file.path, mod_file.content, FALSE)
-                -- A module can be default-selected by two templates with
-                -- overlapping module-folder paths; the unique index would
-                -- complain on a collision. Newer rows lose.
-                ON CONFLICT (module_extension_folder_id, path) DO NOTHING;
-            END LOOP;
-        END LOOP;
-    END LOOP;
-
-    -- Defaults: fold the free-text default_application / default_platform
-    -- columns into the jsonb defaults blob. Empty/null values become empty
-    -- strings so the typed value object's required-string contract is
-    -- satisfied.
-    UPDATE runtime_templates
-    SET defaults_json = jsonb_set(
-        jsonb_set(
-            jsonb_set(
-                jsonb_set(
-                    COALESCE(defaults_json, '{}'::jsonb),
-                    '{application}', to_jsonb(COALESCE(default_application, '')), TRUE),
-                '{platform}', to_jsonb(COALESCE(default_platform, '')), TRUE),
-            '{extension_prefix}',
-            -- Carry the existing AppSourceCop mandatoryPrefix as the default
-            -- extension prefix when the template had one; pre-unified models
-            -- effectively conflated the two anyway. Empty string when missing.
-            to_jsonb(COALESCE(app_source_cop_json->>'mandatoryPrefix', '')),
-            TRUE),
-        '{affix}',
-        to_jsonb(COALESCE(app_source_cop_json->>'mandatoryPrefix', '')),
-        TRUE);
-
-    -- Set affixType to ""Prefix"" when the mandatoryPrefix was non-empty, ""None"" otherwise.
-    UPDATE runtime_templates
-    SET defaults_json = jsonb_set(
-        defaults_json,
-        '{affixType}',
-        CASE
-            WHEN COALESCE(app_source_cop_json->>'mandatoryPrefix', '') = '' THEN to_jsonb('None'::text)
-            ELSE to_jsonb('Prefix'::text)
-        END,
-        TRUE);
-
-    -- Mustache rewrite: {{prefix}} / {{suffix}} → {{affix}}. Pre-unified
-    -- templates used {{prefix}} for AL object name prefixes; the unified
-    -- model collapses both to {{affix}}.
-    UPDATE workspace_extension_files
-    SET content = regexp_replace(
-            regexp_replace(content, '\{\{prefix\}\}',  '{{affix}}', 'g'),
-            '\{\{suffix\}\}', '{{affix}}', 'g')
-    WHERE content LIKE '%{{prefix}}%' OR content LIKE '%{{suffix}}%';
-
-    UPDATE module_extension_files
-    SET content = regexp_replace(
-            regexp_replace(content, '\{\{prefix\}\}',  '{{affix}}', 'g'),
-            '\{\{suffix\}\}', '{{affix}}', 'g')
-    WHERE content LIKE '%{{prefix}}%' OR content LIKE '%{{suffix}}%';
-
-    -- Organisation files are mustache-substituted by the generator too; rewrite
-    -- their content for the same reason.
-    UPDATE organization_files
-    SET content = regexp_replace(
-            regexp_replace(content, '\{\{prefix\}\}',  '{{affix}}', 'g'),
-            '\{\{suffix\}\}', '{{affix}}', 'g')
-    WHERE content LIKE '%{{prefix}}%' OR content LIKE '%{{suffix}}%';
-END
-$unify$;
-");
 
             // 3) Drop the now-redundant columns and tables.
 

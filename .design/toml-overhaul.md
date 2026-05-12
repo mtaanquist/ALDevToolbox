@@ -16,9 +16,9 @@ From the issue body:
 |---|---|
 | EF migration applies cleanly forward; CI green | done |
 | New tests for recursive folder tree, modules-as-extension-template clone, deps by stable id, `AffixType.None` | done |
-| Migration data-shape rewrite covered by a test | **not done** |
-| Real customer-style TOML round-trips through mapper **and generates a ZIP** | mapper side done; the literal "parse customer TOML → persist → generate ZIP → assert layout" E2E isn't pinned |
-| Three impacted design docs rewritten with no stale references | partial — `unified-extensions.md` was pulled in and the three impacted docs got banners + the key sections updated; bodies still describe the pre-unified shape in places |
+| Migration data-shape rewrite covered by a test | done — see `ALDevToolbox.Tests/Migrations/UnifyExtensionsDataMigrationTests.cs`. The migration's PL/pgSQL block is now exposed as `UnifyExtensions.DataRewriteSql` so the test can replay it verbatim against an in-test pre-unified fixture. |
+| Real customer-style TOML round-trips through mapper **and generates a ZIP** | done — see `ALDevToolbox.Tests/Generation/WorkspaceEndToEndTests.cs`. Customer-style TOML parses through `TemplateTomlMapper.FromToml`, persists via `TemplateService.CreateAsync(TemplateAuthoring)`, generates via `GenerationService.GenerateWorkspaceAsync`. The test pins per-extension `app.json` layout, idRange allocation across all three layers, all three dependency reference shapes (`extension =`, `module =`, literal), and module-clone implicit deps on required template extensions. |
+| Three impacted design docs rewritten with no stale references | done — `domain-model.md`, `generation-engine.md`, and `templates-and-seeding.md` rewritten cover-to-cover for the unified-extensions shape. Issue #54 transition banners removed; the bodies now describe the new tables, the per-extension walk, and the `[[extensions]]` TOML schema as the canonical shape. |
 | CLAUDE.md fences still hold | yes — Postgres-as-source-of-truth, multi-tenant, synchronous generation, no client framework all intact |
 
 ## What's in the branch already
@@ -113,78 +113,11 @@ From the issue body:
 
 ## What's left
 
-In rough priority order, with enough context to start cold:
+The two AC-critical bullets and the design-doc rewrite landed in the
+continuation session. Remaining items are housekeeping and a follow-up PR.
+In rough priority order:
 
-### 1. End-to-end customer-template-to-ZIP test (AC bullet)
-
-The literal acceptance-criteria line — "a real customer-style workspace
-TOML … round-trips through `TemplateTomlMapper` **and generates a ZIP**
-with the right per-extension `app.json`, `idRanges`, `dependencies`, and
-folder layout" — isn't pinned by a single test. The shape:
-
-1. Start with the customer TOML in
-   `ALDevToolbox.Tests/Toml/TemplateTomlMapperToleranceTests.cs`.
-2. Add some files inside one or two of the leaf folders so the ZIP has AL
-   content to assert against.
-3. Add a `continia-doc-capture` module to the test DB so the module-key
-   dep resolves.
-4. Parse with `TemplateTomlMapper.FromToml`, persist with
-   `TemplateService.CreateAsync(TemplateAuthoring)`, then
-   `GenerationService.GenerateWorkspaceAsync(plan)` with the right
-   `SelectedExtensionPaths` / `SelectedModuleKeys`.
-5. Assert: three extension folders in the ZIP at expected paths, each with
-   an `app.json` carrying the right id / name / range / deps; the module
-   clone's `dependencies` array contains entries for both Core and Hotfix
-   (implicit Core dep + any explicit `extension =` refs).
-
-Should slot into `ALDevToolbox.Tests/Generation/` as
-`WorkspaceEndToEndTests.cs`. Probably 1-2 tests.
-
-### 2. Migration data-shape rewrite test (AC bullet)
-
-Verify the PL/pgSQL block in `UnifyExtensions.Up()` actually produces the
-shape it claims. The trick is that the migration only runs on databases
-that have the *pre-unified* tables, which the test fixture doesn't
-naturally create (it's already up-to-date). Two approaches:
-
-- **Recommended:** seed a small fixture via raw SQL directly into the
-  pre-unified table names (`template_folders`, `template_files`,
-  `template_module_folders`, `template_module_files`), then invoke the
-  migration's PL/pgSQL block as a raw SQL replay (or extract the SQL into
-  a named helper and call it directly). Assert the rows landed correctly
-  in the new tables, including the `{{prefix}}` → `{{affix}}` rewrite and
-  the `defaults_json` patching.
-- Alternative: create a `pre-unify-snapshot.sql` fixture, restore it to a
-  fresh database (TestDb supports per-fixture DBs), run `MigrateAsync`,
-  assert.
-
-Either way it lives in `ALDevToolbox.Tests/Migrations/` (new folder).
-
-### 3. Full rewrites of three design docs
-
-Banners + key sections were updated in slice 1, but the bodies still
-describe the pre-unified shape in places. The files:
-
-- `.design/domain-model.md` — schema section still walks
-  `template_folders` / `template_module_folders` columns row-by-row in
-  the lower half. Rewrite around the new tables (workspace_extensions,
-  workspace_extension_folders with self-FK + partial unique indexes,
-  workspace_extension_files, workspace_extension_dependencies with CHECK,
-  module_extension_folders, module_extension_files). Keep the snake_case +
-  jsonb + timestamptz conventions.
-- `.design/generation-engine.md` — the "Per-extension generation"
-  algorithm section was updated; the rest of the doc (Output section,
-  Standalone extension generation, mustache substitution table) still
-  references the Core-vs-modules split. Walk through and align.
-- `.design/templates-and-seeding.md` — the schema example at the top has
-  the banner but the body still describes `[[folders]]` /
-  `[[module_folders]]`. Rewrite the schema example to match the customer
-  template fixture; rewrite the "Import strategy" pseudocode to mention
-  WorkspaceExtension + module folder-tree cloning.
-
-The unified-extensions.md doc is the spec — use it as the source of truth.
-
-### 4. Test cleanup: retire the `#if false` files
+### 1. Test cleanup: retire the `#if false` files
 
 These four files have their coverage fully replaced by the new tests:
 
@@ -205,7 +138,7 @@ Pure deletion is fine for the three Generation/Toml files. For the
 AuditInterceptorTests pair, either rewrite (~30 min) or delete with a
 follow-on issue.
 
-### 5. Recursive preview in the UI
+### 2. Recursive preview in the UI
 
 Currently stubbed:
 
@@ -221,7 +154,7 @@ Currently stubbed:
 These are UI polish — functionality works without them, the preview just
 shows a placeholder structure. Not blocking; nice to have.
 
-### 6. Structured admin folder/file editor UI (deferred)
+### 3. Structured admin folder/file editor UI (deferred)
 
 The big remaining piece. `Components/Pages/Admin/AdminTemplateEdit.razor`'s
 `FormState` carries flat-path `Folders` / `ModuleFolders` collections with
@@ -304,7 +237,7 @@ separate types. Both `TemplateService.CreateAsync` / `UpdateAsync` have
 two overloads — one per type. The `TemplateInput` overloads throw
 `NotImplementedException` until the structured form editor is rewritten.
 
-When the structured editor lands (item 6 above), the cleanest move is to
+When the structured editor lands (item 3 above), the cleanest move is to
 delete `TemplateInput` and its overloads, then route the form's
 `ToInput()` directly to `TemplateAuthoring`.
 
@@ -314,7 +247,7 @@ delete `TemplateInput` and its overloads, then route the form's
 2. Read `.design/unified-extensions.md` for the spec.
 3. Read this file for the implementation state.
 4. `dotnet test` to confirm CI-green baseline locally.
-5. Pick an item from "What's left" — items 1-2 are AC-critical, items 3-5
-   are housekeeping that the PR description should call out as follow-ups,
-   item 6 is its own PR.
+5. Pick an item from "What's left" — all three are housekeeping the PR
+   description can call out as follow-ups, with item 3 (structured editor)
+   being its own PR's worth of work.
 6. Watch CI on PR #56 via the `subscribe_pr_activity` MCP tool.
