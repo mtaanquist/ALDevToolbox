@@ -118,9 +118,14 @@ public sealed class TestDb : IDisposable
     /// Returns a fresh <see cref="OrganizationConfigService"/> for tests that
     /// don't need the live DI graph. The on-disk seed has been retired; the
     /// service no longer touches the filesystem.
+    ///
+    /// Constructed with <c>useCache: false</c> so parallel xUnit fixtures
+    /// (each with their own per-fixture database but sharing the static
+    /// in-process cache keyed by <c>organization_id</c>) can't race on the
+    /// same cache slot. See issue #45 for the failure mode this prevents.
     /// </summary>
     public OrganizationConfigService NewOrganizationConfigService(AppDbContext ctx) =>
-        new(ctx, OrgContext, NullLogger<OrganizationConfigService>.Instance);
+        new(ctx, OrgContext, NullLogger<OrganizationConfigService>.Instance, useCache: false);
 
     /// <summary>
     /// Returns an <see cref="AuditInterceptor"/> wired to an empty

@@ -40,15 +40,34 @@ public class OrganizationConfigService
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
     private readonly ILogger<OrganizationConfigService> _logger;
+    private readonly bool _useCache;
 
     public OrganizationConfigService(
         AppDbContext db,
         IOrganizationContext orgContext,
         ILogger<OrganizationConfigService> logger)
+        : this(db, orgContext, logger, useCache: true) { }
+
+    /// <summary>
+    /// Constructor with explicit cache opt-out. Production resolves the
+    /// parameterless overload via DI and uses the process-wide static cache;
+    /// tests pass <paramref name="useCache"/> = false through
+    /// <c>TestDb.NewOrganizationConfigService</c> so parallel xUnit fixtures
+    /// don't race on the same cache slot (see issue #45). Reads always hit
+    /// the database when the cache is disabled; writes still call
+    /// <see cref="InvalidateCache"/> defensively so a real cache entry left
+    /// by another caller is cleared.
+    /// </summary>
+    public OrganizationConfigService(
+        AppDbContext db,
+        IOrganizationContext orgContext,
+        ILogger<OrganizationConfigService> logger,
+        bool useCache)
     {
         _db = db;
         _orgContext = orgContext;
         _logger = logger;
+        _useCache = useCache;
     }
 
     private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
@@ -71,7 +90,7 @@ public class OrganizationConfigService
     /// </summary>
     public async Task<OrganizationConfig> GetForAsync(int organizationId, CancellationToken ct = default)
     {
-        if (Cache.TryGetValue(organizationId, out var cached)) return cached;
+        if (_useCache && Cache.TryGetValue(organizationId, out var cached)) return cached;
 
         var settings = await _db.OrganizationSettings
             .IgnoreQueryFilters()
@@ -95,7 +114,7 @@ public class OrganizationConfigService
             Logo: logo,
             Files: files);
 
-        Cache[organizationId] = config;
+        if (_useCache) Cache[organizationId] = config;
         return config;
     }
 
