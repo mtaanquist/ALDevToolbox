@@ -1982,6 +1982,63 @@ ul.form-field-error {
     min-height: 160px;
 }
 
+/* Buttons under a recursive folder's expanded body: "Add file" / "Add subfolder". */
+.folder-editor__add-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* Inline checkbox used inside a file-header row (Example toggle). */
+.check-row.check-row--inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0;
+    white-space: nowrap;
+    font-size: 13px;
+}
+
+/* Visual nesting cue for child folders inside the recursive editor. The
+   border-left tracks depth without indenting via padding so reorder buttons
+   stay flush with the parent's edge. */
+.folder-editor__row--depth-1 { border-left: 2px solid var(--color-border-strong, var(--color-border)); }
+.folder-editor__row--depth-2 { border-left: 2px solid var(--color-border-strong, var(--color-border)); margin-left: 4px; }
+.folder-editor__row--depth-3 { border-left: 2px solid var(--color-border-strong, var(--color-border)); margin-left: 8px; }
+
+/* Extension list — each extension is a folder-editor-style row with a richer
+   body of nested sections (metadata, dependencies, folders). */
+.extension-editor__list {
+    gap: 16px;
+}
+
+.extension-editor__row {
+    background: var(--color-bg);
+}
+
+.extension-editor__body {
+    border-top: 1px solid var(--color-border);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: var(--color-surface);
+}
+
+.extension-editor__body .form-section { margin: 0; }
+
+/* Dependency-row body uses the existing dep-editor__fields grid; this rule
+   adds the per-row select+remove header spacing without touching that grid. */
+.dep-row .folder-editor__path select {
+    width: 100%;
+    padding: 6px 8px;
+    font-size: 13px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-bg);
+    color: var(--color-text);
+}
+
 /* Per-row field grid used by the module dependency editor and the catalogue
    editor. Sits inside a .folder-editor__row beneath the GUID/order/remove
    header so the four metadata fields wrap predictably on narrow viewports. */

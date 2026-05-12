@@ -119,24 +119,31 @@ block a complete end-to-end flow** and **internal cleanup**.
 
 ### User-facing gaps (block the complete end-to-end flow)
 
-#### 1. Structured admin folder/file editor (biggest gap, its own PR)
+#### 1. ~~Structured admin folder/file editor~~ — done
 
-The big remaining piece. `Components/Pages/Admin/AdminTemplateEdit.razor`'s
-`FormState` carries flat-path `Folders` / `ModuleFolders` collections with
-`FolderRow` / `FileRow` shapes that don't fit the recursive tree. Saving
-from the structured form path throws `NotImplementedException` (the
-service overload throws); the page catches it with a "use the TOML tab"
-message.
+~~`Components/Pages/Admin/AdminTemplateEdit.razor` was rewritten around the
+unified-extensions shape. `FormState` is gone; the page now binds
+against `TemplateFormState` (in `Components/Shared/TemplateFormModels.cs`)
+which mirrors `TemplateAuthoring` 1:1 — `Extensions` with per-extension
+metadata + dependencies + a recursive folder tree. Saving from the
+structured form calls `TemplateService.CreateAsync(TemplateAuthoring)` /
+`UpdateAsync(int, TemplateAuthoring)` directly; the legacy `TemplateInput`
+record and its throwing overloads were deleted.~~
 
-Today **admins can only author via TOML**. The TOML editor works end-to-
-end (parse → persist → generate is pinned by `WorkspaceEndToEndTests`),
-but admins who prefer the structured form are blocked until a tree editor
-component lands. Suggested shape: `Components/Shared/RecursiveFolderEditor.razor`
-that lets admins add / remove / nest folders and attach files at any depth.
-When it lands, the cleanest move is to delete `TemplateInput` and its
-overloads, then route the form's `ToInput()` directly to
-`TemplateAuthoring`. Probably its own PR — material UI work, not a polish
-pass.
+~~Authoring the recursive tree is handled by
+`Components/Shared/RecursiveFolderEditor.razor` — a self-recursive
+component that lets admins add / remove / nest folders and attach files
+at any depth, with up/down reordering at every level. The TOML pane
+still works exactly as before; the Form ↔ TOML round-trip is now lossless
+for everything except the `deprecated` flag (which only lives on the form
+side, as it always did).~~
+
+~~Hydration: `TemplateService.GetAuthoringByKeyAsync` loads an existing
+template into the `TemplateAuthoring` shape via flat queries + client-side
+parent/child reassembly (the same pattern `GenerationService` and
+`TemplateImportService` use). The edit-page load path goes through this
+one method for both the form and the TOML editor.~~ Landed on
+`claude/toml-overhaul-tasks-IVvii` in commit `aabbfca` (PR #57).
 
 #### 2. Recursive preview in the UI
 

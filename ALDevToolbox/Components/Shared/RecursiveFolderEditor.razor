@@ -1,0 +1,197 @@
+@using ALDevToolbox.Components.Shared
+
+@*
+    Recursive editor for one folder in a TemplateFolderForm tree. The component
+    renders itself for each child folder, so nesting is unbounded — admins can
+    build trees as deep as their templates need without a special case for
+    each level. Expansion state is per-instance so two siblings at the same
+    depth open and close independently.
+
+    Field-error keys mirror the service-side validator: "<FieldKeyPrefix>.Path"
+    for the folder's own path, "<FieldKeyPrefix>.Files[i].Path" for each file,
+    "<FieldKeyPrefix>.Folders[i]..." for child folders.
+*@
+
+<div class="folder-editor__row folder-editor__row--depth-@(Depth)">
+    <div class="folder-editor__row-head">
+        <div class="folder-editor__order">
+            <button type="button" class="btn btn--sm" disabled="@(Index == 0)"
+                    @onclick="() => OnMove.InvokeAsync(-1)" title="Move up">
+                <Icon Name="arrow-up" Width="12" Height="12" />
+            </button>
+            <button type="button" class="btn btn--sm" disabled="@(Index == SiblingCount - 1)"
+                    @onclick="() => OnMove.InvokeAsync(1)" title="Move down">
+                <Icon Name="arrow-down" Width="12" Height="12" />
+            </button>
+        </div>
+        <div class="folder-editor__path">
+            <input type="text" required placeholder="@PathPlaceholder"
+                   @bind="Folder.Path" @bind:event="oninput" />
+            <FieldError Field="@($"{FieldKeyPrefix}.Path")" Errors="Errors" />
+        </div>
+        <button type="button" class="btn btn--sm" @onclick="ToggleExpanded"
+                title="@(_expanded ? "Collapse" : "Expand")">
+            <Icon Name="@(_expanded ? "chevron-up" : "chevron-down")" Width="12" Height="12" />
+            <span>@ChildSummary</span>
+        </button>
+        <button type="button" class="btn btn--sm" @onclick="() => OnRemove.InvokeAsync()" title="Remove folder">
+            <Icon Name="trash-2" Width="12" Height="12" />
+        </button>
+    </div>
+
+    @if (_expanded)
+    {
+        <div class="folder-editor__files">
+            @if (Folder.Files.Count == 0 && Folder.Folders.Count == 0)
+            {
+                <p class="muted folder-editor__files-empty">
+                    Empty folder. Add a subfolder or a file — the generator emits a
+                    <code>.gitkeep</code> if neither is supplied.
+                </p>
+            }
+
+            @for (var j = 0; j < Folder.Files.Count; j++)
+            {
+                var fileIndex = j;
+                var file = Folder.Files[fileIndex];
+                <div class="folder-editor__file">
+                    <div class="folder-editor__file-head">
+                        <div class="folder-editor__order">
+                            <button type="button" class="btn btn--sm" disabled="@(fileIndex == 0)"
+                                    @onclick="() => MoveFile(fileIndex, -1)" title="Move up">
+                                <Icon Name="arrow-up" Width="12" Height="12" />
+                            </button>
+                            <button type="button" class="btn btn--sm" disabled="@(fileIndex == Folder.Files.Count - 1)"
+                                    @onclick="() => MoveFile(fileIndex, 1)" title="Move down">
+                                <Icon Name="arrow-down" Width="12" Height="12" />
+                            </button>
+                        </div>
+                        <div class="folder-editor__path">
+                            <input type="text" required placeholder="e.g. AppInstall.Codeunit.al"
+                                   @bind="file.Path" @bind:event="oninput" />
+                            <FieldError Field="@($"{FieldKeyPrefix}.Files[{fileIndex}].Path")" Errors="Errors" />
+                        </div>
+                        <label class="check-row check-row--inline">
+                            <input type="checkbox" @bind="file.IsExample" />
+                            <span>Example</span>
+                        </label>
+                        <button type="button" class="btn btn--sm" @onclick="() => RemoveFile(fileIndex)" title="Remove file">
+                            <Icon Name="trash-2" Width="12" Height="12" />
+                        </button>
+                    </div>
+                    <textarea class="json-editor folder-editor__file-content" rows="8" spellcheck="false"
+                              @bind="file.Content" @bind:event="oninput"></textarea>
+                </div>
+            }
+
+            @for (var k = 0; k < Folder.Folders.Count; k++)
+            {
+                var childIndex = k;
+                var child = Folder.Folders[childIndex];
+                <RecursiveFolderEditor Folder="child"
+                                       Index="childIndex"
+                                       SiblingCount="Folder.Folders.Count"
+                                       Depth="@(Depth + 1)"
+                                       FieldKeyPrefix="@($"{FieldKeyPrefix}.Folders[{childIndex}]")"
+                                       Errors="Errors"
+                                       OnMove="d => MoveChild(childIndex, d)"
+                                       OnRemove="() => RemoveChild(childIndex)" />
+            }
+
+            <div class="folder-editor__add-row">
+                <button type="button" class="btn btn--sm" @onclick="AddFile">
+                    <Icon Name="plus" Width="12" Height="12" />
+                    <span>Add file</span>
+                </button>
+                <button type="button" class="btn btn--sm" @onclick="AddSubfolder">
+                    <Icon Name="folder-plus" Width="12" Height="12" />
+                    <span>Add subfolder</span>
+                </button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public TemplateFolderForm Folder { get; set; } = default!;
+
+    /// <summary>Position among siblings (zero-based). Drives the Move Up button's enabled state.</summary>
+    [Parameter, EditorRequired] public int Index { get; set; }
+
+    /// <summary>Total number of siblings at this depth. Drives the Move Down button's enabled state.</summary>
+    [Parameter, EditorRequired] public int SiblingCount { get; set; }
+
+    /// <summary>0 = top-level under the extension; bumps by one per nesting level for CSS hooks.</summary>
+    [Parameter] public int Depth { get; set; }
+
+    /// <summary>Field-key prefix used when looking up validator errors (e.g. <c>Extensions[0].Folders[2]</c>).</summary>
+    [Parameter, EditorRequired] public string FieldKeyPrefix { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public IReadOnlyDictionary<string, string> Errors { get; set; } = default!;
+
+    /// <summary>Parent-driven move. <c>-1</c> = up, <c>1</c> = down. Parent re-renders after the swap.</summary>
+    [Parameter] public EventCallback<int> OnMove { get; set; }
+
+    /// <summary>Parent-driven remove. The parent owns the list; this component never deletes itself.</summary>
+    [Parameter] public EventCallback OnRemove { get; set; }
+
+    // Per-instance expansion state. Default to expanded so newly-added folders
+    // are immediately editable; admins can collapse to keep the tree compact.
+    private bool _expanded = true;
+
+    private string PathPlaceholder => Depth == 0 ? "e.g. src" : "e.g. codeunits";
+
+    private string ChildSummary
+    {
+        get
+        {
+            var folderCount = Folder.Folders.Count;
+            var fileCount = Folder.Files.Count;
+            if (folderCount == 0 && fileCount == 0) return "Empty";
+            var parts = new List<string>();
+            if (folderCount > 0) parts.Add($"{folderCount} folder{(folderCount == 1 ? "" : "s")}");
+            if (fileCount > 0) parts.Add($"{fileCount} file{(fileCount == 1 ? "" : "s")}");
+            return string.Join(", ", parts);
+        }
+    }
+
+    private void ToggleExpanded() => _expanded = !_expanded;
+
+    private void AddFile()
+    {
+        Folder.Files.Add(new TemplateFileForm());
+        _expanded = true;
+    }
+
+    private void AddSubfolder()
+    {
+        Folder.Folders.Add(new TemplateFolderForm());
+        _expanded = true;
+    }
+
+    private void RemoveFile(int fileIndex)
+    {
+        if (fileIndex >= 0 && fileIndex < Folder.Files.Count) Folder.Files.RemoveAt(fileIndex);
+    }
+
+    private void MoveFile(int fileIndex, int delta)
+    {
+        var target = fileIndex + delta;
+        if (fileIndex < 0 || fileIndex >= Folder.Files.Count) return;
+        if (target < 0 || target >= Folder.Files.Count) return;
+        (Folder.Files[fileIndex], Folder.Files[target]) = (Folder.Files[target], Folder.Files[fileIndex]);
+    }
+
+    private void RemoveChild(int childIndex)
+    {
+        if (childIndex >= 0 && childIndex < Folder.Folders.Count) Folder.Folders.RemoveAt(childIndex);
+    }
+
+    private void MoveChild(int childIndex, int delta)
+    {
+        var target = childIndex + delta;
+        if (childIndex < 0 || childIndex >= Folder.Folders.Count) return;
+        if (target < 0 || target >= Folder.Folders.Count) return;
+        (Folder.Folders[childIndex], Folder.Folders[target]) = (Folder.Folders[target], Folder.Folders[childIndex]);
+    }
+}

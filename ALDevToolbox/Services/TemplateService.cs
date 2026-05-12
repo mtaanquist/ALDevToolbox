@@ -13,12 +13,10 @@ namespace ALDevToolbox.Services;
 /// browser; backs the <c>/admin/templates*</c> pages.
 /// </summary>
 /// <remarks>
-/// Write side accepts <see cref="TemplateAuthoring"/> (produced by
-/// <see cref="TemplateTomlMapper.FromToml(string, bool)"/>). The legacy
-/// <see cref="TemplateInput"/> overloads still exist so the structured admin
-/// form keeps compiling, but they throw <see cref="NotImplementedException"/>
-/// — the form-editor rewrite around the recursive folder tree is a follow-on
-/// PR. The TOML pane is the working authoring path for the unified model.
+/// Write side accepts <see cref="TemplateAuthoring"/> — produced by
+/// <see cref="TemplateTomlMapper.FromToml(string, bool)"/> on the TOML editor
+/// path, or by the structured admin form's <c>FormState.ToAuthoring()</c>.
+/// Both paths converge on the same model.
 /// </remarks>
 public class TemplateService
 {
@@ -40,10 +38,6 @@ public class TemplateService
     /// templates (<c>Core</c>, <c>Hotfix</c>, <c>document-capture</c>).
     /// </summary>
     private static readonly Regex ExtensionPathRegex = new(@"^[A-Za-z][A-Za-z0-9_-]*$", RegexOptions.Compiled);
-
-    private const string LegacyInputMessage =
-        "The structured admin form bridge to the unified-extensions schema is pending. " +
-        "Author templates via the TOML editor until the form-editor rewrite lands.";
 
     private static readonly JsonSerializerOptions JsonOptions = PersistenceJson.Options;
 
@@ -134,6 +128,148 @@ public class TemplateService
                 .ThenInclude(d => d.Module!)
             .Include(t => t.DefaultApplicationVersion)
             .FirstOrDefaultAsync(ct);
+
+    /// <summary>
+    /// Loads an existing template into its <see cref="TemplateAuthoring"/>
+    /// representation — the same shape the TOML mapper produces — so the
+    /// structured admin form binds to a single canonical model regardless of
+    /// which surface (form or TOML) the admin opened. Hydrates the recursive
+    /// folder/file tree under each extension via flat queries + client-side
+    /// reassembly (EF's <c>ThenInclude</c> only recurses two levels).
+    /// </summary>
+    public async Task<TemplateAuthoring?> GetAuthoringByKeyAsync(string key, CancellationToken ct = default)
+    {
+        var template = await _db.RuntimeTemplates
+            .AsNoTracking()
+            .Where(t => t.Key == key)
+            .Include(t => t.WorkspaceExtensions.OrderBy(e => e.Ordering))
+                .ThenInclude(e => e.Dependencies.OrderBy(d => d.Ordering))
+            .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
+                .ThenInclude(d => d.Module!)
+            .Include(t => t.DefaultApplicationVersion)
+            .FirstOrDefaultAsync(ct);
+
+        if (template is null) return null;
+
+        await HydrateExtensionFolderTreeAsync(template, ct);
+
+        var extensions = template.WorkspaceExtensions
+            .OrderBy(e => e.Ordering)
+            .Select(BuildExtensionAuthoring)
+            .ToList();
+
+        return new TemplateAuthoring(
+            Key: template.Key,
+            Runtime: template.Runtime,
+            Name: template.Name,
+            Description: template.Description,
+            DefaultsJson: JsonSerializer.Serialize(template.Defaults ?? new TemplateDefaults(), JsonOptions),
+            AppSourceCopJson: JsonSerializer.Serialize(template.AppSourceCop ?? new AppSourceCopSettings(), JsonOptions),
+            CoreIdRangeFrom: template.CoreIdRangeFrom,
+            CoreIdRangeTo: template.CoreIdRangeTo,
+            ModuleIdRangeStart: template.ModuleIdRangeStart,
+            ModuleIdRangeSize: template.ModuleIdRangeSize,
+            Deprecated: template.Deprecated,
+            IsDefault: template.IsDefault,
+            DefaultApplicationVersionKey: template.DefaultApplicationVersion?.Key,
+            DefaultModuleKeys: template.DefaultModules
+                .OrderBy(d => d.Ordering)
+                .Where(d => d.Module is not null)
+                .Select(d => d.Module!.Key)
+                .ToList(),
+            Extensions: extensions);
+    }
+
+    /// <summary>
+    /// Recursive <c>WorkspaceExtension</c> folder/file load. EF's
+    /// <c>ThenInclude</c> only walks two hops; we issue flat queries against
+    /// folder + file tables scoped by extension id, then reassemble parent
+    /// links client-side. <see cref="AsNoTracking"/> disables change-tracker
+    /// fixup, so the manual reassembly is mandatory.
+    /// </summary>
+    private async Task HydrateExtensionFolderTreeAsync(RuntimeTemplate template, CancellationToken ct)
+    {
+        var extensionIds = template.WorkspaceExtensions.Select(e => e.Id).ToList();
+        if (extensionIds.Count == 0) return;
+
+        var folders = await _db.WorkspaceExtensionFolders
+            .AsNoTracking()
+            .Where(f => extensionIds.Contains(f.WorkspaceExtensionId))
+            .OrderBy(f => f.Ordering)
+            .ToListAsync(ct);
+
+        var folderIds = folders.Select(f => f.Id).ToList();
+        var files = folderIds.Count == 0
+            ? new List<WorkspaceExtensionFile>()
+            : await _db.WorkspaceExtensionFiles
+                .AsNoTracking()
+                .Where(f => folderIds.Contains(f.WorkspaceExtensionFolderId))
+                .OrderBy(f => f.Ordering)
+                .ToListAsync(ct);
+
+        var foldersById = folders.ToDictionary(f => f.Id);
+        var extensionsById = template.WorkspaceExtensions.ToDictionary(e => e.Id);
+
+        foreach (var ext in template.WorkspaceExtensions) ext.Folders.Clear();
+        foreach (var folder in folders)
+        {
+            folder.Folders.Clear();
+            folder.Files.Clear();
+        }
+
+        foreach (var folder in folders)
+        {
+            if (folder.ParentFolderId is int parentId && foldersById.TryGetValue(parentId, out var parent))
+            {
+                parent.Folders.Add(folder);
+            }
+            else if (extensionsById.TryGetValue(folder.WorkspaceExtensionId, out var ext))
+            {
+                ext.Folders.Add(folder);
+            }
+        }
+        foreach (var file in files)
+        {
+            if (foldersById.TryGetValue(file.WorkspaceExtensionFolderId, out var folder))
+            {
+                folder.Files.Add(file);
+            }
+        }
+    }
+
+    private static ExtensionAuthoring BuildExtensionAuthoring(WorkspaceExtension ext) => new(
+        Path: ext.Path,
+        NameTemplate: ext.NameTemplate,
+        Required: ext.Required,
+        Application: ext.Application,
+        Runtime: ext.Runtime,
+        IdRangeFrom: ext.IdRangeFrom,
+        IdRangeTo: ext.IdRangeTo,
+        Folders: ext.Folders
+            .OrderBy(f => f.Ordering)
+            .Select(BuildFolderAuthoring)
+            .ToList(),
+        Dependencies: ext.Dependencies
+            .OrderBy(d => d.Ordering)
+            .Select(d => new DependencyAuthoring(
+                RefExtensionPath: d.RefExtensionPath,
+                RefModuleKey: d.RefModuleKey,
+                LitId: d.LitId,
+                LitName: d.LitName,
+                LitPublisher: d.LitPublisher,
+                LitVersion: d.LitVersion))
+            .ToList());
+
+    private static FolderAuthoring BuildFolderAuthoring(WorkspaceExtensionFolder folder) => new(
+        Path: folder.Path,
+        Folders: folder.Folders
+            .OrderBy(f => f.Ordering)
+            .Select(BuildFolderAuthoring)
+            .ToList(),
+        Files: folder.Files
+            .OrderBy(f => f.Ordering)
+            .Select(f => new FileAuthoring(f.Path, f.Content, f.IsExample))
+            .ToList());
 
     public Task<List<Module>> GetModulesAsync(bool includeDeprecated = true, CancellationToken ct = default)
     {
@@ -830,47 +966,4 @@ public class TemplateService
         }
     }
 
-    // ===== Legacy form-binding stubs =====
-
-    /// <summary>
-    /// Legacy structured-form input. Kept for compile compatibility with the
-    /// unmigrated admin page; the form-editor rewrite around the recursive
-    /// folder tree is a follow-on PR. Both overloads throw at runtime.
-    /// </summary>
-    public Task<RuntimeTemplate> CreateAsync(TemplateInput input, CancellationToken ct = default) =>
-        throw new NotImplementedException(LegacyInputMessage);
-
-    public Task UpdateAsync(int id, TemplateInput input, CancellationToken ct = default) =>
-        throw new NotImplementedException(LegacyInputMessage);
 }
-
-/// <summary>
-/// Form-shaped admin input for create/update operations under the legacy
-/// structured editor. The unified-extensions rewrite of the editor is a
-/// follow-on PR; this record stays in place so the form's <c>ToInput()</c>
-/// keeps compiling. Routed through the throwing overloads above.
-/// </summary>
-public record TemplateInput(
-    string Key,
-    string Runtime,
-    string Name,
-    string? Description,
-    string DefaultApplication,
-    string DefaultPlatform,
-    string DefaultsJson,
-    string AppSourceCopJson,
-    int CoreIdRangeFrom,
-    int CoreIdRangeTo,
-    int ModuleIdRangeStart,
-    int ModuleIdRangeSize,
-    bool Deprecated,
-    IReadOnlyList<string> DefaultModuleKeys,
-    IReadOnlyList<TemplateFolderInput> Folders,
-    IReadOnlyList<TemplateFolderInput> ModuleFolders,
-    string? DefaultApplicationVersionKey = null);
-
-/// <summary>Legacy flat-path folder input retained for the structured-form transition.</summary>
-public record TemplateFolderInput(string Path, IReadOnlyList<TemplateFileInput> Files);
-
-/// <summary>Legacy file input retained for the structured-form transition.</summary>
-public record TemplateFileInput(string Path, string Content);
