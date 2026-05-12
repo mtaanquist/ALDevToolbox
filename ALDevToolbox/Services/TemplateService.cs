@@ -325,23 +325,26 @@ public class TemplateService
     };
 
     /// <summary>
-    /// Reconciles the join rows for the per-org default-modules list. Like
-    /// the pre-unified reconciler, mutates existing rows in-order so
-    /// unchanged join rows keep stable primary keys and the audit log stays
-    /// compact.
+    /// Reconciles the join rows for the per-org default-modules list. Matches
+    /// by <see cref="RuntimeTemplateDefaultModule.ModuleId"/> rather than by
+    /// list position: each row's natural identity is the module it points
+    /// at, so reordering the input list only rewrites <c>Ordering</c> and
+    /// the join row primary keys survive. Crucially this avoids the swap
+    /// cycle — mutating two rows' <c>module_id</c> in one batch would trip
+    /// the <c>(runtime_template_id, module_id)</c> unique index, which EF's
+    /// command-batcher detects and refuses to topologically sort.
     /// </summary>
     private static void ReconcileDefaultModules(RuntimeTemplate existing, IReadOnlyList<int> moduleIds, int orgId)
     {
-        var existingDefaults = existing.DefaultModules.OrderBy(d => d.Ordering).ToList();
+        var existingByModuleId = existing.DefaultModules.ToDictionary(d => d.ModuleId);
 
         for (var i = 0; i < moduleIds.Count; i++)
         {
             var moduleId = moduleIds[i];
-            if (i < existingDefaults.Count)
+            if (existingByModuleId.TryGetValue(moduleId, out var row))
             {
-                var row = existingDefaults[i];
-                row.Ordering = i;
-                row.ModuleId = moduleId;
+                // Keep the PK; rewrite ordering only when it actually changed.
+                if (row.Ordering != i) row.Ordering = i;
                 row.Module = null;
             }
             else
@@ -355,9 +358,12 @@ public class TemplateService
             }
         }
 
-        for (var i = moduleIds.Count; i < existingDefaults.Count; i++)
+        // Remove rows whose ModuleId fell off the input list.
+        var keep = new HashSet<int>(moduleIds);
+        var toRemove = existing.DefaultModules.Where(d => !keep.Contains(d.ModuleId)).ToList();
+        foreach (var row in toRemove)
         {
-            existing.DefaultModules.Remove(existingDefaults[i]);
+            existing.DefaultModules.Remove(row);
         }
     }
 

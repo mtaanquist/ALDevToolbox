@@ -154,9 +154,11 @@ public sealed class TemplateServiceWriteSideTests : IDisposable
             betaJoinId = template.DefaultModules.Single(d => d.Ordering == 1).Id;
         }
 
-        // Swap the order. The reconciler should mutate row[0] in place to
-        // point at beta and row[1] to point at alpha, keeping both join row
-        // primary keys stable so the audit log stays compact.
+        // Swap the order. The reconciler matches rows by ModuleId (their
+        // natural identity), so each existing join row keeps its PK; only the
+        // ordering column is rewritten. Mutating ModuleId in place would
+        // collide with the (runtime_template_id, module_id) unique index
+        // mid-batch, which EF can't topologically sort around.
         var updated = NewAuthoring("runtime-reconcile",
             extensions: SingleCoreExtension(),
             defaultModuleKeys: new[] { "beta", "alpha" });
@@ -173,10 +175,12 @@ public sealed class TemplateServiceWriteSideTests : IDisposable
             .Include(d => d.Module!)
             .ToListAsync();
         rows.Should().HaveCount(2);
-        rows[0].Id.Should().Be(alphaJoinId, "first join row's PK survived; only its ModuleId moved");
+        // beta is now at Ordering=0; its row is the one that was previously
+        // ordered second, so its PK matches betaJoinId.
         rows[0].Module!.Key.Should().Be("beta");
-        rows[1].Id.Should().Be(betaJoinId);
+        rows[0].Id.Should().Be(betaJoinId);
         rows[1].Module!.Key.Should().Be("alpha");
+        rows[1].Id.Should().Be(alphaJoinId);
     }
 
     [Fact]
