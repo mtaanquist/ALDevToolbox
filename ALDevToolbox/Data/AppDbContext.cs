@@ -388,6 +388,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
             entity.Property(e => e.Path).HasColumnName("path").IsRequired();
             entity.Property(e => e.Content).HasColumnName("content").IsRequired();
+            entity.Property(e => e.IsExample).HasColumnName("is_example").IsRequired().HasDefaultValue(false);
             entity.HasIndex(e => new { e.OrganizationId, e.TemplateModuleFolderId, e.Ordering });
             entity.HasIndex(e => new { e.TemplateModuleFolderId, e.Path }).IsUnique();
             ScopeToOrganization<TemplateModuleFile>(entity);
@@ -403,6 +404,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
             entity.Property(e => e.Path).HasColumnName("path").IsRequired();
             entity.Property(e => e.Content).HasColumnName("content").IsRequired();
+            entity.Property(e => e.IsExample).HasColumnName("is_example").IsRequired().HasDefaultValue(false);
             entity.HasIndex(e => new { e.OrganizationId, e.TemplateFolderId, e.Ordering });
             entity.HasIndex(e => new { e.TemplateFolderId, e.Path }).IsUnique();
             ScopeToOrganization<TemplateFile>(entity);

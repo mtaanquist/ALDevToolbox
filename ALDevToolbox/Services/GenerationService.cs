@@ -368,9 +368,18 @@ public class GenerationService
         {
             var folderRelative = $"{rootRelative}/{folder.Path}";
 
-            if (plan.IncludeExamples && folder.Files.Count > 0)
+            // Per-file IncludeExamples filter (M? — was previously folder-level
+            // all-or-nothing). Files flagged IsExample drop out when the user
+            // clears the "Include example AL files" checkbox; un-flagged files
+            // always emit. Folders that become empty after filtering still
+            // produce a .gitkeep so the directory is preserved.
+            var emitFiles = plan.IncludeExamples
+                ? (IReadOnlyList<FileEmit>)folder.Files
+                : folder.Files.Where(f => !f.IsExample).ToList();
+
+            if (emitFiles.Count > 0)
             {
-                foreach (var file in folder.Files)
+                foreach (var file in emitFiles)
                 {
                     var destInZip = $"{folderRelative}/{file.Path}";
                     if (file.Path.EndsWith(".al", StringComparison.OrdinalIgnoreCase))
@@ -466,7 +475,7 @@ public class GenerationService
     /// </summary>
     private readonly record struct FolderEmit(string Path, IReadOnlyList<FileEmit> Files);
 
-    private readonly record struct FileEmit(string Path, string Content);
+    private readonly record struct FileEmit(string Path, string Content, bool IsExample);
 
     /// <summary>Snapshots the Core folder list for emission into the Core extension ZIP.</summary>
     private static IReadOnlyList<FolderEmit> SnapshotCoreFolders(RuntimeTemplate template) =>
@@ -474,7 +483,7 @@ public class GenerationService
             .Select(f => new FolderEmit(
                 f.Path,
                 f.Files.OrderBy(x => x.Ordering)
-                    .Select(x => new FileEmit(x.Path, x.Content))
+                    .Select(x => new FileEmit(x.Path, x.Content, x.IsExample))
                     .ToList()))
             .ToList();
 
@@ -484,7 +493,7 @@ public class GenerationService
             .Select(f => new FolderEmit(
                 f.Path,
                 f.Files.OrderBy(x => x.Ordering)
-                    .Select(x => new FileEmit(x.Path, x.Content))
+                    .Select(x => new FileEmit(x.Path, x.Content, x.IsExample))
                     .ToList()))
             .ToList();
 

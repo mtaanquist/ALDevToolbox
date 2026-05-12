@@ -99,6 +99,10 @@ public static class TemplateTomlMapper
                 sb.AppendLine();
                 sb.AppendLine("[[folders.files]]");
                 sb.Append("path = ").AppendLine(TomlBasicString(file.Path));
+                if (file.IsExample)
+                {
+                    sb.AppendLine("is_example = true");
+                }
                 sb.Append("content = ").AppendLine(TomlMultilineBasic(file.Content));
             }
         }
@@ -113,6 +117,10 @@ public static class TemplateTomlMapper
                 sb.AppendLine();
                 sb.AppendLine("[[module_folders.files]]");
                 sb.Append("path = ").AppendLine(TomlBasicString(file.Path));
+                if (file.IsExample)
+                {
+                    sb.AppendLine("is_example = true");
+                }
                 sb.Append("content = ").AppendLine(TomlMultilineBasic(file.Content));
             }
         }
@@ -255,10 +263,10 @@ public static class TemplateTomlMapper
                 : seed.Template.DefaultApplicationVersion,
             Folders: seed.Folders.Select(f => new TemplateFolderInput(
                 f.Path,
-                f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList(),
+                f.Files.Select(x => new TemplateFileInput(x.Path, x.Content, x.IsExample)).ToList())).ToList(),
             ModuleFolders: seed.ModuleFolders.Select(f => new TemplateFolderInput(
                 f.Path,
-                f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList());
+                f.Files.Select(x => new TemplateFileInput(x.Path, x.Content, x.IsExample)).ToList())).ToList());
     }
 
     private static readonly Regex UnquotedRuntimeRegex =

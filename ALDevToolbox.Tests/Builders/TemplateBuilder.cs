@@ -42,6 +42,12 @@ public static class TemplateBuilder
     };
 
     public static RuntimeTemplate WithCoreFolder(this RuntimeTemplate template, string path, params (string Path, string Content)[] files)
+        => WithCoreFolder(template, path, isExample: false, files);
+
+    public static RuntimeTemplate WithCoreExampleFolder(this RuntimeTemplate template, string path, params (string Path, string Content)[] files)
+        => WithCoreFolder(template, path, isExample: true, files);
+
+    private static RuntimeTemplate WithCoreFolder(RuntimeTemplate template, string path, bool isExample, (string Path, string Content)[] files)
     {
         var folder = new TemplateFolder
         {
@@ -57,6 +63,7 @@ public static class TemplateBuilder
                 Ordering = i,
                 Path = files[i].Path,
                 Content = files[i].Content,
+                IsExample = isExample,
             });
         }
         template.Folders.Add(folder);
@@ -64,6 +71,12 @@ public static class TemplateBuilder
     }
 
     public static RuntimeTemplate WithModuleFolder(this RuntimeTemplate template, string path, params (string Path, string Content)[] files)
+        => WithModuleFolder(template, path, isExample: false, files);
+
+    public static RuntimeTemplate WithModuleExampleFolder(this RuntimeTemplate template, string path, params (string Path, string Content)[] files)
+        => WithModuleFolder(template, path, isExample: true, files);
+
+    private static RuntimeTemplate WithModuleFolder(RuntimeTemplate template, string path, bool isExample, (string Path, string Content)[] files)
     {
         var folder = new TemplateModuleFolder
         {
@@ -79,6 +92,7 @@ public static class TemplateBuilder
                 Ordering = i,
                 Path = files[i].Path,
                 Content = files[i].Content,
+                IsExample = isExample,
             });
         }
         template.ModuleFolders.Add(folder);

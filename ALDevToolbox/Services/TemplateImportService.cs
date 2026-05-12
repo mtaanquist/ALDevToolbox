@@ -204,6 +204,7 @@ public sealed class TemplateImportService
                     Ordering = fi,
                     Path = file.Path,
                     Content = file.Content,
+                    IsExample = file.IsExample,
                 }).ToList(),
             }).ToList(),
             ModuleFolders = source.ModuleFolders.Select((f, i) => new TemplateModuleFolder
@@ -217,6 +218,7 @@ public sealed class TemplateImportService
                     Ordering = fi,
                     Path = file.Path,
                     Content = file.Content,
+                    IsExample = file.IsExample,
                 }).ToList(),
             }).ToList(),
         };

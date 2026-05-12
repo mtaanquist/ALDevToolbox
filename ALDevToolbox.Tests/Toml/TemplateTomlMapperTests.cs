@@ -144,6 +144,28 @@ public class TemplateTomlMapperTests
     }
 
     [Fact]
+    public void Round_trip_preserves_is_example_flag_per_file()
+    {
+        var template = TemplateBuilder.Default()
+            .WithCoreFolder("Source", ("Keep.al", "// keep"))
+            .WithCoreExampleFolder("Examples", ("Sample.al", "// sample"));
+
+        var toml = TemplateTomlMapper.ToToml(template);
+        var input = TemplateTomlMapper.FromToml(toml, deprecated: false);
+
+        // [[folders.files]] for the non-example file should not carry the flag.
+        toml.Should().Contain("path = \"Keep.al\"");
+        toml.Should().Contain("path = \"Sample.al\"");
+        // is_example = true only appears for the example file.
+        toml.Replace("\r\n", "\n").Should().MatchRegex(@"path = ""Sample\.al""\nis_example = true");
+        toml.Should().NotMatchRegex(@"path = ""Keep\.al""\s*\nis_example = true");
+
+        input.Folders.Should().HaveCount(2);
+        input.Folders[0].Files[0].IsExample.Should().BeFalse();
+        input.Folders[1].Files[0].IsExample.Should().BeTrue();
+    }
+
+    [Fact]
     public void Blank_toml_round_trips_with_default_folders_in_both_lists()
     {
         // The New Template flow seeds the editor with BlankToml(). The starter
@@ -229,6 +251,7 @@ public class TemplateTomlMapperTests
                     Ordering = fi,
                     Path = file.Path,
                     Content = file.Content,
+                    IsExample = file.IsExample,
                 }).ToList(),
             }).ToList(),
             ModuleFolders = input.ModuleFolders.Select((f, i) => new TemplateModuleFolder
@@ -240,6 +263,7 @@ public class TemplateTomlMapperTests
                     Ordering = fi,
                     Path = file.Path,
                     Content = file.Content,
+                    IsExample = file.IsExample,
                 }).ToList(),
             }).ToList(),
             DefaultModules = input.DefaultModuleKeys.Select((key, i) => new RuntimeTemplateDefaultModule

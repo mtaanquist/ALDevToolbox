@@ -31,4 +31,10 @@ public class TemplateModuleFile
     /// substitution for <c>.al</c> files; written verbatim for everything else.
     /// </summary>
     public string Content { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Same semantics as <see cref="TemplateFile.IsExample"/> — files flagged
+    /// true are skipped when the end user clears "Include example AL files".
+    /// </summary>
+    public bool IsExample { get; set; }
 }

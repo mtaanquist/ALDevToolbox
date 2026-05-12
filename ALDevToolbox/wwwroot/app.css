@@ -1982,6 +1982,22 @@ ul.form-field-error {
     min-height: 160px;
 }
 
+.folder-editor__example-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+}
+
+.folder-editor__example-toggle input[type="checkbox"] {
+    margin: 0;
+}
+
 /* Per-row field grid used by the module dependency editor and the catalogue
    editor. Sits inside a .folder-editor__row beneath the GUID/order/remove
    header so the four metadata fields wrap predictably on narrow viewports. */

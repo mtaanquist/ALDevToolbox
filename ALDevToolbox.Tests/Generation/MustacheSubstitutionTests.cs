@@ -102,10 +102,14 @@ public sealed class MustacheSubstitutionTests : IDisposable
     }
 
     [Fact]
-    public async Task Examples_off_replaces_files_with_a_single_gitkeep()
+    public async Task Examples_off_replaces_example_files_with_a_single_gitkeep()
     {
+        // Per-file IsExample filter: when the end user clears "Include
+        // example AL files", every file whose IsExample flag is true is
+        // skipped. A folder whose remaining files are all examples falls
+        // back to a .gitkeep so the directory survives.
         var template = TemplateBuilder.Default()
-            .WithCoreFolder("Source/Foundation",
+            .WithCoreExampleFolder("Source/Foundation",
                 ("AppInstall.al", "codeunit {{prefix}} install {}"),
                 ("AppUpgrade.al", "codeunit {{prefix}} upgrade {}"));
         await SeedTemplateAsync(template);
@@ -119,6 +123,29 @@ public sealed class MustacheSubstitutionTests : IDisposable
         zip.GetEntry("AcmeCustomer/Core/Source/Foundation/.gitkeep").Should().NotBeNull();
         zip.GetEntry("AcmeCustomer/Core/Source/Foundation/AppInstall.al").Should().BeNull();
         zip.GetEntry("AcmeCustomer/Core/Source/Foundation/AppUpgrade.al").Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Examples_off_keeps_non_example_files()
+    {
+        // Mirror of the above: a folder that mixes example and non-example
+        // files emits only the non-example ones when the checkbox is off.
+        var template = TemplateBuilder.Default()
+            .WithCoreFolder("Source/Foundation",
+                ("Keep.al", "codeunit {{prefix}} keep {}"))
+            .WithCoreExampleFolder("Source/Foundation/Examples",
+                ("AppInstall.al", "codeunit {{prefix}} install {}"));
+        await SeedTemplateAsync(template);
+
+        var service = NewService();
+        var plan = PlanBuilder.WorkspacePlan(includeExamples: false);
+
+        var archive = await service.GenerateWorkspaceAsync(plan);
+        using var zip = new ZipArchive(archive.Stream, ZipArchiveMode.Read);
+
+        zip.GetEntry("AcmeCustomer/Core/Source/Foundation/Keep.al").Should().NotBeNull();
+        zip.GetEntry("AcmeCustomer/Core/Source/Foundation/Examples/AppInstall.al").Should().BeNull();
+        zip.GetEntry("AcmeCustomer/Core/Source/Foundation/Examples/.gitkeep").Should().NotBeNull();
     }
 
     [Fact]

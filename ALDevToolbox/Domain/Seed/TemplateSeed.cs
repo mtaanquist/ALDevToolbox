@@ -133,4 +133,13 @@ public class FolderFileSeed
 
     /// <summary>Raw file content. Mustache variables are substituted at generation time.</summary>
     public string Content { get; set; } = string.Empty;
+
+    /// <summary>
+    /// When true, the file is treated as scaffolding the end user opted into
+    /// via the "Include example AL files" checkbox; clearing the checkbox
+    /// skips it at generation time. Defaults to false so non-example files
+    /// are always emitted. Serialised as a <c>is_example = true</c> line
+    /// (omitted when false to keep TOML diffs quiet).
+    /// </summary>
+    public bool IsExample { get; set; }
 }

@@ -418,6 +418,10 @@
                                                                @bind="file.Path" @bind:event="oninput" />
                                                         <FieldError Field="@($"Folders[{index}].Files[{fileIndex}].Path")" Errors="_fieldErrors" />
                                                     </div>
+                                                    <label class="folder-editor__example-toggle" title="Skip this file when the end user clears &quot;Include example AL files&quot;.">
+                                                        <input type="checkbox" @bind="file.IsExample" />
+                                                        <span>Example</span>
+                                                    </label>
                                                     <button type="button" class="btn btn--sm" @onclick="() => RemoveFile(index, fileIndex)" title="Remove file">
                                                         <Icon Name="trash-2" Width="12" Height="12" />
                                                     </button>
@@ -530,6 +534,10 @@
                                                                @bind="file.Path" @bind:event="oninput" />
                                                         <FieldError Field="@($"ModuleFolders[{index}].Files[{fileIndex}].Path")" Errors="_fieldErrors" />
                                                     </div>
+                                                    <label class="folder-editor__example-toggle" title="Skip this file when the end user clears &quot;Include example AL files&quot;.">
+                                                        <input type="checkbox" @bind="file.IsExample" />
+                                                        <span>Example</span>
+                                                    </label>
                                                     <button type="button" class="btn btn--sm" @onclick="() => RemoveModuleFile(index, fileIndex)" title="Remove file">
                                                         <Icon Name="trash-2" Width="12" Height="12" />
                                                     </button>
@@ -1566,7 +1574,7 @@
                 var folderRow = new FolderRow { Path = f.Path };
                 foreach (var file in f.Files.OrderBy(x => x.Ordering))
                 {
-                    folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content });
+                    folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content, IsExample = file.IsExample });
                 }
                 state.Folders.Add(folderRow);
             }
@@ -1575,7 +1583,7 @@
                 var folderRow = new FolderRow { Path = f.Path };
                 foreach (var file in f.Files.OrderBy(x => x.Ordering))
                 {
-                    folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content });
+                    folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content, IsExample = file.IsExample });
                 }
                 state.ModuleFolders.Add(folderRow);
             }
@@ -1626,7 +1634,7 @@
                 var folderRow = new FolderRow { Path = f.Path };
                 foreach (var file in f.Files)
                 {
-                    folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content });
+                    folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content, IsExample = file.IsExample });
                 }
                 state.Folders.Add(folderRow);
             }
@@ -1635,7 +1643,7 @@
                 var folderRow = new FolderRow { Path = f.Path };
                 foreach (var file in f.Files)
                 {
-                    folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content });
+                    folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content, IsExample = file.IsExample });
                 }
                 state.ModuleFolders.Add(folderRow);
             }
@@ -1681,10 +1689,10 @@
             DefaultModuleKeys: DefaultModuleKeys.ToList(),
             Folders: Folders.Select(f => new TemplateFolderInput(
                 f.Path,
-                f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList(),
+                f.Files.Select(x => new TemplateFileInput(x.Path, x.Content, x.IsExample)).ToList())).ToList(),
             ModuleFolders: ModuleFolders.Select(f => new TemplateFolderInput(
                 f.Path,
-                f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList(),
+                f.Files.Select(x => new TemplateFileInput(x.Path, x.Content, x.IsExample)).ToList())).ToList(),
             DefaultApplicationVersionKey: string.IsNullOrWhiteSpace(DefaultApplicationVersionKey)
                 ? null
                 : DefaultApplicationVersionKey);
@@ -1700,5 +1708,6 @@
     {
         public string Path { get; set; } = string.Empty;
         public string Content { get; set; } = string.Empty;
+        public bool IsExample { get; set; }
     }
 }

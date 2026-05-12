@@ -693,6 +693,7 @@ public class TemplateService
                 file.Ordering = i;
                 file.Path = path;
                 file.Content = content;
+                file.IsExample = input.IsExample;
             }
             else
             {
@@ -702,6 +703,7 @@ public class TemplateService
                     Ordering = i,
                     Path = path,
                     Content = content,
+                    IsExample = input.IsExample,
                 });
             }
         }
@@ -772,6 +774,7 @@ public class TemplateService
                 file.Ordering = i;
                 file.Path = path;
                 file.Content = content;
+                file.IsExample = input.IsExample;
             }
             else
             {
@@ -781,6 +784,7 @@ public class TemplateService
                     Ordering = i,
                     Path = path,
                     Content = content,
+                    IsExample = input.IsExample,
                 });
             }
         }
@@ -999,4 +1003,4 @@ public record TemplateInput(
 public record TemplateFolderInput(string Path, IReadOnlyList<TemplateFileInput> Files);
 
 /// <summary>One file row submitted by the admin file editor.</summary>
-public record TemplateFileInput(string Path, string Content);
+public record TemplateFileInput(string Path, string Content, bool IsExample = false);

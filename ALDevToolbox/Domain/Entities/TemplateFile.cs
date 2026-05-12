@@ -32,4 +32,15 @@ public class TemplateFile
     /// substitution for <c>.al</c> files; written verbatim for everything else.
     /// </summary>
     public string Content { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Marks the file as scaffolding the end user has opted into via the
+    /// "Include example AL files" checkbox on New Workspace / New Extension.
+    /// When that checkbox is off, the generator skips files flagged true;
+    /// folders whose remaining files are all examples fall back to a
+    /// single <c>.gitkeep</c>. Existing rows are stamped <c>true</c> by the
+    /// migration so the pre-flag behaviour (every seeded file was implicitly
+    /// an example) is preserved; new rows default to <c>false</c>.
+    /// </summary>
+    public bool IsExample { get; set; }
 }
