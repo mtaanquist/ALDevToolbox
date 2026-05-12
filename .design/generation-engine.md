@@ -1,26 +1,31 @@
 # Generation engine
 
+> **Issue #54 transition.** The per-extension generation algorithm described in `unified-extensions.md` supersedes the Core-vs-modules walk documented in the body below. The new walk visits each `WorkspaceExtension` row in display order — including module clones — and emits one folder per visit with its own `app.json`, recursive folder tree, and resolved dependencies. The `IncludeForNav` toggle is gone: ForNAV is a normal catalogue module that templates declare under `[[template.default_modules]]`. The two sections most affected by the rewrite (the input shape and the per-extension algorithm) are updated below; everything else still applies.
+
 This document specifies what `GenerationService` produces given a runtime template and a project plan.
 
 ## Inputs
 
-A `ProjectPlan` value object collected from the form. The shape:
+A `ProjectPlan` value object collected from the form:
 
 ```csharp
 record ProjectPlan(
-    string TemplateKey,         // selects the runtime template
-    string WorkspaceName,       // e.g. "Acme Customer"
+    string TemplateKey,
+    string WorkspaceName,
+    string ExtensionPrefix,          // pre-filled from defaults.extension_prefix; user-editable
     string Brief,
     string Description,
-    string ApplicationVersion,  // user may have overridden the template default
-    string RuntimeVersion,      // e.g. "15.0" — derived from template, but editable
+    string ApplicationVersion,
+    string RuntimeVersion,
     int CoreIdRangeFrom,
     int CoreIdRangeTo,
     bool IncludeExamples,
-    bool IncludeForNav,
-    IReadOnlyList<string> SelectedModuleKeys
+    IReadOnlyList<string> SelectedExtensionPaths,  // optional template-declared extensions the user ticked
+    IReadOnlyList<string> SelectedModuleKeys       // catalogue modules that contribute cloned extensions
 );
 ```
+
+The walk concatenates: template-required `WorkspaceExtension` rows (always emitted) → optional template-declared extensions whose `Path` appears in `SelectedExtensionPaths` → one cloned extension per `SelectedModuleKeys` entry. `{{extension_prefix}}` and `{{affix}}` (with `defaults.affixType`) drive mustache substitution; `{{prefix}}` and `{{suffix}}` are gone.
 
 For the **New Extension** flow, the inputs are slightly different — see [Standalone extension generation](#standalone-extension-generation) at the bottom.
 

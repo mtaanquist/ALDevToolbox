@@ -8,13 +8,15 @@ public static class PlanBuilder
     public static ProjectPlan WorkspacePlan(
         string templateKey = "runtime-test",
         string workspaceName = "Acme Customer",
+        string extensionPrefix = "ACME",
         IReadOnlyList<string>? selectedModules = null,
+        IReadOnlyList<string>? selectedExtensions = null,
         bool includeExamples = true,
-        bool includeForNav = false,
         int coreFrom = 90000,
         int coreTo = 90999) => new(
             TemplateKey: templateKey,
             WorkspaceName: workspaceName,
+            ExtensionPrefix: extensionPrefix,
             Brief: "Test brief.",
             Description: "Test description.",
             ApplicationVersion: "24.0.0.0",
@@ -22,7 +24,7 @@ public static class PlanBuilder
             CoreIdRangeFrom: coreFrom,
             CoreIdRangeTo: coreTo,
             IncludeExamples: includeExamples,
-            IncludeForNav: includeForNav,
+            SelectedExtensionPaths: selectedExtensions ?? Array.Empty<string>(),
             SelectedModuleKeys: selectedModules ?? Array.Empty<string>());
 
     public static StandaloneExtensionPlan ExtensionPlan(

@@ -55,10 +55,12 @@ public class AppDbContext : DbContext
     public DbSet<Invite> Invites => Set<Invite>();
 
     public DbSet<RuntimeTemplate> RuntimeTemplates => Set<RuntimeTemplate>();
-    public DbSet<TemplateFolder> TemplateFolders => Set<TemplateFolder>();
-    public DbSet<TemplateFile> TemplateFiles => Set<TemplateFile>();
-    public DbSet<TemplateModuleFolder> TemplateModuleFolders => Set<TemplateModuleFolder>();
-    public DbSet<TemplateModuleFile> TemplateModuleFiles => Set<TemplateModuleFile>();
+    public DbSet<WorkspaceExtension> WorkspaceExtensions => Set<WorkspaceExtension>();
+    public DbSet<WorkspaceExtensionFolder> WorkspaceExtensionFolders => Set<WorkspaceExtensionFolder>();
+    public DbSet<WorkspaceExtensionFile> WorkspaceExtensionFiles => Set<WorkspaceExtensionFile>();
+    public DbSet<WorkspaceExtensionDependency> WorkspaceExtensionDependencies => Set<WorkspaceExtensionDependency>();
+    public DbSet<ModuleExtensionFolder> ModuleExtensionFolders => Set<ModuleExtensionFolder>();
+    public DbSet<ModuleExtensionFile> ModuleExtensionFiles => Set<ModuleExtensionFile>();
     public DbSet<RuntimeTemplateDefaultModule> RuntimeTemplateDefaultModules => Set<RuntimeTemplateDefaultModule>();
     public DbSet<Module> Modules => Set<Module>();
     public DbSet<ModuleDependency> ModuleDependencies => Set<ModuleDependency>();
@@ -235,8 +237,6 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Runtime).HasColumnName("runtime").IsRequired();
             entity.Property(e => e.Name).HasColumnName("name").IsRequired();
             entity.Property(e => e.Description).HasColumnName("description");
-            entity.Property(e => e.DefaultApplication).HasColumnName("default_application").IsRequired();
-            entity.Property(e => e.DefaultPlatform).HasColumnName("default_platform").IsRequired();
             entity.Property(e => e.DefaultApplicationVersionId).HasColumnName("default_application_version_id");
             // M16: jsonb. The value-converter still goes through string round-
             // trips on the C# side; HasColumnType pins the storage shape so EF
@@ -274,12 +274,7 @@ public class AppDbContext : DbContext
                 .HasForeignKey(e => e.OrganizationId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            entity.HasMany(e => e.Folders)
-                .WithOne(f => f.Template!)
-                .HasForeignKey(f => f.TemplateId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasMany(e => e.ModuleFolders)
+            entity.HasMany(e => e.WorkspaceExtensions)
                 .WithOne(f => f.Template!)
                 .HasForeignKey(f => f.TemplateId)
                 .OnDelete(DeleteBehavior.Cascade);
@@ -340,72 +335,161 @@ public class AppDbContext : DbContext
             ScopeToOrganization<RuntimeTemplateDefaultModule>(entity);
         });
 
-        modelBuilder.Entity<TemplateFolder>(entity =>
+        modelBuilder.Entity<WorkspaceExtension>(entity =>
         {
-            entity.ToTable("template_folders");
+            entity.ToTable("workspace_extensions");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
             entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
             entity.Property(e => e.TemplateId).HasColumnName("template_id").IsRequired();
             entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
             entity.Property(e => e.Path).HasColumnName("path").IsRequired();
+            entity.Property(e => e.NameTemplate).HasColumnName("name_template").IsRequired();
+            entity.Property(e => e.Required).HasColumnName("required").IsRequired();
+            entity.Property(e => e.Application).HasColumnName("application");
+            entity.Property(e => e.Runtime).HasColumnName("runtime");
+            entity.Property(e => e.IdRangeFrom).HasColumnName("id_range_from");
+            entity.Property(e => e.IdRangeTo).HasColumnName("id_range_to");
             entity.HasIndex(e => new { e.OrganizationId, e.TemplateId, e.Ordering });
+            entity.HasIndex(e => new { e.TemplateId, e.Path }).IsUnique();
+
+            entity.HasMany(e => e.Folders)
+                .WithOne(f => f.Extension!)
+                .HasForeignKey(f => f.WorkspaceExtensionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.Dependencies)
+                .WithOne(d => d.Extension!)
+                .HasForeignKey(d => d.WorkspaceExtensionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            ScopeToOrganization<WorkspaceExtension>(entity);
+        });
+
+        modelBuilder.Entity<WorkspaceExtensionFolder>(entity =>
+        {
+            entity.ToTable("workspace_extension_folders");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
+            // Denormalised onto every row so leaf queries don't have to walk
+            // the parent chain to scope by extension. The service-layer
+            // reconciliation keeps it in lock-step with the parent's value.
+            entity.Property(e => e.WorkspaceExtensionId).HasColumnName("workspace_extension_id").IsRequired();
+            entity.Property(e => e.ParentFolderId).HasColumnName("parent_folder_id");
+            entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
+            entity.Property(e => e.Path).HasColumnName("path").IsRequired();
+            entity.HasIndex(e => new { e.WorkspaceExtensionId, e.ParentFolderId, e.Ordering });
+            // Sibling-uniqueness: within a non-null parent, path is unique.
+            entity.HasIndex(e => new { e.ParentFolderId, e.Path })
+                .IsUnique()
+                .HasFilter("parent_folder_id IS NOT NULL")
+                .HasDatabaseName("ix_workspace_extension_folders_sibling_unique");
+            // Sibling-uniqueness at the root: parent_folder_id IS NULL slice.
+            entity.HasIndex(e => new { e.WorkspaceExtensionId, e.Path })
+                .IsUnique()
+                .HasFilter("parent_folder_id IS NULL")
+                .HasDatabaseName("ix_workspace_extension_folders_root_unique");
+
+            entity.HasOne(e => e.ParentFolder)
+                .WithMany(f => f!.Folders)
+                .HasForeignKey(e => e.ParentFolderId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasMany(e => e.Files)
                 .WithOne(f => f.Folder!)
-                .HasForeignKey(f => f.TemplateFolderId)
+                .HasForeignKey(f => f.WorkspaceExtensionFolderId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            ScopeToOrganization<TemplateFolder>(entity);
+            ScopeToOrganization<WorkspaceExtensionFolder>(entity);
         });
 
-        modelBuilder.Entity<TemplateModuleFolder>(entity =>
+        modelBuilder.Entity<WorkspaceExtensionFile>(entity =>
         {
-            entity.ToTable("template_module_folders");
+            entity.ToTable("workspace_extension_files");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
             entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
-            entity.Property(e => e.TemplateId).HasColumnName("template_id").IsRequired();
+            entity.Property(e => e.WorkspaceExtensionFolderId).HasColumnName("workspace_extension_folder_id").IsRequired();
             entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
             entity.Property(e => e.Path).HasColumnName("path").IsRequired();
-            entity.HasIndex(e => new { e.OrganizationId, e.TemplateId, e.Ordering });
+            entity.Property(e => e.Content).HasColumnName("content").IsRequired();
+            entity.Property(e => e.IsExample).HasColumnName("is_example").IsRequired();
+            entity.HasIndex(e => new { e.WorkspaceExtensionFolderId, e.Ordering });
+            entity.HasIndex(e => new { e.WorkspaceExtensionFolderId, e.Path }).IsUnique();
+            ScopeToOrganization<WorkspaceExtensionFile>(entity);
+        });
+
+        modelBuilder.Entity<WorkspaceExtensionDependency>(entity =>
+        {
+            entity.ToTable("workspace_extension_dependencies");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
+            entity.Property(e => e.WorkspaceExtensionId).HasColumnName("workspace_extension_id").IsRequired();
+            entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
+            entity.Property(e => e.RefExtensionPath).HasColumnName("ref_extension_path");
+            entity.Property(e => e.RefModuleKey).HasColumnName("ref_module_key");
+            entity.Property(e => e.LitId).HasColumnName("lit_id");
+            entity.Property(e => e.LitName).HasColumnName("lit_name");
+            entity.Property(e => e.LitPublisher).HasColumnName("lit_publisher");
+            entity.Property(e => e.LitVersion).HasColumnName("lit_version");
+            entity.HasIndex(e => new { e.WorkspaceExtensionId, e.Ordering });
+            // Exactly one of the three reference groups must be non-null. The
+            // CHECK is added in the UnifyExtensions migration; EF doesn't have
+            // a fluent API for table CHECKs, so the constraint lives in raw
+            // SQL there and is regenerated by future migrations via
+            // AppDbContextModelSnapshot.
+            ScopeToOrganization<WorkspaceExtensionDependency>(entity);
+        });
+
+        modelBuilder.Entity<ModuleExtensionFolder>(entity =>
+        {
+            entity.ToTable("module_extension_folders");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
+            entity.Property(e => e.ModuleId).HasColumnName("module_id").IsRequired();
+            entity.Property(e => e.ParentFolderId).HasColumnName("parent_folder_id");
+            entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
+            entity.Property(e => e.Path).HasColumnName("path").IsRequired();
+            entity.HasIndex(e => new { e.ModuleId, e.ParentFolderId, e.Ordering });
+            entity.HasIndex(e => new { e.ParentFolderId, e.Path })
+                .IsUnique()
+                .HasFilter("parent_folder_id IS NOT NULL")
+                .HasDatabaseName("ix_module_extension_folders_sibling_unique");
+            entity.HasIndex(e => new { e.ModuleId, e.Path })
+                .IsUnique()
+                .HasFilter("parent_folder_id IS NULL")
+                .HasDatabaseName("ix_module_extension_folders_root_unique");
+
+            entity.HasOne(e => e.ParentFolder)
+                .WithMany(f => f!.Folders)
+                .HasForeignKey(e => e.ParentFolderId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasMany(e => e.Files)
                 .WithOne(f => f.Folder!)
-                .HasForeignKey(f => f.TemplateModuleFolderId)
+                .HasForeignKey(f => f.ModuleExtensionFolderId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            ScopeToOrganization<TemplateModuleFolder>(entity);
+            ScopeToOrganization<ModuleExtensionFolder>(entity);
         });
 
-        modelBuilder.Entity<TemplateModuleFile>(entity =>
+        modelBuilder.Entity<ModuleExtensionFile>(entity =>
         {
-            entity.ToTable("template_module_files");
+            entity.ToTable("module_extension_files");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
             entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
-            entity.Property(e => e.TemplateModuleFolderId).HasColumnName("template_module_folder_id").IsRequired();
+            entity.Property(e => e.ModuleExtensionFolderId).HasColumnName("module_extension_folder_id").IsRequired();
             entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
             entity.Property(e => e.Path).HasColumnName("path").IsRequired();
             entity.Property(e => e.Content).HasColumnName("content").IsRequired();
-            entity.HasIndex(e => new { e.OrganizationId, e.TemplateModuleFolderId, e.Ordering });
-            entity.HasIndex(e => new { e.TemplateModuleFolderId, e.Path }).IsUnique();
-            ScopeToOrganization<TemplateModuleFile>(entity);
-        });
-
-        modelBuilder.Entity<TemplateFile>(entity =>
-        {
-            entity.ToTable("template_files");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
-            entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
-            entity.Property(e => e.TemplateFolderId).HasColumnName("template_folder_id").IsRequired();
-            entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
-            entity.Property(e => e.Path).HasColumnName("path").IsRequired();
-            entity.Property(e => e.Content).HasColumnName("content").IsRequired();
-            entity.HasIndex(e => new { e.OrganizationId, e.TemplateFolderId, e.Ordering });
-            entity.HasIndex(e => new { e.TemplateFolderId, e.Path }).IsUnique();
-            ScopeToOrganization<TemplateFile>(entity);
+            entity.Property(e => e.IsExample).HasColumnName("is_example").IsRequired();
+            entity.HasIndex(e => new { e.ModuleExtensionFolderId, e.Ordering });
+            entity.HasIndex(e => new { e.ModuleExtensionFolderId, e.Path }).IsUnique();
+            ScopeToOrganization<ModuleExtensionFile>(entity);
         });
 
         modelBuilder.Entity<Module>(entity =>
@@ -431,6 +515,11 @@ public class AppDbContext : DbContext
             entity.HasMany(e => e.Dependencies)
                 .WithOne(d => d.Module!)
                 .HasForeignKey(d => d.ModuleId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.ExtensionFolders)
+                .WithOne(f => f.Module!)
+                .HasForeignKey(f => f.ModuleId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             ScopeToOrganization<Module>(entity);

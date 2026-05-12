@@ -197,7 +197,7 @@
                     <th>Key</th>
                     <th>Runtime</th>
                     <th>Name</th>
-                    <th>Folders</th>
+                    <th>Extensions</th>
                     <th>Status</th>
                     <th>Last updated (UTC)</th>
                     <th class="data-table__actions"></th>
@@ -221,7 +221,7 @@
                         </td>
                         <td>@t.Runtime</td>
                         <td>@t.Name</td>
-                        <td>@t.Folders.Count</td>
+                        <td>@t.WorkspaceExtensions.Count</td>
                         <td>@StatusFor(t)</td>
                         <td><time datetime="@t.UpdatedAt.ToString("O")">@t.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                         <td class="data-table__actions">

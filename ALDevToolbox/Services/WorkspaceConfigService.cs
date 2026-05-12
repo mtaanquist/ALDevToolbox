@@ -75,7 +75,8 @@ public class WorkspaceConfigService
                 CoreIdRangeFrom = plan.CoreIdRangeFrom,
                 CoreIdRangeTo = plan.CoreIdRangeTo,
                 IncludeExamples = plan.IncludeExamples,
-                IncludeForNav = plan.IncludeForNav,
+                ExtensionPrefix = plan.ExtensionPrefix,
+                SelectedExtensions = plan.SelectedExtensionPaths.ToList(),
                 Modules = plan.SelectedModuleKeys.ToList(),
                 Extensions = extensions
                     .Select(e => new ExtensionIdentitySection
@@ -277,6 +278,7 @@ public class WorkspaceConfigService
         return new ProjectPlan(
             TemplateKey: section.Template,
             WorkspaceName: section.Name,
+            ExtensionPrefix: section.ExtensionPrefix,
             Brief: section.Brief,
             Description: section.Description,
             ApplicationVersion: section.ApplicationVersion,
@@ -284,7 +286,7 @@ public class WorkspaceConfigService
             CoreIdRangeFrom: section.CoreIdRangeFrom,
             CoreIdRangeTo: section.CoreIdRangeTo,
             IncludeExamples: section.IncludeExamples,
-            IncludeForNav: section.IncludeForNav,
+            SelectedExtensionPaths: section.SelectedExtensions.ToList(),
             SelectedModuleKeys: section.Modules.ToList());
     }
 
@@ -375,7 +377,14 @@ public class WorkspaceConfigService
         public int CoreIdRangeFrom { get; set; }
         public int CoreIdRangeTo { get; set; }
         public bool IncludeExamples { get; set; } = true;
-        public bool IncludeForNav { get; set; }
+        public string ExtensionPrefix { get; set; } = string.Empty;
+        /// <summary>
+        /// Paths of optional template-declared extensions the user ticked on
+        /// the form (<c>WorkspaceExtension</c> entries with
+        /// <c>required = false</c>). Always-required extensions are emitted
+        /// regardless of this list.
+        /// </summary>
+        public List<string> SelectedExtensions { get; set; } = new();
         // Per-extension identity for Core + every module, captured at workspace
         // generation time. Populated when the workspace flow emits a config so
         // a sibling-extension import can see the actual GUIDs / id-ranges /

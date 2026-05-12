@@ -242,6 +242,7 @@ app.MapPost("/generate/workspace", async (HttpContext ctx, GenerationService gen
     var plan = new ProjectPlan(
         TemplateKey: form["TemplateKey"].ToString(),
         WorkspaceName: form["WorkspaceName"].ToString().Trim(),
+        ExtensionPrefix: form["ExtensionPrefix"].ToString().Trim(),
         Brief: form["Brief"].ToString().Trim(),
         Description: form["Description"].ToString().Trim(),
         ApplicationVersion: form["ApplicationVersion"].ToString().Trim(),
@@ -249,7 +250,10 @@ app.MapPost("/generate/workspace", async (HttpContext ctx, GenerationService gen
         CoreIdRangeFrom: int.TryParse(form["CoreIdRangeFrom"], out var cf) ? cf : 0,
         CoreIdRangeTo: int.TryParse(form["CoreIdRangeTo"], out var ctn) ? ctn : 0,
         IncludeExamples: form["IncludeExamples"] == "true" || form["IncludeExamples"] == "on",
-        IncludeForNav: form["IncludeForNav"] == "true" || form["IncludeForNav"] == "on",
+        SelectedExtensionPaths: form["SelectedExtensionPaths"]
+            .Where(s => !string.IsNullOrEmpty(s))
+            .Select(s => s!)
+            .ToList(),
         SelectedModuleKeys: form["SelectedModuleKeys"]
             .Where(s => !string.IsNullOrEmpty(s))
             .Select(s => s!)

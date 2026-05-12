@@ -126,8 +126,11 @@ public sealed class ApplicationVersionServiceTests : IDisposable
                 Key = "uses-bc24",
                 Runtime = "15",
                 Name = "Uses BC 24",
-                DefaultApplication = "24.0.0.0",
-                DefaultPlatform = "15.0",
+                Defaults = new ALDevToolbox.Domain.ValueObjects.TemplateDefaults
+                {
+                    Application = "24.0.0.0",
+                    Platform = "15.0",
+                },
                 DefaultApplicationVersionId = versionId,
                 CoreIdRangeFrom = 50000,
                 CoreIdRangeTo = 50100,

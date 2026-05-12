@@ -84,7 +84,7 @@
                     {
                         <p class="caption muted">
                             @_selected!.Description
-                            <span> · Default application: <code>@_selected.DefaultApplication</code></span>
+                            <span> · Default application: <code>@_selected.Defaults.Application</code></span>
                         </p>
                     }
                 </section>
@@ -381,7 +381,7 @@
         }
         else
         {
-            _applicationVersion = template.DefaultApplication;
+            _applicationVersion = template.Defaults.Application;
             // Runtime is a string (Major or Major.Minor). app.json wants
             // Major.Minor; append ".0" when the template only has a major.
             _runtimeVersion = template.Runtime.Contains('.') ? template.Runtime : $"{template.Runtime}.0";
@@ -457,11 +457,11 @@
     }
 
     /// <summary>
-    /// Builds one extension folder for the preview. Core extensions reuse the
-    /// template's <see cref="RuntimeTemplate.Folders"/>; modules and standalone
-    /// extensions use the same list (modules use <c>ModuleFolders</c> which we
-    /// reach for explicitly). Marking <paramref name="isNew"/> tags the rendered
-    /// node so the tree component can decorate it.
+    /// Builds one extension folder for the preview. Per-extension folder tree
+    /// is sourced from the unified <see cref="WorkspaceExtension"/> /
+    /// <see cref="ModuleExtensionFolder"/> graph; the preview-side walk is
+    /// pending the Issue #54 generator rewrite. For now the preview shows only
+    /// app.json + AppSourceCop.json + the static fallback folders.
     /// </summary>
     private PreviewNode BuildExtensionNode(string folderName, bool isCore, bool isNew)
     {
@@ -470,27 +470,6 @@
             PreviewNode.File("app.json"),
             PreviewNode.File("AppSourceCop.json"),
         };
-
-        if (_selected is not null)
-        {
-            var entries = isCore
-                ? _selected.Folders
-                    .OrderBy(f => f.Ordering)
-                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromFiles(f.Files)))
-                : _selected.Folders
-                    .OrderBy(f => f.Ordering)
-                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromFiles(f.Files)));
-            // Module folders for non-Core extensions inside a workspace come
-            // from ModuleFolders rather than Folders. Override the entries
-            // when we're rendering a workspace module.
-            if (!isCore && _workspaceContext is not null && !isNew)
-            {
-                entries = _selected.ModuleFolders
-                    .OrderBy(f => f.Ordering)
-                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromModuleFiles(f.Files)));
-            }
-            contents.AddRange(PreviewTreeBuilder.BuildFolderChildren(entries));
-        }
 
         AddFallbackFolder(contents, "libs");
         AddFallbackFolder(contents, "permissionsets");
@@ -501,9 +480,8 @@
     }
 
     /// <summary>
-    /// Adds <paramref name="name"/> as a placeholder folder unless the template
-    /// already contributed a folder whose top-level segment matches case-
-    /// insensitively. See <c>NewWorkspace.razor</c> for the same comment.
+    /// Adds <paramref name="name"/> as a placeholder folder unless the preview
+    /// already shows a folder whose top-level segment matches case-insensitively.
     /// </summary>
     private static void AddFallbackFolder(List<PreviewNode> contents, string name)
     {
@@ -513,22 +491,6 @@
             return;
         }
         contents.Add(PreviewNode.Folder(name, new[] { PreviewNode.File(".gitkeep") }));
-    }
-
-    private List<PreviewNode> LeafFilesFromFiles(IEnumerable<TemplateFile> files) =>
-        LeafFilesByPaths(files.OrderBy(f => f.Ordering).Select(f => f.Path));
-
-    private List<PreviewNode> LeafFilesFromModuleFiles(IEnumerable<TemplateModuleFile> files) =>
-        LeafFilesByPaths(files.OrderBy(f => f.Ordering).Select(f => f.Path));
-
-    private List<PreviewNode> LeafFilesByPaths(IEnumerable<string> paths)
-    {
-        var list = paths.ToList();
-        if (_includeExamples && list.Count > 0)
-        {
-            return list.Select(PreviewNode.File).ToList();
-        }
-        return new List<PreviewNode> { PreviewNode.File(".gitkeep") };
     }
 
     private static string StripWhitespace(string value) =>

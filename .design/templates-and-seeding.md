@@ -1,5 +1,7 @@
 # Templates and seeding
 
+> **Issue #54 transition.** The TOML schema described below uses the pre-unified `[[folders]]` and `[[module_folders]]` shape. The replacement — a single ordered `[[extensions]]` array with recursive `[[extensions.folders]]` / `[[extensions.folders.files]]`, per-extension dependency shapes (`extension = "Core"`, `module = "system-application"`, or literal), and `[[template.default_modules]]` — is documented in `unified-extensions.md` (Section "TOML schema"). The structured-form pipeline still goes through `TemplateInput`; the recursive folder editor and the `[[extensions]]` view of the TOML mapper land alongside the follow-up rewrite. Until then, the admin TOML editor surfaces a placeholder and `TemplateService.CreateAsync` / `UpdateAsync` throw `NotImplementedException`.
+
 ## Where templates live
 
 **Persistence:** in the PostgreSQL database. Templates, modules, and catalogue entries are stored as rows in the tables described in `domain-model.md`. The DB is the source of truth at runtime — every read on the user-facing flows hits these tables.

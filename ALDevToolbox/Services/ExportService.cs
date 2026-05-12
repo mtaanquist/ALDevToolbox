@@ -56,10 +56,7 @@ public class ExportService
         var templateRows = await _db.RuntimeTemplates
             .AsNoTracking()
             .Where(t => t.DeletedAt == null)
-            .Include(t => t.Folders.OrderBy(f => f.Ordering))
-                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
-            .Include(t => t.ModuleFolders.OrderBy(f => f.Ordering))
-                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
+            .Include(t => t.WorkspaceExtensions.OrderBy(e => e.Ordering))
             .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
                 .ThenInclude(d => d.Module!)
             .Include(t => t.DefaultApplicationVersion)

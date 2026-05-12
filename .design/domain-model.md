@@ -1,5 +1,7 @@
 # Domain model
 
+> **Issue #54 transition.** The unified-extensions model (`workspace_extensions`, `workspace_extension_folders/files/dependencies`, `module_extension_folders/files`) is the new shape. The sections below covering `template_folders` / `template_files` / `template_module_folders` / `template_module_files` describe the *pre-unified* layout and are retained for historical context until the schema lands in production. The new contract is documented in `unified-extensions.md`; the migration that drops the old tables and folds `default_application` / `default_platform` into `defaults_json` is `20260514000000_UnifyExtensions`.
+
 This document specifies the entities, their relationships, and the PostgreSQL schema. EF Core code-first migrations are the expected mechanism for creating the schema; the SQL types below are the target shape.
 
 The schema was a SQLite one through v1 (M1–M15) and switched to PostgreSQL 18 in P4.16. The two changes that matter at this layer are:
@@ -11,23 +13,30 @@ The schema was a SQLite one through v1 (M1–M15) and switched to PostgreSQL 18 
 
 ```
 RuntimeTemplate ──┐
-                  ├── has many ──> TemplateFolder (ordered, Core only)
-                  │                    └── has many ──> TemplateFile (ordered)
-                  ├── has many ──> TemplateModuleFolder (ordered, modules only)
-                  │                    └── has many ──> TemplateModuleFile (ordered)
+                  ├── has many ──> WorkspaceExtension (ordered)
+                  │                    ├── has many ──> WorkspaceExtensionFolder (recursive tree)
+                  │                    │                    └── has many ──> WorkspaceExtensionFile (per folder, any depth)
+                  │                    └── has many ──> WorkspaceExtensionDependency
+                  │                                          (one-of: ref_extension_path / ref_module_key / lit_*)
                   ├── has many ──> RuntimeTemplateDefaultModule (ordered) ──> Module
-                  └── has one ────> TemplateDefaults (JSON column on the row)
+                  └── has one ────> TemplateDefaults (JSON column on the row;
+                                       carries publisher, application, platform,
+                                       extension_prefix, affix, affixType, …)
 
 Module ───────────┐
                   ├── has many ──> ModuleDependency (ordered)
+                  ├── has many ──> ModuleExtensionFolder (recursive tree)
+                  │                    └── has many ──> ModuleExtensionFile (per folder, any depth)
                   └── id-range fields on the row
 
 WellKnownDependency  (flat list, used by New Extension flow's dep picker)
 
 AuditLogEntry        (one row per change to any of the above)
-
-AuthSession          (optional — see auth-and-audit.md for cookie strategy)
 ```
+
+`WorkspaceExtension.Path` is the stable identifier — dependencies referencing another extension by `ref_extension_path = "Core"` resolve through it. `WorkspaceExtension.Required` is `true` for always-emitted extensions and `false` for opt-in checkboxes on the New Workspace form. See `unified-extensions.md` for the full per-extension shape (id-range allocation, name template, optional per-extension `application` / `runtime` overrides).
+
+Module-supplied extensions clone the module's `ModuleExtensionFolder` tree into the workspace at generation time; the catalogue rows stay normalised. A workspace is the concatenation of the template's required extensions, the optional extensions the user ticked, and one cloned extension per selected module — emitted in the same display order they appear in those three lists.
 
 ## Tables
 

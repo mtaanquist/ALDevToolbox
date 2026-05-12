@@ -50,9 +50,9 @@
                 <dt>Runtime</dt>
                 <dd>@_template.Runtime</dd>
                 <dt>Default application</dt>
-                <dd><code>@_template.DefaultApplication</code></dd>
+                <dd><code>@_template.Defaults.Application</code></dd>
                 <dt>Default platform</dt>
-                <dd><code>@_template.DefaultPlatform</code></dd>
+                <dd><code>@_template.Defaults.Platform</code></dd>
                 <dt>Core ID range</dt>
                 <dd><code>@_template.CoreIdRangeFrom</code> – <code>@_template.CoreIdRangeTo</code></dd>
                 <dt>Module ID range</dt>
@@ -68,14 +68,19 @@
         </section>
 
         <section class="template-detail__section">
-            <h2>Folder layout</h2>
-            @if (_template.Folders.Count == 0)
+            <h2>Extensions</h2>
+            @if (_template.WorkspaceExtensions.Count == 0)
             {
-                <p class="muted">No folders defined. Generation falls back to the static layout only.</p>
+                <p class="muted">No extensions declared. Generation falls back to the static layout only.</p>
             }
             else
             {
-                <FolderTreePreview Root="_tree" />
+                <ul>
+                @foreach (var ext in _template.WorkspaceExtensions.OrderBy(e => e.Ordering))
+                {
+                    <li><code>@ext.Path</code> — @ext.NameTemplate@(ext.Required ? string.Empty : " (optional)")</li>
+                }
+                </ul>
             }
         </section>
 
@@ -138,26 +143,11 @@
         _tree = BuildTree(template);
     }
 
-    /// <summary>
-    /// Renders the template's folder list using the same merging rules as the
-    /// live preview (shared prefixes collapse, files attach at the deepest
-    /// segment) and the same Windows-Explorer sort. Files seeded into a folder
-    /// surface as leaves; an empty folder shows the placeholder we'd actually
-    /// emit (<c>.gitkeep</c>).
-    /// </summary>
     private static PreviewNode BuildTree(RuntimeTemplate template)
     {
-        var entries = template.Folders
-            .OrderBy(f => f.Ordering)
-            .Select(f =>
-            {
-                IReadOnlyList<PreviewNode> leaves = f.Files.Count > 0
-                    ? f.Files.OrderBy(x => x.Ordering).Select(x => PreviewNode.File(x.Path)).ToList()
-                    : new List<PreviewNode> { PreviewNode.File(".gitkeep") };
-                return (f.Path, leaves);
-            });
-        var children = PreviewTreeBuilder.BuildFolderChildren(entries);
-        var root = PreviewNode.Extension(template.Key, children);
-        return PreviewTreeBuilder.SortForDisplay(root);
+        // The recursive walk of WorkspaceExtension.Folders + ModuleExtensionFolder
+        // is pending the Issue #54 generator rewrite. The detail page falls back
+        // to a single-node tree until the new preview is wired up.
+        return PreviewNode.Extension(template.Key, Array.Empty<PreviewNode>());
     }
 }

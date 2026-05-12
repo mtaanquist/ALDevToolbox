@@ -47,7 +47,7 @@
                     </select>
                     <p class="caption muted">
                         @_selected!.Description
-                        <span> · Default application: <code>@_selected.DefaultApplication</code></span>
+                        <span> · Default application: <code>@_selected.Defaults.Application</code></span>
                     </p>
                 </section>
 
@@ -166,11 +166,6 @@
                                @bind="_includeExamples" />
                         <span>Include example AL files</span>
                     </label>
-                    <label class="check-row">
-                        <input type="checkbox" name="IncludeForNav" value="true"
-                               @bind="_includeForNav" />
-                        <span>Include ForNAV in Core</span>
-                    </label>
                 </section>
 
                 <button type="submit" class="btn btn--primary workspace-layout__generate" data-loading-button>
@@ -222,7 +217,6 @@
     private string _runtimeVersion = string.Empty;
     private readonly HashSet<string> _selectedModuleKeys = new(StringComparer.Ordinal);
     private bool _includeExamples = true;
-    private bool _includeForNav;
 
     private OrganizationConfig? _orgConfig;
 
@@ -291,7 +285,7 @@
         }
         else
         {
-            _applicationVersion = template.DefaultApplication;
+            _applicationVersion = template.Defaults.Application;
             // Runtime is a string in the entity (Major or Major.Minor). The
             // app.json runtime field always wants Major.Minor, so append ".0"
             // when only a major was supplied.
@@ -348,7 +342,6 @@
             if (module is null) continue;
             total += 1 + module.Dependencies.Count;
         }
-        if (_includeForNav) total += 1;
         return total;
     }
 
@@ -402,20 +395,11 @@
             PreviewNode.File("AppSourceCop.json"),
         };
 
-        if (_selected is not null)
-        {
-            // Core uses Folders; modules use ModuleFolders. The split exists
-            // so per-Core scaffolding (App Install codeunits, setup tables)
-            // doesn't bleed into every module preview.
-            var entries = isCore
-                ? _selected.Folders
-                    .OrderBy(f => f.Ordering)
-                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromFiles(f.Files)))
-                : _selected.ModuleFolders
-                    .OrderBy(f => f.Ordering)
-                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromFiles(f.Files)));
-            contents.AddRange(PreviewTreeBuilder.BuildFolderChildren(entries));
-        }
+        // Per-extension folder tree is sourced from WorkspaceExtension /
+        // ModuleExtensionFolder under the unified-extensions model. The preview
+        // currently only renders the static fallback folders below until the
+        // generator rewrite lands (Issue #54 follow-up). The full preview will
+        // walk the recursive folder tree of the matching extension entry.
 
         // Hardcoded fallback folders. Each one only goes in if the template
         // didn't already declare a folder with the same case-insensitive name —
@@ -437,28 +421,6 @@
             return;
         }
         contents.Add(PreviewNode.Folder(name, new[] { PreviewNode.File(".gitkeep") }));
-    }
-
-    private List<PreviewNode> LeafFilesFromFiles(IEnumerable<TemplateFile> files) =>
-        LeafFilesByPaths(files.OrderBy(f => f.Ordering).Select(f => f.Path));
-
-    private List<PreviewNode> LeafFilesFromFiles(IEnumerable<TemplateModuleFile> files) =>
-        LeafFilesByPaths(files.OrderBy(f => f.Ordering).Select(f => f.Path));
-
-    /// <summary>
-    /// Shared tail for the two <see cref="LeafFilesFromFiles(IEnumerable{TemplateFile})"/>
-    /// overloads above. Same rule as the generator: when examples are off or the
-    /// folder has no files, the preview shows a single <c>.gitkeep</c>; otherwise
-    /// it shows one node per file in the order the admin set.
-    /// </summary>
-    private List<PreviewNode> LeafFilesByPaths(IEnumerable<string> paths)
-    {
-        var list = paths.ToList();
-        if (_includeExamples && list.Count > 0)
-        {
-            return list.Select(PreviewNode.File).ToList();
-        }
-        return new List<PreviewNode> { PreviewNode.File(".gitkeep") };
     }
 
     private static string StripWhitespace(string value) =>

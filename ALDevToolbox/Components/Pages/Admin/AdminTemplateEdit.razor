@@ -1258,55 +1258,12 @@
                 ? new AppSourceCopSettings()
                 : JsonSerializer.Deserialize<AppSourceCopSettings>(_form.AppSourceCopJson) ?? new AppSourceCopSettings();
 
-            var stub = new RuntimeTemplate
-            {
-                Key = _form.Key,
-                Runtime = _form.Runtime,
-                Name = _form.Name,
-                Description = _form.Description,
-                DefaultApplication = _form.DefaultApplication,
-                DefaultPlatform = _form.DefaultPlatform,
-                Defaults = defaults,
-                AppSourceCop = appSourceCop,
-                CoreIdRangeFrom = _form.CoreIdRangeFrom,
-                CoreIdRangeTo = _form.CoreIdRangeTo,
-                ModuleIdRangeStart = _form.ModuleIdRangeStart,
-                ModuleIdRangeSize = _form.ModuleIdRangeSize,
-                Deprecated = _form.Deprecated,
-                Folders = _form.Folders.Select((f, i) => new TemplateFolder
-                {
-                    Ordering = i,
-                    Path = f.Path,
-                    Files = f.Files.Select((file, fi) => new TemplateFile
-                    {
-                        Ordering = fi,
-                        Path = file.Path,
-                        Content = file.Content,
-                    }).ToList(),
-                }).ToList(),
-                ModuleFolders = _form.ModuleFolders.Select((f, i) => new TemplateModuleFolder
-                {
-                    Ordering = i,
-                    Path = f.Path,
-                    Files = f.Files.Select((file, fi) => new TemplateModuleFile
-                    {
-                        Ordering = fi,
-                        Path = file.Path,
-                        Content = file.Content,
-                    }).ToList(),
-                }).ToList(),
-                DefaultModules = _form.DefaultModuleKeys
-                    .Select((k, i) => new RuntimeTemplateDefaultModule
-                    {
-                        Ordering = i,
-                        Module = new ALDevToolbox.Domain.Entities.Module { Key = k },
-                    })
-                    .ToList(),
-                DefaultApplicationVersion = string.IsNullOrWhiteSpace(_form.DefaultApplicationVersionKey)
-                    ? null
-                    : new ApplicationVersion { Key = _form.DefaultApplicationVersionKey },
-            };
-            return TemplateTomlMapper.ToToml(stub);
+            // TOML rendering is pending the Issue #54 mapper rewrite — return
+            // a placeholder so the editor surface compiles while the new
+            // [[extensions]] serialisation lands.
+            _ = defaults;
+            _ = appSourceCop;
+            return "# TOML rendering not available during the unified-extensions transition (Issue #54).\n";
         }
         catch (JsonException ex)
         {
@@ -1540,8 +1497,8 @@
                 Runtime = template.Runtime,
                 Name = template.Name,
                 Description = template.Description,
-                DefaultApplication = template.DefaultApplication,
-                DefaultPlatform = template.DefaultPlatform,
+                DefaultApplication = template.Defaults.Application,
+                DefaultPlatform = template.Defaults.Platform,
                 DefaultsJson = JsonSerializer.Serialize(template.Defaults, PrettyJson),
                 AppSourceCopJson = JsonSerializer.Serialize(template.AppSourceCop, PrettyJson),
                 CoreIdRangeFrom = template.CoreIdRangeFrom,
@@ -1551,24 +1508,12 @@
                 Deprecated = template.Deprecated,
                 DefaultApplicationVersionKey = template.DefaultApplicationVersion?.Key ?? string.Empty,
             };
-            foreach (var f in template.Folders.OrderBy(f => f.Ordering))
-            {
-                var folderRow = new FolderRow { Path = f.Path };
-                foreach (var file in f.Files.OrderBy(x => x.Ordering))
-                {
-                    folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content });
-                }
-                state.Folders.Add(folderRow);
-            }
-            foreach (var f in template.ModuleFolders.OrderBy(f => f.Ordering))
-            {
-                var folderRow = new FolderRow { Path = f.Path };
-                foreach (var file in f.Files.OrderBy(x => x.Ordering))
-                {
-                    folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content });
-                }
-                state.ModuleFolders.Add(folderRow);
-            }
+            // TODO Issue #54: rehydrate the recursive WorkspaceExtension folder
+            // tree into the legacy FolderRow/FileRow shape so the existing
+            // admin form continues to render the per-extension files. Until
+            // the editor is rewritten around the new shape, the form opens
+            // with empty folder lists; saves go through the (currently
+            // stubbed) TemplateService.UpdateAsync path.
             foreach (var d in template.DefaultModules.OrderBy(d => d.Ordering))
             {
                 if (d.Module is not null)

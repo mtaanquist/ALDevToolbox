@@ -130,10 +130,7 @@ public sealed class TemplateImportService
         var source = await _db.RuntimeTemplates
             .IgnoreQueryFilters()
             .Where(t => t.Id == systemTemplateId && t.OrganizationId == systemOrgId.Value)
-            .Include(t => t.Folders.OrderBy(f => f.Ordering))
-                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
-            .Include(t => t.ModuleFolders.OrderBy(f => f.Ordering))
-                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
+            .Include(t => t.WorkspaceExtensions.OrderBy(e => e.Ordering))
             .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
                 .ThenInclude(d => d.Module!)
                     .ThenInclude(m => m.Dependencies.OrderBy(dep => dep.Ordering))
@@ -174,6 +171,12 @@ public sealed class TemplateImportService
             localModulesByKey[sourceModule.Key] = await EnsureModuleAsync(sourceModule, actingOrgId, now, ct);
         }
 
+        // TODO Issue #54 follow-up: clone WorkspaceExtensions + folder/file
+        // recursive trees + dependencies, and ensure module ExtensionFolders
+        // are cloned alongside their parent Module. The current shape only
+        // carries the template metadata + default modules so importing a
+        // template gives the admin a starting point; per-extension content
+        // has to be re-authored until the rewrite lands.
         var clone = new RuntimeTemplate
         {
             OrganizationId = actingOrgId,
@@ -181,8 +184,6 @@ public sealed class TemplateImportService
             Runtime = source.Runtime,
             Name = source.Name,
             Description = source.Description,
-            DefaultApplication = source.DefaultApplication,
-            DefaultPlatform = source.DefaultPlatform,
             DefaultApplicationVersion = localVersion,
             Defaults = source.Defaults,
             AppSourceCop = source.AppSourceCop,
@@ -193,32 +194,6 @@ public sealed class TemplateImportService
             Deprecated = false,
             CreatedAt = now,
             UpdatedAt = now,
-            Folders = source.Folders.Select((f, i) => new TemplateFolder
-            {
-                OrganizationId = actingOrgId,
-                Ordering = i,
-                Path = f.Path,
-                Files = f.Files.Select((file, fi) => new TemplateFile
-                {
-                    OrganizationId = actingOrgId,
-                    Ordering = fi,
-                    Path = file.Path,
-                    Content = file.Content,
-                }).ToList(),
-            }).ToList(),
-            ModuleFolders = source.ModuleFolders.Select((f, i) => new TemplateModuleFolder
-            {
-                OrganizationId = actingOrgId,
-                Ordering = i,
-                Path = f.Path,
-                Files = f.Files.Select((file, fi) => new TemplateModuleFile
-                {
-                    OrganizationId = actingOrgId,
-                    Ordering = fi,
-                    Path = file.Path,
-                    Content = file.Content,
-                }).ToList(),
-            }).ToList(),
         };
 
         var ordering = 0;
@@ -238,9 +213,9 @@ public sealed class TemplateImportService
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Imported template '{Key}' from system org {SystemOrgId} into org {OrgId}: {ModuleCount} module(s), {FolderCount} folder(s), elapsed {Elapsed}ms.",
+            "Imported template '{Key}' from system org {SystemOrgId} into org {OrgId}: {ModuleCount} module(s), elapsed {Elapsed}ms.",
             clone.Key, systemOrgId.Value, actingOrgId,
-            clone.DefaultModules.Count, clone.Folders.Count + clone.ModuleFolders.Count,
+            clone.DefaultModules.Count,
             stopwatch.ElapsedMilliseconds);
 
         return clone;
