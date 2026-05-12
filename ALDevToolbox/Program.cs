@@ -103,6 +103,7 @@ builder.Services.AddScoped<TemplateImportService>();
 builder.Services.AddScoped<WorkspaceConfigService>();
 builder.Services.AddScoped<GenerationService>();
 builder.Services.AddScoped<ExportService>();
+builder.Services.AddMemoryCache();
 builder.Services.AddScoped<OrganizationConfigService>();
 builder.Services.AddScoped<AccountService>();
 builder.Services.AddScoped<InviteService>();

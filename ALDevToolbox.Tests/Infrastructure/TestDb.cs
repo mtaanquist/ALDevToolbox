@@ -5,8 +5,10 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -105,22 +107,27 @@ public sealed class TestDb : IDisposable
 
     public void Dispose()
     {
-        // Wipe the org-config cache between fixtures: it's static, so a previous
-        // test's entries would otherwise bleed into the next test's reads.
-        OrganizationConfigService.ClearCache();
+        _memoryCache.Dispose();
         // Idle pool connections hold open the per-fixture database and would
         // block DROP DATABASE; clear them before issuing the drop.
         NpgsqlConnection.ClearAllPools();
         SharedHost.Value.DropDatabase(_databaseName);
     }
 
+    private readonly MemoryCache _memoryCache = new(Options.Create(new MemoryCacheOptions()));
+
     /// <summary>
     /// Returns a fresh <see cref="OrganizationConfigService"/> for tests that
     /// don't need the live DI graph. The on-disk seed has been retired; the
     /// service no longer touches the filesystem.
+    ///
+    /// Hands the service a per-fixture <see cref="IMemoryCache"/> so parallel
+    /// xUnit fixtures — each on their own per-fixture database but inside
+    /// the same process — can't race on a shared cache slot. See issue #45
+    /// for the failure mode this isolation prevents.
     /// </summary>
     public OrganizationConfigService NewOrganizationConfigService(AppDbContext ctx) =>
-        new(ctx, OrgContext, NullLogger<OrganizationConfigService>.Instance);
+        new(ctx, OrgContext, NullLogger<OrganizationConfigService>.Instance, _memoryCache);
 
     /// <summary>
     /// Returns an <see cref="AuditInterceptor"/> wired to an empty

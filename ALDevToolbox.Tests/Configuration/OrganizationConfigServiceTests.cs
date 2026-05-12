@@ -16,7 +16,6 @@ public sealed class OrganizationConfigServiceTests : IDisposable
 {
     private readonly TestDb _db = new();
 
-    public OrganizationConfigServiceTests() => OrganizationConfigService.ClearCache();
     public void Dispose() => _db.Dispose();
 
     [Fact]

@@ -17,7 +17,6 @@ public sealed class CrossOrgConfigIsolationTests : IDisposable
 {
     private readonly TestDb _db = new();
 
-    public CrossOrgConfigIsolationTests() => OrganizationConfigService.ClearCache();
     public void Dispose() => _db.Dispose();
 
     [Fact]

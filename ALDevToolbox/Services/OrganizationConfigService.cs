@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -7,6 +6,7 @@ using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.Seed;
 using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Tomlyn;
 
 namespace ALDevToolbox.Services;
@@ -20,7 +20,10 @@ namespace ALDevToolbox.Services;
 /// hardcoded values so two organisations can have completely different
 /// pre-fills, logos and sidecar files. A small in-memory cache keyed by
 /// <c>organization_id</c> keeps the hot path off the database; cache entries
-/// are invalidated on save.
+/// are invalidated on save. The cache is an <see cref="IMemoryCache"/>
+/// resolved through DI (Singleton in production, per-fixture in tests) so
+/// parallel xUnit fixtures hitting their own databases can't race on a
+/// shared cache slot (issue #45).
 /// </summary>
 public class OrganizationConfigService
 {
@@ -35,24 +38,27 @@ public class OrganizationConfigService
     private static readonly Regex SvgScriptTagRegex = new(@"<script\b[^>]*>.*?</script\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
     private static readonly Regex SvgEventAttrRegex = new(@"\s+on[a-zA-Z]+\s*=\s*(""[^""]*""|'[^']*'|[^\s>]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    private static readonly ConcurrentDictionary<int, OrganizationConfig> Cache = new();
-
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
     private readonly ILogger<OrganizationConfigService> _logger;
+    private readonly IMemoryCache _cache;
 
     public OrganizationConfigService(
         AppDbContext db,
         IOrganizationContext orgContext,
-        ILogger<OrganizationConfigService> logger)
+        ILogger<OrganizationConfigService> logger,
+        IMemoryCache cache)
     {
         _db = db;
         _orgContext = orgContext;
         _logger = logger;
+        _cache = cache;
     }
 
     private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
         ?? throw new InvalidOperationException("No organization in scope; service mutation called outside an authenticated request.");
+
+    private static string CacheKey(int organizationId) => $"org-config:{organizationId}";
 
     /// <summary>
     /// Returns the cached or freshly-loaded <see cref="OrganizationConfig"/>
@@ -71,7 +77,8 @@ public class OrganizationConfigService
     /// </summary>
     public async Task<OrganizationConfig> GetForAsync(int organizationId, CancellationToken ct = default)
     {
-        if (Cache.TryGetValue(organizationId, out var cached)) return cached;
+        if (_cache.TryGetValue(CacheKey(organizationId), out OrganizationConfig? cached) && cached is not null)
+            return cached;
 
         var settings = await _db.OrganizationSettings
             .IgnoreQueryFilters()
@@ -95,15 +102,12 @@ public class OrganizationConfigService
             Logo: logo,
             Files: files);
 
-        Cache[organizationId] = config;
+        _cache.Set(CacheKey(organizationId), config);
         return config;
     }
 
     /// <summary>Drops the cached configuration for one organisation. Called after every write.</summary>
-    public static void InvalidateCache(int organizationId) => Cache.TryRemove(organizationId, out _);
-
-    /// <summary>Drops every cached configuration. Useful in tests.</summary>
-    public static void ClearCache() => Cache.Clear();
+    public void InvalidateCache(int organizationId) => _cache.Remove(CacheKey(organizationId));
 
     /// <summary>
     /// Persists the publisher / id-range / brief / description defaults block.

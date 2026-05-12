@@ -18,7 +18,6 @@ public sealed class ConfigExportImportRoundTripTests : IDisposable
 {
     private readonly TestDb _db = new();
 
-    public ConfigExportImportRoundTripTests() => OrganizationConfigService.ClearCache();
     public void Dispose() => _db.Dispose();
 
     [Fact]
@@ -62,7 +61,6 @@ public sealed class ConfigExportImportRoundTripTests : IDisposable
             await ctx.OrganizationAssets.ExecuteDeleteAsync();
             await ctx.OrganizationSettings.ExecuteDeleteAsync();
         }
-        OrganizationConfigService.ClearCache();
 
         // Re-import.
         await using (var ctx = _db.NewContext())
