@@ -114,10 +114,65 @@ From the issue body:
 ## What's left
 
 The two AC-critical bullets and the design-doc rewrite landed in the
-continuation session. Remaining items are housekeeping and a follow-up PR.
-In rough priority order:
+continuation session. What remains splits into **user-facing gaps that
+block a complete end-to-end flow** and **internal cleanup**.
 
-### 1. Test cleanup: retire the `#if false` files
+### User-facing gaps (block the complete end-to-end flow)
+
+#### 1. Structured admin folder/file editor (biggest gap, its own PR)
+
+The big remaining piece. `Components/Pages/Admin/AdminTemplateEdit.razor`'s
+`FormState` carries flat-path `Folders` / `ModuleFolders` collections with
+`FolderRow` / `FileRow` shapes that don't fit the recursive tree. Saving
+from the structured form path throws `NotImplementedException` (the
+service overload throws); the page catches it with a "use the TOML tab"
+message.
+
+Today **admins can only author via TOML**. The TOML editor works end-to-
+end (parse → persist → generate is pinned by `WorkspaceEndToEndTests`),
+but admins who prefer the structured form are blocked until a tree editor
+component lands. Suggested shape: `Components/Shared/RecursiveFolderEditor.razor`
+that lets admins add / remove / nest folders and attach files at any depth.
+When it lands, the cleanest move is to delete `TemplateInput` and its
+overloads, then route the form's `ToInput()` directly to
+`TemplateAuthoring`. Probably its own PR — material UI work, not a polish
+pass.
+
+#### 2. Recursive preview in the UI
+
+Currently stubbed:
+
+- `Components/Pages/TemplateDetail.razor` — `BuildTree` returns a single
+  empty `PreviewNode.Extension(template.Key, [])` placeholder. Walk
+  `template.WorkspaceExtensions` and each extension's recursive folder
+  tree.
+- `Components/Pages/NewWorkspace.razor` — `BuildExtensionNode` only emits
+  `app.json` + `AppSourceCop.json` + fallback folders. Walk the active
+  template's extensions / their folder trees.
+- `Components/Pages/NewExtension.razor` — same.
+
+Generation itself works without these — this is the "look before you
+click" UX that's missing. End-users see a placeholder folder tree when
+picking a template rather than the real per-extension layout. Smaller
+than item 1; roughly half a day.
+
+#### 3. Migration data-loss advisory (release note, not code)
+
+The migration is forward-only and **lossy on the module side**. The
+pre-unified `template_module_folders` rows were shared per-template across
+every module the template default-selects; the rewrite fans them out onto
+every module in each template's `default_modules` list. Modules that
+aren't in any default list end up with empty folder trees.
+
+For real deployments upgrading from a pre-unified DB: an admin needs to
+look over the cloned module content after the migration runs and either
+accept it or edit/empty modules that don't actually need that scaffolding.
+Not code work — release-note / upgrade-guide work. Don't ship the
+migration to production without flagging this.
+
+### Internal cleanup (doesn't affect users)
+
+#### 4. Test cleanup: retire the `#if false` files
 
 These four files have their coverage fully replaced by the new tests:
 
@@ -137,37 +192,6 @@ These four files have their coverage fully replaced by the new tests:
 Pure deletion is fine for the three Generation/Toml files. For the
 AuditInterceptorTests pair, either rewrite (~30 min) or delete with a
 follow-on issue.
-
-### 2. Recursive preview in the UI
-
-Currently stubbed:
-
-- `Components/Pages/TemplateDetail.razor` — `BuildTree` returns a single
-  empty `PreviewNode.Extension(template.Key, [])` placeholder. Walk
-  `template.WorkspaceExtensions` and each extension's recursive folder
-  tree.
-- `Components/Pages/NewWorkspace.razor` — `BuildExtensionNode` only emits
-  `app.json` + `AppSourceCop.json` + fallback folders. Walk the active
-  template's extensions / their folder trees.
-- `Components/Pages/NewExtension.razor` — same.
-
-These are UI polish — functionality works without them, the preview just
-shows a placeholder structure. Not blocking; nice to have.
-
-### 3. Structured admin folder/file editor UI (deferred)
-
-The big remaining piece. `Components/Pages/Admin/AdminTemplateEdit.razor`'s
-`FormState` carries flat-path `Folders` / `ModuleFolders` collections with
-`FolderRow` / `FileRow` shapes that don't fit the recursive tree. Saving
-from the structured form path throws `NotImplementedException` (the
-service overload throws); the page catches it with a "use the TOML tab"
-message.
-
-The proper rewrite would be a tree editor component
-(`Components/Shared/RecursiveFolderEditor.razor` maybe) that lets admins
-add / remove / nest folders and attach files at any depth. Probably its
-own PR — material UI work, not a polish pass. The TOML pane is the working
-authoring path until then.
 
 ## Gotchas worth knowing
 
@@ -237,9 +261,9 @@ separate types. Both `TemplateService.CreateAsync` / `UpdateAsync` have
 two overloads — one per type. The `TemplateInput` overloads throw
 `NotImplementedException` until the structured form editor is rewritten.
 
-When the structured editor lands (item 3 above), the cleanest move is to
-delete `TemplateInput` and its overloads, then route the form's
-`ToInput()` directly to `TemplateAuthoring`.
+When the structured editor lands (item 1 in "User-facing gaps"), the
+cleanest move is to delete `TemplateInput` and its overloads, then route
+the form's `ToInput()` directly to `TemplateAuthoring`.
 
 ## How to pick up
 
@@ -247,7 +271,9 @@ delete `TemplateInput` and its overloads, then route the form's
 2. Read `.design/unified-extensions.md` for the spec.
 3. Read this file for the implementation state.
 4. `dotnet test` to confirm CI-green baseline locally.
-5. Pick an item from "What's left" — all three are housekeeping the PR
-   description can call out as follow-ups, with item 3 (structured editor)
-   being its own PR's worth of work.
+5. Pick an item from "What's left". The "user-facing gaps" section
+   blocks a complete end-to-end flow; item 1 (structured editor) is its
+   own PR's worth of work, item 2 (preview) is ~half a day, item 3
+   (migration advisory) is release-note work. The "internal cleanup"
+   section doesn't affect users.
 6. Watch CI on PR #56 via the `subscribe_pr_activity` MCP tool.
