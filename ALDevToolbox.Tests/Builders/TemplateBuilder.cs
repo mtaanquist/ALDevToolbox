@@ -1,5 +1,6 @@
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services;
 
 namespace ALDevToolbox.Tests.Builders;
 
@@ -34,6 +35,7 @@ public static class TemplateBuilder
         CoreIdRangeTo = 90999,
         ModuleIdRangeStart = 91000,
         ModuleIdRangeSize = 200,
+        CodeWorkspaceContent = GenerationService.DefaultCodeWorkspaceContent,
         CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
         UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
     };

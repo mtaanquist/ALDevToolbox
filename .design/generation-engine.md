@@ -74,7 +74,8 @@ AcmeCustomer/
 1. Load the runtime template by key.
 2. Load all selected modules with their dependencies.
 3. Generate Core extension:
-     a. Build app.json from template.defaults + project plan
+     a. Build app.json from template.defaults + project plan (the one
+        computed file in the whole ZIP — see "app.json construction" below).
      b. Walk template.folders (Core-only) — for each row:
           - A row whose `path` is empty is the **extension root** (e.g. for
             AppSourceCop.json). Its files land directly next to app.json.
@@ -84,20 +85,20 @@ AcmeCustomer/
                 for `.al` files).
           - If a subfolder ends up with no emitted files, create a .gitkeep.
             The root folder never gets a .gitkeep (app.json lives there).
-     c. Add libs/.gitkeep, permissionsets/.gitkeep, Translations/.gitkeep,
-        unless the template declared them (directly as a [[folders]] entry,
-        or indirectly via a root-folder file under that name).
+     c. (No static fallback folders.) The generator emits exactly what the
+        template declares. Templates that want `libs/`, `permissionsets/`
+        or `Translations/` declare them as `[[folders]]` rows — BlankToml()
+        seeds them for new templates, and existing templates were
+        backfilled by migration <c>20260514150000_AddCodeWorkspaceContent</c>.
 4. For each selected module (in order):
      a. Compute its ID range from template.module_id_range_start + (index * module_id_range_size)
      b. Build app.json including:
           - dependencies = [Core] ++ module's own dependencies
           - the computed ID range
-     c. Walk template.module_folders — same root/subfolder/is_example rules as
-        step 3b, but sourced from template_module_folders / template_module_files.
-        Empty by default, so out-of-the-box modules ship with just app.json
-        and the static fallback folders. Admins can opt in to module
-        scaffolding (including an AppSourceCop.json) via the Module folders
-        editor on the template.
+     c. Walk template.module_folders — same root/subfolder/is_example rules
+        as step 3b. Empty by default, so out-of-the-box modules ship with
+        just app.json. Admins opt in to module scaffolding (including an
+        AppSourceCop.json) via the Module folders editor on the template.
 5. Generate root files:
      a. .gitignore (static — see template-and-seeding.md for content; lives as a string constant or embedded resource)
      b. {WorkspaceName}.code-workspace (see below)
@@ -150,6 +151,27 @@ via `[[module_folders]] path = ""`; admins typically do this only for
 templates whose modules are published to AppSource. PTE-style templates
 simply omit the root file entirely.
 
+## "Emit only what the TOML declares"
+
+The generator is a strict mapping from `template.toml` (plus the workspace
+plan and the org-level files surfaced via the `/admin/organization/files`
+UI) to the output ZIP. With one exception (`app.json`, see above), no file
+appears in the ZIP that the template did not declare. The rule is the
+clearest answer the project has to "where does this file come from in the
+generated workspace?" — read the template TOML or the org files; you'll
+find it there or it isn't emitted.
+
+Concrete consequences:
+- Static fallback folders (`libs/`, `permissionsets/`, `Translations/` +
+  `.gitkeep`) are no longer emitted automatically. The BlankToml() starter
+  declares them so new templates ship with the standard AL layout; existing
+  templates were backfilled by migration on the AppSourceCop rework PR.
+- `AppSourceCop.json` is declared as a regular `[[folders.files]]` entry
+  under a folder with an empty `path`. PTE-style templates omit the row.
+- The `.code-workspace` content is template-editable (see below). The
+  generator only substitutes `{{paths}}`; everything else (settings,
+  analyzers, ruleset path, recommended extensions) is the admin's call.
+
 ## `.code-workspace` construction
 
 A JSON file with:
@@ -178,7 +200,7 @@ A JSON file with:
 }
 ```
 
-The `settings` block can live as a static C# string constant. The `folders` array is dynamic.
+The content above is the **default** stamped onto new templates (and onto existing ones by the migration). It is editable per template through the `code_workspace_content` field on `runtime_templates` — admins can change settings, swap analyzers, add a `recommendations` block for VS Code extensions, etc. The generator only does one substitution: `{{paths}}` expands to the workspace's folder entries (Core + every selected module, in display order). Validation requires the content to be non-empty and to contain `{{paths}}`.
 
 Module folder paths in the workspace match the on-disk folder names — module names with spaces collapse: `"Document Capture"` → `"DocumentCapture"`. This matches the existing tool's behaviour (see `script.js`'s `module.replace(/\s+/g, '')`).
 
@@ -198,6 +220,7 @@ Run mustache substitution on the `content` of every `template_files` row whose `
 | `{{affix}}`          | The `affix` field from `defaults_json`, always (regardless of `affixType`). |
 | `{{namespace}}`      | The current folder's path, dot-separated. e.g. "Source/Foundation" → "Source.Foundation". Used for AL `namespace` declarations. |
 | `{{guid}}`           | A freshly generated GUID per substitution call. Use sparingly — prefer letting the implementer hand-author GUIDs in example files. |
+| `{{paths}}`          | **Only valid inside `code_workspace_content`.** Expands to the workspace's folder-array entries (`{ "path": "Core" },` …). Empty/no-op everywhere else. |
 
 If a variable in the template isn't recognised, leave it as-is (don't crash). Log a warning.
 

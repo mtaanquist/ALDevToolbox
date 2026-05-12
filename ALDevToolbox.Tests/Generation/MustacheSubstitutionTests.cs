@@ -236,6 +236,53 @@ public sealed class MustacheSubstitutionTests : IDisposable
     }
 
     [Fact]
+    public async Task Code_workspace_content_is_emitted_with_paths_substituted()
+    {
+        var template = TemplateBuilder.Default();
+        template.CodeWorkspaceContent = """
+{
+  "folders": [
+{{paths}}
+  ],
+  "settings": { "editor.formatOnSave": true }
+}
+""";
+        await SeedTemplateAsync(template);
+
+        var service = NewService();
+        var archive = await service.GenerateWorkspaceAsync(
+            PlanBuilder.WorkspacePlan(workspaceName: "Acme Customer"));
+        using var zip = new ZipArchive(archive.Stream, ZipArchiveMode.Read);
+
+        var entry = zip.GetEntry("AcmeCustomer/AcmeCustomer.code-workspace");
+        entry.Should().NotBeNull();
+        using var reader = new StreamReader(entry!.Open());
+        var content = await reader.ReadToEndAsync();
+
+        content.Should().Contain("\"path\": \"Core\"");
+        content.Should().Contain("\"editor.formatOnSave\": true");
+        content.Should().NotContain("{{paths}}");
+    }
+
+    [Fact]
+    public async Task Generator_emits_no_static_fallback_folders()
+    {
+        // The generator no longer adds libs/permissionsets/Translations
+        // automatically — they only appear if the template declares them.
+        // TemplateBuilder.Default() ships an empty folder list.
+        var template = TemplateBuilder.Default();
+        await SeedTemplateAsync(template);
+
+        var service = NewService();
+        var archive = await service.GenerateWorkspaceAsync(PlanBuilder.WorkspacePlan());
+        using var zip = new ZipArchive(archive.Stream, ZipArchiveMode.Read);
+
+        zip.GetEntry("AcmeCustomer/Core/libs/.gitkeep").Should().BeNull();
+        zip.GetEntry("AcmeCustomer/Core/permissionsets/.gitkeep").Should().BeNull();
+        zip.GetEntry("AcmeCustomer/Core/Translations/.gitkeep").Should().BeNull();
+    }
+
+    [Fact]
     public async Task Nested_folder_paths_become_dotted_namespaces()
     {
         var template = TemplateBuilder.Default()

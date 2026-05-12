@@ -60,8 +60,12 @@ Tomlyn deserialises directly into POCOs. `Domain/Seed/` carries the mirrored typ
 class TemplateSeed {
     public TemplateMetaSeed Template { get; set; }
     public DefaultsSeed Defaults { get; set; }      // includes the template-wide affix + affixType block
+    public CodeWorkspaceSeed CodeWorkspace { get; set; }  // verbatim .code-workspace content with {{paths}} placeholder
     public List<FolderSeed> Folders { get; set; }
     public List<FolderSeed> ModuleFolders { get; set; }
+}
+class CodeWorkspaceSeed {
+    public string Content { get; set; }            // emitted as a TOML multi-line basic string in the [code_workspace] table
 }
 class FolderSeed {
     public string Path { get; set; }       // empty string == extension root (files land next to app.json)
@@ -115,6 +119,28 @@ affixType = "Prefix"             # "Prefix" or "Suffix" — decides which of {{p
 allowDebugging = true
 allowDownloadingSource = false
 includeSourceInSymbolFile = true
+
+# Required: verbatim .code-workspace content. The generator substitutes
+# {{paths}} with the workspace's folder entries (Core + every selected
+# module). Everything else — settings, analyzers, ruleset path,
+# recommended extensions — is yours to customise per template.
+[code_workspace]
+content = """
+{
+  "folders": [
+{{paths}}
+  ],
+  "settings": {
+    "editor.formatOnSave": true,
+    "al.codeAnalyzers": ["${CodeCop}", "${AppSourceCop}", "${UICop}"],
+    "al.enableCodeAnalysis": true,
+    "al.ruleSetPath": "../.assets/rulesets/Company.ruleset.json"
+  },
+  "extensions": {
+    "recommendations": ["ms-dynamics-smb.al"]
+  }
+}
+"""
 
 # Required: array of folder definitions, in display order. These are emitted
 # into the Core extension only (and into the single extension produced by the
@@ -236,6 +262,7 @@ These are the variables available when seeding example AL files into a generated
 | `{{affix}}`          | `affix` from defaults, always                 |
 | `{{namespace}}`      | The folder path, dot-separated                |
 | `{{guid}}`           | A fresh GUID per call                         |
+| `{{paths}}`          | `.code-workspace` content only: workspace's folder entries |
 
 ## TOML as an authoring surface
 

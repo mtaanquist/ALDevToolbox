@@ -217,6 +217,7 @@ public class TemplateService
             ModuleIdRangeSize = input.ModuleIdRangeSize,
             Deprecated = input.Deprecated,
             DefaultApplicationVersionId = defaultApplicationVersionId,
+            CodeWorkspaceContent = input.CodeWorkspaceContent ?? string.Empty,
             CreatedAt = now,
             UpdatedAt = now,
             DeletedAt = null,
@@ -307,6 +308,7 @@ public class TemplateService
         existing.ModuleIdRangeSize = input.ModuleIdRangeSize;
         existing.Deprecated = input.Deprecated;
         existing.DefaultApplicationVersionId = defaultApplicationVersionId;
+        existing.CodeWorkspaceContent = input.CodeWorkspaceContent ?? string.Empty;
         // Drop the cached navigation reference so EF doesn't get confused if a
         // previously-attached ApplicationVersion is still tracked.
         existing.DefaultApplicationVersion = null;
@@ -886,6 +888,21 @@ public class TemplateService
             errors[nameof(input.DefaultsJson)] = $"Defaults JSON is invalid: {ex.Message}";
         }
 
+        // .code-workspace content must be non-empty (the generator writes
+        // exactly what the template declares, so an empty string would
+        // produce a broken .code-workspace) and must carry the {{paths}}
+        // placeholder so generation has somewhere to insert the workspace's
+        // Core + module folder entries.
+        if (string.IsNullOrWhiteSpace(input.CodeWorkspaceContent))
+        {
+            errors[nameof(input.CodeWorkspaceContent)] = ".code-workspace content is required.";
+        }
+        else if (!input.CodeWorkspaceContent.Contains("{{paths}}", StringComparison.Ordinal))
+        {
+            errors[nameof(input.CodeWorkspaceContent)] =
+                ".code-workspace content must contain {{paths}} — the generator substitutes it with the workspace's folder list.";
+        }
+
         // Case-insensitive uniqueness for folders and files: Windows treats
         // 'src/Foo' and 'src/foo' as the same path, so admitting both would
         // fail at extraction time. Mirror that here. Same rules apply to
@@ -986,6 +1003,7 @@ public record TemplateInput(
     IReadOnlyList<string> DefaultModuleKeys,
     IReadOnlyList<TemplateFolderInput> Folders,
     IReadOnlyList<TemplateFolderInput> ModuleFolders,
+    string CodeWorkspaceContent,
     string? DefaultApplicationVersionKey = null);
 
 /// <summary>One folder row submitted by the admin folder editor, with its files.</summary>

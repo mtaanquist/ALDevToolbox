@@ -45,6 +45,7 @@ The primary template entity — corresponds one-to-one with a runtime version (o
 | `default_application`   | TEXT NOT NULL  | e.g. "24.0.0.0" — pre-fills the form               |
 | `default_platform`      | TEXT NOT NULL  | e.g. "1.0.0.0"                                     |
 | `defaults_json`         | TEXT NOT NULL  | JSON blob of remaining `app.json` defaults (target, features, supportedLocales, url, logo, resourceExposurePolicy) plus the template-wide affix block (`affix` string, `affixType` "Prefix" \| "Suffix") that drives the `{{prefix}}` / `{{suffix}}` / `{{affix}}` mustache vars. The `app_source_cop_json` column was retired — templates that need an AppSourceCop.json declare it as a regular `template_files` row under a folder with empty `path`. |
+| `code_workspace_content`| TEXT NOT NULL  | Verbatim content for the `{WorkspaceName}.code-workspace` file. Substitutes `{{paths}}` at generation time with the workspace's folder entries; everything else is editable per template (analyzers, ruleset path, recommended VS Code extensions). Validation: non-empty and must contain `{{paths}}`. |
 | `core_id_range_from`    | INTEGER NOT NULL | Default 90000                                    |
 | `core_id_range_to`      | INTEGER NOT NULL | Default 90999                                    |
 | `module_id_range_start` | INTEGER NOT NULL | Default 91000 — first module gets this           |

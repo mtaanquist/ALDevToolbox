@@ -23,15 +23,31 @@ public class TemplateSeed
     public TemplateMetaSeed Template { get; set; } = new();
     public DefaultsSeed Defaults { get; set; } = new();
 
+    /// <summary>
+    /// The <c>[code_workspace]</c> table — verbatim <c>.code-workspace</c>
+    /// content with a <c>{{paths}}</c> placeholder for the generator to
+    /// expand. Round-trips through both the admin TOML editor and the export
+    /// bundle so admins can edit per-template VS Code settings, analyzer
+    /// lists, ruleset paths and extension recommendations.
+    /// </summary>
+    [TomlPropertyName("code_workspace")]
+    public CodeWorkspaceSeed CodeWorkspace { get; set; } = new();
+
     public List<FolderSeed> Folders { get; set; } = new();
 
     /// <summary>
     /// <c>[[module_folders]]</c> entries — the folder layout emitted into every
-    /// generated module extension. Empty by default; if omitted, modules ship
-    /// with just their <c>app.json</c> and the static fallback folders.
-    /// Same shape as <see cref="Folders"/>.
+    /// generated module extension. Empty by default. Same shape as
+    /// <see cref="Folders"/>.
     /// </summary>
     public List<FolderSeed> ModuleFolders { get; set; } = new();
+}
+
+/// <summary>The <c>[code_workspace]</c> table — see <see cref="TemplateSeed.CodeWorkspace"/>.</summary>
+public class CodeWorkspaceSeed
+{
+    /// <summary>Verbatim file content; emitted as a TOML multi-line basic string for readability.</summary>
+    public string Content { get; set; } = string.Empty;
 }
 
 /// <summary>The <c>[template]</c> table — identifying metadata and id ranges.</summary>

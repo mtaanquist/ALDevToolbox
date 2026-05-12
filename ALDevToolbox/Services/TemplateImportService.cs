@@ -192,6 +192,7 @@ public sealed class TemplateImportService
             Deprecated = false,
             CreatedAt = now,
             UpdatedAt = now,
+            CodeWorkspaceContent = source.CodeWorkspaceContent,
             Folders = source.Folders.Select((f, i) => new TemplateFolder
             {
                 OrganizationId = actingOrgId,

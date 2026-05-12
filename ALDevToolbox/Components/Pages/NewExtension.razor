@@ -511,27 +511,11 @@
             contents.AddRange(PreviewTreeBuilder.BuildFolderChildren(entries));
         }
 
-        AddFallbackFolder(contents, "libs");
-        AddFallbackFolder(contents, "permissionsets");
-        AddFallbackFolder(contents, "Translations");
+        // The generator no longer adds static fallback folders — the preview
+        // mirrors only what the template declares.
 
         var node = PreviewNode.Extension(folderName, contents);
         return isNew ? node with { IsNew = true } : node;
-    }
-
-    /// <summary>
-    /// Adds <paramref name="name"/> as a placeholder folder unless the template
-    /// already contributed a folder whose top-level segment matches case-
-    /// insensitively. See <c>NewWorkspace.razor</c> for the same comment.
-    /// </summary>
-    private static void AddFallbackFolder(List<PreviewNode> contents, string name)
-    {
-        if (contents.Any(n => n.Kind != PreviewNodeKind.File
-                              && string.Equals(n.Name, name, StringComparison.OrdinalIgnoreCase)))
-        {
-            return;
-        }
-        contents.Add(PreviewNode.Folder(name, new[] { PreviewNode.File(".gitkeep") }));
     }
 
     private List<PreviewNode> LeafFilesFromFiles(IEnumerable<TemplateFile> files) =>

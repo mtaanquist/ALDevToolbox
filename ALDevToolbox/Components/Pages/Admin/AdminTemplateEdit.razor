@@ -284,6 +284,20 @@
             </section>
 
             <section class="form-section">
+                <label class="section-label" for="tpl-codeworkspace">.code-workspace content</label>
+                <textarea id="tpl-codeworkspace" class="json-editor" rows="14" spellcheck="false" required
+                          @bind="_form.CodeWorkspaceContent" @bind:event="oninput"></textarea>
+                <small class="muted">
+                    Verbatim content written to <code>{WorkspaceName}.code-workspace</code>.
+                    Must contain <code>@("{{paths}}")</code>, which the generator replaces
+                    with the workspace's folder entries (Core + every selected module).
+                    Everything else — settings, analyzers, ruleset path, recommended
+                    extensions — is yours to customise per template.
+                </small>
+                <FieldError Field="CodeWorkspaceContent" Errors="_fieldErrors" />
+            </section>
+
+            <section class="form-section">
                 <label class="check-row">
                     <input type="checkbox" @bind="_form.Deprecated" />
                     <span>Deprecated — hide from the user-facing dropdown but keep available for admin regeneration.</span>
@@ -642,6 +656,11 @@
                             <dd>Current folder path with <code>/</code> replaced by <code>.</code>.</dd>
                             <dt><code>@("{{guid}}")</code></dt>
                             <dd>Freshly generated GUID per occurrence.</dd>
+                            <dt><code>@("{{paths}}")</code></dt>
+                            <dd>
+                                In <code>.code-workspace content</code> only: expands to the workspace's folder
+                                entries (Core + every selected module), formatted as JSON array members.
+                            </dd>
                         </dl>
                     </div>
                 </details>
@@ -1336,6 +1355,7 @@
                 DefaultApplication = _form.DefaultApplication,
                 DefaultPlatform = _form.DefaultPlatform,
                 Defaults = defaults,
+                CodeWorkspaceContent = _form.CodeWorkspaceContent,
                 CoreIdRangeFrom = _form.CoreIdRangeFrom,
                 CoreIdRangeTo = _form.CoreIdRangeTo,
                 ModuleIdRangeStart = _form.ModuleIdRangeStart,
@@ -1566,6 +1586,15 @@
         public string DefaultApplication { get; set; } = string.Empty;
         public string DefaultPlatform { get; set; } = "1.0.0.0";
         public string DefaultsJson { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Verbatim <c>.code-workspace</c> content for this template. Carries
+        /// a <c>{{paths}}</c> placeholder that the generator substitutes at
+        /// write time; everything else (settings, analyzers, recommended
+        /// extensions) is edited freely per template.
+        /// </summary>
+        public string CodeWorkspaceContent { get; set; } = string.Empty;
+
         public int CoreIdRangeFrom { get; set; }
         public int CoreIdRangeTo { get; set; }
         public int ModuleIdRangeStart { get; set; }
@@ -1599,6 +1628,7 @@
             var state = new FormState
             {
                 DefaultsJson = JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson),
+                CodeWorkspaceContent = GenerationService.DefaultCodeWorkspaceContent,
                 CoreIdRangeFrom = 90000,
                 CoreIdRangeTo = 90999,
                 ModuleIdRangeStart = 91000,
@@ -1633,6 +1663,7 @@
                 DefaultApplication = template.DefaultApplication,
                 DefaultPlatform = template.DefaultPlatform,
                 DefaultsJson = JsonSerializer.Serialize(template.Defaults, PrettyJson),
+                CodeWorkspaceContent = template.CodeWorkspaceContent,
                 CoreIdRangeFrom = template.CoreIdRangeFrom,
                 CoreIdRangeTo = template.CoreIdRangeTo,
                 ModuleIdRangeStart = template.ModuleIdRangeStart,
@@ -1688,6 +1719,9 @@
                 DefaultsJson = string.IsNullOrWhiteSpace(input.DefaultsJson)
                     ? JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson)
                     : Reformat(input.DefaultsJson, JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson)),
+                CodeWorkspaceContent = string.IsNullOrEmpty(input.CodeWorkspaceContent)
+                    ? GenerationService.DefaultCodeWorkspaceContent
+                    : input.CodeWorkspaceContent,
                 CoreIdRangeFrom = input.CoreIdRangeFrom,
                 CoreIdRangeTo = input.CoreIdRangeTo,
                 ModuleIdRangeStart = input.ModuleIdRangeStart,
@@ -1760,6 +1794,7 @@
             ModuleFolders: ModuleFolders.Select(f => new TemplateFolderInput(
                 f.Path,
                 f.Files.Select(x => new TemplateFileInput(x.Path, x.Content, x.IsExample)).ToList())).ToList(),
+            CodeWorkspaceContent: CodeWorkspaceContent,
             DefaultApplicationVersionKey: string.IsNullOrWhiteSpace(DefaultApplicationVersionKey)
                 ? null
                 : DefaultApplicationVersionKey);

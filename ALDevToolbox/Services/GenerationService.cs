@@ -31,21 +31,31 @@ public class GenerationService
     /// <summary>The ForNAV publisher value used when matching catalogue rows for the "include ForNAV" option.</summary>
     private const string ForNavPublisher = "ForNAV";
 
-    /// <summary>The fixed <c>settings</c> block written into <c>.code-workspace</c>.</summary>
-    private const string WorkspaceSettingsJson = """
+    /// <summary>
+    /// Starter <c>.code-workspace</c> content stamped onto new templates by
+    /// the migration. The <c>{{paths}}</c> placeholder expands at generation
+    /// time to the workspace's folder-array entries (Core + every selected
+    /// module); admins can edit anything else freely per template.
+    /// </summary>
+    public const string DefaultCodeWorkspaceContent = """
 {
-  "editor.formatOnSave": true,
-  "editor.autoIndent": "full",
-  "editor.detectIndentation": false,
-  "editor.tabSize": 4,
-  "editor.insertSpaces": true,
-  "al.codeAnalyzers": [
-    "${CodeCop}",
-    "${AppSourceCop}",
-    "${UICop}"
+  "folders": [
+{{paths}}
   ],
-  "al.enableCodeAnalysis": true,
-  "al.ruleSetPath": "../.assets/rulesets/Company.ruleset.json"
+  "settings": {
+    "editor.formatOnSave": true,
+    "editor.autoIndent": "full",
+    "editor.detectIndentation": false,
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+    "al.codeAnalyzers": [
+      "${CodeCop}",
+      "${AppSourceCop}",
+      "${UICop}"
+    ],
+    "al.enableCodeAnalysis": true,
+    "al.ruleSetPath": "../.assets/rulesets/Company.ruleset.json"
+  }
 }
 """;
 
@@ -175,7 +185,8 @@ public class GenerationService
             await WriteEmbeddedAsync(archive, $"{rootFolder}/.gitignore", "ALDevToolbox.Resources.al.gitignore", ct);
             var workspaceFolderList = new List<string> { "Core" };
             workspaceFolderList.AddRange(moduleInfos.Select(m => m.FolderName));
-            WriteString(archive, $"{rootFolder}/{shortName}.code-workspace", BuildCodeWorkspace(workspaceFolderList));
+            WriteString(archive, $"{rootFolder}/{shortName}.code-workspace",
+                BuildCodeWorkspace(template.CodeWorkspaceContent, workspaceFolderList));
             WriteString(archive, $"{rootFolder}/README.md", BuildReadme(plan));
             // Save the form-post shape plus per-extension identities (Core +
             // every module) alongside the ZIP so a sibling-extension import
@@ -292,7 +303,8 @@ public class GenerationService
                         .Concat(siblingModules.Select(m => StripWhitespace(m.Name)))
                         .ToList();
                 workspaceFolders.Add(folderName);
-                WriteString(archive, workspaceFile, BuildCodeWorkspace(workspaceFolders));
+                WriteString(archive, workspaceFile,
+                    BuildCodeWorkspace(template.CodeWorkspaceContent, workspaceFolders));
                 fileCount++;
             }
         }
@@ -338,48 +350,10 @@ public class GenerationService
         WriteString(archive, $"{rootRelative}/app.json", appJson);
         var fileCount = 1;
 
-        // Top-level folders the caller's folder list already declares
-        // (case-insensitive), so the static fallback folders below don't
-        // collide on Windows extraction. Without this, a folder list that
-        // lays out 'translations' would extract alongside our hardcoded
-        // 'Translations/.gitkeep' and produce two folders that resolve to
-        // the same path. Root-folder files (Path == "") contribute their
-        // own first-segment claims so e.g. a root file at libs/Foo.al
-        // suppresses the static libs/ fallback the same way.
-        var declaredTops = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var f in folders)
-        {
-            if (string.IsNullOrEmpty(f.Path))
-            {
-                foreach (var file in f.Files)
-                {
-                    var seg = file.Path.Split('/', 2)[0];
-                    if (!string.IsNullOrEmpty(seg))
-                    {
-                        declaredTops.Add(seg);
-                    }
-                }
-            }
-            else
-            {
-                declaredTops.Add(f.Path.Split('/', 2)[0]);
-            }
-        }
-        if (!declaredTops.Contains("libs"))
-        {
-            WriteEmptyFile(archive, $"{rootRelative}/libs/.gitkeep");
-            fileCount++;
-        }
-        if (!declaredTops.Contains("permissionsets"))
-        {
-            WriteEmptyFile(archive, $"{rootRelative}/permissionsets/.gitkeep");
-            fileCount++;
-        }
-        if (!declaredTops.Contains("Translations"))
-        {
-            WriteEmptyFile(archive, $"{rootRelative}/Translations/.gitkeep");
-            fileCount++;
-        }
+        // The generator emits exactly what the template declares — there are
+        // no static fallback folders any more. Templates that want `libs/`,
+        // `permissionsets/` or `Translations/` declare them as [[folders]]
+        // rows (BlankToml() seeds them so new templates already do).
 
         foreach (var folder in folders)
         {
@@ -678,27 +652,35 @@ public class GenerationService
     // ===== Code-workspace + README =====
 
     /// <summary>
-    /// Serialises a <c>.code-workspace</c> JSON document with the given list
-    /// of folder paths (workspace-relative, in display order) plus the fixed
-    /// editor/AL settings. Used by both the workspace flow (Core + modules)
-    /// and the sibling-extension flow (Core + every existing module + the
-    /// new extension).
+    /// Produces a <c>.code-workspace</c> document by substituting the
+    /// workspace's folder list into the template's editable
+    /// <c>code_workspace_content</c>. The string carries the JSON shape
+    /// verbatim; <c>{{paths}}</c> is the only generator-supplied
+    /// substitution and expands to a comma-separated list of
+    /// <c>{ "path": "..." }</c> entries indented to match the surrounding
+    /// JSON. Admins can ship per-template VS Code settings, analyzer lists,
+    /// ruleset paths and extension recommendations through this same string.
     /// </summary>
-    private static string BuildCodeWorkspace(IReadOnlyList<string> folderPaths)
+    private static string BuildCodeWorkspace(string templateContent, IReadOnlyList<string> folderPaths)
     {
-        var folders = new JsonArray();
-        foreach (var path in folderPaths)
-        {
-            folders.Add(new JsonObject { ["path"] = path });
-        }
+        // Two-space indent inside a four-space "folders" array gives a six-
+        // space leading indent that matches the surrounding JSON when the
+        // admin keeps the default content. Templates that re-indent the
+        // {{paths}} marker get whatever indentation they choose — the
+        // substitution doesn't normalise.
+        var entries = string.Join(
+            ",\n",
+            folderPaths.Select(p => $"    {{ \"path\": \"{EscapeJsonStringContent(p)}\" }}"));
+        return templateContent.Replace("{{paths}}", entries, StringComparison.Ordinal);
+    }
 
-        var settings = JsonNode.Parse(WorkspaceSettingsJson)!.AsObject();
-        var root = new JsonObject
-        {
-            ["folders"] = folders,
-            ["settings"] = settings,
-        };
-        return SerializeIndented(root);
+    private static string EscapeJsonStringContent(string value)
+    {
+        // Folder names come from Core + module display names; we don't
+        // expect control characters or quotes, but escape the obvious
+        // troublemakers so a stray name like `My "Module"` can't break
+        // JSON parsing downstream.
+        return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
     }
 
     /// <summary>

@@ -442,26 +442,13 @@
             contents.AddRange(PreviewTreeBuilder.BuildFolderChildren(entries));
         }
 
-        // Hardcoded fallback folders. Each one only goes in if the template
-        // didn't already declare a folder with the same case-insensitive name —
-        // Windows would treat 'translations' and 'Translations' as the same
-        // folder, so emitting both would collide on extraction and look
-        // duplicated in the preview.
-        AddFallbackFolder(contents, "libs");
-        AddFallbackFolder(contents, "permissionsets");
-        AddFallbackFolder(contents, "Translations");
+        // The generator no longer adds static fallback folders — the
+        // preview matches the ZIP byte-for-byte by reflecting only what the
+        // template declares (BlankToml seeds libs/, permissionsets/ and
+        // Translations/ for new templates, and existing templates have been
+        // backfilled by migration).
 
         return PreviewNode.Extension(folderName, contents);
-    }
-
-    private static void AddFallbackFolder(List<PreviewNode> contents, string name)
-    {
-        if (contents.Any(n => n.Kind != PreviewNodeKind.File
-                              && string.Equals(n.Name, name, StringComparison.OrdinalIgnoreCase)))
-        {
-            return;
-        }
-        contents.Add(PreviewNode.Folder(name, new[] { PreviewNode.File(".gitkeep") }));
     }
 
     private List<PreviewNode> LeafFilesFromFiles(IEnumerable<TemplateFile> files) =>

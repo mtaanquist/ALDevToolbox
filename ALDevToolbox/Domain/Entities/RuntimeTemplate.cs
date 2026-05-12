@@ -80,6 +80,19 @@ public class RuntimeTemplate
     public int ModuleIdRangeSize { get; set; }
 
     /// <summary>
+    /// Verbatim content written to <c>{WorkspaceName}.code-workspace</c> at
+    /// the generated workspace root. The string passes through mustache
+    /// substitution at generation time, with <c>{{paths}}</c> expanding to
+    /// the workspace's folder-array entries (Core + every selected module).
+    /// Editable per template so admins can ship their preferred AL analyzer
+    /// list, ruleset path, settings, and VS Code extension recommendations
+    /// without forking the generator. Defaults are written by the migration
+    /// at column-add time so existing templates keep producing the same
+    /// <c>.code-workspace</c> as before.
+    /// </summary>
+    public string CodeWorkspaceContent { get; set; } = string.Empty;
+
+    /// <summary>
     /// When true the template is hidden from the user-facing dropdown but remains
     /// usable for regenerating older workspaces from the admin UI.
     /// </summary>
