@@ -50,6 +50,7 @@ public static class TemplateTomlMapper
                     .Select(d => d.Module!.Key)
                     .ToList(),
                 DefaultApplicationVersion = template.DefaultApplicationVersion?.Key,
+                IsDefault = template.IsDefault,
             },
             Defaults = new DefaultsSeed
             {

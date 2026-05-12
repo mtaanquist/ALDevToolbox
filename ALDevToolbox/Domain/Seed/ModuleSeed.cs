@@ -15,6 +15,14 @@ public class ModuleSeed
     public string Key { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public int? IdRangeSize { get; set; }
+
+    /// <summary>
+    /// Mirrors <see cref="ALDevToolbox.Domain.Entities.Module.Deprecated"/> so
+    /// the export/import round-trip preserves the "hidden from end-user
+    /// pickers but still available for regeneration" flag.
+    /// </summary>
+    public bool Deprecated { get; set; }
+
     public List<ModuleDependencySeed> Dependencies { get; set; } = new();
 }
 
