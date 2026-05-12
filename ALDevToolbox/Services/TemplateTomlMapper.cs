@@ -355,6 +355,33 @@ public static class TemplateTomlMapper
         sb.AppendLine("[workspace]");
         sb.Append("content = ").AppendLine(TomlMultilineBasic(GenerationService.DefaultWorkspaceTemplate));
 
+        // A commented-out example showing the [[folders]] / [[folders.files]]
+        // shape. Admins uncomment by stripping the leading "# " from each line
+        // and adapt as needed. The comment block is dropped on the first save
+        // (FromToml → entities → ToToml), which is the point — it's a
+        // first-edit prompt, not a permanent fixture.
+        sb.AppendLine();
+        sb.AppendLine();
+        sb.AppendLine("# Example: declare a file under the Core extension. The on-disk path will be");
+        sb.AppendLine("# {WorkspaceName}/Core/src/codeunits/Test.Codeunit.al. Set is_example = true");
+        sb.AppendLine("# when the file is scaffolding the user can opt out of via the");
+        sb.AppendLine("# \"Include example AL files\" toggle on the New Workspace form.");
+        sb.AppendLine("#");
+        sb.AppendLine("# [[folders]]");
+        sb.AppendLine("# path = \"src/codeunits\"");
+        sb.AppendLine("#");
+        sb.AppendLine("# [[folders.files]]");
+        sb.AppendLine("# path = \"Test.Codeunit.al\"");
+        sb.AppendLine("# is_example = true");
+        sb.AppendLine("# content = \"\"\"");
+        sb.AppendLine("# codeunit 90100 \"{{prefix}} Test\"");
+        sb.AppendLine("# {");
+        sb.AppendLine("#     trigger OnRun()");
+        sb.AppendLine("#     begin");
+        sb.AppendLine("#     end;");
+        sb.AppendLine("# }");
+        sb.AppendLine("# \"\"\"");
+
         foreach (var path in DefaultFolderPaths)
         {
             sb.AppendLine();
