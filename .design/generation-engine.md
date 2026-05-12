@@ -39,23 +39,23 @@ AcmeCustomer/
 │       └── Company.ruleset.json
 ├── Core/
 │   ├── app.json
-│   ├── AppSourceCop.json
+│   ├── AppSourceCop.json                 # only if the template declares it (root folder)
 │   ├── libs/
 │   │   └── .gitkeep
 │   ├── permissionsets/
 │   │   └── .gitkeep
 │   ├── Source/                          # folders defined by the runtime template
 │   │   ├── Foundation/
-│   │   │   ├── AppInstall.Codeunit.al   # if IncludeExamples = true
+│   │   │   ├── AppInstall.Codeunit.al   # files marked is_example skip when the user clears "Include example AL files"
 │   │   │   └── AppUpgrade.Codeunit.al
 │   │   ├── Finance/
-│   │   │   └── .gitkeep                  # if IncludeExamples = false
+│   │   │   └── .gitkeep                  # all files filtered out → fallback .gitkeep
 │   │   └── ...
 │   └── Translations/
 │       └── .gitkeep
 ├── DocumentCapture/
 │   ├── app.json
-│   ├── AppSourceCop.json
+│   ├── AppSourceCop.json                 # only if module_folders declares a root file
 │   ├── libs/.gitkeep
 │   ├── permissionsets/.gitkeep
 │   ├── Source/                          # folders defined by template_module_folders
@@ -75,24 +75,29 @@ AcmeCustomer/
 2. Load all selected modules with their dependencies.
 3. Generate Core extension:
      a. Build app.json from template.defaults + project plan
-     b. Build AppSourceCop.json from template.app_source_cop
-     c. Walk template.folders (Core-only) — for each:
-          if folder has template_files rows AND IncludeExamples is true:
-              for each file row, write its `path` into the folder with `content` as the body
-              run mustache substitution on each `.al` file's content
-          else:
-              create the folder with a .gitkeep file
-     d. Add libs/.gitkeep, permissionsets/.gitkeep, translations/.gitkeep
+     b. Walk template.folders (Core-only) — for each row:
+          - A row whose `path` is empty is the **extension root** (e.g. for
+            AppSourceCop.json). Its files land directly next to app.json.
+          - Otherwise the folder is a subfolder. For each file:
+              - If `is_example = true` and IncludeExamples is false, skip it.
+              - Otherwise write `path` with `content` (mustache-substituted
+                for `.al` files).
+          - If a subfolder ends up with no emitted files, create a .gitkeep.
+            The root folder never gets a .gitkeep (app.json lives there).
+     c. Add libs/.gitkeep, permissionsets/.gitkeep, Translations/.gitkeep,
+        unless the template declared them (directly as a [[folders]] entry,
+        or indirectly via a root-folder file under that name).
 4. For each selected module (in order):
      a. Compute its ID range from template.module_id_range_start + (index * module_id_range_size)
      b. Build app.json including:
           - dependencies = [Core] ++ module's own dependencies
           - the computed ID range
-     c. Walk template.module_folders — same folder/file process as step 3c, but
-        sourced from template_module_folders / template_module_files. Empty by
-        default, so out-of-the-box modules ship with just app.json,
-        AppSourceCop.json and the static fallback folders. Admins can opt in to
-        module scaffolding via the Module folders editor on the template.
+     c. Walk template.module_folders — same root/subfolder/is_example rules as
+        step 3b, but sourced from template_module_folders / template_module_files.
+        Empty by default, so out-of-the-box modules ship with just app.json
+        and the static fallback folders. Admins can opt in to module
+        scaffolding (including an AppSourceCop.json) via the Module folders
+        editor on the template.
 5. Generate root files:
      a. .gitignore (static — see template-and-seeding.md for content; lives as a string constant or embedded resource)
      b. {WorkspaceName}.code-workspace (see below)
@@ -135,9 +140,15 @@ For each extension (Core or module), the `app.json` is built by:
 
 Serialise with 2-space indent for readability of the generated file.
 
-## `AppSourceCop.json` construction
+## `AppSourceCop.json`
 
-This is the simpler of the two — just deserialise `template.app_source_cop_json` and write it as-is into each extension's folder. No per-extension customisation.
+There is no hard-coded AppSourceCop.json output. Templates that need one
+declare it as a regular `[[folders.files]]` entry under a folder with an
+empty `path` (the "extension root"). The generator writes the file's
+`content` verbatim. Module extensions can declare their own root file
+via `[[module_folders]] path = ""`; admins typically do this only for
+templates whose modules are published to AppSource. PTE-style templates
+simply omit the root file entirely.
 
 ## `.code-workspace` construction
 
@@ -173,7 +184,7 @@ Module folder paths in the workspace match the on-disk folder names — module n
 
 ## Mustache substitution
 
-When `IncludeExamples` is true, run mustache substitution on the `content` of every `template_files` row whose `path` ends in `.al`. Non-AL files are written verbatim. Available variables:
+Run mustache substitution on the `content` of every `template_files` row whose `path` ends in `.al`, regardless of the `IncludeExamples` toggle (the toggle decides *whether* the file is emitted at all, not whether substitution runs on emitted files). Non-AL files are written verbatim. Available variables:
 
 | Variable             | Source                                            |
 |----------------------|---------------------------------------------------|
@@ -182,7 +193,9 @@ When `IncludeExamples` is true, run mustache substitution on the `content` of ev
 | `{{shortName}}`      | The workspace name with spaces removed, e.g. "AcmeCustomer" |
 | `{{moduleName}}`     | For module extensions, the module's name. For Core, equals `{{workspaceName}} Core`. |
 | `{{publisher}}`      | The publisher field from `defaults_json`. Default "Consortio IT". |
-| `{{prefix}}`         | The `mandatoryPrefix` from `app_source_cop_json`. Default "CONIT". |
+| `{{prefix}}`         | The `affix` field from `defaults_json` when `affixType = "Prefix"`; empty string otherwise. |
+| `{{suffix}}`         | The `affix` field from `defaults_json` when `affixType = "Suffix"`; empty string otherwise. |
+| `{{affix}}`          | The `affix` field from `defaults_json`, always (regardless of `affixType`). |
 | `{{namespace}}`      | The current folder's path, dot-separated. e.g. "Source/Foundation" → "Source.Foundation". Used for AL `namespace` declarations. |
 | `{{guid}}`           | A freshly generated GUID per substitution call. Use sparingly — prefer letting the implementer hand-author GUIDs in example files. |
 

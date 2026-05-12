@@ -5,7 +5,7 @@ namespace ALDevToolbox.Domain.Entities;
 /// <summary>
 /// A runtime template — a named layout the workspace generator can use to scaffold
 /// an extension. Each row corresponds to an entry in the New Workspace dropdown
-/// and ships with its own folder list, app.json defaults, and AppSourceCop settings.
+/// and ships with its own folder list and app.json defaults.
 /// </summary>
 public class RuntimeTemplate
 {
@@ -67,12 +67,6 @@ public class RuntimeTemplate
     /// </summary>
     public TemplateDefaults Defaults { get; set; } = new();
 
-    /// <summary>
-    /// Typed view of the <c>AppSourceCop.json</c> contents. Stored on the row as
-    /// a JSON column for the same reason as <see cref="Defaults"/>.
-    /// </summary>
-    public AppSourceCopSettings AppSourceCop { get; set; } = new();
-
     /// <summary>Inclusive lower bound of the Core extension's id range.</summary>
     public int CoreIdRangeFrom { get; set; }
 
@@ -116,9 +110,10 @@ public class RuntimeTemplate
 
     /// <summary>
     /// Folders emitted into every module extension generated from this template.
-    /// Empty by default — modules then ship with just <c>app.json</c>,
-    /// <c>AppSourceCop.json</c>, and the static fallback placeholders
-    /// (<c>libs/</c>, <c>permissionsets/</c>, <c>Translations/</c>).
+    /// Empty by default — modules then ship with just <c>app.json</c> and the
+    /// static fallback placeholders (<c>libs/</c>, <c>permissionsets/</c>,
+    /// <c>Translations/</c>) until an admin opts in. An <see cref="TemplateModuleFolder"/>
+    /// with an empty <c>Path</c> writes its files to the extension root.
     /// </summary>
     public List<TemplateModuleFolder> ModuleFolders { get; set; } = new();
 

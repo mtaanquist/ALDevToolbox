@@ -196,7 +196,7 @@ public class TemplateService
     /// </summary>
     public async Task<RuntimeTemplate> CreateAsync(TemplateInput input, CancellationToken ct = default)
     {
-        var (defaults, appSourceCop, defaultModuleIds, defaultApplicationVersionId) =
+        var (defaults, defaultModuleIds, defaultApplicationVersionId) =
             await ValidateAsync(input, existingId: null, ct);
 
         var now = DateTime.UtcNow;
@@ -211,7 +211,6 @@ public class TemplateService
             DefaultApplication = input.DefaultApplication.Trim(),
             DefaultPlatform = input.DefaultPlatform.Trim(),
             Defaults = defaults,
-            AppSourceCop = appSourceCop,
             CoreIdRangeFrom = input.CoreIdRangeFrom,
             CoreIdRangeTo = input.CoreIdRangeTo,
             ModuleIdRangeStart = input.ModuleIdRangeStart,
@@ -293,7 +292,7 @@ public class TemplateService
 
         // Preserve the existing key for validation (keys can't change after creation).
         var validatableInput = input with { Key = existing.Key };
-        var (defaults, appSourceCop, defaultModuleIds, defaultApplicationVersionId) =
+        var (defaults, defaultModuleIds, defaultApplicationVersionId) =
             await ValidateAsync(validatableInput, existingId: id, ct);
 
         existing.Runtime = input.Runtime.Trim();
@@ -302,7 +301,6 @@ public class TemplateService
         existing.DefaultApplication = input.DefaultApplication.Trim();
         existing.DefaultPlatform = input.DefaultPlatform.Trim();
         existing.Defaults = defaults;
-        existing.AppSourceCop = appSourceCop;
         existing.CoreIdRangeFrom = input.CoreIdRangeFrom;
         existing.CoreIdRangeTo = input.CoreIdRangeTo;
         existing.ModuleIdRangeStart = input.ModuleIdRangeStart;
@@ -601,17 +599,21 @@ public class TemplateService
             var folder = folders[i];
             var path = folder.Path?.Trim() ?? string.Empty;
             var fieldKey = $"{fieldPrefix}[{i}].Path";
-            if (string.IsNullOrEmpty(path))
-            {
-                errors[fieldKey] = "Folder path is required.";
-            }
-            else if (path.StartsWith('/') || path.Contains('\\') || path.Split('/').Any(seg => seg == ".." || string.IsNullOrWhiteSpace(seg)))
+            // Empty path is a deliberate value meaning "extension root" — the
+            // folder's files land directly next to app.json. Validated via
+            // the HashSet below (only one root row per list) rather than the
+            // shape rules that apply to nested paths.
+            if (path.Length > 0
+                && (path.StartsWith('/') || path.Contains('\\')
+                    || path.Split('/').Any(seg => seg == ".." || string.IsNullOrWhiteSpace(seg))))
             {
                 errors[fieldKey] = "Folder path must be relative, use '/' separators, and contain no '..' segments.";
             }
             else if (!seenFolderPaths.Add(path))
             {
-                errors[fieldKey] = $"Duplicate folder path '{path}' (case-insensitive). Windows treats these as the same folder.";
+                errors[fieldKey] = path.Length == 0
+                    ? "Only one extension-root folder (empty path) is allowed per list."
+                    : $"Duplicate folder path '{path}' (case-insensitive). Windows treats these as the same folder.";
             }
 
             var seenFilePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -797,11 +799,11 @@ public class TemplateService
 
     /// <summary>
     /// Validates an admin input payload. Returns the parsed <see cref="TemplateDefaults"/>
-    /// and <see cref="AppSourceCopSettings"/> so the caller doesn't reparse them.
-    /// Throws a <see cref="PlanValidationException"/> aggregating every error so
-    /// the form can render all of them on a single round-trip.
+    /// so the caller doesn't reparse it. Throws a <see cref="PlanValidationException"/>
+    /// aggregating every error so the form can render all of them on a single
+    /// round-trip.
     /// </summary>
-    private async Task<(TemplateDefaults Defaults, AppSourceCopSettings AppSourceCop, IReadOnlyList<int> DefaultModuleIds, int? DefaultApplicationVersionId)> ValidateAsync(
+    private async Task<(TemplateDefaults Defaults, IReadOnlyList<int> DefaultModuleIds, int? DefaultApplicationVersionId)> ValidateAsync(
         TemplateInput input,
         int? existingId,
         CancellationToken ct)
@@ -884,18 +886,6 @@ public class TemplateService
             errors[nameof(input.DefaultsJson)] = $"Defaults JSON is invalid: {ex.Message}";
         }
 
-        AppSourceCopSettings appSourceCop = new();
-        try
-        {
-            appSourceCop = string.IsNullOrWhiteSpace(input.AppSourceCopJson)
-                ? new AppSourceCopSettings()
-                : JsonSerializer.Deserialize<AppSourceCopSettings>(input.AppSourceCopJson, JsonOptions) ?? new AppSourceCopSettings();
-        }
-        catch (JsonException ex)
-        {
-            errors[nameof(input.AppSourceCopJson)] = $"AppSourceCop JSON is invalid: {ex.Message}";
-        }
-
         // Case-insensitive uniqueness for folders and files: Windows treats
         // 'src/Foo' and 'src/foo' as the same path, so admitting both would
         // fail at extraction time. Mirror that here. Same rules apply to
@@ -970,7 +960,7 @@ public class TemplateService
             throw new PlanValidationException(errors);
         }
 
-        return (defaults, appSourceCop, defaultModuleIds, defaultApplicationVersionId);
+        return (defaults, defaultModuleIds, defaultApplicationVersionId);
     }
 }
 
@@ -988,7 +978,6 @@ public record TemplateInput(
     string DefaultApplication,
     string DefaultPlatform,
     string DefaultsJson,
-    string AppSourceCopJson,
     int CoreIdRangeFrom,
     int CoreIdRangeTo,
     int ModuleIdRangeStart,

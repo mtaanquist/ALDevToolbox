@@ -15,14 +15,15 @@ namespace ALDevToolbox.Tests.Toml;
 public class TemplateTomlMapperTests
 {
     [Fact]
-    public void Round_trip_preserves_metadata_defaults_and_appsourcecop()
+    public void Round_trip_preserves_metadata_defaults_and_affix()
     {
         var template = TemplateBuilder.Default("runtime-15", "15.2");
         template.Defaults.Url = "https://example.com/";
         template.Defaults.Logo = "../.assets/images/logo.png";
         template.Defaults.Features = new List<string> { "TranslationFile", "NoImplicitWith" };
         template.Defaults.SupportedLocales = new List<string> { "en-US", "da-DK" };
-        template.AppSourceCop.SupportedCountries = new List<string> { "US", "DK" };
+        template.Defaults.Affix = "ACME";
+        template.Defaults.AffixType = AffixType.Prefix;
 
         var toml = TemplateTomlMapper.ToToml(template);
         var input = TemplateTomlMapper.FromToml(toml, deprecated: false);
@@ -37,8 +38,8 @@ public class TemplateTomlMapperTests
         input.ModuleIdRangeSize.Should().Be(200);
         input.DefaultsJson.Should().Contain("\"publisher\":\"Acme\"");
         input.DefaultsJson.Should().Contain("\"url\":\"https://example.com/\"");
-        input.AppSourceCopJson.Should().Contain("\"mandatoryPrefix\":\"ACME\"");
-        input.AppSourceCopJson.Should().Contain("DK");
+        input.DefaultsJson.Should().Contain("\"affix\":\"ACME\"");
+        input.DefaultsJson.Should().Contain("\"affixType\":\"Prefix\"");
     }
 
     [Fact]
@@ -237,7 +238,6 @@ public class TemplateTomlMapperTests
             DefaultApplication = input.DefaultApplication,
             DefaultPlatform = input.DefaultPlatform,
             Defaults = System.Text.Json.JsonSerializer.Deserialize<Domain.ValueObjects.TemplateDefaults>(input.DefaultsJson)!,
-            AppSourceCop = System.Text.Json.JsonSerializer.Deserialize<Domain.ValueObjects.AppSourceCopSettings>(input.AppSourceCopJson)!,
             CoreIdRangeFrom = input.CoreIdRangeFrom,
             CoreIdRangeTo = input.CoreIdRangeTo,
             ModuleIdRangeStart = input.ModuleIdRangeStart,

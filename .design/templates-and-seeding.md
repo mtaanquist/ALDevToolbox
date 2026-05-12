@@ -59,22 +59,23 @@ Tomlyn deserialises directly into POCOs. `Domain/Seed/` carries the mirrored typ
 ```csharp
 class TemplateSeed {
     public TemplateMetaSeed Template { get; set; }
-    public DefaultsSeed Defaults { get; set; }
-    public AppSourceCopSeed AppSourceCop { get; set; }
+    public DefaultsSeed Defaults { get; set; }      // includes the template-wide affix + affixType block
     public List<FolderSeed> Folders { get; set; }
+    public List<FolderSeed> ModuleFolders { get; set; }
 }
 class FolderSeed {
-    public string Path { get; set; }
-    public List<FolderFileSeed> Files { get; set; } = new();  // file contents stored inline
+    public string Path { get; set; }       // empty string == extension root (files land next to app.json)
+    public List<FolderFileSeed> Files { get; set; } = new();
 }
 class FolderFileSeed {
     public string Path { get; set; }       // relative to the folder, e.g. "AppInstall.Codeunit.al"
-    public string Content { get; set; }    // raw file content; mustache substitution runs at generation time
+    public string Content { get; set; }    // raw file content; mustache substitution runs at generation time for .al files
+    public bool IsExample { get; set; }    // skipped when the workspace "Include example AL files" toggle is off; omitted from TOML when false
 }
 // ...etc
 ```
 
-`Toml.ToModel<TemplateSeed>(text)` does the deserialisation. The `defaults_json` and `app_source_cop_json` columns are populated by re-serialising the relevant sub-objects to JSON.
+`Toml.ToModel<TemplateSeed>(text)` does the deserialisation. The `defaults_json` column is populated by re-serialising the `Defaults` sub-object to JSON. There is no longer an `app_source_cop_json` column — AppSourceCop.json is just a regular file under a root-path folder.
 
 ## Template TOML schema
 
@@ -107,29 +108,48 @@ url = "https://www.consortio.dk/"
 logo = "../.assets/images/logo.png"
 features = ["TranslationFile", "NoImplicitWith"]
 supportedLocales = ["en-US", "da-DK"]
+affix = "CONIT"                  # drives {{prefix}}, {{suffix}}, {{affix}} mustache vars
+affixType = "Prefix"             # "Prefix" or "Suffix" — decides which of {{prefix}}/{{suffix}} emits
 
 [defaults.resourceExposurePolicy]
 allowDebugging = true
 allowDownloadingSource = false
 includeSourceInSymbolFile = true
 
-# Required: AppSourceCop.json contents
-[appSourceCop]
-mandatoryPrefix = "CONIT"
-supportedCountries = ["US", "DK"]
-
 # Required: array of folder definitions, in display order. These are emitted
 # into the Core extension only (and into the single extension produced by the
 # standalone New Extension flow). Module extensions in a generated workspace
 # use [[module_folders]] below — see generation-engine.md for why.
+#
+# An empty path means the folder represents the **extension root** — its
+# files land directly next to app.json. This is how AppSourceCop.json is
+# now expressed (it used to be a hard-coded generator output sourced from
+# the retired app_source_cop_json column). At most one empty-path folder
+# per [[folders]] / [[module_folders]] list.
+[[folders]]
+path = ""
+
+[[folders.files]]
+path = "AppSourceCop.json"
+content = """
+{
+    "mandatoryPrefix": "CONIT",
+    "supportedCountries": ["US", "DK"]
+}
+"""
+
 [[folders]]
 path = "Source/Foundation"
 
 # Optional: file contents seeded into this folder. When empty, the folder
 # generates with a single .gitkeep regardless of the include-examples toggle.
-# Mustache substitution runs at generation time, not at seed/parse time.
+# Mustache substitution runs at generation time for .al files; non-AL files
+# are written verbatim. `is_example = true` marks the file as skippable when
+# the end user clears the workspace's "Include example AL files" checkbox;
+# the flag is omitted from TOML when false to keep diffs quiet.
 [[folders.files]]
 path = "AppInstall.Codeunit.al"
+is_example = true
 content = """
 namespace {{namespace}};
 
@@ -141,15 +161,16 @@ codeunit 90100 "{{prefix}} App Install"
 
 [[folders]]
 path = "Source/Sales"
-# no files — gets .gitkeep when include-examples is off and stays empty when it's on
+# no files — gets .gitkeep regardless of the include-examples toggle
 
 [[folders]]
 path = "Translations"
 
 # Optional: array of folders emitted into every module extension. Empty (or
-# omitted) means modules ship with just app.json + AppSourceCop.json + the
-# static fallback folders (libs/, permissionsets/, Translations/). Same shape
-# as [[folders]]: optional [[module_folders.files]] blocks seed file content.
+# omitted) means modules ship with just app.json and the static fallback
+# folders (libs/, permissionsets/, Translations/). Same shape as [[folders]],
+# including the empty-path "extension root" row for an AppSourceCop.json or
+# other module-root file.
 [[module_folders]]
 path = "Source"
 ```
@@ -210,7 +231,9 @@ These are the variables available when seeding example AL files into a generated
 | `{{shortName}}`      | Workspace name with whitespace removed        |
 | `{{moduleName}}`     | The module's display name                     |
 | `{{publisher}}`      | Publisher field from defaults                 |
-| `{{prefix}}`         | mandatoryPrefix from app_source_cop           |
+| `{{prefix}}`         | `affix` from defaults when `affixType = "Prefix"`; empty otherwise |
+| `{{suffix}}`         | `affix` from defaults when `affixType = "Suffix"`; empty otherwise |
+| `{{affix}}`          | `affix` from defaults, always                 |
 | `{{namespace}}`      | The folder path, dot-separated                |
 | `{{guid}}`           | A fresh GUID per call                         |
 

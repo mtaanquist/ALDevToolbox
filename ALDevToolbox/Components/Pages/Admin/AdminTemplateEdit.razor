@@ -270,20 +270,17 @@
                     Merged into every generated <code>app.json</code>. Fields:
                     <code>publisher</code>, <code>target</code>, <code>features</code>,
                     <code>supportedLocales</code>, <code>url</code>, <code>logo</code>,
-                    <code>resourceExposurePolicy</code>.
+                    <code>resourceExposurePolicy</code>, <code>affix</code>,
+                    <code>affixType</code>. The affix value feeds the
+                    <code>@("{{prefix}}")</code>, <code>@("{{suffix}}")</code>
+                    and <code>@("{{affix}}")</code> mustache variables;
+                    <code>affixType</code> ("Prefix" or "Suffix") decides
+                    which of the first two emits. For an <code>AppSourceCop.json</code>,
+                    declare it as a file under a folder with an empty path
+                    (the structured editor renders such a row as
+                    <em>(extension root)</em>).
                 </small>
                 <FieldError Field="DefaultsJson" Errors="_fieldErrors" />
-            </section>
-
-            <section class="form-section">
-                <label class="section-label" for="tpl-cop">AppSourceCop JSON</label>
-                <textarea id="tpl-cop" class="json-editor" rows="6" spellcheck="false"
-                          @bind="_form.AppSourceCopJson" @bind:event="oninput"></textarea>
-                <small class="muted">
-                    Written verbatim into <code>AppSourceCop.json</code>. Fields:
-                    <code>mandatoryPrefix</code>, <code>supportedCountries</code>.
-                </small>
-                <FieldError Field="AppSourceCopJson" Errors="_fieldErrors" />
             </section>
 
             <section class="form-section">
@@ -340,10 +337,19 @@
                         <Icon Name="plus" Width="14" Height="14" />
                         <span>Add folder</span>
                     </button>
+                    <button type="button" class="btn btn--sm"
+                            disabled="@_form.Folders.Any(f => f.IsRoot)"
+                            title="Add a row for files at the extension root (next to app.json)."
+                            @onclick="AddRootFolder">
+                        <Icon Name="plus" Width="14" Height="14" />
+                        <span>Add root folder</span>
+                    </button>
                 </div>
                 <small class="muted">
                     Emitted into the <strong>Core</strong> extension only. Module
-                    extensions get their own list below.
+                    extensions get their own list below. The <em>root folder</em>
+                    row, if present, hosts files at the extension root (e.g.
+                    <code>AppSourceCop.json</code>).
                 </small>
                 @if (_form.Folders.Count == 0)
                 {
@@ -369,8 +375,16 @@
                                         </button>
                                     </div>
                                     <div class="folder-editor__path">
-                                        <input type="text" required placeholder="e.g. Source/Foundation"
-                                               @bind="row.Path" @bind:event="oninput" />
+                                        @if (row.IsRoot)
+                                        {
+                                            @* Extension root — files in this row land next to app.json. *@
+                                            <span class="folder-editor__path-root muted"><em>(extension root)</em></span>
+                                        }
+                                        else
+                                        {
+                                            <input type="text" required placeholder="e.g. Source/Foundation"
+                                                   @bind="row.Path" @bind:event="oninput" />
+                                        }
                                         <FieldError Field="@($"Folders[{index}].Path")" Errors="_fieldErrors" />
                                     </div>
                                     @if (row.Files.Count > 0)
@@ -455,11 +469,18 @@
                         <Icon Name="plus" Width="14" Height="14" />
                         <span>Add folder</span>
                     </button>
+                    <button type="button" class="btn btn--sm"
+                            disabled="@_form.ModuleFolders.Any(f => f.IsRoot)"
+                            title="Add a row for files at each module extension's root."
+                            @onclick="AddRootModuleFolder">
+                        <Icon Name="plus" Width="14" Height="14" />
+                        <span>Add root folder</span>
+                    </button>
                 </div>
                 <small class="muted">
                     Emitted into every <strong>module</strong> extension generated from this
-                    template. Leave empty to ship modules with just <code>app.json</code>,
-                    <code>AppSourceCop.json</code>, and the static fallback folders.
+                    template. Leave empty to ship modules with just <code>app.json</code>
+                    and the static fallback folders.
                 </small>
                 @if (_form.ModuleFolders.Count == 0)
                 {
@@ -485,8 +506,15 @@
                                         </button>
                                     </div>
                                     <div class="folder-editor__path">
-                                        <input type="text" required placeholder="e.g. Source"
-                                               @bind="row.Path" @bind:event="oninput" />
+                                        @if (row.IsRoot)
+                                        {
+                                            <span class="folder-editor__path-root muted"><em>(extension root)</em></span>
+                                        }
+                                        else
+                                        {
+                                            <input type="text" required placeholder="e.g. Source"
+                                                   @bind="row.Path" @bind:event="oninput" />
+                                        }
                                         <FieldError Field="@($"ModuleFolders[{index}].Path")" Errors="_fieldErrors" />
                                     </div>
                                     @if (row.Files.Count > 0)
@@ -605,7 +633,11 @@
                             <dt><code>@("{{publisher}}")</code></dt>
                             <dd>From <code>[defaults] publisher</code>.</dd>
                             <dt><code>@("{{prefix}}")</code></dt>
-                            <dd>From <code>[appSourceCop] mandatoryPrefix</code>.</dd>
+                            <dd>From <code>[defaults] affix</code> when <code>affixType = "Prefix"</code>; empty string otherwise.</dd>
+                            <dt><code>@("{{suffix}}")</code></dt>
+                            <dd>From <code>[defaults] affix</code> when <code>affixType = "Suffix"</code>; empty string otherwise.</dd>
+                            <dt><code>@("{{affix}}")</code></dt>
+                            <dd>From <code>[defaults] affix</code>, always (regardless of <code>affixType</code>).</dd>
                             <dt><code>@("{{namespace}}")</code></dt>
                             <dd>Current folder path with <code>/</code> replaced by <code>.</code>.</dd>
                             <dt><code>@("{{guid}}")</code></dt>
@@ -842,6 +874,19 @@
         _form?.Folders.Add(new FolderRow());
     }
 
+    private void AddRootFolder()
+    {
+        if (_form is null || _form.Folders.Any(f => f.IsRoot)) return;
+        // Surface the root row at the top so it sits next to app.json in
+        // the reader's mental model.
+        _form.Folders.Insert(0, new FolderRow { IsRoot = true });
+        // Re-anchor the expanded-set: every existing index shifts by +1
+        // because we just prepended a row.
+        var bumped = _expandedFolders.Select(i => i + 1).ToList();
+        _expandedFolders.Clear();
+        foreach (var i in bumped) _expandedFolders.Add(i);
+    }
+
     private void RemoveFolder(int index)
     {
         if (_form is null) return;
@@ -913,6 +958,15 @@
     private void AddModuleFolder()
     {
         _form?.ModuleFolders.Add(new FolderRow());
+    }
+
+    private void AddRootModuleFolder()
+    {
+        if (_form is null || _form.ModuleFolders.Any(f => f.IsRoot)) return;
+        _form.ModuleFolders.Insert(0, new FolderRow { IsRoot = true });
+        var bumped = _expandedModuleFolders.Select(i => i + 1).ToList();
+        _expandedModuleFolders.Clear();
+        foreach (var i in bumped) _expandedModuleFolders.Add(i);
     }
 
     private void RemoveModuleFolder(int index)
@@ -1272,9 +1326,6 @@
             var defaults = string.IsNullOrWhiteSpace(_form.DefaultsJson)
                 ? new TemplateDefaults()
                 : JsonSerializer.Deserialize<TemplateDefaults>(_form.DefaultsJson) ?? new TemplateDefaults();
-            var appSourceCop = string.IsNullOrWhiteSpace(_form.AppSourceCopJson)
-                ? new AppSourceCopSettings()
-                : JsonSerializer.Deserialize<AppSourceCopSettings>(_form.AppSourceCopJson) ?? new AppSourceCopSettings();
 
             var stub = new RuntimeTemplate
             {
@@ -1285,7 +1336,6 @@
                 DefaultApplication = _form.DefaultApplication,
                 DefaultPlatform = _form.DefaultPlatform,
                 Defaults = defaults,
-                AppSourceCop = appSourceCop,
                 CoreIdRangeFrom = _form.CoreIdRangeFrom,
                 CoreIdRangeTo = _form.CoreIdRangeTo,
                 ModuleIdRangeStart = _form.ModuleIdRangeStart,
@@ -1300,6 +1350,7 @@
                         Ordering = fi,
                         Path = file.Path,
                         Content = file.Content,
+                        IsExample = file.IsExample,
                     }).ToList(),
                 }).ToList(),
                 ModuleFolders = _form.ModuleFolders.Select((f, i) => new TemplateModuleFolder
@@ -1311,6 +1362,7 @@
                         Ordering = fi,
                         Path = file.Path,
                         Content = file.Content,
+                        IsExample = file.IsExample,
                     }).ToList(),
                 }).ToList(),
                 DefaultModules = _form.DefaultModuleKeys
@@ -1328,7 +1380,7 @@
         }
         catch (JsonException ex)
         {
-            return $"# Could not render TOML — Defaults or AppSourceCop JSON is invalid:\n# {ex.Message}\n";
+            return $"# Could not render TOML — Defaults JSON is invalid:\n# {ex.Message}\n";
         }
     }
 
@@ -1368,11 +1420,24 @@
 
     private static PreviewNode BuildExtensionPreview(string name, IReadOnlyList<FolderRow> folders)
     {
+        // app.json is always emitted (built from template metadata at
+        // generation time). AppSourceCop.json no longer is — admins declare
+        // it as a file under a folder with an empty path, the same way they
+        // would any other root-level file. The preview surfaces those root
+        // files alongside app.json so the layout matches the eventual ZIP.
         var contents = new List<PreviewNode>
         {
             PreviewNode.File("app.json"),
-            PreviewNode.File("AppSourceCop.json"),
         };
+
+        // Root-folder files land at the extension root, not in a subfolder.
+        foreach (var rootFolder in folders.Where(f => string.IsNullOrEmpty(f.Path)))
+        {
+            foreach (var file in rootFolder.Files.Where(x => !string.IsNullOrWhiteSpace(x.Path)))
+            {
+                contents.Add(PreviewNode.File(file.Path));
+            }
+        }
 
         var entries = folders
             .Where(f => !string.IsNullOrWhiteSpace(f.Path))
@@ -1501,7 +1566,6 @@
         public string DefaultApplication { get; set; } = string.Empty;
         public string DefaultPlatform { get; set; } = "1.0.0.0";
         public string DefaultsJson { get; set; } = string.Empty;
-        public string AppSourceCopJson { get; set; } = string.Empty;
         public int CoreIdRangeFrom { get; set; }
         public int CoreIdRangeTo { get; set; }
         public int ModuleIdRangeStart { get; set; }
@@ -1511,9 +1575,8 @@
 
         /// <summary>
         /// Folders emitted into every generated module extension. Empty by
-        /// default — modules then ship with just app.json + AppSourceCop.json
-        /// + the static fallback folders until an admin opts in to extra
-        /// scaffolding.
+        /// default — modules then ship with just app.json and the static
+        /// fallback folders until an admin opts in to extra scaffolding.
         /// </summary>
         public List<FolderRow> ModuleFolders { get; } = new();
 
@@ -1536,12 +1599,21 @@
             var state = new FormState
             {
                 DefaultsJson = JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson),
-                AppSourceCopJson = JsonSerializer.Serialize(new AppSourceCopSettings(), PrettyJson),
                 CoreIdRangeFrom = 90000,
                 CoreIdRangeTo = 90999,
                 ModuleIdRangeStart = 91000,
                 ModuleIdRangeSize = 200,
             };
+            // Root folder (path = "") seeds an empty AppSourceCop.json
+            // example file so new templates emit it by default. Admins can
+            // delete the row for per-tenant extensions that don't need it.
+            var rootCore = new FolderRow { Path = string.Empty, IsRoot = true };
+            rootCore.Files.Add(new FileRow
+            {
+                Path = "AppSourceCop.json",
+                Content = TemplateTomlMapper.DefaultAppSourceCopJson,
+            });
+            state.Folders.Add(rootCore);
             foreach (var path in TemplateTomlMapper.DefaultFolderPaths)
             {
                 state.Folders.Add(new FolderRow { Path = path });
@@ -1561,7 +1633,6 @@
                 DefaultApplication = template.DefaultApplication,
                 DefaultPlatform = template.DefaultPlatform,
                 DefaultsJson = JsonSerializer.Serialize(template.Defaults, PrettyJson),
-                AppSourceCopJson = JsonSerializer.Serialize(template.AppSourceCop, PrettyJson),
                 CoreIdRangeFrom = template.CoreIdRangeFrom,
                 CoreIdRangeTo = template.CoreIdRangeTo,
                 ModuleIdRangeStart = template.ModuleIdRangeStart,
@@ -1571,7 +1642,7 @@
             };
             foreach (var f in template.Folders.OrderBy(f => f.Ordering))
             {
-                var folderRow = new FolderRow { Path = f.Path };
+                var folderRow = new FolderRow { Path = f.Path, IsRoot = string.IsNullOrEmpty(f.Path) };
                 foreach (var file in f.Files.OrderBy(x => x.Ordering))
                 {
                     folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content, IsExample = file.IsExample });
@@ -1580,7 +1651,7 @@
             }
             foreach (var f in template.ModuleFolders.OrderBy(f => f.Ordering))
             {
-                var folderRow = new FolderRow { Path = f.Path };
+                var folderRow = new FolderRow { Path = f.Path, IsRoot = string.IsNullOrEmpty(f.Path) };
                 foreach (var file in f.Files.OrderBy(x => x.Ordering))
                 {
                     folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content, IsExample = file.IsExample });
@@ -1617,9 +1688,6 @@
                 DefaultsJson = string.IsNullOrWhiteSpace(input.DefaultsJson)
                     ? JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson)
                     : Reformat(input.DefaultsJson, JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson)),
-                AppSourceCopJson = string.IsNullOrWhiteSpace(input.AppSourceCopJson)
-                    ? JsonSerializer.Serialize(new AppSourceCopSettings(), PrettyJson)
-                    : Reformat(input.AppSourceCopJson, JsonSerializer.Serialize(new AppSourceCopSettings(), PrettyJson)),
                 CoreIdRangeFrom = input.CoreIdRangeFrom,
                 CoreIdRangeTo = input.CoreIdRangeTo,
                 ModuleIdRangeStart = input.ModuleIdRangeStart,
@@ -1631,7 +1699,7 @@
             };
             foreach (var f in input.Folders)
             {
-                var folderRow = new FolderRow { Path = f.Path };
+                var folderRow = new FolderRow { Path = f.Path, IsRoot = string.IsNullOrEmpty(f.Path) };
                 foreach (var file in f.Files)
                 {
                     folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content, IsExample = file.IsExample });
@@ -1640,7 +1708,7 @@
             }
             foreach (var f in input.ModuleFolders)
             {
-                var folderRow = new FolderRow { Path = f.Path };
+                var folderRow = new FolderRow { Path = f.Path, IsRoot = string.IsNullOrEmpty(f.Path) };
                 foreach (var file in f.Files)
                 {
                     folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content, IsExample = file.IsExample });
@@ -1680,7 +1748,6 @@
             DefaultApplication: DefaultApplication,
             DefaultPlatform: DefaultPlatform,
             DefaultsJson: DefaultsJson,
-            AppSourceCopJson: AppSourceCopJson,
             CoreIdRangeFrom: CoreIdRangeFrom,
             CoreIdRangeTo: CoreIdRangeTo,
             ModuleIdRangeStart: ModuleIdRangeStart,
@@ -1701,6 +1768,17 @@
     private sealed class FolderRow
     {
         public string Path { get; set; } = string.Empty;
+
+        /// <summary>
+        /// UI-only marker for "this row represents the extension root, not
+        /// a subfolder". Set true by the "Add root folder" button and by the
+        /// loader when an entity row's <see cref="TemplateFolder.Path"/> is
+        /// empty; the path field is rendered as a static label rather than
+        /// an editable input. Carries no state across save — on submit the
+        /// row's Path is used as-is (empty for root rows).
+        /// </summary>
+        public bool IsRoot { get; set; }
+
         public List<FileRow> Files { get; } = new();
     }
 

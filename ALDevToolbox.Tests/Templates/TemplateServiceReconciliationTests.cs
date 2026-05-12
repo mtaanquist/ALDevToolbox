@@ -329,7 +329,6 @@ public sealed class TemplateServiceReconciliationTests : IDisposable
             DefaultApplication: "24.0.0.0",
             DefaultPlatform: "1.0.0.0",
             DefaultsJson: "{}",
-            AppSourceCopJson: "{}",
             CoreIdRangeFrom: 90000,
             CoreIdRangeTo: 90999,
             ModuleIdRangeStart: 91000,

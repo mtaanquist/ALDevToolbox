@@ -51,6 +51,93 @@ public sealed class MustacheSubstitutionTests : IDisposable
     }
 
     [Fact]
+    public async Task Prefix_variable_emits_only_when_affix_type_is_prefix()
+    {
+        var template = TemplateBuilder.Default();
+        template.Defaults.Affix = "ACME";
+        template.Defaults.AffixType = AffixType.Prefix;
+        template = template.WithCoreFolder(
+            "Source",
+            ("Mix.al", "prefix={{prefix}};suffix={{suffix}};affix={{affix}}"));
+        await SeedTemplateAsync(template);
+
+        var content = await GenerateAndReadAsync(
+            PlanBuilder.WorkspacePlan(),
+            "AcmeCustomer/Core/Source/Mix.al");
+
+        content.Should().Be("prefix=ACME;suffix=;affix=ACME");
+    }
+
+    [Fact]
+    public async Task Suffix_variable_emits_only_when_affix_type_is_suffix()
+    {
+        var template = TemplateBuilder.Default();
+        template.Defaults.Affix = "ACME";
+        template.Defaults.AffixType = AffixType.Suffix;
+        template = template.WithCoreFolder(
+            "Source",
+            ("Mix.al", "prefix={{prefix}};suffix={{suffix}};affix={{affix}}"));
+        await SeedTemplateAsync(template);
+
+        var content = await GenerateAndReadAsync(
+            PlanBuilder.WorkspacePlan(),
+            "AcmeCustomer/Core/Source/Mix.al");
+
+        content.Should().Be("prefix=;suffix=ACME;affix=ACME");
+    }
+
+    [Fact]
+    public async Task Root_folder_files_emit_at_extension_root()
+    {
+        // A TemplateFolder with an empty Path writes its files directly
+        // next to app.json. AppSourceCop.json is the canonical example.
+        var template = TemplateBuilder.Default();
+        template.Folders.Add(new TemplateFolder
+        {
+            OrganizationId = template.OrganizationId,
+            Path = string.Empty,
+            Ordering = -1,
+            Files = new List<TemplateFile>
+            {
+                new()
+                {
+                    OrganizationId = template.OrganizationId,
+                    Path = "AppSourceCop.json",
+                    Content = "{\"mandatoryPrefix\":\"ACME\"}",
+                },
+            },
+        });
+        await SeedTemplateAsync(template);
+
+        var service = NewService();
+        var archive = await service.GenerateWorkspaceAsync(PlanBuilder.WorkspacePlan());
+        using var zip = new ZipArchive(archive.Stream, ZipArchiveMode.Read);
+
+        var entry = zip.GetEntry("AcmeCustomer/Core/AppSourceCop.json");
+        entry.Should().NotBeNull();
+        using var reader = new StreamReader(entry!.Open());
+        (await reader.ReadToEndAsync()).Should().Be("{\"mandatoryPrefix\":\"ACME\"}");
+    }
+
+    [Fact]
+    public async Task Generator_no_longer_emits_app_source_cop_unconditionally()
+    {
+        // The old code path wrote AppSourceCop.json next to app.json for
+        // every extension regardless of template. After the refactor a
+        // template with no root-folder declaration produces only app.json
+        // at the extension root.
+        var template = TemplateBuilder.Default();
+        await SeedTemplateAsync(template);
+
+        var service = NewService();
+        var archive = await service.GenerateWorkspaceAsync(PlanBuilder.WorkspacePlan());
+        using var zip = new ZipArchive(archive.Stream, ZipArchiveMode.Read);
+
+        zip.GetEntry("AcmeCustomer/Core/app.json").Should().NotBeNull();
+        zip.GetEntry("AcmeCustomer/Core/AppSourceCop.json").Should().BeNull();
+    }
+
+    [Fact]
     public async Task Guid_variable_emits_a_fresh_guid()
     {
         var template = TemplateBuilder.Default()

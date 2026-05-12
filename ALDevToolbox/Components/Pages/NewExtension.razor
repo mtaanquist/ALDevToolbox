@@ -465,30 +465,49 @@
     /// </summary>
     private PreviewNode BuildExtensionNode(string folderName, bool isCore, bool isNew)
     {
+        // app.json is always emitted. AppSourceCop.json now flows through
+        // the template's [[folders]] declarations (path = "") like any
+        // other file.
         var contents = new List<PreviewNode>
         {
             PreviewNode.File("app.json"),
-            PreviewNode.File("AppSourceCop.json"),
         };
 
         if (_selected is not null)
         {
-            var entries = isCore
-                ? _selected.Folders
+            var useModuleFolders = !isCore && _workspaceContext is not null && !isNew;
+
+            // Files in a root folder (Path == "") land directly next to app.json.
+            if (useModuleFolders)
+            {
+                foreach (var root in _selected.ModuleFolders.Where(f => string.IsNullOrEmpty(f.Path)))
+                {
+                    foreach (var file in root.Files.OrderBy(x => x.Ordering))
+                    {
+                        contents.Add(PreviewNode.File(file.Path));
+                    }
+                }
+            }
+            else
+            {
+                foreach (var root in _selected.Folders.Where(f => string.IsNullOrEmpty(f.Path)))
+                {
+                    foreach (var file in root.Files.OrderBy(x => x.Ordering))
+                    {
+                        contents.Add(PreviewNode.File(file.Path));
+                    }
+                }
+            }
+
+            var entries = useModuleFolders
+                ? _selected.ModuleFolders
+                    .Where(f => !string.IsNullOrEmpty(f.Path))
                     .OrderBy(f => f.Ordering)
-                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromFiles(f.Files)))
+                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromModuleFiles(f.Files)))
                 : _selected.Folders
+                    .Where(f => !string.IsNullOrEmpty(f.Path))
                     .OrderBy(f => f.Ordering)
                     .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromFiles(f.Files)));
-            // Module folders for non-Core extensions inside a workspace come
-            // from ModuleFolders rather than Folders. Override the entries
-            // when we're rendering a workspace module.
-            if (!isCore && _workspaceContext is not null && !isNew)
-            {
-                entries = _selected.ModuleFolders
-                    .OrderBy(f => f.Ordering)
-                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromModuleFiles(f.Files)));
-            }
             contents.AddRange(PreviewTreeBuilder.BuildFolderChildren(entries));
         }
 

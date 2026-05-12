@@ -81,9 +81,6 @@ public class AppDbContext : DbContext
         var defaultsConverter = new ValueConverter<TemplateDefaults, string>(
             v => JsonSerializer.Serialize(v, jsonOptions),
             v => JsonSerializer.Deserialize<TemplateDefaults>(v, jsonOptions) ?? new TemplateDefaults());
-        var appSourceCopConverter = new ValueConverter<AppSourceCopSettings, string>(
-            v => JsonSerializer.Serialize(v, jsonOptions),
-            v => JsonSerializer.Deserialize<AppSourceCopSettings>(v, jsonOptions) ?? new AppSourceCopSettings());
 
         modelBuilder.Entity<Organization>(entity =>
         {
@@ -246,11 +243,6 @@ public class AppDbContext : DbContext
                 .HasColumnName("defaults_json")
                 .HasColumnType("jsonb")
                 .HasConversion(defaultsConverter)
-                .IsRequired();
-            entity.Property(e => e.AppSourceCop)
-                .HasColumnName("app_source_cop_json")
-                .HasColumnType("jsonb")
-                .HasConversion(appSourceCopConverter)
                 .IsRequired();
             entity.Property(e => e.CoreIdRangeFrom).HasColumnName("core_id_range_from").IsRequired();
             entity.Property(e => e.CoreIdRangeTo).HasColumnName("core_id_range_to").IsRequired();

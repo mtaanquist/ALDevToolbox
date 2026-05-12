@@ -10,26 +10,26 @@ namespace ALDevToolbox.Domain.Seed;
 /// </summary>
 /// <remarks>
 /// The TOML files mix conventions: <c>[template]</c> / <c>[[folders]]</c> use
-/// <c>snake_case</c>, while <c>[defaults]</c> and <c>[appSourceCop]</c> mirror
-/// the AL JSON shapes and use <c>camelCase</c>. The whole graph deserialises
-/// under a global <c>SnakeCaseLower</c> policy, with <see cref="TomlPropertyNameAttribute"/>
-/// overriding the camelCase outliers individually.
+/// <c>snake_case</c>, while <c>[defaults]</c> mirrors the AL <c>app.json</c>
+/// shape and uses <c>camelCase</c>. The whole graph deserialises under a
+/// global <c>SnakeCaseLower</c> policy, with <see cref="TomlPropertyNameAttribute"/>
+/// overriding the camelCase outliers individually. AppSourceCop is no longer
+/// a top-level table — templates that want an <c>AppSourceCop.json</c>
+/// declare it as a <c>[[folders.files]]</c> entry under a folder with an
+/// empty <c>path</c> (extension root).
 /// </remarks>
 public class TemplateSeed
 {
     public TemplateMetaSeed Template { get; set; } = new();
     public DefaultsSeed Defaults { get; set; } = new();
 
-    [TomlPropertyName("appSourceCop")]
-    public AppSourceCopSeed AppSourceCop { get; set; } = new();
-
     public List<FolderSeed> Folders { get; set; } = new();
 
     /// <summary>
     /// <c>[[module_folders]]</c> entries — the folder layout emitted into every
     /// generated module extension. Empty by default; if omitted, modules ship
-    /// with just their <c>app.json</c>, <c>AppSourceCop.json</c>, and the
-    /// static fallback folders. Same shape as <see cref="Folders"/>.
+    /// with just their <c>app.json</c> and the static fallback folders.
+    /// Same shape as <see cref="Folders"/>.
     /// </summary>
     public List<FolderSeed> ModuleFolders { get; set; } = new();
 }
@@ -88,6 +88,23 @@ public class DefaultsSeed
 
     [TomlPropertyName("resourceExposurePolicy")]
     public ResourceExposurePolicySeed ResourceExposurePolicy { get; set; } = new();
+
+    /// <summary>
+    /// Object-name affix string. Drives the <c>{{prefix}}</c>,
+    /// <c>{{suffix}}</c> and <c>{{affix}}</c> mustache variables at
+    /// generation time. Camel-cased in TOML (<c>affix = "ACME"</c>) to
+    /// match the surrounding <c>[defaults]</c> conventions.
+    /// </summary>
+    public string Affix { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Whether <see cref="Affix"/> is applied as a prefix or suffix.
+    /// Default <c>Prefix</c> matches the migrated <c>mandatoryPrefix</c>
+    /// semantic. Serialised as <c>"Prefix"</c> / <c>"Suffix"</c>.
+    /// </summary>
+    [TomlPropertyName("affixType")]
+    public ALDevToolbox.Domain.ValueObjects.AffixType AffixType { get; set; } =
+        ALDevToolbox.Domain.ValueObjects.AffixType.Prefix;
 }
 
 public class ResourceExposurePolicySeed
@@ -100,16 +117,6 @@ public class ResourceExposurePolicySeed
 
     [TomlPropertyName("includeSourceInSymbolFile")]
     public bool IncludeSourceInSymbolFile { get; set; }
-}
-
-/// <summary>The <c>[appSourceCop]</c> table — copied verbatim into <c>AppSourceCop.json</c>.</summary>
-public class AppSourceCopSeed
-{
-    [TomlPropertyName("mandatoryPrefix")]
-    public string MandatoryPrefix { get; set; } = string.Empty;
-
-    [TomlPropertyName("supportedCountries")]
-    public List<string> SupportedCountries { get; set; } = new();
 }
 
 /// <summary>One <c>[[folders]]</c> entry — a relative folder path plus its seeded files.</summary>

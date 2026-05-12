@@ -336,18 +336,35 @@ public class GenerationService
         ct.ThrowIfCancellationRequested();
 
         WriteString(archive, $"{rootRelative}/app.json", appJson);
-        WriteString(archive, $"{rootRelative}/AppSourceCop.json", JsonSerializer.Serialize(template.AppSourceCop, JsonOptions));
-        var fileCount = 2;
+        var fileCount = 1;
 
         // Top-level folders the caller's folder list already declares
         // (case-insensitive), so the static fallback folders below don't
         // collide on Windows extraction. Without this, a folder list that
         // lays out 'translations' would extract alongside our hardcoded
         // 'Translations/.gitkeep' and produce two folders that resolve to
-        // the same path.
-        var declaredTops = new HashSet<string>(
-            folders.Select(f => f.Path.Split('/', 2)[0]),
-            StringComparer.OrdinalIgnoreCase);
+        // the same path. Root-folder files (Path == "") contribute their
+        // own first-segment claims so e.g. a root file at libs/Foo.al
+        // suppresses the static libs/ fallback the same way.
+        var declaredTops = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var f in folders)
+        {
+            if (string.IsNullOrEmpty(f.Path))
+            {
+                foreach (var file in f.Files)
+                {
+                    var seg = file.Path.Split('/', 2)[0];
+                    if (!string.IsNullOrEmpty(seg))
+                    {
+                        declaredTops.Add(seg);
+                    }
+                }
+            }
+            else
+            {
+                declaredTops.Add(f.Path.Split('/', 2)[0]);
+            }
+        }
         if (!declaredTops.Contains("libs"))
         {
             WriteEmptyFile(archive, $"{rootRelative}/libs/.gitkeep");
@@ -366,13 +383,19 @@ public class GenerationService
 
         foreach (var folder in folders)
         {
-            var folderRelative = $"{rootRelative}/{folder.Path}";
+            // An empty Path means "extension root" — files land next to
+            // app.json instead of inside a subfolder. This is how AppSourceCop.json
+            // is now declared (since the column was retired); admins can also
+            // put any other top-level metadata file here (.gitignore, etc.).
+            var isRoot = string.IsNullOrEmpty(folder.Path);
+            var folderRelative = isRoot ? rootRelative : $"{rootRelative}/{folder.Path}";
 
-            // Per-file IncludeExamples filter (M? — was previously folder-level
-            // all-or-nothing). Files flagged IsExample drop out when the user
-            // clears the "Include example AL files" checkbox; un-flagged files
-            // always emit. Folders that become empty after filtering still
-            // produce a .gitkeep so the directory is preserved.
+            // Per-file IncludeExamples filter: files flagged IsExample drop
+            // out when the user clears the "Include example AL files"
+            // checkbox; un-flagged files always emit. Folders that become
+            // empty after filtering fall back to a .gitkeep so the
+            // directory is preserved — except for the root folder, which
+            // never needs a .gitkeep (app.json always sits there).
             var emitFiles = plan.IncludeExamples
                 ? (IReadOnlyList<FileEmit>)folder.Files
                 : folder.Files.Where(f => !f.IsExample).ToList();
@@ -390,7 +413,8 @@ public class GenerationService
                             ShortName: StripWhitespace(plan.WorkspaceName),
                             ModuleName: moduleName,
                             Publisher: publisherOverride ?? template.Defaults.Publisher,
-                            Prefix: template.AppSourceCop.MandatoryPrefix,
+                            Affix: template.Defaults.Affix,
+                            AffixType: template.Defaults.AffixType,
                             FolderPath: folder.Path));
                         WriteString(archive, destInZip, substituted);
                     }
@@ -401,7 +425,7 @@ public class GenerationService
                     fileCount++;
                 }
             }
-            else
+            else if (!isRoot)
             {
                 WriteEmptyFile(archive, $"{folderRelative}/.gitkeep");
                 fileCount++;
@@ -459,7 +483,8 @@ public class GenerationService
                     ShortName: StripWhitespace(plan.WorkspaceName),
                     ModuleName: plan.WorkspaceName,
                     Publisher: template.Defaults.Publisher,
-                    Prefix: template.AppSourceCop.MandatoryPrefix,
+                    Affix: template.Defaults.Affix,
+                    AffixType: template.Defaults.AffixType,
                     FolderPath: file.Path))
                 : file.Content;
             WriteString(archive, $"{rootFolder}/{file.Path}", content);
@@ -809,7 +834,15 @@ public class GenerationService
                 "shortName" => ctx.ShortName,
                 "moduleName" => ctx.ModuleName,
                 "publisher" => ctx.Publisher,
-                "prefix" => ctx.Prefix,
+                // {{prefix}} and {{suffix}} both read the same Affix value but
+                // gate emission on the template's AffixType so authors can
+                // write `codeunit {{prefix}}1 X {}` and have it stay empty
+                // when the template is configured for suffixes (and vice
+                // versa). {{affix}} always emits — for templates that prefer
+                // positional control in their content.
+                "prefix" => ctx.AffixType == AffixType.Prefix ? ctx.Affix : string.Empty,
+                "suffix" => ctx.AffixType == AffixType.Suffix ? ctx.Affix : string.Empty,
+                "affix" => ctx.Affix,
                 "namespace" => ctx.FolderPath.Replace('/', '.'),
                 "guid" => Guid.NewGuid().ToString(),
                 _ => UnknownVariable(match.Value, key),
@@ -829,7 +862,8 @@ public class GenerationService
         string ShortName,
         string ModuleName,
         string Publisher,
-        string Prefix,
+        string Affix,
+        AffixType AffixType,
         string FolderPath);
 
     /// <summary>

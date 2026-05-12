@@ -24,9 +24,12 @@ public static class TemplateTomlMapper
     };
 
     /// <summary>
-    /// Serialises a template to its <c>template.toml</c> form. The two JSON
-    /// columns are unpacked into proper <c>[defaults]</c> and <c>[appSourceCop]</c>
-    /// tables so they're tractable to edit directly.
+    /// Serialises a template to its <c>template.toml</c> form. The
+    /// <c>defaults_json</c> column is unpacked into a proper
+    /// <c>[defaults]</c> table so admins can edit its fields directly.
+    /// AppSourceCop is no longer a top-level table — templates that want an
+    /// <c>AppSourceCop.json</c> declare it as a <c>[[folders.files]]</c>
+    /// under a folder with an empty <c>path</c>.
     /// </summary>
     public static string ToToml(RuntimeTemplate template)
     {
@@ -65,11 +68,8 @@ public static class TemplateTomlMapper
                     AllowDownloadingSource = template.Defaults.ResourceExposurePolicy.AllowDownloadingSource,
                     IncludeSourceInSymbolFile = template.Defaults.ResourceExposurePolicy.IncludeSourceInSymbolFile,
                 },
-            },
-            AppSourceCop = new AppSourceCopSeed
-            {
-                MandatoryPrefix = template.AppSourceCop.MandatoryPrefix,
-                SupportedCountries = template.AppSourceCop.SupportedCountries.ToList(),
+                Affix = template.Defaults.Affix,
+                AffixType = template.Defaults.AffixType,
             },
             // Folders intentionally left empty for the high-level serializer —
             // it would emit them as a single inline `folders = [{...}, {...}]`
@@ -230,18 +230,13 @@ public static class TemplateTomlMapper
                 AllowDownloadingSource = seed.Defaults.ResourceExposurePolicy.AllowDownloadingSource,
                 IncludeSourceInSymbolFile = seed.Defaults.ResourceExposurePolicy.IncludeSourceInSymbolFile,
             },
+            Affix = seed.Defaults.Affix,
+            AffixType = seed.Defaults.AffixType,
         };
 
-        var appSourceCop = new Domain.ValueObjects.AppSourceCopSettings
-        {
-            MandatoryPrefix = seed.AppSourceCop.MandatoryPrefix,
-            SupportedCountries = seed.AppSourceCop.SupportedCountries.ToList(),
-        };
-
-        // Round-trip the JSON columns through the same converter the structured
+        // Round-trip the JSON column through the same converter the structured
         // form would use, so we hit identical validation and parsing paths.
         var defaultsJson = JsonSerializer.Serialize(defaults);
-        var appSourceCopJson = JsonSerializer.Serialize(appSourceCop);
 
         return new TemplateInput(
             Key: seed.Template.Key,
@@ -251,7 +246,6 @@ public static class TemplateTomlMapper
             DefaultApplication: seed.Template.DefaultApplication,
             DefaultPlatform: seed.Template.DefaultPlatform,
             DefaultsJson: defaultsJson,
-            AppSourceCopJson: appSourceCopJson,
             CoreIdRangeFrom: seed.Template.CoreIdRangeFrom,
             CoreIdRangeTo: seed.Template.CoreIdRangeTo,
             ModuleIdRangeStart: seed.Template.ModuleIdRangeStart,
@@ -299,8 +293,10 @@ public static class TemplateTomlMapper
     /// structure of a fresh <c>template.toml</c> but with placeholder values so
     /// the admin can edit and save in one step. The starter pre-declares the
     /// <c>libs</c>, <c>permissionsets</c> and <c>Translations</c> folders for
-    /// both Core and module extensions so the preview pane shows the standard
-    /// AL layout immediately — admins can delete entries they don't want.
+    /// both Core and module extensions, plus a root folder with an empty
+    /// <c>AppSourceCop.json</c> so new templates emit it by default. Admins
+    /// can delete any of those entries — a PTE-style template typically drops
+    /// the AppSourceCop.json row.
     /// </summary>
     public static string BlankToml()
     {
@@ -325,6 +321,17 @@ public static class TemplateTomlMapper
         head = EmptyFoldersLineRegex.Replace(head, string.Empty).TrimEnd();
 
         var sb = new StringBuilder(head);
+
+        // Root-folder (path = "") seeds AppSourceCop.json next to app.json.
+        sb.AppendLine();
+        sb.AppendLine();
+        sb.AppendLine("[[folders]]");
+        sb.AppendLine("path = \"\"");
+        sb.AppendLine();
+        sb.AppendLine("[[folders.files]]");
+        sb.AppendLine("path = \"AppSourceCop.json\"");
+        sb.Append("content = ").AppendLine(TomlMultilineBasic(DefaultAppSourceCopJson));
+
         foreach (var path in DefaultFolderPaths)
         {
             sb.AppendLine();
@@ -354,4 +361,12 @@ public static class TemplateTomlMapper
         "permissionsets",
         "Translations",
     };
+
+    /// <summary>
+    /// Starter content for the <c>AppSourceCop.json</c> file seeded into new
+    /// templates' root folder. An empty AppSource Cop block — admins fill in
+    /// <c>mandatoryPrefix</c> / <c>supportedCountries</c> as needed, or drop
+    /// the file entirely for per-tenant extensions.
+    /// </summary>
+    public const string DefaultAppSourceCopJson = "{\n  \"mandatoryPrefix\": \"\",\n  \"supportedCountries\": []\n}\n";
 }

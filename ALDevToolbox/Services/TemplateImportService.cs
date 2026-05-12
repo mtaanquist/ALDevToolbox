@@ -185,7 +185,6 @@ public sealed class TemplateImportService
             DefaultPlatform = source.DefaultPlatform,
             DefaultApplicationVersion = localVersion,
             Defaults = source.Defaults,
-            AppSourceCop = source.AppSourceCop,
             CoreIdRangeFrom = source.CoreIdRangeFrom,
             CoreIdRangeTo = source.CoreIdRangeTo,
             ModuleIdRangeStart = source.ModuleIdRangeStart,

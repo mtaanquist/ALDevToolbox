@@ -81,14 +81,8 @@
 
         <section class="template-detail__section">
             <h2>Defaults</h2>
-            <p class="caption muted">Merged into every generated <code>app.json</code>.</p>
+            <p class="caption muted">Merged into every generated <code>app.json</code>; also carries the object-name affix and its type.</p>
             <textarea class="json-editor" rows="12" readonly spellcheck="false">@_defaultsJson</textarea>
-        </section>
-
-        <section class="template-detail__section">
-            <h2>AppSourceCop</h2>
-            <p class="caption muted">Written verbatim into each <code>AppSourceCop.json</code>.</p>
-            <textarea class="json-editor" rows="6" readonly spellcheck="false">@_appSourceCopJson</textarea>
         </section>
 
         @if (!_template.Deprecated && _template.DeletedAt is null)
@@ -110,7 +104,6 @@
     private bool _loadFailed;
     private PreviewNode? _tree;
     private string _defaultsJson = string.Empty;
-    private string _appSourceCopJson = string.Empty;
 
     private string PageTitleText => _template?.Name ?? (string.IsNullOrEmpty(Key) ? "Template" : Key!);
 
@@ -134,7 +127,6 @@
 
         _template = template;
         _defaultsJson = JsonSerializer.Serialize(template.Defaults, PrettyJson);
-        _appSourceCopJson = JsonSerializer.Serialize(template.AppSourceCop, PrettyJson);
         _tree = BuildTree(template);
     }
 

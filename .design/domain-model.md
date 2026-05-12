@@ -44,8 +44,7 @@ The primary template entity — corresponds one-to-one with a runtime version (o
 | `description`           | TEXT           | Caption under the dropdown selection               |
 | `default_application`   | TEXT NOT NULL  | e.g. "24.0.0.0" — pre-fills the form               |
 | `default_platform`      | TEXT NOT NULL  | e.g. "1.0.0.0"                                     |
-| `defaults_json`         | TEXT NOT NULL  | JSON blob of remaining `app.json` defaults (target, features, supportedLocales, url, logo, resourceExposurePolicy, etc.) |
-| `app_source_cop_json`   | TEXT NOT NULL  | JSON blob of the AppSourceCop.json contents        |
+| `defaults_json`         | TEXT NOT NULL  | JSON blob of remaining `app.json` defaults (target, features, supportedLocales, url, logo, resourceExposurePolicy) plus the template-wide affix block (`affix` string, `affixType` "Prefix" \| "Suffix") that drives the `{{prefix}}` / `{{suffix}}` / `{{affix}}` mustache vars. The `app_source_cop_json` column was retired — templates that need an AppSourceCop.json declare it as a regular `template_files` row under a folder with empty `path`. |
 | `core_id_range_from`    | INTEGER NOT NULL | Default 90000                                    |
 | `core_id_range_to`      | INTEGER NOT NULL | Default 90999                                    |
 | `module_id_range_start` | INTEGER NOT NULL | Default 91000 — first module gets this           |
@@ -55,7 +54,7 @@ The primary template entity — corresponds one-to-one with a runtime version (o
 | `updated_at`            | TEXT NOT NULL  | UTC ISO8601                                        |
 | `deleted_at`            | TEXT           | Null = active. Soft-delete                         |
 
-`defaults_json` and `app_source_cop_json` are JSON columns rather than normalized tables because they're write-once-edit-rarely metadata, and the structure is closed (defined by the AL/BC ecosystem). Normalising them would mean a schema migration every time AL adds a new app.json field. EF Core can use `HasConversion<string>()` with `JsonSerializer` to make these typed in C# while stored as text.
+`defaults_json` is a JSON column rather than a normalised table because it's write-once-edit-rarely metadata, and the structure is closed (defined by the AL/BC ecosystem). Normalising it would mean a schema migration every time AL adds a new app.json field. EF Core uses `HasConversion<string>()` with `JsonSerializer` to make this typed in C# while stored as text.
 
 ### `template_folders`
 
@@ -66,17 +65,17 @@ The folder structure the runtime template emits into the **Core** extension only
 | `id`           | INTEGER PK     |                                                |
 | `template_id`  | INTEGER FK     | → runtime_templates.id, cascade delete          |
 | `ordering`     | INTEGER NOT NULL | Position within the template's folder list   |
-| `path`         | TEXT NOT NULL  | Relative path inside the extension folder. e.g. "Source/Foundation" |
+| `path`         | TEXT NOT NULL  | Relative path inside the extension folder. e.g. "Source/Foundation". An **empty** path means the folder represents the extension root — its files land next to app.json. At most one empty-path row per template (enforced by validation). |
 
 Index: `(template_id, ordering)`.
 
-A folder's seeded contents live in `template_files` rows hung off this table. A folder with no `template_files` rows generates a single `.gitkeep` placeholder; a folder with rows generates one entry in the ZIP per row when `include_examples` is true (and a `.gitkeep` otherwise).
+A folder's seeded contents live in `template_files` rows hung off this table. A folder with no `template_files` rows generates a single `.gitkeep` placeholder; a folder with rows generates one entry in the ZIP per row whose `is_example` is false (or true when the workspace's "Include example AL files" toggle is on). When all files filter out, the generator falls back to `.gitkeep` — except for the extension-root folder, which never needs one (app.json is always there).
 
 Module extensions in a generated workspace use `template_module_folders` instead — see below — so Core's per-extension scaffolding (App Install codeunits, setup tables, permission sets) doesn't get duplicated into every module ZIP.
 
 ### `template_module_folders`
 
-Same shape as `template_folders`, but rows are emitted into every **module** extension generated from this template. Empty by default; if a template has no module folders, modules ship with just `app.json`, `AppSourceCop.json`, and the static fallback folders (`libs/`, `permissionsets/`, `Translations/`).
+Same shape as `template_folders`, but rows are emitted into every **module** extension generated from this template. Empty by default; if a template has no module folders, modules ship with just `app.json` and the static fallback folders (`libs/`, `permissionsets/`, `Translations/`). Like `template_folders`, an empty-path row represents the module extension's root — admins typically use it to seed an AppSourceCop.json for AppSource-published modules.
 
 | Column         | Type           | Notes                                          |
 |----------------|----------------|------------------------------------------------|
@@ -99,7 +98,8 @@ Per-module-folder file content. Same shape as `template_files`, just hung off `t
 | `template_module_folder_id` | INTEGER FK     | → template_module_folders.id, cascade delete    |
 | `ordering`                  | INTEGER NOT NULL | Position within the folder's file list        |
 | `path`                      | TEXT NOT NULL  | Relative path inside the folder, forward-slash separated. Same rules as `template_files.path` |
-| `content`                   | TEXT NOT NULL  | Raw file content. Mustache substitution runs at generation time |
+| `content`                   | TEXT NOT NULL  | Raw file content. Mustache substitution runs at generation time for `.al` files |
+| `is_example`                | BOOLEAN NOT NULL | Skipped at generation time when the workspace "Include example AL files" toggle is off. Default false; existing rows backfilled to true by migration |
 
 Indexes: `(template_module_folder_id, ordering)`, `(template_module_folder_id, path)` UNIQUE.
 
@@ -113,7 +113,8 @@ Per-folder file content. Stored as UTF-8 text — binary assets are not supporte
 | `template_folder_id`| INTEGER FK     | → template_folders.id, cascade delete           |
 | `ordering`          | INTEGER NOT NULL | Position within the folder's file list        |
 | `path`              | TEXT NOT NULL  | Relative path inside the folder, forward-slash separated. e.g. "AppInstall.Codeunit.al" or "subfolder/Util.Codeunit.al". No leading slash, no `..` segments. |
-| `content`           | TEXT NOT NULL  | Raw file content. Mustache substitution runs at generation time, not at write time. |
+| `content`           | TEXT NOT NULL  | Raw file content. Mustache substitution runs at generation time for `.al` files. |
+| `is_example`        | BOOLEAN NOT NULL | Skipped at generation time when the workspace "Include example AL files" toggle is off. Default false; existing rows backfilled to true by migration so the pre-flag all-or-nothing behaviour is preserved. |
 
 Indexes: `(template_folder_id, ordering)` for ordered enumeration; `(template_folder_id, path)` UNIQUE so a single folder can't carry two files at the same relative path.
 

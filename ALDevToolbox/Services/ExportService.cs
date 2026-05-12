@@ -18,8 +18,8 @@ public class ExportService
 {
     /// <summary>
     /// Mirrors <see cref="TemplateTomlMapper"/>: a global <c>snake_case</c>
-    /// policy with per-property TOML name overrides on the camelCase outliers
-    /// (defaults / appSourceCop) handled inside the seed POCOs themselves.
+    /// policy with per-property TOML name overrides on the camelCase outlier
+    /// (defaults) handled inside the seed POCOs themselves.
     /// Keeping the options identical across read and write paths is what
     /// makes round-tripping reliable.
     /// </summary>

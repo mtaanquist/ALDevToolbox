@@ -27,11 +27,8 @@ public static class TemplateBuilder
             Target = "Cloud",
             Features = new List<string> { "TranslationFile" },
             SupportedLocales = new List<string> { "en-US" },
-        },
-        AppSourceCop = new AppSourceCopSettings
-        {
-            MandatoryPrefix = "ACME",
-            SupportedCountries = new List<string> { "US" },
+            Affix = "ACME",
+            AffixType = AffixType.Prefix,
         },
         CoreIdRangeFrom = 90000,
         CoreIdRangeTo = 90999,

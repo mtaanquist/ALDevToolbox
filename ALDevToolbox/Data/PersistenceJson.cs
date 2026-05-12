@@ -4,7 +4,7 @@ namespace ALDevToolbox.Data;
 
 /// <summary>
 /// Shared <see cref="JsonSerializerOptions"/> for every persistence-side JSON
-/// round-trip — the <c>defaults_json</c> / <c>app_source_cop_json</c> columns
+/// round-trip — the <c>defaults_json</c> column on <c>runtime_templates</c>
 /// in <see cref="AppDbContext"/>, the snapshot column written by
 /// <see cref="AuditInterceptor"/>, and the validation pre-parse in
 /// <see cref="ALDevToolbox.Services.TemplateService"/>. Keeping these on a

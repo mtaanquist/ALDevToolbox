@@ -396,10 +396,13 @@
 
     private PreviewNode BuildExtensionNode(string folderName, bool isCore)
     {
+        // app.json is always emitted. AppSourceCop.json is no longer
+        // unconditional — templates declare it as a file in a folder with
+        // an empty path. The preview surfaces those root-folder files
+        // alongside app.json so the layout matches the ZIP.
         var contents = new List<PreviewNode>
         {
             PreviewNode.File("app.json"),
-            PreviewNode.File("AppSourceCop.json"),
         };
 
         if (_selected is not null)
@@ -407,11 +410,33 @@
             // Core uses Folders; modules use ModuleFolders. The split exists
             // so per-Core scaffolding (App Install codeunits, setup tables)
             // doesn't bleed into every module preview.
+            if (isCore)
+            {
+                foreach (var rootFolder in _selected.Folders.Where(f => string.IsNullOrEmpty(f.Path)))
+                {
+                    foreach (var file in rootFolder.Files.OrderBy(x => x.Ordering))
+                    {
+                        contents.Add(PreviewNode.File(file.Path));
+                    }
+                }
+            }
+            else
+            {
+                foreach (var rootFolder in _selected.ModuleFolders.Where(f => string.IsNullOrEmpty(f.Path)))
+                {
+                    foreach (var file in rootFolder.Files.OrderBy(x => x.Ordering))
+                    {
+                        contents.Add(PreviewNode.File(file.Path));
+                    }
+                }
+            }
             var entries = isCore
                 ? _selected.Folders
+                    .Where(f => !string.IsNullOrEmpty(f.Path))
                     .OrderBy(f => f.Ordering)
                     .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromFiles(f.Files)))
                 : _selected.ModuleFolders
+                    .Where(f => !string.IsNullOrEmpty(f.Path))
                     .OrderBy(f => f.Ordering)
                     .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromFiles(f.Files)));
             contents.AddRange(PreviewTreeBuilder.BuildFolderChildren(entries));

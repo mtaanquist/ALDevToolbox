@@ -159,8 +159,7 @@ A "New template" button at the top.
 A form mirroring the `runtime_templates` schema:
 
 - Top: key (read-only after creation), runtime number, name, description.
-- Default application, default platform, defaults JSON (for v1, this can be a `<textarea>` with JSON; a structured editor is a "nice to have" for later).
-- AppSourceCop JSON (textarea).
+- Default application, default platform, defaults JSON (for v1, this can be a `<textarea>` with JSON; a structured editor is a "nice to have" for later). Defaults includes the template-wide `affix` + `affixType` fields driving the `{{prefix}}` / `{{suffix}}` / `{{affix}}` mustache variables.
 - Core ID range from/to.
 - Module ID range start, module ID range size.
 - Deprecated toggle.
@@ -193,7 +192,7 @@ These appear in multiple pages — pulling them into reusable components saves d
 - **`<DependencyPicker>`** — used by New Extension and admin module/catalogue editing. Takes a list of `DependencyEntry`, supports add/remove. Catalogue picker mode shows checkboxes over the catalogue; freeform mode shows a list with add buttons.
 - **`<FolderTreePreview>`** — takes a list of folder paths and renders the tree. Used by both project flows.
 - **`<AuditHistoryPanel>`** — takes an entity type + id, fetches recent audit entries. Used at the bottom of every admin edit page.
-- **`<JsonEditor>`** — a textarea with monospace font and basic validation feedback. Used for `defaults_json` and `app_source_cop_json` fields. v1 = textarea + parse-and-show-error-on-blur. v2 = something nicer.
+- **`<JsonEditor>`** — a textarea with monospace font and basic validation feedback. Used for the `defaults_json` field. v1 = textarea + parse-and-show-error-on-blur. v2 = something nicer.
 
 ## Visual conventions
 
