@@ -131,6 +131,7 @@ public sealed class TemplateImportService
             .IgnoreQueryFilters()
             .Where(t => t.Id == systemTemplateId && t.OrganizationId == systemOrgId.Value)
             .Include(t => t.WorkspaceExtensions.OrderBy(e => e.Ordering))
+                .ThenInclude(e => e.Dependencies.OrderBy(d => d.Ordering))
             .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
                 .ThenInclude(d => d.Module!)
                     .ThenInclude(m => m.Dependencies.OrderBy(dep => dep.Ordering))
@@ -162,21 +163,21 @@ public sealed class TemplateImportService
             ? null
             : await EnsureApplicationVersionAsync(source.DefaultApplicationVersion, actingOrgId, now, ct);
 
+        // Source extensions only carry their dependencies via Include. The
+        // recursive folder/file tree is loaded flat below and reassembled —
+        // EF doesn't recurse on Include and AsNoTracking doesn't do fixup.
+        await HydrateExtensionTreeAsync(source, ct);
+
         var localModulesByKey = new Dictionary<string, Module>(StringComparer.Ordinal);
         foreach (var defaultModule in source.DefaultModules)
         {
             var sourceModule = defaultModule.Module
                 ?? throw new InvalidOperationException("Default-module row has no module loaded.");
             if (localModulesByKey.ContainsKey(sourceModule.Key)) continue;
+            await HydrateModuleExtensionTreeAsync(sourceModule, ct);
             localModulesByKey[sourceModule.Key] = await EnsureModuleAsync(sourceModule, actingOrgId, now, ct);
         }
 
-        // TODO Issue #54 follow-up: clone WorkspaceExtensions + folder/file
-        // recursive trees + dependencies, and ensure module ExtensionFolders
-        // are cloned alongside their parent Module. The current shape only
-        // carries the template metadata + default modules so importing a
-        // template gives the admin a starting point; per-extension content
-        // has to be re-authored until the rewrite lands.
         var clone = new RuntimeTemplate
         {
             OrganizationId = actingOrgId,
@@ -194,6 +195,10 @@ public sealed class TemplateImportService
             Deprecated = false,
             CreatedAt = now,
             UpdatedAt = now,
+            WorkspaceExtensions = source.WorkspaceExtensions
+                .OrderBy(e => e.Ordering)
+                .Select(e => CloneWorkspaceExtension(e, actingOrgId))
+                .ToList(),
         };
 
         var ordering = 0;
@@ -213,13 +218,194 @@ public sealed class TemplateImportService
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Imported template '{Key}' from system org {SystemOrgId} into org {OrgId}: {ModuleCount} module(s), elapsed {Elapsed}ms.",
+            "Imported template '{Key}' from system org {SystemOrgId} into org {OrgId}: {Extensions} extension(s), {Modules} module(s), elapsed {Elapsed}ms.",
             clone.Key, systemOrgId.Value, actingOrgId,
+            clone.WorkspaceExtensions.Count,
             clone.DefaultModules.Count,
             stopwatch.ElapsedMilliseconds);
 
         return clone;
     }
+
+    /// <summary>
+    /// Loads the source template's recursive folder + file rows in two flat
+    /// queries and rebuilds the parent/child links on the in-memory graph.
+    /// Mirrors <c>GenerationService.AssembleFolderTree</c>; pulled inline here
+    /// because the import flow only needs it at this entry point and
+    /// extracting a shared helper would couple two unrelated services.
+    /// </summary>
+    private async Task HydrateExtensionTreeAsync(RuntimeTemplate template, CancellationToken ct)
+    {
+        var extensionIds = template.WorkspaceExtensions.Select(e => e.Id).ToList();
+        if (extensionIds.Count == 0) return;
+
+        var folders = await _db.WorkspaceExtensionFolders
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(f => extensionIds.Contains(f.WorkspaceExtensionId))
+            .OrderBy(f => f.Ordering)
+            .ToListAsync(ct);
+        var folderIds = folders.Select(f => f.Id).ToList();
+        var files = folderIds.Count == 0
+            ? new List<WorkspaceExtensionFile>()
+            : await _db.WorkspaceExtensionFiles
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Where(f => folderIds.Contains(f.WorkspaceExtensionFolderId))
+                .OrderBy(f => f.Ordering)
+                .ToListAsync(ct);
+
+        var foldersById = folders.ToDictionary(f => f.Id);
+        var extensionsById = template.WorkspaceExtensions.ToDictionary(e => e.Id);
+
+        foreach (var ext in template.WorkspaceExtensions) ext.Folders.Clear();
+        foreach (var folder in folders)
+        {
+            folder.Folders.Clear();
+            folder.Files.Clear();
+        }
+
+        foreach (var folder in folders)
+        {
+            if (folder.ParentFolderId is int parentId && foldersById.TryGetValue(parentId, out var parent))
+            {
+                parent.Folders.Add(folder);
+            }
+            else if (extensionsById.TryGetValue(folder.WorkspaceExtensionId, out var ext))
+            {
+                ext.Folders.Add(folder);
+            }
+        }
+        foreach (var file in files)
+        {
+            if (foldersById.TryGetValue(file.WorkspaceExtensionFolderId, out var folder))
+            {
+                folder.Files.Add(file);
+            }
+        }
+    }
+
+    private async Task HydrateModuleExtensionTreeAsync(Module module, CancellationToken ct)
+    {
+        var folders = await _db.ModuleExtensionFolders
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(f => f.ModuleId == module.Id)
+            .OrderBy(f => f.Ordering)
+            .ToListAsync(ct);
+        var folderIds = folders.Select(f => f.Id).ToList();
+        var files = folderIds.Count == 0
+            ? new List<ModuleExtensionFile>()
+            : await _db.ModuleExtensionFiles
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Where(f => folderIds.Contains(f.ModuleExtensionFolderId))
+                .OrderBy(f => f.Ordering)
+                .ToListAsync(ct);
+
+        var foldersById = folders.ToDictionary(f => f.Id);
+        module.ExtensionFolders.Clear();
+        foreach (var folder in folders)
+        {
+            folder.Folders.Clear();
+            folder.Files.Clear();
+        }
+
+        foreach (var folder in folders)
+        {
+            if (folder.ParentFolderId is int parentId && foldersById.TryGetValue(parentId, out var parent))
+            {
+                parent.Folders.Add(folder);
+            }
+            else
+            {
+                module.ExtensionFolders.Add(folder);
+            }
+        }
+        foreach (var file in files)
+        {
+            if (foldersById.TryGetValue(file.ModuleExtensionFolderId, out var folder))
+            {
+                folder.Files.Add(file);
+            }
+        }
+    }
+
+    /// <summary>Deep-clones a workspace extension into a fresh entity graph owned by the importing org.</summary>
+    private static WorkspaceExtension CloneWorkspaceExtension(WorkspaceExtension source, int actingOrgId) => new()
+    {
+        OrganizationId = actingOrgId,
+        Ordering = source.Ordering,
+        Path = source.Path,
+        NameTemplate = source.NameTemplate,
+        Required = source.Required,
+        Application = source.Application,
+        Runtime = source.Runtime,
+        IdRangeFrom = source.IdRangeFrom,
+        IdRangeTo = source.IdRangeTo,
+        Folders = source.Folders
+            .OrderBy(f => f.Ordering)
+            .Select(f => CloneWorkspaceFolder(f, actingOrgId))
+            .ToList(),
+        Dependencies = source.Dependencies
+            .OrderBy(d => d.Ordering)
+            .Select(d => new WorkspaceExtensionDependency
+            {
+                OrganizationId = actingOrgId,
+                Ordering = d.Ordering,
+                RefExtensionPath = d.RefExtensionPath,
+                RefModuleKey = d.RefModuleKey,
+                LitId = d.LitId,
+                LitName = d.LitName,
+                LitPublisher = d.LitPublisher,
+                LitVersion = d.LitVersion,
+            })
+            .ToList(),
+    };
+
+    private static WorkspaceExtensionFolder CloneWorkspaceFolder(WorkspaceExtensionFolder source, int actingOrgId) => new()
+    {
+        OrganizationId = actingOrgId,
+        Ordering = source.Ordering,
+        Path = source.Path,
+        Folders = source.Folders
+            .OrderBy(f => f.Ordering)
+            .Select(f => CloneWorkspaceFolder(f, actingOrgId))
+            .ToList(),
+        Files = source.Files
+            .OrderBy(f => f.Ordering)
+            .Select(f => new WorkspaceExtensionFile
+            {
+                OrganizationId = actingOrgId,
+                Ordering = f.Ordering,
+                Path = f.Path,
+                Content = f.Content,
+                IsExample = f.IsExample,
+            })
+            .ToList(),
+    };
+
+    private static ModuleExtensionFolder CloneModuleExtensionFolder(ModuleExtensionFolder source, int actingOrgId) => new()
+    {
+        OrganizationId = actingOrgId,
+        Ordering = source.Ordering,
+        Path = source.Path,
+        Folders = source.Folders
+            .OrderBy(f => f.Ordering)
+            .Select(f => CloneModuleExtensionFolder(f, actingOrgId))
+            .ToList(),
+        Files = source.Files
+            .OrderBy(f => f.Ordering)
+            .Select(f => new ModuleExtensionFile
+            {
+                OrganizationId = actingOrgId,
+                Ordering = f.Ordering,
+                Path = f.Path,
+                Content = f.Content,
+                IsExample = f.IsExample,
+            })
+            .ToList(),
+    };
 
     private async Task<ApplicationVersion> EnsureApplicationVersionAsync(
         ApplicationVersion sourceVersion, int actingOrgId, DateTime now, CancellationToken ct)
@@ -277,6 +463,12 @@ public sealed class TemplateImportService
                 DepPublisher = d.DepPublisher,
                 DepVersion = d.DepVersion,
             }).ToList(),
+            // Module-supplied extension folder/file tree. Caller must have
+            // hydrated the source module's recursive tree before invoking us.
+            ExtensionFolders = sourceModule.ExtensionFolders
+                .OrderBy(f => f.Ordering)
+                .Select(f => CloneModuleExtensionFolder(f, actingOrgId))
+                .ToList(),
         };
         _db.Modules.Add(clone);
         return clone;

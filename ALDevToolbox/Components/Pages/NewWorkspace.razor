@@ -58,6 +58,14 @@
                            title="Letters, digits and spaces only; must start with a letter."
                            @bind="_workspaceName" @bind:event="oninput" />
                     <small class="muted">Workspace name. Letters, digits and spaces only; must start with a letter.</small>
+                    <input type="text" name="ExtensionPrefix" placeholder="e.g. ACME"
+                           @bind="_extensionPrefix" @bind:event="oninput" />
+                    <small class="muted">
+                        Per-workspace extension-name prefix — substitutes into
+                        <code>&#123;&#123;extension_prefix&#125;&#125;</code> in the template's
+                        extension names (e.g. <code>ACME Core</code>). Distinct from the
+                        AL object-name affix configured on the template.
+                    </small>
                     <input type="text" name="Brief" placeholder="One-line description (optional)"
                            @bind="_brief" @bind:event="oninput" />
                     <textarea name="Description" rows="3" placeholder="Longer description (optional)"
@@ -130,6 +138,31 @@
                         </p>
                     }
                 </section>
+
+                @if (_optionalExtensions.Count > 0)
+                {
+                    <section class="form-section">
+                        <label class="section-label">Additional extensions</label>
+                        <p class="caption muted">
+                            Optional extensions declared by this template. Tick to include
+                            them in the generated workspace alongside the required ones.
+                        </p>
+                        <div class="module-list">
+                            @foreach (var ext in _optionalExtensions.OrderBy(e => e.Path, StringComparer.OrdinalIgnoreCase))
+                            {
+                                <label class="module-card">
+                                    <input type="checkbox" name="SelectedExtensionPaths" value="@ext.Path"
+                                           checked="@_selectedExtensionPaths.Contains(ext.Path)"
+                                           @onchange="e => OnExtensionToggled(ext.Path, (bool)(e.Value ?? false))" />
+                                    <span class="module-card__body">
+                                        <span class="module-card__name">@ext.Path</span>
+                                        <span class="module-card__caption muted">@ext.NameTemplate</span>
+                                    </span>
+                                </label>
+                            }
+                        </div>
+                    </section>
+                }
 
                 <section class="form-section">
                     <label class="section-label">Modules</label>
@@ -215,7 +248,15 @@
     private int _coreIdRangeTo;
     private string _applicationVersion = string.Empty;
     private string _runtimeVersion = string.Empty;
+    private string _extensionPrefix = string.Empty;
     private readonly HashSet<string> _selectedModuleKeys = new(StringComparer.Ordinal);
+    /// <summary>
+    /// Paths of optional template-declared extensions the user ticked. The
+    /// required ones are emitted regardless and don't go through this set.
+    /// </summary>
+    private readonly HashSet<string> _selectedExtensionPaths = new(StringComparer.Ordinal);
+    /// <summary>Cache of the picked template's optional extensions for rendering checkboxes.</summary>
+    private List<WorkspaceExtension> _optionalExtensions = new();
     private bool _includeExamples = true;
 
     private OrganizationConfig? _orgConfig;
@@ -273,6 +314,18 @@
         _templateKey = template.Key;
         _coreIdRangeFrom = template.CoreIdRangeFrom;
         _coreIdRangeTo = template.CoreIdRangeTo;
+        // Pre-fill the friendly extension-name prefix from the template's
+        // defaults. The user can override per workspace — this only seeds the
+        // initial value when switching templates.
+        _extensionPrefix = template.Defaults.ExtensionPrefix;
+        // Populate the optional-extension checkbox list. Switching templates
+        // wipes prior selections; required entries (Required = true) are
+        // emitted unconditionally and don't surface here.
+        _selectedExtensionPaths.Clear();
+        _optionalExtensions = template.WorkspaceExtensions
+            .Where(e => !e.Required)
+            .OrderBy(e => e.Ordering)
+            .ToList();
         // Prefer the curated application-version catalogue (Milestone P2.4)
         // when the template points at a live entry — both fields snap to it
         // atomically. Otherwise fall back to the template's free-text
@@ -326,6 +379,12 @@
     {
         if (isChecked) _selectedModuleKeys.Add(key);
         else _selectedModuleKeys.Remove(key);
+    }
+
+    private void OnExtensionToggled(string path, bool isChecked)
+    {
+        if (isChecked) _selectedExtensionPaths.Add(path);
+        else _selectedExtensionPaths.Remove(path);
     }
 
     private int CountDependencies()

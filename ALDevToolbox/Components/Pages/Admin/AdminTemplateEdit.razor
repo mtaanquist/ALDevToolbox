@@ -991,6 +991,15 @@
             _fieldErrors = ex.Errors;
             _saveError = $"Couldn't save: {ex.Errors.Count} validation error(s). See messages next to each field.";
         }
+        catch (NotImplementedException)
+        {
+            // The structured admin folder/file editor hasn't been rewritten
+            // around the unified-extensions recursive folder tree yet — the
+            // TemplateService.UpdateAsync(TemplateInput, …) overload throws
+            // for that reason. Surface a friendly nudge toward the working
+            // path instead of letting the unhandled exception surface.
+            _saveError = "Saving from the structured form is temporarily disabled while the unified-extensions folder editor is rebuilt (Issue #54). Use the TOML tab to author and save the template.";
+        }
         catch (Exception ex)
         {
             Log.LogError(ex, "Unexpected error saving template '{Key}'.", payload.Key);
@@ -1360,14 +1369,35 @@
 
         try
         {
-            // TODO Issue #54 follow-up: the TOML save path needs to bridge
-            // TemplateAuthoring (from the new mapper) into the rewritten
-            // TemplateService.CreateAsync / UpdateAsync, which currently still
-            // accept the legacy TemplateInput shape and throw
-            // NotImplementedException. Validating the TOML parses cleanly is
-            // useful in the meantime; persistence is wired up in the next slice.
-            _ = TemplateTomlMapper.FromToml(_toml, deprecated: _form.Deprecated);
-            _saveError = "Saving templates from TOML is temporarily disabled while the unified-extensions write-path is rebuilt (Issue #54). The TOML parses cleanly.";
+            var payload = TemplateTomlMapper.FromToml(_toml, deprecated: _form.Deprecated);
+
+            if (IsEdit && _existingId is not null)
+            {
+                await Templates.UpdateAsync(_existingId.Value, payload);
+                var refreshed = await Templates.GetByKeyAsync(Key!);
+                if (refreshed is not null)
+                {
+                    _form = FormState.From(refreshed);
+                    _toml = TemplateTomlMapper.ToToml(refreshed);
+                    _editorMountedToml = _toml;
+                    if (_editorId != 0 && _editorModule is not null)
+                    {
+                        await _editorModule.InvokeVoidAsync("setValue", _editorId, _toml);
+                        await _editorModule.InvokeVoidAsync("markPristine", _editorId);
+                    }
+                }
+                _saveSuccess = "Saved from TOML.";
+            }
+            else
+            {
+                await Templates.CreateAsync(payload);
+                if (_editorId != 0 && _editorModule is not null)
+                {
+                    await _editorModule.InvokeVoidAsync("markPristine", _editorId);
+                }
+                Nav.NavigateTo("/admin/templates");
+                return;
+            }
         }
         catch (TomlParseException ex)
         {

@@ -1,9 +1,6 @@
-// TODO Issue #54 follow-up: rewrite around WorkspaceExtension reconciliation
-// once TemplateService.CreateAsync/UpdateAsync are restored from
-// NotImplementedException stubs. The legacy folder/file reconcilers no longer
-// have a place under the unified-extensions model.
-#if false
+using System.Text.Json;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Builders;
 using ALDevToolbox.Tests.Infrastructure;
@@ -14,323 +11,266 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace ALDevToolbox.Tests.Templates;
 
 /// <summary>
-/// Exercises <see cref="TemplateService.UpdateAsync"/> end-to-end: every code
-/// path inside ReconcileFolders / ReconcileFiles / ReconcileModuleFolders /
-/// ReconcileDefaultModules has a test. These reconcilers mutate the persisted
-/// graph in place so unchanged rows keep stable primary keys, which keeps the
-/// audit log tight — a regression here is invisible without a test.
+/// Behavioural tests for the unified-extensions
+/// <see cref="TemplateService.CreateAsync(TemplateAuthoring, CancellationToken)"/>
+/// /
+/// <see cref="TemplateService.UpdateAsync(int, TemplateAuthoring, CancellationToken)"/>
+/// write path. Covers the validator (field-keyed errors), the create-and-persist
+/// happy path, the update-then-rebuild path, the default-modules reconciler
+/// (PK stability), and the legacy-shape stubs (they throw).
 /// </summary>
-public sealed class TemplateServiceReconciliationTests : IDisposable
+public sealed class TemplateServiceWriteSideTests : IDisposable
 {
     private readonly TestDb _db = new();
 
     public void Dispose() => _db.Dispose();
 
     [Fact]
-    public async Task Update_reorders_folders_in_place_without_replacing_primary_keys()
+    public async Task Create_persists_template_with_extension_tree_and_default_modules()
     {
-        int templateId;
-        int folderAId, folderBId;
-
-        await using (var ctx = _db.NewContext())
+        await using (var seed = _db.NewContext())
         {
-            var template = TemplateBuilder.Default("runtime-reorder")
-                .WithCoreFolder("Source", ("A.al", "// a"))
-                .WithCoreFolder("Test", ("B.al", "// b"));
-            ctx.RuntimeTemplates.Add(template);
-            await ctx.SaveChangesAsync();
-            templateId = template.Id;
-            folderAId = template.Folders.Single(f => f.Path == "Source").Id;
-            folderBId = template.Folders.Single(f => f.Path == "Test").Id;
+            seed.Modules.Add(ModuleBuilder.Default("alpha"));
+            await seed.SaveChangesAsync();
         }
 
-        // Swap the order; both folders still present, same paths, new ordering.
-        var input = TemplateInputFor(
-            "runtime-reorder",
-            new TemplateFolderInput("Test", new[] { new TemplateFileInput("B.al", "// b") }),
-            new TemplateFolderInput("Source", new[] { new TemplateFileInput("A.al", "// a") }));
-
-        await using (var ctx = _db.NewContext())
+        var input = NewAuthoring("runtime-create", extensions: new[]
         {
-            await NewService(ctx).UpdateAsync(templateId, input);
-        }
-
-        await using (var verify = _db.NewContext())
-        {
-            var folders = await verify.RuntimeTemplates
-                .Where(t => t.Id == templateId)
-                .Include(t => t.Folders.OrderBy(f => f.Ordering))
-                .Select(t => t.Folders.ToList())
-                .SingleAsync();
-
-            folders.Select(f => f.Path).Should().Equal("Test", "Source");
-            // Reconciler keeps the same primary keys — it mutates row[0] to
-            // become "Test" and row[1] to become "Source". The audit log relies
-            // on this so an unchanged update doesn't churn rows.
-            folders[0].Id.Should().Be(folderAId);
-            folders[1].Id.Should().Be(folderBId);
-        }
-    }
-
-    [Fact]
-    public async Task Update_removes_folders_dropped_from_the_input_list()
-    {
-        int templateId;
-        await using (var ctx = _db.NewContext())
-        {
-            var template = TemplateBuilder.Default("runtime-shrink")
-                .WithCoreFolder("Source", ("A.al", "// a"))
-                .WithCoreFolder("Test", ("B.al", "// b"));
-            ctx.RuntimeTemplates.Add(template);
-            await ctx.SaveChangesAsync();
-            templateId = template.Id;
-        }
-
-        var input = TemplateInputFor(
-            "runtime-shrink",
-            new TemplateFolderInput("Source", new[] { new TemplateFileInput("A.al", "// a") }));
-
-        await using (var ctx = _db.NewContext())
-        {
-            await NewService(ctx).UpdateAsync(templateId, input);
-        }
-
-        await using (var verify = _db.NewContext())
-        {
-            var folders = await verify.TemplateFolders
-                .Where(f => f.TemplateId == templateId)
-                .ToListAsync();
-            folders.Should().HaveCount(1);
-            folders[0].Path.Should().Be("Source");
-        }
-    }
-
-    [Fact]
-    public async Task Update_appends_new_folders_at_the_end_of_the_input_list()
-    {
-        int templateId;
-        await using (var ctx = _db.NewContext())
-        {
-            var template = TemplateBuilder.Default("runtime-grow")
-                .WithCoreFolder("Source", ("A.al", "// a"));
-            ctx.RuntimeTemplates.Add(template);
-            await ctx.SaveChangesAsync();
-            templateId = template.Id;
-        }
-
-        var input = TemplateInputFor(
-            "runtime-grow",
-            new TemplateFolderInput("Source", new[] { new TemplateFileInput("A.al", "// a") }),
-            new TemplateFolderInput("Test", new[] { new TemplateFileInput("B.al", "// b") }));
-
-        await using (var ctx = _db.NewContext())
-        {
-            await NewService(ctx).UpdateAsync(templateId, input);
-        }
-
-        await using (var verify = _db.NewContext())
-        {
-            var folders = await verify.TemplateFolders
-                .Where(f => f.TemplateId == templateId)
-                .OrderBy(f => f.Ordering)
-                .ToListAsync();
-            folders.Select(f => f.Path).Should().Equal("Source", "Test");
-            folders[1].Ordering.Should().Be(1);
-        }
-    }
-
-    [Fact]
-    public async Task Update_persists_file_content_changes_in_place()
-    {
-        int templateId, fileId;
-        await using (var ctx = _db.NewContext())
-        {
-            var template = TemplateBuilder.Default("runtime-edit-file")
-                .WithCoreFolder("Source", ("Sample.al", "// original"));
-            ctx.RuntimeTemplates.Add(template);
-            await ctx.SaveChangesAsync();
-            templateId = template.Id;
-            fileId = template.Folders.Single().Files.Single().Id;
-        }
-
-        var input = TemplateInputFor(
-            "runtime-edit-file",
-            new TemplateFolderInput("Source", new[] { new TemplateFileInput("Sample.al", "// edited") }));
-
-        await using (var ctx = _db.NewContext())
-        {
-            await NewService(ctx).UpdateAsync(templateId, input);
-        }
-
-        await using (var verify = _db.NewContext())
-        {
-            var file = await verify.TemplateFiles.SingleAsync(f => f.Id == fileId);
-            file.Content.Should().Be("// edited");
-        }
-    }
-
-    [Fact]
-    public async Task Update_appends_a_new_default_module_to_the_template()
-    {
-        int templateId;
-        await using (var ctx = _db.NewContext())
-        {
-            ctx.Modules.AddRange(
-                ModuleBuilder.Default("alpha"),
-                ModuleBuilder.Default("bravo"));
-            var template = TemplateBuilder.Default("runtime-defaults-grow");
-            ctx.RuntimeTemplates.Add(template);
-            await ctx.SaveChangesAsync();
-            templateId = template.Id;
-
-            var alphaId = ctx.Modules.Single(m => m.Key == "alpha").Id;
-            ctx.Set<RuntimeTemplateDefaultModule>().Add(
-                new RuntimeTemplateDefaultModule
+            new ExtensionAuthoring(
+                Path: "Core",
+                NameTemplate: "{{extension_prefix}} Core",
+                Required: true,
+                Application: null, Runtime: null,
+                IdRangeFrom: null, IdRangeTo: null,
+                Folders: new[]
                 {
-                    OrganizationId = template.OrganizationId,
-                    RuntimeTemplateId = templateId,
-                    ModuleId = alphaId,
-                    Ordering = 0,
-                });
-            await ctx.SaveChangesAsync();
-        }
-
-        var input = TemplateInputFor(
-            "runtime-defaults-grow",
-            defaultModuleKeys: new[] { "alpha", "bravo" });
-
-        await using (var ctx = _db.NewContext())
-        {
-            await NewService(ctx).UpdateAsync(templateId, input);
-        }
-
-        await using (var verify = _db.NewContext())
-        {
-            var defaults = await verify.Set<RuntimeTemplateDefaultModule>()
-                .Where(d => d.RuntimeTemplateId == templateId)
-                .Include(d => d.Module!)
-                .OrderBy(d => d.Ordering)
-                .ToListAsync();
-            defaults.Select(d => d.Module!.Key).Should().Equal("alpha", "bravo");
-            defaults.Select(d => d.Ordering).Should().Equal(0, 1);
-        }
-    }
-
-    [Fact]
-    public async Task Update_removes_a_default_module_dropped_from_the_input_list()
-    {
-        int templateId;
-        await using (var ctx = _db.NewContext())
-        {
-            ctx.Modules.AddRange(
-                ModuleBuilder.Default("alpha"),
-                ModuleBuilder.Default("bravo"));
-            var template = TemplateBuilder.Default("runtime-defaults-shrink");
-            ctx.RuntimeTemplates.Add(template);
-            await ctx.SaveChangesAsync();
-            templateId = template.Id;
-
-            var alphaId = ctx.Modules.Single(m => m.Key == "alpha").Id;
-            var bravoId = ctx.Modules.Single(m => m.Key == "bravo").Id;
-            ctx.Set<RuntimeTemplateDefaultModule>().AddRange(
-                new RuntimeTemplateDefaultModule { OrganizationId = template.OrganizationId, RuntimeTemplateId = templateId, ModuleId = alphaId, Ordering = 0 },
-                new RuntimeTemplateDefaultModule { OrganizationId = template.OrganizationId, RuntimeTemplateId = templateId, ModuleId = bravoId, Ordering = 1 });
-            await ctx.SaveChangesAsync();
-        }
-
-        var input = TemplateInputFor(
-            "runtime-defaults-shrink",
-            defaultModuleKeys: new[] { "alpha" });
+                    new FolderAuthoring(
+                        Path: "src",
+                        Folders: new[]
+                        {
+                            new FolderAuthoring(
+                                Path: "codeunits",
+                                Folders: Array.Empty<FolderAuthoring>(),
+                                Files: new[]
+                                {
+                                    new FileAuthoring("AppInstall.al", "codeunit Install {}", IsExample: false),
+                                }),
+                        },
+                        Files: Array.Empty<FileAuthoring>()),
+                },
+                Dependencies: Array.Empty<DependencyAuthoring>()),
+        }, defaultModuleKeys: new[] { "alpha" });
 
         await using (var ctx = _db.NewContext())
         {
-            await NewService(ctx).UpdateAsync(templateId, input);
+            await NewService(ctx).CreateAsync(input);
         }
-
-        await using (var verify = _db.NewContext())
-        {
-            var defaults = await verify.Set<RuntimeTemplateDefaultModule>()
-                .Where(d => d.RuntimeTemplateId == templateId)
-                .Include(d => d.Module!)
-                .ToListAsync();
-            defaults.Should().ContainSingle();
-            defaults[0].Module!.Key.Should().Be("alpha");
-        }
-    }
-
-    [Fact]
-    public async Task Update_rejects_a_default_module_key_that_does_not_resolve_to_an_active_module()
-    {
-        int templateId;
-        await using (var ctx = _db.NewContext())
-        {
-            var template = TemplateBuilder.Default("runtime-missing-dep");
-            ctx.RuntimeTemplates.Add(template);
-            await ctx.SaveChangesAsync();
-            templateId = template.Id;
-        }
-
-        var input = TemplateInputFor(
-            "runtime-missing-dep",
-            defaultModuleKeys: new[] { "no-such-module" });
 
         await using var verify = _db.NewContext();
-        var act = () => NewService(verify).UpdateAsync(templateId, input);
-        await act.Should().ThrowAsync<ALDevToolbox.Domain.ValueObjects.PlanValidationException>();
+        var saved = await verify.RuntimeTemplates
+            .Where(t => t.Key == "runtime-create")
+            .Include(t => t.WorkspaceExtensions)
+            .Include(t => t.DefaultModules)
+            .SingleAsync();
+        saved.WorkspaceExtensions.Should().ContainSingle();
+        var coreId = saved.WorkspaceExtensions.Single().Id;
+        var folders = await verify.WorkspaceExtensionFolders
+            .Where(f => f.WorkspaceExtensionId == coreId)
+            .OrderBy(f => f.ParentFolderId == null ? 0 : 1)
+            .ToListAsync();
+        folders.Should().HaveCount(2, "the nested codeunits folder is its own row");
+        folders.Select(f => f.Path).Should().Contain(new[] { "src", "codeunits" });
+        saved.DefaultModules.Should().ContainSingle();
     }
 
     [Fact]
-    public async Task Update_keeps_the_immutable_key_even_when_input_supplies_a_different_one()
+    public async Task Update_replaces_extension_tree_wholesale_via_cascade_delete()
     {
         int templateId;
-        await using (var ctx = _db.NewContext())
+        await using (var seed = _db.NewContext())
         {
-            var template = TemplateBuilder.Default("runtime-immutable-key");
-            ctx.RuntimeTemplates.Add(template);
-            await ctx.SaveChangesAsync();
+            var template = TemplateBuilder.Default("runtime-update")
+                .WithCoreFolder("OldFolder", ("Sample.al", "// old"));
+            seed.RuntimeTemplates.Add(template);
+            await seed.SaveChangesAsync();
             templateId = template.Id;
         }
 
-        // Supply a different (otherwise-valid) key. UpdateAsync should ignore it.
-        var input = TemplateInputFor("totally-different-key");
+        // New input declares a different folder + file. The reconciler should
+        // cascade-drop the old folder/file rows and add fresh ones.
+        var updated = NewAuthoring("runtime-update", extensions: new[]
+        {
+            new ExtensionAuthoring(
+                Path: "Core",
+                NameTemplate: "{{extension_prefix}} Core",
+                Required: true,
+                Application: null, Runtime: null,
+                IdRangeFrom: null, IdRangeTo: null,
+                Folders: new[]
+                {
+                    new FolderAuthoring(
+                        Path: "NewFolder",
+                        Folders: Array.Empty<FolderAuthoring>(),
+                        Files: new[] { new FileAuthoring("Fresh.al", "// fresh", IsExample: false) }),
+                },
+                Dependencies: Array.Empty<DependencyAuthoring>()),
+        });
 
         await using (var ctx = _db.NewContext())
         {
-            await NewService(ctx).UpdateAsync(templateId, input);
+            await NewService(ctx).UpdateAsync(templateId, updated);
         }
 
-        await using (var verify = _db.NewContext())
-        {
-            var key = await verify.RuntimeTemplates
-                .Where(t => t.Id == templateId)
-                .Select(t => t.Key)
-                .SingleAsync();
-            key.Should().Be("runtime-immutable-key");
-        }
+        await using var verify = _db.NewContext();
+        var folders = await verify.WorkspaceExtensionFolders
+            .Where(f => f.Extension!.TemplateId == templateId)
+            .ToListAsync();
+        folders.Select(f => f.Path).Should().ContainSingle().Which.Should().Be("NewFolder");
+        var files = await verify.WorkspaceExtensionFiles
+            .Where(f => f.Folder!.Extension!.TemplateId == templateId)
+            .ToListAsync();
+        files.Should().ContainSingle().Which.Content.Should().Be("// fresh");
     }
 
-    private TemplateService NewService(ALDevToolbox.Data.AppDbContext ctx) =>
-        new(ctx, NullLogger<TemplateService>.Instance, _db.OrgContext);
+    [Fact]
+    public async Task Update_preserves_default_module_join_row_primary_keys_on_reorder()
+    {
+        int templateId, alphaJoinId, betaJoinId;
+        await using (var seed = _db.NewContext())
+        {
+            seed.Modules.AddRange(ModuleBuilder.Default("alpha"), ModuleBuilder.Default("beta"));
+            await seed.SaveChangesAsync();
 
-    private static TemplateInput TemplateInputFor(
-        string key,
-        params TemplateFolderInput[] folders) =>
-        TemplateInputFor(key, folders, Array.Empty<string>());
+            var template = TemplateBuilder.Default("runtime-reconcile");
+            var alpha = seed.Modules.Single(m => m.Key == "alpha");
+            var beta = seed.Modules.Single(m => m.Key == "beta");
+            template.DefaultModules.Add(new RuntimeTemplateDefaultModule { OrganizationId = template.OrganizationId, ModuleId = alpha.Id, Ordering = 0 });
+            template.DefaultModules.Add(new RuntimeTemplateDefaultModule { OrganizationId = template.OrganizationId, ModuleId = beta.Id, Ordering = 1 });
+            seed.RuntimeTemplates.Add(template);
+            await seed.SaveChangesAsync();
 
-    private static TemplateInput TemplateInputFor(
-        string key,
-        IReadOnlyList<string> defaultModuleKeys) =>
-        TemplateInputFor(key, Array.Empty<TemplateFolderInput>(), defaultModuleKeys);
+            templateId = template.Id;
+            alphaJoinId = template.DefaultModules.Single(d => d.Ordering == 0).Id;
+            betaJoinId = template.DefaultModules.Single(d => d.Ordering == 1).Id;
+        }
 
-    private static TemplateInput TemplateInputFor(
-        string key,
-        IReadOnlyList<TemplateFolderInput> folders,
-        IReadOnlyList<string> defaultModuleKeys) =>
-        new(
-            Key: key,
+        // Swap the order. The reconciler should mutate row[0] in place to
+        // point at beta and row[1] to point at alpha, keeping both join row
+        // primary keys stable so the audit log stays compact.
+        var updated = NewAuthoring("runtime-reconcile",
+            extensions: SingleCoreExtension(),
+            defaultModuleKeys: new[] { "beta", "alpha" });
+
+        await using (var ctx = _db.NewContext())
+        {
+            await NewService(ctx).UpdateAsync(templateId, updated);
+        }
+
+        await using var verify = _db.NewContext();
+        var rows = await verify.RuntimeTemplateDefaultModules
+            .Where(d => d.RuntimeTemplateId == templateId)
+            .OrderBy(d => d.Ordering)
+            .Include(d => d.Module!)
+            .ToListAsync();
+        rows.Should().HaveCount(2);
+        rows[0].Id.Should().Be(alphaJoinId, "first join row's PK survived; only its ModuleId moved");
+        rows[0].Module!.Key.Should().Be("beta");
+        rows[1].Id.Should().Be(betaJoinId);
+        rows[1].Module!.Key.Should().Be("alpha");
+    }
+
+    [Fact]
+    public async Task Create_rejects_invalid_folder_path_segments()
+    {
+        var input = NewAuthoring("runtime-bad-path", extensions: new[]
+        {
+            new ExtensionAuthoring(
+                Path: "Core",
+                NameTemplate: "Core",
+                Required: true,
+                Application: null, Runtime: null,
+                IdRangeFrom: null, IdRangeTo: null,
+                Folders: new[]
+                {
+                    new FolderAuthoring(
+                        Path: "with/slash",
+                        Folders: Array.Empty<FolderAuthoring>(),
+                        Files: Array.Empty<FileAuthoring>()),
+                },
+                Dependencies: Array.Empty<DependencyAuthoring>()),
+        });
+
+        await using var ctx = _db.NewContext();
+        var act = () => NewService(ctx).CreateAsync(input);
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Keys.Should().Contain(k => k.EndsWith("Path"));
+    }
+
+    [Fact]
+    public async Task Create_rejects_intra_template_dep_to_unknown_extension()
+    {
+        var input = NewAuthoring("runtime-bad-dep", extensions: new[]
+        {
+            new ExtensionAuthoring(
+                Path: "Core",
+                NameTemplate: "Core",
+                Required: true,
+                Application: null, Runtime: null,
+                IdRangeFrom: null, IdRangeTo: null,
+                Folders: Array.Empty<FolderAuthoring>(),
+                Dependencies: new[]
+                {
+                    new DependencyAuthoring(
+                        RefExtensionPath: "Missing",
+                        RefModuleKey: null,
+                        LitId: null, LitName: null, LitPublisher: null, LitVersion: null),
+                }),
+        });
+
+        await using var ctx = _db.NewContext();
+        var act = () => NewService(ctx).CreateAsync(input);
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Keys.Should().Contain(k => k.Contains("Extension"));
+    }
+
+    [Fact]
+    public async Task Create_rejects_dependency_with_multiple_reference_shapes_set()
+    {
+        var input = NewAuthoring("runtime-multi-ref", extensions: new[]
+        {
+            new ExtensionAuthoring(
+                Path: "Core",
+                NameTemplate: "Core",
+                Required: true,
+                Application: null, Runtime: null,
+                IdRangeFrom: null, IdRangeTo: null,
+                Folders: Array.Empty<FolderAuthoring>(),
+                Dependencies: new[]
+                {
+                    // Both extension-ref and module-ref set — only one allowed.
+                    new DependencyAuthoring(
+                        RefExtensionPath: "Core",
+                        RefModuleKey: "system-application",
+                        LitId: null, LitName: null, LitPublisher: null, LitVersion: null),
+                }),
+        });
+
+        await using var ctx = _db.NewContext();
+        var act = () => NewService(ctx).CreateAsync(input);
+
+        await act.Should().ThrowAsync<PlanValidationException>();
+    }
+
+    [Fact]
+    public async Task Legacy_template_input_overload_throws_NotImplementedException()
+    {
+        var legacy = new TemplateInput(
+            Key: "runtime-legacy",
             Runtime: "15",
-            Name: "Test Runtime",
-            Description: "Synthetic template used in tests.",
+            Name: "Legacy",
+            Description: null,
             DefaultApplication: "24.0.0.0",
             DefaultPlatform: "1.0.0.0",
             DefaultsJson: "{}",
@@ -340,8 +280,58 @@ public sealed class TemplateServiceReconciliationTests : IDisposable
             ModuleIdRangeStart: 91000,
             ModuleIdRangeSize: 200,
             Deprecated: false,
-            DefaultModuleKeys: defaultModuleKeys,
-            Folders: folders,
+            DefaultModuleKeys: Array.Empty<string>(),
+            Folders: Array.Empty<TemplateFolderInput>(),
             ModuleFolders: Array.Empty<TemplateFolderInput>());
+
+        await using var ctx = _db.NewContext();
+        var act = () => NewService(ctx).CreateAsync(legacy);
+
+        await act.Should().ThrowAsync<NotImplementedException>();
+    }
+
+    // ===== Helpers =====
+
+    private TemplateService NewService(Data.AppDbContext ctx) =>
+        new(ctx, NullLogger<TemplateService>.Instance, _db.OrgContext);
+
+    private static IReadOnlyList<ExtensionAuthoring> SingleCoreExtension() => new[]
+    {
+        new ExtensionAuthoring(
+            Path: "Core",
+            NameTemplate: "Core",
+            Required: true,
+            Application: null, Runtime: null,
+            IdRangeFrom: null, IdRangeTo: null,
+            Folders: Array.Empty<FolderAuthoring>(),
+            Dependencies: Array.Empty<DependencyAuthoring>()),
+    };
+
+    /// <summary>Builds a minimally-valid TemplateAuthoring with sensible defaults so each test only spells out the field it cares about.</summary>
+    private static TemplateAuthoring NewAuthoring(
+        string key,
+        IReadOnlyList<ExtensionAuthoring>? extensions = null,
+        IReadOnlyList<string>? defaultModuleKeys = null) => new(
+            Key: key,
+            Runtime: "15",
+            Name: "Test " + key,
+            Description: null,
+            DefaultsJson: JsonSerializer.Serialize(new TemplateDefaults
+            {
+                Publisher = "Acme",
+                Application = "24.0.0.0",
+                Platform = "1.0.0.0",
+                ExtensionPrefix = "ACME",
+                AffixType = AffixType.None,
+            }),
+            AppSourceCopJson: JsonSerializer.Serialize(new AppSourceCopSettings()),
+            CoreIdRangeFrom: 90000,
+            CoreIdRangeTo: 90999,
+            ModuleIdRangeStart: 91000,
+            ModuleIdRangeSize: 200,
+            Deprecated: false,
+            IsDefault: false,
+            DefaultApplicationVersionKey: null,
+            DefaultModuleKeys: defaultModuleKeys ?? Array.Empty<string>(),
+            Extensions: extensions ?? SingleCoreExtension());
 }
-#endif

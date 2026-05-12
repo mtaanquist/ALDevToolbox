@@ -1,9 +1,3 @@
-// TODO Issue #54 follow-up: rewrite TemplateImportService tests once the
-// service clones WorkspaceExtension + ModuleExtensionFolder/File rows again.
-// The current import service stub only carries template metadata + default
-// modules, so the legacy tests for per-extension content no longer apply.
-#if false
-using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
@@ -16,11 +10,12 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace ALDevToolbox.Tests.Templates;
 
 /// <summary>
-/// Behavioural tests for <see cref="TemplateImportService"/>: the cross-org
-/// fork pipeline that copies a system-org template (plus referenced modules
-/// and application version) into the acting user's organisation. The Default
-/// org is the canonical system org; <see cref="TestDb.OtherOrgId"/> stands in
-/// for an importing tenant.
+/// Behavioural tests for <see cref="TemplateImportService"/> under the
+/// unified-extensions model: cross-org clone of a template plus its
+/// <see cref="WorkspaceExtension"/> tree (recursive folders, files,
+/// dependencies) and its referenced modules with their own extension trees.
+/// The Default org stands in for the singleton system org;
+/// <see cref="TestDb.OtherOrgId"/> is the importing tenant.
 /// </summary>
 public sealed class TemplateImportServiceTests : IDisposable
 {
@@ -29,23 +24,12 @@ public sealed class TemplateImportServiceTests : IDisposable
     public void Dispose() => _db.Dispose();
 
     [Fact]
-    public async Task Import_clones_template_with_modules_and_application_version()
+    public async Task Import_clones_template_with_extension_tree_modules_and_application_version()
     {
         await SeedSystemCatalogueAsync();
-
-        // Act as the importing tenant.
         _db.OrgContext.CurrentOrganizationId = TestDb.OtherOrgId;
 
-        int systemTemplateId;
-        await using (var read = _db.NewContext())
-        {
-            systemTemplateId = await read.RuntimeTemplates
-                .IgnoreQueryFilters()
-                .Where(t => t.OrganizationId == TestDb.DefaultOrgId && t.Key == "runtime-system")
-                .Select(t => t.Id)
-                .SingleAsync();
-        }
-
+        int systemTemplateId = await ResolveSystemTemplateIdAsync("runtime-system");
         await using (var ctx = _db.NewContext())
         {
             await NewService(ctx).ImportTemplateAsync(systemTemplateId);
@@ -55,29 +39,48 @@ public sealed class TemplateImportServiceTests : IDisposable
         var imported = await verify.RuntimeTemplates
             .IgnoreQueryFilters()
             .Where(t => t.OrganizationId == TestDb.OtherOrgId && t.Key == "runtime-system")
-            .Include(t => t.Folders).ThenInclude(f => f.Files)
-            .Include(t => t.ModuleFolders).ThenInclude(f => f.Files)
+            .Include(t => t.WorkspaceExtensions.OrderBy(e => e.Ordering))
+                .ThenInclude(e => e.Dependencies)
             .Include(t => t.DefaultModules).ThenInclude(d => d.Module!).ThenInclude(m => m.Dependencies)
             .Include(t => t.DefaultApplicationVersion)
             .SingleAsync();
 
-        imported.Folders.Should().ContainSingle().Which.Path.Should().Be("Source");
-        imported.Folders.Single().Files.Should().ContainSingle()
-            .Which.Content.Should().Be("// hello");
-        imported.ModuleFolders.Should().ContainSingle().Which.Path.Should().Be("Setup");
+        // Extension tree carried over: one Core extension with a Source folder
+        // containing a single AL file. The Hotfix extension's intra-template
+        // dep on Core survives too.
+        imported.WorkspaceExtensions.Should().HaveCount(2);
+        imported.WorkspaceExtensions.Select(e => e.Path).Should().Equal("Core", "Hotfix");
+        var hotfix = imported.WorkspaceExtensions.Single(e => e.Path == "Hotfix");
+        hotfix.Dependencies.Should().ContainSingle()
+            .Which.RefExtensionPath.Should().Be("Core");
+
+        var coreId = imported.WorkspaceExtensions.Single(e => e.Path == "Core").Id;
+        var folders = await verify.WorkspaceExtensionFolders
+            .IgnoreQueryFilters()
+            .Where(f => f.WorkspaceExtensionId == coreId)
+            .OrderBy(f => f.Ordering)
+            .ToListAsync();
+        folders.Should().ContainSingle().Which.Path.Should().Be("Source");
+        var files = await verify.WorkspaceExtensionFiles
+            .IgnoreQueryFilters()
+            .Where(f => f.WorkspaceExtensionFolderId == folders[0].Id)
+            .ToListAsync();
+        files.Should().ContainSingle().Which.Content.Should().Contain("// hello");
+
+        // Module folder/file tree clones alongside the module.
         imported.DefaultModules.Should().ContainSingle();
-        imported.DefaultModules.Single().Module!.Key.Should().Be("payment");
-        imported.DefaultModules.Single().Module!.OrganizationId.Should().Be(TestDb.OtherOrgId);
-        imported.DefaultModules.Single().Module!.Dependencies.Should().ContainSingle();
+        var importedModule = imported.DefaultModules.Single().Module!;
+        importedModule.Key.Should().Be("payment");
+        importedModule.OrganizationId.Should().Be(TestDb.OtherOrgId);
+        var moduleFolders = await verify.ModuleExtensionFolders
+            .IgnoreQueryFilters()
+            .Where(f => f.ModuleId == importedModule.Id)
+            .ToListAsync();
+        moduleFolders.Should().ContainSingle().Which.Path.Should().Be("Setup");
+
         imported.DefaultApplicationVersion.Should().NotBeNull();
         imported.DefaultApplicationVersion!.Key.Should().Be("bc24");
         imported.DefaultApplicationVersion.OrganizationId.Should().Be(TestDb.OtherOrgId);
-
-        // Source rows are untouched.
-        var sourceCount = await verify.RuntimeTemplates
-            .IgnoreQueryFilters()
-            .CountAsync(t => t.OrganizationId == TestDb.DefaultOrgId && t.Key == "runtime-system");
-        sourceCount.Should().Be(1);
     }
 
     [Fact]
@@ -89,19 +92,12 @@ public sealed class TemplateImportServiceTests : IDisposable
             seed.RuntimeTemplates.Add(TemplateBuilder.Default("runtime-system", organizationId: TestDb.OtherOrgId));
             await seed.SaveChangesAsync();
         }
-
         _db.OrgContext.CurrentOrganizationId = TestDb.OtherOrgId;
 
-        int systemTemplateId;
-        await using (var read = _db.NewContext())
-        {
-            systemTemplateId = await read.RuntimeTemplates.IgnoreQueryFilters()
-                .Where(t => t.OrganizationId == TestDb.DefaultOrgId && t.Key == "runtime-system")
-                .Select(t => t.Id).SingleAsync();
-        }
+        int systemTemplateId = await ResolveSystemTemplateIdAsync("runtime-system");
 
         await using var ctx = _db.NewContext();
-        Func<Task> act = () => NewService(ctx).ImportTemplateAsync(systemTemplateId);
+        var act = () => NewService(ctx).ImportTemplateAsync(systemTemplateId);
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("Key");
     }
@@ -110,45 +106,29 @@ public sealed class TemplateImportServiceTests : IDisposable
     public async Task Import_refuses_when_acting_org_is_the_system_org()
     {
         await SeedSystemCatalogueAsync();
-
         _db.OrgContext.CurrentOrganizationId = TestDb.DefaultOrgId;
         _db.OrgContext.IsSystemOrganization = true;
 
-        int systemTemplateId;
-        await using (var read = _db.NewContext())
-        {
-            systemTemplateId = await read.RuntimeTemplates.IgnoreQueryFilters()
-                .Where(t => t.OrganizationId == TestDb.DefaultOrgId && t.Key == "runtime-system")
-                .Select(t => t.Id).SingleAsync();
-        }
+        int systemTemplateId = await ResolveSystemTemplateIdAsync("runtime-system");
 
         await using var ctx = _db.NewContext();
-        Func<Task> act = () => NewService(ctx).ImportTemplateAsync(systemTemplateId);
+        var act = () => NewService(ctx).ImportTemplateAsync(systemTemplateId);
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("Import");
     }
 
     [Fact]
-    public async Task Import_reuses_existing_module_when_key_already_present_in_target()
+    public async Task Import_reuses_existing_local_module_when_key_already_present()
     {
         await SeedSystemCatalogueAsync();
-        // Pre-seed the local org with a module that shares the system module's key.
         await using (var seed = _db.NewContext())
         {
             seed.Modules.Add(ModuleBuilder.Default("payment", "Local Payment", organizationId: TestDb.OtherOrgId));
             await seed.SaveChangesAsync();
         }
-
         _db.OrgContext.CurrentOrganizationId = TestDb.OtherOrgId;
 
-        int systemTemplateId;
-        await using (var read = _db.NewContext())
-        {
-            systemTemplateId = await read.RuntimeTemplates.IgnoreQueryFilters()
-                .Where(t => t.OrganizationId == TestDb.DefaultOrgId && t.Key == "runtime-system")
-                .Select(t => t.Id).SingleAsync();
-        }
-
+        int systemTemplateId = await ResolveSystemTemplateIdAsync("runtime-system");
         await using (var ctx = _db.NewContext())
         {
             await NewService(ctx).ImportTemplateAsync(systemTemplateId);
@@ -163,47 +143,62 @@ public sealed class TemplateImportServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ListSystemTemplates_marks_already_imported_rows()
+    public async Task List_system_templates_marks_already_imported_rows()
     {
         await SeedSystemCatalogueAsync();
         _db.OrgContext.CurrentOrganizationId = TestDb.OtherOrgId;
 
-        int systemTemplateId;
-        await using (var read = _db.NewContext())
-        {
-            systemTemplateId = await read.RuntimeTemplates.IgnoreQueryFilters()
-                .Where(t => t.OrganizationId == TestDb.DefaultOrgId && t.Key == "runtime-system")
-                .Select(t => t.Id).SingleAsync();
-        }
-
+        int systemTemplateId = await ResolveSystemTemplateIdAsync("runtime-system");
         await using (var ctx = _db.NewContext())
         {
             await NewService(ctx).ImportTemplateAsync(systemTemplateId);
         }
 
-        await using var verifyCtx = _db.NewContext();
-        var listing = await NewService(verifyCtx).ListSystemTemplatesAsync();
-        listing.Should().ContainSingle()
+        await using var ctx2 = _db.NewContext();
+        var listed = await NewService(ctx2).ListSystemTemplatesAsync();
+        listed.Should().ContainSingle()
             .Which.AlreadyImported.Should().BeTrue();
     }
 
-    private TemplateImportService NewService(AppDbContext ctx) =>
-        new(ctx, _db.OrgContext, NullLogger<TemplateImportService>.Instance);
+    // ===== Fixture =====
 
-    /// <summary>
-    /// Stamps the Default org as the system org and seeds a runnable template,
-    /// a referenced module, and an application version inside it.
-    /// </summary>
     private async Task SeedSystemCatalogueAsync()
     {
-        await using var ctx = _db.NewContext();
-        var defaultOrg = await ctx.Organizations.IgnoreQueryFilters()
-            .SingleAsync(o => o.Id == TestDb.DefaultOrgId);
-        defaultOrg.IsSystem = true;
+        // Mark the Default org as the singleton system org; configured by the
+        // MoveSeedToSystemOrg migration in real deployments. Re-applying here
+        // so the cross-org IsSystem lookup succeeds.
+        await using (var ctx = _db.NewContext())
+        {
+            var defaultOrg = await ctx.Organizations.IgnoreQueryFilters()
+                .SingleAsync(o => o.Id == TestDb.DefaultOrgId);
+            defaultOrg.IsSystem = true;
+            await ctx.SaveChangesAsync();
+        }
 
-        var module = ModuleBuilder.Default("payment", "Payment")
-            .WithDependency("00000000-0000-0000-0000-000000000001", "Base", "Microsoft", "1.0.0.0");
-        ctx.Modules.Add(module);
+        await using var seed = _db.NewContext();
+        var template = TemplateBuilder.Default("runtime-system", organizationId: TestDb.DefaultOrgId);
+        template.WorkspaceExtensions.Single().NameTemplate = "{{extension_prefix}} Core";
+        template.WithCoreFolder("Source", ("Hello.al", "// hello"));
+        // Hotfix extension with an intra-template dep on Core.
+        var hotfix = new WorkspaceExtension
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Path = "Hotfix",
+            NameTemplate = "{{extension_prefix}} Hotfix",
+            Required = true,
+            Ordering = 1,
+        };
+        hotfix.Dependencies.Add(new WorkspaceExtensionDependency
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            RefExtensionPath = "Core",
+            Ordering = 0,
+        });
+        template.WorkspaceExtensions.Add(hotfix);
+
+        var module = ModuleBuilder.Default("payment", "Payment", organizationId: TestDb.DefaultOrgId)
+            .WithDependency("11111111-1111-1111-1111-111111111111", "Base App", "Microsoft", "27.0.0.0")
+            .WithExtensionFolder("Setup", ("Payment.Setup.al", "// payment setup"));
 
         var appVersion = new ApplicationVersion
         {
@@ -216,21 +211,31 @@ public sealed class TemplateImportServiceTests : IDisposable
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
         };
-        ctx.ApplicationVersions.Add(appVersion);
+        seed.Modules.Add(module);
+        seed.ApplicationVersions.Add(appVersion);
+        await seed.SaveChangesAsync();
 
-        var template = TemplateBuilder.Default("runtime-system")
-            .WithCoreFolder("Source", ("Hello.al", "// hello"))
-            .WithModuleFolder("Setup", ("Setup.al", "// setup"));
-        template.DefaultApplicationVersion = appVersion;
+        // Attach the module + app version to the template after both exist.
+        template.DefaultApplicationVersionId = appVersion.Id;
         template.DefaultModules.Add(new RuntimeTemplateDefaultModule
         {
             OrganizationId = TestDb.DefaultOrgId,
-            Module = module,
+            ModuleId = module.Id,
             Ordering = 0,
         });
-        ctx.RuntimeTemplates.Add(template);
-
-        await ctx.SaveChangesAsync();
+        seed.RuntimeTemplates.Add(template);
+        await seed.SaveChangesAsync();
     }
+
+    private async Task<int> ResolveSystemTemplateIdAsync(string key)
+    {
+        await using var read = _db.NewContext();
+        return await read.RuntimeTemplates.IgnoreQueryFilters()
+            .Where(t => t.OrganizationId == TestDb.DefaultOrgId && t.Key == key)
+            .Select(t => t.Id)
+            .SingleAsync();
+    }
+
+    private TemplateImportService NewService(Data.AppDbContext ctx) =>
+        new(ctx, _db.OrgContext, NullLogger<TemplateImportService>.Instance);
 }
-#endif
