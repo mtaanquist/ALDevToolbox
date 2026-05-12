@@ -568,17 +568,46 @@
                 }
             </div>
             <aside class="admin-template-edit__preview">
-                <section class="preview-card">
-                    <div class="section-label">Preview</div>
-                    @if (_mode == EditorMode.Toml)
-                    {
+                <details class="preview-card preview-card--collapsible" open>
+                    <summary class="preview-card__summary">Mustache variables</summary>
+                    <div class="preview-card__body">
                         <p class="muted preview-card__hint">
-                            Showing the last form-side state. Switch back to the
-                            structured form to refresh.
+                            Substituted into file contents at generation time.
+                            Unknown placeholders are left as-is and logged.
                         </p>
-                    }
-                    <FolderTreePreview Root="BuildPreview()" />
-                </section>
+                        <dl class="mustache-vars">
+                            <dt><code>@("{{name}}")</code></dt>
+                            <dd>Full extension name (e.g. "Acme Customer Core").</dd>
+                            <dt><code>@("{{workspaceName}}")</code></dt>
+                            <dd>Workspace name as entered on New Workspace.</dd>
+                            <dt><code>@("{{shortName}}")</code></dt>
+                            <dd>Workspace name with spaces removed.</dd>
+                            <dt><code>@("{{moduleName}}")</code></dt>
+                            <dd>Module name; equals the workspace name in the Core extension.</dd>
+                            <dt><code>@("{{publisher}}")</code></dt>
+                            <dd>From <code>[defaults] publisher</code>.</dd>
+                            <dt><code>@("{{prefix}}")</code></dt>
+                            <dd>From <code>[appSourceCop] mandatoryPrefix</code>.</dd>
+                            <dt><code>@("{{namespace}}")</code></dt>
+                            <dd>Current folder path with <code>/</code> replaced by <code>.</code>.</dd>
+                            <dt><code>@("{{guid}}")</code></dt>
+                            <dd>Freshly generated GUID per occurrence.</dd>
+                        </dl>
+                    </div>
+                </details>
+                <details class="preview-card preview-card--collapsible preview-card--scroll" open>
+                    <summary class="preview-card__summary">Preview</summary>
+                    <div class="preview-card__body">
+                        @if (_mode == EditorMode.Toml)
+                        {
+                            <p class="muted preview-card__hint">
+                                Showing the last form-side state. Switch back to the
+                                structured form to refresh.
+                            </p>
+                        }
+                        <FolderTreePreview Root="BuildPreview()" />
+                    </div>
+                </details>
             </aside>
         </div>
     }
