@@ -319,10 +319,9 @@ public static class TemplateTomlMapper
     /// structure of a fresh <c>template.toml</c> but with placeholder values so
     /// the admin can edit and save in one step. The starter pre-declares the
     /// <c>libs</c>, <c>permissionsets</c> and <c>Translations</c> folders for
-    /// both Core and module extensions, plus a root folder with an empty
-    /// <c>AppSourceCop.json</c> so new templates emit it by default. Admins
-    /// can delete any of those entries — a PTE-style template typically drops
-    /// the AppSourceCop.json row.
+    /// both Core and module extensions; admins add an <c>AppSourceCop.json</c>
+    /// root-folder entry when the template targets AppSource. PTE-style
+    /// templates need no further folders.
     /// </summary>
     public static string BlankToml()
     {
@@ -356,16 +355,6 @@ public static class TemplateTomlMapper
         sb.AppendLine("[workspace]");
         sb.Append("content = ").AppendLine(TomlMultilineBasic(GenerationService.DefaultWorkspaceTemplate));
 
-        // Root-folder (path = "") seeds AppSourceCop.json next to app.json.
-        sb.AppendLine();
-        sb.AppendLine();
-        sb.AppendLine("[[folders]]");
-        sb.AppendLine("path = \"\"");
-        sb.AppendLine();
-        sb.AppendLine("[[folders.files]]");
-        sb.AppendLine("path = \"AppSourceCop.json\"");
-        sb.Append("content = ").AppendLine(TomlMultilineBasic(DefaultAppSourceCopJson));
-
         foreach (var path in DefaultFolderPaths)
         {
             sb.AppendLine();
@@ -395,12 +384,4 @@ public static class TemplateTomlMapper
         "permissionsets",
         "Translations",
     };
-
-    /// <summary>
-    /// Starter content for the <c>AppSourceCop.json</c> file seeded into new
-    /// templates' root folder. An empty AppSource Cop block — admins fill in
-    /// <c>mandatoryPrefix</c> / <c>supportedCountries</c> as needed, or drop
-    /// the file entirely for per-tenant extensions.
-    /// </summary>
-    public const string DefaultAppSourceCopJson = "{\n  \"mandatoryPrefix\": \"\",\n  \"supportedCountries\": []\n}\n";
 }

@@ -1634,16 +1634,6 @@
                 ModuleIdRangeStart = 91000,
                 ModuleIdRangeSize = 200,
             };
-            // Root folder (path = "") seeds an empty AppSourceCop.json
-            // example file so new templates emit it by default. Admins can
-            // delete the row for per-tenant extensions that don't need it.
-            var rootCore = new FolderRow { Path = string.Empty, IsRoot = true };
-            rootCore.Files.Add(new FileRow
-            {
-                Path = "AppSourceCop.json",
-                Content = TemplateTomlMapper.DefaultAppSourceCopJson,
-            });
-            state.Folders.Add(rootCore);
             foreach (var path in TemplateTomlMapper.DefaultFolderPaths)
             {
                 state.Folders.Add(new FolderRow { Path = path });
