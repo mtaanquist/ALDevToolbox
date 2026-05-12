@@ -23,7 +23,10 @@ namespace ALDevToolbox.Tests.Migrations;
 /// <remarks>
 /// The SQL is the contract; this test calls <see cref="UnifyExtensions.DataRewriteSql"/>
 /// rather than copy-pasting the block so a regression in the migration body
-/// trips the test rather than diverging silently.
+/// trips the test rather than diverging silently. Parameterised inserts avoid
+/// the C# raw-interpolated-string brace-escape minefield (a single dollar sign
+/// makes <c>{</c> the interp marker, so <c>{{prefix}}</c> mustache content
+/// wouldn't survive raw-string interpolation).
 /// </remarks>
 public sealed class UnifyExtensionsDataMigrationTests : IDisposable
 {
@@ -79,60 +82,67 @@ public sealed class UnifyExtensionsDataMigrationTests : IDisposable
         //    and one module-folder + file the rewrite should clone onto the
         //    module side. Slash-separated path forces the recursive split
         //    into two folder rows.
-        await ExecuteAsync($"""
+        var orgId = TestDb.DefaultOrgId;
+
+        var templateId = await ScalarIntAsync("""
             INSERT INTO runtime_templates (
                 organization_id, key, runtime, name, description, defaults_json,
                 app_source_cop_json, core_id_range_from, core_id_range_to,
                 module_id_range_start, module_id_range_size, deprecated, is_default,
                 default_application, default_platform, created_at, updated_at)
             VALUES (
-                {TestDb.DefaultOrgId}, 'preunified', '15', 'Pre-Unified Template', NULL,
-                '{{}}'::jsonb,
-                '{{"mandatoryPrefix":"PRE"}}'::jsonb,
+                @org, 'preunified', '15', 'Pre-Unified Template', NULL,
+                '{}'::jsonb,
+                '{"mandatoryPrefix":"PRE"}'::jsonb,
                 90000, 90999, 91000, 200, FALSE, FALSE,
                 '27.0.0.0', '1.0.0.0', NOW(), NOW())
             RETURNING id;
-            """);
-        var templateId = await ScalarIntAsync(
-            $"SELECT id FROM runtime_templates WHERE key = 'preunified'");
+            """,
+            ("org", orgId));
 
-        await ExecuteAsync($"""
+        var moduleId = await ScalarIntAsync("""
             INSERT INTO modules (organization_id, key, name, created_at, updated_at)
-            VALUES ({TestDb.DefaultOrgId}, 'preunified-module', 'Pre-Unified Module', NOW(), NOW())
+            VALUES (@org, 'preunified-module', 'Pre-Unified Module', NOW(), NOW())
             RETURNING id;
-            """);
-        var moduleId = await ScalarIntAsync(
-            "SELECT id FROM modules WHERE key = 'preunified-module'");
+            """,
+            ("org", orgId));
 
-        await ExecuteAsync($"""
+        await ExecuteAsync("""
             INSERT INTO runtime_template_default_modules
                 (organization_id, runtime_template_id, module_id, ordering)
-            VALUES ({TestDb.DefaultOrgId}, {templateId}, {moduleId}, 0);
+            VALUES (@org, @templateId, @moduleId, 0);
+            """,
+            ("org", orgId), ("templateId", templateId), ("moduleId", moduleId));
 
+        var folderId = await ScalarIntAsync("""
             INSERT INTO template_folders (organization_id, template_id, ordering, path)
-            VALUES ({TestDb.DefaultOrgId}, {templateId}, 0, 'src/codeunits')
+            VALUES (@org, @templateId, 0, 'src/codeunits')
             RETURNING id;
-            """);
-        var folderId = await ScalarIntAsync(
-            $"SELECT id FROM template_folders WHERE template_id = {templateId}");
+            """,
+            ("org", orgId), ("templateId", templateId));
 
-        await ExecuteAsync($"""
+        await ExecuteAsync("""
             INSERT INTO template_files (organization_id, template_folder_id, ordering, path, content)
-            VALUES ({TestDb.DefaultOrgId}, {folderId}, 0, 'AppInstall.al',
-                'codeunit 90000 "{{{{prefix}}}} App Install" {{{{ Subtype = Install; }}}}');
+            VALUES (@org, @folderId, 0, 'AppInstall.al', @content);
+            """,
+            ("org", orgId),
+            ("folderId", folderId),
+            ("content", "codeunit 90000 \"{{prefix}} App Install\" { Subtype = Install; }"));
 
+        var modFolderId = await ScalarIntAsync("""
             INSERT INTO template_module_folders (organization_id, template_id, ordering, path)
-            VALUES ({TestDb.DefaultOrgId}, {templateId}, 0, 'src/api')
+            VALUES (@org, @templateId, 0, 'src/api')
             RETURNING id;
-            """);
-        var modFolderId = await ScalarIntAsync(
-            $"SELECT id FROM template_module_folders WHERE template_id = {templateId}");
+            """,
+            ("org", orgId), ("templateId", templateId));
 
-        await ExecuteAsync($"""
+        await ExecuteAsync("""
             INSERT INTO template_module_files (organization_id, template_module_folder_id, ordering, path, content)
-            VALUES ({TestDb.DefaultOrgId}, {modFolderId}, 0, 'Adapter.al',
-                'codeunit 91000 "{{{{prefix}}}} Adapter" {{}}');
-            """);
+            VALUES (@org, @folderId, 0, 'Adapter.al', @content);
+            """,
+            ("org", orgId),
+            ("folderId", modFolderId),
+            ("content", "codeunit 91000 \"{{prefix}} Adapter\" { }"));
 
         // 3) Replay the migration's data block verbatim.
         await ExecuteAsync(UnifyExtensions.DataRewriteSql);
@@ -156,7 +166,6 @@ public sealed class UnifyExtensionsDataMigrationTests : IDisposable
         //     recursive tree — 'src' at the root, 'codeunits' under it.
         var folders = await ctx.WorkspaceExtensionFolders
             .Where(f => f.WorkspaceExtensionId == coreId)
-            .OrderBy(f => f.ParentFolderId.HasValue)
             .AsNoTracking()
             .ToListAsync();
         folders.Should().HaveCount(2);
@@ -179,7 +188,6 @@ public sealed class UnifyExtensionsDataMigrationTests : IDisposable
         // 4d) Module folder/file rows cloned onto the module side.
         var moduleFolders = await ctx.ModuleExtensionFolders
             .Where(f => f.ModuleId == moduleId)
-            .OrderBy(f => f.ParentFolderId.HasValue)
             .AsNoTracking()
             .ToListAsync();
         moduleFolders.Should().HaveCount(2);
@@ -198,7 +206,8 @@ public sealed class UnifyExtensionsDataMigrationTests : IDisposable
         // 4e) defaults_json folds in default_application / default_platform,
         //     and stamps affix / affixType from AppSourceCop.mandatoryPrefix.
         var defaultsJson = await ScalarStringAsync(
-            $"SELECT defaults_json::text FROM runtime_templates WHERE id = {templateId}");
+            "SELECT defaults_json::text FROM runtime_templates WHERE id = @id",
+            ("id", templateId));
         defaultsJson.Should().Contain("\"application\": \"27.0.0.0\"");
         defaultsJson.Should().Contain("\"platform\": \"1.0.0.0\"");
         defaultsJson.Should().Contain("\"extension_prefix\": \"PRE\"");
@@ -206,30 +215,36 @@ public sealed class UnifyExtensionsDataMigrationTests : IDisposable
         defaultsJson.Should().Contain("\"affixType\": \"Prefix\"");
     }
 
-    private async Task ExecuteAsync(string sql)
+    private async Task ExecuteAsync(string sql, params (string Name, object Value)[] parameters)
     {
         await using var conn = new NpgsqlConnection(_db.ConnectionString);
         await conn.OpenAsync();
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
+        foreach (var (name, value) in parameters)
+            cmd.Parameters.AddWithValue(name, value);
         await cmd.ExecuteNonQueryAsync();
     }
 
-    private async Task<int> ScalarIntAsync(string sql)
+    private async Task<int> ScalarIntAsync(string sql, params (string Name, object Value)[] parameters)
     {
         await using var conn = new NpgsqlConnection(_db.ConnectionString);
         await conn.OpenAsync();
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
+        foreach (var (name, value) in parameters)
+            cmd.Parameters.AddWithValue(name, value);
         return (int)(await cmd.ExecuteScalarAsync())!;
     }
 
-    private async Task<string> ScalarStringAsync(string sql)
+    private async Task<string> ScalarStringAsync(string sql, params (string Name, object Value)[] parameters)
     {
         await using var conn = new NpgsqlConnection(_db.ConnectionString);
         await conn.OpenAsync();
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
+        foreach (var (name, value) in parameters)
+            cmd.Parameters.AddWithValue(name, value);
         return (string)(await cmd.ExecuteScalarAsync())!;
     }
 }
