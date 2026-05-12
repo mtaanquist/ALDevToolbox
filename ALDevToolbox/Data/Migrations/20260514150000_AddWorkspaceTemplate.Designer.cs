@@ -9,8 +9,8 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260514150000_AddCodeWorkspaceContent")]
-    partial class AddCodeWorkspaceContent
+    [Migration("20260514150000_AddWorkspaceTemplate")]
+    partial class AddWorkspaceTemplate
     {
         // Intentionally empty — see InitialCreate.Designer.cs for the
         // hand-rolled-migration rationale (the model snapshot is not the

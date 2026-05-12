@@ -239,7 +239,7 @@ public sealed class MustacheSubstitutionTests : IDisposable
     public async Task Code_workspace_content_is_emitted_with_paths_substituted()
     {
         var template = TemplateBuilder.Default();
-        template.CodeWorkspaceContent = """
+        template.WorkspaceTemplate = """
 {
   "folders": [
 {{paths}}

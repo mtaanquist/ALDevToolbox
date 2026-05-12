@@ -217,7 +217,7 @@ public class TemplateService
             ModuleIdRangeSize = input.ModuleIdRangeSize,
             Deprecated = input.Deprecated,
             DefaultApplicationVersionId = defaultApplicationVersionId,
-            CodeWorkspaceContent = input.CodeWorkspaceContent ?? string.Empty,
+            WorkspaceTemplate = input.WorkspaceTemplate ?? string.Empty,
             CreatedAt = now,
             UpdatedAt = now,
             DeletedAt = null,
@@ -308,7 +308,7 @@ public class TemplateService
         existing.ModuleIdRangeSize = input.ModuleIdRangeSize;
         existing.Deprecated = input.Deprecated;
         existing.DefaultApplicationVersionId = defaultApplicationVersionId;
-        existing.CodeWorkspaceContent = input.CodeWorkspaceContent ?? string.Empty;
+        existing.WorkspaceTemplate = input.WorkspaceTemplate ?? string.Empty;
         // Drop the cached navigation reference so EF doesn't get confused if a
         // previously-attached ApplicationVersion is still tracked.
         existing.DefaultApplicationVersion = null;
@@ -893,13 +893,13 @@ public class TemplateService
         // produce a broken .code-workspace) and must carry the {{paths}}
         // placeholder so generation has somewhere to insert the workspace's
         // Core + module folder entries.
-        if (string.IsNullOrWhiteSpace(input.CodeWorkspaceContent))
+        if (string.IsNullOrWhiteSpace(input.WorkspaceTemplate))
         {
-            errors[nameof(input.CodeWorkspaceContent)] = ".code-workspace content is required.";
+            errors[nameof(input.WorkspaceTemplate)] = ".code-workspace content is required.";
         }
-        else if (!input.CodeWorkspaceContent.Contains("{{paths}}", StringComparison.Ordinal))
+        else if (!input.WorkspaceTemplate.Contains("{{paths}}", StringComparison.Ordinal))
         {
-            errors[nameof(input.CodeWorkspaceContent)] =
+            errors[nameof(input.WorkspaceTemplate)] =
                 ".code-workspace content must contain {{paths}} — the generator substitutes it with the workspace's folder list.";
         }
 
@@ -1003,7 +1003,7 @@ public record TemplateInput(
     IReadOnlyList<string> DefaultModuleKeys,
     IReadOnlyList<TemplateFolderInput> Folders,
     IReadOnlyList<TemplateFolderInput> ModuleFolders,
-    string CodeWorkspaceContent,
+    string WorkspaceTemplate,
     string? DefaultApplicationVersionKey = null);
 
 /// <summary>One folder row submitted by the admin folder editor, with its files.</summary>

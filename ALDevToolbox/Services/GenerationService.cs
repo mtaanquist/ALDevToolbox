@@ -37,7 +37,7 @@ public class GenerationService
     /// time to the workspace's folder-array entries (Core + every selected
     /// module); admins can edit anything else freely per template.
     /// </summary>
-    public const string DefaultCodeWorkspaceContent = """
+    public const string DefaultWorkspaceTemplate = """
 {
   "folders": [
 {{paths}}
@@ -186,7 +186,7 @@ public class GenerationService
             var workspaceFolderList = new List<string> { "Core" };
             workspaceFolderList.AddRange(moduleInfos.Select(m => m.FolderName));
             WriteString(archive, $"{rootFolder}/{shortName}.code-workspace",
-                BuildCodeWorkspace(template.CodeWorkspaceContent, workspaceFolderList));
+                BuildCodeWorkspace(template.WorkspaceTemplate, workspaceFolderList));
             WriteString(archive, $"{rootFolder}/README.md", BuildReadme(plan));
             // Save the form-post shape plus per-extension identities (Core +
             // every module) alongside the ZIP so a sibling-extension import
@@ -304,7 +304,7 @@ public class GenerationService
                         .ToList();
                 workspaceFolders.Add(folderName);
                 WriteString(archive, workspaceFile,
-                    BuildCodeWorkspace(template.CodeWorkspaceContent, workspaceFolders));
+                    BuildCodeWorkspace(template.WorkspaceTemplate, workspaceFolders));
                 fileCount++;
             }
         }
@@ -654,7 +654,7 @@ public class GenerationService
     /// <summary>
     /// Produces a <c>.code-workspace</c> document by substituting the
     /// workspace's folder list into the template's editable
-    /// <c>code_workspace_content</c>. The string carries the JSON shape
+    /// <c>workspace_template</c>. The string carries the JSON shape
     /// verbatim; <c>{{paths}}</c> is the only generator-supplied
     /// substitution and expands to a comma-separated list of
     /// <c>{ "path": "..." }</c> entries indented to match the surrounding

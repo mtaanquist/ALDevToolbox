@@ -89,7 +89,7 @@ AcmeCustomer/
         template declares. Templates that want `libs/`, `permissionsets/`
         or `Translations/` declare them as `[[folders]]` rows — BlankToml()
         seeds them for new templates, and existing templates were
-        backfilled by migration <c>20260514150000_AddCodeWorkspaceContent</c>.
+        backfilled by migration <c>20260514150000_AddWorkspaceTemplate</c>.
 4. For each selected module (in order):
      a. Compute its ID range from template.module_id_range_start + (index * module_id_range_size)
      b. Build app.json including:
@@ -200,7 +200,7 @@ A JSON file with:
 }
 ```
 
-The content above is the **default** stamped onto new templates (and onto existing ones by the migration). It is editable per template through the `code_workspace_content` field on `runtime_templates` — admins can change settings, swap analyzers, add a `recommendations` block for VS Code extensions, etc. The generator only does one substitution: `{{paths}}` expands to the workspace's folder entries (Core + every selected module, in display order). Validation requires the content to be non-empty and to contain `{{paths}}`.
+The content above is the **default** stamped onto new templates (and onto existing ones by the migration). It is editable per template through the `workspace_template` field on `runtime_templates` — admins can change settings, swap analyzers, add a `recommendations` block for VS Code extensions, etc. The generator only does one substitution: `{{paths}}` expands to the workspace's folder entries (Core + every selected module, in display order). Validation requires the content to be non-empty and to contain `{{paths}}`.
 
 Module folder paths in the workspace match the on-disk folder names — module names with spaces collapse: `"Document Capture"` → `"DocumentCapture"`. This matches the existing tool's behaviour (see `script.js`'s `module.replace(/\s+/g, '')`).
 
@@ -220,7 +220,7 @@ Run mustache substitution on the `content` of every `template_files` row whose `
 | `{{affix}}`          | The `affix` field from `defaults_json`, always (regardless of `affixType`). |
 | `{{namespace}}`      | The current folder's path, dot-separated. e.g. "Source/Foundation" → "Source.Foundation". Used for AL `namespace` declarations. |
 | `{{guid}}`           | A freshly generated GUID per substitution call. Use sparingly — prefer letting the implementer hand-author GUIDs in example files. |
-| `{{paths}}`          | **Only valid inside `code_workspace_content`.** Expands to the workspace's folder-array entries (`{ "path": "Core" },` …). Empty/no-op everywhere else. |
+| `{{paths}}`          | **Only valid inside `workspace_template`.** Expands to the workspace's folder-array entries (`{ "path": "Core" },` …). Empty/no-op everywhere else. |
 
 If a variable in the template isn't recognised, leave it as-is (don't crash). Log a warning.
 

@@ -146,10 +146,10 @@ public class TemplateTomlMapperTests
     }
 
     [Fact]
-    public void Round_trip_preserves_code_workspace_content()
+    public void Round_trip_preserves_workspace_template()
     {
         var template = TemplateBuilder.Default();
-        template.CodeWorkspaceContent = """
+        template.WorkspaceTemplate = """
 {
   "folders": [
 {{paths}}
@@ -162,10 +162,10 @@ public class TemplateTomlMapperTests
         var toml = TemplateTomlMapper.ToToml(template);
         var input = TemplateTomlMapper.FromToml(toml, deprecated: false);
 
-        toml.Should().Contain("[code_workspace]");
+        toml.Should().Contain("[workspace]");
         toml.Should().Contain("\"extensions\":");
-        input.CodeWorkspaceContent.Should().Contain("{{paths}}");
-        input.CodeWorkspaceContent.Should().Contain("\"extensions\":");
+        input.WorkspaceTemplate.Should().Contain("{{paths}}");
+        input.WorkspaceTemplate.Should().Contain("\"extensions\":");
     }
 
     [Fact]
@@ -262,7 +262,7 @@ public class TemplateTomlMapperTests
             DefaultApplication = input.DefaultApplication,
             DefaultPlatform = input.DefaultPlatform,
             Defaults = System.Text.Json.JsonSerializer.Deserialize<Domain.ValueObjects.TemplateDefaults>(input.DefaultsJson)!,
-            CodeWorkspaceContent = input.CodeWorkspaceContent,
+            WorkspaceTemplate = input.WorkspaceTemplate,
             CoreIdRangeFrom = input.CoreIdRangeFrom,
             CoreIdRangeTo = input.CoreIdRangeTo,
             ModuleIdRangeStart = input.ModuleIdRangeStart,

@@ -114,6 +114,7 @@ public class ExportService
                         Key = module.Key,
                         Name = module.Name,
                         IdRangeSize = module.IdRangeSize,
+                        Deprecated = module.Deprecated,
                         Dependencies = module.Dependencies
                             .OrderBy(d => d.Ordering)
                             .Select(d => new ModuleDependencySeed
@@ -144,6 +145,7 @@ public class ExportService
                         Application = version.Application,
                         Runtime = version.Runtime,
                         Ordering = version.Ordering,
+                        Deprecated = version.Deprecated,
                     },
                 };
                 await WriteTextEntryAsync(
@@ -163,6 +165,7 @@ public class ExportService
                         DepPublisher = c.DepPublisher,
                         DepVersionDefault = c.DepVersionDefault,
                         Category = c.Category,
+                        Ordering = c.Ordering,
                     })
                     .ToList(),
             };

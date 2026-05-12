@@ -9,7 +9,7 @@ namespace ALDevToolbox.Data.Migrations
     /// "emit only what the template declares" rule:
     ///
     /// <list type="number">
-    ///   <item><description>Adds a <c>code_workspace_content</c> column to
+    ///   <item><description>Adds a <c>workspace_template</c> column to
     ///   <c>runtime_templates</c>. The column carries the verbatim
     ///   <c>.code-workspace</c> JSON that the generator used to build in
     ///   code, with <c>{{paths}}</c> as the only generator-supplied
@@ -24,14 +24,14 @@ namespace ALDevToolbox.Data.Migrations
     ///   <c>BlankToml()</c> / <c>FormState.Blank()</c>.</description></item>
     /// </list>
     /// </summary>
-    public partial class AddCodeWorkspaceContent : Migration
+    public partial class AddWorkspaceTemplate : Migration
     {
         /// <summary>
-        /// Kept in sync with <c>GenerationService.DefaultCodeWorkspaceContent</c>
+        /// Kept in sync with <c>GenerationService.DefaultWorkspaceTemplate</c>
         /// — the migration can't reference application code at runtime, so the
         /// canonical default is duplicated here and asserted equal in tests.
         /// </summary>
-        private const string DefaultCodeWorkspaceContent = """
+        private const string DefaultWorkspaceTemplate = """
 {
   "folders": [
 {{paths}}
@@ -60,11 +60,11 @@ namespace ALDevToolbox.Data.Migrations
             // string property and writes its own default for new rows in
             // BlankToml / FormState.Blank.
             migrationBuilder.AddColumn<string>(
-                name: "code_workspace_content",
+                name: "workspace_template",
                 table: "runtime_templates",
                 type: "text",
                 nullable: false,
-                defaultValue: DefaultCodeWorkspaceContent);
+                defaultValue: DefaultWorkspaceTemplate);
 
             // Seed the three previously-static fallback folders into every
             // existing template's Core and Module folder lists. ordering
@@ -152,16 +152,16 @@ namespace ALDevToolbox.Data.Migrations
             // rows insert an explicit value from the application code, so a
             // server-side default would just go stale if the constant moved.
             migrationBuilder.AlterColumn<string>(
-                name: "code_workspace_content",
+                name: "workspace_template",
                 table: "runtime_templates",
                 type: "text",
                 nullable: false,
-                oldDefaultValue: DefaultCodeWorkspaceContent);
+                oldDefaultValue: DefaultWorkspaceTemplate);
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropColumn(name: "code_workspace_content", table: "runtime_templates");
+            migrationBuilder.DropColumn(name: "workspace_template", table: "runtime_templates");
 
             // The fallback rows aren't reversible without losing data — admins
             // may have added files to them after the migration ran. Leave them

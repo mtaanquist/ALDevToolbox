@@ -35,7 +35,7 @@ public static class TemplateBuilder
         CoreIdRangeTo = 90999,
         ModuleIdRangeStart = 91000,
         ModuleIdRangeSize = 200,
-        CodeWorkspaceContent = GenerationService.DefaultCodeWorkspaceContent,
+        WorkspaceTemplate = GenerationService.DefaultWorkspaceTemplate,
         CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
         UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
     };

@@ -337,5 +337,5 @@ public sealed class TemplateServiceReconciliationTests : IDisposable
             DefaultModuleKeys: defaultModuleKeys,
             Folders: folders,
             ModuleFolders: Array.Empty<TemplateFolderInput>(),
-            CodeWorkspaceContent: GenerationService.DefaultCodeWorkspaceContent);
+            WorkspaceTemplate: GenerationService.DefaultWorkspaceTemplate);
 }

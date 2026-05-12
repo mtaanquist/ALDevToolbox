@@ -248,7 +248,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.CoreIdRangeTo).HasColumnName("core_id_range_to").IsRequired();
             entity.Property(e => e.ModuleIdRangeStart).HasColumnName("module_id_range_start").IsRequired();
             entity.Property(e => e.ModuleIdRangeSize).HasColumnName("module_id_range_size").IsRequired();
-            entity.Property(e => e.CodeWorkspaceContent).HasColumnName("code_workspace_content").IsRequired();
+            entity.Property(e => e.WorkspaceTemplate).HasColumnName("workspace_template").IsRequired();
             entity.Property(e => e.Deprecated).HasColumnName("deprecated").IsRequired();
             entity.Property(e => e.IsDefault).HasColumnName("is_default").IsRequired().HasDefaultValue(false);
             entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();

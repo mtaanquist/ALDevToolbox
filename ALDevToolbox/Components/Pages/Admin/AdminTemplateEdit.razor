@@ -286,7 +286,7 @@
             <section class="form-section">
                 <label class="section-label" for="tpl-codeworkspace">.code-workspace content</label>
                 <textarea id="tpl-codeworkspace" class="json-editor" rows="14" spellcheck="false" required
-                          @bind="_form.CodeWorkspaceContent" @bind:event="oninput"></textarea>
+                          @bind="_form.WorkspaceTemplate" @bind:event="oninput"></textarea>
                 <small class="muted">
                     Verbatim content written to <code>{WorkspaceName}.code-workspace</code>.
                     Must contain <code>@("{{paths}}")</code>, which the generator replaces
@@ -294,7 +294,7 @@
                     Everything else — settings, analyzers, ruleset path, recommended
                     extensions — is yours to customise per template.
                 </small>
-                <FieldError Field="CodeWorkspaceContent" Errors="_fieldErrors" />
+                <FieldError Field="WorkspaceTemplate" Errors="_fieldErrors" />
             </section>
 
             <section class="form-section">
@@ -1355,7 +1355,7 @@
                 DefaultApplication = _form.DefaultApplication,
                 DefaultPlatform = _form.DefaultPlatform,
                 Defaults = defaults,
-                CodeWorkspaceContent = _form.CodeWorkspaceContent,
+                WorkspaceTemplate = _form.WorkspaceTemplate,
                 CoreIdRangeFrom = _form.CoreIdRangeFrom,
                 CoreIdRangeTo = _form.CoreIdRangeTo,
                 ModuleIdRangeStart = _form.ModuleIdRangeStart,
@@ -1593,7 +1593,7 @@
         /// write time; everything else (settings, analyzers, recommended
         /// extensions) is edited freely per template.
         /// </summary>
-        public string CodeWorkspaceContent { get; set; } = string.Empty;
+        public string WorkspaceTemplate { get; set; } = string.Empty;
 
         public int CoreIdRangeFrom { get; set; }
         public int CoreIdRangeTo { get; set; }
@@ -1628,7 +1628,7 @@
             var state = new FormState
             {
                 DefaultsJson = JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson),
-                CodeWorkspaceContent = GenerationService.DefaultCodeWorkspaceContent,
+                WorkspaceTemplate = GenerationService.DefaultWorkspaceTemplate,
                 CoreIdRangeFrom = 90000,
                 CoreIdRangeTo = 90999,
                 ModuleIdRangeStart = 91000,
@@ -1663,7 +1663,7 @@
                 DefaultApplication = template.DefaultApplication,
                 DefaultPlatform = template.DefaultPlatform,
                 DefaultsJson = JsonSerializer.Serialize(template.Defaults, PrettyJson),
-                CodeWorkspaceContent = template.CodeWorkspaceContent,
+                WorkspaceTemplate = template.WorkspaceTemplate,
                 CoreIdRangeFrom = template.CoreIdRangeFrom,
                 CoreIdRangeTo = template.CoreIdRangeTo,
                 ModuleIdRangeStart = template.ModuleIdRangeStart,
@@ -1719,9 +1719,9 @@
                 DefaultsJson = string.IsNullOrWhiteSpace(input.DefaultsJson)
                     ? JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson)
                     : Reformat(input.DefaultsJson, JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson)),
-                CodeWorkspaceContent = string.IsNullOrEmpty(input.CodeWorkspaceContent)
-                    ? GenerationService.DefaultCodeWorkspaceContent
-                    : input.CodeWorkspaceContent,
+                WorkspaceTemplate = string.IsNullOrEmpty(input.WorkspaceTemplate)
+                    ? GenerationService.DefaultWorkspaceTemplate
+                    : input.WorkspaceTemplate,
                 CoreIdRangeFrom = input.CoreIdRangeFrom,
                 CoreIdRangeTo = input.CoreIdRangeTo,
                 ModuleIdRangeStart = input.ModuleIdRangeStart,
@@ -1794,7 +1794,7 @@
             ModuleFolders: ModuleFolders.Select(f => new TemplateFolderInput(
                 f.Path,
                 f.Files.Select(x => new TemplateFileInput(x.Path, x.Content, x.IsExample)).ToList())).ToList(),
-            CodeWorkspaceContent: CodeWorkspaceContent,
+            WorkspaceTemplate: WorkspaceTemplate,
             DefaultApplicationVersionKey: string.IsNullOrWhiteSpace(DefaultApplicationVersionKey)
                 ? null
                 : DefaultApplicationVersionKey);

@@ -90,7 +90,7 @@ public class RuntimeTemplate
     /// at column-add time so existing templates keep producing the same
     /// <c>.code-workspace</c> as before.
     /// </summary>
-    public string CodeWorkspaceContent { get; set; } = string.Empty;
+    public string WorkspaceTemplate { get; set; } = string.Empty;
 
     /// <summary>
     /// When true the template is hidden from the user-facing dropdown but remains

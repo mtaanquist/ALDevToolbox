@@ -60,12 +60,12 @@ Tomlyn deserialises directly into POCOs. `Domain/Seed/` carries the mirrored typ
 class TemplateSeed {
     public TemplateMetaSeed Template { get; set; }
     public DefaultsSeed Defaults { get; set; }      // includes the template-wide affix + affixType block
-    public CodeWorkspaceSeed CodeWorkspace { get; set; }  // verbatim .code-workspace content with {{paths}} placeholder
+    public WorkspaceSeed Workspace { get; set; }  // verbatim .code-workspace content with {{paths}} placeholder
     public List<FolderSeed> Folders { get; set; }
     public List<FolderSeed> ModuleFolders { get; set; }
 }
-class CodeWorkspaceSeed {
-    public string Content { get; set; }            // emitted as a TOML multi-line basic string in the [code_workspace] table
+class WorkspaceSeed {
+    public string Content { get; set; }            // emitted as a TOML multi-line basic string in the [workspace] table
 }
 class FolderSeed {
     public string Path { get; set; }       // empty string == extension root (files land next to app.json)
@@ -124,7 +124,7 @@ includeSourceInSymbolFile = true
 # {{paths}} with the workspace's folder entries (Core + every selected
 # module). Everything else — settings, analyzers, ruleset path,
 # recommended extensions — is yours to customise per template.
-[code_workspace]
+[workspace]
 content = """
 {
   "folders": [

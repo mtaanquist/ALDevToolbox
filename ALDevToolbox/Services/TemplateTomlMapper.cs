@@ -53,6 +53,7 @@ public static class TemplateTomlMapper
                     .Select(d => d.Module!.Key)
                     .ToList(),
                 DefaultApplicationVersion = template.DefaultApplicationVersion?.Key,
+                IsDefault = template.IsDefault,
             },
             Defaults = new DefaultsSeed
             {
@@ -71,10 +72,10 @@ public static class TemplateTomlMapper
                 Affix = template.Defaults.Affix,
                 AffixType = template.Defaults.AffixType,
             },
-            // CodeWorkspace intentionally left blank for the high-level
+            // Workspace intentionally left blank for the high-level
             // serializer — it would emit the multi-line JSON content as a
             // single-line escaped string, which is unreadable. We strip the
-            // empty [code_workspace] table the serializer would otherwise
+            // empty [workspace] table the serializer would otherwise
             // produce and append our own with a multi-line basic string
             // below. FromToml round-trips the field either way.
             // Folders intentionally left empty for the high-level serializer —
@@ -92,17 +93,17 @@ public static class TemplateTomlMapper
         // structured form instead.
         var head = TomlSerializer.Serialize(seed, TomlOptions);
         head = EmptyFoldersLineRegex.Replace(head, string.Empty);
-        head = EmptyCodeWorkspaceBlockRegex.Replace(head, string.Empty).TrimEnd();
+        head = EmptyWorkspaceBlockRegex.Replace(head, string.Empty).TrimEnd();
 
         var sb = new StringBuilder(head);
 
-        // Emit [code_workspace] with a multi-line basic string so the JSON
+        // Emit [workspace] with a multi-line basic string so the JSON
         // is editable as-is in the TOML view (Tomlyn's default would inline
         // the whole document with \n escapes).
         sb.AppendLine();
         sb.AppendLine();
-        sb.AppendLine("[code_workspace]");
-        sb.Append("content = ").AppendLine(TomlMultilineBasic(template.CodeWorkspaceContent));
+        sb.AppendLine("[workspace]");
+        sb.Append("content = ").AppendLine(TomlMultilineBasic(template.WorkspaceTemplate));
 
         foreach (var folder in template.Folders.OrderBy(f => f.Ordering))
         {
@@ -147,12 +148,12 @@ public static class TemplateTomlMapper
     private static readonly Regex EmptyFoldersLineRegex =
         new(@"(?m)^(folders|module_folders)\s*=\s*\[\s*\]\s*\r?\n?", RegexOptions.Compiled);
 
-    // Strips the [code_workspace] table the high-level serializer emits with
+    // Strips the [workspace] table the high-level serializer emits with
     // an empty/inline `content = "..."` line. The hand-written block we
     // append uses a multi-line basic string and lives at the bottom of the
     // document instead.
-    private static readonly Regex EmptyCodeWorkspaceBlockRegex =
-        new(@"(?m)^\[code_workspace\]\s*\r?\ncontent\s*=\s*""[^""\r\n]*""\s*\r?\n?",
+    private static readonly Regex EmptyWorkspaceBlockRegex =
+        new(@"(?m)^\[workspace\]\s*\r?\ncontent\s*=\s*""[^""\r\n]*""\s*\r?\n?",
             RegexOptions.Compiled);
 
     /// <summary>TOML basic-string encoding for short, single-line values like paths.</summary>
@@ -282,7 +283,7 @@ public static class TemplateTomlMapper
             ModuleFolders: seed.ModuleFolders.Select(f => new TemplateFolderInput(
                 f.Path,
                 f.Files.Select(x => new TemplateFileInput(x.Path, x.Content, x.IsExample)).ToList())).ToList(),
-            CodeWorkspaceContent: seed.CodeWorkspace.Content,
+            WorkspaceTemplate: seed.Workspace.Content,
             DefaultApplicationVersionKey: string.IsNullOrWhiteSpace(seed.Template.DefaultApplicationVersion)
                 ? null
                 : seed.Template.DefaultApplicationVersion);
@@ -344,16 +345,16 @@ public static class TemplateTomlMapper
 
         var head = TomlSerializer.Serialize(seed, TomlOptions);
         head = EmptyFoldersLineRegex.Replace(head, string.Empty);
-        head = EmptyCodeWorkspaceBlockRegex.Replace(head, string.Empty).TrimEnd();
+        head = EmptyWorkspaceBlockRegex.Replace(head, string.Empty).TrimEnd();
 
         var sb = new StringBuilder(head);
 
-        // [code_workspace] carries the editable .code-workspace content with
+        // [workspace] carries the editable .code-workspace content with
         // a {{paths}} placeholder for the generator to expand at write time.
         sb.AppendLine();
         sb.AppendLine();
-        sb.AppendLine("[code_workspace]");
-        sb.Append("content = ").AppendLine(TomlMultilineBasic(GenerationService.DefaultCodeWorkspaceContent));
+        sb.AppendLine("[workspace]");
+        sb.Append("content = ").AppendLine(TomlMultilineBasic(GenerationService.DefaultWorkspaceTemplate));
 
         // Root-folder (path = "") seeds AppSourceCop.json next to app.json.
         sb.AppendLine();

@@ -27,4 +27,11 @@ public class ApplicationVersionSeed
 
     /// <summary>Display order; the user-facing select honours it.</summary>
     public int Ordering { get; set; }
+
+    /// <summary>
+    /// Mirrors <see cref="ALDevToolbox.Domain.Entities.ApplicationVersion.Deprecated"/>
+    /// so the export/import round-trip preserves the "hidden from end-user
+    /// pickers" flag.
+    /// </summary>
+    public bool Deprecated { get; set; }
 }

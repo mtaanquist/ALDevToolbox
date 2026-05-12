@@ -24,14 +24,13 @@ public class TemplateSeed
     public DefaultsSeed Defaults { get; set; } = new();
 
     /// <summary>
-    /// The <c>[code_workspace]</c> table — verbatim <c>.code-workspace</c>
+    /// The <c>[workspace]</c> table — verbatim <c>.code-workspace</c>
     /// content with a <c>{{paths}}</c> placeholder for the generator to
     /// expand. Round-trips through both the admin TOML editor and the export
     /// bundle so admins can edit per-template VS Code settings, analyzer
     /// lists, ruleset paths and extension recommendations.
     /// </summary>
-    [TomlPropertyName("code_workspace")]
-    public CodeWorkspaceSeed CodeWorkspace { get; set; } = new();
+    public WorkspaceSeed Workspace { get; set; } = new();
 
     public List<FolderSeed> Folders { get; set; } = new();
 
@@ -43,8 +42,8 @@ public class TemplateSeed
     public List<FolderSeed> ModuleFolders { get; set; } = new();
 }
 
-/// <summary>The <c>[code_workspace]</c> table — see <see cref="TemplateSeed.CodeWorkspace"/>.</summary>
-public class CodeWorkspaceSeed
+/// <summary>The <c>[workspace]</c> table — see <see cref="TemplateSeed.Workspace"/>.</summary>
+public class WorkspaceSeed
 {
     /// <summary>Verbatim file content; emitted as a TOML multi-line basic string for readability.</summary>
     public string Content { get; set; } = string.Empty;
@@ -88,6 +87,15 @@ public class TemplateMetaSeed
     /// <c>runtime</c> values.
     /// </summary>
     public string? DefaultApplicationVersion { get; set; }
+
+    /// <summary>
+    /// Mirrors <see cref="ALDevToolbox.Domain.Entities.RuntimeTemplate.IsDefault"/>
+    /// so the export/import round-trip preserves the per-org "this is the
+    /// default template on New Workspace" flag. Omitted from TOML when
+    /// <c>false</c> to keep diffs quiet for templates that aren't the
+    /// default.
+    /// </summary>
+    public bool IsDefault { get; set; }
 }
 
 /// <summary>The <c>[defaults]</c> table — merged into every generated <c>app.json</c>.</summary>
