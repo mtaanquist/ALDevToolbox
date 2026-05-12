@@ -66,6 +66,60 @@ public static class TemplateTomlMapper
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Serialises an authoring payload to its <c>template.toml</c> form. Used
+    /// by the admin form-editor's Form → TOML mode switch so the document the
+    /// user sees in the TOML pane reflects the structured-form edits without
+    /// a round-trip through the database.
+    /// </summary>
+    public static string ToToml(TemplateAuthoring authoring)
+    {
+        var defaults = string.IsNullOrWhiteSpace(authoring.DefaultsJson)
+            ? new TemplateDefaults()
+            : JsonSerializer.Deserialize<TemplateDefaults>(authoring.DefaultsJson, JsonOptions) ?? new TemplateDefaults();
+        var appSourceCop = string.IsNullOrWhiteSpace(authoring.AppSourceCopJson)
+            ? new AppSourceCopSettings()
+            : JsonSerializer.Deserialize<AppSourceCopSettings>(authoring.AppSourceCopJson, JsonOptions) ?? new AppSourceCopSettings();
+
+        var seed = BuildHeaderSeed(authoring, defaults, appSourceCop);
+        var head = TomlSerializer.Serialize(seed, TomlOptions);
+        head = EmptyExtensionsLineRegex.Replace(head, string.Empty).TrimEnd();
+
+        var sb = new StringBuilder(head);
+        foreach (var ext in authoring.Extensions)
+        {
+            AppendExtension(sb, ext);
+        }
+        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    private static TemplateSeed BuildHeaderSeed(TemplateAuthoring authoring, TemplateDefaults defaults, AppSourceCopSettings appSourceCop) => new()
+    {
+        Template = new TemplateMetaSeed
+        {
+            Key = authoring.Key,
+            Runtime = authoring.Runtime,
+            Name = authoring.Name,
+            Description = authoring.Description,
+            CoreIdRangeFrom = authoring.CoreIdRangeFrom,
+            CoreIdRangeTo = authoring.CoreIdRangeTo,
+            ModuleIdRangeStart = authoring.ModuleIdRangeStart,
+            ModuleIdRangeSize = authoring.ModuleIdRangeSize,
+            IsDefault = authoring.IsDefault,
+            DefaultApplicationVersion = authoring.DefaultApplicationVersionKey,
+            DefaultModules = authoring.DefaultModuleKeys
+                .Select(k => new TemplateDefaultModuleSeed { Key = k })
+                .ToList(),
+        },
+        Defaults = BuildDefaultsSeed(defaults),
+        AppSourceCop = new AppSourceCopSeed
+        {
+            MandatoryPrefix = appSourceCop.MandatoryPrefix,
+            SupportedCountries = appSourceCop.SupportedCountries.ToList(),
+        },
+    };
+
     private static TemplateSeed BuildHeaderSeed(RuntimeTemplate template)
     {
         var defaults = template.Defaults ?? new TemplateDefaults();
@@ -91,26 +145,7 @@ public static class TemplateTomlMapper
                     .Select(d => new TemplateDefaultModuleSeed { Key = d.Module!.Key })
                     .ToList(),
             },
-            Defaults = new DefaultsSeed
-            {
-                Publisher = defaults.Publisher,
-                Target = defaults.Target,
-                Application = defaults.Application,
-                Platform = defaults.Platform,
-                ExtensionPrefix = defaults.ExtensionPrefix,
-                Url = defaults.Url,
-                Logo = defaults.Logo,
-                Features = defaults.Features.ToList(),
-                SupportedLocales = defaults.SupportedLocales.ToList(),
-                Affix = defaults.Affix,
-                AffixType = defaults.AffixType.ToString(),
-                ResourceExposurePolicy = new ResourceExposurePolicySeed
-                {
-                    AllowDebugging = defaults.ResourceExposurePolicy.AllowDebugging,
-                    AllowDownloadingSource = defaults.ResourceExposurePolicy.AllowDownloadingSource,
-                    IncludeSourceInSymbolFile = defaults.ResourceExposurePolicy.IncludeSourceInSymbolFile,
-                },
-            },
+            Defaults = BuildDefaultsSeed(defaults),
             AppSourceCop = new AppSourceCopSeed
             {
                 MandatoryPrefix = appSourceCop.MandatoryPrefix,
@@ -120,37 +155,34 @@ public static class TemplateTomlMapper
         };
     }
 
+    private static DefaultsSeed BuildDefaultsSeed(TemplateDefaults defaults) => new()
+    {
+        Publisher = defaults.Publisher,
+        Target = defaults.Target,
+        Application = defaults.Application,
+        Platform = defaults.Platform,
+        ExtensionPrefix = defaults.ExtensionPrefix,
+        Url = defaults.Url,
+        Logo = defaults.Logo,
+        Features = defaults.Features.ToList(),
+        SupportedLocales = defaults.SupportedLocales.ToList(),
+        Affix = defaults.Affix,
+        AffixType = defaults.AffixType.ToString(),
+        ResourceExposurePolicy = new ResourceExposurePolicySeed
+        {
+            AllowDebugging = defaults.ResourceExposurePolicy.AllowDebugging,
+            AllowDownloadingSource = defaults.ResourceExposurePolicy.AllowDownloadingSource,
+            IncludeSourceInSymbolFile = defaults.ResourceExposurePolicy.IncludeSourceInSymbolFile,
+        },
+    };
+
     private static void AppendExtension(StringBuilder sb, WorkspaceExtension ext)
     {
-        sb.AppendLine();
-        sb.AppendLine();
-        sb.AppendLine("[[extensions]]");
-        sb.Append("path = ").AppendLine(TomlBasicString(ext.Path));
-        sb.Append("name = ").AppendLine(TomlBasicString(ext.NameTemplate));
-        if (!ext.Required)
-        {
-            sb.AppendLine("required = false");
-        }
-        if (!string.IsNullOrEmpty(ext.Application))
-        {
-            sb.Append("application = ").AppendLine(TomlBasicString(ext.Application));
-        }
-        if (!string.IsNullOrEmpty(ext.Runtime))
-        {
-            sb.Append("runtime = ").AppendLine(TomlBasicString(ext.Runtime));
-        }
-        if (ext.IdRangeFrom is int from)
-        {
-            sb.Append("id_range_from = ").AppendLine(from.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        }
-        if (ext.IdRangeTo is int to)
-        {
-            sb.Append("id_range_to = ").AppendLine(to.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        }
+        AppendExtensionHeader(sb, ext.Path, ext.NameTemplate, ext.Required, ext.Application, ext.Runtime, ext.IdRangeFrom, ext.IdRangeTo);
 
         foreach (var dep in ext.Dependencies.OrderBy(d => d.Ordering))
         {
-            AppendDependency(sb, dep);
+            AppendDependency(sb, dep.RefExtensionPath, dep.RefModuleKey, dep.LitId, dep.LitName, dep.LitPublisher, dep.LitVersion);
         }
 
         foreach (var folder in ext.Folders.OrderBy(f => f.Ordering))
@@ -159,24 +191,68 @@ public static class TemplateTomlMapper
         }
     }
 
-    private static void AppendDependency(StringBuilder sb, WorkspaceExtensionDependency dep)
+    private static void AppendExtension(StringBuilder sb, ExtensionAuthoring ext)
+    {
+        AppendExtensionHeader(sb, ext.Path, ext.NameTemplate, ext.Required, ext.Application, ext.Runtime, ext.IdRangeFrom, ext.IdRangeTo);
+
+        foreach (var dep in ext.Dependencies)
+        {
+            AppendDependency(sb, dep.RefExtensionPath, dep.RefModuleKey, dep.LitId, dep.LitName, dep.LitPublisher, dep.LitVersion);
+        }
+
+        foreach (var folder in ext.Folders)
+        {
+            AppendFolder(sb, folder, parentPath: "extensions");
+        }
+    }
+
+    private static void AppendExtensionHeader(StringBuilder sb, string path, string nameTemplate, bool required, string? application, string? runtime, int? idRangeFrom, int? idRangeTo)
+    {
+        sb.AppendLine();
+        sb.AppendLine();
+        sb.AppendLine("[[extensions]]");
+        sb.Append("path = ").AppendLine(TomlBasicString(path));
+        sb.Append("name = ").AppendLine(TomlBasicString(nameTemplate));
+        if (!required)
+        {
+            sb.AppendLine("required = false");
+        }
+        if (!string.IsNullOrEmpty(application))
+        {
+            sb.Append("application = ").AppendLine(TomlBasicString(application));
+        }
+        if (!string.IsNullOrEmpty(runtime))
+        {
+            sb.Append("runtime = ").AppendLine(TomlBasicString(runtime));
+        }
+        if (idRangeFrom is int from)
+        {
+            sb.Append("id_range_from = ").AppendLine(from.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        if (idRangeTo is int to)
+        {
+            sb.Append("id_range_to = ").AppendLine(to.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+    }
+
+    private static void AppendDependency(StringBuilder sb, string? refExtensionPath, string? refModuleKey, string? litId, string? litName, string? litPublisher, string? litVersion)
     {
         sb.AppendLine();
         sb.AppendLine("[[extensions.dependencies]]");
-        if (dep.RefExtensionPath is not null)
+        if (refExtensionPath is not null)
         {
-            sb.Append("extension = ").AppendLine(TomlBasicString(dep.RefExtensionPath));
+            sb.Append("extension = ").AppendLine(TomlBasicString(refExtensionPath));
         }
-        else if (dep.RefModuleKey is not null)
+        else if (refModuleKey is not null)
         {
-            sb.Append("module = ").AppendLine(TomlBasicString(dep.RefModuleKey));
+            sb.Append("module = ").AppendLine(TomlBasicString(refModuleKey));
         }
         else
         {
-            sb.Append("id = ").AppendLine(TomlBasicString(dep.LitId ?? string.Empty));
-            sb.Append("name = ").AppendLine(TomlBasicString(dep.LitName ?? string.Empty));
-            sb.Append("publisher = ").AppendLine(TomlBasicString(dep.LitPublisher ?? string.Empty));
-            sb.Append("version = ").AppendLine(TomlBasicString(dep.LitVersion ?? string.Empty));
+            sb.Append("id = ").AppendLine(TomlBasicString(litId ?? string.Empty));
+            sb.Append("name = ").AppendLine(TomlBasicString(litName ?? string.Empty));
+            sb.Append("publisher = ").AppendLine(TomlBasicString(litPublisher ?? string.Empty));
+            sb.Append("version = ").AppendLine(TomlBasicString(litVersion ?? string.Empty));
         }
     }
 
@@ -195,19 +271,42 @@ public static class TemplateTomlMapper
 
         foreach (var file in folder.Files.OrderBy(f => f.Ordering))
         {
-            sb.AppendLine();
-            sb.Append("[[").Append(folderKey).AppendLine(".files]]");
-            sb.Append("path = ").AppendLine(TomlBasicString(file.Path));
-            sb.Append("content = ").AppendLine(TomlMultilineBasic(file.Content));
-            if (file.IsExample)
-            {
-                sb.AppendLine("is_example = true");
-            }
+            AppendFile(sb, folderKey, file.Path, file.Content, file.IsExample);
         }
 
         foreach (var child in folder.Folders.OrderBy(f => f.Ordering))
         {
             AppendFolder(sb, child, folderKey);
+        }
+    }
+
+    private static void AppendFolder(StringBuilder sb, FolderAuthoring folder, string parentPath)
+    {
+        var folderKey = $"{parentPath}.folders";
+        sb.AppendLine();
+        sb.Append("[[").Append(folderKey).AppendLine("]]");
+        sb.Append("path = ").AppendLine(TomlBasicString(folder.Path));
+
+        foreach (var file in folder.Files)
+        {
+            AppendFile(sb, folderKey, file.Path, file.Content, file.IsExample);
+        }
+
+        foreach (var child in folder.Folders)
+        {
+            AppendFolder(sb, child, folderKey);
+        }
+    }
+
+    private static void AppendFile(StringBuilder sb, string folderKey, string path, string content, bool isExample)
+    {
+        sb.AppendLine();
+        sb.Append("[[").Append(folderKey).AppendLine(".files]]");
+        sb.Append("path = ").AppendLine(TomlBasicString(path));
+        sb.Append("content = ").AppendLine(TomlMultilineBasic(content));
+        if (isExample)
+        {
+            sb.AppendLine("is_example = true");
         }
     }
 

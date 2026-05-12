@@ -16,8 +16,8 @@ namespace ALDevToolbox.Tests.Templates;
 /// /
 /// <see cref="TemplateService.UpdateAsync(int, TemplateAuthoring, CancellationToken)"/>
 /// write path. Covers the validator (field-keyed errors), the create-and-persist
-/// happy path, the update-then-rebuild path, the default-modules reconciler
-/// (PK stability), and the legacy-shape stubs (they throw).
+/// happy path, the update-then-rebuild path, and the default-modules
+/// reconciler (PK stability).
 /// </summary>
 public sealed class TemplateServiceWriteSideTests : IDisposable
 {
@@ -265,33 +265,6 @@ public sealed class TemplateServiceWriteSideTests : IDisposable
         var act = () => NewService(ctx).CreateAsync(input);
 
         await act.Should().ThrowAsync<PlanValidationException>();
-    }
-
-    [Fact]
-    public async Task Legacy_template_input_overload_throws_NotImplementedException()
-    {
-        var legacy = new TemplateInput(
-            Key: "runtime-legacy",
-            Runtime: "15",
-            Name: "Legacy",
-            Description: null,
-            DefaultApplication: "24.0.0.0",
-            DefaultPlatform: "1.0.0.0",
-            DefaultsJson: "{}",
-            AppSourceCopJson: "{}",
-            CoreIdRangeFrom: 90000,
-            CoreIdRangeTo: 90999,
-            ModuleIdRangeStart: 91000,
-            ModuleIdRangeSize: 200,
-            Deprecated: false,
-            DefaultModuleKeys: Array.Empty<string>(),
-            Folders: Array.Empty<TemplateFolderInput>(),
-            ModuleFolders: Array.Empty<TemplateFolderInput>());
-
-        await using var ctx = _db.NewContext();
-        var act = () => NewService(ctx).CreateAsync(legacy);
-
-        await act.Should().ThrowAsync<NotImplementedException>();
     }
 
     // ===== Helpers =====

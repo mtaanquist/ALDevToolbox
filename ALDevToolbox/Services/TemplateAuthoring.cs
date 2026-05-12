@@ -3,19 +3,13 @@ namespace ALDevToolbox.Services;
 /// <summary>
 /// Structured authoring payload for a runtime template under the
 /// unified-extensions model. Produced by
-/// <see cref="TemplateTomlMapper.FromToml(string, bool)"/>; consumed (in a
-/// follow-up slice) by the rewritten <see cref="TemplateService.CreateAsync"/>
-/// / <see cref="TemplateService.UpdateAsync"/> bridge into
+/// <see cref="TemplateTomlMapper.FromToml(string, bool)"/> on the TOML pane and
+/// by the structured admin form's <c>FormState.ToAuthoring()</c>; consumed by
+/// <see cref="TemplateService.CreateAsync"/> /
+/// <see cref="TemplateService.UpdateAsync"/> into
 /// <see cref="Domain.Entities.WorkspaceExtension"/> / its folder tree / its
 /// dependencies.
 /// </summary>
-/// <remarks>
-/// Distinct from the legacy <see cref="TemplateInput"/>, which mirrors the
-/// pre-unified admin form. Both coexist during the Issue #54 transition; the
-/// form's <c>FormState.ToInput()</c> still builds <see cref="TemplateInput"/>,
-/// the TOML editor builds this. They converge when the admin form is
-/// rewritten around the new shape.
-/// </remarks>
 public record TemplateAuthoring(
     string Key,
     string Runtime,
