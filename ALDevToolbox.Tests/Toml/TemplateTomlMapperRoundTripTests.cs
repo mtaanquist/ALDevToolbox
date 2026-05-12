@@ -245,19 +245,34 @@ public sealed class TemplateTomlMapperRoundTripTests
     }
 
     [Fact]
-    public void Blank_toml_parses_and_declares_a_required_core_extension()
+    public void Blank_toml_parses_into_a_teaching_starter()
     {
         var toml = TemplateTomlMapper.BlankToml();
 
         var parsed = TemplateTomlMapper.FromToml(toml, deprecated: false);
 
         parsed.Key.Should().Be("runtime-new");
-        parsed.Extensions.Should().ContainSingle().Which.Path.Should().Be("Core");
-        parsed.Extensions.Single().Required.Should().BeTrue();
-        // Starter ships the standard AL fallback folders so the preview is
-        // non-empty out of the box.
-        parsed.Extensions.Single().Folders.Select(f => f.Path)
-            .Should().BeEquivalentTo(TemplateTomlMapper.DefaultFolderPaths);
+        parsed.Runtime.Should().Be("26");
+
+        // One required Core extension is the only uncommented [[extensions]]
+        // entry. The Hotfix example next to it is commented out so admins
+        // see the optional-extension pattern without having to delete a
+        // second live entry on day one.
+        parsed.Extensions.Should().ContainSingle();
+        var core = parsed.Extensions.Single();
+        core.Path.Should().Be("Core");
+        core.Required.Should().BeTrue();
+
+        // Starter shows: src/codeunits as a nested folder example, a
+        // commented-block sibling for permissionsets / translations.
+        core.Folders.Should().Contain(f => f.Path == "src");
+        var src = core.Folders.Single(f => f.Path == "src");
+        src.Folders.Should().ContainSingle(f => f.Path == "codeunits");
+        // The nested codeunits folder ships an example .al file so the
+        // mustache substitutions ({{affix}}, {{name}}) are discoverable
+        // from the starter.
+        src.Folders.Single().Files.Should().ContainSingle(f => f.Path == "Hello.al")
+            .Which.Content.Should().Contain("{{affix}}");
     }
 
     [Fact]
