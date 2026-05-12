@@ -3,18 +3,35 @@
 @using System.Text.Json
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Services
+@using Lucide.Blazor.Components
 @inject SiteAdminService SiteAdmin
 
 <PageTitle>Site Admin · Audit · AL Dev Toolbox</PageTitle>
 
-<div class="audit-page">
-    <h1>Site Admin · Audit</h1>
-    <p class="muted">
-        Cross-organisation audit search. Filters are optional; an unfiltered
-        search returns the most recent activity across every organisation.
-    </p>
+<div class="admin-page audit-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Site Admin · Audit</h1>
+            <p class="muted">
+                Cross-organisation audit search. Filters are optional; an
+                unfiltered search returns the most recent activity across
+                every organisation.
+            </p>
+        </div>
+        <a class="btn btn--sm" href="/admin">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to admin</span>
+        </a>
+    </header>
 
-    <form method="get" action="/site-admin/audit" class="admin-filter-form">
+    @*
+        Filters apply on change rather than waiting for a submit button:
+        selects and date pickers fire change events synchronously, and the
+        Actor text input submits on Enter or when it loses focus. Keeping
+        the form GET-based preserves bookmarkable URLs and uses the same
+        SupplyParameterFromQuery wiring as before.
+    *@
+    <form method="get" action="/site-admin/audit" class="admin-filter-form" onchange="this.submit()">
         <label>
             Entity type
             <select name="entityType">
@@ -50,7 +67,6 @@
             To (UTC)
             <input type="datetime-local" name="to" value="@ToUtc" />
         </label>
-        <button type="submit" class="btn btn--secondary">Search</button>
     </form>
 
     @if (_rows is null)

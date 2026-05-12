@@ -205,6 +205,50 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .nav-link.active .nav-link__icon { color: var(--color-accent); }
 .nav-link--muted { color: var(--color-text-muted); }
 
+.nav-group { display: flex; flex-direction: column; gap: 2px; }
+
+.nav-link--group {
+    color: var(--color-text);
+    cursor: default;
+}
+
+.nav-link--group:hover { background: transparent; }
+
+/* The sub-list is anchored to the parent's icon column (≈ 18px icon + 10px
+   gap = 28px) so a thin vertical guide can sit at that x-coordinate and read
+   as a continuation of the parent row. */
+.nav-sublist {
+    list-style: none;
+    margin: 2px 0 0;
+    padding: 2px 0 2px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    position: relative;
+}
+
+.nav-sublist::before {
+    content: "";
+    position: absolute;
+    left: 18px;
+    top: 2px;
+    bottom: 2px;
+    width: 1px;
+    background: var(--color-border-strong);
+}
+
+.nav-link--sub {
+    padding: 5px 10px;
+    font-size: 13px;
+    color: var(--color-text-secondary);
+}
+
+.nav-link--sub.active {
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+    font-weight: 500;
+}
+
 .nav-divider {
     height: 1px;
     background: var(--color-border);
@@ -213,6 +257,10 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 /* ---------- Tab bar (page-level) ---------- */
 
+/* The .tab-bar / .tab classes drive the auth sign-in tabs (password vs magic
+   link). The in-page tab strip on the generator pages was removed once the
+   sidebar gained sub-items, but the styles are kept here so the auth surface
+   stays consistent with the rest of the chrome. */
 .tab-bar {
     display: flex;
     gap: 6px;
@@ -243,6 +291,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 /* ---------- Templates browser ---------- */
 
+.templates-browser { max-width: 1100px; }
 .templates-browser h2 { margin-top: 28px; }
 .templates-browser h2:first-of-type { margin-top: 16px; }
 
@@ -279,6 +328,13 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
    scrolls on the left, the preview sticks to the top of the viewport on the
    right so it stays visible while the user works through a long modules list. */
 .workspace-page { max-width: 1100px; }
+
+/* Page header used by the generator pages (New workspace, New extension,
+   Templates). Matches admin-page__header visually so the title bar reads
+   the same wherever you are. */
+.page-header { margin-bottom: 20px; }
+.page-header h1 { margin: 0 0 6px; }
+.page-header p { margin: 0; }
 
 .workspace-layout {
     display: grid;
@@ -324,15 +380,18 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     flex-wrap: wrap;
 }
 
-.import-card__button {
+.import-card__button,
+.logo-upload__button {
     cursor: pointer;
     margin: 0;
+    align-self: flex-start;
 }
 
 /* Native <input type="file"> is awkward to style cross-browser, so we hide
    it visually and let the surrounding label trigger it. The accessible
    name comes from the label's text content. */
-.import-card__input {
+.import-card__input,
+.logo-upload__input {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -502,6 +561,13 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .form-section--row > div { display: flex; flex-direction: column; gap: 6px; }
 
+/* Narrower form grid for forms where 100%-wide inputs feel wider than they
+   need to be (the Configuration page being the main culprit). Keeps the
+   eye-line shorter without forcing each field to declare its own max-width. */
+.form-grid--narrow { max-width: 560px; }
+.form-grid--narrow .form-section--row { max-width: 360px; }
+.form-grid--narrow .form-section--id { max-width: 180px; }
+
 .section-label {
     font-size: 11px;
     font-weight: 500;
@@ -539,7 +605,12 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .admin-form input[type="datetime-local"],
 .admin-form input[type="file"],
 .admin-form textarea,
-.admin-form select {
+.admin-form select,
+.admin-filter-form input[type="text"],
+.admin-filter-form input[type="search"],
+.admin-filter-form input[type="datetime-local"],
+.admin-filter-form select,
+.admin-search-input {
     width: 100%;
     padding: 8px 10px;
     border: 1px solid var(--color-border-strong);
@@ -770,6 +841,17 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 }
 
 .btn--sm:hover { text-decoration: none; }
+
+/* Square icon-only variant. Used in tight row-action cells where a row of
+   icons reads better than a row of full text buttons (Backups list, etc.).
+   Title/aria-label on the element carry the accessible name. */
+.btn--icon {
+    padding: 4px;
+    width: 28px;
+    height: 28px;
+    justify-content: center;
+    gap: 0;
+}
 
 .data-table__actions {
     width: 1%;
@@ -1033,7 +1115,11 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .user-button:hover {
     background: var(--color-bg);
     border-color: var(--color-accent);
+    text-decoration: none;
 }
+
+.user-button:hover .user-button__name,
+.user-button:hover .user-button__org { text-decoration: none; }
 
 .user-button__name { font-weight: 500; }
 
@@ -1077,6 +1163,16 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     gap: 6px;
 }
 
+.tab-bar--auth { margin-bottom: 0; }
+
+.login-form__inline-link {
+    align-self: flex-start;
+    font-size: 12.5px;
+    color: var(--color-text-muted);
+}
+
+.login-form__inline-link:hover { color: var(--color-accent); }
+
 .form-error {
     color: var(--color-error-text);
     background: var(--color-surface);
@@ -1102,7 +1198,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 /* ---------- Admin dashboard ---------- */
 
-.admin-dashboard { max-width: 880px; }
+.admin-dashboard { max-width: 1100px; }
 
 .admin-tiles {
     margin-top: 20px;
@@ -1250,12 +1346,6 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     gap: 8px;
 }
 
-.org-file-save-row {
-    display: flex;
-    justify-content: flex-start;
-    margin-top: 12px;
-}
-
 .admin-configuration__danger {
     border-top-color: rgba(207, 34, 46, 0.4);
 }
@@ -1265,6 +1355,66 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .audit-page { max-width: 1100px; }
 
 .audit-page__limit-note { margin-top: 12px; font-size: 12.5px; }
+
+/* Search and filter toolbars used by the SiteAdmin pages. The wider filter
+   form wraps onto multiple rows on narrower screens; the search form is an
+   input-group: input and button share an edge with no gap so they read as
+   a single control. */
+.admin-search-form {
+    display: flex;
+    align-items: stretch;
+    margin: 16px 0 20px;
+    max-width: 560px;
+}
+
+.admin-search-form .admin-search-input {
+    flex: 1;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right-width: 0;
+}
+
+.admin-search-form .admin-search-input:focus { border-right-width: 1px; }
+
+.admin-search-form > .btn {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
+/* When an icon-only button lives in the search input-group it should match
+   the input's height (stretched by the form's align-items: stretch) rather
+   than its own 28px square. Aspect-ratio keeps it square against whatever
+   height the surrounding input ends up at. */
+.admin-search-form > .btn--icon {
+    width: auto;
+    height: auto;
+    padding: 0 10px;
+    aspect-ratio: 1 / 1;
+}
+
+.admin-filter-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    align-items: end;
+    gap: 12px 16px;
+    margin: 16px 0 20px;
+    padding: 16px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+}
+
+.admin-filter-form > label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+}
+
 
 .audit-panel { margin-top: 28px; }
 
@@ -1453,11 +1603,44 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .admin-page__header p { margin: 0; }
 
+.admin-page__header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
 .admin-page__toolbar {
     display: flex;
     align-items: center;
     gap: 12px;
     margin-bottom: 12px;
+}
+
+/* Compact inline select used inside data-table rows (e.g. role picker on the
+   Users page). Standard form-section padding makes the control overpower
+   the rest of the row; this tightens it without losing the focus ring. */
+.row-role-select {
+    padding: 4px 8px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: inherit;
+    font-size: 12.5px;
+}
+
+/* Trailing action row for "content creation" buttons that sit at the bottom
+   of the list they relate to (e.g. New template, New module, New snippet).
+   The top-right corner is reserved for navigation (Back to admin); creation
+   actions live with the data they create. */
+.admin-page__footer-actions {
+    display: flex;
+    justify-content: flex-start;
+    gap: 8px;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--color-border);
 }
 
 .data-table__row--muted td { opacity: 0.65; }
@@ -1964,40 +2147,89 @@ ul.form-field-error {
 }
 
 .snippet-files {
-    display: grid;
-    gap: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
 }
 
 .snippet-file {
-    border: 1px solid var(--color-border, #d0d7de);
-    border-radius: 6px;
-    padding: 12px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    background: var(--color-surface);
 }
+
+.snippet-file--expanded { padding-bottom: 12px; }
 
 .snippet-file__row {
     display: flex;
-    gap: 12px;
-    align-items: flex-start;
-    margin-bottom: 8px;
+    gap: 10px;
+    align-items: flex-end;
+}
+
+.snippet-file--expanded .snippet-file__row { margin-bottom: 10px; }
+
+.snippet-file__toggle {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 32px;
+    margin-bottom: 1px;
+    border: none;
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+}
+
+.snippet-file__toggle:hover {
+    background: var(--color-bg);
+    color: var(--color-text);
 }
 
 .snippet-file__name {
     flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
 }
 
 .snippet-file__name input {
     width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    font-family: inherit;
+    font-size: 13.5px;
+    background: var(--color-surface);
+    color: var(--color-text);
 }
 
 .snippet-file__actions {
     display: flex;
     gap: 4px;
+    flex: 0 0 auto;
+}
+
+.snippet-file__content {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .snippet-file__content textarea {
     width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: var(--color-text);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.85em;
+    resize: vertical;
 }
 
 .snippet-suggestion-list {
@@ -2011,6 +2243,13 @@ ul.form-field-error {
     border: 1px solid var(--color-border, #d0d7de);
     border-radius: 6px;
     padding: 16px;
+}
+
+/* Applied when /admin/snippets/suggestions?focus={id} matches this row, so
+   the admin lands directly on the suggestion the Review link pointed at. */
+.snippet-suggestion--focused {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 2px var(--color-accent-soft);
 }
 
 .snippet-suggestion__header {

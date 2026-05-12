@@ -1,18 +1,34 @@
 @page "/site-admin/settings"
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
 @using ALDevToolbox.Services
+@using Lucide.Blazor.Components
 @inject SystemSettingsService Settings
 
 <PageTitle>Site Admin · Settings · AL Dev Toolbox</PageTitle>
 
-<div class="admin-section">
-    <h1>Site Admin · Settings</h1>
-    <p class="muted">
-        Hosting-wide configuration. SMTP values entered here override the
-        <code>SMTP_*</code> environment variables on the next email send —
-        no restart required. Leave a field blank to fall back to the env-var
-        path; clear all fields to disable the override entirely.
-    </p>
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Site Admin · Settings</h1>
+            <p class="muted">
+                Hosting-wide configuration. SMTP values entered here override
+                the <code>SMTP_*</code> environment variables on the next
+                email send — no restart required. Leave a field blank to fall
+                back to the env-var path; clear all fields to disable the
+                override entirely.
+            </p>
+        </div>
+        <div class="admin-page__header-actions">
+            <a class="btn btn--sm" href="/admin">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to admin</span>
+            </a>
+            <button type="submit" form="site-admin-settings-form" class="btn btn--sm btn--primary">
+                <Icon Name="save" Width="14" Height="14" />
+                <span>Save settings</span>
+            </button>
+        </div>
+    </header>
 
     @if (!string.IsNullOrEmpty(Message))
     {
@@ -33,7 +49,7 @@
     }
     else
     {
-        <form method="post" action="/site-admin/settings/save" class="admin-form">
+        <form method="post" action="/site-admin/settings/save" class="admin-form" id="site-admin-settings-form">
             <AntiforgeryToken />
 
             <h2>SMTP</h2>
@@ -107,14 +123,14 @@
                 Auto-approve signups into existing organisations (skip admin review)
             </label>
 
-            <div class="form-actions">
-                <button type="submit" class="btn">Save settings</button>
-            </div>
         </form>
 
         <form method="post" action="/site-admin/settings/test-email" class="admin-form admin-form--inline">
             <AntiforgeryToken />
-            <button type="submit" class="btn btn--secondary">Send test email to me</button>
+            <button type="submit" class="btn btn--sm">
+                <Icon Name="mail" Width="14" Height="14" />
+                <span>Send test email to me</span>
+            </button>
             <span class="muted">Sends a one-line test to your own address using the resolved SMTP settings.</span>
         </form>
 

@@ -6,7 +6,10 @@
     EditableFile rows so they can pass it straight to the service input record
     on submit.
 
-    Reorder uses up/down buttons (same reason as the template editor: HTML5
+    Rows are collapsible: only the filename input + actions are shown by
+    default. Click the row (or the expand button) to reveal the content
+    textarea. Empty rows start expanded so freshly-added files don't hide
+    their empty content area. Reorder uses up/down buttons (HTML5
     drag-and-drop would need .razor.js plumbing for v1).
 *@
 
@@ -20,8 +23,14 @@
     {
         var i = idx;
         var file = Files[i];
-        <div class="snippet-file" role="group" aria-label="@($"File {i + 1}")">
+        var expanded = IsExpanded(file);
+        <div class="snippet-file @(expanded ? "snippet-file--expanded" : null)" role="group" aria-label="@($"File {i + 1}")">
             <div class="snippet-file__row">
+                <button type="button" class="snippet-file__toggle" @onclick="() => Toggle(file)"
+                        aria-expanded="@(expanded ? "true" : "false")"
+                        title="@(expanded ? "Collapse" : "Expand")">
+                    <Icon Name="@(expanded ? "chevron-down" : "chevron-right")" Width="14" Height="14" />
+                </button>
                 <label class="snippet-file__name">
                     <span class="section-label">File name</span>
                     <input type="text" value="@file.FileName"
@@ -42,12 +51,15 @@
                     </button>
                 </div>
             </div>
-            <label class="snippet-file__content">
-                <span class="section-label">Content</span>
-                <textarea rows="12" spellcheck="false" wrap="off"
-                          @oninput="e => file.Content = e.Value?.ToString() ?? string.Empty">@file.Content</textarea>
-                <FieldError Field="@($"Files[{i}].Content")" Errors="Errors" />
-            </label>
+            @if (expanded)
+            {
+                <label class="snippet-file__content">
+                    <span class="section-label">Content</span>
+                    <textarea rows="12" spellcheck="false" wrap="off"
+                              @oninput="e => file.Content = e.Value?.ToString() ?? string.Empty">@file.Content</textarea>
+                    <FieldError Field="@($"Files[{i}].Content")" Errors="Errors" />
+                </label>
+            }
         </div>
     }
 
@@ -71,16 +83,51 @@
     [Parameter] public IReadOnlyDictionary<string, string>? Errors { get; set; }
     [Parameter] public EventCallback OnChanged { get; set; }
 
+    // Tracks which rows the user explicitly expanded or collapsed. Identity
+    // lookup is intentional — moving a row reorders the list but the same
+    // EditableFile instance stays expanded/collapsed.
+    private readonly HashSet<EditableFile> _expanded = new();
+    private readonly HashSet<EditableFile> _collapsed = new();
+
+    private bool IsExpanded(EditableFile file)
+    {
+        if (_expanded.Contains(file)) return true;
+        if (_collapsed.Contains(file)) return false;
+        // Default: expand empty rows (they have nothing to summarise) and
+        // collapse rows that already carry content so a long list reads as a
+        // summary by default.
+        return string.IsNullOrEmpty(file.Content);
+    }
+
+    private void Toggle(EditableFile file)
+    {
+        if (IsExpanded(file))
+        {
+            _expanded.Remove(file);
+            _collapsed.Add(file);
+        }
+        else
+        {
+            _collapsed.Remove(file);
+            _expanded.Add(file);
+        }
+    }
+
     private async Task AddFile()
     {
-        Files.Add(new EditableFile());
+        var fresh = new EditableFile();
+        Files.Add(fresh);
+        _expanded.Add(fresh);
         await NotifyChanged();
     }
 
     private async Task Remove(int index)
     {
         if (index < 0 || index >= Files.Count) return;
+        var removed = Files[index];
         Files.RemoveAt(index);
+        _expanded.Remove(removed);
+        _collapsed.Remove(removed);
         await NotifyChanged();
     }
 

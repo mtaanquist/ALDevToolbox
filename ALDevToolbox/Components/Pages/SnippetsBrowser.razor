@@ -4,6 +4,7 @@
 @inject SnippetService Snippets
 @inject NavigationManager Nav
 @using ALDevToolbox.Domain.Entities
+@using Lucide.Blazor.Components
 
 <PageTitle>Snippets · AL Dev Toolbox</PageTitle>
 
@@ -23,12 +24,17 @@
     </header>
 
     <div class="snippets-browser__toolbar">
-        <input type="search"
-               class="snippets-browser__search"
-               placeholder="Search snippets…"
-               value="@_query"
-               @oninput="OnQueryChanged"
-               aria-label="Search snippets" />
+        <div class="admin-search-form snippets-browser__search">
+            <input type="search"
+                   class="admin-search-input"
+                   placeholder="Search snippets…"
+                   value="@_query"
+                   @oninput="OnQueryChanged"
+                   aria-label="Search snippets" />
+            <button type="button" class="btn btn--icon" @onclick="ReloadAsync" aria-label="Search" title="Search">
+                <Icon Name="search" Width="14" Height="14" />
+            </button>
+        </div>
         <label class="check-row">
             <input type="checkbox" @bind="_includeDeprecated" @bind:after="ReloadAsync" />
             <span>Include deprecated</span>

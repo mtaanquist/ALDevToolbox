@@ -9,17 +9,30 @@
 <PageTitle>Suggest a snippet · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page">
-    <a class="btn btn--sm" href="/snippets">
-        <Icon Name="arrow-left" Width="14" Height="14" />
-        <span>Back to snippets</span>
-    </a>
-
-    <h1>Suggest a snippet</h1>
-    <p class="muted">
-        Submit a reusable AL pattern for an admin to review. Include a clear
-        title, a description of what the pattern is for, search keywords, and
-        one or more files (each one becomes a separate AL object).
-    </p>
+    <header class="admin-page__header">
+        <div>
+            <h1>Suggest a snippet</h1>
+            <p class="muted">
+                Submit a reusable AL pattern for an admin to review. Include a
+                clear title, a description of what the pattern is for, search
+                keywords, and one or more files (each one becomes a separate
+                AL object).
+            </p>
+        </div>
+        <div class="admin-page__header-actions">
+            <a class="btn btn--sm" href="/snippets">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to snippets</span>
+            </a>
+            @if (!_submitted)
+            {
+                <button type="button" class="btn btn--sm btn--primary" @onclick="SubmitAsync" disabled="@_busy">
+                    <Icon Name="send" Width="14" Height="14" />
+                    <span>@(_busy ? "Submitting…" : "Submit for review")</span>
+                </button>
+            }
+        </div>
+    </header>
 
     @if (_submitted)
     {
@@ -31,33 +44,43 @@
     }
     else
     {
-        <section class="form-section">
-            <label class="section-label" for="snippet-title">Title</label>
-            <input id="snippet-title" type="text" maxlength="200"
-                   @bind="_title" @bind:event="oninput"
-                   placeholder="e.g. Doc. Attachment List Factbox for an unsupported table" />
-            <FieldError Field="Title" Errors="_errors" />
+        <section class="admin-section">
+            <h2>Details</h2>
+            <div class="form-grid form-grid--narrow">
+                <section class="form-section">
+                    <label class="section-label" for="snippet-title">Title</label>
+                    <input id="snippet-title" type="text" maxlength="200"
+                           @bind="_title" @bind:event="oninput"
+                           placeholder="e.g. Doc. Attachment List Factbox for an unsupported table" />
+                    <FieldError Field="Title" Errors="_errors" />
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label" for="snippet-description">Description</label>
+                    <textarea id="snippet-description" rows="4" maxlength="2000"
+                              @bind="_description" @bind:event="oninput"
+                              placeholder="What does this snippet do, and when would you use it?"></textarea>
+                    <FieldError Field="Description" Errors="_errors" />
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label" for="snippet-keywords">Keywords</label>
+                    <input id="snippet-keywords" type="text" maxlength="500"
+                           @bind="_keywords" @bind:event="oninput"
+                           placeholder="space-separated, e.g. factbox attachment subscriber" />
+                    <FieldError Field="Keywords" Errors="_errors" />
+                </section>
+            </div>
         </section>
 
-        <section class="form-section">
-            <label class="section-label" for="snippet-description">Description</label>
-            <textarea id="snippet-description" rows="4" maxlength="2000"
-                      @bind="_description" @bind:event="oninput"
-                      placeholder="What does this snippet do, and when would you use it?"></textarea>
-            <FieldError Field="Description" Errors="_errors" />
-        </section>
-
-        <section class="form-section">
-            <label class="section-label" for="snippet-keywords">Keywords</label>
-            <input id="snippet-keywords" type="text" maxlength="500"
-                   @bind="_keywords" @bind:event="oninput"
-                   placeholder="space-separated, e.g. factbox attachment subscriber" />
-            <FieldError Field="Keywords" Errors="_errors" />
-        </section>
-
-        <section class="form-section">
+        <section class="admin-section">
             <h2>Files</h2>
-            <p class="muted">Each file becomes one AL object. Use the file name (e.g. <code>MyPageExt.al</code>) the recipient should save it as.</p>
+            <p class="muted">
+                Each file becomes one AL object. Use the file name (e.g.
+                <code>MyPageExt.al</code>) the recipient should save it as.
+                Existing rows collapse to the file name — click to expand and
+                edit the content.
+            </p>
             <SnippetFileEditor Files="_files" Errors="_errors" />
         </section>
 
@@ -65,13 +88,6 @@
         {
             <p class="form-error" role="alert">@_lastError</p>
         }
-
-        <div class="form-actions">
-            <button type="button" class="btn btn--primary" @onclick="SubmitAsync" disabled="@_busy">
-                <Icon Name="send" Width="16" Height="16" />
-                <span>Submit for review</span>
-            </button>
-        </div>
     }
 </div>
 
