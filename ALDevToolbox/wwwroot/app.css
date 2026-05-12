@@ -1938,6 +1938,78 @@ ul.form-field-error {
     color: var(--color-text);
 }
 
+/* Module dependency editor: catalogue picker row above the selected-rows list,
+   read-only GUID/name/publisher rendered as labels inside each row, and a
+   small badge for legacy rows whose GUID isn't in the current catalogue. */
+.mod-dep-add {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.mod-dep-add select {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 8px;
+    font-size: 13px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-bg);
+    color: var(--color-text);
+}
+
+.mod-dep-row__heading {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    flex-wrap: wrap;
+    padding: 0 8px;
+}
+
+.mod-dep-row__name { font-weight: 500; }
+
+.mod-dep-row__legacy {
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--color-bg);
+    color: var(--color-text-muted);
+    border: 1px solid var(--color-border);
+}
+
+.mod-dep-row__fields {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: 8px;
+    padding: 0 8px 8px;
+}
+
+.mod-dep-row__id code {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    word-break: break-all;
+}
+
+.mod-dep-row__version label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.mod-dep-row__version input[type="text"] {
+    width: 100%;
+    padding: 6px 8px;
+    font-size: 13px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-bg);
+    color: var(--color-text);
+}
+
 /* ---------- Generate button loading state ---------- */
 
 /* The default state hides the spinner and the busy label. Toggling the
