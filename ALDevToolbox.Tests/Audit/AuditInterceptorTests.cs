@@ -179,7 +179,11 @@ public sealed class AuditInterceptorTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        (await read.AuditLog.SingleAsync()).ChangedBy.Should().Be("unknown");
+        // TemplateBuilder.Default seeds both the RuntimeTemplate row and its
+        // required Core WorkspaceExtension (the unified-extensions model
+        // requires at least one extension); pick the parent row to assert on.
+        (await read.AuditLog.Where(r => r.EntityType == AuditEntityType.RuntimeTemplate).SingleAsync())
+            .ChangedBy.Should().Be("unknown");
     }
 
     private async Task ClearAuditAsync()

@@ -34,6 +34,63 @@ public class AppDbContext : DbContext
     }
 
     /// <summary>
+    /// Propagates the denormalised <c>workspace_extension_id</c> /
+    /// <c>module_id</c> columns down the recursive folder tree before save.
+    /// EF only sets the FK column on direct navigation children — i.e. it
+    /// wires <c>extension.Folders</c> and <c>folder.ParentFolder</c>, but
+    /// doesn't carry the extension's id past the first hop. The migration's
+    /// data-rewrite block populates the column row-by-row; application writes
+    /// have to do the same. We walk the parent chain of every added folder so
+    /// that nested rows land with the right FK value, matching the unique-root
+    /// and unique-sibling indexes set up in <c>OnModelCreating</c>.
+    /// </summary>
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        PropagateExtensionFolderIds();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    public override int SaveChanges()
+    {
+        PropagateExtensionFolderIds();
+        return base.SaveChanges();
+    }
+
+    private void PropagateExtensionFolderIds()
+    {
+        foreach (var entry in ChangeTracker.Entries<WorkspaceExtensionFolder>())
+        {
+            if (entry.State != EntityState.Added && entry.State != EntityState.Modified) continue;
+            var folder = entry.Entity;
+            if (folder.ParentFolder is null) continue;
+
+            // Walk up to the root and copy its extension reference. The root's
+            // extension nav is set by the EF parent relationship at save time,
+            // so by the time SaveChanges runs the chain is well-formed.
+            var root = folder.ParentFolder;
+            while (root.ParentFolder is not null) root = root.ParentFolder;
+            if (root.Extension is not null)
+            {
+                folder.Extension = root.Extension;
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<ModuleExtensionFolder>())
+        {
+            if (entry.State != EntityState.Added && entry.State != EntityState.Modified) continue;
+            var folder = entry.Entity;
+            if (folder.ParentFolder is null) continue;
+
+            var root = folder.ParentFolder;
+            while (root.ParentFolder is not null) root = root.ParentFolder;
+            if (root.Module is not null)
+            {
+                folder.Module = root.Module;
+            }
+        }
+    }
+
+    /// <summary>
     /// Sentinel <see cref="IOrganizationContext"/> used when the context is
     /// constructed without one (design-time tooling). Filters never match.
     /// </summary>
