@@ -17,4 +17,10 @@ public class WellKnownDependencySeed
     public string DepPublisher { get; set; } = string.Empty;
     public string DepVersionDefault { get; set; } = string.Empty;
     public string? Category { get; set; }
+
+    /// <summary>
+    /// Display position within the catalogue's dep-picker. Round-tripping
+    /// preserves the admin's curated order across export/import cycles.
+    /// </summary>
+    public int Ordering { get; set; }
 }

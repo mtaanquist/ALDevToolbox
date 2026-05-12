@@ -72,6 +72,16 @@ public class TemplateMetaSeed
     /// <c>runtime</c> values.
     /// </summary>
     public string? DefaultApplicationVersion { get; set; }
+
+    /// <summary>
+    /// Mirrors <see cref="ALDevToolbox.Domain.Entities.RuntimeTemplate.IsDefault"/>
+    /// so the export/import round-trip preserves the per-org "this is the
+    /// default template on New Workspace" flag. Export-only: the import
+    /// path leaves it out of <c>TemplateInput</c> on purpose, mirroring how
+    /// <see cref="ALDevToolbox.Domain.Entities.RuntimeTemplate.Deprecated"/>
+    /// is handled — <c>SetDefaultAsync</c> remains the only writer.
+    /// </summary>
+    public bool IsDefault { get; set; }
 }
 
 /// <summary>The <c>[defaults]</c> table — merged into every generated <c>app.json</c>.</summary>
