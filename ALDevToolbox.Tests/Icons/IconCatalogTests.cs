@@ -54,17 +54,22 @@ public sealed class IconCatalogTests
         var referenced = CollectReferencedIconNames();
         referenced.Should().NotBeEmpty("the test couldn't find any <Icon Name=...> usage — has the component moved?");
 
-        var missing = referenced.Where(n => !available.Contains(n)).OrderBy(n => n).ToList();
+        var missing = referenced
+            .Where(kv => !available.Contains(kv.Key))
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+            .ToList();
+
+        var report = string.Join("; ", missing.Select(kv => $"{kv.Key} (in {string.Join(", ", kv.Value)})"));
 
         missing.Should().BeEmpty(
             "every icon name used in *.razor must have a vendored SVG under Resources/Icons/. " +
-            "Missing: {0}", string.Join(", ", missing));
+            "Missing: {0}", report);
     }
 
-    private static IReadOnlyCollection<string> CollectReferencedIconNames()
+    private static IReadOnlyDictionary<string, List<string>> CollectReferencedIconNames()
     {
         var componentsDir = FindComponentsDir();
-        var names = new HashSet<string>(StringComparer.Ordinal);
+        var hits = new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
         // Two patterns we need to cover:
         //   <Icon Name="folder-plus" ...>
@@ -75,16 +80,27 @@ public sealed class IconCatalogTests
 
         foreach (var file in Directory.EnumerateFiles(componentsDir, "*.razor", SearchOption.AllDirectories))
         {
+            var rel = Path.GetRelativePath(componentsDir, file);
             var content = File.ReadAllText(file);
-            foreach (Match m in literal.Matches(content)) names.Add(m.Groups["name"].Value);
+            foreach (Match m in literal.Matches(content)) Record(hits, m.Groups["name"].Value, rel);
             foreach (Match m in conditional.Matches(content))
             {
-                names.Add(m.Groups["a"].Value);
-                names.Add(m.Groups["b"].Value);
+                Record(hits, m.Groups["a"].Value, rel);
+                Record(hits, m.Groups["b"].Value, rel);
             }
         }
 
-        return names;
+        return hits;
+    }
+
+    private static void Record(Dictionary<string, List<string>> hits, string name, string file)
+    {
+        if (!hits.TryGetValue(name, out var files))
+        {
+            files = new List<string>();
+            hits[name] = files;
+        }
+        if (!files.Contains(file)) files.Add(file);
     }
 
     private static string FindComponentsDir()
