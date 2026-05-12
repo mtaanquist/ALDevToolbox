@@ -107,6 +107,9 @@
     private string FriendlyEntityName() => EntityType switch
     {
         AuditEntityType.RuntimeTemplate => "template",
+        AuditEntityType.WorkspaceExtension => "extension",
+        AuditEntityType.WorkspaceExtensionFolder => "folder",
+        AuditEntityType.ModuleExtensionFolder => "folder",
         AuditEntityType.TemplateFolder => "folder",
         AuditEntityType.Module => "module",
         AuditEntityType.ModuleDependency => "dependency",

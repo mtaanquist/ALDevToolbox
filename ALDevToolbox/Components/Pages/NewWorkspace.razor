@@ -4,6 +4,7 @@
 @inject TemplateService Templates
 @inject ApplicationVersionService Versions
 @inject OrganizationConfigService OrgConfig
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 
@@ -47,7 +48,7 @@
                     </select>
                     <p class="caption muted">
                         @_selected!.Description
-                        <span> · Default application: <code>@_selected.DefaultApplication</code></span>
+                        <span> · Default application: <code>@_selected.Defaults.Application</code></span>
                     </p>
                 </section>
 
@@ -58,6 +59,14 @@
                            title="Letters, digits and spaces only; must start with a letter."
                            @bind="_workspaceName" @bind:event="oninput" />
                     <small class="muted">Workspace name. Letters, digits and spaces only; must start with a letter.</small>
+                    <input type="text" name="ExtensionPrefix" placeholder="e.g. ACME"
+                           @bind="_extensionPrefix" @bind:event="oninput" />
+                    <small class="muted">
+                        Per-workspace extension-name prefix — substitutes into
+                        <code>&#123;&#123;extension_prefix&#125;&#125;</code> in the template's
+                        extension names (e.g. <code>ACME Core</code>). Distinct from the
+                        AL object-name affix configured on the template.
+                    </small>
                     <input type="text" name="Brief" placeholder="One-line description (optional)"
                            @bind="_brief" @bind:event="oninput" />
                     <textarea name="Description" rows="3" placeholder="Longer description (optional)"
@@ -131,6 +140,31 @@
                     }
                 </section>
 
+                @if (_optionalExtensions.Count > 0)
+                {
+                    <section class="form-section">
+                        <label class="section-label">Additional extensions</label>
+                        <p class="caption muted">
+                            Optional extensions declared by this template. Tick to include
+                            them in the generated workspace alongside the required ones.
+                        </p>
+                        <div class="module-list">
+                            @foreach (var ext in _optionalExtensions.OrderBy(e => e.Path, StringComparer.OrdinalIgnoreCase))
+                            {
+                                <label class="module-card">
+                                    <input type="checkbox" name="SelectedExtensionPaths" value="@ext.Path"
+                                           checked="@_selectedExtensionPaths.Contains(ext.Path)"
+                                           @onchange="e => OnExtensionToggled(ext.Path, (bool)(e.Value ?? false))" />
+                                    <span class="module-card__body">
+                                        <span class="module-card__name">@ext.Path</span>
+                                        <span class="module-card__caption muted">@ext.NameTemplate</span>
+                                    </span>
+                                </label>
+                            }
+                        </div>
+                    </section>
+                }
+
                 <section class="form-section">
                     <label class="section-label">Modules</label>
                     @if (_modules.Count == 0)
@@ -166,11 +200,6 @@
                                @bind="_includeExamples" />
                         <span>Include example AL files</span>
                     </label>
-                    <label class="check-row">
-                        <input type="checkbox" name="IncludeForNav" value="true"
-                               @bind="_includeForNav" />
-                        <span>Include ForNAV in Core</span>
-                    </label>
                 </section>
 
                 <button type="submit" class="btn btn--primary workspace-layout__generate" data-loading-button>
@@ -188,7 +217,7 @@
 
                 <section class="preview-stats">
                     <div class="stat-card">
-                        <div class="stat-card__value">@(1 + _selectedModuleKeys.Count)</div>
+                        <div class="stat-card__value">@CountExtensions()</div>
                         <div class="stat-card__label">Extensions</div>
                     </div>
                     <div class="stat-card">
@@ -220,9 +249,16 @@
     private int _coreIdRangeTo;
     private string _applicationVersion = string.Empty;
     private string _runtimeVersion = string.Empty;
+    private string _extensionPrefix = string.Empty;
     private readonly HashSet<string> _selectedModuleKeys = new(StringComparer.Ordinal);
+    /// <summary>
+    /// Paths of optional template-declared extensions the user ticked. The
+    /// required ones are emitted regardless and don't go through this set.
+    /// </summary>
+    private readonly HashSet<string> _selectedExtensionPaths = new(StringComparer.Ordinal);
+    /// <summary>Cache of the picked template's optional extensions for rendering checkboxes.</summary>
+    private List<WorkspaceExtension> _optionalExtensions = new();
     private bool _includeExamples = true;
-    private bool _includeForNav;
 
     private OrganizationConfig? _orgConfig;
 
@@ -230,6 +266,12 @@
     {
         _templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
         _modules = await Templates.GetModulesAsync(includeDeprecated: false);
+        // Folder/file trees aren't pulled by the default reads — load them on
+        // top so the live preview can walk each extension's real layout
+        // without an extra round-trip when the user picks a template or
+        // toggles a module.
+        await Templates.HydrateExtensionFolderTreeAsync(_templates);
+        await Templates.HydrateModuleExtensionFolderTreeAsync(_modules);
         _applicationVersions = await Versions.GetActiveAsync(includeDeprecated: false);
         _orgConfig = await OrgConfig.GetCurrentAsync();
         // Pre-fill the brief / description from the org's defaults block
@@ -279,6 +321,18 @@
         _templateKey = template.Key;
         _coreIdRangeFrom = template.CoreIdRangeFrom;
         _coreIdRangeTo = template.CoreIdRangeTo;
+        // Pre-fill the friendly extension-name prefix from the template's
+        // defaults. The user can override per workspace — this only seeds the
+        // initial value when switching templates.
+        _extensionPrefix = template.Defaults.ExtensionPrefix;
+        // Populate the optional-extension checkbox list. Switching templates
+        // wipes prior selections; required entries (Required = true) are
+        // emitted unconditionally and don't surface here.
+        _selectedExtensionPaths.Clear();
+        _optionalExtensions = template.WorkspaceExtensions
+            .Where(e => !e.Required)
+            .OrderBy(e => e.Ordering)
+            .ToList();
         // Prefer the curated application-version catalogue (Milestone P2.4)
         // when the template points at a live entry — both fields snap to it
         // atomically. Otherwise fall back to the template's free-text
@@ -291,7 +345,7 @@
         }
         else
         {
-            _applicationVersion = template.DefaultApplication;
+            _applicationVersion = template.Defaults.Application;
             // Runtime is a string in the entity (Major or Major.Minor). The
             // app.json runtime field always wants Major.Minor, so append ".0"
             // when only a major was supplied.
@@ -334,6 +388,21 @@
         else _selectedModuleKeys.Remove(key);
     }
 
+    private void OnExtensionToggled(string path, bool isChecked)
+    {
+        if (isChecked) _selectedExtensionPaths.Add(path);
+        else _selectedExtensionPaths.Remove(path);
+    }
+
+    private int CountExtensions()
+    {
+        var template = _selected;
+        var fromTemplate = template is null
+            ? 0
+            : template.WorkspaceExtensions.Count(e => e.Required || _selectedExtensionPaths.Contains(e.Path));
+        return fromTemplate + _selectedModuleKeys.Count;
+    }
+
     private int CountDependencies()
     {
         if (_modules is null) return 0;
@@ -348,17 +417,18 @@
             if (module is null) continue;
             total += 1 + module.Dependencies.Count;
         }
-        if (_includeForNav) total += 1;
         return total;
     }
 
     /// <summary>
     /// Builds the <see cref="PreviewNode"/> tree displayed in the right column.
     /// Mirrors the structure documented in <c>generation-engine.md</c>: the
-    /// workspace root contains <c>.assets</c>, the Core extension, one folder
-    /// per selected module, and three workspace-level files. Per-extension
-    /// folders are populated from the active template; <c>.gitkeep</c> stand-ins
-    /// are shown when examples are off or the example folder is missing.
+    /// workspace root contains <c>.assets</c>, one extension folder per
+    /// required template extension and per ticked optional extension, one
+    /// folder per selected module (cloned from the module's extension tree),
+    /// and three workspace-level files. The per-extension contents come from
+    /// <see cref="ExtensionPreviewBuilder"/>, which walks the recursive folder
+    /// tree the same way <c>GenerationService</c> does.
     /// </summary>
     private PreviewNode BuildPreview()
     {
@@ -373,8 +443,18 @@
                 PreviewNode.Folder("images", new[] { PreviewNode.File("logo.png") }),
                 PreviewNode.Folder("rulesets", new[] { PreviewNode.File("Company.ruleset.json") }),
             }),
-            BuildExtensionNode("Core", isCore: true),
         };
+
+        if (_selected is not null)
+        {
+            foreach (var ext in _selected.WorkspaceExtensions.OrderBy(e => e.Ordering))
+            {
+                if (!ext.Required && !_selectedExtensionPaths.Contains(ext.Path)) continue;
+                children.Add(PreviewNode.Extension(
+                    ext.Path,
+                    ExtensionPreviewBuilder.BuildContents(ext.Folders, _includeExamples)));
+            }
+        }
 
         if (_modules is not null)
         {
@@ -382,7 +462,11 @@
             {
                 var module = _modules.FirstOrDefault(m => m.Key == key);
                 if (module is null) continue;
-                children.Add(BuildExtensionNode(StripWhitespace(module.Name), isCore: false));
+                // Module-cloned extension folder name mirrors GenerationService:
+                // the module's Key is what lands in the ZIP, not the display name.
+                children.Add(PreviewNode.Extension(
+                    module.Key,
+                    ExtensionPreviewBuilder.BuildContents(module.ExtensionFolders, _includeExamples)));
             }
         }
 
@@ -392,73 +476,6 @@
 
         return PreviewTreeBuilder.SortForDisplay(
             new PreviewNode(rootName, PreviewNodeKind.Workspace, children));
-    }
-
-    private PreviewNode BuildExtensionNode(string folderName, bool isCore)
-    {
-        var contents = new List<PreviewNode>
-        {
-            PreviewNode.File("app.json"),
-            PreviewNode.File("AppSourceCop.json"),
-        };
-
-        if (_selected is not null)
-        {
-            // Core uses Folders; modules use ModuleFolders. The split exists
-            // so per-Core scaffolding (App Install codeunits, setup tables)
-            // doesn't bleed into every module preview.
-            var entries = isCore
-                ? _selected.Folders
-                    .OrderBy(f => f.Ordering)
-                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromFiles(f.Files)))
-                : _selected.ModuleFolders
-                    .OrderBy(f => f.Ordering)
-                    .Select(f => (f.Path, (IReadOnlyList<PreviewNode>)LeafFilesFromFiles(f.Files)));
-            contents.AddRange(PreviewTreeBuilder.BuildFolderChildren(entries));
-        }
-
-        // Hardcoded fallback folders. Each one only goes in if the template
-        // didn't already declare a folder with the same case-insensitive name —
-        // Windows would treat 'translations' and 'Translations' as the same
-        // folder, so emitting both would collide on extraction and look
-        // duplicated in the preview.
-        AddFallbackFolder(contents, "libs");
-        AddFallbackFolder(contents, "permissionsets");
-        AddFallbackFolder(contents, "Translations");
-
-        return PreviewNode.Extension(folderName, contents);
-    }
-
-    private static void AddFallbackFolder(List<PreviewNode> contents, string name)
-    {
-        if (contents.Any(n => n.Kind != PreviewNodeKind.File
-                              && string.Equals(n.Name, name, StringComparison.OrdinalIgnoreCase)))
-        {
-            return;
-        }
-        contents.Add(PreviewNode.Folder(name, new[] { PreviewNode.File(".gitkeep") }));
-    }
-
-    private List<PreviewNode> LeafFilesFromFiles(IEnumerable<TemplateFile> files) =>
-        LeafFilesByPaths(files.OrderBy(f => f.Ordering).Select(f => f.Path));
-
-    private List<PreviewNode> LeafFilesFromFiles(IEnumerable<TemplateModuleFile> files) =>
-        LeafFilesByPaths(files.OrderBy(f => f.Ordering).Select(f => f.Path));
-
-    /// <summary>
-    /// Shared tail for the two <see cref="LeafFilesFromFiles(IEnumerable{TemplateFile})"/>
-    /// overloads above. Same rule as the generator: when examples are off or the
-    /// folder has no files, the preview shows a single <c>.gitkeep</c>; otherwise
-    /// it shows one node per file in the order the admin set.
-    /// </summary>
-    private List<PreviewNode> LeafFilesByPaths(IEnumerable<string> paths)
-    {
-        var list = paths.ToList();
-        if (_includeExamples && list.Count > 0)
-        {
-            return list.Select(PreviewNode.File).ToList();
-        }
-        return new List<PreviewNode> { PreviewNode.File(".gitkeep") };
     }
 
     private static string StripWhitespace(string value) =>

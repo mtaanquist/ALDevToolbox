@@ -2,25 +2,30 @@
 
 This document specifies what `GenerationService` produces given a runtime template and a project plan.
 
+The generation model is the **unified-extensions** walk (Issue #54): a workspace is N extensions — required template-declared ones, optional template-declared ones the user ticked, and one cloned extension per selected catalogue module — and each emits its own folder. The data-model spec lives in `unified-extensions.md`; this doc covers the algorithm and output layout.
+
 ## Inputs
 
-A `ProjectPlan` value object collected from the form. The shape:
+A `ProjectPlan` value object collected from the form:
 
 ```csharp
 record ProjectPlan(
-    string TemplateKey,         // selects the runtime template
-    string WorkspaceName,       // e.g. "Acme Customer"
+    string TemplateKey,
+    string WorkspaceName,
+    string ExtensionPrefix,          // pre-filled from defaults.extension_prefix; user-editable
     string Brief,
     string Description,
-    string ApplicationVersion,  // user may have overridden the template default
-    string RuntimeVersion,      // e.g. "15.0" — derived from template, but editable
+    string ApplicationVersion,
+    string RuntimeVersion,
     int CoreIdRangeFrom,
     int CoreIdRangeTo,
     bool IncludeExamples,
-    bool IncludeForNav,
-    IReadOnlyList<string> SelectedModuleKeys
+    IReadOnlyList<string> SelectedExtensionPaths,  // optional template-declared extensions the user ticked
+    IReadOnlyList<string> SelectedModuleKeys       // catalogue modules that contribute cloned extensions
 );
 ```
+
+The walk concatenates the emittable extension list in this order: template-required `WorkspaceExtension` rows (always emitted) → optional template-declared extensions whose `Path` appears in `SelectedExtensionPaths` (in template `Ordering`) → one cloned extension per `SelectedModuleKeys` entry (in selection order). `{{extension_prefix}}` and `{{affix}}` (with `defaults.affixType`) drive mustache substitution. There is no Core-vs-module split; "Core" is just the conventional `path` of the first required template extension. There is no `IncludeForNav` toggle either — ForNAV is a normal catalogue module that templates declare under `[[template.default_modules]]`.
 
 For the **New Extension** flow, the inputs are slightly different — see [Standalone extension generation](#standalone-extension-generation) at the bottom.
 
@@ -28,7 +33,7 @@ For the **New Extension** flow, the inputs are slightly different — see [Stand
 
 A `Stream` containing a ZIP archive. The caller is responsible for writing it to the HTTP response.
 
-The structure of the ZIP — for a workspace called "Acme Customer" with Document Capture and Payment Management selected — should look like:
+The structure of the ZIP — for a workspace called "Acme Customer" from a template declaring Core + Hotfix extensions, with the Document Capture module selected — looks like:
 
 ```
 AcmeCustomer/
@@ -37,107 +42,100 @@ AcmeCustomer/
 │   │   └── logo.png
 │   └── rulesets/
 │       └── Company.ruleset.json
-├── Core/
+├── Core/                                # path of the first required WorkspaceExtension
 │   ├── app.json
 │   ├── AppSourceCop.json
-│   ├── libs/
-│   │   └── .gitkeep
-│   ├── permissionsets/
-│   │   └── .gitkeep
-│   ├── Source/                          # folders defined by the runtime template
-│   │   ├── Foundation/
-│   │   │   ├── AppInstall.Codeunit.al   # if IncludeExamples = true
-│   │   │   └── AppUpgrade.Codeunit.al
-│   │   ├── Finance/
-│   │   │   └── .gitkeep                  # if IncludeExamples = false
-│   │   └── ...
-│   └── Translations/
-│       └── .gitkeep
-├── DocumentCapture/
-│   ├── app.json
+│   ├── libs/.gitkeep                    # static fallback folder
+│   ├── permissionsets/.gitkeep          # static fallback folder
+│   ├── Translations/.gitkeep            # static fallback folder
+│   ├── src/                             # folder from workspace_extension_folders
+│   │   └── codeunits/
+│   │       └── AppInstall.Codeunit.al   # file from workspace_extension_files; mustache-substituted
+│   └── ...
+├── Hotfix/                              # path of a second required WorkspaceExtension
+│   ├── app.json                         # carries a dependencies[] entry referencing Core's freshly-allocated GUID
 │   ├── AppSourceCop.json
-│   ├── libs/.gitkeep
-│   ├── permissionsets/.gitkeep
-│   ├── Source/                          # folders defined by template_module_folders
-│   │   └── .gitkeep                     # empty by default — admins opt in to module scaffolding
-│   └── Translations/.gitkeep
-├── PaymentManagement/
 │   ├── ...
+├── DocumentCapture/                     # path = module.key for the cloned-from-catalogue module
+│   ├── app.json                         # implicit deps on Core and Hotfix; module's own deps follow
+│   ├── AppSourceCop.json
+│   ├── src/                             # folder from module_extension_folders
+│   │   └── ...                          # files from module_extension_files
+│   └── ...
 ├── AcmeCustomer.code-workspace
 ├── .gitignore
 └── README.md
 ```
 
+Static fallback folders (`libs/`, `permissionsets/`, `Translations/`) are emitted under every extension that doesn't already declare them. A folder declared with no files ships with a single `.gitkeep` placeholder.
+
 ## Algorithm
 
 ```
-1. Load the runtime template by key.
-2. Load all selected modules with their dependencies.
-3. Generate Core extension:
-     a. Build app.json from template.defaults + project plan
-     b. Build AppSourceCop.json from template.app_source_cop
-     c. Walk template.folders (Core-only) — for each:
-          if folder has template_files rows AND IncludeExamples is true:
-              for each file row, write its `path` into the folder with `content` as the body
-              run mustache substitution on each `.al` file's content
-          else:
-              create the folder with a .gitkeep file
-     d. Add libs/.gitkeep, permissionsets/.gitkeep, translations/.gitkeep
-4. For each selected module (in order):
-     a. Compute its ID range from template.module_id_range_start + (index * module_id_range_size)
-     b. Build app.json including:
-          - dependencies = [Core] ++ module's own dependencies
-          - the computed ID range
-     c. Walk template.module_folders — same folder/file process as step 3c, but
-        sourced from template_module_folders / template_module_files. Empty by
-        default, so out-of-the-box modules ship with just app.json,
-        AppSourceCop.json and the static fallback folders. Admins can opt in to
-        module scaffolding via the Module folders editor on the template.
-5. Generate root files:
-     a. .gitignore (static — see template-and-seeding.md for content; lives as a string constant or embedded resource)
-     b. {WorkspaceName}.code-workspace (see below)
-     c. README.md (minimal — workspace name + description)
+1. Load the runtime template by key, eagerly including its WorkspaceExtension rows
+   plus the recursive folder/file/dep trees. EF's Include doesn't recurse past one
+   level — load folders/files via flat queries and reassemble the tree client-side
+   (see GenerationService.AssembleFolderTree).
+2. Load the selected modules by their keys, similarly including their recursive
+   module_extension_folder / module_extension_file trees.
+3. Build the EmittableExtension list:
+     a. For each template extension (ordered by ordering): include if Required, OR
+        if its Path is in plan.SelectedExtensionPaths.
+     b. Append one EmittableExtension per selected module (using the module's
+        recursive folder tree as its content; the module's `key` becomes the
+        ZIP folder name; the rendered name defaults to
+        "{{extension_prefix}} {module.name}").
+     c. Allocate id ranges in walk order. See "ID range allocation" below.
+     d. Resolve each extension's dependencies into freshly-substituted name +
+        freshly-allocated GUID. See "Dependency resolution" below.
+4. For each EmittableExtension in walk order:
+     a. Build app.json (see below).
+     b. Build AppSourceCop.json from the template's app_source_cop_json,
+        mustache-substituted with the per-workspace context.
+     c. Walk the folder tree depth-first. For each folder, emit its declared
+        files (skipping IsExample files when plan.IncludeExamples is false). If
+        the folder ends up with no emitted files AND no child folders, drop a
+        .gitkeep placeholder so empty directories survive the ZIP round-trip.
+     d. Add the static fallback folders (libs/, permissionsets/, Translations/)
+        with .gitkeep when the extension hasn't already declared them.
+5. Generate workspace-root files:
+     a. {ShortName}.code-workspace (see below).
+     b. README.md (minimal — workspace name + description).
+     c. .gitignore (embedded resource shipped with the app; per-deployment policy).
      d. Per-org always-included files from organization_files (M14). Each row's
         `path` is workspace-root-relative; mustache substitution runs when
-        `mustache_enabled` is true, using the same context as per-template
-        files. Written before per-extension folders so a per-template file
-        could in principle override on path collision (in practice the paths
-        don't overlap because per-template files live under the extension folder).
+        `mustache_enabled` is true, using the same context as per-extension
+        files.
 6. Generate .assets:
-     a. images/logo.{png|svg} — bytes from organization_assets for the acting
-        org (M14). The file extension matches the asset's `content_type` so a
-        PNG or SVG upload round-trips correctly. Pre-M14 this was an embedded
-        resource shipped with the app; that path is gone.
+     a. images/logo.{png|svg|jpg} — bytes from organization_assets for the
+        acting org (M14). The file extension matches the asset's `content_type`.
+        Pre-M14 this was an embedded resource; that path is gone.
      b. rulesets/Company.ruleset.json — embedded resource shipped with the app
         (per-deployment policy, not per-org).
 7. Stream the whole thing as a ZIP.
 ```
 
+Validation that doesn't fit the template-save validator (because it depends on plan-time inputs) runs upfront: `ValidateIdRanges` rejects a plan whose extensions resolve to overlapping ranges, surfacing a field-keyed `PlanValidationException`.
+
 ## `app.json` construction
 
-For each extension (Core or module), the `app.json` is built by:
+For each emittable extension, the `app.json` is built by:
 
-1. Start with the runtime template's `defaults_json` deserialized as the base.
-2. Set `id` to a freshly generated GUID.
-3. Set `name`:
-   - For Core: `"{WorkspaceName} Core"` (e.g. "Acme Customer Core").
-   - For modules: `"{WorkspaceName} {ModuleName}"` (e.g. "Acme Customer Document Capture").
+1. Start with the runtime template's `defaults_json` deserialized as the base. `application` and `platform` come from the plan (which pre-fills them from `defaults.application` / `defaults.platform` but lets the user override).
+2. Set `id` to a freshly generated GUID — kept on the `EmittableExtension` so dependency resolution can reference it.
+3. Set `name` to the extension's `NameTemplate` after mustache substitution. The template default is `"{{extension_prefix}} {extension_path}"` for declared extensions and `"{{extension_prefix}} {module_name}"` for module clones; admins can override either by writing the desired name template directly.
 4. Set `brief`, `description` from the project plan.
 5. Set `version` to `"0.0.0.1"` for new generations.
-6. Set `application` to project plan's `ApplicationVersion` (which defaults to `template.default_application` but the user can override).
-7. Set `runtime` to project plan's `RuntimeVersion`.
-8. Set `idRanges` to a single range:
-   - Core: `[{ from: CoreIdRangeFrom, to: CoreIdRangeTo }]`
-   - Module: computed (see step 4a in the algorithm).
-9. Set `dependencies`:
-   - Core: empty array, OR if `IncludeForNav` is true, add the ForNAV entries from the well-known catalogue (look up by category="ForNAV" or by a hardcoded set of GUIDs — implementer's choice).
-   - Modules: prepend a self-reference to Core (with Core's freshly generated id, name, publisher), then append the module's own dependencies from `module_dependencies` table.
+6. Set `application` to the extension's per-extension override when set, otherwise the plan's `ApplicationVersion`.
+7. Set `runtime` to the extension's per-extension override when set, otherwise the plan's `RuntimeVersion`.
+8. Set `idRanges` to a single range computed via the three-layer allocation below.
+9. Set `dependencies` via the resolver below.
 
 Serialise with 2-space indent for readability of the generated file.
 
 ## `AppSourceCop.json` construction
 
-This is the simpler of the two — just deserialise `template.app_source_cop_json` and write it as-is into each extension's folder. No per-extension customisation.
+Deserialise `template.app_source_cop_json`, run mustache substitution on its string fields, write it into each extension's folder. No per-extension customisation today; templates can opt out by leaving the column empty.
 
 ## `.code-workspace` construction
 
@@ -147,8 +145,8 @@ A JSON file with:
 {
     "folders": [
         { "path": "Core" },
-        { "path": "DocumentCapture" },
-        { "path": "PaymentManagement" }
+        { "path": "Hotfix" },
+        { "path": "DocumentCapture" }
     ],
     "settings": {
         "editor.formatOnSave": true,
@@ -167,45 +165,57 @@ A JSON file with:
 }
 ```
 
-The `settings` block can live as a static C# string constant. The `folders` array is dynamic.
-
-Module folder paths in the workspace match the on-disk folder names — module names with spaces collapse: `"Document Capture"` → `"DocumentCapture"`. This matches the existing tool's behaviour (see `script.js`'s `module.replace(/\s+/g, '')`).
+The `settings` block is a static C# string constant in `WorkspaceConfigService`. The `folders` array is dynamic — one entry per emitted extension, using its `path` (which is also the on-disk folder name). Module clones use the module's `key` as the path; spaces don't appear because keys are URL-safe.
 
 ## Mustache substitution
 
-When `IncludeExamples` is true, run mustache substitution on the `content` of every `template_files` row whose `path` ends in `.al`. Non-AL files are written verbatim. Available variables:
+Substitution runs on every `.al` file's content, on the rendered extension `name`, on `AppSourceCop.json` strings, and on every workspace-root file from `organization_files` that has `mustache_enabled = true`. Non-AL extension files are written verbatim by default; admins can opt a particular folder/file into substitution explicitly via the authoring surface when they need it.
 
-| Variable             | Source                                            |
-|----------------------|---------------------------------------------------|
-| `{{name}}`           | The full extension name, e.g. "Acme Customer Core" |
-| `{{workspaceName}}`  | The workspace name from the form, e.g. "Acme Customer" |
-| `{{shortName}}`      | The workspace name with spaces removed, e.g. "AcmeCustomer" |
-| `{{moduleName}}`     | For module extensions, the module's name. For Core, equals `{{workspaceName}} Core`. |
-| `{{publisher}}`      | The publisher field from `defaults_json`. Default "Consortio IT". |
-| `{{prefix}}`         | The `mandatoryPrefix` from `app_source_cop_json`. Default "CONIT". |
-| `{{namespace}}`      | The current folder's path, dot-separated. e.g. "Source/Foundation" → "Source.Foundation". Used for AL `namespace` declarations. |
-| `{{guid}}`           | A freshly generated GUID per substitution call. Use sparingly — prefer letting the implementer hand-author GUIDs in example files. |
+Available variables:
 
-If a variable in the template isn't recognised, leave it as-is (don't crash). Log a warning.
+| Variable                | Source                                                                   |
+|-------------------------|--------------------------------------------------------------------------|
+| `{{name}}`              | The full extension name, e.g. "Acme Customer Core"                        |
+| `{{workspaceName}}`     | The workspace name from the plan, e.g. "Acme Customer"                    |
+| `{{shortName}}`         | The workspace name with whitespace removed, e.g. "AcmeCustomer"           |
+| `{{moduleName}}`        | For module-cloned extensions, the module's `name`. For template-declared extensions, equals `{{name}}`. |
+| `{{publisher}}`         | The publisher field from `defaults_json`.                                 |
+| `{{extension_prefix}}`  | The plan's `ExtensionPrefix` — the per-workspace short identifier (e.g. "CRO"). |
+| `{{affix}}`             | `defaults.affix` when `defaults.affixType` is `Prefix` or `Suffix`; empty string when `AffixType.None`. Replaces the pre-unified `{{prefix}}` / `{{suffix}}`. |
+| `{{namespace}}`         | The current folder's path, dot-separated, e.g. `src/codeunits` → `src.codeunits`. Used for AL `namespace` declarations. |
+| `{{guid}}`              | A freshly generated GUID per substitution call. Use sparingly — prefer hand-authored GUIDs in example files. |
 
-The mustache implementation can be naive — regex replacement of `\{\{(\w+)\}\}` is enough. Don't pull in a full mustache library for this.
+If a variable in the content isn't recognised, leave it as-is (don't crash). Log a warning.
+
+The mustache implementation is intentionally naive — regex replacement of `\{\{(\w+)\}\}` is enough.
 
 ## ID range allocation
 
-For modules, the ID range allocation is purely positional based on the order modules are selected:
+Each extension gets one `idRanges` entry. Three layers, in priority order:
 
-```csharp
-var rangeStart = template.ModuleIdRangeStart + (moduleIndex * (module.IdRangeSize ?? template.ModuleIdRangeSize));
-var rangeEnd = rangeStart + (module.IdRangeSize ?? template.ModuleIdRangeSize) - 1;
-```
+1. **Explicit on the extension.** If the row carries both `id_range_from` and `id_range_to`, use them verbatim. The cursor does not advance.
+2. **Module-supplied size.** For a module-cloned extension, allocate `[cursor, cursor + size - 1]` where `size = module.IdRangeSize ?? template.ModuleIdRangeSize`. Cursor advances past the slice.
+3. **Auto-allocated from the template.** The first auto-allocated template-declared extension consumes the plan's `[CoreIdRangeFrom, CoreIdRangeTo]`. Subsequent auto-allocated extensions take a `template.ModuleIdRangeSize`-wide slice from the cursor, which starts at `template.ModuleIdRangeStart` and advances after each consumed slice.
 
-So for a template with `module_id_range_start = 91000` and `module_id_range_size = 200`:
+So for a template with `module_id_range_start = 91000` and `module_id_range_size = 200`, and a workspace selecting Core (auto), Hotfix (auto), and the Document Capture module:
 
-- Module index 0 (first selected): 91000–91199
-- Module index 1: 91200–91399
-- Module index 2: 91400–91599
+- Core (first auto): `90000..90999` from the plan.
+- Hotfix (next auto): `91000..91199` from the cursor.
+- Document Capture (module, default size 200): `91200..91399`.
 
-If a module has its own `id_range_size` override (e.g. JobManager wants 500 IDs), it's applied for *that* module's range, but the next module starts where the previous one ended. Be careful with the running offset — it's not just `moduleIndex * defaultSize` if any module has an override.
+Validation: the resolved ranges must not overlap. `ValidateIdRanges` checks this up front and throws `PlanValidationException` with a field-keyed `Extensions[*].IdRange` error pointing at the colliding pair.
+
+## Dependency resolution
+
+`workspace_extension_dependencies` rows are emitted in `Ordering`, after any implicit deps the resolver injects. Three reference shapes (the CHECK constraint enforces exactly one per row):
+
+- **`ref_extension_path`** — intra-workspace reference to another extension. The resolver looks up the target's freshly-allocated GUID and substituted name and emits a dep node. A reference to a `path` that isn't in this workspace (optional but not selected, or a typo) fails fast with `PlanValidationException`.
+- **`ref_module_key`** — catalogue reference. When the named module was also selected for this workspace, point at its cloned extension's GUID. Otherwise the dep is silently dropped; the template-save validator should have rejected dangling references already.
+- **`lit_id` + `lit_name` + `lit_publisher` + `lit_version`** — literal AL app coordinates. Emitted as-is.
+
+**Implicit deps.** Module-cloned extensions get an implicit dependency on every required template-declared extension (Core, Hotfix, etc.) prepended before their own declared deps. So a Document Capture module clone in a workspace with required Core and Hotfix extensions ships with `dependencies = [Core, Hotfix, ...module's own]` even when the module's own declarations don't mention them. This lets the AL compiler see them without the template author having to spell it out.
+
+Resolution is by stable identifier (`path` or `key`), never display name — display names get mustache-substituted and would drift between save time and generation time.
 
 ## Standalone extension generation
 
@@ -231,7 +241,7 @@ record DependencyEntry(
 );
 ```
 
-The output is a single folder (no workspace wrapper, no .code-workspace file, no .assets folder), zipped:
+The output is a single folder (no workspace wrapper, no `.code-workspace`, no `.assets/`), zipped:
 
 ```
 MyExtension/
@@ -239,29 +249,30 @@ MyExtension/
 ├── AppSourceCop.json
 ├── libs/.gitkeep
 ├── permissionsets/.gitkeep
-├── Source/...                       # same template folder structure
+├── src/...                       # folder structure from the template's first extension
 └── Translations/.gitkeep
 ```
 
-The folder structure inside the extension still comes from the chosen runtime template. The user is expected to drop this folder into an existing workspace and add a corresponding entry to their `.code-workspace` file themselves. The success page should explain this clearly with a copy-pasteable line for the workspace `folders` array.
+The folder structure inside the extension reuses the template's **first** `WorkspaceExtension` row as the scaffold (typically the conventional `Core` extension). All other declared extensions / modules / dependencies are ignored: the user is dropping the result into an existing workspace and wants only a self-contained extension shell. The `app.json` `dependencies` array comes from the user-supplied list rather than the template; if they want to depend on something Core-like in their existing workspace, they pick it via the dependency picker that sources from `well_known_dependencies`.
 
-The `app.json` `dependencies` array is built from the user's selected dependencies — there's no automatic "depend on Core" because we don't know what Core looks like in their existing workspace. If they want to depend on Core, they enter it manually using the manual-dep form.
+The success page should explain "drop this folder into your existing workspace and add a corresponding entry to `.code-workspace` yourself" clearly, with a copy-pasteable line for the workspace `folders` array.
 
 ## Error handling
 
-- Invalid `ProjectPlan` (validation failed) → throw a `ValidationException`-style exception with a list of field-keyed errors. The page catches this and renders inline.
+- Invalid `ProjectPlan` (validation failed) → throw `PlanValidationException` with a dictionary of field-keyed errors. The page catches this and renders inline next to the offending field.
 - IO error mid-stream → propagate. The user gets a server error page; the audit log captures nothing because nothing was written.
 
-(There is no longer a "missing example file" warning case: file content lives in the DB alongside the folder row, so it can't go missing relative to the row.)
+(There is no "missing example file" warning case any more: file content lives in the DB alongside the folder row, so it can't go missing relative to the row.)
 
 ## What gets logged
 
-Each successful generation logs (at Info level):
-- Workspace name (or extension name)
-- Template key
-- Module keys selected (or dependencies for standalone)
-- Generated file count
-- ZIP size in bytes
-- Duration
+Each successful generation logs (at `Information` level) via structured fields:
+
+- Workspace name (or standalone extension name).
+- Template key.
+- The walk order of emitted extension paths.
+- Generated file count.
+- ZIP size in bytes.
+- Duration.
 
 This is for operational telemetry, not user-facing. No need to persist it — `ILogger` output is enough.

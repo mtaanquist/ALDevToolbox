@@ -9,6 +9,7 @@
 @inject ILogger<AdminTemplateEdit> Log
 @implements IAsyncDisposable
 @using System.Text.Json
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 
@@ -24,8 +25,9 @@
 
     Reordering uses Up/Down buttons rather than HTML5 drag-and-drop because the
     latter would need .razor.js plumbing for v1; can be upgraded later if asked
-    for. Form state lives in a mutable inner class so two-way bindings stay
-    light — TemplateInput is built fresh on Save.
+    for. Form state lives in TemplateFormState (Components/Shared) so the
+    recursive folder editor can bind against the same models the page does;
+    on save we pack into TemplateAuthoring and call TemplateService directly.
 *@
 
 <PageTitle>@PageTitleText · Admin · AL Dev Toolbox</PageTitle>
@@ -41,7 +43,7 @@
                 }
                 else
                 {
-                    <span>Create a new runtime template. Folders, defaults, and ID ranges can all be edited later.</span>
+                    <span>Create a new runtime template. Extensions, defaults, and ID ranges can all be edited later.</span>
                 }
             </p>
         </div>
@@ -87,11 +89,8 @@
         {
             <div class="form-error" role="alert">
                 <p>@_saveError</p>
-                @if (_mode == EditorMode.Toml && _fieldErrors.Count > 0)
+                @if (_fieldErrors.Count > 0)
                 {
-                    @* Bulleted list — admins can scan field-keyed messages back
-                       to their TOML location instead of decoding a single
-                       concatenated string. *@
                     <ul class="form-error__list">
                         @foreach (var e in _fieldErrors)
                         {
@@ -116,13 +115,7 @@
         <form class="form-grid admin-template-edit__form admin-template-edit__toml-form"
               @onsubmit="SaveTomlAsync" @onsubmit:preventDefault>
             <section class="form-section">
-                @* `for=` would point at a non-input here — the editor is a
-                   contenteditable div managed by CodeMirror — so this is a
-                   plain section header rather than a real label. *@
                 <span class="section-label">template.toml</span>
-                @* CodeMirror 6 mounts into this div on first render. The
-                   editor handles its own state; we pull the current text on
-                   save and on mode-switch via JS interop. *@
                 <div class="admin-template-edit__toml" @ref="_tomlContainer"></div>
                 @if (_tomlIssues.Count > 0)
                 {
@@ -134,10 +127,9 @@
                     </ul>
                 }
                 <small class="muted">
-                    Edits the same fields as the structured form. The
-                    <code>deprecated</code> flag and folder reordering by row aren't
-                    represented here; toggle deprecated and reorder folders in the
-                    structured view.
+                    Edits the same data the structured form does. Toggle
+                    <code>deprecated</code> and reorder extensions in the
+                    structured view — those aren't represented in TOML.
                 </small>
             </section>
 
@@ -202,6 +194,7 @@
                     <input id="tpl-app" type="text" required pattern="\d+\.\d+\.\d+\.\d+"
                            @bind="_form.DefaultApplication" @bind:event="oninput"
                            placeholder="e.g. 24.0.0.0" />
+                    <small class="muted">Spliced into <code>defaults.application</code> on save.</small>
                     <FieldError Field="DefaultApplication" Errors="_fieldErrors" />
                 </div>
                 <div>
@@ -209,6 +202,7 @@
                     <input id="tpl-platform" type="text" required pattern="\d+\.\d+\.\d+\.\d+"
                            @bind="_form.DefaultPlatform" @bind:event="oninput"
                            placeholder="e.g. 1.0.0.0" />
+                    <small class="muted">Spliced into <code>defaults.platform</code> on save.</small>
                     <FieldError Field="DefaultPlatform" Errors="_fieldErrors" />
                 </div>
             </section>
@@ -270,7 +264,9 @@
                     Merged into every generated <code>app.json</code>. Fields:
                     <code>publisher</code>, <code>target</code>, <code>features</code>,
                     <code>supportedLocales</code>, <code>url</code>, <code>logo</code>,
-                    <code>resourceExposurePolicy</code>.
+                    <code>extension_prefix</code>, <code>affix</code>, <code>affix_type</code>,
+                    <code>resourceExposurePolicy</code>. The Default application /
+                    platform fields above are spliced in automatically on save.
                 </small>
                 <FieldError Field="DefaultsJson" Errors="_fieldErrors" />
             </section>
@@ -335,205 +331,230 @@
 
             <section class="form-section">
                 <div class="folder-editor__header">
-                    <label class="section-label">Core folders</label>
-                    <button type="button" class="btn btn--sm" @onclick="AddFolder">
+                    <label class="section-label">Extensions</label>
+                    <button type="button" class="btn btn--sm" @onclick="AddExtension">
                         <Icon Name="plus" Width="14" Height="14" />
-                        <span>Add folder</span>
+                        <span>Add extension</span>
                     </button>
                 </div>
                 <small class="muted">
-                    Emitted into the <strong>Core</strong> extension only. Module
-                    extensions get their own list below.
+                    Each entry is one extension generated into the workspace.
+                    <strong>Required</strong> extensions are always emitted;
+                    <strong>optional</strong> ones surface as opt-in checkboxes
+                    on the New Workspace form. Catalogue modules contribute a
+                    cloned extension on top — those aren't authored here.
                 </small>
-                @if (_form.Folders.Count == 0)
+                @if (_form.Extensions.Count == 0)
                 {
-                    <p class="muted">No folders yet. Add at least one — the generator emits one folder per row in the order shown.</p>
+                    <p class="muted">
+                        No extensions yet. Add at least one — most templates start
+                        with a <code>Core</code> required extension.
+                    </p>
                 }
                 else
                 {
-                    <div class="folder-editor__list">
-                        @for (var i = 0; i < _form.Folders.Count; i++)
+                    <div class="folder-editor__list extension-editor__list">
+                        @for (var i = 0; i < _form.Extensions.Count; i++)
                         {
-                            var index = i;
-                            var row = _form.Folders[index];
-                            <div class="folder-editor__row">
+                            var extIndex = i;
+                            var ext = _form.Extensions[extIndex];
+                            var extKey = $"Extensions[{extIndex}]";
+                            <div class="folder-editor__row extension-editor__row">
                                 <div class="folder-editor__row-head">
                                     <div class="folder-editor__order">
-                                        <button type="button" class="btn btn--sm" disabled="@(index == 0)"
-                                                @onclick="() => MoveFolder(index, -1)" title="Move up">
+                                        <button type="button" class="btn btn--sm" disabled="@(extIndex == 0)"
+                                                @onclick="() => MoveExtension(extIndex, -1)" title="Move up">
                                             <Icon Name="arrow-up" Width="12" Height="12" />
                                         </button>
-                                        <button type="button" class="btn btn--sm" disabled="@(index == _form.Folders.Count - 1)"
-                                                @onclick="() => MoveFolder(index, 1)" title="Move down">
+                                        <button type="button" class="btn btn--sm" disabled="@(extIndex == _form.Extensions.Count - 1)"
+                                                @onclick="() => MoveExtension(extIndex, 1)" title="Move down">
                                             <Icon Name="arrow-down" Width="12" Height="12" />
                                         </button>
                                     </div>
                                     <div class="folder-editor__path">
-                                        <input type="text" required placeholder="e.g. Source/Foundation"
-                                               @bind="row.Path" @bind:event="oninput" />
-                                        <FieldError Field="@($"Folders[{index}].Path")" Errors="_fieldErrors" />
+                                        <input type="text" required placeholder="e.g. Core"
+                                               @bind="ext.Path" @bind:event="oninput" />
+                                        <FieldError Field="@($"{extKey}.Path")" Errors="_fieldErrors" />
                                     </div>
-                                    <button type="button" class="btn btn--sm" @onclick="() => ToggleFolderExpanded(index)"
-                                            title="@(IsFolderExpanded(index) ? "Hide files" : "Show files")">
-                                        <Icon Name="@(IsFolderExpanded(index) ? "chevron-up" : "chevron-down")" Width="12" Height="12" />
-                                        <span>@(row.Files.Count == 0 ? "No files" : $"{row.Files.Count} file{(row.Files.Count == 1 ? "" : "s")}")</span>
-                                    </button>
-                                    <button type="button" class="btn btn--sm" @onclick="() => RemoveFolder(index)" title="Remove folder">
+                                    <button type="button" class="btn btn--sm" @onclick="() => RemoveExtension(extIndex)" title="Remove extension">
                                         <Icon Name="trash-2" Width="12" Height="12" />
                                     </button>
                                 </div>
 
-                                @if (IsFolderExpanded(index))
-                                {
-                                    <div class="folder-editor__files">
-                                        @if (row.Files.Count == 0)
+                                <div class="extension-editor__body">
+                                    <div class="form-section form-section--row">
+                                        <div>
+                                            <label class="section-label">Name template</label>
+                                            <input type="text" required placeholder="e.g. {{extension_prefix}} Core"
+                                                   @bind="ext.NameTemplate" @bind:event="oninput" />
+                                            <FieldError Field="@($"{extKey}.NameTemplate")" Errors="_fieldErrors" />
+                                        </div>
+                                        <div>
+                                            <label class="check-row">
+                                                <input type="checkbox" @bind="ext.Required" />
+                                                <span>Required (always emitted)</span>
+                                            </label>
+                                            <small class="muted">
+                                                Untick to expose as a checkbox on New Workspace.
+                                            </small>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-section form-section--row">
+                                        <div>
+                                            <label class="section-label">Application override</label>
+                                            <input type="text" placeholder="(use template default)"
+                                                   @bind="ext.Application" @bind:event="oninput" />
+                                        </div>
+                                        <div>
+                                            <label class="section-label">Runtime override</label>
+                                            <input type="text" placeholder="(use template runtime)"
+                                                   @bind="ext.Runtime" @bind:event="oninput" />
+                                        </div>
+                                    </div>
+
+                                    <div class="form-section form-section--row">
+                                        <div>
+                                            <label class="section-label">ID range from</label>
+                                            <input type="number" min="1" placeholder="(auto-allocate)"
+                                                   @bind="ext.IdRangeFrom" @bind:event="oninput" />
+                                            <FieldError Field="@($"{extKey}.IdRangeFrom")" Errors="_fieldErrors" />
+                                            <FieldError Field="@($"{extKey}.IdRange")" Errors="_fieldErrors" />
+                                        </div>
+                                        <div>
+                                            <label class="section-label">ID range to</label>
+                                            <input type="number" min="1" placeholder="(auto-allocate)"
+                                                   @bind="ext.IdRangeTo" @bind:event="oninput" />
+                                            <FieldError Field="@($"{extKey}.IdRangeTo")" Errors="_fieldErrors" />
+                                        </div>
+                                    </div>
+
+                                    <div class="form-section">
+                                        <div class="folder-editor__header">
+                                            <label class="section-label">Dependencies</label>
+                                            <button type="button" class="btn btn--sm" @onclick="() => AddDependency(extIndex)">
+                                                <Icon Name="plus" Width="12" Height="12" />
+                                                <span>Add dependency</span>
+                                            </button>
+                                        </div>
+                                        @if (ext.Dependencies.Count == 0)
                                         {
-                                            <p class="muted folder-editor__files-empty">
-                                                No files. The generator emits a single <code>.gitkeep</code> for empty folders.
-                                            </p>
+                                            <p class="muted">No dependencies on this extension.</p>
                                         }
-                                        @for (var j = 0; j < row.Files.Count; j++)
+                                        else
                                         {
-                                            var fileIndex = j;
-                                            var file = row.Files[fileIndex];
-                                            <div class="folder-editor__file">
-                                                <div class="folder-editor__file-head">
-                                                    <div class="folder-editor__order">
-                                                        <button type="button" class="btn btn--sm" disabled="@(fileIndex == 0)"
-                                                                @onclick="() => MoveFile(index, fileIndex, -1)" title="Move up">
-                                                            <Icon Name="arrow-up" Width="12" Height="12" />
-                                                        </button>
-                                                        <button type="button" class="btn btn--sm" disabled="@(fileIndex == row.Files.Count - 1)"
-                                                                @onclick="() => MoveFile(index, fileIndex, 1)" title="Move down">
-                                                            <Icon Name="arrow-down" Width="12" Height="12" />
-                                                        </button>
+                                            <div class="folder-editor__list">
+                                                @for (var d = 0; d < ext.Dependencies.Count; d++)
+                                                {
+                                                    var depIndex = d;
+                                                    var dep = ext.Dependencies[depIndex];
+                                                    var depKey = $"{extKey}.Dependencies[{depIndex}]";
+                                                    <div class="folder-editor__row dep-row">
+                                                        <div class="folder-editor__row-head">
+                                                            <div class="folder-editor__order">
+                                                                <button type="button" class="btn btn--sm" disabled="@(depIndex == 0)"
+                                                                        @onclick="() => MoveDependency(extIndex, depIndex, -1)" title="Move up">
+                                                                    <Icon Name="arrow-up" Width="12" Height="12" />
+                                                                </button>
+                                                                <button type="button" class="btn btn--sm" disabled="@(depIndex == ext.Dependencies.Count - 1)"
+                                                                        @onclick="() => MoveDependency(extIndex, depIndex, 1)" title="Move down">
+                                                                    <Icon Name="arrow-down" Width="12" Height="12" />
+                                                                </button>
+                                                            </div>
+                                                            <div class="folder-editor__path">
+                                                                <select @bind="dep.Kind">
+                                                                    <option value="@DependencyFormKind.Extension">Reference an extension in this template</option>
+                                                                    <option value="@DependencyFormKind.Module">Reference a catalogue module</option>
+                                                                    <option value="@DependencyFormKind.Literal">Literal dependency (id + name + publisher + version)</option>
+                                                                </select>
+                                                            </div>
+                                                            <button type="button" class="btn btn--sm" @onclick="() => RemoveDependency(extIndex, depIndex)" title="Remove dependency">
+                                                                <Icon Name="trash-2" Width="12" Height="12" />
+                                                            </button>
+                                                        </div>
+
+                                                        <div class="dep-editor__fields">
+                                                            @switch (dep.Kind)
+                                                            {
+                                                                case DependencyFormKind.Extension:
+                                                                    <div>
+                                                                        <label class="section-label">Extension path</label>
+                                                                        <input type="text" placeholder="e.g. Core"
+                                                                               @bind="dep.RefExtensionPath" @bind:event="oninput" />
+                                                                        <FieldError Field="@($"{depKey}.Extension")" Errors="_fieldErrors" />
+                                                                    </div>
+                                                                    break;
+                                                                case DependencyFormKind.Module:
+                                                                    <div>
+                                                                        <label class="section-label">Module key</label>
+                                                                        <input type="text" placeholder="e.g. system-application"
+                                                                               @bind="dep.RefModuleKey" @bind:event="oninput" />
+                                                                    </div>
+                                                                    break;
+                                                                default:
+                                                                    <div>
+                                                                        <label class="section-label">ID (GUID)</label>
+                                                                        <input type="text" @bind="dep.LitId" @bind:event="oninput" />
+                                                                        <FieldError Field="@($"{depKey}.Id")" Errors="_fieldErrors" />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label class="section-label">Name</label>
+                                                                        <input type="text" @bind="dep.LitName" @bind:event="oninput" />
+                                                                        <FieldError Field="@($"{depKey}.Name")" Errors="_fieldErrors" />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label class="section-label">Publisher</label>
+                                                                        <input type="text" @bind="dep.LitPublisher" @bind:event="oninput" />
+                                                                        <FieldError Field="@($"{depKey}.Publisher")" Errors="_fieldErrors" />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label class="section-label">Version</label>
+                                                                        <input type="text" placeholder="e.g. 1.0.0.0"
+                                                                               @bind="dep.LitVersion" @bind:event="oninput" />
+                                                                        <FieldError Field="@($"{depKey}.Version")" Errors="_fieldErrors" />
+                                                                    </div>
+                                                                    break;
+                                                            }
+                                                        </div>
+                                                        <FieldError Field="@depKey" Errors="_fieldErrors" />
                                                     </div>
-                                                    <div class="folder-editor__path">
-                                                        <input type="text" required placeholder="e.g. AppInstall.Codeunit.al"
-                                                               @bind="file.Path" @bind:event="oninput" />
-                                                        <FieldError Field="@($"Folders[{index}].Files[{fileIndex}].Path")" Errors="_fieldErrors" />
-                                                    </div>
-                                                    <button type="button" class="btn btn--sm" @onclick="() => RemoveFile(index, fileIndex)" title="Remove file">
-                                                        <Icon Name="trash-2" Width="12" Height="12" />
-                                                    </button>
-                                                </div>
-                                                <textarea class="json-editor folder-editor__file-content" rows="10" spellcheck="false"
-                                                          @bind="file.Content" @bind:event="oninput"></textarea>
+                                                }
                                             </div>
                                         }
-                                        <button type="button" class="btn btn--sm" @onclick="() => AddFile(index)">
-                                            <Icon Name="plus" Width="12" Height="12" />
-                                            <span>Add file</span>
-                                        </button>
                                     </div>
-                                }
-                            </div>
-                        }
-                    </div>
-                    <small class="muted">
-                        <strong>Path</strong> is relative inside the generated extension folder
-                        (e.g. <code>Source/Foundation</code>). Each folder optionally seeds files
-                        (toggle the chevron to expand). <code>.al</code> files run through mustache
-                        substitution at generation time; everything else is written verbatim.
-                    </small>
-                }
-            </section>
 
-            <section class="form-section">
-                <div class="folder-editor__header">
-                    <label class="section-label">Module folders</label>
-                    <button type="button" class="btn btn--sm" @onclick="AddModuleFolder">
-                        <Icon Name="plus" Width="14" Height="14" />
-                        <span>Add folder</span>
-                    </button>
-                </div>
-                <small class="muted">
-                    Emitted into every <strong>module</strong> extension generated from this
-                    template. Leave empty to ship modules with just <code>app.json</code>,
-                    <code>AppSourceCop.json</code>, and the static fallback folders.
-                </small>
-                @if (_form.ModuleFolders.Count == 0)
-                {
-                    <p class="muted">No module folders. Add one to scaffold a starter layout inside every generated module extension.</p>
-                }
-                else
-                {
-                    <div class="folder-editor__list">
-                        @for (var i = 0; i < _form.ModuleFolders.Count; i++)
-                        {
-                            var index = i;
-                            var row = _form.ModuleFolders[index];
-                            <div class="folder-editor__row">
-                                <div class="folder-editor__row-head">
-                                    <div class="folder-editor__order">
-                                        <button type="button" class="btn btn--sm" disabled="@(index == 0)"
-                                                @onclick="() => MoveModuleFolder(index, -1)" title="Move up">
-                                            <Icon Name="arrow-up" Width="12" Height="12" />
-                                        </button>
-                                        <button type="button" class="btn btn--sm" disabled="@(index == _form.ModuleFolders.Count - 1)"
-                                                @onclick="() => MoveModuleFolder(index, 1)" title="Move down">
-                                            <Icon Name="arrow-down" Width="12" Height="12" />
-                                        </button>
+                                    <div class="form-section">
+                                        <div class="folder-editor__header">
+                                            <label class="section-label">Folders</label>
+                                            <button type="button" class="btn btn--sm" @onclick="() => AddRootFolder(extIndex)">
+                                                <Icon Name="folder-plus" Width="12" Height="12" />
+                                                <span>Add folder</span>
+                                            </button>
+                                        </div>
+                                        @if (ext.Folders.Count == 0)
+                                        {
+                                            <p class="muted">No folders. Generation still produces <code>app.json</code> + the static fallback folders.</p>
+                                        }
+                                        else
+                                        {
+                                            <div class="folder-editor__list">
+                                                @for (var f = 0; f < ext.Folders.Count; f++)
+                                                {
+                                                    var folderIndex = f;
+                                                    var folder = ext.Folders[folderIndex];
+                                                    <RecursiveFolderEditor Folder="folder"
+                                                                           Index="folderIndex"
+                                                                           SiblingCount="ext.Folders.Count"
+                                                                           Depth="0"
+                                                                           FieldKeyPrefix="@($"{extKey}.Folders[{folderIndex}]")"
+                                                                           Errors="_fieldErrors"
+                                                                           OnMove="d => MoveRootFolder(extIndex, folderIndex, d)"
+                                                                           OnRemove="() => RemoveRootFolder(extIndex, folderIndex)" />
+                                                }
+                                            </div>
+                                        }
                                     </div>
-                                    <div class="folder-editor__path">
-                                        <input type="text" required placeholder="e.g. Source"
-                                               @bind="row.Path" @bind:event="oninput" />
-                                        <FieldError Field="@($"ModuleFolders[{index}].Path")" Errors="_fieldErrors" />
-                                    </div>
-                                    <button type="button" class="btn btn--sm" @onclick="() => ToggleModuleFolderExpanded(index)"
-                                            title="@(IsModuleFolderExpanded(index) ? "Hide files" : "Show files")">
-                                        <Icon Name="@(IsModuleFolderExpanded(index) ? "chevron-up" : "chevron-down")" Width="12" Height="12" />
-                                        <span>@(row.Files.Count == 0 ? "No files" : $"{row.Files.Count} file{(row.Files.Count == 1 ? "" : "s")}")</span>
-                                    </button>
-                                    <button type="button" class="btn btn--sm" @onclick="() => RemoveModuleFolder(index)" title="Remove folder">
-                                        <Icon Name="trash-2" Width="12" Height="12" />
-                                    </button>
                                 </div>
-
-                                @if (IsModuleFolderExpanded(index))
-                                {
-                                    <div class="folder-editor__files">
-                                        @if (row.Files.Count == 0)
-                                        {
-                                            <p class="muted folder-editor__files-empty">
-                                                No files. The generator emits a single <code>.gitkeep</code> for empty folders.
-                                            </p>
-                                        }
-                                        @for (var j = 0; j < row.Files.Count; j++)
-                                        {
-                                            var fileIndex = j;
-                                            var file = row.Files[fileIndex];
-                                            <div class="folder-editor__file">
-                                                <div class="folder-editor__file-head">
-                                                    <div class="folder-editor__order">
-                                                        <button type="button" class="btn btn--sm" disabled="@(fileIndex == 0)"
-                                                                @onclick="() => MoveModuleFile(index, fileIndex, -1)" title="Move up">
-                                                            <Icon Name="arrow-up" Width="12" Height="12" />
-                                                        </button>
-                                                        <button type="button" class="btn btn--sm" disabled="@(fileIndex == row.Files.Count - 1)"
-                                                                @onclick="() => MoveModuleFile(index, fileIndex, 1)" title="Move down">
-                                                            <Icon Name="arrow-down" Width="12" Height="12" />
-                                                        </button>
-                                                    </div>
-                                                    <div class="folder-editor__path">
-                                                        <input type="text" required placeholder="e.g. Setup.Page.al"
-                                                               @bind="file.Path" @bind:event="oninput" />
-                                                        <FieldError Field="@($"ModuleFolders[{index}].Files[{fileIndex}].Path")" Errors="_fieldErrors" />
-                                                    </div>
-                                                    <button type="button" class="btn btn--sm" @onclick="() => RemoveModuleFile(index, fileIndex)" title="Remove file">
-                                                        <Icon Name="trash-2" Width="12" Height="12" />
-                                                    </button>
-                                                </div>
-                                                <textarea class="json-editor folder-editor__file-content" rows="10" spellcheck="false"
-                                                          @bind="file.Content" @bind:event="oninput"></textarea>
-                                            </div>
-                                        }
-                                        <button type="button" class="btn btn--sm" @onclick="() => AddModuleFile(index)">
-                                            <Icon Name="plus" Width="12" Height="12" />
-                                            <span>Add file</span>
-                                        </button>
-                                    </div>
-                                }
                             </div>
                         }
                     </div>
@@ -586,8 +607,10 @@
                             <dd>Module name; equals the workspace name in the Core extension.</dd>
                             <dt><code>@("{{publisher}}")</code></dt>
                             <dd>From <code>[defaults] publisher</code>.</dd>
-                            <dt><code>@("{{prefix}}")</code></dt>
-                            <dd>From <code>[appSourceCop] mandatoryPrefix</code>.</dd>
+                            <dt><code>@("{{extension_prefix}}")</code></dt>
+                            <dd>From the New Workspace form; defaults to <code>defaults.extension_prefix</code>.</dd>
+                            <dt><code>@("{{affix}}")</code></dt>
+                            <dd>From <code>defaults.affix</code>; expands to empty when <code>affix_type = "None"</code>.</dd>
                             <dt><code>@("{{namespace}}")</code></dt>
                             <dd>Current folder path with <code>/</code> replaced by <code>.</code>.</dd>
                             <dt><code>@("{{guid}}")</code></dt>
@@ -645,7 +668,7 @@
     private bool IsEdit => !string.IsNullOrEmpty(Key);
     private string PageTitleText => IsEdit ? "Edit template" : "New template";
 
-    private FormState? _form;
+    private TemplateFormState? _form;
     private int? _existingId;
     private bool _isDeleted;
     private bool _loadFailed;
@@ -673,14 +696,6 @@
     // while the first mount() is still awaiting and would otherwise spin up a
     // duplicate editor.
     private bool _editorMounting;
-    // Indices of folder rows whose file list is currently expanded. Tracked
-    // outside FormState so reordering folders doesn't drag the wrong rows open.
-    // Separate sets for the two editors (Core folders vs module folders) so
-    // they expand independently.
-    private readonly HashSet<int> _expandedFolders = new();
-    private readonly HashSet<int> _expandedModuleFolders = new();
-
-    private static readonly JsonSerializerOptions PrettyJson = new() { WriteIndented = true };
 
     /// <summary>
     /// Which editor surface is currently visible. The structured form is the
@@ -738,9 +753,6 @@
         // templates without losing the reference; the user-facing
         // dropdown filters them out separately.
         _availableModules = await Templates.GetModulesAsync(includeDeprecated: true);
-        // Include deprecated entries so admins can keep templates linked to a
-        // legacy application-version row without losing the reference; the
-        // user-facing select filters them out.
         _availableApplicationVersions = await Versions.GetActiveAsync(includeDeprecated: true);
 
         if (!IsEdit)
@@ -750,25 +762,21 @@
             _loadFailed = false;
 
             // Duplicate flow: prefill the new-template form from an existing
-            // template's state. The Key is intentionally cleared so the admin
-            // has to pick a fresh one — every other field carries over and
-            // can be tweaked before save. Falls back to a blank form if the
-            // source key is missing or no longer exists.
+            // template's authoring shape. The Key is intentionally cleared so
+            // the admin has to pick a fresh one; every other field carries
+            // over and can be tweaked before save.
             if (!string.IsNullOrWhiteSpace(DuplicateFrom))
             {
-                var source = await Templates.GetByKeyAsync(DuplicateFrom);
+                var source = await Templates.GetAuthoringByKeyAsync(DuplicateFrom);
                 if (source is not null)
                 {
-                    _form = FormState.From(source);
+                    _form = TemplateFormState.From(source);
                     _form.Key = string.Empty;
                     _form.Name = string.IsNullOrWhiteSpace(source.Name)
                         ? string.Empty
                         : $"{source.Name} (copy)";
-                    // Don't carry the deprecated flag onto a brand-new copy —
-                    // the admin is starting fresh, not preserving end-of-life.
+                    // Don't carry the deprecated flag onto a brand-new copy.
                     _form.Deprecated = false;
-                    // Open the structured form so the empty Key is the first
-                    // visible required field rather than buried in TOML.
                     _mode = EditorMode.Form;
                     _saveSuccess = $"Duplicated from \"{source.Key}\". Pick a new key, then click Create template.";
                     return;
@@ -776,10 +784,7 @@
                 Log.LogWarning("Duplicate source template '{Key}' not found; falling back to blank form.", DuplicateFrom);
             }
 
-            // Always reset on the no-source path so navigating from
-            // ?from=foo to a plain /new doesn't carry the prefilled state
-            // through.
-            _form = FormState.Blank();
+            _form = TemplateFormState.Blank();
             // New-template flow opens in TOML — pasting a template.toml is the
             // common path. Pre-render the blank scaffold once so the textarea
             // has something useful to start from.
@@ -788,7 +793,7 @@
             return;
         }
 
-        var existing = await Templates.GetByKeyAsync(Key!);
+        var existing = await Templates.GetAuthoringByKeyAsync(Key!);
         if (existing is null)
         {
             _loadFailed = true;
@@ -796,10 +801,13 @@
             return;
         }
 
+        // Need the existing row's id (and the soft-delete flag) for the
+        // delete/restore buttons; the authoring payload doesn't carry it.
+        var entity = await Templates.GetByKeyAsync(Key!);
         _loadFailed = false;
-        _existingId = existing.Id;
-        _isDeleted = existing.DeletedAt is not null;
-        _form = FormState.From(existing);
+        _existingId = entity?.Id;
+        _isDeleted = entity?.DeletedAt is not null;
+        _form = TemplateFormState.From(existing);
         _mode = EditorMode.Form;
     }
 
@@ -819,146 +827,91 @@
         }
     }
 
-    private void AddFolder()
-    {
-        _form?.Folders.Add(new FolderRow());
-    }
+    // ===== Extension list handlers =====
 
-    private void RemoveFolder(int index)
+    private void AddExtension()
     {
         if (_form is null) return;
-        if (index >= 0 && index < _form.Folders.Count)
+        _form.Extensions.Add(new ExtensionForm
         {
-            _form.Folders.RemoveAt(index);
-            _expandedFolders.Clear();
-        }
+            Path = string.Empty,
+            NameTemplate = "{{extension_prefix}} Extension",
+            Required = true,
+        });
     }
 
-    private void MoveFolder(int index, int delta)
+    private void RemoveExtension(int index)
     {
         if (_form is null) return;
-        var target = index + delta;
-        if (index < 0 || index >= _form.Folders.Count || target < 0 || target >= _form.Folders.Count)
-        {
-            return;
-        }
-        (_form.Folders[index], _form.Folders[target]) = (_form.Folders[target], _form.Folders[index]);
-        // Re-anchor expanded rows so the user keeps their open editor tracking
-        // the folder they were editing, not the row index.
-        var wasExpandedHere = _expandedFolders.Contains(index);
-        var wasExpandedThere = _expandedFolders.Contains(target);
-        _expandedFolders.Remove(index);
-        _expandedFolders.Remove(target);
-        if (wasExpandedHere) _expandedFolders.Add(target);
-        if (wasExpandedThere) _expandedFolders.Add(index);
+        if (index < 0 || index >= _form.Extensions.Count) return;
+        _form.Extensions.RemoveAt(index);
     }
 
-    private bool IsFolderExpanded(int index) => _expandedFolders.Contains(index);
-
-    private void ToggleFolderExpanded(int index)
-    {
-        if (!_expandedFolders.Add(index))
-        {
-            _expandedFolders.Remove(index);
-        }
-    }
-
-    private void AddFile(int folderIndex)
-    {
-        if (_form is null || folderIndex < 0 || folderIndex >= _form.Folders.Count) return;
-        _form.Folders[folderIndex].Files.Add(new FileRow());
-        _expandedFolders.Add(folderIndex);
-    }
-
-    private void RemoveFile(int folderIndex, int fileIndex)
-    {
-        if (_form is null || folderIndex < 0 || folderIndex >= _form.Folders.Count) return;
-        var files = _form.Folders[folderIndex].Files;
-        if (fileIndex >= 0 && fileIndex < files.Count)
-        {
-            files.RemoveAt(fileIndex);
-        }
-    }
-
-    private void MoveFile(int folderIndex, int fileIndex, int delta)
-    {
-        if (_form is null || folderIndex < 0 || folderIndex >= _form.Folders.Count) return;
-        var files = _form.Folders[folderIndex].Files;
-        var target = fileIndex + delta;
-        if (fileIndex < 0 || fileIndex >= files.Count || target < 0 || target >= files.Count) return;
-        (files[fileIndex], files[target]) = (files[target], files[fileIndex]);
-    }
-
-    // Parallel handlers for the module-folder editor. Same shape as the
-    // Core-folder handlers above; the duplication is deliberate so the two
-    // editors can expand and reorder independently without sharing state.
-    private void AddModuleFolder()
-    {
-        _form?.ModuleFolders.Add(new FolderRow());
-    }
-
-    private void RemoveModuleFolder(int index)
-    {
-        if (_form is null) return;
-        if (index >= 0 && index < _form.ModuleFolders.Count)
-        {
-            _form.ModuleFolders.RemoveAt(index);
-            _expandedModuleFolders.Clear();
-        }
-    }
-
-    private void MoveModuleFolder(int index, int delta)
+    private void MoveExtension(int index, int delta)
     {
         if (_form is null) return;
         var target = index + delta;
-        if (index < 0 || index >= _form.ModuleFolders.Count || target < 0 || target >= _form.ModuleFolders.Count)
+        if (index < 0 || index >= _form.Extensions.Count) return;
+        if (target < 0 || target >= _form.Extensions.Count) return;
+        (_form.Extensions[index], _form.Extensions[target]) = (_form.Extensions[target], _form.Extensions[index]);
+    }
+
+    // ===== Top-level folder handlers (recursive editor owns nested ops) =====
+
+    private void AddRootFolder(int extIndex)
+    {
+        if (_form is null || extIndex < 0 || extIndex >= _form.Extensions.Count) return;
+        _form.Extensions[extIndex].Folders.Add(new TemplateFolderForm());
+    }
+
+    private void RemoveRootFolder(int extIndex, int folderIndex)
+    {
+        if (_form is null || extIndex < 0 || extIndex >= _form.Extensions.Count) return;
+        var folders = _form.Extensions[extIndex].Folders;
+        if (folderIndex < 0 || folderIndex >= folders.Count) return;
+        folders.RemoveAt(folderIndex);
+    }
+
+    private void MoveRootFolder(int extIndex, int folderIndex, int delta)
+    {
+        if (_form is null || extIndex < 0 || extIndex >= _form.Extensions.Count) return;
+        var folders = _form.Extensions[extIndex].Folders;
+        var target = folderIndex + delta;
+        if (folderIndex < 0 || folderIndex >= folders.Count) return;
+        if (target < 0 || target >= folders.Count) return;
+        (folders[folderIndex], folders[target]) = (folders[target], folders[folderIndex]);
+    }
+
+    // ===== Dependency handlers =====
+
+    private void AddDependency(int extIndex)
+    {
+        if (_form is null || extIndex < 0 || extIndex >= _form.Extensions.Count) return;
+        _form.Extensions[extIndex].Dependencies.Add(new DependencyForm
         {
-            return;
-        }
-        (_form.ModuleFolders[index], _form.ModuleFolders[target]) = (_form.ModuleFolders[target], _form.ModuleFolders[index]);
-        var wasExpandedHere = _expandedModuleFolders.Contains(index);
-        var wasExpandedThere = _expandedModuleFolders.Contains(target);
-        _expandedModuleFolders.Remove(index);
-        _expandedModuleFolders.Remove(target);
-        if (wasExpandedHere) _expandedModuleFolders.Add(target);
-        if (wasExpandedThere) _expandedModuleFolders.Add(index);
+            Kind = DependencyFormKind.Extension,
+        });
     }
 
-    private bool IsModuleFolderExpanded(int index) => _expandedModuleFolders.Contains(index);
-
-    private void ToggleModuleFolderExpanded(int index)
+    private void RemoveDependency(int extIndex, int depIndex)
     {
-        if (!_expandedModuleFolders.Add(index))
-        {
-            _expandedModuleFolders.Remove(index);
-        }
+        if (_form is null || extIndex < 0 || extIndex >= _form.Extensions.Count) return;
+        var deps = _form.Extensions[extIndex].Dependencies;
+        if (depIndex < 0 || depIndex >= deps.Count) return;
+        deps.RemoveAt(depIndex);
     }
 
-    private void AddModuleFile(int folderIndex)
+    private void MoveDependency(int extIndex, int depIndex, int delta)
     {
-        if (_form is null || folderIndex < 0 || folderIndex >= _form.ModuleFolders.Count) return;
-        _form.ModuleFolders[folderIndex].Files.Add(new FileRow());
-        _expandedModuleFolders.Add(folderIndex);
+        if (_form is null || extIndex < 0 || extIndex >= _form.Extensions.Count) return;
+        var deps = _form.Extensions[extIndex].Dependencies;
+        var target = depIndex + delta;
+        if (depIndex < 0 || depIndex >= deps.Count) return;
+        if (target < 0 || target >= deps.Count) return;
+        (deps[depIndex], deps[target]) = (deps[target], deps[depIndex]);
     }
 
-    private void RemoveModuleFile(int folderIndex, int fileIndex)
-    {
-        if (_form is null || folderIndex < 0 || folderIndex >= _form.ModuleFolders.Count) return;
-        var files = _form.ModuleFolders[folderIndex].Files;
-        if (fileIndex >= 0 && fileIndex < files.Count)
-        {
-            files.RemoveAt(fileIndex);
-        }
-    }
-
-    private void MoveModuleFile(int folderIndex, int fileIndex, int delta)
-    {
-        if (_form is null || folderIndex < 0 || folderIndex >= _form.ModuleFolders.Count) return;
-        var files = _form.ModuleFolders[folderIndex].Files;
-        var target = fileIndex + delta;
-        if (fileIndex < 0 || fileIndex >= files.Count || target < 0 || target >= files.Count) return;
-        (files[fileIndex], files[target]) = (files[target], files[fileIndex]);
-    }
+    // ===== Save / delete / restore =====
 
     private async Task SaveAsync()
     {
@@ -968,7 +921,7 @@
         _saveSuccess = null;
         _fieldErrors = new Dictionary<string, string>();
 
-        var payload = _form.ToInput();
+        var payload = _form.ToAuthoring();
 
         try
         {
@@ -1041,6 +994,8 @@
         }
     }
 
+    // ===== Mode switching =====
+
     private async Task SwitchModeAsync(EditorMode mode)
     {
         if (_form is null || _mode == mode || _saving) return;
@@ -1075,10 +1030,6 @@
     private async Task RefreshPreviewAsync()
     {
         if (_form is null || _saving) return;
-        // Same parse + rebuild path the mode switch uses, just without the
-        // mode flip. Successful parses update _form so the preview re-reads
-        // it on the next render; failures populate _tomlIssues for the
-        // gutter and leave the preview as-is.
         if (await TryHydrateFormFromEditorAsync())
         {
             _saveError = null;
@@ -1114,7 +1065,7 @@
         try
         {
             var parsed = TemplateTomlMapper.FromToml(_toml, deprecated: _form.Deprecated);
-            _form = FormState.FromInput(parsed, _form.Deprecated);
+            _form = TemplateFormState.From(parsed);
             _tomlIssues = new();
             _saveError = null;
             return true;
@@ -1241,90 +1192,35 @@
                       : "btn btn--sm admin-template-edit__mode-btn";
 
     /// <summary>
-    /// Builds a TOML view of the current in-memory form state. We round-trip
-    /// through <see cref="TemplateInput"/> so the same JSON parsing behaviour
-    /// is exercised in both modes — i.e. the TOML you see is the TOML the
-    /// service would produce after parsing whatever JSON sat in the textareas.
+    /// Renders the current form state as TOML for the Form → TOML mode switch.
+    /// Falls back to a placeholder when the embedded JSON columns are
+    /// unparseable so the editor still opens — the admin can fix the JSON in
+    /// the form pane and switch back without losing it.
     /// </summary>
     private string BuildTomlFromFormState()
     {
         if (_form is null) return string.Empty;
         try
         {
-            var defaults = string.IsNullOrWhiteSpace(_form.DefaultsJson)
-                ? new TemplateDefaults()
-                : JsonSerializer.Deserialize<TemplateDefaults>(_form.DefaultsJson) ?? new TemplateDefaults();
-            var appSourceCop = string.IsNullOrWhiteSpace(_form.AppSourceCopJson)
-                ? new AppSourceCopSettings()
-                : JsonSerializer.Deserialize<AppSourceCopSettings>(_form.AppSourceCopJson) ?? new AppSourceCopSettings();
-
-            var stub = new RuntimeTemplate
-            {
-                Key = _form.Key,
-                Runtime = _form.Runtime,
-                Name = _form.Name,
-                Description = _form.Description,
-                DefaultApplication = _form.DefaultApplication,
-                DefaultPlatform = _form.DefaultPlatform,
-                Defaults = defaults,
-                AppSourceCop = appSourceCop,
-                CoreIdRangeFrom = _form.CoreIdRangeFrom,
-                CoreIdRangeTo = _form.CoreIdRangeTo,
-                ModuleIdRangeStart = _form.ModuleIdRangeStart,
-                ModuleIdRangeSize = _form.ModuleIdRangeSize,
-                Deprecated = _form.Deprecated,
-                Folders = _form.Folders.Select((f, i) => new TemplateFolder
-                {
-                    Ordering = i,
-                    Path = f.Path,
-                    Files = f.Files.Select((file, fi) => new TemplateFile
-                    {
-                        Ordering = fi,
-                        Path = file.Path,
-                        Content = file.Content,
-                    }).ToList(),
-                }).ToList(),
-                ModuleFolders = _form.ModuleFolders.Select((f, i) => new TemplateModuleFolder
-                {
-                    Ordering = i,
-                    Path = f.Path,
-                    Files = f.Files.Select((file, fi) => new TemplateModuleFile
-                    {
-                        Ordering = fi,
-                        Path = file.Path,
-                        Content = file.Content,
-                    }).ToList(),
-                }).ToList(),
-                DefaultModules = _form.DefaultModuleKeys
-                    .Select((k, i) => new RuntimeTemplateDefaultModule
-                    {
-                        Ordering = i,
-                        Module = new ALDevToolbox.Domain.Entities.Module { Key = k },
-                    })
-                    .ToList(),
-                DefaultApplicationVersion = string.IsNullOrWhiteSpace(_form.DefaultApplicationVersionKey)
-                    ? null
-                    : new ApplicationVersion { Key = _form.DefaultApplicationVersionKey },
-            };
-            return TemplateTomlMapper.ToToml(stub);
+            return TemplateTomlMapper.ToToml(_form.ToAuthoring());
         }
         catch (JsonException ex)
         {
             return $"# Could not render TOML — Defaults or AppSourceCop JSON is invalid:\n# {ex.Message}\n";
         }
+        catch (Exception ex)
+        {
+            Log.LogWarning(ex, "Failed to render TOML from form state.");
+            return $"# Could not render TOML: {ex.Message}\n";
+        }
     }
 
     /// <summary>
-    /// Folder-tree preview for the right column. Reflects only what's declared
-    /// in the template itself: Core uses the Core folder list; a representative
-    /// <c>Module</c> entry is added only when module folders are declared. The
-    /// generator's unconditional scaffolding (<c>libs</c>, <c>permissionsets</c>,
-    /// <c>Translations</c>) is *not* drawn here — admins start from a non-empty
-    /// template (see <see cref="TemplateTomlMapper.DefaultFolderPaths"/>), so
-    /// those folders are visible because the template declares them, not
-    /// because the preview synthesises them. The preview is always built from
-    /// <c>_form</c>; in TOML mode it reflects the last validated form state
-    /// rather than each keystroke (a switch back to Form parses and refreshes).
+    /// Folder-tree preview for the right column. Walks the form's extensions
+    /// list and emits one extension subtree per <c>[[extensions]]</c> row.
+    /// In TOML mode this reflects the last validated form state — typing in
+    /// the TOML editor doesn't refresh the preview until the admin clicks
+    /// "Refresh preview" or switches back to the form view.
     /// </summary>
     private PreviewNode BuildPreview()
     {
@@ -1335,20 +1231,17 @@
 
         var rootName = string.IsNullOrWhiteSpace(_form.Key) ? "template" : _form.Key;
 
-        var children = new List<PreviewNode>
+        var children = new List<PreviewNode>();
+        foreach (var ext in _form.Extensions)
         {
-            BuildExtensionPreview("Core", _form.Folders),
-        };
-        if (_form.ModuleFolders.Count > 0)
-        {
-            children.Add(BuildExtensionPreview("Module", _form.ModuleFolders));
+            children.Add(BuildExtensionPreview(ext));
         }
 
         return PreviewTreeBuilder.SortForDisplay(
             new PreviewNode(rootName, PreviewNodeKind.Workspace, children));
     }
 
-    private static PreviewNode BuildExtensionPreview(string name, IReadOnlyList<FolderRow> folders)
+    private static PreviewNode BuildExtensionPreview(ExtensionForm ext)
     {
         var contents = new List<PreviewNode>
         {
@@ -1356,21 +1249,31 @@
             PreviewNode.File("AppSourceCop.json"),
         };
 
-        var entries = folders
-            .Where(f => !string.IsNullOrWhiteSpace(f.Path))
-            .Select(f =>
-            {
-                var leaves = f.Files.Count == 0
-                    ? (IReadOnlyList<PreviewNode>)new[] { PreviewNode.File(".gitkeep") }
-                    : f.Files
-                        .Where(file => !string.IsNullOrWhiteSpace(file.Path))
-                        .Select(file => PreviewNode.File(file.Path))
-                        .ToList();
-                return (f.Path, leaves);
-            });
-        contents.AddRange(PreviewTreeBuilder.BuildFolderChildren(entries));
+        foreach (var folder in ext.Folders.Where(f => !string.IsNullOrWhiteSpace(f.Path)))
+        {
+            contents.Add(BuildFolderPreview(folder));
+        }
 
+        var name = string.IsNullOrWhiteSpace(ext.Path) ? "(unnamed)" : ext.Path;
         return PreviewNode.Extension(name, contents);
+    }
+
+    private static PreviewNode BuildFolderPreview(TemplateFolderForm folder)
+    {
+        var children = new List<PreviewNode>();
+        foreach (var file in folder.Files.Where(f => !string.IsNullOrWhiteSpace(f.Path)))
+        {
+            children.Add(PreviewNode.File(file.Path));
+        }
+        foreach (var child in folder.Folders.Where(f => !string.IsNullOrWhiteSpace(f.Path)))
+        {
+            children.Add(BuildFolderPreview(child));
+        }
+        if (children.Count == 0)
+        {
+            children.Add(PreviewNode.File(".gitkeep"));
+        }
+        return PreviewNode.Folder(folder.Path, children);
     }
 
     private async Task SaveTomlAsync()
@@ -1408,19 +1311,14 @@
             if (IsEdit && _existingId is not null)
             {
                 await Templates.UpdateAsync(_existingId.Value, payload);
-                var refreshed = await Templates.GetByKeyAsync(Key!);
+                var refreshed = await Templates.GetAuthoringByKeyAsync(Key!);
                 if (refreshed is not null)
                 {
-                    _form = FormState.From(refreshed);
+                    _form = TemplateFormState.From(refreshed);
                     _toml = TemplateTomlMapper.ToToml(refreshed);
                     _editorMountedToml = _toml;
                     if (_editorId != 0 && _editorModule is not null)
                     {
-                        // setValue resets the editor's pristine baseline, so
-                        // markPristine here is mostly belt-and-braces — but
-                        // it also covers the case where the refreshed TOML
-                        // matches the editor doc exactly (setValue early-outs
-                        // and dirty would otherwise stay set).
                         await _editorModule.InvokeVoidAsync("setValue", _editorId, _toml);
                         await _editorModule.InvokeVoidAsync("markPristine", _editorId);
                     }
@@ -1432,11 +1330,8 @@
                 await Templates.CreateAsync(payload);
                 if (_editorId != 0 && _editorModule is not null)
                 {
-                    // The follow-up navigation is in-app and would trip the
-                    // location-changing guard if the editor is still dirty.
                     await _editorModule.InvokeVoidAsync("markPristine", _editorId);
                 }
-                // Back to the list so the admin sees the new row in context.
                 Nav.NavigateTo("/admin/templates");
                 return;
             }
@@ -1467,228 +1362,5 @@
         {
             _saving = false;
         }
-    }
-
-    /// <summary>
-    /// Mutable form-state mirror of <see cref="TemplateInput"/>. Lives in the
-    /// page so Razor's <c>@bind</c> can write into individual fields without
-    /// the per-keystroke record allocations a record-based form would need.
-    /// </summary>
-    private sealed class FormState
-    {
-        public string Key { get; set; } = string.Empty;
-        public string Runtime { get; set; } = string.Empty;
-        public string Name { get; set; } = string.Empty;
-        public string? Description { get; set; }
-        public string DefaultApplication { get; set; } = string.Empty;
-        public string DefaultPlatform { get; set; } = "1.0.0.0";
-        public string DefaultsJson { get; set; } = string.Empty;
-        public string AppSourceCopJson { get; set; } = string.Empty;
-        public int CoreIdRangeFrom { get; set; }
-        public int CoreIdRangeTo { get; set; }
-        public int ModuleIdRangeStart { get; set; }
-        public int ModuleIdRangeSize { get; set; }
-        public bool Deprecated { get; set; }
-        public List<FolderRow> Folders { get; } = new();
-
-        /// <summary>
-        /// Folders emitted into every generated module extension. Empty by
-        /// default — modules then ship with just app.json + AppSourceCop.json
-        /// + the static fallback folders until an admin opts in to extra
-        /// scaffolding.
-        /// </summary>
-        public List<FolderRow> ModuleFolders { get; } = new();
-
-        /// <summary>
-        /// Keys of modules pre-selected on the New Workspace form when this
-        /// template is picked. Order matters; the multi-select renders rows
-        /// in this order so admins can curate the visual hierarchy.
-        /// </summary>
-        public List<string> DefaultModuleKeys { get; } = new();
-
-        /// <summary>
-        /// Optional curated application-version key (Milestone P2.4). Empty
-        /// string means "no curated entry"; the form's free-text
-        /// DefaultApplication / runtime values are used at generation time.
-        /// </summary>
-        public string DefaultApplicationVersionKey { get; set; } = string.Empty;
-
-        public static FormState Blank()
-        {
-            var state = new FormState
-            {
-                DefaultsJson = JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson),
-                AppSourceCopJson = JsonSerializer.Serialize(new AppSourceCopSettings(), PrettyJson),
-                CoreIdRangeFrom = 90000,
-                CoreIdRangeTo = 90999,
-                ModuleIdRangeStart = 91000,
-                ModuleIdRangeSize = 200,
-            };
-            foreach (var path in TemplateTomlMapper.DefaultFolderPaths)
-            {
-                state.Folders.Add(new FolderRow { Path = path });
-                state.ModuleFolders.Add(new FolderRow { Path = path });
-            }
-            return state;
-        }
-
-        public static FormState From(RuntimeTemplate template)
-        {
-            var state = new FormState
-            {
-                Key = template.Key,
-                Runtime = template.Runtime,
-                Name = template.Name,
-                Description = template.Description,
-                DefaultApplication = template.DefaultApplication,
-                DefaultPlatform = template.DefaultPlatform,
-                DefaultsJson = JsonSerializer.Serialize(template.Defaults, PrettyJson),
-                AppSourceCopJson = JsonSerializer.Serialize(template.AppSourceCop, PrettyJson),
-                CoreIdRangeFrom = template.CoreIdRangeFrom,
-                CoreIdRangeTo = template.CoreIdRangeTo,
-                ModuleIdRangeStart = template.ModuleIdRangeStart,
-                ModuleIdRangeSize = template.ModuleIdRangeSize,
-                Deprecated = template.Deprecated,
-                DefaultApplicationVersionKey = template.DefaultApplicationVersion?.Key ?? string.Empty,
-            };
-            foreach (var f in template.Folders.OrderBy(f => f.Ordering))
-            {
-                var folderRow = new FolderRow { Path = f.Path };
-                foreach (var file in f.Files.OrderBy(x => x.Ordering))
-                {
-                    folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content });
-                }
-                state.Folders.Add(folderRow);
-            }
-            foreach (var f in template.ModuleFolders.OrderBy(f => f.Ordering))
-            {
-                var folderRow = new FolderRow { Path = f.Path };
-                foreach (var file in f.Files.OrderBy(x => x.Ordering))
-                {
-                    folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content });
-                }
-                state.ModuleFolders.Add(folderRow);
-            }
-            foreach (var d in template.DefaultModules.OrderBy(d => d.Ordering))
-            {
-                if (d.Module is not null)
-                {
-                    state.DefaultModuleKeys.Add(d.Module.Key);
-                }
-            }
-            return state;
-        }
-
-        /// <summary>
-        /// Mirror of <see cref="From"/> for the TOML → Form switch path:
-        /// hydrates a fresh <see cref="FormState"/> directly from the parsed
-        /// <see cref="TemplateInput"/>. The two builders converge on the same
-        /// shape so a switch round-trip is lossless apart from anything the
-        /// TOML schema deliberately omits (the Deprecated flag).
-        /// </summary>
-        public static FormState FromInput(TemplateInput input, bool currentDeprecated)
-        {
-            var state = new FormState
-            {
-                Key = input.Key,
-                Runtime = input.Runtime,
-                Name = input.Name,
-                Description = input.Description,
-                DefaultApplication = input.DefaultApplication,
-                DefaultPlatform = input.DefaultPlatform,
-                DefaultsJson = string.IsNullOrWhiteSpace(input.DefaultsJson)
-                    ? JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson)
-                    : Reformat(input.DefaultsJson, JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson)),
-                AppSourceCopJson = string.IsNullOrWhiteSpace(input.AppSourceCopJson)
-                    ? JsonSerializer.Serialize(new AppSourceCopSettings(), PrettyJson)
-                    : Reformat(input.AppSourceCopJson, JsonSerializer.Serialize(new AppSourceCopSettings(), PrettyJson)),
-                CoreIdRangeFrom = input.CoreIdRangeFrom,
-                CoreIdRangeTo = input.CoreIdRangeTo,
-                ModuleIdRangeStart = input.ModuleIdRangeStart,
-                ModuleIdRangeSize = input.ModuleIdRangeSize,
-                // TOML doesn't carry Deprecated (see TemplateTomlMapper.ToToml);
-                // preserve the structured form's value rather than zeroing it.
-                Deprecated = currentDeprecated,
-                DefaultApplicationVersionKey = input.DefaultApplicationVersionKey ?? string.Empty,
-            };
-            foreach (var f in input.Folders)
-            {
-                var folderRow = new FolderRow { Path = f.Path };
-                foreach (var file in f.Files)
-                {
-                    folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content });
-                }
-                state.Folders.Add(folderRow);
-            }
-            foreach (var f in input.ModuleFolders)
-            {
-                var folderRow = new FolderRow { Path = f.Path };
-                foreach (var file in f.Files)
-                {
-                    folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content });
-                }
-                state.ModuleFolders.Add(folderRow);
-            }
-            foreach (var key in input.DefaultModuleKeys)
-            {
-                state.DefaultModuleKeys.Add(key);
-            }
-            return state;
-        }
-
-        // Round-trip the JSON through the pretty-printer so the form's
-        // textareas show the same indentation regardless of how the TOML
-        // mapper serialised it. Falls back to the supplied default on
-        // anything we can't re-parse, which is more useful to the user
-        // than a stack trace at switch time.
-        private static string Reformat(string json, string fallback)
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(json);
-                return JsonSerializer.Serialize(doc.RootElement, PrettyJson);
-            }
-            catch (JsonException)
-            {
-                return fallback;
-            }
-        }
-
-        public TemplateInput ToInput() => new(
-            Key: Key,
-            Runtime: Runtime,
-            Name: Name,
-            Description: Description,
-            DefaultApplication: DefaultApplication,
-            DefaultPlatform: DefaultPlatform,
-            DefaultsJson: DefaultsJson,
-            AppSourceCopJson: AppSourceCopJson,
-            CoreIdRangeFrom: CoreIdRangeFrom,
-            CoreIdRangeTo: CoreIdRangeTo,
-            ModuleIdRangeStart: ModuleIdRangeStart,
-            ModuleIdRangeSize: ModuleIdRangeSize,
-            Deprecated: Deprecated,
-            DefaultModuleKeys: DefaultModuleKeys.ToList(),
-            Folders: Folders.Select(f => new TemplateFolderInput(
-                f.Path,
-                f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList(),
-            ModuleFolders: ModuleFolders.Select(f => new TemplateFolderInput(
-                f.Path,
-                f.Files.Select(x => new TemplateFileInput(x.Path, x.Content)).ToList())).ToList(),
-            DefaultApplicationVersionKey: string.IsNullOrWhiteSpace(DefaultApplicationVersionKey)
-                ? null
-                : DefaultApplicationVersionKey);
-    }
-
-    private sealed class FolderRow
-    {
-        public string Path { get; set; } = string.Empty;
-        public List<FileRow> Files { get; } = new();
-    }
-
-    private sealed class FileRow
-    {
-        public string Path { get; set; } = string.Empty;
-        public string Content { get; set; } = string.Empty;
     }
 }

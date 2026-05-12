@@ -7,10 +7,24 @@ namespace ALDevToolbox.Domain.Entities;
 public enum AuditEntityType
 {
     RuntimeTemplate,
+    /// <summary>
+    /// Pre-unified Core folder rows. Retained for historical audit-log reads
+    /// from databases that pre-date <c>UnifyExtensions</c>; new writes go to
+    /// <see cref="WorkspaceExtensionFolder"/>.
+    /// </summary>
     TemplateFolder,
+    /// <summary>Pre-unified Core file rows; see <see cref="TemplateFolder"/>.</summary>
     TemplateFile,
+    /// <summary>Pre-unified module folder rows; see <see cref="TemplateFolder"/>.</summary>
     TemplateModuleFolder,
+    /// <summary>Pre-unified module file rows; see <see cref="TemplateFolder"/>.</summary>
     TemplateModuleFile,
+    WorkspaceExtension,
+    WorkspaceExtensionFolder,
+    WorkspaceExtensionFile,
+    WorkspaceExtensionDependency,
+    ModuleExtensionFolder,
+    ModuleExtensionFile,
     RuntimeTemplateDefaultModule,
     Module,
     ModuleDependency,

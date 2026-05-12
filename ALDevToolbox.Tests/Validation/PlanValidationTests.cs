@@ -28,6 +28,7 @@ public sealed class PlanValidationTests : IDisposable
         var plan = new ProjectPlan(
             TemplateKey: string.Empty,
             WorkspaceName: string.Empty,
+            ExtensionPrefix: string.Empty,
             Brief: string.Empty,
             Description: string.Empty,
             ApplicationVersion: string.Empty,
@@ -35,7 +36,7 @@ public sealed class PlanValidationTests : IDisposable
             CoreIdRangeFrom: 0,
             CoreIdRangeTo: 0,
             IncludeExamples: false,
-            IncludeForNav: false,
+            SelectedExtensionPaths: Array.Empty<string>(),
             SelectedModuleKeys: Array.Empty<string>());
 
         var act = () => service.GenerateWorkspaceAsync(plan);

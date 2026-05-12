@@ -809,11 +809,14 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     border: 1px solid var(--color-border-strong);
     background: var(--color-surface);
     color: var(--color-text);
+    font-family: inherit;
     font-size: 13.5px;
     font-weight: 500;
+    line-height: 1.2;
     cursor: pointer;
     white-space: nowrap;
     text-decoration: none;
+    box-sizing: border-box;
 }
 
 .btn:hover { text-decoration: none; }
@@ -824,6 +827,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     background: var(--color-accent);
     border-color: var(--color-accent);
     color: white;
+    font-weight: 600;
 }
 
 .btn--primary:hover { background: var(--color-accent-hover); }
@@ -1982,6 +1986,63 @@ ul.form-field-error {
     min-height: 160px;
 }
 
+/* Buttons under a recursive folder's expanded body: "Add file" / "Add subfolder". */
+.folder-editor__add-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* Inline checkbox used inside a file-header row (Example toggle). */
+.check-row.check-row--inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0;
+    white-space: nowrap;
+    font-size: 13px;
+}
+
+/* Visual nesting cue for child folders inside the recursive editor. The
+   border-left tracks depth without indenting via padding so reorder buttons
+   stay flush with the parent's edge. */
+.folder-editor__row--depth-1 { border-left: 2px solid var(--color-border-strong, var(--color-border)); }
+.folder-editor__row--depth-2 { border-left: 2px solid var(--color-border-strong, var(--color-border)); margin-left: 4px; }
+.folder-editor__row--depth-3 { border-left: 2px solid var(--color-border-strong, var(--color-border)); margin-left: 8px; }
+
+/* Extension list — each extension is a folder-editor-style row with a richer
+   body of nested sections (metadata, dependencies, folders). */
+.extension-editor__list {
+    gap: 16px;
+}
+
+.extension-editor__row {
+    background: var(--color-bg);
+}
+
+.extension-editor__body {
+    border-top: 1px solid var(--color-border);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: var(--color-surface);
+}
+
+.extension-editor__body .form-section { margin: 0; }
+
+/* Dependency-row body uses the existing dep-editor__fields grid; this rule
+   adds the per-row select+remove header spacing without touching that grid. */
+.dep-row .folder-editor__path select {
+    width: 100%;
+    padding: 6px 8px;
+    font-size: 13px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-bg);
+    color: var(--color-text);
+}
+
 /* Per-row field grid used by the module dependency editor and the catalogue
    editor. Sits inside a .folder-editor__row beneath the GUID/order/remove
    header so the four metadata fields wrap predictably on narrow viewports. */
@@ -2217,27 +2278,29 @@ ul.form-field-error {
     font-size: 0.75em;
     padding: 1px 6px;
     border-radius: 8px;
-    background: #f6f8fa;
-    color: #6e7681;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-muted);
 }
 
 .snippet-card__description {
     margin: 8px 0;
-    color: var(--color-muted, #57606a);
+    color: var(--color-text-muted);
 }
 
 .snippet-card__keywords {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 6px;
 }
 
 .snippet-card__keyword {
     font-size: 0.75em;
-    padding: 2px 6px;
+    padding: 2px 8px;
     border-radius: 8px;
-    background: #f6f8fa;
-    color: #57606a;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-muted);
 }
 
 .snippet-detail__header {
@@ -2252,6 +2315,14 @@ ul.form-field-error {
     margin: 8px 0 16px;
 }
 
+.snippet-detail .snippet-card__keywords {
+    margin-bottom: 20px;
+}
+
+.snippet-detail h2 {
+    margin-top: 8px;
+}
+
 .snippet-detail__files {
     list-style: none;
     padding: 0;
@@ -2260,9 +2331,10 @@ ul.form-field-error {
 }
 
 .snippet-file-view {
-    border: 1px solid var(--color-border, #d0d7de);
+    border: 1px solid var(--color-border);
     border-radius: 6px;
     overflow: hidden;
+    background: var(--color-surface);
 }
 
 .snippet-file-view__header {
@@ -2270,8 +2342,15 @@ ul.form-field-error {
     justify-content: space-between;
     align-items: center;
     padding: 6px 12px;
-    background: #f6f8fa;
-    border-bottom: 1px solid var(--color-border, #d0d7de);
+    background: var(--color-bg);
+    color: var(--color-text);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.snippet-file-view__header code {
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
 }
 
 .snippet-file-view__content {
@@ -2348,6 +2427,11 @@ ul.form-field-error {
     display: flex;
     gap: 4px;
     flex: 0 0 auto;
+}
+
+.snippet-file__actions .btn {
+    height: 34px;
+    padding: 0 10px;
 }
 
 .snippet-file__content {
