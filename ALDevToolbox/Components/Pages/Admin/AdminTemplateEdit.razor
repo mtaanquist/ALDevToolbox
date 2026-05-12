@@ -373,23 +373,28 @@
                                                @bind="row.Path" @bind:event="oninput" />
                                         <FieldError Field="@($"Folders[{index}].Path")" Errors="_fieldErrors" />
                                     </div>
-                                    <button type="button" class="btn btn--sm" @onclick="() => ToggleFolderExpanded(index)"
-                                            title="@(IsFolderExpanded(index) ? "Hide files" : "Show files")">
-                                        <Icon Name="@(IsFolderExpanded(index) ? "chevron-up" : "chevron-down")" Width="12" Height="12" />
-                                        <span>@(row.Files.Count == 0 ? "No files" : $"{row.Files.Count} file{(row.Files.Count == 1 ? "" : "s")}")</span>
-                                    </button>
+                                    @if (row.Files.Count > 0)
+                                    {
+                                        <button type="button" class="btn btn--sm" @onclick="() => ToggleFolderExpanded(index)"
+                                                title="@(IsFolderExpanded(index) ? "Hide files" : "Show files")">
+                                            <Icon Name="@(IsFolderExpanded(index) ? "chevron-up" : "chevron-down")" Width="12" Height="12" />
+                                            <span>@($"{row.Files.Count} file{(row.Files.Count == 1 ? "" : "s")}")</span>
+                                        </button>
+                                    }
                                     <button type="button" class="btn btn--sm" @onclick="() => RemoveFolder(index)" title="Remove folder">
                                         <Icon Name="trash-2" Width="12" Height="12" />
                                     </button>
                                 </div>
 
-                                @if (IsFolderExpanded(index))
+                                @* Empty folders always show the editor so 'Add file' is one click away. *@
+                                @if (row.Files.Count == 0 || IsFolderExpanded(index))
                                 {
                                     <div class="folder-editor__files">
                                         @if (row.Files.Count == 0)
                                         {
                                             <p class="muted folder-editor__files-empty">
-                                                No files. The generator emits a single <code>.gitkeep</code> for empty folders.
+                                                No files yet. The generator emits a single <code>.gitkeep</code> for empty folders;
+                                                click <strong>Add file</strong> to seed one.
                                             </p>
                                         }
                                         @for (var j = 0; j < row.Files.Count; j++)
@@ -480,23 +485,28 @@
                                                @bind="row.Path" @bind:event="oninput" />
                                         <FieldError Field="@($"ModuleFolders[{index}].Path")" Errors="_fieldErrors" />
                                     </div>
-                                    <button type="button" class="btn btn--sm" @onclick="() => ToggleModuleFolderExpanded(index)"
-                                            title="@(IsModuleFolderExpanded(index) ? "Hide files" : "Show files")">
-                                        <Icon Name="@(IsModuleFolderExpanded(index) ? "chevron-up" : "chevron-down")" Width="12" Height="12" />
-                                        <span>@(row.Files.Count == 0 ? "No files" : $"{row.Files.Count} file{(row.Files.Count == 1 ? "" : "s")}")</span>
-                                    </button>
+                                    @if (row.Files.Count > 0)
+                                    {
+                                        <button type="button" class="btn btn--sm" @onclick="() => ToggleModuleFolderExpanded(index)"
+                                                title="@(IsModuleFolderExpanded(index) ? "Hide files" : "Show files")">
+                                            <Icon Name="@(IsModuleFolderExpanded(index) ? "chevron-up" : "chevron-down")" Width="12" Height="12" />
+                                            <span>@($"{row.Files.Count} file{(row.Files.Count == 1 ? "" : "s")}")</span>
+                                        </button>
+                                    }
                                     <button type="button" class="btn btn--sm" @onclick="() => RemoveModuleFolder(index)" title="Remove folder">
                                         <Icon Name="trash-2" Width="12" Height="12" />
                                     </button>
                                 </div>
 
-                                @if (IsModuleFolderExpanded(index))
+                                @* Empty folders always show the editor so 'Add file' is one click away. *@
+                                @if (row.Files.Count == 0 || IsModuleFolderExpanded(index))
                                 {
                                     <div class="folder-editor__files">
                                         @if (row.Files.Count == 0)
                                         {
                                             <p class="muted folder-editor__files-empty">
-                                                No files. The generator emits a single <code>.gitkeep</code> for empty folders.
+                                                No files yet. The generator emits a single <code>.gitkeep</code> for empty folders;
+                                                click <strong>Add file</strong> to seed one.
                                             </p>
                                         }
                                         @for (var j = 0; j < row.Files.Count; j++)
