@@ -6,30 +6,20 @@ using FluentAssertions;
 namespace ALDevToolbox.Tests.Toml;
 
 /// <summary>
-/// Tolerance tests for <see cref="TemplateTomlMapper.FromToml"/>: real-world
-/// authored TOML often carries fields that the current schema doesn't model
-/// — leftovers from the pre-unified shape, deployment-specific extras, or
-/// pasted-in `[workspace]` blocks. The mapper must drop the unknowns and
-/// surface the values that *are* modelled, not throw.
+/// Pins <see cref="TemplateTomlMapper.FromToml"/> against a real-world
+/// customer-style template: three extensions (required Core, required Hotfix,
+/// module-cloned Document Capture), each with its own folder tree, plus a
+/// module-key dependency on the catalogue's <c>continia-doc-capture</c>.
+/// Mirrors the shape an admin would actually paste into the TOML editor
+/// once the unified-extensions model is in production.
 /// </summary>
 public sealed class TemplateTomlMapperToleranceTests
 {
-    /// <summary>
-    /// A real customer-style template carried over from the pre-unified
-    /// branch: Core + Hotfix + a module-cloned Document Capture extension,
-    /// each with its own folder tree. Also carries three artefacts the new
-    /// schema doesn't model — <c>[template].default_application</c>,
-    /// <c>[template].default_platform</c>, the <c>[[defaults.modules]]</c>
-    /// array, and a <c>[workspace]</c> block — to pin that the mapper
-    /// tolerates them silently rather than refusing the whole document.
-    /// </summary>
-    private const string CustomerTemplateToml = """"
+    private const string CustomerTemplateToml = """
 [template]
 key = "runtime-new"
 runtime = "0"
 name = ""
-default_application = ""
-default_platform = "1.0.0.0"
 core_id_range_from = 90000
 core_id_range_to = 90999
 module_id_range_start = 91000
@@ -51,31 +41,6 @@ platform = "1.0.0.0"
 allowDebugging = false
 allowDownloadingSource = false
 includeSourceInSymbolFile = false
-
-[[defaults.modules]]
-
-[workspace]
-content = """
-{
-  "folders": [
-{{paths}}
-  ],
-  "settings": {
-    "editor.formatOnSave": true,
-    "editor.autoIndent": "full",
-    "editor.detectIndentation": false,
-    "editor.tabSize": 4,
-    "editor.insertSpaces": true,
-    "al.codeAnalyzers": [
-      "${CodeCop}",
-      "${PerTenantExtensionCop}",
-      "${UICop}"
-    ],
-    "al.enableCodeAnalysis": true,
-    "al.ruleSetPath": "../.assets/rulesets/Company.ruleset.json"
-  }
-}
-"""
 
 [[extensions]]
 name = "{{extension_prefix}} Core"
@@ -160,17 +125,14 @@ path = "codeunits"
 
 [[extensions.folders.folders]]
 path = "pageextensions"
-"""";
+""";
 
     [Fact]
-    public void Customer_template_with_pre_unified_leftovers_parses_cleanly()
+    public void Customer_template_parses_metadata_and_defaults()
     {
         var parsed = TemplateTomlMapper.FromToml(CustomerTemplateToml, deprecated: false);
 
         parsed.Key.Should().Be("runtime-new");
-        // The pre-unified default_application / default_platform at the
-        // [template] level are silently dropped (they live in [defaults] now);
-        // the values from [defaults] should win.
         var defaults = JsonSerializer.Deserialize<TemplateDefaults>(parsed.DefaultsJson)!;
         defaults.Application.Should().Be("27.5.0.0");
         defaults.Platform.Should().Be("1.0.0.0");
@@ -180,8 +142,13 @@ path = "pageextensions"
         defaults.Publisher.Should().Be("Test Publisher");
         defaults.Features.Should().Equal("TranslationFile", "NoImplicitWith");
         defaults.SupportedLocales.Should().Equal("en-US", "da-DK");
+    }
 
-        // Three extensions with the expected paths.
+    [Fact]
+    public void Customer_template_parses_three_extensions_with_substituting_name_templates()
+    {
+        var parsed = TemplateTomlMapper.FromToml(CustomerTemplateToml, deprecated: false);
+
         parsed.Extensions.Should().HaveCount(3);
         parsed.Extensions.Select(e => e.Path).Should().Equal("Core", "Hotfix", "DocumentCapture");
         parsed.Extensions.Select(e => e.NameTemplate).Should().Equal(
@@ -195,22 +162,22 @@ path = "pageextensions"
     {
         var parsed = TemplateTomlMapper.FromToml(CustomerTemplateToml, deprecated: false);
 
-        // Core: three root folders, with src/ carrying the full AL sub-tree.
         var core = parsed.Extensions.Single(e => e.Path == "Core");
         core.Folders.Select(f => f.Path).Should().Equal("permissionsets", "translations", "src");
-        var src = core.Folders.Single(f => f.Path == "src");
-        src.Folders.Select(f => f.Path).Should().Equal(
-            "api", "codeunits", "enums",
-            "pageextensions", "pages", "queries",
-            "reportextensions", "reports",
-            "tableextensions", "tables");
+        // Per TOML semantics, [[extensions.folders.folders]] appends to the most
+        // recently opened [[extensions.folders]] — so api/codeunits/… all nest
+        // under src/, not at the extension root.
+        core.Folders.Single(f => f.Path == "src").Folders
+            .Select(f => f.Path).Should().Equal(
+                "api", "codeunits", "enums",
+                "pageextensions", "pages", "queries",
+                "reportextensions", "reports",
+                "tableextensions", "tables");
 
-        // Hotfix: src/ with the codeunits + pageextensions slimmed-down sub-tree.
         var hotfix = parsed.Extensions.Single(e => e.Path == "Hotfix");
         hotfix.Folders.Single(f => f.Path == "src").Folders
             .Select(f => f.Path).Should().Equal("codeunits", "pageextensions");
 
-        // Document Capture: same slim sub-tree, plus a module-key dependency.
         var docCapture = parsed.Extensions.Single(e => e.Path == "DocumentCapture");
         docCapture.Folders.Single(f => f.Path == "src").Folders
             .Select(f => f.Path).Should().Equal("codeunits", "pageextensions");
