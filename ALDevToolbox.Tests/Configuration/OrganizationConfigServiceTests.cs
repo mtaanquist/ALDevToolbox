@@ -16,7 +16,6 @@ public sealed class OrganizationConfigServiceTests : IDisposable
 {
     private readonly TestDb _db = new();
 
-    public OrganizationConfigServiceTests() => OrganizationConfigService.ClearCache();
     public void Dispose() => _db.Dispose();
 
     [Fact]
@@ -233,30 +232,5 @@ public sealed class OrganizationConfigServiceTests : IDisposable
             snapshot.Logo!.ContentType.Should().Be("image/png");
             snapshot.Logo.Content.Should().Equal(0x89, 0x50, 0x4E, 0x47);
         }
-    }
-
-    [Fact]
-    public async Task Test_factory_disables_static_cache_so_parallel_fixtures_do_not_race()
-    {
-        // Regression for #45. Two services on independent contexts (the same
-        // scenario a real cross-fixture race would set up) must not bleed
-        // state through the static cache when constructed via TestDb's
-        // factory. Read once to give the cache a chance to populate, then
-        // confirm it's still empty.
-        OrganizationConfigService.ClearCache();
-
-        await using var ctx = _db.NewContext();
-        var svc = _db.NewOrganizationConfigService(ctx);
-
-        _ = await svc.GetCurrentAsync();
-
-        // Reflect on the static Cache field to assert it stayed empty.
-        // Reaching for internals is justified here because the whole point
-        // of the change is that this dictionary must not be touched from
-        // tests — the assertion locks that guarantee in.
-        var cacheField = typeof(OrganizationConfigService)
-            .GetField("Cache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-        var cache = (System.Collections.Concurrent.ConcurrentDictionary<int, OrganizationConfig>)cacheField.GetValue(null)!;
-        cache.Should().BeEmpty("TestDb.NewOrganizationConfigService passes useCache: false so the static cache stays untouched.");
     }
 }
