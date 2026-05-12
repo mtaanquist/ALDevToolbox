@@ -6,6 +6,7 @@
 @inject WorkspaceConfigService Configs
 @inject OrganizationConfigService OrgConfig
 @inject ILogger<NewExtension> Logger
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 
@@ -326,6 +327,12 @@
         _templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
         _catalog = await Templates.GetCatalogAsync();
         _modules = await Templates.GetModulesAsync(includeDeprecated: false);
+        // Folder/file trees aren't pulled by the default reads — load them on
+        // top so the standalone preview can walk the template's scaffold
+        // extension and the sibling-workspace preview can render real module
+        // trees alongside the new extension.
+        await Templates.HydrateExtensionFolderTreeAsync(_templates);
+        await Templates.HydrateModuleExtensionFolderTreeAsync(_modules);
         _applicationVersions = await Versions.GetActiveAsync(includeDeprecated: false);
         _orgConfig = await OrgConfig.GetCurrentAsync();
         // Prefer the per-org default template; fall back to the first row so
@@ -412,7 +419,18 @@
 
     private PreviewNode BuildExtensionPreview()
     {
-        return PreviewTreeBuilder.SortForDisplay(BuildExtensionNode(FolderName, isCore: false, isNew: false));
+        // The generator scaffolds a standalone extension from the picked
+        // template's first required WorkspaceExtension — see
+        // GenerationService.GenerateExtensionAsync. Reflect that in the
+        // preview so the user sees the folder tree they'll actually get.
+        var scaffold = _selected?.WorkspaceExtensions
+            .Where(e => e.Required)
+            .OrderBy(e => e.Ordering)
+            .FirstOrDefault();
+        var folders = scaffold?.Folders ?? new List<WorkspaceExtensionFolder>();
+        var contents = ExtensionPreviewBuilder.BuildContents(folders, _includeExamples);
+        var node = PreviewNode.Extension(FolderName, contents);
+        return PreviewTreeBuilder.SortForDisplay(node);
     }
 
     private PreviewNode BuildSiblingWorkspacePreview(WorkspaceImportContext context)
@@ -428,8 +446,23 @@
                 PreviewNode.Folder("images", new[] { PreviewNode.File("logo.png") }),
                 PreviewNode.Folder("rulesets", new[] { PreviewNode.File("Company.ruleset.json") }),
             }),
-            BuildExtensionNode("Core", isCore: true, isNew: false),
         };
+
+        // Required template extensions land on every generated workspace. We
+        // don't know which optionals the original workspace included, so only
+        // the required set is rendered — matches what an empty WorkspaceFolders
+        // list would imply.
+        if (_selected is not null)
+        {
+            foreach (var ext in _selected.WorkspaceExtensions
+                .Where(e => e.Required)
+                .OrderBy(e => e.Ordering))
+            {
+                children.Add(PreviewNode.Extension(
+                    ext.Path,
+                    ExtensionPreviewBuilder.BuildContents(ext.Folders, _includeExamples)));
+            }
+        }
 
         // Modules from the imported workspace, in the order they were saved.
         // Unknown / soft-deleted module keys silently drop off — same rule as
@@ -440,13 +473,17 @@
             {
                 var module = _modules.FirstOrDefault(m => m.Key == key);
                 if (module is null) continue;
-                children.Add(BuildExtensionNode(StripWhitespace(module.Name), isCore: false, isNew: false));
+                children.Add(PreviewNode.Extension(
+                    module.Key,
+                    ExtensionPreviewBuilder.BuildContents(module.ExtensionFolders, _includeExamples)));
             }
         }
 
-        // The new sibling extension we're about to generate, marked so the
-        // renderer can label it.
-        children.Add(BuildExtensionNode(FolderName, isCore: false, isNew: true));
+        // The new sibling extension we're about to generate. Reuses the
+        // standalone-extension scaffold so the folder tree matches what the
+        // generator will emit; the IsNew flag lets the renderer label it.
+        var newNode = BuildExtensionPreview() with { IsNew = true };
+        children.Add(newNode);
 
         children.Add(PreviewNode.File($"{rootName}.code-workspace"));
         children.Add(PreviewNode.File(".gitignore"));
@@ -454,43 +491,6 @@
 
         return PreviewTreeBuilder.SortForDisplay(
             new PreviewNode(rootName, PreviewNodeKind.Workspace, children));
-    }
-
-    /// <summary>
-    /// Builds one extension folder for the preview. Per-extension folder tree
-    /// is sourced from the unified <see cref="WorkspaceExtension"/> /
-    /// <see cref="ModuleExtensionFolder"/> graph; the preview-side walk is
-    /// pending the Issue #54 generator rewrite. For now the preview shows only
-    /// app.json + AppSourceCop.json + the static fallback folders.
-    /// </summary>
-    private PreviewNode BuildExtensionNode(string folderName, bool isCore, bool isNew)
-    {
-        var contents = new List<PreviewNode>
-        {
-            PreviewNode.File("app.json"),
-            PreviewNode.File("AppSourceCop.json"),
-        };
-
-        AddFallbackFolder(contents, "libs");
-        AddFallbackFolder(contents, "permissionsets");
-        AddFallbackFolder(contents, "Translations");
-
-        var node = PreviewNode.Extension(folderName, contents);
-        return isNew ? node with { IsNew = true } : node;
-    }
-
-    /// <summary>
-    /// Adds <paramref name="name"/> as a placeholder folder unless the preview
-    /// already shows a folder whose top-level segment matches case-insensitively.
-    /// </summary>
-    private static void AddFallbackFolder(List<PreviewNode> contents, string name)
-    {
-        if (contents.Any(n => n.Kind != PreviewNodeKind.File
-                              && string.Equals(n.Name, name, StringComparison.OrdinalIgnoreCase)))
-        {
-            return;
-        }
-        contents.Add(PreviewNode.Folder(name, new[] { PreviewNode.File(".gitkeep") }));
     }
 
     private static string StripWhitespace(string value) =>
