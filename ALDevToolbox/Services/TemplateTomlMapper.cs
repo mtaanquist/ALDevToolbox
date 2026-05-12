@@ -289,7 +289,10 @@ public static class TemplateTomlMapper
     /// <summary>
     /// Builds a starter TOML document for the New Template flow. Mirrors the
     /// structure of a fresh <c>template.toml</c> but with placeholder values so
-    /// the admin can edit and save in one step.
+    /// the admin can edit and save in one step. The starter pre-declares the
+    /// <c>libs</c>, <c>permissionsets</c> and <c>Translations</c> folders for
+    /// both Core and module extensions so the preview pane shows the standard
+    /// AL layout immediately — admins can delete entries they don't want.
     /// </summary>
     public static string BlankToml()
     {
@@ -309,6 +312,38 @@ public static class TemplateTomlMapper
                 ModuleIdRangeSize = 200,
             },
         };
-        return TomlSerializer.Serialize(seed, TomlOptions);
+
+        var head = TomlSerializer.Serialize(seed, TomlOptions);
+        head = EmptyFoldersLineRegex.Replace(head, string.Empty).TrimEnd();
+
+        var sb = new StringBuilder(head);
+        foreach (var path in DefaultFolderPaths)
+        {
+            sb.AppendLine();
+            sb.AppendLine();
+            sb.AppendLine("[[folders]]");
+            sb.Append("path = ").AppendLine(TomlBasicString(path));
+        }
+        foreach (var path in DefaultFolderPaths)
+        {
+            sb.AppendLine();
+            sb.AppendLine();
+            sb.AppendLine("[[module_folders]]");
+            sb.Append("path = ").AppendLine(TomlBasicString(path));
+        }
+        sb.AppendLine();
+        return sb.ToString();
     }
+
+    /// <summary>
+    /// Folder paths pre-declared in a new template. Kept in sync with
+    /// <c>AdminTemplateEdit.FormState.Blank()</c> so the structured and TOML
+    /// views render the same preview on a fresh template.
+    /// </summary>
+    public static readonly IReadOnlyList<string> DefaultFolderPaths = new[]
+    {
+        "libs",
+        "permissionsets",
+        "Translations",
+    };
 }

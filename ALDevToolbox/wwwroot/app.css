@@ -1772,6 +1772,70 @@ ul.form-field-error {
     font-size: 12px;
 }
 
+/* Collapsible variant used on the admin template editor: the <details>
+   element gets the card chrome, the <summary> becomes the clickable header,
+   and content sits in a padded body div. Keeps the card padding consistent
+   whether the panel is open or closed. */
+.preview-card--collapsible {
+    padding: 0;
+    max-height: none;
+    overflow: visible;
+}
+
+.preview-card__summary {
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-secondary);
+}
+
+.preview-card__summary::-webkit-details-marker { display: none; }
+
+.preview-card__summary::before {
+    content: "";
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 4px 0 4px 6px;
+    border-color: transparent transparent transparent currentColor;
+    transition: transform 0.15s ease;
+}
+
+.preview-card--collapsible[open] > .preview-card__summary::before {
+    transform: rotate(90deg);
+}
+
+.preview-card__body {
+    padding: 0 16px 14px;
+}
+
+.preview-card--scroll[open] {
+    max-height: calc(100vh - 200px);
+    overflow: auto;
+}
+
+.mustache-vars {
+    margin: 0;
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 12px;
+    row-gap: 6px;
+    font-size: 12px;
+}
+
+.mustache-vars dt { margin: 0; }
+.mustache-vars dt code { font-size: 12px; white-space: nowrap; }
+.mustache-vars dd { margin: 0; color: var(--color-text-muted); }
+.mustache-vars dd code { font-size: 11px; }
+
 .admin-template-edit__form { max-width: 880px; }
 
 .admin-template-edit__mode {

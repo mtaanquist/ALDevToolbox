@@ -144,6 +144,25 @@ public class TemplateTomlMapperTests
     }
 
     [Fact]
+    public void Blank_toml_round_trips_with_default_folders_in_both_lists()
+    {
+        // The New Template flow seeds the editor with BlankToml(). The starter
+        // must parse cleanly and carry the libs/permissionsets/Translations
+        // folders in both [[folders]] and [[module_folders]] so the preview pane
+        // shows the standard AL layout without the page synthesising fallback
+        // folders.
+        var toml = TemplateTomlMapper.BlankToml();
+
+        var input = TemplateTomlMapper.FromToml(toml, deprecated: false);
+
+        input.Key.Should().Be("runtime-new");
+        input.Folders.Select(f => f.Path).Should().Equal(TemplateTomlMapper.DefaultFolderPaths);
+        input.ModuleFolders.Select(f => f.Path).Should().Equal(TemplateTomlMapper.DefaultFolderPaths);
+        input.Folders.Should().OnlyContain(f => f.Files.Count == 0);
+        input.ModuleFolders.Should().OnlyContain(f => f.Files.Count == 0);
+    }
+
+    [Fact]
     public void Malformed_toml_throws_with_line_columns()
     {
         const string toml = "this is = not = valid = toml";

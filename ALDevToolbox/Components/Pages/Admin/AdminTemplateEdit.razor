@@ -568,17 +568,46 @@
                 }
             </div>
             <aside class="admin-template-edit__preview">
-                <section class="preview-card">
-                    <div class="section-label">Preview</div>
-                    @if (_mode == EditorMode.Toml)
-                    {
+                <details class="preview-card preview-card--collapsible" open>
+                    <summary class="preview-card__summary">Mustache variables</summary>
+                    <div class="preview-card__body">
                         <p class="muted preview-card__hint">
-                            Showing the last form-side state. Switch back to the
-                            structured form to refresh.
+                            Substituted into file contents at generation time.
+                            Unknown placeholders are left as-is and logged.
                         </p>
-                    }
-                    <FolderTreePreview Root="BuildPreview()" />
-                </section>
+                        <dl class="mustache-vars">
+                            <dt><code>@("{{name}}")</code></dt>
+                            <dd>Full extension name (e.g. "Acme Customer Core").</dd>
+                            <dt><code>@("{{workspaceName}}")</code></dt>
+                            <dd>Workspace name as entered on New Workspace.</dd>
+                            <dt><code>@("{{shortName}}")</code></dt>
+                            <dd>Workspace name with spaces removed.</dd>
+                            <dt><code>@("{{moduleName}}")</code></dt>
+                            <dd>Module name; equals the workspace name in the Core extension.</dd>
+                            <dt><code>@("{{publisher}}")</code></dt>
+                            <dd>From <code>[defaults] publisher</code>.</dd>
+                            <dt><code>@("{{prefix}}")</code></dt>
+                            <dd>From <code>[appSourceCop] mandatoryPrefix</code>.</dd>
+                            <dt><code>@("{{namespace}}")</code></dt>
+                            <dd>Current folder path with <code>/</code> replaced by <code>.</code>.</dd>
+                            <dt><code>@("{{guid}}")</code></dt>
+                            <dd>Freshly generated GUID per occurrence.</dd>
+                        </dl>
+                    </div>
+                </details>
+                <details class="preview-card preview-card--collapsible preview-card--scroll" open>
+                    <summary class="preview-card__summary">Preview</summary>
+                    <div class="preview-card__body">
+                        @if (_mode == EditorMode.Toml)
+                        {
+                            <p class="muted preview-card__hint">
+                                Showing the last form-side state. Switch back to the
+                                structured form to refresh.
+                            </p>
+                        }
+                        <FolderTreePreview Root="BuildPreview()" />
+                    </div>
+                </details>
             </aside>
         </div>
     }
@@ -1286,11 +1315,14 @@
     }
 
     /// <summary>
-    /// Folder-tree preview for the right column. Shows what generation would
-    /// emit per extension at the current form state — Core uses the Core
-    /// folder list, a representative <c>Module</c> entry uses the module
-    /// folder list. Files appear under their folders so admins can see their
-    /// scaffolding take shape as they edit. The preview is always built from
+    /// Folder-tree preview for the right column. Reflects only what's declared
+    /// in the template itself: Core uses the Core folder list; a representative
+    /// <c>Module</c> entry is added only when module folders are declared. The
+    /// generator's unconditional scaffolding (<c>libs</c>, <c>permissionsets</c>,
+    /// <c>Translations</c>) is *not* drawn here — admins start from a non-empty
+    /// template (see <see cref="TemplateTomlMapper.DefaultFolderPaths"/>), so
+    /// those folders are visible because the template declares them, not
+    /// because the preview synthesises them. The preview is always built from
     /// <c>_form</c>; in TOML mode it reflects the last validated form state
     /// rather than each keystroke (a switch back to Form parses and refreshes).
     /// </summary>
@@ -1306,8 +1338,11 @@
         var children = new List<PreviewNode>
         {
             BuildExtensionPreview("Core", _form.Folders),
-            BuildExtensionPreview("Module", _form.ModuleFolders),
         };
+        if (_form.ModuleFolders.Count > 0)
+        {
+            children.Add(BuildExtensionPreview("Module", _form.ModuleFolders));
+        }
 
         return PreviewTreeBuilder.SortForDisplay(
             new PreviewNode(rootName, PreviewNodeKind.Workspace, children));
@@ -1335,24 +1370,7 @@
             });
         contents.AddRange(PreviewTreeBuilder.BuildFolderChildren(entries));
 
-        // Static fallback folders the generator always emits if the template
-        // didn't already declare them. Mirrors NewWorkspace.razor so the two
-        // previews agree on what the ZIP will look like.
-        AddFallbackFolder(contents, "libs");
-        AddFallbackFolder(contents, "permissionsets");
-        AddFallbackFolder(contents, "Translations");
-
         return PreviewNode.Extension(name, contents);
-    }
-
-    private static void AddFallbackFolder(List<PreviewNode> contents, string name)
-    {
-        if (contents.Any(n => n.Kind != PreviewNodeKind.File
-                              && string.Equals(n.Name, name, StringComparison.OrdinalIgnoreCase)))
-        {
-            return;
-        }
-        contents.Add(PreviewNode.Folder(name, new[] { PreviewNode.File(".gitkeep") }));
     }
 
     private async Task SaveTomlAsync()
@@ -1495,15 +1513,24 @@
         /// </summary>
         public string DefaultApplicationVersionKey { get; set; } = string.Empty;
 
-        public static FormState Blank() => new()
+        public static FormState Blank()
         {
-            DefaultsJson = JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson),
-            AppSourceCopJson = JsonSerializer.Serialize(new AppSourceCopSettings(), PrettyJson),
-            CoreIdRangeFrom = 90000,
-            CoreIdRangeTo = 90999,
-            ModuleIdRangeStart = 91000,
-            ModuleIdRangeSize = 200,
-        };
+            var state = new FormState
+            {
+                DefaultsJson = JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson),
+                AppSourceCopJson = JsonSerializer.Serialize(new AppSourceCopSettings(), PrettyJson),
+                CoreIdRangeFrom = 90000,
+                CoreIdRangeTo = 90999,
+                ModuleIdRangeStart = 91000,
+                ModuleIdRangeSize = 200,
+            };
+            foreach (var path in TemplateTomlMapper.DefaultFolderPaths)
+            {
+                state.Folders.Add(new FolderRow { Path = path });
+                state.ModuleFolders.Add(new FolderRow { Path = path });
+            }
+            return state;
+        }
 
         public static FormState From(RuntimeTemplate template)
         {
