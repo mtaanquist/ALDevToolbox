@@ -336,67 +336,10 @@ app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen
     }
 }).RequireAuthorization();
 
-// /admin/configuration/* — endpoints behind the admin configuration page.
-// Each section posts independently so the user can save Defaults, Logo and
-// Files in isolation; failure on one section doesn't roll back the others.
-app.MapPost("/admin/configuration/settings", async (
-    HttpContext ctx, OrganizationConfigService config, IAntiforgery antiforgery, CancellationToken ct) =>
-{
-    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
-    var form = await ctx.Request.ReadFormAsync(ct);
-    var input = new OrganizationSettingsInput(
-        DefaultPublisher: form["DefaultPublisher"].ToString().Trim(),
-        DefaultIdRangeFrom: int.TryParse(form["DefaultIdRangeFrom"], out var from) ? from : 0,
-        DefaultIdRangeTo: int.TryParse(form["DefaultIdRangeTo"], out var to) ? to : 0,
-        DefaultBrief: form["DefaultBrief"].ToString().Trim(),
-        DefaultCoreDescription: form["DefaultCoreDescription"].ToString().Trim());
-    try
-    {
-        await config.SaveSettingsAsync(input, ct);
-        ctx.Response.Redirect("/admin/configuration?ok=settings");
-    }
-    catch (PlanValidationException ex)
-    {
-        var first = ex.Errors.First();
-        ctx.Response.Redirect(
-            $"/admin/configuration?err={Uri.EscapeDataString(first.Key)}&msg={Uri.EscapeDataString(first.Value)}");
-    }
-}).RequireAuthorization(policy => policy.RequireRole("Admin"));
-
-app.MapPost("/admin/configuration/logo", async (
-    HttpContext ctx, OrganizationConfigService config, IAntiforgery antiforgery, CancellationToken ct) =>
-{
-    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
-    var form = await ctx.Request.ReadFormAsync(ct);
-    var file = form.Files["Logo"];
-    if (file is null || file.Length == 0)
-    {
-        ctx.Response.Redirect("/admin/configuration?err=Logo&msg=" + Uri.EscapeDataString("Pick a logo file to upload."));
-        return;
-    }
-    using var ms = new MemoryStream();
-    await file.CopyToAsync(ms, ct);
-    try
-    {
-        await config.UploadLogoAsync(file.ContentType ?? string.Empty, ms.ToArray(), ct);
-        ctx.Response.Redirect("/admin/configuration?ok=logo");
-    }
-    catch (PlanValidationException ex)
-    {
-        var first = ex.Errors.First();
-        ctx.Response.Redirect(
-            $"/admin/configuration?err={Uri.EscapeDataString(first.Key)}&msg={Uri.EscapeDataString(first.Value)}");
-    }
-}).RequireAuthorization(policy => policy.RequireRole("Admin"));
-
-app.MapPost("/admin/configuration/logo/revert", async (
-    HttpContext ctx, OrganizationConfigService config, IAntiforgery antiforgery, CancellationToken ct) =>
-{
-    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
-    await config.RevertLogoAsync(ct);
-    ctx.Response.Redirect("/admin/configuration?ok=logo-reverted");
-}).RequireAuthorization(policy => policy.RequireRole("Admin"));
-
+// /admin/configuration/logo/preview serves the current org's logo bytes so
+// the configuration page can display the existing logo. The page itself
+// commits its edits (settings, files, logo bytes) through Blazor service
+// calls, so there are no per-section POST endpoints any more.
 app.MapGet("/admin/configuration/logo/preview", async (
     HttpContext ctx, OrganizationConfigService config, CancellationToken ct) =>
 {
@@ -407,12 +350,14 @@ app.MapGet("/admin/configuration/logo/preview", async (
         return;
     }
     ctx.Response.ContentType = snapshot.Logo.ContentType;
-    // Cache-busting handled by the page (it appends ?t=… to the URL after a save).
     ctx.Response.Headers.CacheControl = "no-store";
     await ctx.Response.Body.WriteAsync(snapshot.Logo.Content, ct);
 }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
-app.MapPost("/admin/configuration/import", async (
+// /admin/backup/import — destructive restore from a TOML snapshot. Lives on
+// the Backup & Restore page, kept as a server POST so the (large) TOML body
+// is parsed outside the interactive Blazor circuit.
+app.MapPost("/admin/backup/import", async (
     HttpContext ctx, OrganizationConfigService config, IAntiforgery antiforgery, CancellationToken ct) =>
 {
     if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
@@ -422,19 +367,19 @@ app.MapPost("/admin/configuration/import", async (
     if (!confirmed)
     {
         ctx.Response.Redirect(
-            "/admin/configuration?err=Confirm&msg=" + Uri.EscapeDataString("Tick the confirmation box before importing."));
+            "/admin/backup?err=Confirm&msg=" + Uri.EscapeDataString("Tick the confirmation box before importing."));
         return;
     }
     try
     {
         await config.ImportFromTomlAsync(toml, ct);
-        ctx.Response.Redirect("/admin/configuration?ok=imported");
+        ctx.Response.Redirect("/admin/backup?ok=imported");
     }
     catch (PlanValidationException ex)
     {
         var first = ex.Errors.First();
         ctx.Response.Redirect(
-            $"/admin/configuration?err={Uri.EscapeDataString(first.Key)}&msg={Uri.EscapeDataString(first.Value)}");
+            $"/admin/backup?err={Uri.EscapeDataString(first.Key)}&msg={Uri.EscapeDataString(first.Value)}");
     }
 }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
@@ -826,7 +771,9 @@ app.MapPost("/auth/account/delete", async (
     }
 }).RequireAuthorization();
 
-// /admin/users/* — approve / reject / disable / role change. Admin-only.
+// /admin/users/* — approve / reject / disable / enable / invite. Admin-only.
+// Role changes run inside the Blazor circuit (interactive role dropdown on
+// AdminUsers.razor) and call AccountService.ChangeRoleAsync directly.
 app.MapPost("/admin/users/{id:int}/approve", async (
     int id, HttpContext ctx, AccountService accounts, AppDbContext db, IEmailService email,
     IOrganizationContext org, IAntiforgery antiforgery, ILoggerFactory loggerFactory, CancellationToken ct) =>
@@ -975,22 +922,6 @@ app.MapPost("/admin/users/invites/{id:int}/revoke", async (
     ctx.Response.Redirect("/admin/users?ok=invite-revoked");
 }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
-app.MapPost("/admin/users/{id:int}/role", async (
-    int id, HttpContext ctx, AccountService accounts, IOrganizationContext org, IAntiforgery antiforgery, CancellationToken ct) =>
-{
-    if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
-    var form = await ctx.Request.ReadFormAsync(ct);
-    var newRole = form["Role"].ToString() == "Admin" ? UserRole.Admin : UserRole.User;
-    try { await accounts.ChangeRoleAsync(id, newRole, org.CurrentOrganizationId!.Value, ct); }
-    catch (PlanValidationException ex)
-    {
-        var first = ex.Errors.FirstOrDefault();
-        ctx.Response.Redirect($"/admin/users?err={Uri.EscapeDataString(first.Value)}");
-        return;
-    }
-    ctx.Response.Redirect("/admin/users");
-}).RequireAuthorization(policy => policy.RequireRole("Admin"));
-
 // /site-admin/* — hosting-operator endpoints. The cookie events
 // translate auth failures on this prefix into 404 so non-SiteAdmins
 // can't even confirm the routes exist.
@@ -1026,7 +957,7 @@ app.MapPost("/site-admin/users/{id:int}/demote", async (
 // endpoint that MapRazorComponents registers for the `/site-admin/settings`
 // page route — overlapping the two raises AmbiguousMatchException at request
 // time. Every other form in the app already follows this pattern
-// (`/site-admin/backups/create`, `/admin/configuration/settings`, …).
+// (`/site-admin/backups/create`, `/admin/backup/import`, …).
 app.MapPost("/site-admin/settings/save", async (
     HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
 {

@@ -2,19 +2,37 @@
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Services
+@using Lucide.Blazor.Components
 @inject BackupService Backups
 @inject SystemSettingsService Settings
 
 <PageTitle>Site Admin · Backups · AL Dev Toolbox</PageTitle>
 
-<div class="admin-section">
-    <h1>Site Admin · Backups</h1>
-    <p class="muted">
-        Database backups written by <code>pg_dump -Fc</code> to the
-        <code>app-backups</code> volume. Scheduled backups run daily;
-        ad-hoc backups can be triggered below. Pinned backups are exempt
-        from retention pruning.
-    </p>
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Site Admin · Backups</h1>
+            <p class="muted">
+                Database backups written by <code>pg_dump -Fc</code> to the
+                <code>app-backups</code> volume. Scheduled backups run daily;
+                ad-hoc backups can be triggered below. Pinned backups are
+                exempt from retention pruning.
+            </p>
+        </div>
+        <div class="admin-page__header-actions">
+            <a class="btn btn--sm" href="/admin">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to admin</span>
+            </a>
+            <form method="post" action="/site-admin/backups/create" style="display:inline">
+                <AntiforgeryToken />
+                <button type="submit" class="btn btn--sm btn--primary" title="Run pg_dump against the live database">
+                    <Icon Name="database-backup" Width="14" Height="14" />
+                    <span>Take a backup now</span>
+                </button>
+            </form>
+        </div>
+    </header>
 
     @if (!string.IsNullOrEmpty(Message))
     {
@@ -56,12 +74,6 @@
         </p>
     }
 
-    <form method="post" action="/site-admin/backups/create" class="admin-form admin-form--inline">
-        <AntiforgeryToken />
-        <button type="submit" class="btn">Take a backup now</button>
-        <span class="muted">Runs <code>pg_dump</code> against the live database and stores the file in the backups volume.</span>
-    </form>
-
     @if (_rows is null)
     {
         <p class="muted">Loading…</p>
@@ -95,19 +107,25 @@
                         <td>@(row.CreatedByEmail ?? "scheduler")</td>
                         <td>@(row.IsPinned ? "Pinned" : "")</td>
                         <td class="row-actions">
-                            <a class="btn btn--small" href="@($"/site-admin/backups/{row.Id}/download")">Download</a>
+                            <a class="btn btn--sm btn--icon" title="Download" aria-label="Download" href="@($"/site-admin/backups/{row.Id}/download")">
+                                <Icon Name="download" Width="14" Height="14" />
+                            </a>
                             @if (row.IsPinned)
                             {
                                 <form method="post" action="@($"/site-admin/backups/{row.Id}/unpin")" style="display:inline">
                                     <AntiforgeryToken />
-                                    <button type="submit" class="btn btn--small">Unpin</button>
+                                    <button type="submit" class="btn btn--sm btn--icon" title="Unpin" aria-label="Unpin">
+                                        <Icon Name="pin-off" Width="14" Height="14" />
+                                    </button>
                                 </form>
                             }
                             else
                             {
                                 <form method="post" action="@($"/site-admin/backups/{row.Id}/pin")" style="display:inline">
                                     <AntiforgeryToken />
-                                    <button type="submit" class="btn btn--small">Pin</button>
+                                    <button type="submit" class="btn btn--sm btn--icon" title="Pin" aria-label="Pin">
+                                        <Icon Name="pin" Width="14" Height="14" />
+                                    </button>
                                 </form>
                             }
                             <form method="post" action="@($"/site-admin/backups/{row.Id}/restore")"
@@ -115,7 +133,9 @@
                                   onsubmit="return confirm('Restoring will overwrite the entire database with this backup. Continue?');">
                                 <AntiforgeryToken />
                                 <input type="hidden" name="Confirm" value="true" />
-                                <button type="submit" class="btn btn--small btn--danger">Restore</button>
+                                <button type="submit" class="btn btn--sm btn--icon btn--danger" title="Restore from this backup" aria-label="Restore">
+                                    <Icon Name="rotate-ccw" Width="14" Height="14" />
+                                </button>
                             </form>
                             @if (!row.IsPinned)
                             {
@@ -123,7 +143,9 @@
                                       style="display:inline"
                                       onsubmit="return confirm('Delete this backup permanently?');">
                                     <AntiforgeryToken />
-                                    <button type="submit" class="btn btn--small btn--danger">Delete</button>
+                                    <button type="submit" class="btn btn--sm btn--icon btn--danger" title="Delete backup" aria-label="Delete">
+                                        <Icon Name="trash-2" Width="14" Height="14" />
+                                    </button>
                                 </form>
                             }
                         </td>

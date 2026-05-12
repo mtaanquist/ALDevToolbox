@@ -7,14 +7,22 @@
 
 <PageTitle>Site Admin · Users · AL Dev Toolbox</PageTitle>
 
-<div class="admin-section">
-    <h1>Site Admin · Users</h1>
-    <p class="muted">
-        Search across every organisation by email or display name. Use this
-        page to grant or revoke the SiteAdmin (hosting-operator) flag.
-        Per-organisation Admin status is managed by each org's own
-        <a href="/admin/users">Users</a> page.
-    </p>
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Site Admin · Users</h1>
+            <p class="muted">
+                Search across every organisation by email or display name. Use
+                this page to grant or revoke the SiteAdmin (hosting-operator)
+                flag. Per-organisation Admin status is managed by each org's
+                own <a href="/admin/users">Users</a> page.
+            </p>
+        </div>
+        <a class="btn btn--sm" href="/admin">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to admin</span>
+        </a>
+    </header>
 
     @if (!string.IsNullOrEmpty(Error))
     {
@@ -33,7 +41,7 @@
         <label for="q" class="visually-hidden">Search by email or name</label>
         <input id="q" name="q" type="search" value="@Query"
                placeholder="Search by email or display name…" class="admin-search-input" />
-        <button type="submit" class="btn btn--secondary">Search</button>
+        <button type="submit" class="btn btn--sm">Search</button>
     </form>
 
     @if (_rows is null)
@@ -79,14 +87,14 @@
                         {
                             <form method="post" action="/site-admin/users/@u.UserId/demote" style="display:inline">
                                 <AntiforgeryToken />
-                                <button type="submit" class="btn btn--small btn--secondary">Remove SiteAdmin</button>
+                                <button type="submit" class="btn btn--sm">Remove SiteAdmin</button>
                             </form>
                         }
                         else
                         {
                             <form method="post" action="/site-admin/users/@u.UserId/promote" style="display:inline">
                                 <AntiforgeryToken />
-                                <button type="submit" class="btn btn--small">Make SiteAdmin</button>
+                                <button type="submit" class="btn btn--sm btn--primary">Make SiteAdmin</button>
                             </form>
                         }
                     </td>

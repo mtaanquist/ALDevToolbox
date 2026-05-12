@@ -4,12 +4,17 @@
 <PageTitle>Sign in with a magic link · AL Dev Toolbox</PageTitle>
 
 <div class="login-page">
-    <h1>Sign in with a magic link</h1>
+    <h1>Sign in</h1>
     <p class="caption muted">
-        Enter your email and we'll send you a single-use sign-in link, valid
-        for 15 minutes. No password needed. We always show the same
-        confirmation regardless of whether the email is in our database.
+        We'll email you a single-use sign-in link, valid for 15 minutes. No
+        password needed. We always show the same confirmation regardless of
+        whether the email is in our database.
     </p>
+
+    <nav class="tab-bar tab-bar--auth" aria-label="Sign-in method">
+        <a href="/login" class="tab">Password</a>
+        <a href="/login/magic" class="tab active">Magic link</a>
+    </nav>
 
     @if (Error == "not-configured")
     {
@@ -31,11 +36,10 @@
             <input id="ml-email" type="email" name="Email" required autofocus autocomplete="username" />
         </section>
         <div class="login-form__actions">
-            <button type="submit" class="btn">
+            <button type="submit" class="btn btn--primary">
                 <Icon Name="mail" Width="16" Height="16" />
                 <span>Send sign-in link</span>
             </button>
-            <a href="/login" class="muted">Sign in with a password instead</a>
         </div>
     </form>
 </div>
