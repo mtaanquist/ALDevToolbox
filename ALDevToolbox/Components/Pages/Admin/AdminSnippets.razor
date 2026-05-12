@@ -83,9 +83,9 @@
                                     <Icon Name="@(s.Deprecated ? "archive-restore" : "archive")" Width="14" Height="14" />
                                     <span>@(s.Deprecated ? "Un-deprecate" : "Deprecate")</span>
                                 </button>
-                                <button type="button" class="btn btn--sm btn--danger" @onclick="() => SoftDeleteAsync(s)" disabled="@_busy">
+                                <button type="button" class="btn btn--sm btn--danger" @onclick="() => DeleteClickAsync(s)" disabled="@_busy">
                                     <Icon Name="trash-2" Width="14" Height="14" />
-                                    <span>Delete</span>
+                                    <span>@(_pendingDeleteId == s.Id ? "Confirm?" : "Delete")</span>
                                 </button>
                             }
                             else
@@ -164,6 +164,9 @@
     private bool _busy;
     private string? _lastError;
     private string? _lastSuccess;
+    // First press arms the row; second press on the same row commits the
+    // delete. Switching to a different row resets the arming.
+    private int? _pendingDeleteId;
 
     protected override Task OnInitializedAsync() => ReloadAsync();
 
@@ -173,8 +176,14 @@
         _suggestions = await Suggestions.GetPendingAsync();
     }
 
-    private async Task SoftDeleteAsync(Snippet s)
+    private async Task DeleteClickAsync(Snippet s)
     {
+        if (_pendingDeleteId != s.Id)
+        {
+            _pendingDeleteId = s.Id;
+            return;
+        }
+        _pendingDeleteId = null;
         await RunActionAsync(() => Snippets.SoftDeleteAsync(s.Id), $"Snippet '{s.Title}' deleted.");
     }
 
@@ -195,6 +204,7 @@
         _busy = true;
         _lastError = null;
         _lastSuccess = null;
+        _pendingDeleteId = null;
         try
         {
             await action();
