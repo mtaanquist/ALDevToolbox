@@ -145,23 +145,33 @@ parent/child reassembly (the same pattern `GenerationService` and
 one method for both the form and the TOML editor.~~ Landed on
 `claude/toml-overhaul-tasks-IVvii` in commit `aabbfca` (PR #57).
 
-#### 2. Recursive preview in the UI
+#### 2. ~~Recursive preview in the UI~~ — done
 
-Currently stubbed:
+~~Currently stubbed.~~ Landed: every preview surface walks the real
+per-extension folder tree.
 
-- `Components/Pages/TemplateDetail.razor` — `BuildTree` returns a single
-  empty `PreviewNode.Extension(template.Key, [])` placeholder. Walk
-  `template.WorkspaceExtensions` and each extension's recursive folder
-  tree.
-- `Components/Pages/NewWorkspace.razor` — `BuildExtensionNode` only emits
-  `app.json` + `AppSourceCop.json` + fallback folders. Walk the active
-  template's extensions / their folder trees.
-- `Components/Pages/NewExtension.razor` — same.
+- `Components/Pages/TemplateDetail.razor` — renders a `FolderTreePreview`
+  built from each required `WorkspaceExtension`'s recursive folder tree,
+  examples on.
+- `Components/Pages/NewWorkspace.razor` — emits one extension folder per
+  required template extension, one per ticked optional, and one per
+  selected module (cloned from `Module.ExtensionFolders`). The stat card
+  counts those instead of the old "Core + selected modules" approximation.
+- `Components/Pages/NewExtension.razor` — standalone preview walks the
+  picked template's first required extension (the scaffold the generator
+  uses); sibling-workspace preview renders required template extensions +
+  imported module trees + the new extension tagged `IsNew`.
 
-Generation itself works without these — this is the "look before you
-click" UX that's missing. End-users see a placeholder folder tree when
-picking a template rather than the real per-extension layout. Smaller
-than item 1; roughly half a day.
+All three share `Components/Shared/ExtensionPreviewBuilder` — recursive
+folder walk, example filtering, `.gitkeep` for empty leaves, and the
+libs/permissionsets/Translations fallback. Pinned by
+`ALDevToolbox.Tests/Extensions/ExtensionPreviewBuilderTests.cs`.
+
+Folder trees aren't pulled by the default `GetTemplatesAsync` /
+`GetModulesAsync` / `GetByKeyAsync` reads; the preview pages call
+`TemplateService.HydrateExtensionFolderTreeAsync` /
+`HydrateModuleExtensionFolderTreeAsync` after the initial load so the
+recursive tree is in memory before the preview renders.
 
 #### 3. Migration data-loss advisory (release note, not code)
 
@@ -179,26 +189,16 @@ migration to production without flagging this.
 
 ### Internal cleanup (doesn't affect users)
 
-#### 4. Test cleanup: retire the `#if false` files
+#### 4. ~~Test cleanup: retire the `#if false` files~~ — done
 
-These four files have their coverage fully replaced by the new tests:
-
-- `ALDevToolbox.Tests/Generation/MustacheSubstitutionTests.cs` — superseded
-  by `WorkspaceGenerationTests`'s `Affix_*` and `Extension_prefix_*` tests.
-- `ALDevToolbox.Tests/Generation/IdRangeAllocationTests.cs` — superseded
-  by the id-range tests in `WorkspaceGenerationTests`.
-- `ALDevToolbox.Tests/Toml/TemplateTomlMapperTests.cs` — superseded by
-  `TemplateTomlMapperRoundTripTests` + `TemplateTomlMapperToleranceTests`.
-- The two `#if false`-style commented-out tests inside
-  `ALDevToolbox.Tests/Audit/AuditInterceptorTests.cs` (snapshot-inline and
-  content-hash) — superseded conceptually by the new audit story for
-  `WorkspaceExtensionFile`/`ModuleExtensionFile`; an analogous pair of
-  tests should be added back using the new types. Either rewrite or
-  delete with a note.
-
-Pure deletion is fine for the three Generation/Toml files. For the
-AuditInterceptorTests pair, either rewrite (~30 min) or delete with a
-follow-on issue.
+The three `#if false` Generation/Toml files were deleted outright
+(`MustacheSubstitutionTests`, `IdRangeAllocationTests`,
+`TemplateTomlMapperTests`); their coverage already lives in
+`WorkspaceGenerationTests`, `TemplateTomlMapperRoundTripTests`, and
+`TemplateTomlMapperToleranceTests`. The two missing
+`AuditInterceptorTests` got rewritten against the unified-extensions
+types (`Extension_snapshot_inlines_folders`,
+`Workspace_extension_file_snapshot_hashes_content`).
 
 ## Gotchas worth knowing
 

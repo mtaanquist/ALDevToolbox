@@ -4,6 +4,7 @@
 @inject TemplateService Templates
 @inject ApplicationVersionService Versions
 @inject OrganizationConfigService OrgConfig
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 
@@ -216,7 +217,7 @@
 
                 <section class="preview-stats">
                     <div class="stat-card">
-                        <div class="stat-card__value">@(1 + _selectedModuleKeys.Count)</div>
+                        <div class="stat-card__value">@CountExtensions()</div>
                         <div class="stat-card__label">Extensions</div>
                     </div>
                     <div class="stat-card">
@@ -265,6 +266,12 @@
     {
         _templates = await Templates.GetTemplatesAsync(includeDeprecated: false);
         _modules = await Templates.GetModulesAsync(includeDeprecated: false);
+        // Folder/file trees aren't pulled by the default reads — load them on
+        // top so the live preview can walk each extension's real layout
+        // without an extra round-trip when the user picks a template or
+        // toggles a module.
+        await Templates.HydrateExtensionFolderTreeAsync(_templates);
+        await Templates.HydrateModuleExtensionFolderTreeAsync(_modules);
         _applicationVersions = await Versions.GetActiveAsync(includeDeprecated: false);
         _orgConfig = await OrgConfig.GetCurrentAsync();
         // Pre-fill the brief / description from the org's defaults block
@@ -387,6 +394,15 @@
         else _selectedExtensionPaths.Remove(path);
     }
 
+    private int CountExtensions()
+    {
+        var template = _selected;
+        var fromTemplate = template is null
+            ? 0
+            : template.WorkspaceExtensions.Count(e => e.Required || _selectedExtensionPaths.Contains(e.Path));
+        return fromTemplate + _selectedModuleKeys.Count;
+    }
+
     private int CountDependencies()
     {
         if (_modules is null) return 0;
@@ -407,10 +423,12 @@
     /// <summary>
     /// Builds the <see cref="PreviewNode"/> tree displayed in the right column.
     /// Mirrors the structure documented in <c>generation-engine.md</c>: the
-    /// workspace root contains <c>.assets</c>, the Core extension, one folder
-    /// per selected module, and three workspace-level files. Per-extension
-    /// folders are populated from the active template; <c>.gitkeep</c> stand-ins
-    /// are shown when examples are off or the example folder is missing.
+    /// workspace root contains <c>.assets</c>, one extension folder per
+    /// required template extension and per ticked optional extension, one
+    /// folder per selected module (cloned from the module's extension tree),
+    /// and three workspace-level files. The per-extension contents come from
+    /// <see cref="ExtensionPreviewBuilder"/>, which walks the recursive folder
+    /// tree the same way <c>GenerationService</c> does.
     /// </summary>
     private PreviewNode BuildPreview()
     {
@@ -425,8 +443,18 @@
                 PreviewNode.Folder("images", new[] { PreviewNode.File("logo.png") }),
                 PreviewNode.Folder("rulesets", new[] { PreviewNode.File("Company.ruleset.json") }),
             }),
-            BuildExtensionNode("Core", isCore: true),
         };
+
+        if (_selected is not null)
+        {
+            foreach (var ext in _selected.WorkspaceExtensions.OrderBy(e => e.Ordering))
+            {
+                if (!ext.Required && !_selectedExtensionPaths.Contains(ext.Path)) continue;
+                children.Add(PreviewNode.Extension(
+                    ext.Path,
+                    ExtensionPreviewBuilder.BuildContents(ext.Folders, _includeExamples)));
+            }
+        }
 
         if (_modules is not null)
         {
@@ -434,7 +462,11 @@
             {
                 var module = _modules.FirstOrDefault(m => m.Key == key);
                 if (module is null) continue;
-                children.Add(BuildExtensionNode(StripWhitespace(module.Name), isCore: false));
+                // Module-cloned extension folder name mirrors GenerationService:
+                // the module's Key is what lands in the ZIP, not the display name.
+                children.Add(PreviewNode.Extension(
+                    module.Key,
+                    ExtensionPreviewBuilder.BuildContents(module.ExtensionFolders, _includeExamples)));
             }
         }
 
@@ -444,42 +476,6 @@
 
         return PreviewTreeBuilder.SortForDisplay(
             new PreviewNode(rootName, PreviewNodeKind.Workspace, children));
-    }
-
-    private PreviewNode BuildExtensionNode(string folderName, bool isCore)
-    {
-        var contents = new List<PreviewNode>
-        {
-            PreviewNode.File("app.json"),
-            PreviewNode.File("AppSourceCop.json"),
-        };
-
-        // Per-extension folder tree is sourced from WorkspaceExtension /
-        // ModuleExtensionFolder under the unified-extensions model. The preview
-        // currently only renders the static fallback folders below until the
-        // generator rewrite lands (Issue #54 follow-up). The full preview will
-        // walk the recursive folder tree of the matching extension entry.
-
-        // Hardcoded fallback folders. Each one only goes in if the template
-        // didn't already declare a folder with the same case-insensitive name —
-        // Windows would treat 'translations' and 'Translations' as the same
-        // folder, so emitting both would collide on extraction and look
-        // duplicated in the preview.
-        AddFallbackFolder(contents, "libs");
-        AddFallbackFolder(contents, "permissionsets");
-        AddFallbackFolder(contents, "Translations");
-
-        return PreviewNode.Extension(folderName, contents);
-    }
-
-    private static void AddFallbackFolder(List<PreviewNode> contents, string name)
-    {
-        if (contents.Any(n => n.Kind != PreviewNodeKind.File
-                              && string.Equals(n.Name, name, StringComparison.OrdinalIgnoreCase)))
-        {
-            return;
-        }
-        contents.Add(PreviewNode.Folder(name, new[] { PreviewNode.File(".gitkeep") }));
     }
 
     private static string StripWhitespace(string value) =>

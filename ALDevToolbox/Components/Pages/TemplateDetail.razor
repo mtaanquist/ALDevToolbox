@@ -2,6 +2,7 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @inject TemplateService Templates
 @using System.Text.Json
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 
@@ -84,6 +85,18 @@
             }
         </section>
 
+        @if (_tree is not null)
+        {
+            <section class="template-detail__section">
+                <h2>Layout preview</h2>
+                <p class="caption muted">
+                    What the generated workspace looks like with this template's
+                    required extensions, including example files.
+                </p>
+                <FolderTreePreview Root="_tree" />
+            </section>
+        }
+
         <section class="template-detail__section">
             <h2>Defaults</h2>
             <p class="caption muted">Merged into every generated <code>app.json</code>.</p>
@@ -137,17 +150,33 @@
             return;
         }
 
+        await Templates.HydrateExtensionFolderTreeAsync(new[] { template });
+
         _template = template;
         _defaultsJson = JsonSerializer.Serialize(template.Defaults, PrettyJson);
         _appSourceCopJson = JsonSerializer.Serialize(template.AppSourceCop, PrettyJson);
         _tree = BuildTree(template);
     }
 
+    /// <summary>
+    /// Builds a workspace-shaped <see cref="PreviewNode"/> tree from the
+    /// template's required extensions, each rendered through the same
+    /// <see cref="ExtensionPreviewBuilder"/> the generation pages use.
+    /// Examples are included so admins see the seeded content; optional
+    /// extensions are omitted because there's no per-user toggle here.
+    /// </summary>
     private static PreviewNode BuildTree(RuntimeTemplate template)
     {
-        // The recursive walk of WorkspaceExtension.Folders + ModuleExtensionFolder
-        // is pending the Issue #54 generator rewrite. The detail page falls back
-        // to a single-node tree until the new preview is wired up.
-        return PreviewNode.Extension(template.Key, Array.Empty<PreviewNode>());
+        var children = new List<PreviewNode>();
+        foreach (var ext in template.WorkspaceExtensions
+            .Where(e => e.Required)
+            .OrderBy(e => e.Ordering))
+        {
+            children.Add(PreviewNode.Extension(
+                ext.Path,
+                ExtensionPreviewBuilder.BuildContents(ext.Folders, includeExamples: true)));
+        }
+        return PreviewTreeBuilder.SortForDisplay(
+            new PreviewNode(template.Key, PreviewNodeKind.Workspace, children));
     }
 }

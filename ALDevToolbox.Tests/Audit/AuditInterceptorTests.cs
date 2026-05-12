@@ -132,12 +132,75 @@ public sealed class AuditInterceptorTests : IDisposable
             .Should().Be("Doomed Template");
     }
 
-    // TODO Issue #54 follow-up: re-add the inline-snapshot and content-hash
-    // tests once the audit interceptor surfaces WorkspaceExtension /
-    // WorkspaceExtensionFolder / WorkspaceExtensionFile / ModuleExtensionFolder /
-    // ModuleExtensionFile rows. The interceptor already targets the new types
-    // (AuditInterceptor.AuditedTypes) but the tests' folder fixtures need to
-    // be reworked around the recursive folder tree.
+    [Fact]
+    public async Task Extension_snapshot_inlines_folders()
+    {
+        int templateId;
+        await using (var seed = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default("runtime-ext-snapshot")
+                .WithCoreFolder("Source", ("Hello.al", "codeunit 50000 H { }"))
+                .WithCoreFolder("Translations");
+            seed.RuntimeTemplates.Add(template);
+            await seed.SaveChangesAsync();
+            templateId = template.Id;
+        }
+        await ClearAuditAsync();
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("admin")))
+        {
+            var template = await ctx.RuntimeTemplates
+                .Include(t => t.WorkspaceExtensions)
+                    .ThenInclude(e => e.Folders)
+                        .ThenInclude(f => f.Files)
+                .FirstAsync(t => t.Id == templateId);
+            ctx.RuntimeTemplates.Remove(template);
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var row = await read.AuditLog
+            .Where(r => r.EntityType == AuditEntityType.WorkspaceExtension && r.Action == AuditAction.Deleted)
+            .SingleAsync();
+        var snapshot = JsonDocument.Parse(row.SnapshotJson!).RootElement;
+        snapshot.GetProperty("folders").GetArrayLength().Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Workspace_extension_file_snapshot_hashes_content()
+    {
+        const string content = "codeunit 50000 LargeAlBody { trigger OnRun() begin Message('hi'); end; }";
+        int templateId;
+        await using (var seed = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default("runtime-hash")
+                .WithCoreFolder("Source", ("Hello.al", content));
+            seed.RuntimeTemplates.Add(template);
+            await seed.SaveChangesAsync();
+            templateId = template.Id;
+        }
+        await ClearAuditAsync();
+
+        await using (var ctx = _db.NewContextWithAudit(NewInterceptor("admin")))
+        {
+            var template = await ctx.RuntimeTemplates
+                .Include(t => t.WorkspaceExtensions)
+                    .ThenInclude(e => e.Folders)
+                        .ThenInclude(f => f.Files)
+                .FirstAsync(t => t.Id == templateId);
+            ctx.RuntimeTemplates.Remove(template);
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var row = await read.AuditLog
+            .Where(r => r.EntityType == AuditEntityType.WorkspaceExtensionFile && r.Action == AuditAction.Deleted)
+            .SingleAsync();
+        var snapshot = JsonDocument.Parse(row.SnapshotJson!).RootElement;
+        snapshot.TryGetProperty("Content", out _).Should().BeFalse();
+        snapshot.GetProperty("ContentSha256").GetString()
+            .Should().MatchRegex("^[a-f0-9]{64}$");
+    }
 
     [Fact]
     public async Task Module_snapshot_inlines_dependencies()

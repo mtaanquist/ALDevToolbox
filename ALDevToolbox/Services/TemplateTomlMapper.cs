@@ -26,17 +26,6 @@ public static class TemplateTomlMapper
 
     private static readonly JsonSerializerOptions JsonOptions = PersistenceJson.Options;
 
-    /// <summary>
-    /// Folder paths a fresh template starts with. Kept in sync with the
-    /// blank-template starter; mirrors the static fallback folders the
-    /// generator would otherwise emit so the preview pane is non-empty.
-    /// </summary>
-    public static readonly IReadOnlyList<string> DefaultFolderPaths = new[]
-    {
-        "libs",
-        "permissionsets",
-        "Translations",
-    };
 
     // ===== ToToml =====
 
@@ -441,51 +430,184 @@ public static class TemplateTomlMapper
     // ===== Blank starter =====
 
     /// <summary>
-    /// Starter TOML document for the New Template flow. Mirrors the structure
-    /// of a fresh customer-style template: a required <c>Core</c> extension
-    /// pre-declaring the standard AL fallback folders, no files, no
-    /// dependencies. Admins fill in the rest.
+    /// Starter TOML document for the New Template flow. Hand-written rather
+    /// than serialised so the comments survive — admins authoring their first
+    /// template see annotated sections for every common knob: defaults that
+    /// merge into <c>app.json</c>, the <c>[appSourceCop]</c> block, a single
+    /// required <c>Core</c> extension with a nested folder + example file,
+    /// and commented-out scaffolding for optional extensions and each
+    /// dependency-reference shape. Comments are dropped by Tomlyn on parse,
+    /// so they live only in the textarea — saving round-trips through
+    /// <see cref="ToToml"/> which re-emits without them.
     /// </summary>
-    public static string BlankToml()
-    {
-        var seed = new TemplateSeed
-        {
-            Template = new TemplateMetaSeed
-            {
-                Key = "runtime-new",
-                Runtime = "0",
-                Name = string.Empty,
-                Description = null,
-                CoreIdRangeFrom = 90000,
-                CoreIdRangeTo = 90999,
-                ModuleIdRangeStart = 91000,
-                ModuleIdRangeSize = 200,
-            },
-            Defaults = new DefaultsSeed
-            {
-                Platform = "1.0.0.0",
-            },
-        };
+    public static string BlankToml() => """"
+# AL Dev Toolbox runtime template — TOML reference.
+# Edit the fields below, then click "Create template". Comments are
+# stripped on save and won't reappear after the next round-trip.
+# Anything you leave at its default stays empty in the generated
+# app.json / AppSourceCop.json.
 
-        var head = TomlSerializer.Serialize(seed, TomlOptions);
-        head = EmptyExtensionsLineRegex.Replace(head, string.Empty).TrimEnd();
+[template]
+# Stable identifier shown in URLs and used for cross-org imports. Pick
+# once — renaming breaks references from imported templates. Lowercase
+# letters, digits, and hyphens only.
+key = "runtime-new"
 
-        var sb = new StringBuilder(head);
-        sb.AppendLine();
-        sb.AppendLine();
-        sb.AppendLine("[[extensions]]");
-        sb.AppendLine("path = \"Core\"");
-        sb.AppendLine("name = \"{{extension_prefix}} Core\"");
-        sb.AppendLine("required = true");
-        foreach (var path in DefaultFolderPaths)
-        {
-            sb.AppendLine();
-            sb.AppendLine("[[extensions.folders]]");
-            sb.Append("path = ").AppendLine(TomlBasicString(path));
-        }
-        sb.AppendLine();
-        return sb.ToString();
-    }
+# Business Central runtime version. "26" (major) or "26.1" (Major.Minor).
+runtime = "26"
+
+# Display name in the templates browser. Required.
+name = ""
+description = ""
+
+# Object-ID ranges. The Core range is used by the template's primary
+# extension. Modules are auto-allocated module_id_range_size IDs each
+# from a sliding window starting at module_id_range_start.
+core_id_range_from = 90000
+core_id_range_to = 90999
+module_id_range_start = 91000
+module_id_range_size = 200
+
+# Optional key from /admin/application-versions. When set, the New
+# Workspace form snaps application + runtime together to this entry.
+# default_application_version = ""
+
+[defaults]
+# Merged verbatim into every generated app.json; some fields also
+# pre-fill the New Workspace form.
+
+# AL "publisher" field written into every generated app.json. Set this
+# before users generate workspaces — there's no per-workspace override.
+publisher = ""
+
+# "OnPrem" or "Cloud".
+target = "Cloud"
+
+# Pre-fills the application / platform inputs on New Workspace. Match
+# the BC version you ship against; per-extension overrides on
+# [[extensions]] handle mixed-version setups.
+application = "26.0.0.0"
+platform = "1.0.0.0"
+
+# Friendly extension-name prefix for this workspace — substitutes into
+# {{extension_prefix}} in the [[extensions]] name template below (so
+# "ACME" produces "ACME Core"). Users can override per workspace.
+# Distinct from `affix`, which controls AL object names.
+extension_prefix = ""
+
+# Optional URL written into every app.json.
+# url = "https://example.com"
+
+# AL feature flags. Common picks: "TranslationFile", "NoImplicitWith".
+features = ["TranslationFile"]
+supportedLocales = ["en-US"]
+
+# AL object-name affix substituted into {{affix}} placeholders in .al
+# files. With affixType = "None" the placeholder collapses to empty,
+# regardless of `affix`. Set affixType to "Prefix" or "Suffix" to
+# enable substitution.
+affix = ""
+affixType = "None"
+
+[defaults.resourceExposurePolicy]
+allowDebugging = false
+allowDownloadingSource = false
+includeSourceInSymbolFile = false
+
+[appSourceCop]
+# Written verbatim into each extension's AppSourceCop.json. Set
+# mandatoryPrefix to your AL object-name prefix when shipping to
+# AppSource; leave both empty otherwise.
+mandatoryPrefix = ""
+supportedCountries = ["US"]
+
+# Each [[extensions]] entry becomes its own folder in the generated
+# workspace, with its own app.json + AppSourceCop.json. Order matters:
+# the first required extension is the scaffold for standalone-extension
+# generation.
+[[extensions]]
+path = "Core"
+name = "{{extension_prefix}} Core"
+required = true
+
+# Optional per-extension overrides — only set them when this extension
+# needs a different BC version from the template-wide defaults.
+# application = "26.1.0.0"
+# runtime = "26.1"
+
+# Explicit id-range override. Without these two, the generator
+# allocates from the template's Core range (extension #0) or a sliding
+# module window (extension #1+).
+# id_range_from = 50100
+# id_range_to = 50199
+
+# Each [[extensions.dependencies]] entry references exactly one of:
+#   - another [[extensions]] in this template (extension = "Path"),
+#   - a Module from the catalogue (module = "Key"),
+#   - a literal AL app (id / name / publisher / version).
+# Examples below are commented out — uncomment and edit, or delete.
+#
+# [[extensions.dependencies]]
+# extension = "Core"
+#
+# [[extensions.dependencies]]
+# module = "shared-lib"
+#
+# [[extensions.dependencies]]
+# id = "63ca2fa4-4f03-4f2b-a480-172fef340d3f"
+# name = "Base Application"
+# publisher = "Microsoft"
+# version = "26.0.0.0"
+
+# Folder tree under this extension. Nest via [[extensions.folders.folders]];
+# files attach at any depth with [[...folders.files]]. Empty leaves ship
+# a .gitkeep so the structure survives the ZIP round-trip.
+[[extensions.folders]]
+path = "src"
+
+[[extensions.folders.folders]]
+path = "codeunits"
+
+[[extensions.folders.folders.files]]
+path = "Hello.al"
+content = """
+codeunit 50000 "{{affix}}Hello"
+{
+    trigger OnRun()
+    begin
+        Message('Hello from {{name}}');
+    end;
+}
+"""
+# Example files only ship to the user's ZIP when "include examples" is
+# ticked on New Workspace. Flip to true for files you want hidden by
+# default.
+is_example = false
+
+[[extensions.folders]]
+path = "permissionsets"
+
+[[extensions.folders]]
+path = "translations"
+
+# An additional opt-in extension. Required = false surfaces a checkbox
+# on New Workspace; users tick to include this extension's folder in
+# the generated workspace. Uncomment and edit, or delete.
+#
+# [[extensions]]
+# path = "Hotfix"
+# name = "{{extension_prefix}} Hotfix"
+# required = false
+#
+# [[extensions.folders]]
+# path = "src"
+
+# Catalogue modules pre-selected on New Workspace when this template is
+# picked. The user can untick them. Keys must exist in /admin/modules.
+#
+# [[template.default_modules]]
+# key = "shared-lib"
+"""";
 
     // ===== Runtime normalisation =====
 
