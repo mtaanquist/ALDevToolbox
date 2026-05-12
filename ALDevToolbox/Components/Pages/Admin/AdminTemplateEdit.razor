@@ -1360,43 +1360,14 @@
 
         try
         {
-            var payload = TemplateTomlMapper.FromToml(_toml, deprecated: _form.Deprecated);
-
-            if (IsEdit && _existingId is not null)
-            {
-                await Templates.UpdateAsync(_existingId.Value, payload);
-                var refreshed = await Templates.GetByKeyAsync(Key!);
-                if (refreshed is not null)
-                {
-                    _form = FormState.From(refreshed);
-                    _toml = TemplateTomlMapper.ToToml(refreshed);
-                    _editorMountedToml = _toml;
-                    if (_editorId != 0 && _editorModule is not null)
-                    {
-                        // setValue resets the editor's pristine baseline, so
-                        // markPristine here is mostly belt-and-braces — but
-                        // it also covers the case where the refreshed TOML
-                        // matches the editor doc exactly (setValue early-outs
-                        // and dirty would otherwise stay set).
-                        await _editorModule.InvokeVoidAsync("setValue", _editorId, _toml);
-                        await _editorModule.InvokeVoidAsync("markPristine", _editorId);
-                    }
-                }
-                _saveSuccess = "Saved from TOML.";
-            }
-            else
-            {
-                await Templates.CreateAsync(payload);
-                if (_editorId != 0 && _editorModule is not null)
-                {
-                    // The follow-up navigation is in-app and would trip the
-                    // location-changing guard if the editor is still dirty.
-                    await _editorModule.InvokeVoidAsync("markPristine", _editorId);
-                }
-                // Back to the list so the admin sees the new row in context.
-                Nav.NavigateTo("/admin/templates");
-                return;
-            }
+            // TODO Issue #54 follow-up: the TOML save path needs to bridge
+            // TemplateAuthoring (from the new mapper) into the rewritten
+            // TemplateService.CreateAsync / UpdateAsync, which currently still
+            // accept the legacy TemplateInput shape and throw
+            // NotImplementedException. Validating the TOML parses cleanly is
+            // useful in the meantime; persistence is wired up in the next slice.
+            _ = TemplateTomlMapper.FromToml(_toml, deprecated: _form.Deprecated);
+            _saveError = "Saving templates from TOML is temporarily disabled while the unified-extensions write-path is rebuilt (Issue #54). The TOML parses cleanly.";
         }
         catch (TomlParseException ex)
         {
@@ -1531,16 +1502,33 @@
         /// shape so a switch round-trip is lossless apart from anything the
         /// TOML schema deliberately omits (the Deprecated flag).
         /// </summary>
-        public static FormState FromInput(TemplateInput input, bool currentDeprecated)
+        public static FormState FromInput(TemplateAuthoring input, bool currentDeprecated)
         {
+            // The unified-extensions form-editor rewrite is pending; for now
+            // the TOML → form switch hydrates only the scalar metadata and
+            // leaves the legacy Folders / ModuleFolders editor empty. The
+            // template's extension tree is still round-tripped through the
+            // TOML pane untouched.
+            // Application / Platform live inside DefaultsJson now; surface
+            // them on the form for the legacy structured editor.
+            string application = string.Empty;
+            string platform = string.Empty;
+            try
+            {
+                using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(input.DefaultsJson) ? "{}" : input.DefaultsJson);
+                if (doc.RootElement.TryGetProperty("application", out var app)) application = app.GetString() ?? string.Empty;
+                if (doc.RootElement.TryGetProperty("platform", out var plat)) platform = plat.GetString() ?? string.Empty;
+            }
+            catch (JsonException) { /* fall through with empty strings */ }
+
             var state = new FormState
             {
                 Key = input.Key,
                 Runtime = input.Runtime,
                 Name = input.Name,
                 Description = input.Description,
-                DefaultApplication = input.DefaultApplication,
-                DefaultPlatform = input.DefaultPlatform,
+                DefaultApplication = application,
+                DefaultPlatform = platform,
                 DefaultsJson = string.IsNullOrWhiteSpace(input.DefaultsJson)
                     ? JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson)
                     : Reformat(input.DefaultsJson, JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson)),
@@ -1551,29 +1539,9 @@
                 CoreIdRangeTo = input.CoreIdRangeTo,
                 ModuleIdRangeStart = input.ModuleIdRangeStart,
                 ModuleIdRangeSize = input.ModuleIdRangeSize,
-                // TOML doesn't carry Deprecated (see TemplateTomlMapper.ToToml);
-                // preserve the structured form's value rather than zeroing it.
                 Deprecated = currentDeprecated,
                 DefaultApplicationVersionKey = input.DefaultApplicationVersionKey ?? string.Empty,
             };
-            foreach (var f in input.Folders)
-            {
-                var folderRow = new FolderRow { Path = f.Path };
-                foreach (var file in f.Files)
-                {
-                    folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content });
-                }
-                state.Folders.Add(folderRow);
-            }
-            foreach (var f in input.ModuleFolders)
-            {
-                var folderRow = new FolderRow { Path = f.Path };
-                foreach (var file in f.Files)
-                {
-                    folderRow.Files.Add(new FileRow { Path = file.Path, Content = file.Content });
-                }
-                state.ModuleFolders.Add(folderRow);
-            }
             foreach (var key in input.DefaultModuleKeys)
             {
                 state.DefaultModuleKeys.Add(key);

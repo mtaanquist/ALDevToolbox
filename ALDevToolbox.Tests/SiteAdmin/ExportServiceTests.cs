@@ -23,10 +23,7 @@ public sealed class ExportServiceTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
-    // TODO Issue #54 follow-up: ExportService writes templates via the (stubbed)
-    // TemplateTomlMapper.ToToml. Re-enable once the [[extensions]]-aware mapper
-    // lands.
-    [Fact(Skip = "TemplateTomlMapper stubbed during Issue #54 unified-extensions transition.")]
+    [Fact]
     public async Task ExportAllAsync_writes_active_rows_under_expected_paths()
     {
         await using (var seed = _db.NewContext())
@@ -84,7 +81,7 @@ public sealed class ExportServiceTests : IDisposable
         entries.Should().NotContain("application-versions/bc-deleted.toml");
     }
 
-    [Fact(Skip = "TemplateTomlMapper stubbed during Issue #54 unified-extensions transition.")]
+    [Fact]
     public async Task ExportAllAsync_excludes_rows_from_other_orgs()
     {
         await using (var seed = _db.NewContext())
@@ -102,7 +99,7 @@ public sealed class ExportServiceTests : IDisposable
         entries.Should().NotContain("runtime-theirs/template.toml");
     }
 
-    [Fact(Skip = "TemplateTomlMapper stubbed during Issue #54 unified-extensions transition.")]
+    [Fact]
     public async Task ExportAllAsync_template_toml_round_trips_through_the_mapper()
     {
         // Use the same TemplateTomlMapper the admin TOML editor uses, so a

@@ -3,16 +3,16 @@ using Tomlyn.Serialization;
 namespace ALDevToolbox.Domain.Seed;
 
 /// <summary>
-/// In-memory representation of a <c>template.toml</c> document. Used by the
-/// admin TOML editor (<see cref="Services.TemplateTomlMapper"/>) and by the
-/// export pipeline (<see cref="Services.ExportService"/>) so admins can paste
-/// or download templates in a stable text format.
+/// In-memory representation of a <c>template.toml</c> document under the
+/// unified-extensions model (Issue #54). Used by
+/// <see cref="Services.TemplateTomlMapper"/> for round-trip serialisation
+/// between the admin TOML editor and a structured authoring payload.
 /// </summary>
 /// <remarks>
-/// The TOML files mix conventions: <c>[template]</c> / <c>[[folders]]</c> use
-/// <c>snake_case</c>, while <c>[defaults]</c> and <c>[appSourceCop]</c> mirror
-/// the AL JSON shapes and use <c>camelCase</c>. The whole graph deserialises
-/// under a global <c>SnakeCaseLower</c> policy, with <see cref="TomlPropertyNameAttribute"/>
+/// The TOML files mix conventions: <c>[template]</c> / <c>[[extensions]]</c>
+/// use <c>snake_case</c>; <c>[defaults]</c> and <c>[appSourceCop]</c> mirror
+/// AL's JSON shape and use <c>camelCase</c>. The graph deserialises under a
+/// global <c>SnakeCaseLower</c> policy, with <see cref="TomlPropertyNameAttribute"/>
 /// overriding the camelCase outliers individually.
 /// </remarks>
 public class TemplateSeed
@@ -23,15 +23,12 @@ public class TemplateSeed
     [TomlPropertyName("appSourceCop")]
     public AppSourceCopSeed AppSourceCop { get; set; } = new();
 
-    public List<FolderSeed> Folders { get; set; } = new();
-
     /// <summary>
-    /// <c>[[module_folders]]</c> entries — the folder layout emitted into every
-    /// generated module extension. Empty by default; if omitted, modules ship
-    /// with just their <c>app.json</c>, <c>AppSourceCop.json</c>, and the
-    /// static fallback folders. Same shape as <see cref="Folders"/>.
+    /// Ordered extensions declared by the template. Required entries are
+    /// always emitted; <c>required = false</c> entries surface as opt-in
+    /// checkboxes on New Workspace.
     /// </summary>
-    public List<FolderSeed> ModuleFolders { get; set; } = new();
+    public List<ExtensionSeed> Extensions { get; set; } = new();
 }
 
 /// <summary>The <c>[template]</c> table — identifying metadata and id ranges.</summary>
@@ -39,62 +36,65 @@ public class TemplateMetaSeed
 {
     public string Key { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Runtime version, e.g. <c>"15"</c> or <c>"15.2"</c>. Older TOML
-    /// documents have it as a bare integer; the admin TOML pipeline
-    /// normalises both forms before deserialisation so the schema stays
-    /// welcoming.
-    /// </summary>
+    /// <summary>Runtime version, e.g. <c>"15"</c> or <c>"15.2"</c>. Bare integers normalised before deserialisation.</summary>
     public string Runtime { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
-    public string DefaultApplication { get; set; } = string.Empty;
-    public string DefaultPlatform { get; set; } = string.Empty;
     public int CoreIdRangeFrom { get; set; } = 90000;
     public int CoreIdRangeTo { get; set; } = 90999;
     public int ModuleIdRangeStart { get; set; } = 91000;
     public int ModuleIdRangeSize { get; set; } = 200;
 
-    /// <summary>
-    /// Module keys pre-selected when a user picks this template on the New
-    /// Workspace form. Order matches the array order in the TOML file. Unknown
-    /// keys are dropped at seed time with a warning rather than failing the
-    /// import — admins can fix typos through the UI later.
-    /// </summary>
-    public List<string> DefaultModules { get; set; } = new();
-
-    /// <summary>
-    /// Optional key into the curated <c>application_versions</c> catalogue
-    /// (Milestone P2.4). When set and resolvable at seed time, the template's
-    /// <c>DefaultApplicationVersionId</c> FK is filled in so the user-facing
-    /// builder forms preselect this entry. Unresolved keys log a warning and
-    /// the template falls back to its free-text <c>default_application</c> /
-    /// <c>runtime</c> values.
-    /// </summary>
+    /// <summary>Optional curated <c>application_versions</c> catalogue key.</summary>
     public string? DefaultApplicationVersion { get; set; }
 
-    /// <summary>
-    /// Mirrors <see cref="ALDevToolbox.Domain.Entities.RuntimeTemplate.IsDefault"/>
-    /// so the export/import round-trip preserves the per-org "this is the
-    /// default template on New Workspace" flag. Export-only: the import
-    /// path leaves it out of <c>TemplateInput</c> on purpose, mirroring how
-    /// <see cref="ALDevToolbox.Domain.Entities.RuntimeTemplate.Deprecated"/>
-    /// is handled — <c>SetDefaultAsync</c> remains the only writer.
-    /// </summary>
+    /// <summary>Mirrors <c>RuntimeTemplate.IsDefault</c> for export/import round-tripping.</summary>
     public bool IsDefault { get; set; }
+
+    /// <summary>
+    /// Catalogue modules pre-selected on the New Workspace form when this
+    /// template is chosen. Lives under <c>[template]</c> rather than
+    /// <c>[defaults]</c> because module selection is a workspace-composition
+    /// concern, not app.json content.
+    /// </summary>
+    public List<TemplateDefaultModuleSeed> DefaultModules { get; set; } = new();
 }
 
-/// <summary>The <c>[defaults]</c> table — merged into every generated <c>app.json</c>.</summary>
+/// <summary>One <c>[[template.default_modules]]</c> entry.</summary>
+public class TemplateDefaultModuleSeed
+{
+    public string Key { get; set; } = string.Empty;
+}
+
+/// <summary>The <c>[defaults]</c> table — verbatim merge into every app.json + form pre-fills.</summary>
 public class DefaultsSeed
 {
     public string Publisher { get; set; } = string.Empty;
     public string Target { get; set; } = "Cloud";
+
+    /// <summary>Pre-fills the <c>application</c> field on New Workspace.</summary>
+    public string Application { get; set; } = string.Empty;
+
+    /// <summary>Pre-fills the <c>platform</c> field on New Workspace.</summary>
+    public string Platform { get; set; } = string.Empty;
+
+    /// <summary>Pre-fills the per-workspace short identifier (e.g. <c>"ACME"</c> → <c>"ACME Core"</c>).</summary>
+    [TomlPropertyName("extension_prefix")]
+    public string ExtensionPrefix { get; set; } = string.Empty;
+
     public string? Url { get; set; }
     public string? Logo { get; set; }
     public List<string> Features { get; set; } = new();
 
     [TomlPropertyName("supportedLocales")]
     public List<string> SupportedLocales { get; set; } = new();
+
+    /// <summary>AL object-name affix substituted into <c>{{affix}}</c> placeholders.</summary>
+    public string Affix { get; set; } = string.Empty;
+
+    /// <summary>One of <c>"None"</c>, <c>"Prefix"</c>, or <c>"Suffix"</c>.</summary>
+    [TomlPropertyName("affixType")]
+    public string AffixType { get; set; } = "None";
 
     [TomlPropertyName("resourceExposurePolicy")]
     public ResourceExposurePolicySeed ResourceExposurePolicy { get; set; } = new();
@@ -122,25 +122,74 @@ public class AppSourceCopSeed
     public List<string> SupportedCountries { get; set; } = new();
 }
 
-/// <summary>One <c>[[folders]]</c> entry — a relative folder path plus its seeded files.</summary>
-public class FolderSeed
+/// <summary>One <c>[[extensions]]</c> entry.</summary>
+public class ExtensionSeed
 {
+    /// <summary>Stable identifier (folder name in the ZIP; reference target for intra-template dependencies).</summary>
     public string Path { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Files seeded into the folder. Empty list means the folder generates
-    /// with a single <c>.gitkeep</c> placeholder. Mustache substitution runs
-    /// at generation time, not at parse time.
-    /// </summary>
+    /// <summary>Mustache template for the rendered extension name (e.g. <c>"{{extension_prefix}} Core"</c>).</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>True (default) for always-emitted; false for opt-in extensions.</summary>
+    public bool Required { get; set; } = true;
+
+    /// <summary>Optional per-extension override of the template-wide application.</summary>
+    public string? Application { get; set; }
+
+    /// <summary>Optional per-extension override of the template-wide runtime.</summary>
+    public string? Runtime { get; set; }
+
+    /// <summary>Optional explicit id-range start. When both this and <see cref="IdRangeTo"/> are set, the generator uses them verbatim.</summary>
+    [TomlPropertyName("id_range_from")]
+    public int? IdRangeFrom { get; set; }
+
+    [TomlPropertyName("id_range_to")]
+    public int? IdRangeTo { get; set; }
+
+    /// <summary>Top-level folders under this extension. Nesting is recursive via <see cref="FolderSeed.Folders"/>.</summary>
+    public List<FolderSeed> Folders { get; set; } = new();
+
+    public List<DependencySeed> Dependencies { get; set; } = new();
+}
+
+/// <summary>One folder in the recursive tree. Files attach at any depth.</summary>
+public class FolderSeed
+{
+    /// <summary>Single path segment (no <c>/</c>).</summary>
+    public string Path { get; set; } = string.Empty;
+
+    public List<FolderSeed> Folders { get; set; } = new();
     public List<FolderFileSeed> Files { get; set; } = new();
 }
 
-/// <summary>One <c>[[folders.files]]</c> entry — a path/content pair.</summary>
+/// <summary>One file attached to a folder.</summary>
 public class FolderFileSeed
 {
-    /// <summary>Relative path inside the folder, forward-slash separated.</summary>
     public string Path { get; set; } = string.Empty;
-
-    /// <summary>Raw file content. Mustache variables are substituted at generation time.</summary>
     public string Content { get; set; } = string.Empty;
+
+    /// <summary>Ships only when "include examples" is on; otherwise the file is omitted from the ZIP.</summary>
+    [TomlPropertyName("is_example")]
+    public bool IsExample { get; set; }
+}
+
+/// <summary>
+/// One <c>[[extensions.dependencies]]</c> entry. Exactly one of
+/// <see cref="Extension"/>, <see cref="Module"/>, or <see cref="Id"/> is set.
+/// The other reference fields hang off the literal form.
+/// </summary>
+public class DependencySeed
+{
+    /// <summary>Intra-template reference: another <c>[[extensions]] path</c>.</summary>
+    public string? Extension { get; set; }
+
+    /// <summary>Catalogue reference: a <c>Module.Key</c>.</summary>
+    public string? Module { get; set; }
+
+    /// <summary>Literal reference: the AL app GUID. Pairs with <see cref="Name"/>, <see cref="Publisher"/>, <see cref="Version"/>.</summary>
+    public string? Id { get; set; }
+    public string? Name { get; set; }
+    public string? Publisher { get; set; }
+    public string? Version { get; set; }
 }

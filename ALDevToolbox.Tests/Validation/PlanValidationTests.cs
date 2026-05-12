@@ -81,10 +81,7 @@ public sealed class PlanValidationTests : IDisposable
         ex.Errors.Should().ContainKey(nameof(plan.CoreIdRangeTo));
     }
 
-    // TODO Issue #54 follow-up: this test reaches into GenerationService's
-    // template-existence check, which now sits past the stubbed entry point.
-    // Re-enable when the generator rewrite restores the DB-backed validation.
-    [Fact(Skip = "GenerationService stubbed during Issue #54 unified-extensions transition.")]
+    [Fact]
     public async Task Workspace_plan_with_unknown_template_key_surfaces_template_key_error()
     {
         var service = NewService();
