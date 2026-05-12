@@ -1,0 +1,13 @@
+Lucide icons vendored from https://github.com/lucide-icons/lucide
+Upstream tag: 1.14.0
+Upstream tarball SHA-256: 5f3d0b4e555e04d36d3bfe9f76fff70e88465d46fbe5582f3f6ae52340a13658
+
+Only the icons referenced by the app live here. To add an icon:
+  1. Copy `<name>.svg` from https://github.com/lucide-icons/lucide/tree/1.14.0/icons
+     (or a newer pinned tag — bump this file when you do).
+  2. Drop it into ALDevToolbox/Resources/Icons/ — the .csproj globs *.svg
+     as embedded resources.
+  3. Use it as `<Icon Name="<name>" Width="..." Height="..." />`.
+
+License: ISC (and MIT for icons derived from Feather). See LICENSE in this
+folder.

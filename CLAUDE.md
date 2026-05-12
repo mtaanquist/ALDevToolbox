@@ -5,7 +5,7 @@ Guidance for working on this repository. Read this before touching code, especia
 ## Project at a glance
 
 - **AL Dev Toolbox** — internal Blazor Server tool that generates AL/BC workspaces and standalone extensions from runtime templates.
-- Stack: .NET 10, Blazor Server, EF Core 10 + Npgsql against PostgreSQL 18, Tomlyn, Lucide.Blazor.
+- Stack: .NET 10, Blazor Server, EF Core 10 + Npgsql against PostgreSQL 18, Tomlyn. Lucide icons are vendored as embedded SVGs (no NuGet dependency); see `Resources/Icons/`.
 - Two projects at the repo root: `ALDevToolbox/` (the app, layered by folder) and `ALDevToolbox.Tests/` (xUnit + FluentAssertions, established in Milestone 12). The solution file is `ALDevToolbox.slnx` at the repo root.
 - Source of truth for behaviour: documents under `.design/`. If code disagrees with the design doc, fix one of them — don't leave them out of sync.
 
@@ -119,7 +119,7 @@ These are the patterns the existing code has settled on. New code should match u
 - Hydrate state in `OnInitializedAsync`. Render `Loading…` / empty / data states explicitly — don't render an empty grid when the data is `null`.
 - For form posts that return file downloads (Generate), use a minimal API endpoint in `Program.cs` rather than a Blazor component event — `FileStreamResult` with `Content-Disposition: attachment` is simpler than wrestling with `IJSRuntime` downloads. Always validate antiforgery first.
 - CSS lives in `wwwroot/app.css` for global rules and `Component.razor.css` for component-scoped styles (Blazor's CSS isolation handles the rest). Stick to the CSS custom properties at the top of `app.css` — if you need a new colour, add a variable.
-- Icons: Lucide.Blazor only. No mixing icon families. The same icon name should be used for the same concept across pages (e.g. `folder-plus` for "create workspace").
+- Icons: Lucide SVGs vendored under `Resources/Icons/`, rendered inline by `Components/Shared/Icon.razor` via the singleton `IconCatalog`. No mixing icon families. The same icon name is used for the same concept across pages (e.g. `folder-plus` for "create workspace"). To add an icon, drop the SVG from lucide.dev (at the pinned version in `Resources/Icons/VERSION.txt`) into that folder — the csproj globs `*.svg` as embedded resources. A missing icon logs a warning and renders an invisible placeholder rather than throwing, but the catalogue test will fail the build if any call site references an icon that hasn't been vendored.
 
 ### Comments and docs
 

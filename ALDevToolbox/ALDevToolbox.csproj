@@ -15,11 +15,17 @@
          in the organization_assets table. -->
     <EmbeddedResource Include="Resources/Company.ruleset.json" LogicalName="ALDevToolbox.Resources.Company.ruleset.json" />
     <EmbeddedResource Include="Resources/al.gitignore" LogicalName="ALDevToolbox.Resources.al.gitignore" />
+    <!-- Vendored Lucide icons (issue #47). The unmaintained Lucide.Blazor
+         package was replaced by IconCatalog + Components/Shared/Icon.razor,
+         which inline the SVGs below. LogicalName is set explicitly so kebab-
+         case filenames survive MSBuild's identifier normalisation. -->
+    <EmbeddedResource Include="Resources/Icons/*.svg">
+      <LogicalName>ALDevToolbox.Resources.Icons.%(Filename).svg</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
-    <PackageReference Include="Lucide.Blazor" Version="0.0.38" />
     <!-- 4.* floats over CVE-patched releases (GHSA-9j88-vvj5-vhgr, GHSA-g7hc-96xr-gvvx). -->
     <PackageReference Include="MailKit" Version="4.*" />
     <PackageReference Include="MimeKit" Version="4.*" />
