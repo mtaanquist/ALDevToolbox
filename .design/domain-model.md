@@ -7,117 +7,191 @@ The schema was a SQLite one through v1 (M1–M15) and switched to PostgreSQL 18 
 - `defaults_json` and `app_source_cop_json` are now `jsonb` columns. The C# value-converter still serialises through a `string` round-trip, so application code is unchanged. No JSONB GIN index yet — add one when a query needs it.
 - All `DateTime` columns are `timestamp with time zone`. Application code is already disciplined about `DateTime.UtcNow` / `DateTimeKind.Utc` literals, and `OnModelCreating` pins the column type so a new column added without an explicit type still lands correctly.
 
+The current shape is the **unified-extensions model** (Issue #54). A workspace is N extensions: required template-declared ones, optional template-declared ones the user ticks, and one cloned extension per selected catalogue module. The spec for the data model lives in `unified-extensions.md`; the rest of this document maps that spec onto the EF entities and the PostgreSQL schema. Migration `20260514000000_UnifyExtensions` collapses the pre-unified `template_folders` / `template_files` / `template_module_folders` / `template_module_files` rows into the new tables and is forward-only.
+
 ## Entities
 
 ```
 RuntimeTemplate ──┐
-                  ├── has many ──> TemplateFolder (ordered, Core only)
-                  │                    └── has many ──> TemplateFile (ordered)
-                  ├── has many ──> TemplateModuleFolder (ordered, modules only)
-                  │                    └── has many ──> TemplateModuleFile (ordered)
+                  ├── has many ──> WorkspaceExtension (ordered)
+                  │                    ├── has many ──> WorkspaceExtensionFolder (recursive tree)
+                  │                    │                    └── has many ──> WorkspaceExtensionFile (per folder, any depth)
+                  │                    └── has many ──> WorkspaceExtensionDependency
+                  │                                          (one-of: ref_extension_path / ref_module_key / lit_*)
                   ├── has many ──> RuntimeTemplateDefaultModule (ordered) ──> Module
-                  └── has one ────> TemplateDefaults (JSON column on the row)
+                  └── has one ────> TemplateDefaults (JSON column on the row;
+                                       carries publisher, application, platform,
+                                       extension_prefix, affix, affixType, …)
 
 Module ───────────┐
                   ├── has many ──> ModuleDependency (ordered)
+                  ├── has many ──> ModuleExtensionFolder (recursive tree)
+                  │                    └── has many ──> ModuleExtensionFile (per folder, any depth)
                   └── id-range fields on the row
 
 WellKnownDependency  (flat list, used by New Extension flow's dep picker)
 
 AuditLogEntry        (one row per change to any of the above)
-
-AuthSession          (optional — see auth-and-audit.md for cookie strategy)
 ```
 
+`WorkspaceExtension.Path` is the stable identifier — dependencies referencing another extension by `ref_extension_path = "Core"` resolve through it. `WorkspaceExtension.Required` is `true` for always-emitted extensions and `false` for opt-in checkboxes on the New Workspace form. See `unified-extensions.md` for the full per-extension shape (id-range allocation, name template, optional per-extension `application` / `runtime` overrides).
+
+Module-supplied extensions clone the module's `ModuleExtensionFolder` tree into the workspace at generation time; the catalogue rows stay normalised. A workspace is the concatenation of the template's required extensions, the optional extensions the user ticked, and one cloned extension per selected module — emitted in the same display order they appear in those three lists.
+
 ## Tables
+
+All identifiers are PostgreSQL snake_case, configured explicitly in `AppDbContext.OnModelCreating`. EF's pluralising / casing conventions are *not* in play — never rely on them.
 
 ### `runtime_templates`
 
 The primary template entity — corresponds one-to-one with a runtime version (or rather, a *named* template; you might have multiple per runtime in theory, though we don't expect to).
 
-| Column                  | Type           | Notes                                              |
-|-------------------------|----------------|----------------------------------------------------|
-| `id`                    | INTEGER PK     | Autoincrement                                      |
-| `key`                   | TEXT NOT NULL  | Unique. Used in URLs and the dropdown. e.g. "runtime-15" |
-| `runtime`               | INTEGER NOT NULL | The AL runtime version, e.g. 15                  |
-| `name`                  | TEXT NOT NULL  | Display name in the dropdown                       |
-| `description`           | TEXT           | Caption under the dropdown selection               |
-| `default_application`   | TEXT NOT NULL  | e.g. "24.0.0.0" — pre-fills the form               |
-| `default_platform`      | TEXT NOT NULL  | e.g. "1.0.0.0"                                     |
-| `defaults_json`         | TEXT NOT NULL  | JSON blob of remaining `app.json` defaults (target, features, supportedLocales, url, logo, resourceExposurePolicy, etc.) |
-| `app_source_cop_json`   | TEXT NOT NULL  | JSON blob of the AppSourceCop.json contents        |
-| `core_id_range_from`    | INTEGER NOT NULL | Default 90000                                    |
-| `core_id_range_to`      | INTEGER NOT NULL | Default 90999                                    |
-| `module_id_range_start` | INTEGER NOT NULL | Default 91000 — first module gets this           |
-| `module_id_range_size`  | INTEGER NOT NULL | Default 200 — span per module                    |
-| `deprecated`            | INTEGER NOT NULL | 0/1 boolean. Hidden from the dropdown if 1       |
-| `created_at`            | TEXT NOT NULL  | UTC ISO8601                                        |
-| `updated_at`            | TEXT NOT NULL  | UTC ISO8601                                        |
-| `deleted_at`            | TEXT           | Null = active. Soft-delete                         |
+| Column                  | Type                          | Notes                                              |
+|-------------------------|-------------------------------|----------------------------------------------------|
+| `id`                    | INTEGER PK                    | Identity column                                    |
+| `organization_id`       | INTEGER NOT NULL              | Multi-tenant key; rows are scoped per-org via the EF query filter |
+| `key`                   | TEXT NOT NULL                 | Unique within an org. Used in URLs and the dropdown. e.g. "runtime-15" |
+| `runtime`               | TEXT NOT NULL                 | The AL runtime version, e.g. "15"                  |
+| `name`                  | TEXT NOT NULL                 | Display name in the dropdown                       |
+| `description`           | TEXT                          | Caption under the dropdown selection               |
+| `defaults_json`         | JSONB NOT NULL                | The `TemplateDefaults` blob — `publisher`, `application`, `platform`, `extension_prefix`, `affix`, `affixType`, `features`, `supportedLocales`, `resourceExposurePolicy`, etc. `application` / `platform` moved off the row in Issue #54. |
+| `app_source_cop_json`   | JSONB NOT NULL                | The AppSourceCop.json contents — `mandatoryPrefix`, `supportedCountries`, … |
+| `core_id_range_from`    | INTEGER NOT NULL              | Default 90000 — the plan's Core range when the first auto-allocated extension consumes it |
+| `core_id_range_to`      | INTEGER NOT NULL              | Default 90999                                      |
+| `module_id_range_start` | INTEGER NOT NULL              | Default 91000 — first auto-allocated subsequent slice |
+| `module_id_range_size`  | INTEGER NOT NULL              | Default 200 — span per auto-allocated extension / module |
+| `default_application_version_id` | INTEGER                | Optional FK → `app_versions.id`; nullable          |
+| `deprecated`            | BOOLEAN NOT NULL              | Hidden from end-user dropdowns when true           |
+| `is_default`            | BOOLEAN NOT NULL DEFAULT false | At most one active default per org (filtered unique index) |
+| `created_at`            | TIMESTAMPTZ NOT NULL          |                                                    |
+| `updated_at`            | TIMESTAMPTZ NOT NULL          |                                                    |
+| `deleted_at`            | TIMESTAMPTZ                   | Null = active. Soft-delete                         |
 
-`defaults_json` and `app_source_cop_json` are JSON columns rather than normalized tables because they're write-once-edit-rarely metadata, and the structure is closed (defined by the AL/BC ecosystem). Normalising them would mean a schema migration every time AL adds a new app.json field. EF Core can use `HasConversion<string>()` with `JsonSerializer` to make these typed in C# while stored as text.
+Indexes:
+- `(organization_id, key)` UNIQUE — per-org uniqueness of the slug.
+- `(organization_id, is_default) UNIQUE WHERE is_default = true AND deleted_at IS NULL` — at most one active default per org.
 
-### `template_folders`
+`defaults_json` and `app_source_cop_json` are JSONB columns rather than normalised tables because they're write-once-edit-rarely metadata, and the structure is closed (defined by the AL/BC ecosystem). Normalising them would mean a schema migration every time AL adds a new app.json field. EF Core uses `HasConversion<string>()` with `JsonSerializer` to make these typed in C# while stored as jsonb.
 
-The folder structure the runtime template emits into the **Core** extension only — and into the single extension folder produced by the standalone (New Extension) flow. Each row is one folder.
+### `workspace_extensions`
 
-| Column         | Type           | Notes                                          |
-|----------------|----------------|------------------------------------------------|
-| `id`           | INTEGER PK     |                                                |
-| `template_id`  | INTEGER FK     | → runtime_templates.id, cascade delete          |
-| `ordering`     | INTEGER NOT NULL | Position within the template's folder list   |
-| `path`         | TEXT NOT NULL  | Relative path inside the extension folder. e.g. "Source/Foundation" |
+One row per declared extension on a template. The template's required extensions, plus its optional extensions (`required = false`) the user can tick on New Workspace, plus the implicit module clones (which don't live here — see `module_extension_folders` instead).
 
-Index: `(template_id, ordering)`.
+| Column           | Type             | Notes                                                          |
+|------------------|------------------|----------------------------------------------------------------|
+| `id`             | INTEGER PK       | Identity                                                       |
+| `organization_id`| INTEGER NOT NULL |                                                                |
+| `template_id`    | INTEGER FK NOT NULL | → `runtime_templates.id`, cascade delete                    |
+| `ordering`       | INTEGER NOT NULL | Position in the template's extension list                      |
+| `path`           | TEXT NOT NULL    | Stable identifier (folder name in the ZIP, dependency ref target). Single segment, no `/` |
+| `name_template`  | TEXT NOT NULL    | Mustache template for the rendered extension name, e.g. `"{{extension_prefix}} Core"` |
+| `required`       | BOOLEAN NOT NULL | True = always emitted; false = opt-in checkbox                  |
+| `application`    | TEXT             | Optional per-extension override of the template-wide `defaults.application` |
+| `runtime`        | TEXT             | Optional per-extension override of the template-wide runtime    |
+| `id_range_from`  | INTEGER          | Optional explicit start. When both this and `id_range_to` are set, the generator uses them verbatim. |
+| `id_range_to`    | INTEGER          | Optional explicit end                                          |
 
-A folder's seeded contents live in `template_files` rows hung off this table. A folder with no `template_files` rows generates a single `.gitkeep` placeholder; a folder with rows generates one entry in the ZIP per row when `include_examples` is true (and a `.gitkeep` otherwise).
+Indexes:
+- `(organization_id, template_id, ordering)` — ordered enumeration.
+- `(template_id, path)` UNIQUE — paths are unique within a template.
 
-Module extensions in a generated workspace use `template_module_folders` instead — see below — so Core's per-extension scaffolding (App Install codeunits, setup tables, permission sets) doesn't get duplicated into every module ZIP.
+### `workspace_extension_folders`
 
-### `template_module_folders`
+Recursive folder tree, one row per folder. Top-level folders have `parent_folder_id IS NULL`; nested folders point at their parent. Both the parent FK and the owning-extension FK are kept on every row (denormalised) so leaf queries don't have to walk the chain.
 
-Same shape as `template_folders`, but rows are emitted into every **module** extension generated from this template. Empty by default; if a template has no module folders, modules ship with just `app.json`, `AppSourceCop.json`, and the static fallback folders (`libs/`, `permissionsets/`, `Translations/`).
+| Column                | Type             | Notes                                                       |
+|-----------------------|------------------|-------------------------------------------------------------|
+| `id`                  | INTEGER PK       |                                                             |
+| `organization_id`     | INTEGER NOT NULL |                                                             |
+| `workspace_extension_id` | INTEGER FK NOT NULL | → `workspace_extensions.id`, cascade delete            |
+| `parent_folder_id`    | INTEGER FK       | → `workspace_extension_folders.id`, cascade delete. Null on top-level folders. |
+| `ordering`            | INTEGER NOT NULL | Position among siblings                                     |
+| `path`                | TEXT NOT NULL    | Single path segment (no `/`)                                |
 
-| Column         | Type           | Notes                                          |
-|----------------|----------------|------------------------------------------------|
-| `id`           | INTEGER PK     |                                                |
-| `template_id`  | INTEGER FK     | → runtime_templates.id, cascade delete          |
-| `ordering`     | INTEGER NOT NULL | Position within the template's module-folder list |
-| `path`         | TEXT NOT NULL  | Relative path inside the generated module extension |
+Indexes:
+- `(workspace_extension_id, parent_folder_id, ordering)` for ordered enumeration.
+- `(parent_folder_id, path) UNIQUE WHERE parent_folder_id IS NOT NULL` — siblings can't collide on path.
+- `(workspace_extension_id, path) UNIQUE WHERE parent_folder_id IS NULL` — top-level siblings can't collide either.
 
-Index: `(template_id, ordering)`.
+Because EF's `Include`/`ThenInclude` only recurses one level at a time, code that loads the tree should issue a single flat query and reassemble client-side — see `GenerationService.AssembleFolderTree` and `TemplateImportService.HydrateExtensionTreeAsync`.
 
-Per-folder file content lives in `template_module_files` (next).
+### `workspace_extension_files`
 
-### `template_module_files`
+One row per file attached to a folder. Files can attach at any depth, including intermediate folders.
 
-Per-module-folder file content. Same shape as `template_files`, just hung off `template_module_folders`.
+| Column                          | Type             | Notes                                                  |
+|---------------------------------|------------------|--------------------------------------------------------|
+| `id`                            | INTEGER PK       |                                                        |
+| `organization_id`               | INTEGER NOT NULL |                                                        |
+| `workspace_extension_folder_id` | INTEGER FK NOT NULL | → `workspace_extension_folders.id`, cascade delete  |
+| `ordering`                      | INTEGER NOT NULL | Position within the folder                             |
+| `path`                          | TEXT NOT NULL    | Filename (no `/`, no `..`). Mustache substitution runs at generation time, not at write time. |
+| `content`                       | TEXT NOT NULL    | UTF-8 text. Binary assets are not supported in v1.    |
+| `is_example`                    | BOOLEAN NOT NULL | When true, the file ships only if the plan's `IncludeExamples` is set. |
 
-| Column                      | Type           | Notes                                          |
-|-----------------------------|----------------|------------------------------------------------|
-| `id`                        | INTEGER PK     |                                                |
-| `template_module_folder_id` | INTEGER FK     | → template_module_folders.id, cascade delete    |
-| `ordering`                  | INTEGER NOT NULL | Position within the folder's file list        |
-| `path`                      | TEXT NOT NULL  | Relative path inside the folder, forward-slash separated. Same rules as `template_files.path` |
-| `content`                   | TEXT NOT NULL  | Raw file content. Mustache substitution runs at generation time |
+Indexes:
+- `(workspace_extension_folder_id, ordering)` for ordered enumeration.
+- `(workspace_extension_folder_id, path)` UNIQUE — a folder can't carry two files at the same name.
 
-Indexes: `(template_module_folder_id, ordering)`, `(template_module_folder_id, path)` UNIQUE.
+Editing `path` or `content` flows through the same `TemplateAuthoring` pipeline both authoring surfaces use. The TOML editor expresses the same data via `[[extensions.folders.files]]` blocks at any depth (see `templates-and-seeding.md`).
 
-### `template_files`
+### `workspace_extension_dependencies`
 
-Per-folder file content. Stored as UTF-8 text — binary assets are not supported in v1.
+One row per `[[extensions.dependencies]]` entry. Each row sets **exactly one** of three reference shapes, enforced by a CHECK constraint:
 
-| Column              | Type           | Notes                                          |
-|---------------------|----------------|------------------------------------------------|
-| `id`                | INTEGER PK     |                                                |
-| `template_folder_id`| INTEGER FK     | → template_folders.id, cascade delete           |
-| `ordering`          | INTEGER NOT NULL | Position within the folder's file list        |
-| `path`              | TEXT NOT NULL  | Relative path inside the folder, forward-slash separated. e.g. "AppInstall.Codeunit.al" or "subfolder/Util.Codeunit.al". No leading slash, no `..` segments. |
-| `content`           | TEXT NOT NULL  | Raw file content. Mustache substitution runs at generation time, not at write time. |
+| Column                   | Type             | Notes                                                  |
+|--------------------------|------------------|--------------------------------------------------------|
+| `id`                     | INTEGER PK       |                                                        |
+| `organization_id`        | INTEGER NOT NULL |                                                        |
+| `workspace_extension_id` | INTEGER FK NOT NULL | → `workspace_extensions.id`, cascade delete         |
+| `ordering`               | INTEGER NOT NULL | Position within the extension's dependency list        |
+| `ref_extension_path`     | TEXT             | Intra-workspace ref: another extension's `path`        |
+| `ref_module_key`         | TEXT             | Catalogue ref: a `modules.key`                         |
+| `lit_id`                 | TEXT             | Literal ref: an AL app GUID                            |
+| `lit_name`               | TEXT             | Literal ref: paired with `lit_id`                      |
+| `lit_publisher`          | TEXT             | Literal ref: paired with `lit_id`                      |
+| `lit_version`            | TEXT             | Literal ref: paired with `lit_id`                      |
 
-Indexes: `(template_folder_id, ordering)` for ordered enumeration; `(template_folder_id, path)` UNIQUE so a single folder can't carry two files at the same relative path.
+Indexes:
+- `(workspace_extension_id, ordering)` for ordered enumeration.
 
-Editing `path` or `content` flows through the same `TemplateInput` pipeline both authoring surfaces use. The structured editor offers per-file path inputs and a `<textarea>` for content; the TOML editor expresses the same data via `[[folders.files]]` blocks (see `templates-and-seeding.md`).
+CHECK constraint `ck_workspace_extension_dependencies_one_ref`: exactly one of `ref_extension_path`, `ref_module_key`, `lit_id` is non-null per row. The service layer pre-validates the same shape so the DB constraint is a belt-and-braces guard, not a live error surface.
+
+### `module_extension_folders`
+
+Mirror of `workspace_extension_folders` for the catalogue side: each module declares its own recursive folder tree, cloned into the workspace at generation time when the user selects the module.
+
+| Column            | Type             | Notes                                                       |
+|-------------------|------------------|-------------------------------------------------------------|
+| `id`              | INTEGER PK       |                                                             |
+| `organization_id` | INTEGER NOT NULL |                                                             |
+| `module_id`       | INTEGER FK NOT NULL | → `modules.id`, cascade delete                           |
+| `parent_folder_id`| INTEGER FK       | → self, cascade delete. Null on top-level folders.          |
+| `ordering`        | INTEGER NOT NULL |                                                             |
+| `path`            | TEXT NOT NULL    | Single segment                                              |
+
+Indexes mirror `workspace_extension_folders`:
+- `(module_id, parent_folder_id, ordering)`
+- `(parent_folder_id, path) UNIQUE WHERE parent_folder_id IS NOT NULL`
+- `(module_id, path) UNIQUE WHERE parent_folder_id IS NULL`
+
+### `module_extension_files`
+
+Mirror of `workspace_extension_files`: per-folder file content on the module side.
+
+| Column                       | Type             | Notes                                                  |
+|------------------------------|------------------|--------------------------------------------------------|
+| `id`                         | INTEGER PK       |                                                        |
+| `organization_id`            | INTEGER NOT NULL |                                                        |
+| `module_extension_folder_id` | INTEGER FK NOT NULL | → `module_extension_folders.id`, cascade delete     |
+| `ordering`                   | INTEGER NOT NULL |                                                        |
+| `path`                       | TEXT NOT NULL    | Filename                                               |
+| `content`                    | TEXT NOT NULL    | UTF-8 text                                             |
+| `is_example`                 | BOOLEAN NOT NULL |                                                        |
+
+Indexes:
+- `(module_extension_folder_id, ordering)`
+- `(module_extension_folder_id, path)` UNIQUE
 
 ### `runtime_template_default_modules`
 
@@ -126,40 +200,47 @@ Pre-selected modules per template (Milestone P2.1). When a user picks a template
 | Column                | Type             | Notes                                         |
 |-----------------------|------------------|-----------------------------------------------|
 | `id`                  | INTEGER PK       |                                               |
-| `runtime_template_id` | INTEGER FK       | → runtime_templates.id, cascade delete         |
-| `module_id`           | INTEGER FK       | → modules.id, cascade delete                   |
+| `organization_id`     | INTEGER NOT NULL |                                               |
+| `runtime_template_id` | INTEGER FK NOT NULL | → `runtime_templates.id`, cascade delete   |
+| `module_id`           | INTEGER FK NOT NULL | → `modules.id`, cascade delete             |
 | `ordering`            | INTEGER NOT NULL | Display order in the admin's chosen sequence  |
 
-Indexes: `(runtime_template_id, ordering)` for ordered enumeration; `(runtime_template_id, module_id)` UNIQUE so the same module can't appear twice on a template's default list.
+Indexes:
+- `(runtime_template_id, ordering)` for ordered enumeration.
+- `(runtime_template_id, module_id)` UNIQUE — the same module can't appear twice on a template's default list.
 
 The relation is purely cosmetic for end-users — generation does not consult it. A user who deselects a default module gets a workspace without that module, just as they would by leaving an unticked module unticked. Soft-deleted modules are silently dropped from the pre-selection at form load time.
 
+The write-path reconciler in `TemplateService.UpdateAsync` matches existing rows by `module_id` (the natural identity), **not** by list position — position-based mutation would trip the `(runtime_template_id, module_id)` unique index when two rows swap places, and EF would refuse with a circular-dependency error. Reorders rewrite `ordering`; `module_id` stays put on each row.
+
 ### `modules`
 
-| Column                   | Type           | Notes                                          |
-|--------------------------|----------------|------------------------------------------------|
-| `id`                     | INTEGER PK     |                                                |
-| `key`                    | TEXT NOT NULL  | Unique. URL-safe, e.g. "document-capture"      |
-| `name`                   | TEXT NOT NULL  | Display name e.g. "Document Capture"           |
-| `id_range_size`          | INTEGER        | Optional override; null = use the template's `module_id_range_size` |
-| `deprecated`             | INTEGER NOT NULL | 0/1                                          |
-| `created_at`             | TEXT NOT NULL  |                                                |
-| `updated_at`             | TEXT NOT NULL  |                                                |
-| `deleted_at`             | TEXT           |                                                |
+| Column                   | Type             | Notes                                          |
+|--------------------------|------------------|------------------------------------------------|
+| `id`                     | INTEGER PK       |                                                |
+| `organization_id`        | INTEGER NOT NULL |                                                |
+| `key`                    | TEXT NOT NULL    | Unique per org. URL-safe, e.g. "document-capture" |
+| `name`                   | TEXT NOT NULL    | Display name e.g. "Document Capture"           |
+| `id_range_size`          | INTEGER          | Optional override; null = use the template's `module_id_range_size` |
+| `deprecated`             | BOOLEAN NOT NULL |                                                |
+| `created_at`             | TIMESTAMPTZ NOT NULL |                                            |
+| `updated_at`             | TIMESTAMPTZ NOT NULL |                                            |
+| `deleted_at`             | TIMESTAMPTZ      |                                                |
 
-Modules are not tied to a specific runtime — they declare dependencies that work across runtimes. The runtime template owns the folder layout; the module just contributes to `app.json`'s `dependencies` array.
+Modules are not tied to a specific runtime — they declare dependencies that work across runtimes. A module contributes one cloned extension to the workspace (folder/file tree from `module_extension_folders` / `module_extension_files`) plus entries in its `app.json`'s `dependencies` array from `module_dependencies`.
 
 ### `module_dependencies`
 
-| Column         | Type           | Notes                                                |
-|----------------|----------------|------------------------------------------------------|
-| `id`           | INTEGER PK     |                                                      |
-| `module_id`    | INTEGER FK     | → modules.id, cascade delete                          |
-| `ordering`     | INTEGER NOT NULL |                                                    |
-| `dep_id`       | TEXT NOT NULL  | The GUID of the dependency, e.g. "4b915d7e-..."      |
-| `dep_name`     | TEXT NOT NULL  | e.g. "Continia Core"                                 |
-| `dep_publisher`| TEXT NOT NULL  | e.g. "Continia Software"                             |
-| `dep_version`  | TEXT NOT NULL  | e.g. "1.0.0.0"                                       |
+| Column         | Type             | Notes                                                |
+|----------------|------------------|------------------------------------------------------|
+| `id`           | INTEGER PK       |                                                      |
+| `organization_id` | INTEGER NOT NULL |                                                   |
+| `module_id`    | INTEGER FK NOT NULL | → `modules.id`, cascade delete                    |
+| `ordering`     | INTEGER NOT NULL |                                                      |
+| `dep_id`       | TEXT NOT NULL    | The GUID of the dependency, e.g. "4b915d7e-..."      |
+| `dep_name`     | TEXT NOT NULL    | e.g. "Continia Core"                                 |
+| `dep_publisher`| TEXT NOT NULL    | e.g. "Continia Software"                             |
+| `dep_version`  | TEXT NOT NULL    | e.g. "1.0.0.0"                                       |
 
 Index: `(module_id, ordering)`.
 
@@ -173,45 +254,49 @@ The catalogue of "things you might depend on without us knowing in advance." It'
 - The same dependency might appear in multiple modules' lists (Continia Core appears in three).
 - Admins should be able to add new well-known deps without creating a fake module for them.
 
-| Column         | Type           | Notes                                                |
-|----------------|----------------|------------------------------------------------------|
-| `id`           | INTEGER PK     |                                                      |
-| `dep_id`       | TEXT NOT NULL  | GUID                                                 |
-| `dep_name`     | TEXT NOT NULL  |                                                      |
-| `dep_publisher`| TEXT NOT NULL  |                                                      |
-| `dep_version_default` | TEXT NOT NULL  | Pre-fills the version field; the user can override it for their specific extension |
-| `category`     | TEXT           | Optional grouping label e.g. "Continia", "ForNAV", "Other" — used to group items in the picker UI |
-| `ordering`     | INTEGER NOT NULL |                                                    |
-| `created_at`   | TEXT NOT NULL  |                                                      |
-| `updated_at`   | TEXT NOT NULL  |                                                      |
+| Column         | Type             | Notes                                                |
+|----------------|------------------|------------------------------------------------------|
+| `id`           | INTEGER PK       |                                                      |
+| `organization_id` | INTEGER NOT NULL |                                                   |
+| `dep_id`       | TEXT NOT NULL    | GUID                                                 |
+| `dep_name`     | TEXT NOT NULL    |                                                      |
+| `dep_publisher`| TEXT NOT NULL    |                                                      |
+| `dep_version_default` | TEXT NOT NULL | Pre-fills the version field; the user can override it for their specific extension |
+| `category`     | TEXT             | Optional grouping label e.g. "Continia", "ForNAV", "Other" — used to group items in the picker UI |
+| `ordering`     | INTEGER NOT NULL |                                                      |
+| `created_at`   | TIMESTAMPTZ NOT NULL |                                                  |
+| `updated_at`   | TIMESTAMPTZ NOT NULL |                                                  |
 
 ### `audit_log`
 
 One row per write to any of the above tables. See `auth-and-audit.md` for the full behaviour.
 
-| Column         | Type           | Notes                                                |
-|----------------|----------------|------------------------------------------------------|
-| `id`           | INTEGER PK     |                                                      |
-| `timestamp`    | TEXT NOT NULL  | UTC ISO8601                                          |
-| `changed_by`   | TEXT NOT NULL  | The honour-system display name from login            |
-| `entity_type`  | TEXT NOT NULL  | "runtime_template" \| "template_folder" \| "template_file" \| "template_module_folder" \| "template_module_file" \| "runtime_template_default_module" \| "module" \| "module_dependency" \| "well_known_dependency" |
-| `entity_id`    | INTEGER NOT NULL | The id within that entity's table                  |
-| `action`       | TEXT NOT NULL  | "created" \| "updated" \| "deleted"                  |
-| `snapshot_json`| TEXT           | Full JSON of the row's state *before* the change. Null for "created" |
+| Column         | Type             | Notes                                                |
+|----------------|------------------|------------------------------------------------------|
+| `id`           | INTEGER PK       |                                                      |
+| `timestamp`    | TIMESTAMPTZ NOT NULL | UTC                                              |
+| `changed_by`   | TEXT NOT NULL    | The current user's display name                      |
+| `entity_type`  | TEXT NOT NULL    | One of: `runtime_template`, `workspace_extension`, `workspace_extension_folder`, `workspace_extension_file`, `workspace_extension_dependency`, `runtime_template_default_module`, `module`, `module_dependency`, `module_extension_folder`, `module_extension_file`, `well_known_dependency`. Pre-Issue #54 rows with `template_folder` / `template_file` / `template_module_folder` / `template_module_file` are retained for historical view. |
+| `entity_id`    | INTEGER NOT NULL | The id within that entity's table                    |
+| `action`       | TEXT NOT NULL    | `created` \| `updated` \| `deleted`                  |
+| `snapshot_json`| TEXT             | Full JSON of the row's state *before* the change. Null for `created`. |
 
 Index: `(entity_type, entity_id, timestamp DESC)` for the per-entity history view.
 
 ## Validation rules
 
-These are domain rules — they should be enforced in service code, not just at the form layer. In particular, anything that calls `TemplateService.Update` should fail before hitting the DB if these are violated.
+These are domain rules — they should be enforced in service code, not just at the form layer. In particular, anything that calls `TemplateService.CreateAsync` / `UpdateAsync` should fail before hitting the DB if these are violated, throwing `PlanValidationException` with field-keyed errors so the UI can render them inline.
 
-- `runtime_templates.key` must match `^[a-z0-9-]+$` and be unique.
-- `runtime_templates.runtime` must be > 0.
+- `runtime_templates.key` must match `^[a-z0-9-]+$` and be unique within an org.
+- `runtime_templates.runtime` must be a non-empty string.
 - `runtime_templates.core_id_range_from < core_id_range_to`.
-- `template_folders.path` must be a relative path with `/` separators, no leading slash, no `..`.
-- `template_files.path` must be a relative path with `/` separators, no leading slash, no `..`. It is unique per `template_folder_id`.
-- `template_files.content` is UTF-8 text. Audit snapshots store a SHA-256 hash of the content (plus the path) rather than the content itself, so the audit log doesn't bloat with copies of every AL file on every save.
-- `modules.key` must match `^[a-z0-9-]+$` and be unique.
+- `workspace_extensions.path` must be a single segment matching `^[A-Za-z0-9._-]+$` (no `/`, no `..`), unique within a template.
+- `workspace_extension_folders.path` must be a single segment (no `/`). Top-level siblings under one extension can't share a path; nested siblings under one parent can't share a path.
+- `workspace_extension_files.path` must be a filename (no `/`, no `..`). Unique within a folder.
+- `workspace_extension_files.content` is UTF-8 text. Audit snapshots store a SHA-256 hash of the content (plus the path) rather than the content itself, so the audit log doesn't bloat with copies of every AL file on every save.
+- `workspace_extension_dependencies`: exactly one of `ref_extension_path`, `ref_module_key`, `lit_id` is non-null. When `ref_extension_path` is set, it must resolve to another extension in the same template; the save validator rejects unresolvable references rather than letting them slip through to generation.
+- `module_extension_folders` / `module_extension_files`: same path-segment rules as the workspace mirrors.
+- `modules.key` must match `^[a-z0-9-]+$` and be unique within an org.
 - `module_dependencies.dep_id` must be a GUID format.
 - `well_known_dependencies.dep_id` must be a GUID format.
 

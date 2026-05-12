@@ -31,7 +31,7 @@
                     <th>Runtime</th>
                     <th>Name</th>
                     <th>Description</th>
-                    <th>Folders</th>
+                    <th>Extensions</th>
                     <th>Status</th>
                     <th class="data-table__actions"></th>
                 </tr>
@@ -44,7 +44,7 @@
                         <td>@t.Runtime</td>
                         <td>@t.Name</td>
                         <td class="muted">@t.Description</td>
-                        <td>@t.Folders.Count</td>
+                        <td>@t.WorkspaceExtensions.Count</td>
                         <td>@(t.Deprecated ? "Deprecated" : "Active")</td>
                         <td class="data-table__actions">
                             <a class="btn btn--sm" href="@($"/templates/{Uri.EscapeDataString(t.Key)}")">

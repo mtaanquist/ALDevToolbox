@@ -2,8 +2,10 @@ namespace ALDevToolbox.Domain.Entities;
 
 /// <summary>
 /// A reusable module the user can select on the New Workspace form. Each module
-/// contributes its own extension folder to the generated output and adds a
-/// fixed set of dependencies to that extension's <c>app.json</c>.
+/// declares its own extension folder/file tree; when the user picks it, the
+/// generator clones that tree into the workspace as another extension. Modules
+/// also carry their own AL dependencies (e.g. the runtime DLLs / system apps
+/// they depend on) which are added to the cloned extension's <c>app.json</c>.
 /// </summary>
 public class Module
 {
@@ -30,6 +32,13 @@ public class Module
     public DateTime UpdatedAt { get; set; }
     public DateTime? DeletedAt { get; set; }
 
-    /// <summary>The dependencies this module appends to its generated extension's <c>app.json</c>.</summary>
+    /// <summary>The dependencies this module appends to its cloned extension's <c>app.json</c>.</summary>
     public List<ModuleDependency> Dependencies { get; set; } = new();
+
+    /// <summary>
+    /// Top-level folders in the module's extension layout. Children live
+    /// recursively in <see cref="ModuleExtensionFolder.Folders"/>; files attach
+    /// at any depth via <see cref="ModuleExtensionFolder.Files"/>.
+    /// </summary>
+    public List<ModuleExtensionFolder> ExtensionFolders { get; set; } = new();
 }

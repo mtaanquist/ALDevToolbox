@@ -1,10 +1,12 @@
 # Templates and seeding
 
+This document covers where templates live, the TOML schema admins author against, and the import-from-system-org flow. The data-model spec lives in `domain-model.md`; the unified-extensions data shape (Issue #54) is documented in `unified-extensions.md`.
+
 ## Where templates live
 
 **Persistence:** in the PostgreSQL database. Templates, modules, and catalogue entries are stored as rows in the tables described in `domain-model.md`. The DB is the source of truth at runtime — every read on the user-facing flows hits these tables.
 
-**Authoring surfaces:** two equal options, both writing through the same `TemplateInput` validation pipeline into the DB.
+**Authoring surfaces:** two equal options, both writing through the same `TemplateAuthoring` validation pipeline into the DB.
 
 1. **The structured admin form.** Field-by-field editing on `/admin/templates/{key}`. Best for incremental tweaks, single-flag changes, and folder reordering.
 2. **TOML.** A textarea on the same admin page (toggle in the header) that round-trips a `template.toml` document. Best for authoring a new template from scratch, bulk folder edits, and copy-pasting a template from one environment to another. New templates default to TOML mode because that's the workflow this is optimised for.
@@ -33,16 +35,24 @@ TemplateImportService.ImportTemplateAsync(systemTemplateId):
     require an authenticated org context
     refuse if the acting org IS the system org (would import from itself)
     resolve the system org via IsSystem = true (bypassing query filters)
-    load the source template with all children (folders, module folders,
-        default modules + their dependencies, default application version)
+    load the source template with its WorkspaceExtension graph:
+      - extensions ordered by Ordering
+      - the recursive workspace_extension_folders tree (loaded via a flat
+        query and reassembled client-side — EF's Include doesn't recurse)
+      - workspace_extension_files attached to each folder at its depth
+      - workspace_extension_dependencies per extension
+      - default modules + their dependencies
+      - default application version
     refuse if the local org already has a template with the same key
     for each referenced Module:
         reuse the local module that shares the key, otherwise clone it
-        (with its module_dependencies) into the local org
+        (with its module_dependencies AND its recursive
+        module_extension_folders / module_extension_files tree) into the
+        local org
     for the default application version:
         reuse the local row that shares the key, otherwise clone it
     insert a fresh runtime_template row (organization_id = acting org)
-        plus cloned folder + file rows
+        plus the cloned WorkspaceExtension graph
     return the new template
 ```
 
@@ -61,102 +71,159 @@ class TemplateSeed {
     public TemplateMetaSeed Template { get; set; }
     public DefaultsSeed Defaults { get; set; }
     public AppSourceCopSeed AppSourceCop { get; set; }
-    public List<FolderSeed> Folders { get; set; }
+    public List<ExtensionSeed> Extensions { get; set; }  // [[extensions]]
+}
+class ExtensionSeed {
+    public string Path { get; set; }                     // stable identifier
+    public string Name { get; set; }                     // mustache name template
+    public bool Required { get; set; } = true;
+    public string? Application { get; set; }             // per-extension override
+    public string? Runtime { get; set; }                 // per-extension override
+    public int? IdRangeFrom { get; set; }                // explicit override
+    public int? IdRangeTo { get; set; }
+    public List<FolderSeed> Folders { get; set; } = new();
+    public List<DependencySeed> Dependencies { get; set; } = new();
 }
 class FolderSeed {
-    public string Path { get; set; }
-    public List<FolderFileSeed> Files { get; set; } = new();  // file contents stored inline
+    public string Path { get; set; }                     // single segment
+    public List<FolderSeed> Folders { get; set; } = new();   // recursive
+    public List<FolderFileSeed> Files { get; set; } = new(); // attached at this depth
 }
 class FolderFileSeed {
-    public string Path { get; set; }       // relative to the folder, e.g. "AppInstall.Codeunit.al"
-    public string Content { get; set; }    // raw file content; mustache substitution runs at generation time
+    public string Path { get; set; }
+    public string Content { get; set; }                  // mustache-substituted at generation time
+    public bool IsExample { get; set; }
 }
-// ...etc
+class DependencySeed {
+    public string? Extension { get; set; }               // one of these
+    public string? Module { get; set; }
+    public string? Id { get; set; }
+    public string? Name { get; set; }
+    public string? Publisher { get; set; }
+    public string? Version { get; set; }
+}
 ```
 
-`Toml.ToModel<TemplateSeed>(text)` does the deserialisation. The `defaults_json` and `app_source_cop_json` columns are populated by re-serialising the relevant sub-objects to JSON.
+`TemplateTomlMapper.FromToml(text, deprecated)` does the deserialisation and emits a `TemplateAuthoring` ready for `TemplateService.CreateAsync` / `UpdateAsync`. The `defaults_json` and `app_source_cop_json` columns are populated by re-serialising the relevant sub-objects to JSON.
 
 ## Template TOML schema
 
-A `template.toml` document — pasted into the admin TOML editor or produced by the export pipeline — follows this shape:
+A `template.toml` document — pasted into the admin TOML editor or produced by the export pipeline — follows the **unified-extensions** shape:
 
 ```toml
 # Required: template metadata
 [template]
-key = "runtime-15"               # URL-safe unique key
-runtime = 15                     # the AL runtime version
-name = "Runtime 15+"             # display name
-description = "Namespace folders" # caption under the dropdown
-default_application = "24.0.0.0" # used to pre-fill the form
-default_platform = "1.0.0.0"
+key = "runtime-15"
+runtime = "15"
+name = "Runtime 15+"
+description = "Namespace folders, AppSource-ready"
 core_id_range_from = 90000
 core_id_range_to = 90999
 module_id_range_start = 91000
 module_id_range_size = 200
-# Optional: module keys pre-selected on the New Workspace form when this
-# template is picked. End-users can still opt out of any entry; this only
-# seeds the initial selection. Unknown keys are dropped at seed time with a
-# warning rather than failing the import.
-default_modules = ["foundation", "document-capture"]
+is_default = false
 
-# Required: defaults merged into every generated app.json
+# Optional: default-selected catalogue modules. End-users can still opt out of
+# any entry; this only seeds the initial selection on the New Workspace form.
+# Unknown keys drop with a warning rather than failing the import.
+[[template.default_modules]]
+key = "document-capture"
+
+# Required: defaults merged into every generated app.json. The form pre-fills
+# from these, the user edits, the final values flow into per-extension app.json.
 [defaults]
 publisher = "Consortio IT"
 target = "Cloud"
+application = "27.0.0.0"        # pre-fill; user can override on New Workspace
+platform = "1.0.0.0"            # pre-fill; user can override on New Workspace
+extension_prefix = "ACME"       # pre-fill; user can override on New Workspace
 url = "https://www.consortio.dk/"
 logo = "../.assets/images/logo.png"
 features = ["TranslationFile", "NoImplicitWith"]
 supportedLocales = ["en-US", "da-DK"]
+affix = "ACME"
+affixType = "Prefix"            # "None" | "Prefix" | "Suffix"
 
 [defaults.resourceExposurePolicy]
 allowDebugging = true
 allowDownloadingSource = false
 includeSourceInSymbolFile = true
 
-# Required: AppSourceCop.json contents
+# Required: AppSourceCop.json contents (merged into every extension's
+# AppSourceCop.json — mustache substitution runs at generation time).
 [appSourceCop]
 mandatoryPrefix = "CONIT"
 supportedCountries = ["US", "DK"]
 
-# Required: array of folder definitions, in display order. These are emitted
-# into the Core extension only (and into the single extension produced by the
-# standalone New Extension flow). Module extensions in a generated workspace
-# use [[module_folders]] below — see generation-engine.md for why.
-[[folders]]
-path = "Source/Foundation"
+# Required: at least one [[extensions]] entry. Display order is array order;
+# required = true entries always emit, required = false entries surface as
+# checkboxes on the New Workspace form.
 
-# Optional: file contents seeded into this folder. When empty, the folder
-# generates with a single .gitkeep regardless of the include-examples toggle.
-# Mustache substitution runs at generation time, not at seed/parse time.
-[[folders.files]]
+[[extensions]]
+path = "Core"                   # stable identifier (folder name in ZIP, dep ref target)
+name = "{{extension_prefix}} Core"
+required = true
+# id_range_from / id_range_to optional — auto-allocate from the template ranges
+# when omitted (see generation-engine.md "ID range allocation").
+
+# Folders nest: each [[extensions.folders]] is a top-level folder under the
+# extension; [[extensions.folders.folders]] are children, recursively. Files
+# attach at any depth via [[extensions.folders.files]] / nested .files blocks.
+[[extensions.folders]]
+path = "src"
+
+[[extensions.folders.folders]]
+path = "codeunits"
+
+[[extensions.folders.folders.files]]
 path = "AppInstall.Codeunit.al"
 content = """
 namespace {{namespace}};
 
-codeunit 90100 "{{prefix}} App Install"
+codeunit 90100 "{{affix}} App Install"
 {
     Subtype = Install;
 }
 """
 
-[[folders]]
-path = "Source/Sales"
-# no files — gets .gitkeep when include-examples is off and stays empty when it's on
+[[extensions.folders.folders.files]]
+path = "Example.Codeunit.al"
+content = """codeunit 90101 \"{{affix}} Example\" { }"""
+is_example = true              # only emitted when plan.IncludeExamples is true
 
-[[folders]]
+# A second required extension — depending on Core by stable path.
+[[extensions]]
+path = "Hotfix"
+name = "{{extension_prefix}} Hotfix"
+required = true
+application = "27.0.0.0"        # per-extension override (optional)
+runtime = "15"                  # per-extension override (optional)
+
+[[extensions.dependencies]]
+extension = "Core"              # refs another [[extensions]] entry by `path`
+
+[[extensions.folders]]
+path = "src"
+
+# An optional extension — admins flip required = false to surface it as a
+# checkbox on New Workspace. Hidden until ticked.
+[[extensions]]
 path = "Translations"
-
-# Optional: array of folders emitted into every module extension. Empty (or
-# omitted) means modules ship with just app.json + AppSourceCop.json + the
-# static fallback folders (libs/, permissionsets/, Translations/). Same shape
-# as [[folders]]: optional [[module_folders.files]] blocks seed file content.
-[[module_folders]]
-path = "Source"
+name = "{{extension_prefix}} Translations"
+required = false
 ```
+
+Notes:
+
+- **`path` is the stable identifier** of an extension. `name` is display-only (mustache-substituted), `path` is the immutable reference target for dependencies.
+- **`required` defaults to true.** Template-declared extensions are always emitted unless explicitly marked optional. Optional extensions surface as checkboxes on New Workspace.
+- **Folders are a recursive tree, not flat paths.** Each `path` is a single segment; nesting is `[[extensions.folders.folders]]`. Files attach at any depth via `[[extensions.folders.files]]` / `[[extensions.folders.folders.files]]` / etc.
+- **No `[[module_folders]]`** at the template level. Modules carry their own folder/file trees on the module entity itself (see "Module TOML schema" below).
+- **`application` and `runtime`** are template-wide by default (from `[defaults]`), override-able per extension. Most workspaces use one version; the override unblocks mixed-version edge cases.
 
 ## Module TOML schema
 
-Each module's TOML document:
+Each module's TOML document. Modules now carry their own folder/file tree alongside their dependencies — when a module is selected on New Workspace, its folder tree clones into the workspace as one cloned extension at generation time.
 
 ```toml
 [module]
@@ -170,11 +237,17 @@ dep_name = "Continia Core"
 dep_publisher = "Continia Software"
 dep_version = "1.0.0.0"
 
-[[module.dependencies]]
-dep_id = "0745e76d-0b72-4641-87c2-ee45db5d2c32"
-dep_name = "Continia Delivery Network"
-dep_publisher = "Continia Software"
-dep_version = "1.0.0.0"
+# Optional: folder tree contributed by the module. Same shape as the template's
+# [[extensions.folders]] — recursive, files attach at any depth.
+[[module.folders]]
+path = "src"
+
+[[module.folders.folders]]
+path = "codeunits"
+
+[[module.folders.folders.files]]
+path = "DocAdapter.Codeunit.al"
+content = """codeunit 91000 \"{{affix}} Doc Adapter\" { }"""
 ```
 
 Order of `[[module.dependencies]]` blocks is preserved.
@@ -201,30 +274,33 @@ category = "ForNAV"
 
 ## Mustache variables (reference)
 
-These are the variables available when seeding example AL files into a generated extension. See `generation-engine.md` for substitution behaviour.
+These are the variables available when seeding AL files into a generated extension. See `generation-engine.md` for substitution behaviour.
 
-| Variable             | Description                                   |
-|----------------------|-----------------------------------------------|
-| `{{name}}`           | Full extension name                           |
-| `{{workspaceName}}`  | The workspace name from the form              |
-| `{{shortName}}`      | Workspace name with whitespace removed        |
-| `{{moduleName}}`     | The module's display name                     |
-| `{{publisher}}`      | Publisher field from defaults                 |
-| `{{prefix}}`         | mandatoryPrefix from app_source_cop           |
-| `{{namespace}}`      | The folder path, dot-separated                |
-| `{{guid}}`           | A fresh GUID per call                         |
+| Variable                | Description                                                |
+|-------------------------|------------------------------------------------------------|
+| `{{name}}`              | Full rendered extension name                               |
+| `{{workspaceName}}`     | The workspace name from the form                           |
+| `{{shortName}}`         | Workspace name with whitespace removed                     |
+| `{{moduleName}}`        | Module's display name (for module-cloned extensions)       |
+| `{{publisher}}`         | Publisher field from defaults                              |
+| `{{extension_prefix}}`  | Per-workspace short identifier from the plan, e.g. "CRO"   |
+| `{{affix}}`             | `defaults.affix` when `affixType ∈ {Prefix, Suffix}`; empty when `None`. Replaces the pre-unified `{{prefix}}` / `{{suffix}}`. |
+| `{{namespace}}`         | The folder path, dot-separated                             |
+| `{{guid}}`              | A fresh GUID per call                                      |
 
 ## TOML as an authoring surface
 
 Both `/admin/templates/new` and `/admin/templates/{key}` expose a TOML editor next to the structured form via a header toggle. The new-template flow opens in TOML mode by default because pasting in a `template.toml` is usually the fastest way to get a fresh template going; the edit flow opens in the structured form because surgical tweaks are what people do most often there.
 
-Saving from TOML mode parses the textarea via Tomlyn, maps it onto the same `TemplateInput` payload the structured form produces, and runs through identical validation. There is no separate code path on the way to the database.
+Saving from TOML mode parses the textarea via Tomlyn, maps it onto the same `TemplateAuthoring` payload the structured form produces (once the structured editor is rewritten around the recursive tree), and runs through identical validation in `TemplateService.CreateAsync` / `UpdateAsync`. There is no separate code path on the way to the database.
 
-The mapper (`Services/TemplateTomlMapper.cs`) is load-bearing infrastructure for the admin editor and the export pipeline. Two things to keep in mind when touching it:
+The mapper (`Services/TemplateTomlMapper.cs`) is load-bearing infrastructure for the admin editor and the export pipeline. A few things to keep in mind:
 
 - One TOML schema covers the admin editor, the export ZIP, and any future import-from-TOML affordance. Don't fork it.
-- A few fields are deliberately not represented in the TOML view: `deprecated` (flip it from the structured form's checkbox), and per-row folder reordering by drag (express the order by writing the `[[folders]]` blocks in that order; array order is preserved as `ordering`).
-- `[[folders.files]]` blocks make the TOML lossless even when folders carry file content. For larger files this gets noisy; the structured editor is usually the more comfortable surface for editing AL source. Both write through the same pipeline, so neither is "more correct" than the other.
+- `deprecated` is deliberately not represented in the TOML view — flip it from the structured form's checkbox.
+- Per-extension and per-folder ordering is expressed by array order; `ordering` columns are filled in from array position by the mapper.
+- `[[extensions.folders.files]]` blocks make the TOML lossless even when extensions carry file content. For larger files this gets noisy; the structured editor will be the more comfortable surface for editing AL source once it's been rewritten around the recursive tree. Both write through the same pipeline, so neither is "more correct" than the other.
+- Tomlyn silently drops unknown keys, so old templates that still mention `default_application` at `[template]` level or `[[folders]]` at the top level parse cleanly — they just don't produce any extensions. The mapper rewrite is responsible for surfacing this as a validation error rather than letting the import succeed with an empty extension list.
 
 ## Export to TOML
 
@@ -234,12 +310,12 @@ The mapper (`Services/TemplateTomlMapper.cs`) is load-bearing infrastructure for
 - Quickly grepping/diffing the entire template state outside the app.
 - Disaster recovery if the database is unrecoverable (paste the templates back via the admin TOML editor).
 
-Implementation: walk all active rows, serialise each template/module/catalogue back into the TOML shape, ZIP into `aldt-export-<datestamp>.zip`. Use Tomlyn's `Toml.FromModel(...)` for the inverse direction.
+Implementation: walk all active rows, serialise each template/module/catalogue back into the TOML shape via `TemplateTomlMapper.ToToml`. Recursive folder trees emit `[[extensions.folders.folders]]` blocks in depth order; files emit `[[extensions.folders.files]]` (or `[[extensions.folders.folders.files]]` for nested) at the parent folder's scope. The mapper hand-emits recursive folder blocks rather than going through Tomlyn's reflection serialiser, which produces inline arrays.
 
 ## What is *not* admin-editable
 
 - The static `.gitignore` template and the AL ruleset JSON. These ship as embedded resources under `Resources/` because they're per-deployment policy rather than per-template content. Treat them as code.
 - The `README.md` boilerplate written into a generated workspace — it's emitted by `GenerationService` and shaped by template metadata, not edited directly.
-- Binary files inside template folders. v1 stores file content as UTF-8 text only; PNGs, ZIPs, or anything else non-text don't have a place in `template_files`. If we need binary template assets later, the likely shape is a separate `template_file_blobs` table or a URL-fetched asset; defer until there's a real ask.
+- Binary files inside template or module folders. v1 stores file content as UTF-8 text only; PNGs, ZIPs, or anything else non-text don't have a place in `workspace_extension_files` / `module_extension_files`. If we need binary template assets later, the likely shape is a separate `*_file_blobs` table or a URL-fetched asset; defer until there's a real ask.
 
 The org logo, default publisher / ID range / brief / core description, and the always-included files appended to every generated workspace **are** admin-editable from `/admin/configuration` and live in the database (`organization_assets`, `organization_settings`, `organization_files`). Fresh orgs start without any of these rows — admins fill them in once they need them.

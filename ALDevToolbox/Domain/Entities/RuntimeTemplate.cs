@@ -4,9 +4,16 @@ namespace ALDevToolbox.Domain.Entities;
 
 /// <summary>
 /// A runtime template — a named layout the workspace generator can use to scaffold
-/// an extension. Each row corresponds to an entry in the New Workspace dropdown
-/// and ships with its own folder list, app.json defaults, and AppSourceCop settings.
+/// AL extensions. Each row corresponds to an entry in the New Workspace dropdown
+/// and declares an ordered list of <see cref="WorkspaceExtension"/> entries plus
+/// shared id-range policy, defaults, and AppSourceCop settings.
 /// </summary>
+/// <remarks>
+/// The pre-unified model carried a separate <c>template_folders</c> table for
+/// the implicit Core extension and a <c>template_module_folders</c> table for
+/// scaffolding shared across modules. Both are gone: extensions are now the
+/// only unit of layout — see <c>.design/templates-and-seeding.md</c>.
+/// </remarks>
 public class RuntimeTemplate
 {
     /// <summary>Database identifier. Auto-incremented.</summary>
@@ -24,10 +31,8 @@ public class RuntimeTemplate
 
     /// <summary>
     /// The AL runtime version this template targets (e.g. <c>15</c> or
-    /// <c>15.2</c>). BC's runtime is conceptually a Major[.Minor] string —
-    /// kept as a string so newer BC releases (15.2, 15.3, …) round-trip
-    /// cleanly through the seed TOML, the admin form, and the generated
-    /// <c>app.json</c>'s <c>runtime</c> field.
+    /// <c>15.2</c>). Per-extension overrides on <see cref="WorkspaceExtension.Runtime"/>
+    /// take precedence when set.
     /// </summary>
     public string Runtime { get; set; } = string.Empty;
 
@@ -38,32 +43,20 @@ public class RuntimeTemplate
     public string? Description { get; set; }
 
     /// <summary>
-    /// Free-text fallback for the <c>application</c> field (Major.Minor.Build.Revision).
-    /// Superseded in Milestone P2.4 by <see cref="DefaultApplicationVersion"/>; kept as
-    /// the orphan value when no curated entry matches, and as the backing field exported
-    /// to <c>template.toml</c> for backward compatibility.
-    /// </summary>
-    public string DefaultApplication { get; set; } = string.Empty;
-
-    /// <summary>Pre-fills the <c>platform</c> field on the New Workspace form.</summary>
-    public string DefaultPlatform { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Optional foreign key into <c>application_versions</c>. When set, the user-facing
-    /// builder forms preselect the matching curated entry and fill both
-    /// <c>application</c> and <c>runtime</c> from it. <c>null</c> means the template
-    /// pre-dates the curated catalogue or no entry matches; the form then falls back
-    /// to the free-text <see cref="DefaultApplication"/> / <see cref="Runtime"/> values.
+    /// Optional foreign key into <c>application_versions</c>. When set, the
+    /// user-facing builder forms preselect the matching curated entry. The free
+    /// text default (application + platform) lives inside
+    /// <see cref="Defaults"/> now.
     /// </summary>
     public int? DefaultApplicationVersionId { get; set; }
 
-    /// <summary>Navigation back to the curated catalogue entry (when one is set).</summary>
     public ApplicationVersion? DefaultApplicationVersion { get; set; }
 
     /// <summary>
-    /// Typed view of the rest of the <c>app.json</c> defaults (publisher, target,
-    /// features, etc.). Stored on the row as a JSON column to avoid schema churn
-    /// when AL adds new fields.
+    /// Typed view of the rest of the <c>app.json</c> defaults plus the
+    /// workspace plan's pre-fill block (publisher, target, application,
+    /// platform, extension_prefix, affix, features, …). Stored on the row as
+    /// a JSON column to avoid schema churn when AL adds new fields.
     /// </summary>
     public TemplateDefaults Defaults { get; set; } = new();
 
@@ -73,16 +66,20 @@ public class RuntimeTemplate
     /// </summary>
     public AppSourceCopSettings AppSourceCop { get; set; } = new();
 
-    /// <summary>Inclusive lower bound of the Core extension's id range.</summary>
+    /// <summary>
+    /// Inclusive lower bound of the first template-declared extension's id
+    /// range, used when the extension doesn't supply its own. Subsequent
+    /// auto-allocated extensions start at <see cref="ModuleIdRangeStart"/>.
+    /// </summary>
     public int CoreIdRangeFrom { get; set; }
 
-    /// <summary>Inclusive upper bound of the Core extension's id range.</summary>
+    /// <summary>Inclusive upper bound of the auto-allocated first extension's id range.</summary>
     public int CoreIdRangeTo { get; set; }
 
-    /// <summary>The first object id assigned to a module-derived extension.</summary>
+    /// <summary>The first object id assigned to a module-cloned extension (or an unannotated second template extension).</summary>
     public int ModuleIdRangeStart { get; set; }
 
-    /// <summary>How many object ids each module gets, unless it overrides this.</summary>
+    /// <summary>How many object ids each module / unannotated extension gets, unless it overrides this.</summary>
     public int ModuleIdRangeSize { get; set; }
 
     /// <summary>
@@ -94,10 +91,7 @@ public class RuntimeTemplate
     /// <summary>
     /// Marks this template as the per-organisation default selected on the New
     /// Workspace and New Extension forms when the user lands without an explicit
-    /// ?template= hint. Exactly one active template per organisation should
-    /// carry this flag — enforced by a filtered unique index in the DB. Toggled
-    /// via <c>TemplateService.SetDefaultAsync</c>; not editable from the
-    /// Create/Edit form directly.
+    /// ?template= hint. Toggled via <c>TemplateService.SetDefaultAsync</c>.
     /// </summary>
     public bool IsDefault { get; set; }
 
@@ -108,19 +102,11 @@ public class RuntimeTemplate
     public DateTime? DeletedAt { get; set; }
 
     /// <summary>
-    /// Folders emitted into the Core extension only, ordered as they appear in
-    /// the UI. Module extensions use <see cref="ModuleFolders"/> instead so
-    /// Core-specific scaffolding doesn't bleed into every module ZIP.
+    /// The ordered list of extensions this template declares. Each entry has
+    /// its own folder tree, files, and dependencies; <see cref="WorkspaceExtension.Required"/>
+    /// = false entries surface as optional checkboxes on the workspace form.
     /// </summary>
-    public List<TemplateFolder> Folders { get; set; } = new();
-
-    /// <summary>
-    /// Folders emitted into every module extension generated from this template.
-    /// Empty by default — modules then ship with just <c>app.json</c>,
-    /// <c>AppSourceCop.json</c>, and the static fallback placeholders
-    /// (<c>libs/</c>, <c>permissionsets/</c>, <c>Translations/</c>).
-    /// </summary>
-    public List<TemplateModuleFolder> ModuleFolders { get; set; } = new();
+    public List<WorkspaceExtension> WorkspaceExtensions { get; set; } = new();
 
     /// <summary>
     /// Modules pre-selected on the New Workspace form when this template is

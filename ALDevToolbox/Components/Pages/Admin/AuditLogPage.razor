@@ -94,6 +94,14 @@
     private static string FriendlyType(AuditEntityType type) => type switch
     {
         AuditEntityType.RuntimeTemplate => "Template",
+        AuditEntityType.WorkspaceExtension => "Extension",
+        AuditEntityType.WorkspaceExtensionFolder => "Extension folder",
+        AuditEntityType.WorkspaceExtensionFile => "Extension file",
+        AuditEntityType.WorkspaceExtensionDependency => "Extension dependency",
+        AuditEntityType.ModuleExtensionFolder => "Module folder",
+        AuditEntityType.ModuleExtensionFile => "Module file",
+        // Pre-unified labels — still used for historical rows written before
+        // 20260514000000_UnifyExtensions.
         AuditEntityType.TemplateFolder => "Template folder",
         AuditEntityType.TemplateFile => "Template file",
         AuditEntityType.TemplateModuleFolder => "Template module folder",

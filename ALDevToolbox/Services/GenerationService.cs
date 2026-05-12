@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
@@ -12,9 +13,11 @@ using Microsoft.EntityFrameworkCore;
 namespace ALDevToolbox.Services;
 
 /// <summary>
-/// Builds an in-memory ZIP archive for a workspace or standalone extension. The
-/// caller streams the resulting bytes to the HTTP response — see
-/// <c>generation-engine.md</c> for the full algorithm.
+/// Builds an in-memory ZIP archive for a workspace or standalone extension
+/// under the unified-extensions model (Issue #54). The caller streams the
+/// resulting bytes to the HTTP response — algorithm in
+/// <c>.design/generation-engine.md</c> and the per-extension contract in
+/// <c>.design/unified-extensions.md</c>.
 /// </summary>
 public class GenerationService
 {
@@ -27,9 +30,6 @@ public class GenerationService
         WriteIndented = true,
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never,
     };
-
-    /// <summary>The ForNAV publisher value used when matching catalogue rows for the "include ForNAV" option.</summary>
-    private const string ForNavPublisher = "ForNAV";
 
     /// <summary>The fixed <c>settings</c> block written into <c>.code-workspace</c>.</summary>
     private const string WorkspaceSettingsJson = """
@@ -69,12 +69,6 @@ public class GenerationService
         _logger = logger;
     }
 
-    /// <summary>
-    /// Resolves the per-org configuration for the acting user. Generation runs
-    /// inside an authenticated request, so a missing organisation is a bug —
-    /// reading without scope is the same kind of mistake as bypassing the EF
-    /// query filter.
-    /// </summary>
     private Task<OrganizationConfig> GetOrgConfigAsync(CancellationToken ct) =>
         _orgConfig.GetForAsync(
             _orgContext.CurrentOrganizationId
@@ -84,104 +78,56 @@ public class GenerationService
     // ===== Workspace flow =====
 
     /// <summary>
-    /// Generates a workspace ZIP for the given plan. The returned stream is a
-    /// rewound <see cref="MemoryStream"/> ready to be copied to the HTTP body.
+    /// Generates a workspace ZIP for the given plan. The walk concatenates the
+    /// template's required extensions, any optional extensions the user
+    /// ticked, and one cloned extension per selected catalogue module — all
+    /// in their display order.
     /// </summary>
     public async Task<GeneratedArchive> GenerateWorkspaceAsync(ProjectPlan plan, CancellationToken ct = default)
     {
         ValidateWorkspacePlan(plan);
 
         var stopwatch = Stopwatch.StartNew();
-        var template = await _db.RuntimeTemplates
-            .AsNoTracking()
-            .Include(t => t.Folders.OrderBy(f => f.Ordering))
-                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
-            .Include(t => t.ModuleFolders.OrderBy(f => f.Ordering))
-                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
-            .Where(t => t.DeletedAt == null && t.Key == plan.TemplateKey)
-            .FirstOrDefaultAsync(ct)
-            ?? throw new PlanValidationException(new Dictionary<string, string>
-            {
-                [nameof(plan.TemplateKey)] = $"Template '{plan.TemplateKey}' was not found.",
-            });
-
+        var template = await LoadTemplateAsync(plan.TemplateKey, ct);
         var modules = await LoadSelectedModulesAsync(plan.SelectedModuleKeys, ct);
         var orgConfig = await GetOrgConfigAsync(ct);
 
+        var extensions = BuildExtensionList(template, plan, modules);
+        ValidateIdRanges(extensions);
+
         var shortName = StripWhitespace(plan.WorkspaceName);
         var rootFolder = shortName;
-        var coreId = Guid.NewGuid();
-        var coreName = $"{plan.WorkspaceName} Core";
-
-        // Compute module names + folder names + GUIDs up front so the
-        // workspace file and the per-module dependency graphs all line up.
-        var moduleInfos = AssignModuleRanges(template, modules, plan, coreId, coreName);
-
         var stream = new MemoryStream();
         var fileCount = 0;
 
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
-            // .assets — logo + ruleset. Logo bytes come from the acting user's
-            // organisation_assets row (M14); ruleset is still per-deployment
-            // policy and ships as an embedded resource.
+            // Workspace-level assets: org logo, ruleset, always-included files.
             fileCount += WriteOrgLogo(archive, $"{rootFolder}/.assets/images", orgConfig.Logo);
             await WriteEmbeddedAsync(archive, $"{rootFolder}/.assets/rulesets/Company.ruleset.json", "ALDevToolbox.Resources.Company.ruleset.json", ct);
             fileCount += 1;
-
-            // Always-included org files (M14): written into the workspace root
-            // before per-extension folders so a per-template file at the same
-            // path could in principle override; in practice the paths don't
-            // overlap because per-template files live under the extension folder.
             fileCount += WriteOrgFiles(archive, rootFolder, orgConfig.Files, plan, template);
 
-            // Core extension uses the Core folder list; modules use the module
-            // folder list so Core's per-extension scaffolding (App Install
-            // codeunits, setup tables, permission sets) doesn't get duplicated
-            // into every module ZIP.
-            var coreFolders = SnapshotCoreFolders(template);
-            var moduleFolders = SnapshotModuleFolders(template);
-
-            // Core extension
-            var coreAppJson = await BuildCoreAppJsonAsync(template, plan, coreId, coreName, ct);
-            fileCount += await WriteExtensionAsync(
-                archive,
-                rootRelative: $"{rootFolder}/Core",
-                appJson: coreAppJson,
-                template: template,
-                folders: coreFolders,
-                plan: plan,
-                extensionName: coreName,
-                moduleName: coreName,
-                ct: ct);
-
-            // Module extensions
-            foreach (var info in moduleInfos)
+            // Per-extension folders.
+            foreach (var ext in extensions)
             {
-                var moduleAppJson = BuildModuleAppJson(info, template, plan);
-                fileCount += await WriteExtensionAsync(
-                    archive,
-                    rootRelative: $"{rootFolder}/{info.FolderName}",
-                    appJson: moduleAppJson,
-                    template: template,
-                    folders: moduleFolders,
-                    plan: plan,
-                    extensionName: info.ExtensionName,
-                    moduleName: info.Module.Name,
-                    ct: ct);
+                fileCount += WriteExtension(archive, rootFolder, ext, extensions, template, plan);
             }
 
-            // Root files
+            // Workspace-root metadata.
             await WriteEmbeddedAsync(archive, $"{rootFolder}/.gitignore", "ALDevToolbox.Resources.al.gitignore", ct);
-            var workspaceFolderList = new List<string> { "Core" };
-            workspaceFolderList.AddRange(moduleInfos.Select(m => m.FolderName));
-            WriteString(archive, $"{rootFolder}/{shortName}.code-workspace", BuildCodeWorkspace(workspaceFolderList));
+            var folderNames = extensions.Select(e => e.Path).ToList();
+            WriteString(archive, $"{rootFolder}/{shortName}.code-workspace", BuildCodeWorkspace(folderNames));
             WriteString(archive, $"{rootFolder}/README.md", BuildReadme(plan));
-            // Save the form-post shape plus per-extension identities (Core +
-            // every module) alongside the ZIP so a sibling-extension import
-            // later can declare real dependencies on these GUIDs and avoid id
-            // range collisions. See Milestone P2.3 in .design/milestones.md.
-            var identities = BuildExtensionIdentities(template, plan, coreId, coreName, moduleInfos);
+            var identities = extensions.Select(e => new WorkspaceExtensionIdentity(
+                Kind: e.IsModuleClone ? WorkspaceExtensionIdentity.ModuleKind : WorkspaceExtensionIdentity.CoreKind,
+                Key: e.ModuleKey,
+                Id: e.Id,
+                Name: e.Name,
+                Folder: e.Path,
+                Publisher: e.Publisher,
+                IdRangeFrom: e.IdRangeFrom,
+                IdRangeTo: e.IdRangeTo)).ToList();
             WriteString(archive, $"{rootFolder}/{WorkspaceConfigService.FileName}", _config.BuildWorkspace(plan, identities));
             fileCount += 4;
         }
@@ -190,10 +136,10 @@ public class GenerationService
         stopwatch.Stop();
 
         _logger.LogInformation(
-            "Generated workspace '{Workspace}' from template '{Template}' with modules [{Modules}]: {Files} files, {Bytes} bytes, {Ms} ms.",
+            "Generated workspace '{Workspace}' from template '{Template}' with [{Extensions}]: {Files} files, {Bytes} bytes, {Ms} ms.",
             plan.WorkspaceName,
             plan.TemplateKey,
-            string.Join(",", plan.SelectedModuleKeys),
+            string.Join(",", extensions.Select(e => e.Path)),
             fileCount,
             stream.Length,
             stopwatch.ElapsedMilliseconds);
@@ -201,14 +147,13 @@ public class GenerationService
         return new GeneratedArchive(stream, $"{shortName}.zip");
     }
 
-    // ===== Standalone / sibling extension flow =====
+    // ===== Standalone extension flow =====
 
     /// <summary>
-    /// Generates an extension ZIP for the New Extension flow. With
-    /// <paramref name="sibling"/> non-null, the ZIP also carries an updated
-    /// <c>&lt;WorkspaceName&gt;.code-workspace</c> at archive root listing
-    /// every existing extension plus the new one — see Milestone P2.3 in
-    /// <c>.design/milestones.md</c> for the sibling-extension UX.
+    /// Generates a single-extension ZIP for the New Extension flow. The
+    /// emitted layout reuses the workspace template's first extension as the
+    /// scaffold (typically Core); dependencies come from the form rather than
+    /// the template's declarations.
     /// </summary>
     public async Task<GeneratedArchive> GenerateExtensionAsync(
         StandaloneExtensionPlan plan,
@@ -218,81 +163,52 @@ public class GenerationService
         ValidateExtensionPlan(plan);
 
         var stopwatch = Stopwatch.StartNew();
-        var template = await _db.RuntimeTemplates
-            .AsNoTracking()
-            .Include(t => t.Folders.OrderBy(f => f.Ordering))
-                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
-            .Include(t => t.ModuleFolders.OrderBy(f => f.Ordering))
-                .ThenInclude(f => f.Files.OrderBy(x => x.Ordering))
-            .Where(t => t.DeletedAt == null && t.Key == plan.TemplateKey)
-            .FirstOrDefaultAsync(ct)
-            ?? throw new PlanValidationException(new Dictionary<string, string>
-            {
-                [nameof(plan.TemplateKey)] = $"Template '{plan.TemplateKey}' was not found.",
-            });
+        var template = await LoadTemplateAsync(plan.TemplateKey, ct);
 
-        // Resolve the imported workspace's modules up front so we can build a
-        // .code-workspace folder list that matches the existing on-disk layout.
-        // Unknown / soft-deleted module keys are dropped silently, mirroring
-        // the import-side validation that already gated this submission.
-        var siblingModules = sibling is null
-            ? new List<Module>()
-            : await LoadSelectedModulesAsync(sibling.ModuleKeys, ct);
+        // Use the first (required) template extension as the scaffold for a
+        // standalone build. Falls back to no template folders when the
+        // template doesn't declare any extensions — the static fallback
+        // folders below carry the structure.
+        var scaffold = template.WorkspaceExtensions
+            .OrderBy(e => e.Ordering)
+            .FirstOrDefault(e => e.Required);
+        var folderRoots = scaffold is null
+            ? new List<FolderNode>()
+            : BuildFolderTree(scaffold.Folders);
 
-        // Standalone extensions don't carry an .assets/ folder or workspace-
-        // level always-included files: they're a single extension dropping into
-        // a workspace that already has those assets. Pre-M14 the embedded
-        // logo.png wasn't written here either, so behaviour is unchanged.
+        var folderName = StripWhitespace(plan.ExtensionName);
         var stream = new MemoryStream();
         var fileCount = 0;
-        var folderName = StripWhitespace(plan.ExtensionName);
 
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
-            // Standalone extensions reuse the Core folder list — they're a
-            // primary, top-level extension by definition, not a module living
-            // alongside a Core in someone else's workspace. The sibling-extension
-            // flow doesn't auto-wire dependencies on the workspace's Core or
-            // modules: the workspace config doesn't carry their GUIDs, and we
-            // shouldn't fabricate IDs that won't match the existing app.json
-            // files. Users add those references by hand from their workspace.
-            var appJson = BuildStandaloneAppJson(template, plan);
-            fileCount += await WriteExtensionAsync(
-                archive,
-                rootRelative: folderName,
-                appJson: appJson,
-                template: template,
-                folders: SnapshotCoreFolders(template),
-                plan: PlanForStandaloneSubstitution(plan),
-                extensionName: plan.ExtensionName,
-                moduleName: plan.ExtensionName,
-                publisherOverride: plan.Publisher,
-                ct: ct);
+            var appJson = BuildStandaloneAppJson(plan, template);
+            WriteString(archive, $"{folderName}/app.json", appJson);
+            fileCount++;
 
-            // Mirror the workspace flow: save the form-post shape alongside the
-            // ZIP so the user can re-import the same settings later. The file
-            // sits inside the extension folder rather than at archive root so
-            // it tags along with the extension when the user drops the folder
-            // into an existing workspace.
+            var substitutionCtx = new MustacheContext(
+                Name: plan.ExtensionName,
+                WorkspaceName: plan.ExtensionName,
+                ShortName: StripWhitespace(plan.ExtensionName),
+                ModuleName: plan.ExtensionName,
+                Publisher: plan.Publisher,
+                ExtensionPrefix: string.Empty,
+                Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
+                FolderPath: string.Empty);
+            fileCount += EmitFolderTree(archive, folderName, folderRoots, plan.IncludeExamples, substitutionCtx);
+            EmitFallbackFolders(archive, folderName, folderRoots, ref fileCount);
+
             WriteString(archive, $"{folderName}/{WorkspaceConfigService.FileName}", _config.BuildExtension(plan));
             fileCount++;
 
-            // Sibling-extension flow: regenerate the workspace's .code-workspace
-            // with the new folder appended so the user can drop it straight
-            // into the existing repo without hand-editing the folders array.
             if (sibling is not null)
             {
                 var workspaceFile = $"{StripWhitespace(sibling.WorkspaceName)}.code-workspace";
-                // Prefer folder names captured at the original generation time
-                // (carried in the imported config's identities); fall back to
-                // a DB lookup only when older configs lacked the section.
-                var workspaceFolders = sibling.ExistingFolders.Count > 0
+                var existing = sibling.ExistingFolders.Count > 0
                     ? sibling.ExistingFolders.ToList()
-                    : new[] { "Core" }
-                        .Concat(siblingModules.Select(m => StripWhitespace(m.Name)))
-                        .ToList();
-                workspaceFolders.Add(folderName);
-                WriteString(archive, workspaceFile, BuildCodeWorkspace(workspaceFolders));
+                    : new List<string>();
+                existing.Add(folderName);
+                WriteString(archive, workspaceFile, BuildCodeWorkspace(existing));
                 fileCount++;
             }
         }
@@ -313,103 +229,616 @@ public class GenerationService
         return new GeneratedArchive(stream, $"{folderName}.zip");
     }
 
-    // ===== Per-extension writer =====
+    // ===== Loading =====
+
+    private async Task<RuntimeTemplate> LoadTemplateAsync(string key, CancellationToken ct)
+    {
+        // EF doesn't support a recursive Include on the folder tree, so the
+        // top-level Folders + Files come through here and any nested levels
+        // are loaded as a flat list below and reassembled.
+        var template = await _db.RuntimeTemplates
+            .AsNoTracking()
+            .Where(t => t.DeletedAt == null && t.Key == key)
+            .Include(t => t.WorkspaceExtensions.OrderBy(e => e.Ordering))
+                .ThenInclude(e => e.Dependencies.OrderBy(d => d.Ordering))
+            .FirstOrDefaultAsync(ct)
+            ?? throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["TemplateKey"] = $"Template '{key}' was not found.",
+            });
+
+        // Load every folder + file for this template in two flat queries, then
+        // wire up the recursive tree client-side. AsNoTracking + FK fixup
+        // doesn't fire, so we build the parent/child links by hand.
+        var extensionIds = template.WorkspaceExtensions.Select(e => e.Id).ToList();
+        var folders = await _db.WorkspaceExtensionFolders
+            .AsNoTracking()
+            .Where(f => extensionIds.Contains(f.WorkspaceExtensionId))
+            .OrderBy(f => f.Ordering)
+            .ToListAsync(ct);
+        var folderIds = folders.Select(f => f.Id).ToList();
+        var files = await _db.WorkspaceExtensionFiles
+            .AsNoTracking()
+            .Where(f => folderIds.Contains(f.WorkspaceExtensionFolderId))
+            .OrderBy(f => f.Ordering)
+            .ToListAsync(ct);
+
+        AssembleFolderTree(template, folders, files);
+        return template;
+    }
 
     /// <summary>
-    /// Emits one extension folder (Core or module or standalone). Returns the
-    /// number of files written so the caller can roll up totals for logging.
-    /// File contents come from the folder's <see cref="TemplateFolder.Files"/>;
-    /// mustache substitution runs on every <c>.al</c> file before it's written.
+    /// Wires up the in-memory recursive tree on each extension. The DB stores
+    /// the folders as a flat list with parent links; here we attach each
+    /// folder to its parent's <see cref="WorkspaceExtensionFolder.Folders"/>
+    /// collection (or the extension's <see cref="WorkspaceExtension.Folders"/>
+    /// when it's a root), and each file to its folder's
+    /// <see cref="WorkspaceExtensionFolder.Files"/> collection.
     /// </summary>
-    private Task<int> WriteExtensionAsync(
-        ZipArchive archive,
-        string rootRelative,
-        string appJson,
-        RuntimeTemplate template,
-        IReadOnlyList<FolderEmit> folders,
-        ProjectPlan plan,
-        string extensionName,
-        string moduleName,
-        string? publisherOverride = null,
-        CancellationToken ct = default)
+    private static void AssembleFolderTree(RuntimeTemplate template, List<WorkspaceExtensionFolder> folders, List<WorkspaceExtensionFile> files)
     {
-        ct.ThrowIfCancellationRequested();
+        var foldersById = folders.ToDictionary(f => f.Id);
+        var extensionsById = template.WorkspaceExtensions.ToDictionary(e => e.Id);
 
-        WriteString(archive, $"{rootRelative}/app.json", appJson);
-        WriteString(archive, $"{rootRelative}/AppSourceCop.json", JsonSerializer.Serialize(template.AppSourceCop, JsonOptions));
-        var fileCount = 2;
-
-        // Top-level folders the caller's folder list already declares
-        // (case-insensitive), so the static fallback folders below don't
-        // collide on Windows extraction. Without this, a folder list that
-        // lays out 'translations' would extract alongside our hardcoded
-        // 'Translations/.gitkeep' and produce two folders that resolve to
-        // the same path.
-        var declaredTops = new HashSet<string>(
-            folders.Select(f => f.Path.Split('/', 2)[0]),
-            StringComparer.OrdinalIgnoreCase);
-        if (!declaredTops.Contains("libs"))
+        // Reset any nav collections EF may have hydrated half-way and rebuild
+        // them deterministically.
+        foreach (var ext in template.WorkspaceExtensions) ext.Folders.Clear();
+        foreach (var folder in folders)
         {
-            WriteEmptyFile(archive, $"{rootRelative}/libs/.gitkeep");
-            fileCount++;
-        }
-        if (!declaredTops.Contains("permissionsets"))
-        {
-            WriteEmptyFile(archive, $"{rootRelative}/permissionsets/.gitkeep");
-            fileCount++;
-        }
-        if (!declaredTops.Contains("Translations"))
-        {
-            WriteEmptyFile(archive, $"{rootRelative}/Translations/.gitkeep");
-            fileCount++;
+            folder.Folders.Clear();
+            folder.Files.Clear();
         }
 
         foreach (var folder in folders)
         {
-            var folderRelative = $"{rootRelative}/{folder.Path}";
-
-            if (plan.IncludeExamples && folder.Files.Count > 0)
+            if (folder.ParentFolderId is int parentId && foldersById.TryGetValue(parentId, out var parent))
             {
-                foreach (var file in folder.Files)
-                {
-                    var destInZip = $"{folderRelative}/{file.Path}";
-                    if (file.Path.EndsWith(".al", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var substituted = SubstituteMustache(file.Content, new MustacheContext(
-                            Name: extensionName,
-                            WorkspaceName: plan.WorkspaceName,
-                            ShortName: StripWhitespace(plan.WorkspaceName),
-                            ModuleName: moduleName,
-                            Publisher: publisherOverride ?? template.Defaults.Publisher,
-                            Prefix: template.AppSourceCop.MandatoryPrefix,
-                            FolderPath: folder.Path));
-                        WriteString(archive, destInZip, substituted);
-                    }
-                    else
-                    {
-                        WriteString(archive, destInZip, file.Content);
-                    }
-                    fileCount++;
-                }
+                parent.Folders.Add(folder);
             }
-            else
+            else if (extensionsById.TryGetValue(folder.WorkspaceExtensionId, out var ext))
             {
-                WriteEmptyFile(archive, $"{folderRelative}/.gitkeep");
-                fileCount++;
+                ext.Folders.Add(folder);
             }
         }
 
-        return Task.FromResult(fileCount);
+        foreach (var file in files)
+        {
+            if (foldersById.TryGetValue(file.WorkspaceExtensionFolderId, out var folder))
+            {
+                folder.Files.Add(file);
+            }
+        }
+    }
+
+    private async Task<List<Module>> LoadSelectedModulesAsync(IReadOnlyList<string> moduleKeys, CancellationToken ct)
+    {
+        if (moduleKeys.Count == 0) return new();
+
+        var modules = await _db.Modules
+            .AsNoTracking()
+            .Where(m => m.DeletedAt == null && moduleKeys.Contains(m.Key))
+            .Include(m => m.Dependencies.OrderBy(d => d.Ordering))
+            .ToListAsync(ct);
+
+        // Module folder/file trees, same flat-then-reassemble pattern as
+        // workspace extensions.
+        var moduleIds = modules.Select(m => m.Id).ToList();
+        var folders = await _db.ModuleExtensionFolders
+            .AsNoTracking()
+            .Where(f => moduleIds.Contains(f.ModuleId))
+            .OrderBy(f => f.Ordering)
+            .ToListAsync(ct);
+        var folderIds = folders.Select(f => f.Id).ToList();
+        var files = await _db.ModuleExtensionFiles
+            .AsNoTracking()
+            .Where(f => folderIds.Contains(f.ModuleExtensionFolderId))
+            .OrderBy(f => f.Ordering)
+            .ToListAsync(ct);
+        AssembleModuleFolderTree(modules, folders, files);
+
+        // Preserve user-selected ordering — EF returns them in whatever
+        // order the IN-clause matched.
+        var byKey = modules.ToDictionary(m => m.Key);
+        var ordered = new List<Module>(moduleKeys.Count);
+        foreach (var key in moduleKeys)
+        {
+            if (byKey.TryGetValue(key, out var module)) ordered.Add(module);
+        }
+        return ordered;
+    }
+
+    private static void AssembleModuleFolderTree(List<Module> modules, List<ModuleExtensionFolder> folders, List<ModuleExtensionFile> files)
+    {
+        var foldersById = folders.ToDictionary(f => f.Id);
+        var modulesById = modules.ToDictionary(m => m.Id);
+
+        foreach (var module in modules) module.ExtensionFolders.Clear();
+        foreach (var folder in folders)
+        {
+            folder.Folders.Clear();
+            folder.Files.Clear();
+        }
+
+        foreach (var folder in folders)
+        {
+            if (folder.ParentFolderId is int parentId && foldersById.TryGetValue(parentId, out var parent))
+            {
+                parent.Folders.Add(folder);
+            }
+            else if (modulesById.TryGetValue(folder.ModuleId, out var module))
+            {
+                module.ExtensionFolders.Add(folder);
+            }
+        }
+
+        foreach (var file in files)
+        {
+            if (foldersById.TryGetValue(file.ModuleExtensionFolderId, out var folder))
+            {
+                folder.Files.Add(file);
+            }
+        }
+    }
+
+    // ===== Extension list building =====
+
+    /// <summary>
+    /// Walks the template's declared extensions in display order — required
+    /// first, then the optional ones the user ticked — and appends one cloned
+    /// extension per selected catalogue module. Each
+    /// <see cref="EmittableExtension"/> carries a fresh GUID, its resolved
+    /// id-range, the substituted display name, and the source folder tree.
+    /// </summary>
+    private static List<EmittableExtension> BuildExtensionList(RuntimeTemplate template, ProjectPlan plan, IReadOnlyList<Module> modules)
+    {
+        var selectedOptional = new HashSet<string>(plan.SelectedExtensionPaths, StringComparer.Ordinal);
+        var list = new List<EmittableExtension>();
+
+        // ID-range cursor: starts at the template's first auto-allocate slot
+        // (ModuleIdRangeStart) and walks forward. The first extension consumes
+        // the Core range from the plan when it has no explicit ids; subsequent
+        // unannotated extensions take a slice from the cursor.
+        var cursor = template.ModuleIdRangeStart;
+        var firstAuto = true;
+
+        foreach (var ext in template.WorkspaceExtensions.OrderBy(e => e.Ordering))
+        {
+            if (!ext.Required && !selectedOptional.Contains(ext.Path)) continue;
+            var (from, to, advancedCursor) = ResolveTemplateRange(ext, template, plan, firstAuto, cursor);
+            cursor = advancedCursor;
+            if (ext.IdRangeFrom is null && ext.IdRangeTo is null) firstAuto = false;
+
+            list.Add(BuildFromTemplate(ext, template, plan, from, to));
+        }
+
+        foreach (var module in modules)
+        {
+            var size = module.IdRangeSize ?? template.ModuleIdRangeSize;
+            var from = cursor;
+            var to = from + size - 1;
+            cursor = to + 1;
+            list.Add(BuildFromModule(module, template, plan, from, to));
+        }
+
+        return list;
+    }
+
+    private static (int From, int To, int Cursor) ResolveTemplateRange(
+        WorkspaceExtension ext, RuntimeTemplate template, ProjectPlan plan, bool firstAuto, int cursor)
+    {
+        // Explicit on the extension: use verbatim, don't move the cursor.
+        if (ext.IdRangeFrom is int explicitFrom && ext.IdRangeTo is int explicitTo)
+        {
+            return (explicitFrom, explicitTo, cursor);
+        }
+        // First unannotated template extension: take the plan's Core range.
+        if (firstAuto)
+        {
+            return (plan.CoreIdRangeFrom, plan.CoreIdRangeTo, cursor);
+        }
+        // Subsequent unannotated extensions: slice the template's module range.
+        var size = template.ModuleIdRangeSize;
+        return (cursor, cursor + size - 1, cursor + size);
+    }
+
+    private static EmittableExtension BuildFromTemplate(WorkspaceExtension ext, RuntimeTemplate template, ProjectPlan plan, int from, int to)
+    {
+        var name = SubstituteScalar(ext.NameTemplate, plan, template);
+        return new EmittableExtension(
+            Path: ext.Path,
+            Name: name,
+            Id: Guid.NewGuid(),
+            IdRangeFrom: from,
+            IdRangeTo: to,
+            Application: !string.IsNullOrEmpty(ext.Application) ? ext.Application : plan.ApplicationVersion,
+            Runtime: !string.IsNullOrEmpty(ext.Runtime) ? ext.Runtime : plan.RuntimeVersion,
+            Publisher: template.Defaults.Publisher,
+            IsModuleClone: false,
+            ModuleKey: null,
+            ModuleName: name,
+            FolderRoots: BuildFolderTree(ext.Folders),
+            Dependencies: ext.Dependencies
+                .OrderBy(d => d.Ordering)
+                .Select(d => new EmittableDependency(d.RefExtensionPath, d.RefModuleKey, d.LitId, d.LitName, d.LitPublisher, d.LitVersion))
+                .ToList());
+    }
+
+    private static EmittableExtension BuildFromModule(Module module, RuntimeTemplate template, ProjectPlan plan, int from, int to)
+    {
+        // Module-cloned extension name defaults to "{{extension_prefix}} {module.name}".
+        // The substitution happens up-front so the resolved name is stable for
+        // downstream dep resolution.
+        var nameTemplate = $"{{{{extension_prefix}}}} {module.Name}";
+        var name = SubstituteScalar(nameTemplate, plan, template);
+
+        // Module dependencies (from module_dependencies) become literal deps.
+        // Implicit dependencies on every required template-declared extension
+        // get added in BuildAppJson at emit time so they pick up the
+        // freshly-generated GUIDs from the rest of the list.
+        var deps = module.Dependencies
+            .OrderBy(d => d.Ordering)
+            .Select(d => new EmittableDependency(null, null, d.DepId, d.DepName, d.DepPublisher, d.DepVersion))
+            .ToList();
+
+        return new EmittableExtension(
+            Path: module.Key,
+            Name: name,
+            Id: Guid.NewGuid(),
+            IdRangeFrom: from,
+            IdRangeTo: to,
+            Application: plan.ApplicationVersion,
+            Runtime: plan.RuntimeVersion,
+            Publisher: template.Defaults.Publisher,
+            IsModuleClone: true,
+            ModuleKey: module.Key,
+            ModuleName: module.Name,
+            FolderRoots: BuildModuleFolderTree(module.ExtensionFolders),
+            Dependencies: deps);
+    }
+
+    private static List<FolderNode> BuildFolderTree(IEnumerable<WorkspaceExtensionFolder> roots) =>
+        roots.OrderBy(f => f.Ordering)
+            .Select(f => new FolderNode(
+                f.Path,
+                f.Files.OrderBy(x => x.Ordering).Select(x => new FileLeaf(x.Path, x.Content, x.IsExample)).ToList(),
+                BuildFolderTree(f.Folders)))
+            .ToList();
+
+    private static List<FolderNode> BuildModuleFolderTree(IEnumerable<ModuleExtensionFolder> roots) =>
+        roots.OrderBy(f => f.Ordering)
+            .Select(f => new FolderNode(
+                f.Path,
+                f.Files.OrderBy(x => x.Ordering).Select(x => new FileLeaf(x.Path, x.Content, x.IsExample)).ToList(),
+                BuildModuleFolderTree(f.Folders)))
+            .ToList();
+
+    // ===== Validation =====
+
+    private static void ValidateWorkspacePlan(ProjectPlan plan)
+    {
+        var errors = new Dictionary<string, string>();
+        if (string.IsNullOrWhiteSpace(plan.TemplateKey)) errors[nameof(plan.TemplateKey)] = "Required.";
+        if (string.IsNullOrWhiteSpace(plan.WorkspaceName) || !WorkspaceNameRegex.IsMatch(plan.WorkspaceName))
+            errors[nameof(plan.WorkspaceName)] = "Required. Letters, digits and spaces only; must start with a letter.";
+        if (plan.CoreIdRangeFrom <= 0) errors[nameof(plan.CoreIdRangeFrom)] = "Must be greater than zero.";
+        if (plan.CoreIdRangeTo <= plan.CoreIdRangeFrom) errors[nameof(plan.CoreIdRangeTo)] = "Must be greater than 'from'.";
+        if (string.IsNullOrWhiteSpace(plan.ApplicationVersion)) errors[nameof(plan.ApplicationVersion)] = "Required.";
+        if (string.IsNullOrWhiteSpace(plan.RuntimeVersion)) errors[nameof(plan.RuntimeVersion)] = "Required.";
+        if (errors.Count > 0) throw new PlanValidationException(errors);
+    }
+
+    private static void ValidateExtensionPlan(StandaloneExtensionPlan plan)
+    {
+        var errors = new Dictionary<string, string>();
+        if (string.IsNullOrWhiteSpace(plan.TemplateKey)) errors[nameof(plan.TemplateKey)] = "Required.";
+        if (string.IsNullOrWhiteSpace(plan.ExtensionName) || !ExtensionNameRegex.IsMatch(plan.ExtensionName))
+            errors[nameof(plan.ExtensionName)] = "Required. Letters and digits only, no spaces.";
+        if (string.IsNullOrWhiteSpace(plan.Publisher)) errors[nameof(plan.Publisher)] = "Required.";
+        if (plan.IdRangeFrom <= 0) errors[nameof(plan.IdRangeFrom)] = "Must be greater than zero.";
+        if (plan.IdRangeTo <= plan.IdRangeFrom) errors[nameof(plan.IdRangeTo)] = "Must be greater than 'from'.";
+        if (string.IsNullOrWhiteSpace(plan.ApplicationVersion)) errors[nameof(plan.ApplicationVersion)] = "Required.";
+        if (string.IsNullOrWhiteSpace(plan.RuntimeVersion)) errors[nameof(plan.RuntimeVersion)] = "Required.";
+
+        var seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < plan.Dependencies.Count; i++)
+        {
+            var dep = plan.Dependencies[i];
+            if (string.IsNullOrWhiteSpace(dep.DepId)) continue;
+            if (!seenIds.Add(dep.DepId.Trim()))
+            {
+                errors[$"Dependencies[{i}].DepId"] = $"Duplicate dependency id '{dep.DepId}'.";
+            }
+        }
+        if (errors.Count > 0) throw new PlanValidationException(errors);
     }
 
     /// <summary>
-    /// Writes the acting org's logo (Milestone P3.14) into the given parent
-    /// path. The asset's MIME type drives the file extension so PNG and SVG
-    /// uploads round-trip into <c>.assets/images/logo.png</c> or
-    /// <c>logo.svg</c>. Returns 1 on success and 0 when the org has no logo
-    /// configured — fresh orgs start without one and the layout falls back
-    /// to a placeholder until an admin uploads via <c>/admin/configuration</c>.
+    /// Walks the final extension list and rejects the plan when any two
+    /// resolved id ranges overlap. Per <c>unified-extensions.md</c> a
+    /// workspace's allocated ranges have to be disjoint or AL refuses to
+    /// compile a multi-extension app.
     /// </summary>
+    private static void ValidateIdRanges(IReadOnlyList<EmittableExtension> extensions)
+    {
+        var errors = new Dictionary<string, string>();
+        for (var i = 0; i < extensions.Count; i++)
+        {
+            var a = extensions[i];
+            for (var j = i + 1; j < extensions.Count; j++)
+            {
+                var b = extensions[j];
+                if (a.IdRangeFrom <= b.IdRangeTo && b.IdRangeFrom <= a.IdRangeTo)
+                {
+                    errors[$"Extensions[{j}].IdRange"] =
+                        $"Extension '{b.Path}' id range {b.IdRangeFrom}..{b.IdRangeTo} overlaps '{a.Path}' {a.IdRangeFrom}..{a.IdRangeTo}.";
+                }
+            }
+        }
+        if (errors.Count > 0) throw new PlanValidationException(errors);
+    }
+
+    // ===== Per-extension emission =====
+
+    private int WriteExtension(
+        ZipArchive archive,
+        string rootFolder,
+        EmittableExtension ext,
+        IReadOnlyList<EmittableExtension> allExtensions,
+        RuntimeTemplate template,
+        ProjectPlan plan)
+    {
+        var extPath = $"{rootFolder}/{ext.Path}";
+        var appJson = BuildAppJson(ext, allExtensions, template, plan);
+        WriteString(archive, $"{extPath}/app.json", appJson);
+        var fileCount = 1;
+
+        var substitutionCtx = new MustacheContext(
+            Name: ext.Name,
+            WorkspaceName: plan.WorkspaceName,
+            ShortName: StripWhitespace(plan.WorkspaceName),
+            ModuleName: ext.ModuleName,
+            Publisher: ext.Publisher,
+            ExtensionPrefix: plan.ExtensionPrefix,
+            Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
+            FolderPath: string.Empty);
+
+        fileCount += EmitFolderTree(archive, extPath, ext.FolderRoots, plan.IncludeExamples, substitutionCtx);
+        EmitFallbackFolders(archive, extPath, ext.FolderRoots, ref fileCount);
+        return fileCount;
+    }
+
+    /// <summary>
+    /// Recursively emit every folder + file under <paramref name="parentPath"/>.
+    /// A folder with no files (after the example filter) and no sub-folders
+    /// gets a <c>.gitkeep</c> so the ZIP carries the structure.
+    /// </summary>
+    private int EmitFolderTree(
+        ZipArchive archive,
+        string parentPath,
+        IReadOnlyList<FolderNode> folders,
+        bool includeExamples,
+        MustacheContext baseCtx)
+    {
+        var fileCount = 0;
+        foreach (var folder in folders)
+        {
+            var folderPath = $"{parentPath}/{folder.Path}";
+            var emittableFiles = folder.Files
+                .Where(f => includeExamples || !f.IsExample)
+                .ToList();
+
+            var folderCtx = baseCtx with
+            {
+                FolderPath = baseCtx.FolderPath.Length == 0 ? folder.Path : $"{baseCtx.FolderPath}/{folder.Path}",
+            };
+
+            foreach (var file in emittableFiles)
+            {
+                var dest = $"{folderPath}/{file.Path}";
+                var content = file.Path.EndsWith(".al", StringComparison.OrdinalIgnoreCase)
+                    ? SubstituteMustache(file.Content, folderCtx)
+                    : file.Content;
+                WriteString(archive, dest, content);
+                fileCount++;
+            }
+
+            fileCount += EmitFolderTree(archive, folderPath, folder.Folders, includeExamples, folderCtx);
+
+            // Empty leaf: drop a .gitkeep so the folder shows up in git.
+            if (emittableFiles.Count == 0 && folder.Folders.Count == 0)
+            {
+                WriteEmptyFile(archive, $"{folderPath}/.gitkeep");
+                fileCount++;
+            }
+        }
+        return fileCount;
+    }
+
+    /// <summary>
+    /// Fallback folders (<c>libs</c>, <c>permissionsets</c>, <c>Translations</c>)
+    /// — placed at the extension root for any name the template didn't already
+    /// declare (case-insensitive). Mirrors the pre-unified behaviour so
+    /// extensions that don't customise their layout still look like an AL
+    /// project on disk.
+    /// </summary>
+    private static void EmitFallbackFolders(ZipArchive archive, string extPath, IReadOnlyList<FolderNode> rootFolders, ref int fileCount)
+    {
+        var declared = new HashSet<string>(rootFolders.Select(f => f.Path), StringComparer.OrdinalIgnoreCase);
+        foreach (var fallback in new[] { "libs", "permissionsets", "Translations" })
+        {
+            if (declared.Contains(fallback)) continue;
+            WriteEmptyFile(archive, $"{extPath}/{fallback}/.gitkeep");
+            fileCount++;
+        }
+    }
+
+    // ===== app.json builders =====
+
+    private string BuildAppJson(
+        EmittableExtension ext,
+        IReadOnlyList<EmittableExtension> allExtensions,
+        RuntimeTemplate template,
+        ProjectPlan plan)
+    {
+        var node = BaseAppJson(template);
+        node["id"] = ext.Id.ToString();
+        node["name"] = ext.Name;
+        node["publisher"] = ext.Publisher;
+        node["brief"] = plan.Brief;
+        node["description"] = plan.Description;
+        node["version"] = "0.0.0.1";
+        node["application"] = ext.Application;
+        node["platform"] = template.Defaults.Platform;
+        node["runtime"] = ext.Runtime;
+        node["idRanges"] = new JsonArray(new JsonObject
+        {
+            ["from"] = ext.IdRangeFrom,
+            ["to"] = ext.IdRangeTo,
+        });
+        node["dependencies"] = ResolveDependencies(ext, allExtensions);
+        return SerializeIndented(node);
+    }
+
+    /// <summary>
+    /// Walks an extension's declared deps in order, dispatching on which
+    /// reference shape is set. Intra-workspace refs lock onto the
+    /// freshly-generated GUIDs of the in-this-build extensions so AL's
+    /// dependency graph resolves at compile time. Module-key refs work the
+    /// same way when the target module was selected for this workspace,
+    /// otherwise they fall back to the catalogue's stored dep identifiers.
+    /// Module-cloned extensions also get an implicit dependency on every
+    /// required template extension so a Document Capture clone depends on
+    /// Core without the template author having to spell it out.
+    /// </summary>
+    private JsonArray ResolveDependencies(EmittableExtension ext, IReadOnlyList<EmittableExtension> allExtensions)
+    {
+        var array = new JsonArray();
+        var emitted = new HashSet<Guid>();
+
+        // Module clones get implicit dependencies on required template
+        // extensions (typically just Core). Emitted before the module's own
+        // deps so Core is listed first in the resulting app.json.
+        if (ext.IsModuleClone)
+        {
+            foreach (var other in allExtensions)
+            {
+                if (other.IsModuleClone) continue;
+                if (other.Id == ext.Id) continue;
+                if (!emitted.Add(other.Id)) continue;
+                array.Add(BuildDepNode(other.Id.ToString(), other.Name, other.Publisher, "0.0.0.1"));
+            }
+        }
+
+        foreach (var dep in ext.Dependencies)
+        {
+            if (dep.RefExtensionPath is not null)
+            {
+                var target = allExtensions.FirstOrDefault(e => string.Equals(e.Path, dep.RefExtensionPath, StringComparison.Ordinal));
+                if (target is null)
+                {
+                    // The template-save validator should catch this; if it
+                    // slipped through, surface a clear runtime error rather
+                    // than emit a half-formed dep node.
+                    throw new PlanValidationException(new Dictionary<string, string>
+                    {
+                        [$"Extensions[{ext.Path}].Dependencies"] =
+                            $"Extension '{ext.Path}' depends on extension '{dep.RefExtensionPath}', which isn't part of this workspace.",
+                    });
+                }
+                if (!emitted.Add(target.Id)) continue;
+                array.Add(BuildDepNode(target.Id.ToString(), target.Name, target.Publisher, "0.0.0.1"));
+            }
+            else if (dep.RefModuleKey is not null)
+            {
+                // Module-cloned-in-this-workspace: prefer the freshly-allocated
+                // identity. Otherwise emit a literal pointing at the catalogue
+                // module's dep_* fields if we still have them (we don't — the
+                // module catalogue carries its own dependencies, not a self-
+                // identifying GUID). Without a self GUID on Module, the
+                // best we can do here is emit nothing, but the validator
+                // shouldn't permit a module ref to a module that isn't either
+                // selected or self-described — call out the gap.
+                var target = allExtensions.FirstOrDefault(e => e.IsModuleClone && string.Equals(e.ModuleKey, dep.RefModuleKey, StringComparison.Ordinal));
+                if (target is not null)
+                {
+                    if (!emitted.Add(target.Id)) continue;
+                    array.Add(BuildDepNode(target.Id.ToString(), target.Name, target.Publisher, "0.0.0.1"));
+                }
+                // else: the validator should have caught this; skip silently
+                // to avoid emitting a placeholder GUID that won't compile.
+            }
+            else if (dep.LitId is not null)
+            {
+                array.Add(BuildDepNode(dep.LitId, dep.LitName ?? string.Empty, dep.LitPublisher ?? string.Empty, dep.LitVersion ?? string.Empty));
+            }
+        }
+        return array;
+    }
+
+    private static JsonObject BuildDepNode(string id, string name, string publisher, string version) => new()
+    {
+        ["id"] = id,
+        ["name"] = name,
+        ["publisher"] = publisher,
+        ["version"] = version,
+    };
+
+    private static string BuildStandaloneAppJson(StandaloneExtensionPlan plan, RuntimeTemplate template)
+    {
+        var node = BaseAppJson(template);
+        node["id"] = Guid.NewGuid().ToString();
+        node["name"] = plan.ExtensionName;
+        node["publisher"] = string.IsNullOrWhiteSpace(plan.Publisher) ? template.Defaults.Publisher : plan.Publisher;
+        node["brief"] = plan.Brief;
+        node["description"] = plan.Description;
+        node["version"] = "0.0.0.1";
+        node["application"] = plan.ApplicationVersion;
+        node["platform"] = template.Defaults.Platform;
+        node["runtime"] = plan.RuntimeVersion;
+        node["idRanges"] = new JsonArray(new JsonObject
+        {
+            ["from"] = plan.IdRangeFrom,
+            ["to"] = plan.IdRangeTo,
+        });
+
+        var deps = new JsonArray();
+        foreach (var d in plan.Dependencies)
+        {
+            deps.Add(BuildDepNode(d.DepId, d.DepName, d.DepPublisher, d.DepVersion));
+        }
+        node["dependencies"] = deps;
+        return SerializeIndented(node);
+    }
+
+    private static JsonObject BaseAppJson(RuntimeTemplate template)
+    {
+        var node = new JsonObject
+        {
+            ["id"] = "00000000-0000-0000-0000-000000000000",
+            ["name"] = string.Empty,
+        };
+        // Round-trip TemplateDefaults through JSON so the template-defined
+        // fields (target, features, supportedLocales, resourceExposurePolicy,
+        // …) get merged. The form-pre-fill fields (application, platform,
+        // extension_prefix, affix, affixType) appear in the serialised blob
+        // too — the per-extension layering overwrites application / platform
+        // with plan values; the affix / extension_prefix entries are
+        // mustache-template inputs, not app.json content.
+        var defaults = JsonNode.Parse(JsonSerializer.Serialize(template.Defaults, JsonOptions))?.AsObject();
+        if (defaults is not null)
+        {
+            foreach (var kvp in defaults.ToList())
+            {
+                // Strip the form-pre-fill keys that aren't app.json fields.
+                if (kvp.Key is "application" or "platform" or "extension_prefix" or "affix" or "affixType") continue;
+                node[kvp.Key] = kvp.Value?.DeepClone();
+            }
+        }
+        return node;
+    }
+
+    // ===== Org assets =====
+
     private static int WriteOrgLogo(ZipArchive archive, string parentPath, OrganizationAsset? logo)
     {
         if (logo is null) return 0;
@@ -424,14 +853,6 @@ public class GenerationService
         return 1;
     }
 
-    /// <summary>
-    /// Writes the always-included files configured for the acting org
-    /// (Milestone P3.14) into the workspace root. Mustache substitution runs
-    /// per-row when <see cref="OrganizationFile.MustacheEnabled"/> is true,
-    /// using the same context per-template files use ({{workspaceName}},
-    /// {{publisher}}, {{prefix}}, …). Returns the number of files written so
-    /// the caller can roll up totals for logging.
-    /// </summary>
     private int WriteOrgFiles(
         ZipArchive archive,
         string rootFolder,
@@ -441,17 +862,19 @@ public class GenerationService
     {
         if (files.Count == 0) return 0;
         var written = 0;
+        var ctx = new MustacheContext(
+            Name: plan.WorkspaceName,
+            WorkspaceName: plan.WorkspaceName,
+            ShortName: StripWhitespace(plan.WorkspaceName),
+            ModuleName: plan.WorkspaceName,
+            Publisher: template.Defaults.Publisher,
+            ExtensionPrefix: plan.ExtensionPrefix,
+            Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
+            FolderPath: string.Empty);
         foreach (var file in files)
         {
             var content = file.MustacheEnabled
-                ? SubstituteMustache(file.Content, new MustacheContext(
-                    Name: plan.WorkspaceName,
-                    WorkspaceName: plan.WorkspaceName,
-                    ShortName: StripWhitespace(plan.WorkspaceName),
-                    ModuleName: plan.WorkspaceName,
-                    Publisher: template.Defaults.Publisher,
-                    Prefix: template.AppSourceCop.MandatoryPrefix,
-                    FolderPath: file.Path))
+                ? SubstituteMustache(file.Content, ctx with { FolderPath = file.Path })
                 : file.Content;
             WriteString(archive, $"{rootFolder}/{file.Path}", content);
             written++;
@@ -459,222 +882,19 @@ public class GenerationService
         return written;
     }
 
-    /// <summary>
-    /// Snapshot of a folder + its files, decoupled from whether the source is
-    /// <see cref="TemplateFolder"/> (Core) or <see cref="TemplateModuleFolder"/>
-    /// (modules). Both flow through <see cref="WriteExtensionAsync"/> the same way.
-    /// </summary>
-    private readonly record struct FolderEmit(string Path, IReadOnlyList<FileEmit> Files);
+    // ===== Workspace-level files =====
 
-    private readonly record struct FileEmit(string Path, string Content);
-
-    /// <summary>Snapshots the Core folder list for emission into the Core extension ZIP.</summary>
-    private static IReadOnlyList<FolderEmit> SnapshotCoreFolders(RuntimeTemplate template) =>
-        template.Folders.OrderBy(f => f.Ordering)
-            .Select(f => new FolderEmit(
-                f.Path,
-                f.Files.OrderBy(x => x.Ordering)
-                    .Select(x => new FileEmit(x.Path, x.Content))
-                    .ToList()))
-            .ToList();
-
-    /// <summary>Snapshots the module folder list for emission into every module extension ZIP.</summary>
-    private static IReadOnlyList<FolderEmit> SnapshotModuleFolders(RuntimeTemplate template) =>
-        template.ModuleFolders.OrderBy(f => f.Ordering)
-            .Select(f => new FolderEmit(
-                f.Path,
-                f.Files.OrderBy(x => x.Ordering)
-                    .Select(x => new FileEmit(x.Path, x.Content))
-                    .ToList()))
-            .ToList();
-
-    // ===== app.json builders =====
-
-    private async Task<string> BuildCoreAppJsonAsync(
-        RuntimeTemplate template,
-        ProjectPlan plan,
-        Guid coreId,
-        string coreName,
-        CancellationToken ct)
-    {
-        var node = BaseAppJson(template);
-        node["id"] = coreId.ToString();
-        node["name"] = coreName;
-        node["publisher"] = template.Defaults.Publisher;
-        node["brief"] = plan.Brief;
-        node["description"] = plan.Description;
-        node["version"] = "0.0.0.1";
-        node["application"] = plan.ApplicationVersion;
-        node["platform"] = template.DefaultPlatform;
-        node["runtime"] = plan.RuntimeVersion;
-        node["idRanges"] = new JsonArray(new JsonObject
-        {
-            ["from"] = plan.CoreIdRangeFrom,
-            ["to"] = plan.CoreIdRangeTo,
-        });
-        var coreDeps = new JsonArray();
-        if (plan.IncludeForNav)
-        {
-            foreach (var d in await LoadForNavDependenciesAsync(ct)) coreDeps.Add(d);
-        }
-        node["dependencies"] = coreDeps;
-        return SerializeIndented(node);
-    }
-
-    private static string BuildModuleAppJson(ModuleAssignment info, RuntimeTemplate template, ProjectPlan plan)
-    {
-        var node = BaseAppJson(template);
-        node["id"] = info.ExtensionId.ToString();
-        node["name"] = info.ExtensionName;
-        node["publisher"] = template.Defaults.Publisher;
-        node["brief"] = plan.Brief;
-        node["description"] = plan.Description;
-        node["version"] = "0.0.0.1";
-        node["application"] = plan.ApplicationVersion;
-        node["platform"] = template.DefaultPlatform;
-        node["runtime"] = plan.RuntimeVersion;
-        node["idRanges"] = new JsonArray(new JsonObject
-        {
-            ["from"] = info.IdRangeFrom,
-            ["to"] = info.IdRangeTo,
-        });
-
-        var deps = new JsonArray
-        {
-            new JsonObject
-            {
-                ["id"] = info.CoreId.ToString(),
-                ["name"] = info.CoreName,
-                ["publisher"] = template.Defaults.Publisher,
-                ["version"] = "0.0.0.1",
-            },
-        };
-        foreach (var d in info.Module.Dependencies.OrderBy(d => d.Ordering))
-        {
-            deps.Add(new JsonObject
-            {
-                ["id"] = d.DepId,
-                ["name"] = d.DepName,
-                ["publisher"] = d.DepPublisher,
-                ["version"] = d.DepVersion,
-            });
-        }
-        node["dependencies"] = deps;
-        return SerializeIndented(node);
-    }
-
-    private static string BuildStandaloneAppJson(RuntimeTemplate template, StandaloneExtensionPlan plan)
-    {
-        var node = BaseAppJson(template);
-        node["id"] = Guid.NewGuid().ToString();
-        node["name"] = plan.ExtensionName;
-        node["publisher"] = string.IsNullOrWhiteSpace(plan.Publisher) ? template.Defaults.Publisher : plan.Publisher;
-        node["brief"] = plan.Brief;
-        node["description"] = plan.Description;
-        node["version"] = "0.0.0.1";
-        node["application"] = plan.ApplicationVersion;
-        node["platform"] = template.DefaultPlatform;
-        node["runtime"] = plan.RuntimeVersion;
-        node["idRanges"] = new JsonArray(new JsonObject
-        {
-            ["from"] = plan.IdRangeFrom,
-            ["to"] = plan.IdRangeTo,
-        });
-
-        var deps = new JsonArray();
-        foreach (var d in plan.Dependencies)
-        {
-            deps.Add(new JsonObject
-            {
-                ["id"] = d.DepId,
-                ["name"] = d.DepName,
-                ["publisher"] = d.DepPublisher,
-                ["version"] = d.DepVersion,
-            });
-        }
-        node["dependencies"] = deps;
-        return SerializeIndented(node);
-    }
-
-    /// <summary>
-    /// Re-serialises the template's stored defaults into a fresh
-    /// <see cref="JsonObject"/>. Per-extension fields are layered on top by the
-    /// callers above so the template-defined keys (target, features, etc.) are
-    /// preserved verbatim.
-    /// </summary>
-    private static JsonObject BaseAppJson(RuntimeTemplate template)
-    {
-        var node = new JsonObject
-        {
-            ["id"] = "00000000-0000-0000-0000-000000000000",
-            ["name"] = string.Empty,
-        };
-        var defaults = JsonNode.Parse(JsonSerializer.Serialize(template.Defaults, JsonOptions))?.AsObject();
-        if (defaults is not null)
-        {
-            foreach (var kvp in defaults.ToList())
-            {
-                node[kvp.Key] = kvp.Value?.DeepClone();
-            }
-        }
-        return node;
-    }
-
-    /// <summary>
-    /// Returns the ForNAV catalogue entries to inject into Core's
-    /// <c>dependencies</c> array when the user opts in. Uses the well-known
-    /// catalogue rather than hardcoded GUIDs so admins control the list.
-    /// </summary>
-    private async Task<List<JsonObject>> LoadForNavDependenciesAsync(CancellationToken ct)
-    {
-        var rows = await _db.WellKnownDependencies
-            .AsNoTracking()
-            .Where(w => w.DepPublisher == ForNavPublisher)
-            .OrderBy(w => w.Ordering)
-            .ToListAsync(ct);
-        return rows.Select(r => new JsonObject
-        {
-            ["id"] = r.DepId,
-            ["name"] = r.DepName,
-            ["publisher"] = r.DepPublisher,
-            ["version"] = r.DepVersionDefault,
-        }).ToList();
-    }
-
-    // ===== Code-workspace + README =====
-
-    /// <summary>
-    /// Serialises a <c>.code-workspace</c> JSON document with the given list
-    /// of folder paths (workspace-relative, in display order) plus the fixed
-    /// editor/AL settings. Used by both the workspace flow (Core + modules)
-    /// and the sibling-extension flow (Core + every existing module + the
-    /// new extension).
-    /// </summary>
     private static string BuildCodeWorkspace(IReadOnlyList<string> folderPaths)
     {
         var folders = new JsonArray();
-        foreach (var path in folderPaths)
-        {
-            folders.Add(new JsonObject { ["path"] = path });
-        }
-
+        foreach (var path in folderPaths) folders.Add(new JsonObject { ["path"] = path });
         var settings = JsonNode.Parse(WorkspaceSettingsJson)!.AsObject();
-        var root = new JsonObject
+        return SerializeIndented(new JsonObject
         {
             ["folders"] = folders,
             ["settings"] = settings,
-        };
-        return SerializeIndented(root);
+        });
     }
-
-    /// <summary>
-    /// Serialise a <see cref="JsonNode"/> to indented JSON. Goes through
-    /// <see cref="JsonSerializer"/> rather than <c>JsonNode.ToJsonString</c>
-    /// because the latter has historically dropped the writer's indent setting
-    /// — generation-engine.md mandates 2-space-indented output.
-    /// </summary>
-    private static string SerializeIndented(JsonNode node) =>
-        JsonSerializer.Serialize(node, JsonOptions);
 
     private static string BuildReadme(ProjectPlan plan) =>
         $"""
@@ -685,111 +905,57 @@ public class GenerationService
         Generated by AL Dev Toolbox.
         """;
 
-    // ===== Workspace extension identities =====
-
-    /// <summary>
-    /// Snapshots Core + every module assignment as
-    /// <see cref="WorkspaceExtensionIdentity"/> rows for the workspace's
-    /// <c>workspace.aldt.toml</c>. The GUID, id-range, and folder name baked
-    /// in here are the same ones <see cref="ZipArchive"/> just stamped into
-    /// the per-extension <c>app.json</c> files; persisting them lets a
-    /// sibling-extension import quote real values back without guessing.
-    /// </summary>
-    private static IReadOnlyList<WorkspaceExtensionIdentity> BuildExtensionIdentities(
-        RuntimeTemplate template,
-        ProjectPlan plan,
-        Guid coreId,
-        string coreName,
-        IReadOnlyList<ModuleAssignment> moduleInfos)
-    {
-        var rows = new List<WorkspaceExtensionIdentity>(moduleInfos.Count + 1)
-        {
-            new WorkspaceExtensionIdentity(
-                Kind: WorkspaceExtensionIdentity.CoreKind,
-                Key: null,
-                Id: coreId,
-                Name: coreName,
-                Folder: "Core",
-                Publisher: template.Defaults.Publisher,
-                IdRangeFrom: plan.CoreIdRangeFrom,
-                IdRangeTo: plan.CoreIdRangeTo),
-        };
-        foreach (var info in moduleInfos)
-        {
-            rows.Add(new WorkspaceExtensionIdentity(
-                Kind: WorkspaceExtensionIdentity.ModuleKind,
-                Key: info.Module.Key,
-                Id: info.ExtensionId,
-                Name: info.ExtensionName,
-                Folder: info.FolderName,
-                Publisher: template.Defaults.Publisher,
-                IdRangeFrom: info.IdRangeFrom,
-                IdRangeTo: info.IdRangeTo));
-        }
-        return rows;
-    }
-
-    // ===== ID range allocation =====
-
-    /// <summary>
-    /// Walks the selected modules in order, computing each one's contiguous
-    /// id-range slice. Honours per-module size overrides while keeping the
-    /// running offset correct.
-    /// </summary>
-    private static List<ModuleAssignment> AssignModuleRanges(
-        RuntimeTemplate template,
-        IReadOnlyList<Module> modules,
-        ProjectPlan plan,
-        Guid coreId,
-        string coreName)
-    {
-        var assignments = new List<ModuleAssignment>(modules.Count);
-        var nextStart = template.ModuleIdRangeStart;
-        foreach (var module in modules)
-        {
-            var size = module.IdRangeSize ?? template.ModuleIdRangeSize;
-            var rangeFrom = nextStart;
-            var rangeTo = rangeFrom + size - 1;
-            nextStart = rangeTo + 1;
-
-            assignments.Add(new ModuleAssignment(
-                Module: module,
-                FolderName: StripWhitespace(module.Name),
-                ExtensionName: $"{plan.WorkspaceName} {module.Name}",
-                ExtensionId: Guid.NewGuid(),
-                IdRangeFrom: rangeFrom,
-                IdRangeTo: rangeTo,
-                CoreId: coreId,
-                CoreName: coreName));
-        }
-        return assignments;
-    }
-
-    private async Task<List<Module>> LoadSelectedModulesAsync(IReadOnlyList<string> moduleKeys, CancellationToken ct)
-    {
-        if (moduleKeys.Count == 0) return new();
-
-        var rows = await _db.Modules
-            .AsNoTracking()
-            .Where(m => m.DeletedAt == null && moduleKeys.Contains(m.Key))
-            .Include(m => m.Dependencies.OrderBy(d => d.Ordering))
-            .ToListAsync(ct);
-
-        // Preserve the user-selected ordering, since EF won't.
-        var byKey = rows.ToDictionary(m => m.Key);
-        var ordered = new List<Module>(moduleKeys.Count);
-        foreach (var key in moduleKeys)
-        {
-            if (byKey.TryGetValue(key, out var module))
-                ordered.Add(module);
-        }
-        return ordered;
-    }
-
     // ===== Mustache substitution =====
 
-    private string SubstituteMustache(string source, MustacheContext ctx)
+    /// <summary>
+    /// Substitutes the supported placeholders inside <paramref name="source"/>.
+    /// The table is: <c>{{name}}</c>, <c>{{workspaceName}}</c>,
+    /// <c>{{shortName}}</c>, <c>{{moduleName}}</c>, <c>{{publisher}}</c>,
+    /// <c>{{extension_prefix}}</c>, <c>{{affix}}</c>, <c>{{namespace}}</c>,
+    /// <c>{{guid}}</c>. Unknown keys log a warning and pass through verbatim.
+    /// </summary>
+    private string SubstituteMustache(string source, MustacheContext ctx) =>
+        MustacheRegex.Replace(source, match =>
+        {
+            var key = match.Groups[1].Value;
+            return key switch
+            {
+                "name" => ctx.Name,
+                "workspaceName" => ctx.WorkspaceName,
+                "shortName" => ctx.ShortName,
+                "moduleName" => ctx.ModuleName,
+                "publisher" => ctx.Publisher,
+                "extension_prefix" => ctx.ExtensionPrefix,
+                "affix" => ctx.Affix,
+                "namespace" => ctx.FolderPath.Replace('/', '.'),
+                "guid" => Guid.NewGuid().ToString(),
+                _ => UnknownVariable(match.Value, key),
+            };
+        });
+
+    private string UnknownVariable(string original, string key)
     {
+        _logger.LogWarning("Unknown mustache variable {{{{{Key}}}}} encountered during generation; left as-is.", key);
+        return original;
+    }
+
+    /// <summary>
+    /// Scalar substitution used for the extension name (no folder-context
+    /// awareness yet — names are built before folder traversal). The
+    /// substitution table is the same as the file-content path but
+    /// <c>{{namespace}}</c> resolves to the empty string here.
+    /// </summary>
+    private static string SubstituteScalar(string source, ProjectPlan plan, RuntimeTemplate template)
+    {
+        var ctx = new MustacheContext(
+            Name: source,
+            WorkspaceName: plan.WorkspaceName,
+            ShortName: StripWhitespace(plan.WorkspaceName),
+            ModuleName: source,
+            Publisher: template.Defaults.Publisher,
+            ExtensionPrefix: plan.ExtensionPrefix,
+            Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
+            FolderPath: string.Empty);
         return MustacheRegex.Replace(source, match =>
         {
             var key = match.Groups[1].Value;
@@ -800,18 +966,13 @@ public class GenerationService
                 "shortName" => ctx.ShortName,
                 "moduleName" => ctx.ModuleName,
                 "publisher" => ctx.Publisher,
-                "prefix" => ctx.Prefix,
-                "namespace" => ctx.FolderPath.Replace('/', '.'),
+                "extension_prefix" => ctx.ExtensionPrefix,
+                "affix" => ctx.Affix,
+                "namespace" => string.Empty,
                 "guid" => Guid.NewGuid().ToString(),
-                _ => UnknownVariable(match.Value, key),
+                _ => match.Value,
             };
         });
-    }
-
-    private string UnknownVariable(string original, string key)
-    {
-        _logger.LogWarning("Unknown mustache variable {{{{{Key}}}}} encountered during generation; left as-is.", key);
-        return original;
     }
 
     private record MustacheContext(
@@ -820,79 +981,9 @@ public class GenerationService
         string ShortName,
         string ModuleName,
         string Publisher,
-        string Prefix,
+        string ExtensionPrefix,
+        string Affix,
         string FolderPath);
-
-    /// <summary>
-    /// Builds a synthetic <see cref="ProjectPlan"/> shape so the standalone
-    /// flow can reuse <see cref="WriteExtensionAsync"/> (which keys mustache
-    /// variables off the workspace plan). Only the fields touched during
-    /// substitution are filled in.
-    /// </summary>
-    private static ProjectPlan PlanForStandaloneSubstitution(StandaloneExtensionPlan plan) => new(
-        TemplateKey: plan.TemplateKey,
-        WorkspaceName: plan.ExtensionName,
-        Brief: plan.Brief,
-        Description: plan.Description,
-        ApplicationVersion: plan.ApplicationVersion,
-        RuntimeVersion: plan.RuntimeVersion,
-        CoreIdRangeFrom: plan.IdRangeFrom,
-        CoreIdRangeTo: plan.IdRangeTo,
-        IncludeExamples: plan.IncludeExamples,
-        IncludeForNav: false,
-        SelectedModuleKeys: Array.Empty<string>());
-
-    // ===== Validation =====
-
-    private static void ValidateWorkspacePlan(ProjectPlan plan)
-    {
-        var errors = new Dictionary<string, string>();
-        if (string.IsNullOrWhiteSpace(plan.TemplateKey)) errors[nameof(plan.TemplateKey)] = "Required.";
-        if (string.IsNullOrWhiteSpace(plan.WorkspaceName) || !WorkspaceNameRegex.IsMatch(plan.WorkspaceName))
-            errors[nameof(plan.WorkspaceName)] = "Required. Letters, digits and spaces only; must start with a letter.";
-        if (plan.CoreIdRangeFrom <= 0) errors[nameof(plan.CoreIdRangeFrom)] = "Must be greater than zero.";
-        if (plan.CoreIdRangeTo <= plan.CoreIdRangeFrom) errors[nameof(plan.CoreIdRangeTo)] = "Must be greater than 'from'.";
-        // Milestone P2.4: ApplicationVersion + RuntimeVersion are now sourced
-        // from the curated application_versions catalogue, so the regex checks
-        // moved into the catalogue service. The plan still requires both to be
-        // present — orphan templates without a curated row keep posting their
-        // raw default_application / runtime strings.
-        if (string.IsNullOrWhiteSpace(plan.ApplicationVersion))
-            errors[nameof(plan.ApplicationVersion)] = "Required.";
-        if (string.IsNullOrWhiteSpace(plan.RuntimeVersion))
-            errors[nameof(plan.RuntimeVersion)] = "Required.";
-        if (errors.Count > 0) throw new PlanValidationException(errors);
-    }
-
-    private static void ValidateExtensionPlan(StandaloneExtensionPlan plan)
-    {
-        var errors = new Dictionary<string, string>();
-        if (string.IsNullOrWhiteSpace(plan.TemplateKey)) errors[nameof(plan.TemplateKey)] = "Required.";
-        if (string.IsNullOrWhiteSpace(plan.ExtensionName) || !ExtensionNameRegex.IsMatch(plan.ExtensionName))
-            errors[nameof(plan.ExtensionName)] = "Required. Letters and digits only, no spaces.";
-        if (string.IsNullOrWhiteSpace(plan.Publisher)) errors[nameof(plan.Publisher)] = "Required.";
-        if (plan.IdRangeFrom <= 0) errors[nameof(plan.IdRangeFrom)] = "Must be greater than zero.";
-        if (plan.IdRangeTo <= plan.IdRangeFrom) errors[nameof(plan.IdRangeTo)] = "Must be greater than 'from'.";
-        if (string.IsNullOrWhiteSpace(plan.ApplicationVersion))
-            errors[nameof(plan.ApplicationVersion)] = "Required.";
-        if (string.IsNullOrWhiteSpace(plan.RuntimeVersion))
-            errors[nameof(plan.RuntimeVersion)] = "Required.";
-
-        // The picker UI prevents duplicate selections, but a direct POST could
-        // ship two rows with the same GUID — emit Each AL extension can only
-        // declare a given dependency once, mirroring ModuleService.
-        var seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < plan.Dependencies.Count; i++)
-        {
-            var dep = plan.Dependencies[i];
-            if (string.IsNullOrWhiteSpace(dep.DepId)) continue;
-            if (!seenIds.Add(dep.DepId.Trim()))
-            {
-                errors[$"Dependencies[{i}].DepId"] = $"Duplicate dependency id '{dep.DepId}'.";
-            }
-        }
-        if (errors.Count > 0) throw new PlanValidationException(errors);
-    }
 
     // ===== ZIP helpers =====
 
@@ -918,38 +1009,48 @@ public class GenerationService
         await resource.CopyToAsync(entryStream, ct);
     }
 
-    private static string StripWhitespace(string value) => Regex.Replace(value ?? string.Empty, @"\s+", string.Empty);
+    private static string SerializeIndented(JsonNode node) =>
+        JsonSerializer.Serialize(node, JsonOptions);
 
-    /// <summary>Per-module derived data used during workspace generation.</summary>
-    private record ModuleAssignment(
-        Module Module,
-        string FolderName,
-        string ExtensionName,
-        Guid ExtensionId,
+    private static string StripWhitespace(string value) =>
+        Regex.Replace(value ?? string.Empty, @"\s+", string.Empty);
+
+    // ===== In-memory shapes =====
+
+    /// <summary>Resolved per-extension data carried through the generation pipeline.</summary>
+    private sealed record EmittableExtension(
+        string Path,
+        string Name,
+        Guid Id,
         int IdRangeFrom,
         int IdRangeTo,
-        Guid CoreId,
-        string CoreName);
+        string Application,
+        string Runtime,
+        string Publisher,
+        bool IsModuleClone,
+        string? ModuleKey,
+        string ModuleName,
+        IReadOnlyList<FolderNode> FolderRoots,
+        IReadOnlyList<EmittableDependency> Dependencies);
+
+    /// <summary>Folder + its files + its children (recursive). Built once at load time.</summary>
+    private sealed record FolderNode(string Path, IReadOnlyList<FileLeaf> Files, IReadOnlyList<FolderNode> Folders);
+
+    private sealed record FileLeaf(string Path, string Content, bool IsExample);
+
+    private sealed record EmittableDependency(
+        string? RefExtensionPath,
+        string? RefModuleKey,
+        string? LitId,
+        string? LitName,
+        string? LitPublisher,
+        string? LitVersion);
 }
 
-/// <summary>
-/// Container for a finished archive. The stream is rewound and ready to copy
-/// into the HTTP response body.
-/// </summary>
+/// <summary>Container for a finished archive. The stream is rewound and ready to copy to the HTTP response body.</summary>
 public record GeneratedArchive(MemoryStream Stream, string FileName);
 
-/// <summary>
-/// Sibling-extension context: tells <see cref="GenerationService.GenerateExtensionAsync"/>
-/// the new extension is being generated for an existing workspace. Drives the
-/// extra <c>&lt;WorkspaceName&gt;.code-workspace</c> emitted at archive root
-/// alongside the new extension folder.
-/// <see cref="ExistingFolders"/> is the authoritative list of workspace
-/// folders (Core + every existing extension) when the imported workspace
-/// config carried persisted identities; the regenerated workspace file uses
-/// these names verbatim so a module rename in the DB since the original
-/// generation can't desync the user's repo. With an empty list (older
-/// configs) we fall back to DB lookups via <see cref="ModuleKeys"/>.
-/// </summary>
+/// <summary>Sibling-extension context for the New Extension flow.</summary>
 public record SiblingWorkspaceContext(
     string WorkspaceName,
     IReadOnlyList<string> ModuleKeys,

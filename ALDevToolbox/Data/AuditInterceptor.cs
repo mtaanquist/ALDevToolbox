@@ -31,10 +31,12 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     private static readonly HashSet<Type> AuditedTypes = new()
     {
         typeof(RuntimeTemplate),
-        typeof(TemplateFolder),
-        typeof(TemplateFile),
-        typeof(TemplateModuleFolder),
-        typeof(TemplateModuleFile),
+        typeof(WorkspaceExtension),
+        typeof(WorkspaceExtensionFolder),
+        typeof(WorkspaceExtensionFile),
+        typeof(WorkspaceExtensionDependency),
+        typeof(ModuleExtensionFolder),
+        typeof(ModuleExtensionFile),
         typeof(RuntimeTemplateDefaultModule),
         typeof(Module),
         typeof(ModuleDependency),
@@ -175,11 +177,12 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
 
     /// <summary>
     /// Builds the JSON "before" snapshot for a modified or deleted row. Parent
-    /// entities (template, module) inline their child collection's pre-save state so
-    /// an investigator can read one snapshot row instead of joining several.
-    /// <see cref="TemplateFile"/> rows replace their (potentially large)
-    /// <c>Content</c> column with a SHA-256 hash so the audit log doesn't
-    /// inflate with every AL file edit — see <c>.design/domain-model.md</c>.
+    /// entities (template, module, extension) inline their child collection's
+    /// pre-save state so an investigator can read one snapshot row instead of
+    /// joining several. <see cref="WorkspaceExtensionFile"/> rows replace their
+    /// (potentially large) <c>Content</c> column with a SHA-256 hash so the
+    /// audit log doesn't inflate with every AL file edit — see
+    /// <c>.design/domain-model.md</c>.
     /// </summary>
     private static string BuildOriginalSnapshot(EntityEntry entry, List<EntityEntry> allEntries)
     {
@@ -188,64 +191,54 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         if (entry.Entity is RuntimeTemplate)
         {
             var templateId = (int)entry.OriginalValues["Id"]!;
-            var folders = allEntries
-                .Where(e => e.Entity is TemplateFolder
+            snapshot["extensions"] = allEntries
+                .Where(e => e.Entity is WorkspaceExtension
                             && e.State != EntityState.Added
                             && (int)e.OriginalValues["TemplateId"]! == templateId)
-                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
-                .ToList();
-            snapshot["folders"] = folders.Select(folder =>
-            {
-                var folderDict = OriginalValuesToDict(folder);
-                var folderId = (int)folder.OriginalValues["Id"]!;
-                folderDict["files"] = allEntries
-                    .Where(e => e.Entity is TemplateFile
-                                && e.State != EntityState.Added
-                                && (int)e.OriginalValues["TemplateFolderId"]! == folderId)
-                    .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
-                    .Select(OriginalValuesToDict)
-                    .ToList();
-                return folderDict;
-            }).ToList();
-
-            var moduleFolders = allEntries
-                .Where(e => e.Entity is TemplateModuleFolder
-                            && e.State != EntityState.Added
-                            && (int)e.OriginalValues["TemplateId"]! == templateId)
-                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
-                .ToList();
-            snapshot["module_folders"] = moduleFolders.Select(folder =>
-            {
-                var folderDict = OriginalValuesToDict(folder);
-                var folderId = (int)folder.OriginalValues["Id"]!;
-                folderDict["files"] = allEntries
-                    .Where(e => e.Entity is TemplateModuleFile
-                                && e.State != EntityState.Added
-                                && (int)e.OriginalValues["TemplateModuleFolderId"]! == folderId)
-                    .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
-                    .Select(OriginalValuesToDict)
-                    .ToList();
-                return folderDict;
-            }).ToList();
-        }
-        else if (entry.Entity is TemplateFolder)
-        {
-            var folderId = (int)entry.OriginalValues["Id"]!;
-            snapshot["files"] = allEntries
-                .Where(e => e.Entity is TemplateFile
-                            && e.State != EntityState.Added
-                            && (int)e.OriginalValues["TemplateFolderId"]! == folderId)
                 .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
                 .Select(OriginalValuesToDict)
                 .ToList();
         }
-        else if (entry.Entity is TemplateModuleFolder)
+        else if (entry.Entity is WorkspaceExtension)
+        {
+            // Recursive folder tree + dependencies are tracked at the
+            // extension level; per-folder details fan out to file lists when
+            // an admin edits one folder, so capturing a top-level snapshot
+            // here is enough.
+            var extensionId = (int)entry.OriginalValues["Id"]!;
+            snapshot["folders"] = allEntries
+                .Where(e => e.Entity is WorkspaceExtensionFolder
+                            && e.State != EntityState.Added
+                            && (int)e.OriginalValues["WorkspaceExtensionId"]! == extensionId)
+                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
+                .Select(OriginalValuesToDict)
+                .ToList();
+            snapshot["dependencies"] = allEntries
+                .Where(e => e.Entity is WorkspaceExtensionDependency
+                            && e.State != EntityState.Added
+                            && (int)e.OriginalValues["WorkspaceExtensionId"]! == extensionId)
+                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
+                .Select(OriginalValuesToDict)
+                .ToList();
+        }
+        else if (entry.Entity is WorkspaceExtensionFolder)
         {
             var folderId = (int)entry.OriginalValues["Id"]!;
             snapshot["files"] = allEntries
-                .Where(e => e.Entity is TemplateModuleFile
+                .Where(e => e.Entity is WorkspaceExtensionFile
                             && e.State != EntityState.Added
-                            && (int)e.OriginalValues["TemplateModuleFolderId"]! == folderId)
+                            && (int)e.OriginalValues["WorkspaceExtensionFolderId"]! == folderId)
+                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
+                .Select(OriginalValuesToDict)
+                .ToList();
+        }
+        else if (entry.Entity is ModuleExtensionFolder)
+        {
+            var folderId = (int)entry.OriginalValues["Id"]!;
+            snapshot["files"] = allEntries
+                .Where(e => e.Entity is ModuleExtensionFile
+                            && e.State != EntityState.Added
+                            && (int)e.OriginalValues["ModuleExtensionFolderId"]! == folderId)
                 .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
                 .Select(OriginalValuesToDict)
                 .ToList();
@@ -255,6 +248,13 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             var moduleId = (int)entry.OriginalValues["Id"]!;
             snapshot["dependencies"] = allEntries
                 .Where(e => e.Entity is ModuleDependency
+                            && e.State != EntityState.Added
+                            && (int)e.OriginalValues["ModuleId"]! == moduleId)
+                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
+                .Select(OriginalValuesToDict)
+                .ToList();
+            snapshot["extension_folders"] = allEntries
+                .Where(e => e.Entity is ModuleExtensionFolder
                             && e.State != EntityState.Added
                             && (int)e.OriginalValues["ModuleId"]! == moduleId)
                 .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
@@ -289,7 +289,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
 
     /// <summary>
     /// Materialises an entry's original values into a dictionary, replacing
-    /// <see cref="TemplateFile.Content"/> with a SHA-256 hash so the audit log
+    /// <see cref="WorkspaceExtensionFile.Content"/> with a SHA-256 hash so the audit log
     /// stays compact even when files contain large AL bodies. The encrypted
     /// SMTP password on <see cref="SystemSettings"/> is replaced with a fixed
     /// sentinel so the audit log never captures ciphertext history (which
@@ -298,14 +298,14 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     private static Dictionary<string, object?> OriginalValuesToDict(EntityEntry entry)
     {
         var dict = new Dictionary<string, object?>();
-        var hashContent = entry.Entity is TemplateFile or TemplateModuleFile or OrganizationFile;
+        var hashContent = entry.Entity is WorkspaceExtensionFile or ModuleExtensionFile or OrganizationFile;
         var hashSnippetContent = entry.Entity is SnippetFile or SnippetSuggestionFile;
         var hashAssetBytes = entry.Entity is OrganizationAsset;
         var redactSmtpPassword = entry.Entity is SystemSettings;
         foreach (var property in entry.OriginalValues.Properties)
         {
             var value = entry.OriginalValues[property.Name];
-            if (hashContent && property.Name == nameof(TemplateFile.Content) && value is string s)
+            if (hashContent && property.Name == nameof(WorkspaceExtensionFile.Content) && value is string s)
             {
                 dict["ContentSha256"] = Sha256(s);
             }
@@ -344,10 +344,12 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     private static AuditEntityType MapEntityType(Type t)
     {
         if (t == typeof(RuntimeTemplate)) return AuditEntityType.RuntimeTemplate;
-        if (t == typeof(TemplateFolder)) return AuditEntityType.TemplateFolder;
-        if (t == typeof(TemplateFile)) return AuditEntityType.TemplateFile;
-        if (t == typeof(TemplateModuleFolder)) return AuditEntityType.TemplateModuleFolder;
-        if (t == typeof(TemplateModuleFile)) return AuditEntityType.TemplateModuleFile;
+        if (t == typeof(WorkspaceExtension)) return AuditEntityType.WorkspaceExtension;
+        if (t == typeof(WorkspaceExtensionFolder)) return AuditEntityType.WorkspaceExtensionFolder;
+        if (t == typeof(WorkspaceExtensionFile)) return AuditEntityType.WorkspaceExtensionFile;
+        if (t == typeof(WorkspaceExtensionDependency)) return AuditEntityType.WorkspaceExtensionDependency;
+        if (t == typeof(ModuleExtensionFolder)) return AuditEntityType.ModuleExtensionFolder;
+        if (t == typeof(ModuleExtensionFile)) return AuditEntityType.ModuleExtensionFile;
         if (t == typeof(RuntimeTemplateDefaultModule)) return AuditEntityType.RuntimeTemplateDefaultModule;
         if (t == typeof(Module)) return AuditEntityType.Module;
         if (t == typeof(ModuleDependency)) return AuditEntityType.ModuleDependency;
