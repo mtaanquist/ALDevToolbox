@@ -1,0 +1,39 @@
+@*
+    First-party drop-in replacement for the unmaintained Lucide.Blazor <Icon>
+    component (issue #47). Inner SVG markup is loaded from the vendored
+    Resources/Icons/*.svg embedded resources at startup via IconCatalog;
+    a missing name renders an invisible placeholder and logs a warning
+    instead of throwing KeyNotFoundException during render.
+
+    Prop surface (Name / Width / Height / Css) matches the previous package
+    so all existing call sites work unchanged.
+*@
+@using Microsoft.AspNetCore.Components
+@inject ALDevToolbox.Services.IconCatalog Catalog
+
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = string.Empty;
+    [Parameter] public int Width { get; set; } = 24;
+    [Parameter] public int Height { get; set; } = 24;
+    [Parameter] public string? Css { get; set; }
+}
+
+@{
+    var inner = Catalog.GetInnerSvg(Name);
+    var cssClass = string.IsNullOrWhiteSpace(Css) ? $"lucide lucide-{Name}" : $"lucide lucide-{Name} {Css}";
+}
+@if (inner is null)
+{
+    <span class="@cssClass icon-missing" style="@($"width:{Width}px;height:{Height}px")" aria-hidden="true" title="@($"Missing icon: {Name}")"></span>
+}
+else
+{
+    <svg xmlns="http://www.w3.org/2000/svg"
+         width="@Width" height="@Height"
+         viewBox="0 0 24 24"
+         fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+         class="@cssClass">
+        @((MarkupString)inner)
+    </svg>
+}

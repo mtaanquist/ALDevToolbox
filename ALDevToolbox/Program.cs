@@ -112,6 +112,9 @@ builder.Services.AddScoped<BackupService>();
 // MaintenanceModeState is a process-local flag — singleton lifetime so the
 // middleware and BackupService share the same instance.
 builder.Services.AddSingleton<MaintenanceModeState>();
+// IconCatalog reads the vendored Lucide SVGs from embedded resources once
+// at startup; singleton so we pay the parse cost a single time per process.
+builder.Services.AddSingleton<IconCatalog>();
 // The scheduler runs in the background; opt-out via DISABLE_BACKUP_SCHEDULER=1
 // for environments (tests, CI) that don't want a background timer to start
 // chasing pg_dump.

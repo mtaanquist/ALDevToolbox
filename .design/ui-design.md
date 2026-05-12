@@ -70,7 +70,7 @@ In order, top to bottom:
 
 ### Right column
 
-1. **Preview** — a monospace folder tree, rendered live from the current form state. As the user toggles modules, options, or changes the workspace name, the tree updates. The tree should use Tabler folder icons in the secondary text colour, with a subtle accent (info colour) on the *generated extension* folders (Core and module folders) to distinguish them from grouping/static folders (.assets, Translations).
+1. **Preview** — a monospace folder tree, rendered live from the current form state. As the user toggles modules, options, or changes the workspace name, the tree updates. The tree uses Lucide folder icons in the secondary text colour, with a subtle accent (info colour) on the *generated extension* folders (Core and module folders) to distinguish them from grouping/static folders (.assets, Translations).
 
 2. **Stat cards** — two small cards: "Extensions: N" and "Dependencies: M".
 
@@ -201,7 +201,7 @@ These appear in multiple pages — pulling them into reusable components saves d
 - Form fields full-width within their section.
 - Cards (modules, dep entries) have subtle borders; selected state has a stronger background.
 - The Generate button is the only "primary" button visually — everything else is the default outline button style.
-- Use Tabler icons (or Lucide) consistently. No mixing icon families.
+- Icons are Lucide, vendored as SVGs under `ALDevToolbox/Resources/Icons/` (see `VERSION.txt` for the pinned upstream tag) and rendered inline by `Components/Shared/Icon.razor`. No mixing icon families. Don't reintroduce a third-party icon NuGet — the package this replaced (`Lucide.Blazor`) was unmaintained and threw on render when an icon name didn't exist (issue #47); the vendored catalogue logs a warning and renders a placeholder instead.
 - Stick to a single accent colour for "active" or "selected" states throughout.
 
 ## Mobile
