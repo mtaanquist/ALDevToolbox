@@ -44,10 +44,7 @@ AcmeCustomer/
 │       └── Company.ruleset.json
 ├── Core/                                # path of the first required WorkspaceExtension
 │   ├── app.json
-│   ├── AppSourceCop.json
-│   ├── libs/.gitkeep                    # static fallback folder
-│   ├── permissionsets/.gitkeep          # static fallback folder
-│   ├── Translations/.gitkeep            # static fallback folder
+│   ├── AppSourceCop.json                # only when template.AppSourceCop.Include = true
 │   ├── src/                             # folder from workspace_extension_folders
 │   │   └── codeunits/
 │   │       └── AppInstall.Codeunit.al   # file from workspace_extension_files; mustache-substituted
@@ -67,7 +64,7 @@ AcmeCustomer/
 └── README.md
 ```
 
-Static fallback folders (`libs/`, `permissionsets/`, `Translations/`) are emitted under every extension that doesn't already declare them. A folder declared with no files ships with a single `.gitkeep` placeholder.
+What the template declares is what the ZIP contains — there are no static fallback folders. A folder declared with no files (and no children) ships with a single `.gitkeep` placeholder so the directory survives the ZIP round-trip.
 
 ## Algorithm
 
@@ -90,14 +87,13 @@ Static fallback folders (`libs/`, `permissionsets/`, `Translations/`) are emitte
         freshly-allocated GUID. See "Dependency resolution" below.
 4. For each EmittableExtension in walk order:
      a. Build app.json (see below).
-     b. Build AppSourceCop.json from the template's app_source_cop_json,
-        mustache-substituted with the per-workspace context.
+     b. When template.AppSourceCop.Include = true, build AppSourceCop.json
+        from the template's app_source_cop_json. The Include flag itself is
+        stripped — it's our authoring concept, not an AL field.
      c. Walk the folder tree depth-first. For each folder, emit its declared
         files (skipping IsExample files when plan.IncludeExamples is false). If
         the folder ends up with no emitted files AND no child folders, drop a
         .gitkeep placeholder so empty directories survive the ZIP round-trip.
-     d. Add the static fallback folders (libs/, permissionsets/, Translations/)
-        with .gitkeep when the extension hasn't already declared them.
 5. Generate workspace-root files:
      a. {ShortName}.code-workspace (see below).
      b. README.md (minimal — workspace name + description).
@@ -135,7 +131,7 @@ Serialise with 2-space indent for readability of the generated file.
 
 ## `AppSourceCop.json` construction
 
-Deserialise `template.app_source_cop_json`, run mustache substitution on its string fields, write it into each extension's folder. No per-extension customisation today; templates can opt out by leaving the column empty.
+Deserialise `template.app_source_cop_json`, write it into each extension's folder. The `include` flag on the JSON column gates emission — set it to `false` to suppress the file workspace-wide. The flag is stripped before serialisation since AL would reject an unknown field. No per-extension customisation today.
 
 ## `.code-workspace` construction
 

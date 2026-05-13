@@ -445,6 +445,7 @@
             }),
         };
 
+        var includeCop = _selected?.AppSourceCop.Include ?? true;
         if (_selected is not null)
         {
             foreach (var ext in _selected.WorkspaceExtensions.OrderBy(e => e.Ordering))
@@ -452,7 +453,7 @@
                 if (!ext.Required && !_selectedExtensionPaths.Contains(ext.Path)) continue;
                 children.Add(PreviewNode.Extension(
                     ext.Path,
-                    ExtensionPreviewBuilder.BuildContents(ext.Folders, _includeExamples)));
+                    ExtensionPreviewBuilder.BuildContents(ext.Folders, _includeExamples, includeCop)));
             }
         }
 
@@ -466,7 +467,7 @@
                 // the module's Key is what lands in the ZIP, not the display name.
                 children.Add(PreviewNode.Extension(
                     module.Key,
-                    ExtensionPreviewBuilder.BuildContents(module.ExtensionFolders, _includeExamples)));
+                    ExtensionPreviewBuilder.BuildContents(module.ExtensionFolders, _includeExamples, includeCop)));
             }
         }
 

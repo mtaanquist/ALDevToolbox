@@ -428,7 +428,8 @@
             .OrderBy(e => e.Ordering)
             .FirstOrDefault();
         var folders = scaffold?.Folders ?? new List<WorkspaceExtensionFolder>();
-        var contents = ExtensionPreviewBuilder.BuildContents(folders, _includeExamples);
+        var includeCop = _selected?.AppSourceCop.Include ?? true;
+        var contents = ExtensionPreviewBuilder.BuildContents(folders, _includeExamples, includeCop);
         var node = PreviewNode.Extension(FolderName, contents);
         return PreviewTreeBuilder.SortForDisplay(node);
     }
@@ -460,7 +461,7 @@
             {
                 children.Add(PreviewNode.Extension(
                     ext.Path,
-                    ExtensionPreviewBuilder.BuildContents(ext.Folders, _includeExamples)));
+                    ExtensionPreviewBuilder.BuildContents(ext.Folders, _includeExamples, _selected.AppSourceCop.Include)));
             }
         }
 
@@ -469,13 +470,14 @@
         // the workspace builder applies on its own form.
         if (_modules is not null)
         {
+            var includeCop = _selected?.AppSourceCop.Include ?? true;
             foreach (var key in context.ModuleKeys)
             {
                 var module = _modules.FirstOrDefault(m => m.Key == key);
                 if (module is null) continue;
                 children.Add(PreviewNode.Extension(
                     module.Key,
-                    ExtensionPreviewBuilder.BuildContents(module.ExtensionFolders, _includeExamples)));
+                    ExtensionPreviewBuilder.BuildContents(module.ExtensionFolders, _includeExamples, includeCop)));
             }
         }
 

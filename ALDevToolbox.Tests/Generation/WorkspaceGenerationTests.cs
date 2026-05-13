@@ -26,22 +26,64 @@ public sealed class WorkspaceGenerationTests : IDisposable
     public void Dispose() => _db.Dispose();
 
     [Fact]
-    public async Task Required_extension_emits_its_folder_with_app_json_and_fallback_layout()
+    public async Task Required_extension_emits_its_folder_with_app_json_and_appsourcecop()
     {
         await SeedTemplateAsync(TemplateBuilder.Default());
 
         using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
 
         zip.GetEntry("AcmeCustomer/Core/app.json").Should().NotBeNull();
-        // Static fallback folders are emitted under every extension that
-        // doesn't already declare them.
-        zip.GetEntry("AcmeCustomer/Core/libs/.gitkeep").Should().NotBeNull();
-        zip.GetEntry("AcmeCustomer/Core/permissionsets/.gitkeep").Should().NotBeNull();
-        zip.GetEntry("AcmeCustomer/Core/Translations/.gitkeep").Should().NotBeNull();
+        // AppSourceCop.json ships per-extension when the template has
+        // AppSourceCop.Include = true (the default).
+        zip.GetEntry("AcmeCustomer/Core/AppSourceCop.json").Should().NotBeNull();
+        // No fallback folder injection — what the template declares is what
+        // ships, per issue #60.
+        zip.GetEntry("AcmeCustomer/Core/libs/.gitkeep").Should().BeNull();
+        zip.GetEntry("AcmeCustomer/Core/permissionsets/.gitkeep").Should().BeNull();
+        zip.GetEntry("AcmeCustomer/Core/Translations/.gitkeep").Should().BeNull();
         // Workspace-root metadata files.
         zip.GetEntry("AcmeCustomer/AcmeCustomer.code-workspace").Should().NotBeNull();
         zip.GetEntry("AcmeCustomer/README.md").Should().NotBeNull();
         zip.GetEntry("AcmeCustomer/.gitignore").Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task AppSourceCop_omitted_when_include_is_false()
+    {
+        var template = TemplateBuilder.Default();
+        template.AppSourceCop = new AppSourceCopSettings
+        {
+            Include = false,
+            MandatoryPrefix = "IGNORED",
+        };
+        await SeedTemplateAsync(template);
+
+        using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
+
+        zip.GetEntry("AcmeCustomer/Core/AppSourceCop.json").Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AppSourceCop_json_strips_include_flag()
+    {
+        var template = TemplateBuilder.Default();
+        template.AppSourceCop = new AppSourceCopSettings
+        {
+            Include = true,
+            MandatoryPrefix = "ACME",
+            SupportedCountries = new() { "US", "DK" },
+        };
+        await SeedTemplateAsync(template);
+
+        using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
+
+        var content = ReadEntry(zip.GetEntry("AcmeCustomer/Core/AppSourceCop.json")!);
+        var doc = JsonDocument.Parse(content);
+        doc.RootElement.GetProperty("mandatoryPrefix").GetString().Should().Be("ACME");
+        doc.RootElement.GetProperty("supportedCountries").EnumerateArray()
+            .Select(c => c.GetString()).Should().BeEquivalentTo("US", "DK");
+        // The include flag is our authoring concept; AL would reject an unknown field.
+        doc.RootElement.TryGetProperty("include", out _).Should().BeFalse();
     }
 
     [Fact]

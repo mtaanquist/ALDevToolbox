@@ -174,7 +174,7 @@
         {
             children.Add(PreviewNode.Extension(
                 ext.Path,
-                ExtensionPreviewBuilder.BuildContents(ext.Folders, includeExamples: true)));
+                ExtensionPreviewBuilder.BuildContents(ext.Folders, includeExamples: true, includeAppSourceCop: template.AppSourceCop.Include)));
         }
         return PreviewTreeBuilder.SortForDisplay(
             new PreviewNode(template.Key, PreviewNodeKind.Workspace, children));
