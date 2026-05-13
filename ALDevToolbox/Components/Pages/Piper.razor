@@ -82,7 +82,7 @@
 
             <div class="form-section">
                 <label class="section-label" for="piper-sep">Input separator</label>
-                <input id="piper-sep" type="text" placeholder="leave blank to auto-detect"
+                <input id="piper-sep" type="text" placeholder="@_separatorPlaceholder"
                        @bind="SeparatorOverride" @bind:event="oninput" />
                 <p class="muted piper-hint">
                     Use <code>\t</code>, <code>\n</code>, <code>\r</code> for whitespace.
@@ -111,6 +111,7 @@
     private string _input = string.Empty;
     private string _output = string.Empty;
     private string _inputMetaText = "Awaiting input…";
+    private string _separatorPlaceholder = "leave blank to auto-detect";
 
     private OutputFormat _format = OutputFormat.Piped;
     private string _customPrefix = string.Empty;
@@ -140,6 +141,7 @@
         {
             _output = string.Empty;
             _inputMetaText = "Awaiting input…";
+            _separatorPlaceholder = "leave blank to auto-detect";
             return;
         }
 
@@ -176,11 +178,13 @@
             {
                 items = new[] { _input };
                 delimiterDesc = "no delimiter found";
+                _separatorPlaceholder = "leave blank to auto-detect";
             }
             else
             {
                 items = _input.Split(new[] { bestDelim }, StringSplitOptions.None);
                 delimiterDesc = $"auto-detected: {FriendlyDelim(bestDelim)}";
+                _separatorPlaceholder = $"auto-detected: {EscapeForDisplay(bestDelim)}";
             }
         }
 
@@ -240,13 +244,15 @@
         return sb.ToString();
     }
 
-    private static string FriendlyDelim(string s) => s switch
+    private static string FriendlyDelim(string s) => $"\"{EscapeForDisplay(s)}\"";
+
+    private static string EscapeForDisplay(string s) => s switch
     {
-        "\t" => "\"\\t\"",
-        "\n" => "\"\\n\"",
-        "\r" => "\"\\r\"",
-        "\r\n" => "\"\\r\\n\"",
-        _ => $"\"{s}\"",
+        "\t" => "\\t",
+        "\n" => "\\n",
+        "\r" => "\\r",
+        "\r\n" => "\\r\\n",
+        _ => s,
     };
 
     private async Task CopyAsync()
