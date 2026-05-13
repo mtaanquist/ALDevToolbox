@@ -1,3 +1,5 @@
+using ALDevToolbox.Domain.ValueObjects;
+
 namespace ALDevToolbox.Domain.Entities;
 
 /// <summary>
@@ -26,6 +28,15 @@ public class OrganizationSettings
 
     /// <summary>Longer default description copied into the form's <c>Description</c> field.</summary>
     public string DefaultCoreDescription { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Admin-editable JSON template for the workspace's
+    /// <c>{ShortName}.code-workspace</c> file. The generator runs mustache
+    /// substitution over it, then overlays a computed <c>folders</c> array
+    /// before writing the file — so the admin owns <c>settings</c> and any
+    /// other top-level keys, and the generator owns the folder list.
+    /// </summary>
+    public string CodeWorkspaceJson { get; set; } = OrganizationDefaults.CodeWorkspaceJson;
 
     public DateTime UpdatedAt { get; set; }
 }

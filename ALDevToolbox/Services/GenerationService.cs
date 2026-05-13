@@ -31,24 +31,6 @@ public class GenerationService
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never,
     };
 
-    /// <summary>The fixed <c>settings</c> block written into <c>.code-workspace</c>.</summary>
-    private const string WorkspaceSettingsJson = """
-{
-  "editor.formatOnSave": true,
-  "editor.autoIndent": "full",
-  "editor.detectIndentation": false,
-  "editor.tabSize": 4,
-  "editor.insertSpaces": true,
-  "al.codeAnalyzers": [
-    "${CodeCop}",
-    "${AppSourceCop}",
-    "${UICop}"
-  ],
-  "al.enableCodeAnalysis": true,
-  "al.ruleSetPath": "../.assets/rulesets/Company.ruleset.json"
-}
-""";
-
     private readonly AppDbContext _db;
     private readonly WorkspaceConfigService _config;
     private readonly OrganizationConfigService _orgConfig;
@@ -117,7 +99,24 @@ public class GenerationService
             // Workspace-root metadata.
             await WriteEmbeddedAsync(archive, $"{rootFolder}/.gitignore", "ALDevToolbox.Resources.al.gitignore", ct);
             var folderNames = extensions.Select(e => e.Path).ToList();
-            WriteString(archive, $"{rootFolder}/{shortName}.code-workspace", BuildCodeWorkspace(folderNames));
+            var workspaceJsonCtx = new MustacheContext(
+                Name: plan.WorkspaceName,
+                WorkspaceName: plan.WorkspaceName,
+                ShortName: shortName,
+                ModuleName: plan.WorkspaceName,
+                // Sourced from the template defaults to match WriteOrgFiles
+                // (the always-included files use the same substitution table)
+                // and to handle fresh orgs whose settings row is still blank.
+                Publisher: template.Defaults.Publisher,
+                ExtensionPrefix: plan.ExtensionPrefix,
+                Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
+                FolderPath: string.Empty);
+            WriteString(archive, $"{rootFolder}/{shortName}.code-workspace",
+                BuildCodeWorkspace(
+                    orgConfig.Settings.CodeWorkspaceJson,
+                    template.CodeWorkspaceJson,
+                    folderNames,
+                    workspaceJsonCtx));
             WriteString(archive, $"{rootFolder}/README.md", BuildReadme(plan));
             var identities = extensions.Select(e => new WorkspaceExtensionIdentity(
                 Kind: e.IsModuleClone ? WorkspaceExtensionIdentity.ModuleKind : WorkspaceExtensionIdentity.CoreKind,
@@ -213,7 +212,27 @@ public class GenerationService
                     ? sibling.ExistingFolders.ToList()
                     : new List<string>();
                 existing.Add(folderName);
-                WriteString(archive, workspaceFile, BuildCodeWorkspace(existing));
+
+                // Rewriting the sibling workspace's .code-workspace file: pull
+                // the admin's JSON template from the org config so the result
+                // matches what the workspace was originally generated with.
+                var orgConfig = await GetOrgConfigAsync(ct);
+                var siblingShort = StripWhitespace(sibling.WorkspaceName);
+                var siblingCtx = new MustacheContext(
+                    Name: sibling.WorkspaceName,
+                    WorkspaceName: sibling.WorkspaceName,
+                    ShortName: siblingShort,
+                    ModuleName: sibling.WorkspaceName,
+                    Publisher: template.Defaults.Publisher,
+                    ExtensionPrefix: string.Empty,
+                    Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
+                    FolderPath: string.Empty);
+                WriteString(archive, workspaceFile,
+                    BuildCodeWorkspace(
+                        orgConfig.Settings.CodeWorkspaceJson,
+                        template.CodeWorkspaceJson,
+                        existing,
+                        siblingCtx));
                 fileCount++;
             }
         }
@@ -891,16 +910,109 @@ public class GenerationService
 
     // ===== Workspace-level files =====
 
-    private static string BuildCodeWorkspace(IReadOnlyList<string> folderPaths)
+    /// <summary>
+    /// Builds <c>{ShortName}.code-workspace</c> by layering three sources
+    /// (Issue #61):
+    /// <list type="number">
+    ///   <item>The organisation base JSON template
+    ///         (<see cref="OrganizationSettings.CodeWorkspaceJson"/>).</item>
+    ///   <item>The optional per-template overlay
+    ///         (<see cref="RuntimeTemplate.CodeWorkspaceJson"/>) — deep-merged
+    ///         on the <c>settings</c> object, replacing wholesale on every
+    ///         other top-level key.</item>
+    ///   <item>The computed <c>folders</c> array, written last and always
+    ///         authoritative — the workspace must point at the folders the
+    ///         generator actually emits, regardless of what either layer
+    ///         pasted.</item>
+    /// </list>
+    /// Mustache substitution runs over each layer before merging so both can
+    /// use <c>{{publisher}}</c>, <c>{{shortName}}</c>, etc.
+    /// </summary>
+    private string BuildCodeWorkspace(
+        string orgJsonTemplate,
+        string? templateJsonOverlay,
+        IReadOnlyList<string> folderPaths,
+        MustacheContext ctx)
     {
+        var root = ParseSubstitutedJsonObject(orgJsonTemplate, ctx, "codeWorkspaceJson");
+
+        if (!string.IsNullOrWhiteSpace(templateJsonOverlay))
+        {
+            var overlay = ParseSubstitutedJsonObject(templateJsonOverlay, ctx, "template.codeWorkspaceJson");
+            MergeTemplateOverlay(root, overlay);
+        }
+
         var folders = new JsonArray();
         foreach (var path in folderPaths) folders.Add(new JsonObject { ["path"] = path });
-        var settings = JsonNode.Parse(WorkspaceSettingsJson)!.AsObject();
-        return SerializeIndented(new JsonObject
+        root["folders"] = folders;
+        return SerializeIndented(root);
+    }
+
+    /// <summary>
+    /// Substitute mustache vars and parse the result as a JSON object. Validation
+    /// errors are keyed under <paramref name="fieldKey"/> so the workspace and
+    /// template error surfaces stay distinct in the audit log and the form.
+    /// </summary>
+    private JsonObject ParseSubstitutedJsonObject(string source, MustacheContext ctx, string fieldKey)
+    {
+        var substituted = SubstituteMustache(source, ctx);
+        JsonNode? parsed;
+        try
         {
-            ["folders"] = folders,
-            ["settings"] = settings,
-        });
+            parsed = JsonNode.Parse(substituted);
+        }
+        catch (JsonException ex)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                [fieldKey] = $"Workspace JSON template did not parse: {ex.Message}",
+            });
+        }
+        if (parsed is not JsonObject root)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                [fieldKey] = "Workspace JSON template must be a JSON object.",
+            });
+        }
+        return root;
+    }
+
+    /// <summary>
+    /// Merge the per-template overlay onto the org base in place:
+    /// <list type="bullet">
+    ///   <item><c>folders</c>: skipped — the generator owns that key and writes
+    ///         it last regardless of either layer.</item>
+    ///   <item><c>settings</c>: when both layers carry a JSON object, the
+    ///         overlay's keys win individually so a template can add one new
+    ///         AL/VS Code setting without restating the org block.</item>
+    ///   <item>everything else: the overlay replaces the org's value wholesale.
+    ///         This keeps semantics predictable for arbitrarily-shaped keys
+    ///         like <c>tasks</c> or <c>launch</c> without inventing
+    ///         JSON-Patch-style merge rules.</item>
+    /// </list>
+    /// </summary>
+    private static void MergeTemplateOverlay(JsonObject target, JsonObject overlay)
+    {
+        foreach (var (key, value) in overlay.ToList())
+        {
+            if (string.Equals(key, "folders", StringComparison.Ordinal)) continue;
+
+            if (string.Equals(key, "settings", StringComparison.Ordinal)
+                && value is JsonObject overlaySettings
+                && target.TryGetPropertyValue("settings", out var targetSettingsNode)
+                && targetSettingsNode is JsonObject targetSettings)
+            {
+                foreach (var (sk, sv) in overlaySettings.ToList())
+                {
+                    targetSettings[sk] = sv?.DeepClone();
+                }
+            }
+            else
+            {
+                target[key] = value?.DeepClone();
+            }
+        }
     }
 
     private static string BuildReadme(ProjectPlan plan) =>

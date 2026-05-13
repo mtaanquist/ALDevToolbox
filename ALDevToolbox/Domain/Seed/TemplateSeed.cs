@@ -1,3 +1,4 @@
+using ALDevToolbox.Domain.Entities;
 using Tomlyn.Serialization;
 
 namespace ALDevToolbox.Domain.Seed;
@@ -24,11 +25,34 @@ public class TemplateSeed
     public AppSourceCopSeed AppSourceCop { get; set; } = new();
 
     /// <summary>
+    /// Optional per-template overlay for <c>{ShortName}.code-workspace</c>
+    /// (issue #61). Absent in most templates — the org's base template is
+    /// used unchanged. When present, the JSON is deep-merged onto the org
+    /// base at generation time. Serialised by hand so the embedded JSON
+    /// renders as a TOML triple-quoted literal rather than an escaped
+    /// single-line blob.
+    /// </summary>
+    [TomlPropertyName("workspace_settings")]
+    public WorkspaceSettingsSeed? WorkspaceSettings { get; set; }
+
+    /// <summary>
     /// Ordered extensions declared by the template. Required entries are
     /// always emitted; <c>required = false</c> entries surface as opt-in
     /// checkboxes on New Workspace.
     /// </summary>
     public List<ExtensionSeed> Extensions { get; set; } = new();
+}
+
+/// <summary>
+/// The <c>[workspace_settings]</c> table — per-template overlay for the
+/// generated <c>{ShortName}.code-workspace</c> JSON. See
+/// <see cref="RuntimeTemplate.CodeWorkspaceJson"/>.
+/// </summary>
+public class WorkspaceSettingsSeed
+{
+    /// <summary>The raw workspace JSON template. Round-tripped verbatim.</summary>
+    [TomlPropertyName("json")]
+    public string Json { get; set; } = string.Empty;
 }
 
 /// <summary>The <c>[template]</c> table — identifying metadata and id ranges.</summary>

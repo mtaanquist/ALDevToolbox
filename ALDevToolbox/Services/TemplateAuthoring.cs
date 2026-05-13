@@ -25,7 +25,15 @@ public record TemplateAuthoring(
     bool IsDefault,
     string? DefaultApplicationVersionKey,
     IReadOnlyList<string> DefaultModuleKeys,
-    IReadOnlyList<ExtensionAuthoring> Extensions);
+    IReadOnlyList<ExtensionAuthoring> Extensions,
+    /// <summary>
+    /// Optional per-template addition to the workspace's .code-workspace
+    /// JSON. Null / empty means "inherit the org base"; otherwise a JSON
+    /// object that the generator deep-merges onto the org base (template
+    /// keys win on `settings`, replace wholesale elsewhere). See
+    /// <see cref="GenerationService"/>.
+    /// </summary>
+    string? CodeWorkspaceJson = null);
 
 /// <summary>One declared extension in the authoring payload.</summary>
 public record ExtensionAuthoring(

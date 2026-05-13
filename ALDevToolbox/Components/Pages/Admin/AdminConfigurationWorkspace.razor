@@ -1,0 +1,194 @@
+@page "/admin/configuration/workspace"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+@inject OrganizationConfigService Config
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ILogger<AdminConfigurationWorkspace> Log
+@using ALDevToolbox.Domain.ValueObjects
+@using Microsoft.JSInterop
+
+@*
+    Workspace settings sub-page (Issue #61). Admin-owned JSON template for the
+    generated workspace's {ShortName}.code-workspace file. The generator
+    overlays the computed folders array onto whatever is saved here, so the
+    admin owns the settings block (and any other top-level keys) but doesn't
+    have to manage folders.
+*@
+
+<PageTitle>Workspace settings · Configuration · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page admin-configuration">
+    <header class="admin-page__header">
+        <div>
+            <h1>Workspace settings</h1>
+            <p class="muted">
+                JSON template for the generated <code>{ShortName}.code-workspace</code>
+                file. The generator overlays a <code>folders</code> array onto
+                whatever you save here, so leave that key out — the rest of the
+                file (the <code>settings</code> block, custom tasks, …) is yours
+                to edit. Mustache substitution runs over the template first.
+            </p>
+        </div>
+        <div class="admin-page__header-actions">
+            <a class="btn btn--sm" href="/admin">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to admin</span>
+            </a>
+            <button type="button" class="btn btn--sm" @onclick="ResetToDefaultAsync" disabled="@_saving">
+                <Icon Name="rotate-ccw" Width="14" Height="14" />
+                <span>Reset to default</span>
+            </button>
+            <button type="button" class="btn btn--sm btn--primary"
+                    @onclick="SaveAsync"
+                    disabled="@(_saving)">
+                <Icon Name="save" Width="14" Height="14" />
+                <span>@(_saving ? "Saving…" : "Save changes")</span>
+            </button>
+        </div>
+    </header>
+
+    @if (_loading)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(_okMessage))
+        {
+            <p class="form-success" role="status">@_okMessage</p>
+        }
+        @if (!string.IsNullOrEmpty(_errMessage))
+        {
+            <div class="form-error" role="alert"><p>@_errMessage</p></div>
+        }
+
+        <MustacheVarsHint />
+
+        <section class="admin-section">
+            <div class="admin-template-edit__toml" @ref="_editorContainer"></div>
+        </section>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "ok")] public string? OkParam { get; set; }
+
+    private bool _loading = true;
+    private bool _saving;
+    private string? _okMessage;
+    private string? _errMessage;
+
+    private string _initialJson = OrganizationDefaults.CodeWorkspaceJson;
+    private ElementReference _editorContainer;
+    private IJSObjectReference? _editorModule;
+    private int _editorId;
+    private bool _editorMounting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var config = await Config.GetCurrentAsync();
+        _initialJson = string.IsNullOrWhiteSpace(config.Settings.CodeWorkspaceJson)
+            ? OrganizationDefaults.CodeWorkspaceJson
+            : config.Settings.CodeWorkspaceJson;
+        _okMessage = OkParam == "saved" ? "Workspace settings saved." : null;
+        _loading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_loading) return;
+        if (_editorId != 0 || _editorMounting) return;
+        _editorMounting = true;
+        try
+        {
+            _editorModule ??= await JS.InvokeAsync<IJSObjectReference>(
+                "import", "/code-editor.js");
+            _editorId = await _editorModule.InvokeAsync<int>("mount", _editorContainer, _initialJson, "json");
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to mount the CodeMirror JSON editor.");
+            _errMessage = $"Could not mount the editor: {ex.Message}";
+        }
+        finally
+        {
+            _editorMounting = false;
+        }
+    }
+
+    private async Task<string> ReadEditorAsync()
+    {
+        if (_editorModule is null || _editorId == 0) return _initialJson;
+        try
+        {
+            return await _editorModule.InvokeAsync<string>("getValue", _editorId);
+        }
+        catch (JSDisconnectedException)
+        {
+            return _initialJson;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving) return;
+        _saving = true;
+        _errMessage = null;
+        _okMessage = null;
+        try
+        {
+            var json = await ReadEditorAsync();
+            await Config.SaveCodeWorkspaceJsonAsync(json);
+            // Force-reload so the redirect picks up the new value via
+            // OrganizationConfigService's cache invalidation. Matches the
+            // pattern used by the other configuration sub-pages.
+            Nav.NavigateTo("/admin/configuration/workspace?ok=saved", forceLoad: true);
+        }
+        catch (PlanValidationException ex)
+        {
+            _errMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save workspace settings JSON.");
+            _errMessage = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ResetToDefaultAsync()
+    {
+        if (_editorModule is null || _editorId == 0) return;
+        try
+        {
+            await _editorModule.InvokeVoidAsync("setValue", _editorId, OrganizationDefaults.CodeWorkspaceJson);
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning(ex, "Failed to reset the workspace JSON editor.");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_editorModule is not null && _editorId != 0)
+        {
+            try { await _editorModule.InvokeVoidAsync("dispose", _editorId); }
+            catch (JSDisconnectedException) { }
+            catch (Exception ex) { Log.LogWarning(ex, "Failed to dispose CodeMirror JSON editor."); }
+            _editorId = 0;
+        }
+        if (_editorModule is not null)
+        {
+            try { await _editorModule.DisposeAsync(); }
+            catch (JSDisconnectedException) { }
+            catch (Exception ex) { Log.LogWarning(ex, "Failed to dispose CodeMirror module."); }
+            _editorModule = null;
+        }
+    }
+}

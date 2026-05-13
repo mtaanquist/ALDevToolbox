@@ -1,0 +1,169 @@
+@page "/admin/configuration/defaults"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject OrganizationConfigService Config
+@inject NavigationManager Nav
+@inject ILogger<AdminConfigurationDefaults> Log
+@using ALDevToolbox.Domain.ValueObjects
+
+@*
+    Defaults sub-page (Issue #61). Pre-fills for the New Workspace and New
+    Extension forms. The form posts only this section's columns; the other
+    configuration sub-pages save independently.
+*@
+
+<PageTitle>Defaults · Configuration · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page admin-configuration">
+    <header class="admin-page__header">
+        <div>
+            <h1>Defaults</h1>
+            <p class="muted">
+                Pre-filled into the New Workspace and New Extension forms. Users
+                can still edit on the form — these are defaults, not locks.
+            </p>
+        </div>
+        <div class="admin-page__header-actions">
+            <a class="btn btn--sm" href="/admin">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to admin</span>
+            </a>
+            <button type="button" class="btn btn--sm btn--primary"
+                    @onclick="SaveAsync"
+                    disabled="@(_saving || !IsDirty)">
+                <Icon Name="save" Width="14" Height="14" />
+                <span>@(_saving ? "Saving…" : "Save changes")</span>
+            </button>
+        </div>
+    </header>
+
+    @if (_loading)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(_okMessage))
+        {
+            <p class="form-success" role="status">@_okMessage</p>
+        }
+        @if (!string.IsNullOrEmpty(_errMessage))
+        {
+            <div class="form-error" role="alert"><p>@_errMessage</p></div>
+        }
+
+        <section class="admin-section">
+            <div class="form-grid form-grid--narrow">
+                <section class="form-section">
+                    <label class="section-label" for="cfg-publisher">Publisher</label>
+                    <input id="cfg-publisher" type="text" required
+                           @bind="_publisher" @bind:event="oninput" />
+                    <small class="muted">Used as the <code>publisher</code> for every generated <code>app.json</code>.</small>
+                </section>
+
+                <section class="form-section--row">
+                    <div class="form-section form-section--id">
+                        <label class="section-label" for="cfg-from">Default ID range — from</label>
+                        <input id="cfg-from" type="number" required min="1"
+                               @bind="_idFrom" @bind:event="oninput" />
+                    </div>
+                    <div class="form-section form-section--id">
+                        <label class="section-label" for="cfg-to">Default ID range — to</label>
+                        <input id="cfg-to" type="number" required min="1"
+                               @bind="_idTo" @bind:event="oninput" />
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label" for="cfg-brief">Default brief</label>
+                    <input id="cfg-brief" type="text"
+                           placeholder="e.g. Customisations and reports for Acme."
+                           @bind="_brief" @bind:event="oninput" />
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label" for="cfg-desc">Default core description</label>
+                    <textarea id="cfg-desc" rows="3"
+                              placeholder="Longer description prefilled into the New Workspace form."
+                              @bind="_description" @bind:event="oninput"></textarea>
+                </section>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "ok")] public string? OkParam { get; set; }
+
+    private bool _loading = true;
+    private bool _saving;
+    private string? _okMessage;
+    private string? _errMessage;
+
+    private string _publisher = string.Empty;
+    private int _idFrom;
+    private int _idTo;
+    private string _brief = string.Empty;
+    private string _description = string.Empty;
+
+    private string _basePublisher = string.Empty;
+    private int _baseIdFrom;
+    private int _baseIdTo;
+    private string _baseBrief = string.Empty;
+    private string _baseDescription = string.Empty;
+
+    private bool IsDirty =>
+        _publisher != _basePublisher
+        || _idFrom != _baseIdFrom
+        || _idTo != _baseIdTo
+        || _brief != _baseBrief
+        || _description != _baseDescription;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _okMessage = OkParam == "saved" ? "Defaults saved." : null;
+    }
+
+    private async Task LoadAsync()
+    {
+        var config = await Config.GetCurrentAsync();
+        _publisher = _basePublisher = config.Settings.DefaultPublisher;
+        _idFrom = _baseIdFrom = config.Settings.DefaultIdRangeFrom;
+        _idTo = _baseIdTo = config.Settings.DefaultIdRangeTo;
+        _brief = _baseBrief = config.Settings.DefaultBrief;
+        _description = _baseDescription = config.Settings.DefaultCoreDescription;
+        _loading = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving || !IsDirty) return;
+        _saving = true;
+        _errMessage = null;
+        _okMessage = null;
+        try
+        {
+            await Config.SaveSettingsAsync(new OrganizationSettingsInput(
+                DefaultPublisher: _publisher.Trim(),
+                DefaultIdRangeFrom: _idFrom,
+                DefaultIdRangeTo: _idTo,
+                DefaultBrief: _brief,
+                DefaultCoreDescription: _description));
+            Nav.NavigateTo("/admin/configuration/defaults?ok=saved", forceLoad: true);
+        }
+        catch (PlanValidationException ex)
+        {
+            _errMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save organisation defaults.");
+            _errMessage = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

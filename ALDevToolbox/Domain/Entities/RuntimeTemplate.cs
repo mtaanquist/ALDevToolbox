@@ -67,6 +67,16 @@ public class RuntimeTemplate
     public AppSourceCopSettings AppSourceCop { get; set; } = new();
 
     /// <summary>
+    /// Optional per-template additions to the workspace's
+    /// <c>{ShortName}.code-workspace</c> JSON. Deep-merged on top of the
+    /// organisation's base template (see
+    /// <c>OrganizationSettings.CodeWorkspaceJson</c>) at generation time, with
+    /// template keys winning on the <c>settings</c> block and replacing whole
+    /// values elsewhere. <c>null</c> means "inherit the org template as-is".
+    /// </summary>
+    public string? CodeWorkspaceJson { get; set; }
+
+    /// <summary>
     /// Inclusive lower bound of the first template-declared extension's id
     /// range, used when the extension doesn't supply its own. Subsequent
     /// auto-allocated extensions start at <see cref="ModuleIdRangeStart"/>.

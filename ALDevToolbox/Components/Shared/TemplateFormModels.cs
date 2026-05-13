@@ -32,6 +32,15 @@ public sealed class TemplateFormState
 
     public string DefaultsJson { get; set; } = string.Empty;
     public string AppSourceCopJson { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Optional per-template overlay on the org's <c>.code-workspace</c> JSON
+    /// (issue #61). Empty / whitespace means "no override — inherit the org
+    /// base unchanged"; a non-empty value must be a JSON object that the
+    /// generator deep-merges onto the org base at generation time.
+    /// </summary>
+    public string CodeWorkspaceJson { get; set; } = string.Empty;
+
     public int CoreIdRangeFrom { get; set; }
     public int CoreIdRangeTo { get; set; }
     public int ModuleIdRangeStart { get; set; }
@@ -73,6 +82,11 @@ public sealed class TemplateFormState
             DefaultPlatform = string.IsNullOrEmpty(platform) ? "1.0.0.0" : platform,
             DefaultsJson = ReformatJson(source.DefaultsJson, fallback: JsonSerializer.Serialize(new TemplateDefaults(), PrettyJson)),
             AppSourceCopJson = ReformatJson(source.AppSourceCopJson, fallback: JsonSerializer.Serialize(new AppSourceCopSettings(), PrettyJson)),
+            // Pretty-print on load so the textarea is editable; leave blank
+            // entries blank rather than rendering "null" or an empty object.
+            CodeWorkspaceJson = string.IsNullOrWhiteSpace(source.CodeWorkspaceJson)
+                ? string.Empty
+                : ReformatJson(source.CodeWorkspaceJson, fallback: source.CodeWorkspaceJson),
             CoreIdRangeFrom = source.CoreIdRangeFrom,
             CoreIdRangeTo = source.CoreIdRangeTo,
             ModuleIdRangeStart = source.ModuleIdRangeStart,
@@ -110,7 +124,8 @@ public sealed class TemplateFormState
             ? null
             : DefaultApplicationVersionKey,
         DefaultModuleKeys: DefaultModuleKeys.ToList(),
-        Extensions: Extensions.Select(e => e.ToAuthoring()).ToList());
+        Extensions: Extensions.Select(e => e.ToAuthoring()).ToList(),
+        CodeWorkspaceJson: string.IsNullOrWhiteSpace(CodeWorkspaceJson) ? null : CodeWorkspaceJson);
 
     internal static readonly JsonSerializerOptions PrettyJson = new() { WriteIndented = true };
 

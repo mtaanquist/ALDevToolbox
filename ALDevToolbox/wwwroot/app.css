@@ -1278,6 +1278,51 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     color: var(--color-text);
 }
 
+/* ---------- Mustache variables hint ---------- */
+
+.mustache-hint {
+    margin: 0 0 16px;
+    padding: 10px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface-muted, var(--color-surface));
+    font-size: 13px;
+}
+
+.mustache-hint > summary {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    list-style: none;
+}
+
+.mustache-hint > summary::-webkit-details-marker { display: none; }
+
+.mustache-hint__intro {
+    margin: 8px 0 6px;
+    font-size: 12px;
+}
+
+.mustache-hint__list {
+    margin: 0;
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 16px;
+    row-gap: 4px;
+}
+
+.mustache-hint__list dt code {
+    font-size: 12px;
+}
+
+.mustache-hint__list dd {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: 12px;
+}
+
 /* ---------- Configuration page ---------- */
 
 .logo-preview {
@@ -1867,7 +1912,7 @@ ul.form-field-error {
 /* The CodeMirror 6 editor mounts into this div. We give it a fixed height
    so the gutter and content area share a stable scroll context, and let
    the inner .cm-editor fill it. Theme colours come from the CodeMirror
-   extension in AdminTemplateEdit.razor.js — we only frame the box. */
+   extension in wwwroot/code-editor.js — we only frame the box. */
 .admin-template-edit__toml {
     height: 540px;
     border: 1px solid var(--color-border-strong);

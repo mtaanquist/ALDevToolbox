@@ -240,6 +240,59 @@ public sealed class TemplateServiceWriteSideTests : IDisposable
     }
 
     [Fact]
+    public async Task Create_persists_per_template_code_workspace_json_overlay()
+    {
+        const string overlay = """
+            { "settings": { "al.newSetting": "${X}" } }
+            """;
+        var input = NewAuthoring("runtime-overlay") with { CodeWorkspaceJson = overlay };
+
+        await using (var ctx = _db.NewContext())
+        {
+            await NewService(ctx).CreateAsync(input);
+        }
+
+        await using var verify = _db.NewContext();
+        var saved = await verify.RuntimeTemplates.SingleAsync(t => t.Key == "runtime-overlay");
+        saved.CodeWorkspaceJson.Should().NotBeNullOrWhiteSpace();
+        saved.CodeWorkspaceJson!.Should().Contain("al.newSetting");
+    }
+
+    [Fact]
+    public async Task Create_treats_blank_code_workspace_json_as_null()
+    {
+        // Blank / whitespace input rounds-trips to NULL in the column so the
+        // generator's "no override" branch fires and the audit log stays
+        // clean — empty-string vs null shouldn't be a meaningful distinction
+        // for admins.
+        var input = NewAuthoring("runtime-blank-overlay") with { CodeWorkspaceJson = "   " };
+
+        await using (var ctx = _db.NewContext())
+        {
+            await NewService(ctx).CreateAsync(input);
+        }
+
+        await using var verify = _db.NewContext();
+        var saved = await verify.RuntimeTemplates.SingleAsync(t => t.Key == "runtime-blank-overlay");
+        saved.CodeWorkspaceJson.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("not even close to json")]
+    [InlineData("[\"array root not allowed\"]")]
+    [InlineData("\"plain string\"")]
+    public async Task Create_rejects_invalid_code_workspace_json(string bad)
+    {
+        var input = NewAuthoring("runtime-bad-overlay") with { CodeWorkspaceJson = bad };
+
+        await using var ctx = _db.NewContext();
+        var act = () => NewService(ctx).CreateAsync(input);
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey(nameof(TemplateAuthoring.CodeWorkspaceJson));
+    }
+
+    [Fact]
     public async Task Create_rejects_dependency_with_multiple_reference_shapes_set()
     {
         var input = NewAuthoring("runtime-multi-ref", extensions: new[]

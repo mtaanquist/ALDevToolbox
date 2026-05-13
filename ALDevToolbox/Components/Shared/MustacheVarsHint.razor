@@ -1,0 +1,30 @@
+@*
+    Lists the mustache placeholders admins can reference inside an
+    organisation-wide editable file (always-included files, the
+    .code-workspace template). Reads from MustacheVariableCatalog so the hint
+    and the generator's actual substitution table can never drift apart.
+
+    Per-file / volatile vars ({{name}}, {{moduleName}}, {{namespace}},
+    {{guid}}) are intentionally not surfaced here — see the
+    AvailableInAdminContent flag on each catalogue entry.
+*@
+@using ALDevToolbox.Domain.ValueObjects
+
+<details class="mustache-hint">
+    <summary>
+        <Icon Name="lightbulb" Width="14" Height="14" />
+        <span>Available mustache variables</span>
+    </summary>
+    <p class="muted mustache-hint__intro">
+        These resolve at generation time when <strong>mustache substitution</strong>
+        is enabled for the file. Wrap the name in double braces, e.g.
+        <code>{{publisher}}</code>.
+    </p>
+    <dl class="mustache-hint__list">
+        @foreach (var v in MustacheVariableCatalog.ForAdminContent)
+        {
+            <dt><code>@($"{{{{{v.Name}}}}}")</code></dt>
+            <dd>@v.Caption</dd>
+        }
+    </dl>
+</details>

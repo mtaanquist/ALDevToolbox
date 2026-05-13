@@ -1,8 +1,9 @@
-// CodeMirror 6 companion for /admin/templates TOML mode.
+// CodeMirror 6 companion shared by every page that embeds a syntax-aware
+// text editor (TOML for /admin/templates, JSON for /admin/configuration/workspace).
 //
-// We pull CodeMirror in as ESM modules from esm.sh so the rest of the app
-// stays JS-bundler-free (per .design/milestones.md → P2.2). Versions are
-// pinned to keep cache hits stable and to avoid surprise behaviour drifts.
+// Pulled in as ESM modules from esm.sh so the rest of the app stays JS-bundler-
+// free (per .design/milestones.md → P2.2). Versions are pinned to keep cache
+// hits stable and to avoid surprise behaviour drifts.
 //
 // Every URL carries the same `?deps=` query so esm.sh resolves the shared
 // CodeMirror packages to a single canonical instance. Without this, each
@@ -33,6 +34,8 @@ import { lintKeymap, lintGutter, setDiagnostics }
     from "https://esm.sh/@codemirror/lint@6.8.4?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
 import { toml }
     from "https://esm.sh/@codemirror/legacy-modes@6.4.1/mode/toml?deps=@codemirror/state@6.4.1,@codemirror/language@6.10.6";
+import { json as jsonMode }
+    from "https://esm.sh/@codemirror/lang-json@6.0.1?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6";
 import { oneDark }
     from "https://esm.sh/@codemirror/theme-one-dark@6.1.2?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6";
 
@@ -41,7 +44,7 @@ const editors = new Map();
 
 // Browser-level guard against losing edits to a full reload, tab close, or a
 // browser back that exits the SPA. In-app navigation goes through Blazor's
-// LocationChangingHandler instead — see AdminTemplateEdit.razor.
+// LocationChangingHandler instead — see the callers under Components/Pages.
 let beforeUnloadAttached = false;
 function beforeUnloadHandler(e) {
     e.preventDefault();
@@ -75,7 +78,18 @@ function themeExtensions() {
     return isDarkTheme() ? [oneDark] : [];
 }
 
-function buildExtensions(themeCompartment, dirtyListener) {
+// Returns the CodeMirror language extension for the requested mode. Unknown
+// modes fall back to plain text so the editor still renders rather than
+// throwing inside the EditorState constructor.
+function languageExtensionFor(language) {
+    switch (language) {
+        case "toml": return StreamLanguage.define(toml);
+        case "json": return jsonMode();
+        default: return [];
+    }
+}
+
+function buildExtensions(themeCompartment, dirtyListener, language) {
     return [
         dirtyListener,
         lineNumbers(),
@@ -105,17 +119,18 @@ function buildExtensions(themeCompartment, dirtyListener) {
             ...lintKeymap,
             indentWithTab,
         ]),
-        StreamLanguage.define(toml),
+        languageExtensionFor(language),
         lintGutter(),
         themeCompartment.of(themeExtensions()),
     ];
 }
 
-export function mount(container, initialValue) {
+export function mount(container, initialValue, language) {
     if (!container) return 0;
     const id = nextId++;
     const themeCompartment = new Compartment();
     const initial = initialValue ?? "";
+    const lang = typeof language === "string" ? language : "toml";
 
     // Re-evaluate dirtiness on every doc change so the navigate-away guard
     // (both browser-level beforeunload and Blazor's LocationChangingHandler)
@@ -135,7 +150,7 @@ export function mount(container, initialValue) {
         parent: container,
         state: EditorState.create({
             doc: initial,
-            extensions: buildExtensions(themeCompartment, dirtyListener),
+            extensions: buildExtensions(themeCompartment, dirtyListener, lang),
         }),
     });
 

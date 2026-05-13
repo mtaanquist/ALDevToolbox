@@ -20,6 +20,13 @@ public class OrganizationSettingsSeed
     public int DefaultIdRangeTo { get; set; }
     public string DefaultBrief { get; set; } = string.Empty;
     public string DefaultCoreDescription { get; set; } = string.Empty;
+
+    /// <summary>
+    /// JSON template for the workspace's <c>{ShortName}.code-workspace</c>
+    /// file. Empty in pre-Issue-#61 exports — readers default to the in-app
+    /// fallback (<see cref="ValueObjects.OrganizationDefaults.CodeWorkspaceJson"/>).
+    /// </summary>
+    public string CodeWorkspaceJson { get; set; } = string.Empty;
 }
 
 public class OrganizationLogoSeed
