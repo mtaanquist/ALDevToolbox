@@ -1,7 +1,6 @@
 @page "/piper"
 @rendermode InteractiveServer
 @inject IJSRuntime JS
-@using System.Text
 
 <PageTitle>Piper · AL Dev Toolbox</PageTitle>
 
@@ -61,14 +60,14 @@
             <div class="form-section">
                 <label class="section-label" for="piper-format">Output format</label>
                 <select id="piper-format" @bind="Format">
-                    <option value="@OutputFormat.BcOr">BC OR (a|b|c)</option>
-                    <option value="@OutputFormat.BcAnd">BC AND (&lt;&gt;a&amp;&lt;&gt;b&amp;&lt;&gt;c)</option>
-                    <option value="@OutputFormat.Sql">SQL ('a','b','c')</option>
-                    <option value="@OutputFormat.Custom">Custom…</option>
+                    <option value="@PiperOutputFormat.BcOr">BC OR (a|b|c)</option>
+                    <option value="@PiperOutputFormat.BcAnd">BC AND (&lt;&gt;a&amp;&lt;&gt;b&amp;&lt;&gt;c)</option>
+                    <option value="@PiperOutputFormat.Sql">SQL ('a','b','c')</option>
+                    <option value="@PiperOutputFormat.Custom">Custom…</option>
                 </select>
             </div>
 
-            @if (_format == OutputFormat.Custom)
+            @if (Format == PiperOutputFormat.Custom)
             {
                 <div class="form-section">
                     <label class="section-label" for="piper-prefix">Item prefix</label>
@@ -110,9 +109,9 @@
             <div class="form-section">
                 <label class="section-label" for="piper-sort">Sort items</label>
                 <select id="piper-sort" @bind="Sort">
-                    <option value="@SortOrder.None">None (keep input order)</option>
-                    <option value="@SortOrder.Ascending">Ascending (A → Z, 1 → 9)</option>
-                    <option value="@SortOrder.Descending">Descending (Z → A, 9 → 1)</option>
+                    <option value="@PiperSortOrder.None">None (keep input order)</option>
+                    <option value="@PiperSortOrder.Ascending">Ascending (A → Z, 1 → 9)</option>
+                    <option value="@PiperSortOrder.Descending">Descending (Z → A, 9 → 1)</option>
                 </select>
             </div>
 
@@ -137,200 +136,49 @@
 </div>
 
 @code {
-    private enum OutputFormat { BcOr, BcAnd, Sql, Custom }
-    private enum SortOrder { None, Ascending, Descending }
+    // Heavy lifting (delimiter detection, format application, sort, escape
+    // handling) lives in PiperTransform — see Services/PiperTransform.cs.
+    // The @code block here is just Blazor plumbing: bindings, the JS
+    // clipboard call, and the meta strings that aren't part of the
+    // transform contract.
 
-    private string _input = string.Empty;
-    private string _output = string.Empty;
+    private string _input = "";
+    private string _output = "";
     private string _inputMetaText = "Awaiting input…";
-    private string _separatorPlaceholder = "leave blank to auto-detect";
+    private string _separatorPlaceholder = DefaultSeparatorPlaceholder;
 
-    private OutputFormat _format = OutputFormat.BcOr;
-    private string _customPrefix = string.Empty;
-    private string _customSuffix = string.Empty;
-    private string _customJoin = ",";
-    private string _resultPrefix = string.Empty;
-    private string _resultSuffix = string.Empty;
-    private string _separatorOverride = string.Empty;
-    private SortOrder _sort = SortOrder.None;
-    private bool _splitOnNewlinesOnly;
-    private bool _removeDuplicates;
-    private bool _trimItems;
-    private bool _skipEmpty;
+    private PiperOptions _options = new();
 
     private bool _justCopied;
     private CancellationTokenSource? _copyTimer;
 
+    private const string DefaultSeparatorPlaceholder = "leave blank to auto-detect";
+
     private string Input { get => _input; set { _input = value; Transform(); } }
-    private OutputFormat Format { get => _format; set { _format = value; Transform(); } }
-    private string CustomPrefix { get => _customPrefix; set { _customPrefix = value; Transform(); } }
-    private string CustomSuffix { get => _customSuffix; set { _customSuffix = value; Transform(); } }
-    private string CustomJoin { get => _customJoin; set { _customJoin = value; Transform(); } }
-    private string ResultPrefix { get => _resultPrefix; set { _resultPrefix = value; Transform(); } }
-    private string ResultSuffix { get => _resultSuffix; set { _resultSuffix = value; Transform(); } }
-    private string SeparatorOverride { get => _separatorOverride; set { _separatorOverride = value; Transform(); } }
-    private SortOrder Sort { get => _sort; set { _sort = value; Transform(); } }
-    private bool SplitOnNewlinesOnly { get => _splitOnNewlinesOnly; set { _splitOnNewlinesOnly = value; Transform(); } }
-    private bool RemoveDuplicates { get => _removeDuplicates; set { _removeDuplicates = value; Transform(); } }
-    private bool TrimItems { get => _trimItems; set { _trimItems = value; Transform(); } }
-    private bool SkipEmpty { get => _skipEmpty; set { _skipEmpty = value; Transform(); } }
+    private PiperOutputFormat Format { get => _options.Format; set { _options = _options with { Format = value }; Transform(); } }
+    private string CustomPrefix { get => _options.CustomPrefix; set { _options = _options with { CustomPrefix = value }; Transform(); } }
+    private string CustomSuffix { get => _options.CustomSuffix; set { _options = _options with { CustomSuffix = value }; Transform(); } }
+    private string CustomJoin { get => _options.CustomJoin; set { _options = _options with { CustomJoin = value }; Transform(); } }
+    private string ResultPrefix { get => _options.ResultPrefix; set { _options = _options with { ResultPrefix = value }; Transform(); } }
+    private string ResultSuffix { get => _options.ResultSuffix; set { _options = _options with { ResultSuffix = value }; Transform(); } }
+    private string SeparatorOverride { get => _options.SeparatorOverride; set { _options = _options with { SeparatorOverride = value }; Transform(); } }
+    private PiperSortOrder Sort { get => _options.Sort; set { _options = _options with { Sort = value }; Transform(); } }
+    private bool SplitOnNewlinesOnly { get => _options.SplitOnNewlinesOnly; set { _options = _options with { SplitOnNewlinesOnly = value }; Transform(); } }
+    private bool TrimItems { get => _options.TrimItems; set { _options = _options with { TrimItems = value }; Transform(); } }
+    private bool SkipEmpty { get => _options.SkipEmpty; set { _options = _options with { SkipEmpty = value }; Transform(); } }
+    private bool RemoveDuplicates { get => _options.RemoveDuplicates; set { _options = _options with { RemoveDuplicates = value }; Transform(); } }
 
     private void Transform()
     {
-        if (string.IsNullOrEmpty(_input))
-        {
-            _output = string.Empty;
-            _inputMetaText = "Awaiting input…";
-            _separatorPlaceholder = "leave blank to auto-detect";
-            return;
-        }
-
-        var overrideLiteral = UnescapeSeparator(_separatorOverride);
-        string[] items;
-        string delimiterDesc;
-
-        if (!string.IsNullOrEmpty(overrideLiteral))
-        {
-            items = _input.Split(new[] { overrideLiteral }, StringSplitOptions.None);
-            delimiterDesc = $"custom: {FriendlyDelim(overrideLiteral)}";
-        }
-        else
-        {
-            // Auto-detect: the candidate with the highest occurrence count
-            // wins. \r\n leads so Windows line-endings aren't double-counted.
-            // "|" is included so a BC OR result round-trips cleanly via Swap.
-            var candidates = _splitOnNewlinesOnly
-                ? new[] { "\r\n", "\n", "\r" }
-                : new[] { "\r\n", "\n", "\r", "\t", ",", ";", "|" };
-
-            string bestDelim = string.Empty;
-            int bestCount = 0;
-            foreach (var c in candidates)
-            {
-                var count = CountOccurrences(_input, c);
-                if (count > bestCount)
-                {
-                    bestCount = count;
-                    bestDelim = c;
-                }
-            }
-
-            if (bestCount == 0)
-            {
-                items = new[] { _input };
-                delimiterDesc = "no delimiter found";
-                _separatorPlaceholder = "leave blank to auto-detect";
-            }
-            else
-            {
-                items = _input.Split(new[] { bestDelim }, StringSplitOptions.None);
-                delimiterDesc = $"auto-detected: {FriendlyDelim(bestDelim)}";
-                _separatorPlaceholder = $"auto-detected: {EscapeForDisplay(bestDelim)}";
-            }
-        }
-
-        if (_trimItems)
-        {
-            for (var i = 0; i < items.Length; i++) items[i] = items[i].Trim();
-        }
-
-        if (_skipEmpty)
-        {
-            items = items.Where(i => i.Length > 0).ToArray();
-        }
-
-        if (_removeDuplicates)
-        {
-            items = items.Distinct().ToArray();
-        }
-
-        if (_sort != SortOrder.None && items.Length > 1)
-        {
-            items = SortItems(items, _sort);
-        }
-
-        _output = _format switch
-        {
-            OutputFormat.BcAnd => string.Join("&", items.Select(i => "<>" + i)),
-            OutputFormat.Sql => string.Join(",", items.Select(i => $"'{i.Replace("'", "''")}'")),
-            OutputFormat.Custom => string.Join(_customJoin, items.Select(i => _customPrefix + i + _customSuffix)),
-            _ => string.Join("|", items),
-        };
-
-        if (_resultPrefix.Length > 0 || _resultSuffix.Length > 0)
-        {
-            _output = _resultPrefix + _output + _resultSuffix;
-        }
-
-        _inputMetaText = $"{items.Length} item{(items.Length == 1 ? string.Empty : "s")} · {delimiterDesc}";
+        var result = PiperTransform.Run(_input, _options);
+        _output = result.Output;
+        _inputMetaText = string.IsNullOrEmpty(_input)
+            ? result.DelimiterDescription
+            : $"{result.ItemCount} item{(result.ItemCount == 1 ? "" : "s")} · {result.DelimiterDescription}";
+        _separatorPlaceholder = result.DetectedSeparatorDisplay is null
+            ? DefaultSeparatorPlaceholder
+            : $"auto-detected: {result.DetectedSeparatorDisplay}";
     }
-
-    // Sorts numerically when every item parses as a decimal (typical for AL
-    // ID lists where lexical order would put "999" after "1001"); falls back
-    // to case-insensitive lexical otherwise.
-    private static string[] SortItems(string[] items, SortOrder order)
-    {
-        var allNumeric = items.All(i => decimal.TryParse(
-            i, System.Globalization.NumberStyles.Number,
-            System.Globalization.CultureInfo.InvariantCulture, out _));
-
-        IEnumerable<string> sorted = allNumeric
-            ? (order == SortOrder.Ascending
-                ? items.OrderBy(i => decimal.Parse(i, System.Globalization.CultureInfo.InvariantCulture))
-                : items.OrderByDescending(i => decimal.Parse(i, System.Globalization.CultureInfo.InvariantCulture)))
-            : (order == SortOrder.Ascending
-                ? items.OrderBy(i => i, StringComparer.OrdinalIgnoreCase)
-                : items.OrderByDescending(i => i, StringComparer.OrdinalIgnoreCase));
-
-        return sorted.ToArray();
-    }
-
-    private static int CountOccurrences(string haystack, string needle)
-    {
-        if (string.IsNullOrEmpty(needle)) return 0;
-        var count = 0;
-        var i = 0;
-        while ((i = haystack.IndexOf(needle, i, StringComparison.Ordinal)) != -1)
-        {
-            count++;
-            i += needle.Length;
-        }
-        return count;
-    }
-
-    // Lets the user type literal "\t" / "\n" / "\r" in the separator input
-    // instead of needing to paste actual whitespace.
-    private static string UnescapeSeparator(string s)
-    {
-        if (string.IsNullOrEmpty(s) || s.IndexOf('\\') < 0) return s;
-        var sb = new StringBuilder(s.Length);
-        for (var i = 0; i < s.Length; i++)
-        {
-            if (s[i] == '\\' && i + 1 < s.Length)
-            {
-                switch (s[i + 1])
-                {
-                    case 't': sb.Append('\t'); i++; continue;
-                    case 'n': sb.Append('\n'); i++; continue;
-                    case 'r': sb.Append('\r'); i++; continue;
-                    case '\\': sb.Append('\\'); i++; continue;
-                }
-            }
-            sb.Append(s[i]);
-        }
-        return sb.ToString();
-    }
-
-    private static string FriendlyDelim(string s) => $"\"{EscapeForDisplay(s)}\"";
-
-    private static string EscapeForDisplay(string s) => s switch
-    {
-        "\t" => "\\t",
-        "\n" => "\\n",
-        "\r" => "\\r",
-        "\r\n" => "\\r\\n",
-        _ => s,
-    };
 
     private async Task CopyAsync()
     {
@@ -373,9 +221,9 @@
 
     private void ClearAll()
     {
-        _input = string.Empty;
-        _output = string.Empty;
+        _input = "";
+        _output = "";
         _inputMetaText = "Awaiting input…";
-        _separatorPlaceholder = "leave blank to auto-detect";
+        _separatorPlaceholder = DefaultSeparatorPlaceholder;
     }
 }
