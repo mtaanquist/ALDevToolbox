@@ -333,24 +333,8 @@
             .Where(e => !e.Required)
             .OrderBy(e => e.Ordering)
             .ToList();
-        // Prefer the curated application-version catalogue (Milestone P2.4)
-        // when the template points at a live entry — both fields snap to it
-        // atomically. Otherwise fall back to the template's free-text
-        // default_application + runtime values.
-        var curated = ResolveCuratedVersion(template);
-        if (curated is not null)
-        {
-            _applicationVersion = curated.Application;
-            _runtimeVersion = curated.Runtime;
-        }
-        else
-        {
-            _applicationVersion = template.Defaults.Application;
-            // Runtime is a string in the entity (Major or Major.Minor). The
-            // app.json runtime field always wants Major.Minor, so append ".0"
-            // when only a major was supplied.
-            _runtimeVersion = template.Runtime.Contains('.') ? template.Runtime : $"{template.Runtime}.0";
-        }
+        (_applicationVersion, _runtimeVersion) =
+            TemplateDefaultsResolver.ResolveApplicationAndRuntime(template, _applicationVersions);
 
         // Pre-select the modules this template ships with (Milestone P2.1).
         // Switching templates retunes the selection; the user's subsequent
@@ -368,18 +352,6 @@
                 _selectedModuleKeys.Add(key);
             }
         }
-    }
-
-    /// <summary>
-    /// Returns the curated <see cref="ApplicationVersion"/> the template
-    /// should preselect, or <c>null</c> when the template has no FK or the
-    /// referenced entry is no longer in the active catalogue.
-    /// </summary>
-    private ApplicationVersion? ResolveCuratedVersion(RuntimeTemplate template)
-    {
-        if (template.DefaultApplicationVersion is null || _applicationVersions is null) return null;
-        var key = template.DefaultApplicationVersion.Key;
-        return _applicationVersions.FirstOrDefault(v => v.Key == key);
     }
 
     private void OnModuleToggled(string key, bool isChecked)

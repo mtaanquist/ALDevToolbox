@@ -377,29 +377,8 @@
     {
         _templateKey = template.Key;
         _publisher = template.Defaults.Publisher;
-        // Prefer the curated application-version catalogue (Milestone P2.4)
-        // when the template points at a live entry — both fields snap to it
-        // atomically. Fall back to the template's free-text default otherwise.
-        var curated = ResolveCuratedVersion(template);
-        if (curated is not null)
-        {
-            _applicationVersion = curated.Application;
-            _runtimeVersion = curated.Runtime;
-        }
-        else
-        {
-            _applicationVersion = template.Defaults.Application;
-            // Runtime is a string (Major or Major.Minor). app.json wants
-            // Major.Minor; append ".0" when the template only has a major.
-            _runtimeVersion = template.Runtime.Contains('.') ? template.Runtime : $"{template.Runtime}.0";
-        }
-    }
-
-    private ApplicationVersion? ResolveCuratedVersion(RuntimeTemplate template)
-    {
-        if (template.DefaultApplicationVersion is null || _applicationVersions is null) return null;
-        var key = template.DefaultApplicationVersion.Key;
-        return _applicationVersions.FirstOrDefault(v => v.Key == key);
+        (_applicationVersion, _runtimeVersion) =
+            TemplateDefaultsResolver.ResolveApplicationAndRuntime(template, _applicationVersions);
     }
 
     private void OnDependenciesChanged(List<DependencyEntry> next)
