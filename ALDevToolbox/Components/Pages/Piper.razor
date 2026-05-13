@@ -1,0 +1,291 @@
+@page "/piper"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject IJSRuntime JS
+@using System.Text
+
+<PageTitle>Piper · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page piper-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Piper</h1>
+            <p class="muted">
+                Paste separated values and get back a piped string, a SQL list,
+                or anything in between. Detection is automatic; everything is
+                tweakable from the panel on the right.
+            </p>
+        </div>
+    </header>
+
+    <div class="piper-layout">
+        <section class="piper-main">
+            <div class="form-section">
+                <label class="section-label" for="piper-input">Input</label>
+                <textarea id="piper-input" rows="10"
+                          placeholder="e.g. 1001, 1005, 1007 — or one value per line"
+                          spellcheck="false"
+                          @bind="Input" @bind:event="oninput"></textarea>
+                <p class="muted piper-meta">@_inputMetaText</p>
+            </div>
+
+            <div class="form-section">
+                <label class="section-label" for="piper-output">Result</label>
+                <textarea id="piper-output" rows="3" readonly spellcheck="false">@_output</textarea>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn btn--primary"
+                        @onclick="CopyAsync" disabled="@string.IsNullOrEmpty(_output)">
+                    <Icon Name="copy" Width="14" Height="14" />
+                    <span>@(_justCopied ? "Copied!" : "Copy result")</span>
+                </button>
+                <button type="button" class="btn" @onclick="ClearAll">
+                    <Icon Name="trash-2" Width="14" Height="14" />
+                    <span>Clear both fields</span>
+                </button>
+            </div>
+        </section>
+
+        <aside class="piper-settings">
+            <h2 class="piper-settings__title">
+                <Icon Name="settings" Width="16" Height="16" />
+                <span>Settings</span>
+            </h2>
+
+            <div class="form-section">
+                <label class="section-label" for="piper-format">Output format</label>
+                <select id="piper-format" @bind="Format">
+                    <option value="@OutputFormat.Piped">Piped (a|b|c)</option>
+                    <option value="@OutputFormat.Sql">SQL ('a','b','c')</option>
+                    <option value="@OutputFormat.Custom">Custom…</option>
+                </select>
+            </div>
+
+            @if (_format == OutputFormat.Custom)
+            {
+                <div class="form-section">
+                    <label class="section-label" for="piper-prefix">Item prefix</label>
+                    <input id="piper-prefix" type="text" placeholder="e.g. ["
+                           @bind="CustomPrefix" @bind:event="oninput" />
+                </div>
+                <div class="form-section">
+                    <label class="section-label" for="piper-suffix">Item suffix</label>
+                    <input id="piper-suffix" type="text" placeholder="e.g. ]"
+                           @bind="CustomSuffix" @bind:event="oninput" />
+                </div>
+                <div class="form-section">
+                    <label class="section-label" for="piper-join">Join with</label>
+                    <input id="piper-join" type="text" placeholder="e.g. , or  → "
+                           @bind="CustomJoin" @bind:event="oninput" />
+                </div>
+            }
+
+            <div class="form-section">
+                <label class="section-label" for="piper-sep">Input separator</label>
+                <input id="piper-sep" type="text" placeholder="leave blank to auto-detect"
+                       @bind="SeparatorOverride" @bind:event="oninput" />
+                <p class="muted piper-hint">
+                    Use <code>\t</code>, <code>\n</code>, <code>\r</code> for whitespace.
+                </p>
+            </div>
+
+            <label class="check-row">
+                <input type="checkbox" @bind="SplitOnNewlinesOnly" />
+                <span>Auto-detect: split on new lines only</span>
+            </label>
+            <label class="check-row">
+                <input type="checkbox" @bind="TrimItems" />
+                <span>Trim whitespace around items</span>
+            </label>
+            <label class="check-row">
+                <input type="checkbox" @bind="RemoveDuplicates" />
+                <span>Remove duplicate items</span>
+            </label>
+        </aside>
+    </div>
+</div>
+
+@code {
+    private enum OutputFormat { Piped, Sql, Custom }
+
+    private string _input = string.Empty;
+    private string _output = string.Empty;
+    private string _inputMetaText = "Awaiting input…";
+
+    private OutputFormat _format = OutputFormat.Piped;
+    private string _customPrefix = string.Empty;
+    private string _customSuffix = string.Empty;
+    private string _customJoin = ",";
+    private string _separatorOverride = string.Empty;
+    private bool _splitOnNewlinesOnly;
+    private bool _removeDuplicates;
+    private bool _trimItems;
+
+    private bool _justCopied;
+    private CancellationTokenSource? _copyTimer;
+
+    private string Input { get => _input; set { _input = value; Transform(); } }
+    private OutputFormat Format { get => _format; set { _format = value; Transform(); } }
+    private string CustomPrefix { get => _customPrefix; set { _customPrefix = value; Transform(); } }
+    private string CustomSuffix { get => _customSuffix; set { _customSuffix = value; Transform(); } }
+    private string CustomJoin { get => _customJoin; set { _customJoin = value; Transform(); } }
+    private string SeparatorOverride { get => _separatorOverride; set { _separatorOverride = value; Transform(); } }
+    private bool SplitOnNewlinesOnly { get => _splitOnNewlinesOnly; set { _splitOnNewlinesOnly = value; Transform(); } }
+    private bool RemoveDuplicates { get => _removeDuplicates; set { _removeDuplicates = value; Transform(); } }
+    private bool TrimItems { get => _trimItems; set { _trimItems = value; Transform(); } }
+
+    private void Transform()
+    {
+        if (string.IsNullOrEmpty(_input))
+        {
+            _output = string.Empty;
+            _inputMetaText = "Awaiting input…";
+            return;
+        }
+
+        var overrideLiteral = UnescapeSeparator(_separatorOverride);
+        string[] items;
+        string delimiterDesc;
+
+        if (!string.IsNullOrEmpty(overrideLiteral))
+        {
+            items = _input.Split(new[] { overrideLiteral }, StringSplitOptions.None);
+            delimiterDesc = $"custom: {FriendlyDelim(overrideLiteral)}";
+        }
+        else
+        {
+            // Auto-detect: the candidate with the highest occurrence count wins.
+            // \r\n is checked first so Windows line-endings don't split into two empty halves.
+            var candidates = _splitOnNewlinesOnly
+                ? new[] { "\r\n", "\n", "\r" }
+                : new[] { "\r\n", "\n", "\r", "\t", ",", ";" };
+
+            string bestDelim = string.Empty;
+            int bestCount = 0;
+            foreach (var c in candidates)
+            {
+                var count = CountOccurrences(_input, c);
+                if (count > bestCount)
+                {
+                    bestCount = count;
+                    bestDelim = c;
+                }
+            }
+
+            if (bestCount == 0)
+            {
+                items = new[] { _input };
+                delimiterDesc = "no delimiter found";
+            }
+            else
+            {
+                items = _input.Split(new[] { bestDelim }, StringSplitOptions.None);
+                delimiterDesc = $"auto-detected: {FriendlyDelim(bestDelim)}";
+            }
+        }
+
+        if (_trimItems)
+        {
+            for (var i = 0; i < items.Length; i++) items[i] = items[i].Trim();
+        }
+
+        if (_removeDuplicates)
+        {
+            items = items.Distinct().ToArray();
+        }
+
+        _output = _format switch
+        {
+            OutputFormat.Sql => string.Join(",", items.Select(i => $"'{i.Replace("'", "''")}'")),
+            OutputFormat.Custom => string.Join(_customJoin, items.Select(i => _customPrefix + i + _customSuffix)),
+            _ => string.Join("|", items),
+        };
+
+        _inputMetaText = $"{items.Length} item{(items.Length == 1 ? string.Empty : "s")} · {delimiterDesc}";
+    }
+
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        if (string.IsNullOrEmpty(needle)) return 0;
+        var count = 0;
+        var i = 0;
+        while ((i = haystack.IndexOf(needle, i, StringComparison.Ordinal)) != -1)
+        {
+            count++;
+            i += needle.Length;
+        }
+        return count;
+    }
+
+    // Lets the user type literal "\t" / "\n" / "\r" in the separator input
+    // instead of needing to paste actual whitespace.
+    private static string UnescapeSeparator(string s)
+    {
+        if (string.IsNullOrEmpty(s) || s.IndexOf('\\') < 0) return s;
+        var sb = new StringBuilder(s.Length);
+        for (var i = 0; i < s.Length; i++)
+        {
+            if (s[i] == '\\' && i + 1 < s.Length)
+            {
+                switch (s[i + 1])
+                {
+                    case 't': sb.Append('\t'); i++; continue;
+                    case 'n': sb.Append('\n'); i++; continue;
+                    case 'r': sb.Append('\r'); i++; continue;
+                    case '\\': sb.Append('\\'); i++; continue;
+                }
+            }
+            sb.Append(s[i]);
+        }
+        return sb.ToString();
+    }
+
+    private static string FriendlyDelim(string s) => s switch
+    {
+        "\t" => "\"\\t\"",
+        "\n" => "\"\\n\"",
+        "\r" => "\"\\r\"",
+        "\r\n" => "\"\\r\\n\"",
+        _ => $"\"{s}\"",
+    };
+
+    private async Task CopyAsync()
+    {
+        if (string.IsNullOrEmpty(_output)) return;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _output);
+            _justCopied = true;
+            _copyTimer?.Cancel();
+            _copyTimer = new CancellationTokenSource();
+            var token = _copyTimer.Token;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(1500, token);
+                    if (token.IsCancellationRequested) return;
+                    await InvokeAsync(() =>
+                    {
+                        _justCopied = false;
+                        StateHasChanged();
+                    });
+                }
+                catch (TaskCanceledException) { }
+            });
+        }
+        catch
+        {
+            // Clipboard write can fail (insecure context, denied permission).
+            // Surface nothing — the textarea is still selectable.
+        }
+    }
+
+    private void ClearAll()
+    {
+        _input = string.Empty;
+        _output = string.Empty;
+        _inputMetaText = "Awaiting input…";
+    }
+}
