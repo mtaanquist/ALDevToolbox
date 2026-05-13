@@ -104,7 +104,7 @@
         try
         {
             _editorModule ??= await JS.InvokeAsync<IJSObjectReference>(
-                "import", "./Components/Shared/CodeEditor.razor.js");
+                "import", "/code-editor.js");
             _editorId = await _editorModule.InvokeAsync<int>("mount", _editorContainer, _initialJson, "json");
         }
         catch (Exception ex)

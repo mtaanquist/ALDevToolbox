@@ -1107,7 +1107,7 @@
             try
             {
                 _editorModule ??= await JS.InvokeAsync<IJSObjectReference>(
-                    "import", "./Components/Shared/CodeEditor.razor.js");
+                    "import", "/code-editor.js");
                 _editorId = await _editorModule.InvokeAsync<int>("mount", _tomlContainer, _toml, "toml");
                 _editorMountedToml = _toml;
                 if (_tomlIssues.Count > 0)

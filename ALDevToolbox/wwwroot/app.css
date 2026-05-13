@@ -1912,7 +1912,7 @@ ul.form-field-error {
 /* The CodeMirror 6 editor mounts into this div. We give it a fixed height
    so the gutter and content area share a stable scroll context, and let
    the inner .cm-editor fill it. Theme colours come from the CodeMirror
-   extension in Components/Shared/CodeEditor.razor.js — we only frame the box. */
+   extension in wwwroot/code-editor.js — we only frame the box. */
 .admin-template-edit__toml {
     height: 540px;
     border: 1px solid var(--color-border-strong);
