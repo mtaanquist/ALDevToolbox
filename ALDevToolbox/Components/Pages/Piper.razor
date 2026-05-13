@@ -39,6 +39,12 @@
                     <Icon Name="copy" Width="14" Height="14" />
                     <span>@(_justCopied ? "Copied!" : "Copy result")</span>
                 </button>
+                <button type="button" class="btn" @onclick="SwapInputOutput"
+                        disabled="@string.IsNullOrEmpty(_output)"
+                        title="Move the result back into the input box for chained transforms">
+                    <Icon Name="arrow-up" Width="14" Height="14" />
+                    <span>Use result as input</span>
+                </button>
                 <button type="button" class="btn" @onclick="ClearAll">
                     <Icon Name="trash-2" Width="14" Height="14" />
                     <span>Clear both fields</span>
@@ -55,7 +61,8 @@
             <div class="form-section">
                 <label class="section-label" for="piper-format">Output format</label>
                 <select id="piper-format" @bind="Format">
-                    <option value="@OutputFormat.Piped">Piped (a|b|c)</option>
+                    <option value="@OutputFormat.BcOr">BC OR (a|b|c)</option>
+                    <option value="@OutputFormat.BcAnd">BC AND (&lt;&gt;a&amp;&lt;&gt;b&amp;&lt;&gt;c)</option>
                     <option value="@OutputFormat.Sql">SQL ('a','b','c')</option>
                     <option value="@OutputFormat.Custom">Custom…</option>
                 </select>
@@ -81,12 +88,32 @@
             }
 
             <div class="form-section">
+                <label class="section-label" for="piper-wrap-prefix">Wrap result with</label>
+                <div class="piper-wrap-row">
+                    <input id="piper-wrap-prefix" type="text" placeholder="prefix, e.g. ("
+                           @bind="ResultPrefix" @bind:event="oninput" />
+                    <input id="piper-wrap-suffix" type="text" placeholder="suffix, e.g. )"
+                           aria-label="Result suffix"
+                           @bind="ResultSuffix" @bind:event="oninput" />
+                </div>
+            </div>
+
+            <div class="form-section">
                 <label class="section-label" for="piper-sep">Input separator</label>
                 <input id="piper-sep" type="text" placeholder="@_separatorPlaceholder"
                        @bind="SeparatorOverride" @bind:event="oninput" />
                 <p class="muted piper-hint">
                     Use <code>\t</code>, <code>\n</code>, <code>\r</code> for whitespace.
                 </p>
+            </div>
+
+            <div class="form-section">
+                <label class="section-label" for="piper-sort">Sort items</label>
+                <select id="piper-sort" @bind="Sort">
+                    <option value="@SortOrder.None">None (keep input order)</option>
+                    <option value="@SortOrder.Ascending">Ascending (A → Z, 1 → 9)</option>
+                    <option value="@SortOrder.Descending">Descending (Z → A, 9 → 1)</option>
+                </select>
             </div>
 
             <label class="check-row">
@@ -98,6 +125,10 @@
                 <span>Trim whitespace around items</span>
             </label>
             <label class="check-row">
+                <input type="checkbox" @bind="SkipEmpty" />
+                <span>Skip empty items</span>
+            </label>
+            <label class="check-row">
                 <input type="checkbox" @bind="RemoveDuplicates" />
                 <span>Remove duplicate items</span>
             </label>
@@ -106,21 +137,26 @@
 </div>
 
 @code {
-    private enum OutputFormat { Piped, Sql, Custom }
+    private enum OutputFormat { BcOr, BcAnd, Sql, Custom }
+    private enum SortOrder { None, Ascending, Descending }
 
     private string _input = string.Empty;
     private string _output = string.Empty;
     private string _inputMetaText = "Awaiting input…";
     private string _separatorPlaceholder = "leave blank to auto-detect";
 
-    private OutputFormat _format = OutputFormat.Piped;
+    private OutputFormat _format = OutputFormat.BcOr;
     private string _customPrefix = string.Empty;
     private string _customSuffix = string.Empty;
     private string _customJoin = ",";
+    private string _resultPrefix = string.Empty;
+    private string _resultSuffix = string.Empty;
     private string _separatorOverride = string.Empty;
+    private SortOrder _sort = SortOrder.None;
     private bool _splitOnNewlinesOnly;
     private bool _removeDuplicates;
     private bool _trimItems;
+    private bool _skipEmpty;
 
     private bool _justCopied;
     private CancellationTokenSource? _copyTimer;
@@ -130,10 +166,14 @@
     private string CustomPrefix { get => _customPrefix; set { _customPrefix = value; Transform(); } }
     private string CustomSuffix { get => _customSuffix; set { _customSuffix = value; Transform(); } }
     private string CustomJoin { get => _customJoin; set { _customJoin = value; Transform(); } }
+    private string ResultPrefix { get => _resultPrefix; set { _resultPrefix = value; Transform(); } }
+    private string ResultSuffix { get => _resultSuffix; set { _resultSuffix = value; Transform(); } }
     private string SeparatorOverride { get => _separatorOverride; set { _separatorOverride = value; Transform(); } }
+    private SortOrder Sort { get => _sort; set { _sort = value; Transform(); } }
     private bool SplitOnNewlinesOnly { get => _splitOnNewlinesOnly; set { _splitOnNewlinesOnly = value; Transform(); } }
     private bool RemoveDuplicates { get => _removeDuplicates; set { _removeDuplicates = value; Transform(); } }
     private bool TrimItems { get => _trimItems; set { _trimItems = value; Transform(); } }
+    private bool SkipEmpty { get => _skipEmpty; set { _skipEmpty = value; Transform(); } }
 
     private void Transform()
     {
@@ -156,11 +196,12 @@
         }
         else
         {
-            // Auto-detect: the candidate with the highest occurrence count wins.
-            // \r\n is checked first so Windows line-endings don't split into two empty halves.
+            // Auto-detect: the candidate with the highest occurrence count
+            // wins. \r\n leads so Windows line-endings aren't double-counted.
+            // "|" is included so a BC OR result round-trips cleanly via Swap.
             var candidates = _splitOnNewlinesOnly
                 ? new[] { "\r\n", "\n", "\r" }
-                : new[] { "\r\n", "\n", "\r", "\t", ",", ";" };
+                : new[] { "\r\n", "\n", "\r", "\t", ",", ";", "|" };
 
             string bestDelim = string.Empty;
             int bestCount = 0;
@@ -193,19 +234,55 @@
             for (var i = 0; i < items.Length; i++) items[i] = items[i].Trim();
         }
 
+        if (_skipEmpty)
+        {
+            items = items.Where(i => i.Length > 0).ToArray();
+        }
+
         if (_removeDuplicates)
         {
             items = items.Distinct().ToArray();
         }
 
+        if (_sort != SortOrder.None && items.Length > 1)
+        {
+            items = SortItems(items, _sort);
+        }
+
         _output = _format switch
         {
+            OutputFormat.BcAnd => string.Join("&", items.Select(i => "<>" + i)),
             OutputFormat.Sql => string.Join(",", items.Select(i => $"'{i.Replace("'", "''")}'")),
             OutputFormat.Custom => string.Join(_customJoin, items.Select(i => _customPrefix + i + _customSuffix)),
             _ => string.Join("|", items),
         };
 
+        if (_resultPrefix.Length > 0 || _resultSuffix.Length > 0)
+        {
+            _output = _resultPrefix + _output + _resultSuffix;
+        }
+
         _inputMetaText = $"{items.Length} item{(items.Length == 1 ? string.Empty : "s")} · {delimiterDesc}";
+    }
+
+    // Sorts numerically when every item parses as a decimal (typical for AL
+    // ID lists where lexical order would put "999" after "1001"); falls back
+    // to case-insensitive lexical otherwise.
+    private static string[] SortItems(string[] items, SortOrder order)
+    {
+        var allNumeric = items.All(i => decimal.TryParse(
+            i, System.Globalization.NumberStyles.Number,
+            System.Globalization.CultureInfo.InvariantCulture, out _));
+
+        IEnumerable<string> sorted = allNumeric
+            ? (order == SortOrder.Ascending
+                ? items.OrderBy(i => decimal.Parse(i, System.Globalization.CultureInfo.InvariantCulture))
+                : items.OrderByDescending(i => decimal.Parse(i, System.Globalization.CultureInfo.InvariantCulture)))
+            : (order == SortOrder.Ascending
+                ? items.OrderBy(i => i, StringComparer.OrdinalIgnoreCase)
+                : items.OrderByDescending(i => i, StringComparer.OrdinalIgnoreCase));
+
+        return sorted.ToArray();
     }
 
     private static int CountOccurrences(string haystack, string needle)
@@ -287,10 +364,18 @@
         }
     }
 
+    private void SwapInputOutput()
+    {
+        if (string.IsNullOrEmpty(_output)) return;
+        _input = _output;
+        Transform();
+    }
+
     private void ClearAll()
     {
         _input = string.Empty;
         _output = string.Empty;
         _inputMetaText = "Awaiting input…";
+        _separatorPlaceholder = "leave blank to auto-detect";
     }
 }
