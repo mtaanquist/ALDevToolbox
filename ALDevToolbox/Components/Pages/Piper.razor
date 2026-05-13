@@ -23,6 +23,7 @@
                 <textarea id="piper-input" rows="10"
                           placeholder="e.g. 1001, 1005, 1007 — or one value per line"
                           spellcheck="false"
+                          @ref="_inputRef"
                           @bind="Input" @bind:event="oninput"></textarea>
                 <p class="muted piper-meta">@_inputMetaText</p>
             </div>
@@ -151,6 +152,7 @@
 
     private bool _justCopied;
     private CancellationTokenSource? _copyTimer;
+    private ElementReference _inputRef;
 
     private const string DefaultSeparatorPlaceholder = "leave blank to auto-detect";
 
@@ -167,6 +169,16 @@
     private bool TrimItems { get => _options.TrimItems; set { _options = _options with { TrimItems = value }; Transform(); } }
     private bool SkipEmpty { get => _options.SkipEmpty; set { _options = _options with { SkipEmpty = value }; Transform(); } }
     private bool RemoveDuplicates { get => _options.RemoveDuplicates; set { _options = _options with { RemoveDuplicates = value }; Transform(); } }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        // Routes.razor's <FocusOnNavigate Selector="h1" /> announces the page
+        // title for screen readers; once that's done, hand focus to the input
+        // so a keyboard user can just start typing.
+        try { await _inputRef.FocusAsync(); }
+        catch { /* element gone — nothing to focus */ }
+    }
 
     private void Transform()
     {
