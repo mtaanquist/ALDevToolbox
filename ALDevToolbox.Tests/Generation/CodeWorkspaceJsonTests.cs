@@ -129,6 +129,166 @@ public sealed class CodeWorkspaceJsonTests : IDisposable
         ex.Which.Errors.Should().ContainKey("codeWorkspaceJson");
     }
 
+    [Fact]
+    public async Task Template_overlay_deep_merges_settings_onto_org_base()
+    {
+        // Org base: a baseline al.ruleSetPath. Template overlay adds a fresh
+        // setting and rewrites an existing one. The merged result should keep
+        // org-only keys, accept template-only keys, and prefer the template
+        // on conflict — all inside the `settings` object.
+        await using (var ctx = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default();
+            template.CodeWorkspaceJson = """
+                {
+                  "settings": {
+                    "al.ruleSetPath": "../from-template.ruleset.json",
+                    "al.newAnalyzer": "${X}"
+                  }
+                }
+                """;
+            ctx.RuntimeTemplates.Add(template);
+            await ctx.SaveChangesAsync();
+        }
+        await SetCodeWorkspaceJsonAsync("""
+            {
+              "settings": {
+                "editor.formatOnSave": true,
+                "al.ruleSetPath": "../from-org.ruleset.json"
+              }
+            }
+            """);
+
+        using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
+
+        var entry = zip.GetEntry("AcmeCustomer/AcmeCustomer.code-workspace");
+        using var doc = JsonDocument.Parse(ReadEntry(entry!));
+        var settings = doc.RootElement.GetProperty("settings");
+        settings.GetProperty("editor.formatOnSave").GetBoolean().Should().BeTrue();
+        settings.GetProperty("al.ruleSetPath").GetString()
+            .Should().Be("../from-template.ruleset.json");
+        settings.GetProperty("al.newAnalyzer").GetString().Should().Be("${X}");
+    }
+
+    [Fact]
+    public async Task Template_overlay_replaces_non_settings_keys_wholesale()
+    {
+        // tasks/launch-style top-level keys aren't merged element-by-element —
+        // the template wholesale replaces whatever the org had. Keeps merge
+        // semantics predictable for arbitrarily-shaped values.
+        await using (var ctx = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default();
+            template.CodeWorkspaceJson = """
+                {
+                  "tasks": { "version": "2.0.0", "tasks": [{ "label": "from-template" }] }
+                }
+                """;
+            ctx.RuntimeTemplates.Add(template);
+            await ctx.SaveChangesAsync();
+        }
+        await SetCodeWorkspaceJsonAsync("""
+            {
+              "settings": { "editor.formatOnSave": true },
+              "tasks": { "version": "1.0.0", "tasks": [{ "label": "from-org" }] }
+            }
+            """);
+
+        using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
+
+        var entry = zip.GetEntry("AcmeCustomer/AcmeCustomer.code-workspace");
+        using var doc = JsonDocument.Parse(ReadEntry(entry!));
+        // settings survived (org-only).
+        doc.RootElement.GetProperty("settings")
+            .GetProperty("editor.formatOnSave").GetBoolean().Should().BeTrue();
+        // tasks block was replaced wholesale by the template's.
+        doc.RootElement.GetProperty("tasks")
+            .GetProperty("version").GetString().Should().Be("2.0.0");
+        doc.RootElement.GetProperty("tasks")
+            .GetProperty("tasks")[0]
+            .GetProperty("label").GetString().Should().Be("from-template");
+    }
+
+    [Fact]
+    public async Task Template_overlay_ignores_a_folders_key_so_generator_stays_authoritative()
+    {
+        // Even if the template's overlay carries a folders array, the
+        // generator overwrites it with the computed list. The workspace
+        // must point at the extensions actually emitted to the ZIP.
+        await using (var ctx = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default();
+            template.CodeWorkspaceJson = """
+                {
+                  "folders": [{ "path": "BogusFromTemplate" }],
+                  "settings": { "al.newSetting": "${X}" }
+                }
+                """;
+            ctx.RuntimeTemplates.Add(template);
+            await ctx.SaveChangesAsync();
+        }
+
+        using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
+
+        var entry = zip.GetEntry("AcmeCustomer/AcmeCustomer.code-workspace");
+        using var doc = JsonDocument.Parse(ReadEntry(entry!));
+        var paths = doc.RootElement.GetProperty("folders")
+            .EnumerateArray()
+            .Select(f => f.GetProperty("path").GetString())
+            .ToList();
+        paths.Should().Equal("Core");
+        paths.Should().NotContain("BogusFromTemplate");
+    }
+
+    [Fact]
+    public async Task Template_overlay_supports_mustache_substitution()
+    {
+        // Both layers run through the substitution table so a template can
+        // reference the workspace context just like the org base does.
+        await using (var ctx = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default();
+            template.CodeWorkspaceJson = """
+                {
+                  "settings": {
+                    "al.workspaceShortName": "{{shortName}}"
+                  }
+                }
+                """;
+            ctx.RuntimeTemplates.Add(template);
+            await ctx.SaveChangesAsync();
+        }
+
+        using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
+
+        var entry = zip.GetEntry("AcmeCustomer/AcmeCustomer.code-workspace");
+        using var doc = JsonDocument.Parse(ReadEntry(entry!));
+        doc.RootElement.GetProperty("settings")
+            .GetProperty("al.workspaceShortName").GetString()
+            .Should().Be("AcmeCustomer");
+    }
+
+    [Fact]
+    public async Task Template_overlay_with_invalid_json_throws_with_template_keyed_error()
+    {
+        // Bypassing the form validator — same defensive guard the org-base
+        // path has, but the error key carries `template.` so the UI can route
+        // the message to the per-template field rather than the org form.
+        await using (var ctx = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default();
+            template.CodeWorkspaceJson = "this is not json";
+            ctx.RuntimeTemplates.Add(template);
+            await ctx.SaveChangesAsync();
+        }
+
+        var service = NewService();
+        var act = () => service.GenerateWorkspaceAsync(PlanBuilder.WorkspacePlan());
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("template.codeWorkspaceJson");
+    }
+
     // ===== helpers =====
 
     private GenerationService NewService()

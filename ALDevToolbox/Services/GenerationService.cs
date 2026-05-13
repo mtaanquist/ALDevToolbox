@@ -112,7 +112,11 @@ public class GenerationService
                 Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
                 FolderPath: string.Empty);
             WriteString(archive, $"{rootFolder}/{shortName}.code-workspace",
-                BuildCodeWorkspace(orgConfig.Settings.CodeWorkspaceJson, folderNames, workspaceJsonCtx));
+                BuildCodeWorkspace(
+                    orgConfig.Settings.CodeWorkspaceJson,
+                    template.CodeWorkspaceJson,
+                    folderNames,
+                    workspaceJsonCtx));
             WriteString(archive, $"{rootFolder}/README.md", BuildReadme(plan));
             var identities = extensions.Select(e => new WorkspaceExtensionIdentity(
                 Kind: e.IsModuleClone ? WorkspaceExtensionIdentity.ModuleKind : WorkspaceExtensionIdentity.CoreKind,
@@ -224,7 +228,11 @@ public class GenerationService
                     Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
                     FolderPath: string.Empty);
                 WriteString(archive, workspaceFile,
-                    BuildCodeWorkspace(orgConfig.Settings.CodeWorkspaceJson, existing, siblingCtx));
+                    BuildCodeWorkspace(
+                        orgConfig.Settings.CodeWorkspaceJson,
+                        template.CodeWorkspaceJson,
+                        existing,
+                        siblingCtx));
                 fileCount++;
             }
         }
@@ -903,18 +911,51 @@ public class GenerationService
     // ===== Workspace-level files =====
 
     /// <summary>
-    /// Builds <c>{ShortName}.code-workspace</c> by overlaying the computed
-    /// <c>folders</c> array onto the admin-edited JSON template stored on the
-    /// organisation (Issue #61). Mustache substitution runs first so the
-    /// admin can splice <c>{{publisher}}</c>, <c>{{shortName}}</c>, etc. into
-    /// the JSON. If the admin pasted their own <c>folders</c> key, the
-    /// generator overwrites it — that array is always authoritative because
-    /// it has to match the extensions actually emitted into the ZIP.
+    /// Builds <c>{ShortName}.code-workspace</c> by layering three sources
+    /// (Issue #61):
+    /// <list type="number">
+    ///   <item>The organisation base JSON template
+    ///         (<see cref="OrganizationSettings.CodeWorkspaceJson"/>).</item>
+    ///   <item>The optional per-template overlay
+    ///         (<see cref="RuntimeTemplate.CodeWorkspaceJson"/>) — deep-merged
+    ///         on the <c>settings</c> object, replacing wholesale on every
+    ///         other top-level key.</item>
+    ///   <item>The computed <c>folders</c> array, written last and always
+    ///         authoritative — the workspace must point at the folders the
+    ///         generator actually emits, regardless of what either layer
+    ///         pasted.</item>
+    /// </list>
+    /// Mustache substitution runs over each layer before merging so both can
+    /// use <c>{{publisher}}</c>, <c>{{shortName}}</c>, etc.
     /// </summary>
-    private string BuildCodeWorkspace(string adminJsonTemplate, IReadOnlyList<string> folderPaths, MustacheContext ctx)
+    private string BuildCodeWorkspace(
+        string orgJsonTemplate,
+        string? templateJsonOverlay,
+        IReadOnlyList<string> folderPaths,
+        MustacheContext ctx)
     {
-        var substituted = SubstituteMustache(adminJsonTemplate, ctx);
+        var root = ParseSubstitutedJsonObject(orgJsonTemplate, ctx, "codeWorkspaceJson");
 
+        if (!string.IsNullOrWhiteSpace(templateJsonOverlay))
+        {
+            var overlay = ParseSubstitutedJsonObject(templateJsonOverlay, ctx, "template.codeWorkspaceJson");
+            MergeTemplateOverlay(root, overlay);
+        }
+
+        var folders = new JsonArray();
+        foreach (var path in folderPaths) folders.Add(new JsonObject { ["path"] = path });
+        root["folders"] = folders;
+        return SerializeIndented(root);
+    }
+
+    /// <summary>
+    /// Substitute mustache vars and parse the result as a JSON object. Validation
+    /// errors are keyed under <paramref name="fieldKey"/> so the workspace and
+    /// template error surfaces stay distinct in the audit log and the form.
+    /// </summary>
+    private JsonObject ParseSubstitutedJsonObject(string source, MustacheContext ctx, string fieldKey)
+    {
+        var substituted = SubstituteMustache(source, ctx);
         JsonNode? parsed;
         try
         {
@@ -922,26 +963,56 @@ public class GenerationService
         }
         catch (JsonException ex)
         {
-            // The form-layer validator catches this on save; reaching here
-            // means a manual DB edit or a pre-validation row. Surface clearly
-            // rather than emit a broken file.
             throw new PlanValidationException(new Dictionary<string, string>
             {
-                ["codeWorkspaceJson"] = $"Workspace JSON template did not parse: {ex.Message}",
+                [fieldKey] = $"Workspace JSON template did not parse: {ex.Message}",
             });
         }
         if (parsed is not JsonObject root)
         {
             throw new PlanValidationException(new Dictionary<string, string>
             {
-                ["codeWorkspaceJson"] = "Workspace JSON template must be a JSON object.",
+                [fieldKey] = "Workspace JSON template must be a JSON object.",
             });
         }
+        return root;
+    }
 
-        var folders = new JsonArray();
-        foreach (var path in folderPaths) folders.Add(new JsonObject { ["path"] = path });
-        root["folders"] = folders;
-        return SerializeIndented(root);
+    /// <summary>
+    /// Merge the per-template overlay onto the org base in place:
+    /// <list type="bullet">
+    ///   <item><c>folders</c>: skipped — the generator owns that key and writes
+    ///         it last regardless of either layer.</item>
+    ///   <item><c>settings</c>: when both layers carry a JSON object, the
+    ///         overlay's keys win individually so a template can add one new
+    ///         AL/VS Code setting without restating the org block.</item>
+    ///   <item>everything else: the overlay replaces the org's value wholesale.
+    ///         This keeps semantics predictable for arbitrarily-shaped keys
+    ///         like <c>tasks</c> or <c>launch</c> without inventing
+    ///         JSON-Patch-style merge rules.</item>
+    /// </list>
+    /// </summary>
+    private static void MergeTemplateOverlay(JsonObject target, JsonObject overlay)
+    {
+        foreach (var (key, value) in overlay.ToList())
+        {
+            if (string.Equals(key, "folders", StringComparison.Ordinal)) continue;
+
+            if (string.Equals(key, "settings", StringComparison.Ordinal)
+                && value is JsonObject overlaySettings
+                && target.TryGetPropertyValue("settings", out var targetSettingsNode)
+                && targetSettingsNode is JsonObject targetSettings)
+            {
+                foreach (var (sk, sv) in overlaySettings.ToList())
+                {
+                    targetSettings[sk] = sv?.DeepClone();
+                }
+            }
+            else
+            {
+                target[key] = value?.DeepClone();
+            }
+        }
     }
 
     private static string BuildReadme(ProjectPlan plan) =>

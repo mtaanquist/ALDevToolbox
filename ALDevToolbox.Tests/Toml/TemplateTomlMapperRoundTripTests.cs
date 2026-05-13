@@ -286,4 +286,54 @@ public sealed class TemplateTomlMapperRoundTripTests
         ex.Issues.Should().NotBeEmpty();
         ex.Issues.First().Line.Should().Be(1);
     }
+
+    [Fact]
+    public void Round_trip_preserves_per_template_workspace_settings_overlay()
+    {
+        // Issue #61 per-template overlay: the JSON the admin pastes survives
+        // a ToToml → FromToml round trip verbatim, including the embedded
+        // double-quotes and newlines inside the multi-line literal.
+        const string overlay = """
+            {
+              "settings": {
+                "al.newAnalyzer": "${X}",
+                "al.ruleSetPath": "../my.ruleset.json"
+              }
+            }
+            """;
+        var template = TemplateBuilder.Default();
+        template.CodeWorkspaceJson = overlay;
+
+        var toml = TemplateTomlMapper.ToToml(template);
+        toml.Should().Contain("[workspace_settings]");
+        toml.Should().Contain("json = '''");
+
+        var parsed = TemplateTomlMapper.FromToml(toml, deprecated: false);
+        parsed.CodeWorkspaceJson.Should().NotBeNull();
+        // Compare the structural shape rather than whitespace — Tomlyn may
+        // trim trailing whitespace on the literal and the test should tolerate
+        // that without becoming brittle.
+        var roundTripped = JsonDocument.Parse(parsed.CodeWorkspaceJson!).RootElement;
+        roundTripped.GetProperty("settings").GetProperty("al.newAnalyzer").GetString()
+            .Should().Be("${X}");
+        roundTripped.GetProperty("settings").GetProperty("al.ruleSetPath").GetString()
+            .Should().Be("../my.ruleset.json");
+    }
+
+    [Fact]
+    public void Templates_without_overlay_emit_no_workspace_settings_block()
+    {
+        // Default state: no template-level overlay. ToToml must not emit the
+        // [workspace_settings] block at all, and FromToml must produce a null
+        // CodeWorkspaceJson on the authoring shape so the form renders "no
+        // override" rather than an empty JSON blob.
+        var template = TemplateBuilder.Default();
+        template.CodeWorkspaceJson = null;
+
+        var toml = TemplateTomlMapper.ToToml(template);
+        toml.Should().NotContain("[workspace_settings]");
+
+        var parsed = TemplateTomlMapper.FromToml(toml, deprecated: false);
+        parsed.CodeWorkspaceJson.Should().BeNull();
+    }
 }

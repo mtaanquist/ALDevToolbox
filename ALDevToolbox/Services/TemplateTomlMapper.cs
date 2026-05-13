@@ -47,6 +47,7 @@ public static class TemplateTomlMapper
         head = EmptyExtensionsLineRegex.Replace(head, string.Empty).TrimEnd();
 
         var sb = new StringBuilder(head);
+        AppendWorkspaceSettings(sb, template.CodeWorkspaceJson);
         foreach (var ext in template.WorkspaceExtensions.OrderBy(e => e.Ordering))
         {
             AppendExtension(sb, ext);
@@ -75,12 +76,38 @@ public static class TemplateTomlMapper
         head = EmptyExtensionsLineRegex.Replace(head, string.Empty).TrimEnd();
 
         var sb = new StringBuilder(head);
+        AppendWorkspaceSettings(sb, authoring.CodeWorkspaceJson);
         foreach (var ext in authoring.Extensions)
         {
             AppendExtension(sb, ext);
         }
         sb.AppendLine();
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Hand-emits the optional <c>[workspace_settings]</c> block (issue #61
+    /// per-template overlay). Uses a TOML multi-line *literal* string
+    /// (<c>'''…'''</c>) so the embedded JSON renders verbatim — basic
+    /// triple-quoted strings (<c>"""…"""</c>) would interpret backslash
+    /// escapes inside the JSON. Tomlyn's reflection serialiser is bypassed
+    /// for this property; <see cref="TemplateSeed.WorkspaceSettings"/> is
+    /// never populated when serialising so no auto-emitted block needs
+    /// stripping.
+    /// </summary>
+    private static void AppendWorkspaceSettings(StringBuilder sb, string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return;
+        // Defensive: TOML literal strings cannot contain three single quotes
+        // in a row. JSON has no reason to, but if it does we fall back to
+        // omitting the block rather than emitting un-parseable TOML.
+        if (json.Contains("'''", StringComparison.Ordinal)) return;
+        sb.AppendLine();
+        sb.AppendLine();
+        sb.AppendLine("[workspace_settings]");
+        sb.Append("json = '''").AppendLine();
+        sb.Append(json.TrimEnd('\r', '\n', ' ', '\t')).AppendLine();
+        sb.Append("'''");
     }
 
     private static TemplateSeed BuildHeaderSeed(TemplateAuthoring authoring, TemplateDefaults defaults, AppSourceCopSettings appSourceCop) => new()
@@ -384,7 +411,10 @@ public static class TemplateTomlMapper
                 ? null
                 : seed.Template.DefaultApplicationVersion,
             DefaultModuleKeys: seed.Template.DefaultModules.Select(d => d.Key).ToList(),
-            Extensions: extensions);
+            Extensions: extensions,
+            CodeWorkspaceJson: string.IsNullOrWhiteSpace(seed.WorkspaceSettings?.Json)
+                ? null
+                : seed.WorkspaceSettings.Json);
     }
 
     private static ExtensionAuthoring MapExtension(ExtensionSeed seed) => new(

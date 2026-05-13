@@ -287,7 +287,8 @@ public class TemplateService
                 .Where(d => d.Module is not null)
                 .Select(d => d.Module!.Key)
                 .ToList(),
-            Extensions: extensions);
+            Extensions: extensions,
+            CodeWorkspaceJson: template.CodeWorkspaceJson);
     }
 
     private Task HydrateExtensionFolderTreeAsync(RuntimeTemplate template, CancellationToken ct)
@@ -373,6 +374,7 @@ public class TemplateService
             Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim(),
             Defaults = defaults,
             AppSourceCop = appSourceCop,
+            CodeWorkspaceJson = NormaliseCodeWorkspaceJson(input.CodeWorkspaceJson),
             CoreIdRangeFrom = input.CoreIdRangeFrom,
             CoreIdRangeTo = input.CoreIdRangeTo,
             ModuleIdRangeStart = input.ModuleIdRangeStart,
@@ -433,6 +435,7 @@ public class TemplateService
         existing.Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim();
         existing.Defaults = defaults;
         existing.AppSourceCop = appSourceCop;
+        existing.CodeWorkspaceJson = NormaliseCodeWorkspaceJson(input.CodeWorkspaceJson);
         existing.CoreIdRangeFrom = input.CoreIdRangeFrom;
         existing.CoreIdRangeTo = input.CoreIdRangeTo;
         existing.ModuleIdRangeStart = input.ModuleIdRangeStart;
@@ -483,6 +486,16 @@ public class TemplateService
             .Select((d, i) => BuildDependency(d, orgId, ordering: i))
             .ToList(),
     };
+
+    /// <summary>
+    /// Maps the admin form's input into the storage shape for
+    /// <see cref="RuntimeTemplate.CodeWorkspaceJson"/>: empty / whitespace
+    /// becomes <c>null</c> so "no override" round-trips cleanly through the
+    /// DB and the audit log, otherwise the input is trimmed verbatim. The
+    /// validator already proved any non-empty value parses to a JSON object.
+    /// </summary>
+    private static string? NormaliseCodeWorkspaceJson(string? raw) =>
+        string.IsNullOrWhiteSpace(raw) ? null : raw.Trim();
 
     private static WorkspaceExtensionFolder BuildFolder(FolderAuthoring src, int orgId, int ordering) => new()
     {
@@ -800,6 +813,25 @@ public class TemplateService
         catch (JsonException ex)
         {
             errors[nameof(input.AppSourceCopJson)] = $"AppSourceCop JSON is invalid: {ex.Message}";
+        }
+
+        // Optional per-template workspace JSON: empty / whitespace is treated
+        // as "inherit org base", anything else must parse to a JSON object.
+        if (!string.IsNullOrWhiteSpace(input.CodeWorkspaceJson))
+        {
+            try
+            {
+                var node = System.Text.Json.Nodes.JsonNode.Parse(input.CodeWorkspaceJson);
+                if (node is not System.Text.Json.Nodes.JsonObject)
+                {
+                    errors[nameof(input.CodeWorkspaceJson)] =
+                        "Workspace JSON template must be a JSON object (e.g. { \"settings\": {...} }).";
+                }
+            }
+            catch (JsonException ex)
+            {
+                errors[nameof(input.CodeWorkspaceJson)] = $"Workspace JSON template is invalid: {ex.Message}";
+            }
         }
 
         ValidateExtensions(input.Extensions, errors);

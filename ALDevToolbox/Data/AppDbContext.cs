@@ -309,6 +309,9 @@ public class AppDbContext : DbContext
                 .HasColumnType("jsonb")
                 .HasConversion(appSourceCopConverter)
                 .IsRequired();
+            // Per-template overlay for the .code-workspace JSON (issue #61).
+            // Nullable: most templates inherit the org-level base unchanged.
+            entity.Property(e => e.CodeWorkspaceJson).HasColumnName("code_workspace_json");
             entity.Property(e => e.CoreIdRangeFrom).HasColumnName("core_id_range_from").IsRequired();
             entity.Property(e => e.CoreIdRangeTo).HasColumnName("core_id_range_to").IsRequired();
             entity.Property(e => e.ModuleIdRangeStart).HasColumnName("module_id_range_start").IsRequired();
