@@ -1,0 +1,299 @@
+@page "/admin/configuration/files"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject OrganizationConfigService Config
+@inject NavigationManager Nav
+@inject ILogger<AdminConfigurationFiles> Log
+@using ALDevToolbox.Domain.ValueObjects
+
+@*
+    Always-included files sub-page (Issue #61). Text files written at the
+    workspace root on every generation. The hint at the top lists the mustache
+    variables substituted when "mustache on" is set per file.
+*@
+
+<PageTitle>Files · Configuration · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page admin-configuration">
+    <header class="admin-page__header">
+        <div>
+            <h1>Always-included files</h1>
+            <p class="muted">
+                Text files written into every generated workspace at the root.
+                Mustache substitution applies the same context as per-template
+                files when enabled.
+            </p>
+        </div>
+        <div class="admin-page__header-actions">
+            <a class="btn btn--sm" href="/admin">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to admin</span>
+            </a>
+            <button type="button" class="btn btn--sm btn--primary"
+                    @onclick="SaveAsync"
+                    disabled="@(_saving || !IsDirty)">
+                <Icon Name="save" Width="14" Height="14" />
+                <span>@(_saving ? "Saving…" : "Save changes")</span>
+            </button>
+        </div>
+    </header>
+
+    @if (_loading)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(_okMessage))
+        {
+            <p class="form-success" role="status">@_okMessage</p>
+        }
+        @if (!string.IsNullOrEmpty(_errMessage))
+        {
+            <div class="form-error" role="alert"><p>@_errMessage</p></div>
+        }
+
+        <MustacheVarsHint />
+
+        <section class="admin-section">
+            @if (_files.Count == 0)
+            {
+                <p class="muted">No files configured. Add <code>.editorconfig</code>, a per-org <code>README.md</code>, or anything else admins want shipped on every generation.</p>
+            }
+            else
+            {
+                <ul class="org-file-list">
+                    @foreach (var file in _files.OrderBy(f => f.Ordering))
+                    {
+                        <li class="org-file-row">
+                            <div class="org-file-row__head">
+                                <span><code>@file.Path</code></span>
+                                <span class="muted">
+                                    @(file.MustacheEnabled ? "mustache on" : "mustache off")
+                                </span>
+                            </div>
+                            <div class="org-file-row__body">
+                                <pre class="org-file-row__content">@TruncateForPreview(file.Content)</pre>
+                            </div>
+                            <div class="org-file-row__actions">
+                                <button type="button" class="btn btn--sm" @onclick="() => StartEdit(file)">
+                                    <Icon Name="pencil" Width="12" Height="12" />
+                                    <span>Edit</span>
+                                </button>
+                                <button type="button" class="btn btn--sm" @onclick="() => RemoveFile(file)">
+                                    <Icon Name="trash-2" Width="12" Height="12" />
+                                    <span>Remove</span>
+                                </button>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+
+            <h3>@(_editing is null ? "Add a file" : $"Editing {_editing.Path}")</h3>
+            <div class="form-grid">
+                <section class="form-section">
+                    <label class="section-label" for="cfg-file-path">Path</label>
+                    <input id="cfg-file-path" type="text" placeholder=".editorconfig"
+                           @bind="_editPath" @bind:event="oninput" />
+                </section>
+                <section class="form-section">
+                    <label class="section-label" for="cfg-file-content">Content</label>
+                    <textarea id="cfg-file-content" rows="6" @bind="_editContent" @bind:event="oninput"></textarea>
+                </section>
+                <label class="check-row">
+                    <input type="checkbox" @bind="_editMustache" />
+                    <span>Substitute mustache variables when generating</span>
+                </label>
+                <div class="form-actions">
+                    <button type="button" class="btn" @onclick="ApplyEdit">
+                        <Icon Name="check" Width="12" Height="12" />
+                        <span>@(_editing is null ? "Add to list" : "Apply changes")</span>
+                    </button>
+                    @if (_editing is not null)
+                    {
+                        <button type="button" class="btn btn--sm" @onclick="CancelEdit">Cancel</button>
+                    }
+                </div>
+                @if (!string.IsNullOrEmpty(_localError))
+                {
+                    <span class="form-field-error" role="alert">@_localError</span>
+                }
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "ok")] public string? OkParam { get; set; }
+
+    private bool _loading = true;
+    private bool _saving;
+    private string? _okMessage;
+    private string? _errMessage;
+    private string? _localError;
+
+    private List<FileRow> _files = new();
+    private List<FileRow> _baseFiles = new();
+
+    private FileRow? _editing;
+    private string _editPath = string.Empty;
+    private string _editContent = string.Empty;
+    private bool _editMustache;
+
+    private sealed class FileRow
+    {
+        public int? Id { get; set; }
+        public string Path { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
+        public bool MustacheEnabled { get; set; }
+        public int Ordering { get; set; }
+
+        public FileRow Clone() => new()
+        {
+            Id = Id, Path = Path, Content = Content,
+            MustacheEnabled = MustacheEnabled, Ordering = Ordering,
+        };
+    }
+
+    private bool IsDirty
+    {
+        get
+        {
+            if (_files.Count != _baseFiles.Count) return true;
+            for (var i = 0; i < _files.Count; i++)
+            {
+                var a = _files[i]; var b = _baseFiles[i];
+                if (a.Id != b.Id || a.Path != b.Path || a.Content != b.Content
+                    || a.MustacheEnabled != b.MustacheEnabled || a.Ordering != b.Ordering)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _okMessage = OkParam == "saved" ? "Always-included files saved." : null;
+    }
+
+    private async Task LoadAsync()
+    {
+        var config = await Config.GetCurrentAsync();
+        _files = config.Files
+            .Select(f => new FileRow
+            {
+                Id = f.Id, Path = f.Path, Content = f.Content,
+                MustacheEnabled = f.MustacheEnabled, Ordering = f.Ordering,
+            })
+            .ToList();
+        _baseFiles = _files.Select(f => f.Clone()).ToList();
+        _loading = false;
+    }
+
+    private void StartEdit(FileRow row)
+    {
+        _editing = row;
+        _editPath = row.Path;
+        _editContent = row.Content;
+        _editMustache = row.MustacheEnabled;
+        _localError = null;
+    }
+
+    private void CancelEdit()
+    {
+        _editing = null;
+        _editPath = string.Empty;
+        _editContent = string.Empty;
+        _editMustache = false;
+        _localError = null;
+    }
+
+    private void ApplyEdit()
+    {
+        var path = _editPath.Trim();
+        if (string.IsNullOrEmpty(path))
+        {
+            _localError = "Path is required.";
+            return;
+        }
+        if (path.Contains(".."))
+        {
+            _localError = "Path must not contain '..' segments.";
+            return;
+        }
+        var conflict = _files.Any(f => f != _editing && string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase));
+        if (conflict)
+        {
+            _localError = $"Another file already uses path '{path}'.";
+            return;
+        }
+
+        if (_editing is null)
+        {
+            _files.Add(new FileRow
+            {
+                Path = path,
+                Content = _editContent,
+                MustacheEnabled = _editMustache,
+                Ordering = _files.Count,
+            });
+        }
+        else
+        {
+            _editing.Path = path;
+            _editing.Content = _editContent;
+            _editing.MustacheEnabled = _editMustache;
+        }
+        CancelEdit();
+    }
+
+    private void RemoveFile(FileRow row)
+    {
+        _files.Remove(row);
+        for (var i = 0; i < _files.Count; i++) _files[i].Ordering = i;
+        if (_editing == row) CancelEdit();
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving || !IsDirty) return;
+        _saving = true;
+        _errMessage = null;
+        _okMessage = null;
+        try
+        {
+            for (var i = 0; i < _files.Count; i++) _files[i].Ordering = i;
+            var inputs = _files
+                .Select(f => new OrganizationFileInput(
+                    Id: f.Id, Path: f.Path, Content: f.Content,
+                    MustacheEnabled: f.MustacheEnabled))
+                .ToList();
+            await Config.SaveFilesAsync(inputs);
+            Nav.NavigateTo("/admin/configuration/files?ok=saved", forceLoad: true);
+        }
+        catch (PlanValidationException ex)
+        {
+            _errMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save organisation files.");
+            _errMessage = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private static string TruncateForPreview(string content)
+    {
+        if (string.IsNullOrEmpty(content)) return string.Empty;
+        const int max = 240;
+        return content.Length <= max ? content : content.Substring(0, max) + "…";
+    }
+}

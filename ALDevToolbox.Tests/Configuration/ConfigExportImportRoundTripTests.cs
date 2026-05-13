@@ -33,6 +33,16 @@ public sealed class ConfigExportImportRoundTripTests : IDisposable
                 40000, 40999,
                 "round-trip brief",
                 "round-trip core description"));
+            // Customise the workspace JSON template so the round-trip
+            // assertion below catches a regression in the export/import path
+            // for Issue #61's new column.
+            await svc.SaveCodeWorkspaceJsonAsync("""
+                {
+                  "settings": {
+                    "al.ruleSetPath": "../.assets/rulesets/RoundTrip.ruleset.json"
+                  }
+                }
+                """);
             await svc.SaveFilesAsync(new[]
             {
                 new OrganizationFileInput(null, ".editorconfig", "indent=tab", false),
@@ -79,6 +89,7 @@ public sealed class ConfigExportImportRoundTripTests : IDisposable
             snapshot.Settings.DefaultIdRangeTo.Should().Be(40999);
             snapshot.Settings.DefaultBrief.Should().Be("round-trip brief");
             snapshot.Settings.DefaultCoreDescription.Should().Be("round-trip core description");
+            snapshot.Settings.CodeWorkspaceJson.Should().Contain("RoundTrip.ruleset.json");
             snapshot.Files.Select(f => (f.Path, f.Content, f.MustacheEnabled))
                 .Should().BeEquivalentTo(new[]
                 {

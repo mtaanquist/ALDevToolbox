@@ -631,6 +631,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.DefaultIdRangeTo).HasColumnName("default_id_range_to").IsRequired();
             entity.Property(e => e.DefaultBrief).HasColumnName("default_brief").IsRequired();
             entity.Property(e => e.DefaultCoreDescription).HasColumnName("default_core_description").IsRequired();
+            entity.Property(e => e.CodeWorkspaceJson).HasColumnName("code_workspace_json").IsRequired();
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
             entity.HasIndex(e => e.OrganizationId).IsUnique();
             entity.HasOne(e => e.Organization)

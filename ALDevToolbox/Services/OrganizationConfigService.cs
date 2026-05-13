@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
@@ -97,6 +98,9 @@ public class OrganizationConfigService
             .OrderBy(f => f.Ordering)
             .ToListAsync(ct);
 
+        // The transient fallback initialises CodeWorkspaceJson from the
+        // property initialiser (OrganizationDefaults.CodeWorkspaceJson) so a
+        // fresh org's Workspace settings page renders the seeded JSON.
         var config = new OrganizationConfig(
             Settings: settings ?? new OrganizationSettings { OrganizationId = organizationId },
             Logo: logo,
@@ -142,6 +146,37 @@ public class OrganizationConfigService
         _logger.LogInformation(
             "Updated organisation settings for org {OrgId} (publisher={Publisher}, range={From}-{To}).",
             orgId, row.DefaultPublisher, row.DefaultIdRangeFrom, row.DefaultIdRangeTo);
+    }
+
+    /// <summary>
+    /// Persists the admin-edited <c>.code-workspace</c> JSON template. The
+    /// generator overlays the computed <c>folders</c> array onto whatever is
+    /// stored here, so the admin owns <c>settings</c> and any other top-level
+    /// keys but never has to manage <c>folders</c>. Validation refuses empty
+    /// input and anything that doesn't parse as a JSON object.
+    /// </summary>
+    public async Task SaveCodeWorkspaceJsonAsync(string codeWorkspaceJson, CancellationToken ct = default)
+    {
+        ValidateCodeWorkspaceJson(codeWorkspaceJson);
+        var orgId = RequireOrganizationId();
+
+        var row = await _db.OrganizationSettings
+            .FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
+        var now = DateTime.UtcNow;
+        if (row is null)
+        {
+            row = new OrganizationSettings { OrganizationId = orgId };
+            _db.OrganizationSettings.Add(row);
+        }
+        row.CodeWorkspaceJson = codeWorkspaceJson;
+        row.UpdatedAt = now;
+
+        await _db.SaveChangesAsync(ct);
+        InvalidateCache(orgId);
+
+        _logger.LogInformation(
+            "Updated organisation code-workspace JSON for org {OrgId} ({Bytes} bytes).",
+            orgId, codeWorkspaceJson.Length);
     }
 
     /// <summary>
@@ -306,6 +341,14 @@ public class OrganizationConfigService
             DefaultCoreDescription: seed.Settings.DefaultCoreDescription);
         Validate(settingsInput);
 
+        // Pre-Issue-#61 exports omit the field — fall back to the in-app default
+        // so old archives still import. New imports go through the same
+        // server-side JSON-object validation the Workspace settings form uses.
+        var codeWorkspaceJson = string.IsNullOrWhiteSpace(seed.Settings.CodeWorkspaceJson)
+            ? OrganizationDefaults.CodeWorkspaceJson
+            : seed.Settings.CodeWorkspaceJson;
+        ValidateCodeWorkspaceJson(codeWorkspaceJson);
+
         var fileInputs = seed.File
             .Select(f => new OrganizationFileInput(
                 Id: null,
@@ -365,6 +408,7 @@ public class OrganizationConfigService
         settings.DefaultIdRangeTo = settingsInput.DefaultIdRangeTo;
         settings.DefaultBrief = settingsInput.DefaultBrief?.Trim() ?? string.Empty;
         settings.DefaultCoreDescription = settingsInput.DefaultCoreDescription?.Trim() ?? string.Empty;
+        settings.CodeWorkspaceJson = codeWorkspaceJson;
         settings.UpdatedAt = now;
 
         // Files: drop everything and re-insert. Wipe-and-replace import means
@@ -450,6 +494,45 @@ public class OrganizationConfigService
         if (input.DefaultIdRangeTo <= input.DefaultIdRangeFrom)
             errors[nameof(input.DefaultIdRangeTo)] = "Must be greater than 'from'.";
         if (errors.Count > 0) throw new PlanValidationException(errors);
+    }
+
+    /// <summary>
+    /// Server-side validation for the workspace-settings JSON: must be
+    /// non-empty and parse to a JSON object (not array / string / number).
+    /// Errors are keyed on <c>codeWorkspaceJson</c> so the Workspace settings
+    /// form can render the message inline next to the editor.
+    /// </summary>
+    internal static void ValidateCodeWorkspaceJson(string? input)
+    {
+        const string field = "codeWorkspaceJson";
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                [field] = "JSON is required. The file is always written, so the template can't be blank.",
+            });
+        }
+
+        JsonNode? parsed;
+        try
+        {
+            parsed = JsonNode.Parse(input);
+        }
+        catch (JsonException ex)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                [field] = $"Could not parse as JSON: {ex.Message}",
+            });
+        }
+
+        if (parsed is not JsonObject)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                [field] = "JSON root must be an object — a workspace file has top-level keys like 'settings'.",
+            });
+        }
     }
 
     private static void ValidateFiles(IReadOnlyList<OrganizationFileInput> inputs)

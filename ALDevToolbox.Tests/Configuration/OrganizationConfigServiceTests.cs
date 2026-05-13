@@ -181,6 +181,69 @@ public sealed class OrganizationConfigServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveCodeWorkspaceJson_round_trips_and_isolates_from_defaults()
+    {
+        // Seed defaults first so we can prove SaveCodeWorkspaceJsonAsync touches
+        // only its column and leaves the publisher / id range alone (Issue #61).
+        await using (var ctx = _db.NewContext())
+        {
+            var svc = _db.NewOrganizationConfigService(ctx);
+            await svc.SaveSettingsAsync(new OrganizationSettingsInput(
+                "Acme", 50000, 50999, "brief", "desc"));
+        }
+
+        const string adminJson = """
+            {
+              "settings": {
+                "al.ruleSetPath": "../my.ruleset.json"
+              }
+            }
+            """;
+        await using (var ctx = _db.NewContext())
+        {
+            var svc = _db.NewOrganizationConfigService(ctx);
+            await svc.SaveCodeWorkspaceJsonAsync(adminJson);
+        }
+
+        await using (var ctx = _db.NewContext())
+        {
+            var svc = _db.NewOrganizationConfigService(ctx);
+            var loaded = await svc.GetCurrentAsync();
+            loaded.Settings.CodeWorkspaceJson.Should().Be(adminJson);
+            loaded.Settings.DefaultPublisher.Should().Be("Acme");
+            loaded.Settings.DefaultIdRangeFrom.Should().Be(50000);
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("not even close to json")]
+    [InlineData("[\"array root not allowed\"]")]
+    [InlineData("\"plain string\"")]
+    public async Task SaveCodeWorkspaceJson_rejects_invalid_input(string bad)
+    {
+        await using var ctx = _db.NewContext();
+        var svc = _db.NewOrganizationConfigService(ctx);
+        var act = () => svc.SaveCodeWorkspaceJsonAsync(bad);
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("codeWorkspaceJson");
+    }
+
+    [Fact]
+    public async Task GetCurrent_falls_back_to_default_workspace_json_when_no_row_persisted()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = _db.NewOrganizationConfigService(ctx);
+        var snapshot = await svc.GetCurrentAsync();
+
+        // No SaveSettings call has happened, so the row is transient. The
+        // in-app default seeds the workspace JSON template so fresh orgs can
+        // generate workspaces without an admin saving the page first.
+        snapshot.Settings.CodeWorkspaceJson.Should().Be(OrganizationDefaults.CodeWorkspaceJson);
+    }
+
+    [Fact]
     public async Task ImportFromToml_replaces_settings_files_and_logo()
     {
         // Seed an initial state we expect to be wiped, then import a TOML

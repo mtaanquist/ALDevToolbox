@@ -31,24 +31,6 @@ public class GenerationService
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never,
     };
 
-    /// <summary>The fixed <c>settings</c> block written into <c>.code-workspace</c>.</summary>
-    private const string WorkspaceSettingsJson = """
-{
-  "editor.formatOnSave": true,
-  "editor.autoIndent": "full",
-  "editor.detectIndentation": false,
-  "editor.tabSize": 4,
-  "editor.insertSpaces": true,
-  "al.codeAnalyzers": [
-    "${CodeCop}",
-    "${AppSourceCop}",
-    "${UICop}"
-  ],
-  "al.enableCodeAnalysis": true,
-  "al.ruleSetPath": "../.assets/rulesets/Company.ruleset.json"
-}
-""";
-
     private readonly AppDbContext _db;
     private readonly WorkspaceConfigService _config;
     private readonly OrganizationConfigService _orgConfig;
@@ -117,7 +99,20 @@ public class GenerationService
             // Workspace-root metadata.
             await WriteEmbeddedAsync(archive, $"{rootFolder}/.gitignore", "ALDevToolbox.Resources.al.gitignore", ct);
             var folderNames = extensions.Select(e => e.Path).ToList();
-            WriteString(archive, $"{rootFolder}/{shortName}.code-workspace", BuildCodeWorkspace(folderNames));
+            var workspaceJsonCtx = new MustacheContext(
+                Name: plan.WorkspaceName,
+                WorkspaceName: plan.WorkspaceName,
+                ShortName: shortName,
+                ModuleName: plan.WorkspaceName,
+                // Sourced from the template defaults to match WriteOrgFiles
+                // (the always-included files use the same substitution table)
+                // and to handle fresh orgs whose settings row is still blank.
+                Publisher: template.Defaults.Publisher,
+                ExtensionPrefix: plan.ExtensionPrefix,
+                Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
+                FolderPath: string.Empty);
+            WriteString(archive, $"{rootFolder}/{shortName}.code-workspace",
+                BuildCodeWorkspace(orgConfig.Settings.CodeWorkspaceJson, folderNames, workspaceJsonCtx));
             WriteString(archive, $"{rootFolder}/README.md", BuildReadme(plan));
             var identities = extensions.Select(e => new WorkspaceExtensionIdentity(
                 Kind: e.IsModuleClone ? WorkspaceExtensionIdentity.ModuleKind : WorkspaceExtensionIdentity.CoreKind,
@@ -213,7 +208,23 @@ public class GenerationService
                     ? sibling.ExistingFolders.ToList()
                     : new List<string>();
                 existing.Add(folderName);
-                WriteString(archive, workspaceFile, BuildCodeWorkspace(existing));
+
+                // Rewriting the sibling workspace's .code-workspace file: pull
+                // the admin's JSON template from the org config so the result
+                // matches what the workspace was originally generated with.
+                var orgConfig = await GetOrgConfigAsync(ct);
+                var siblingShort = StripWhitespace(sibling.WorkspaceName);
+                var siblingCtx = new MustacheContext(
+                    Name: sibling.WorkspaceName,
+                    WorkspaceName: sibling.WorkspaceName,
+                    ShortName: siblingShort,
+                    ModuleName: sibling.WorkspaceName,
+                    Publisher: template.Defaults.Publisher,
+                    ExtensionPrefix: string.Empty,
+                    Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
+                    FolderPath: string.Empty);
+                WriteString(archive, workspaceFile,
+                    BuildCodeWorkspace(orgConfig.Settings.CodeWorkspaceJson, existing, siblingCtx));
                 fileCount++;
             }
         }
@@ -891,16 +902,46 @@ public class GenerationService
 
     // ===== Workspace-level files =====
 
-    private static string BuildCodeWorkspace(IReadOnlyList<string> folderPaths)
+    /// <summary>
+    /// Builds <c>{ShortName}.code-workspace</c> by overlaying the computed
+    /// <c>folders</c> array onto the admin-edited JSON template stored on the
+    /// organisation (Issue #61). Mustache substitution runs first so the
+    /// admin can splice <c>{{publisher}}</c>, <c>{{shortName}}</c>, etc. into
+    /// the JSON. If the admin pasted their own <c>folders</c> key, the
+    /// generator overwrites it — that array is always authoritative because
+    /// it has to match the extensions actually emitted into the ZIP.
+    /// </summary>
+    private string BuildCodeWorkspace(string adminJsonTemplate, IReadOnlyList<string> folderPaths, MustacheContext ctx)
     {
+        var substituted = SubstituteMustache(adminJsonTemplate, ctx);
+
+        JsonNode? parsed;
+        try
+        {
+            parsed = JsonNode.Parse(substituted);
+        }
+        catch (JsonException ex)
+        {
+            // The form-layer validator catches this on save; reaching here
+            // means a manual DB edit or a pre-validation row. Surface clearly
+            // rather than emit a broken file.
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["codeWorkspaceJson"] = $"Workspace JSON template did not parse: {ex.Message}",
+            });
+        }
+        if (parsed is not JsonObject root)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["codeWorkspaceJson"] = "Workspace JSON template must be a JSON object.",
+            });
+        }
+
         var folders = new JsonArray();
         foreach (var path in folderPaths) folders.Add(new JsonObject { ["path"] = path });
-        var settings = JsonNode.Parse(WorkspaceSettingsJson)!.AsObject();
-        return SerializeIndented(new JsonObject
-        {
-            ["folders"] = folders,
-            ["settings"] = settings,
-        });
+        root["folders"] = folders;
+        return SerializeIndented(root);
     }
 
     private static string BuildReadme(ProjectPlan plan) =>

@@ -117,10 +117,34 @@
                     @if (!isSystemOrg)
                     {
                         <li>
-                            <NavLink class="nav-link" href="/admin/configuration" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <Icon Name="settings" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>Configuration</span>
-                            </NavLink>
+                            <div class="nav-group">
+                                <div class="nav-link nav-link--group">
+                                    <Icon Name="settings" Width="18" Height="18" Css="nav-link__icon" />
+                                    <span>Configuration</span>
+                                </div>
+                                <ul class="nav-sublist">
+                                    <li>
+                                        <NavLink class="nav-link nav-link--sub" href="/admin/configuration/defaults" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                            <span>Defaults</span>
+                                        </NavLink>
+                                    </li>
+                                    <li>
+                                        <NavLink class="nav-link nav-link--sub" href="/admin/configuration/logo" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                            <span>Logo</span>
+                                        </NavLink>
+                                    </li>
+                                    <li>
+                                        <NavLink class="nav-link nav-link--sub" href="/admin/configuration/files" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                            <span>Always-included files</span>
+                                        </NavLink>
+                                    </li>
+                                    <li>
+                                        <NavLink class="nav-link nav-link--sub" href="/admin/configuration/workspace" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                            <span>Workspace settings</span>
+                                        </NavLink>
+                                    </li>
+                                </ul>
+                            </div>
                         </li>
                     }
 
