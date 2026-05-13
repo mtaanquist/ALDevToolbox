@@ -215,26 +215,40 @@ public sealed class PiperTransformTests
     }
 
     [Fact]
-    public void SkipEmpty_removes_empties_that_arise_from_adjacent_delimiters()
+    public void SkipEmpty_defaults_to_true_so_adjacent_delimiters_collapse()
     {
-        // Default keeps empties (matches original Piper behaviour).
-        var defaults = PiperTransform.Run("a,,b", new PiperOptions());
-        defaults.ItemCount.Should().Be(3);
-        defaults.Output.Should().Be("a||b");
-
-        // Opt-in collapses them.
-        var skipped = PiperTransform.Run("a,,b",
-            new PiperOptions { SkipEmpty = true });
-        skipped.ItemCount.Should().Be(2);
-        skipped.Output.Should().Be("a|b");
+        var result = PiperTransform.Run("a,,b", new PiperOptions());
+        result.ItemCount.Should().Be(2);
+        result.Output.Should().Be("a|b");
     }
 
     [Fact]
-    public void RemoveDuplicates_preserves_first_occurrence_order()
+    public void SkipEmpty_false_keeps_empty_items_for_callers_that_want_them()
     {
-        var result = PiperTransform.Run("c,a,b,a,c,d",
-            new PiperOptions { RemoveDuplicates = true });
+        // Also turn off RemoveDuplicates so empties past the first don't
+        // collapse via dedup — this test is specifically about empties.
+        var result = PiperTransform.Run("a,,,b", new PiperOptions
+        {
+            SkipEmpty = false,
+            RemoveDuplicates = false,
+        });
+        result.ItemCount.Should().Be(4);
+        result.Output.Should().Be("a|||b");
+    }
+
+    [Fact]
+    public void RemoveDuplicates_defaults_to_true_and_preserves_first_occurrence_order()
+    {
+        var result = PiperTransform.Run("c,a,b,a,c,d", new PiperOptions());
         result.Output.Should().Be("c|a|b|d");
+    }
+
+    [Fact]
+    public void RemoveDuplicates_false_keeps_repeats()
+    {
+        var result = PiperTransform.Run("a,b,a",
+            new PiperOptions { RemoveDuplicates = false });
+        result.Output.Should().Be("a|b|a");
     }
 
     // ---------- Sort ----------

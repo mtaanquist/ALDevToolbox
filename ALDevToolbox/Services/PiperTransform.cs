@@ -50,8 +50,20 @@ public sealed record PiperOptions
     public bool SplitOnNewlinesOnly { get; init; }
 
     public bool TrimItems { get; init; }
-    public bool SkipEmpty { get; init; }
-    public bool RemoveDuplicates { get; init; }
+
+    /// <summary>
+    /// Drops items that are empty after trimming. Defaults to <c>true</c>
+    /// because <c>a,,b</c> is almost always a typo, not three intentional
+    /// items. Set <c>false</c> to keep the original behaviour.
+    /// </summary>
+    public bool SkipEmpty { get; init; } = true;
+
+    /// <summary>
+    /// Removes duplicate items, preserving first-occurrence order.
+    /// Defaults to <c>true</c> because the most common use of Piper is
+    /// building a BC OR or SQL <c>IN</c> list where duplicates are noise.
+    /// </summary>
+    public bool RemoveDuplicates { get; init; } = true;
 }
 
 /// <summary>
