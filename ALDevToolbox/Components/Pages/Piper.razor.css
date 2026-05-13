@@ -1,0 +1,77 @@
+.piper-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 24px;
+    align-items: start;
+}
+
+.piper-main {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+}
+
+.piper-main ::deep textarea {
+    font-family: var(--font-mono);
+    font-size: 13px;
+}
+
+.piper-settings {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    position: sticky;
+    top: calc(var(--top-bar-height) + 16px);
+}
+
+.piper-settings__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    margin: 0 0 4px;
+}
+
+.piper-settings ::deep .form-section {
+    gap: 6px;
+}
+
+.piper-meta {
+    font-size: 12px;
+    margin: 0;
+}
+
+.piper-hint {
+    font-size: 12px;
+    margin: 0;
+}
+
+.piper-wrap-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+
+.piper-hint ::deep code {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    padding: 0 4px;
+}
+
+@media (max-width: 900px) {
+    .piper-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .piper-settings {
+        position: static;
+    }
+}

@@ -1,0 +1,241 @@
+@page "/piper"
+@rendermode InteractiveServer
+@inject IJSRuntime JS
+
+<PageTitle>Piper · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page piper-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Piper</h1>
+            <p class="muted">
+                Paste separated values and get back a piped string, a SQL list,
+                or anything in between. Detection is automatic; everything is
+                tweakable from the panel on the right.
+            </p>
+        </div>
+    </header>
+
+    <div class="piper-layout">
+        <section class="piper-main">
+            <div class="form-section">
+                <label class="section-label" for="piper-input">Input</label>
+                <textarea id="piper-input" rows="10"
+                          placeholder="e.g. 1001, 1005, 1007 — or one value per line"
+                          spellcheck="false"
+                          @ref="_inputRef"
+                          @bind="Input" @bind:event="oninput"></textarea>
+                <p class="muted piper-meta">@_inputMetaText</p>
+            </div>
+
+            <div class="form-section">
+                <label class="section-label" for="piper-output">Result</label>
+                <textarea id="piper-output" rows="3" readonly spellcheck="false">@_output</textarea>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn btn--primary"
+                        @onclick="CopyAsync" disabled="@string.IsNullOrEmpty(_output)">
+                    <Icon Name="copy" Width="14" Height="14" />
+                    <span>@(_justCopied ? "Copied!" : "Copy result")</span>
+                </button>
+                <button type="button" class="btn" @onclick="SwapInputOutput"
+                        disabled="@string.IsNullOrEmpty(_output)"
+                        title="Move the result back into the input box for chained transforms">
+                    <Icon Name="arrow-up" Width="14" Height="14" />
+                    <span>Use result as input</span>
+                </button>
+                <button type="button" class="btn" @onclick="ClearAll">
+                    <Icon Name="trash-2" Width="14" Height="14" />
+                    <span>Clear both fields</span>
+                </button>
+            </div>
+        </section>
+
+        <aside class="piper-settings">
+            <h2 class="piper-settings__title">
+                <Icon Name="settings" Width="16" Height="16" />
+                <span>Settings</span>
+            </h2>
+
+            <div class="form-section">
+                <label class="section-label" for="piper-format">Output format</label>
+                <select id="piper-format" @bind="Format">
+                    <option value="@PiperOutputFormat.BcOr">BC OR (a|b|c)</option>
+                    <option value="@PiperOutputFormat.BcAnd">BC AND (&lt;&gt;a&amp;&lt;&gt;b&amp;&lt;&gt;c)</option>
+                    <option value="@PiperOutputFormat.Sql">SQL ('a','b','c')</option>
+                    <option value="@PiperOutputFormat.Custom">Custom…</option>
+                </select>
+            </div>
+
+            @if (Format == PiperOutputFormat.Custom)
+            {
+                <div class="form-section">
+                    <label class="section-label" for="piper-prefix">Item prefix</label>
+                    <input id="piper-prefix" type="text" placeholder="e.g. ["
+                           @bind="CustomPrefix" @bind:event="oninput" />
+                </div>
+                <div class="form-section">
+                    <label class="section-label" for="piper-suffix">Item suffix</label>
+                    <input id="piper-suffix" type="text" placeholder="e.g. ]"
+                           @bind="CustomSuffix" @bind:event="oninput" />
+                </div>
+                <div class="form-section">
+                    <label class="section-label" for="piper-join">Join with</label>
+                    <input id="piper-join" type="text" placeholder="e.g. , or  → "
+                           @bind="CustomJoin" @bind:event="oninput" />
+                </div>
+            }
+
+            <div class="form-section">
+                <label class="section-label" for="piper-wrap-prefix">Wrap result with</label>
+                <div class="piper-wrap-row">
+                    <input id="piper-wrap-prefix" type="text" placeholder="prefix, e.g. ("
+                           @bind="ResultPrefix" @bind:event="oninput" />
+                    <input id="piper-wrap-suffix" type="text" placeholder="suffix, e.g. )"
+                           aria-label="Result suffix"
+                           @bind="ResultSuffix" @bind:event="oninput" />
+                </div>
+            </div>
+
+            <div class="form-section">
+                <label class="section-label" for="piper-sep">Input separator</label>
+                <input id="piper-sep" type="text" placeholder="@_separatorPlaceholder"
+                       @bind="SeparatorOverride" @bind:event="oninput" />
+                <p class="muted piper-hint">
+                    Use <code>\t</code>, <code>\n</code>, <code>\r</code> for whitespace.
+                </p>
+            </div>
+
+            <div class="form-section">
+                <label class="section-label" for="piper-sort">Sort items</label>
+                <select id="piper-sort" @bind="Sort">
+                    <option value="@PiperSortOrder.None">None (keep input order)</option>
+                    <option value="@PiperSortOrder.Ascending">Ascending (A → Z, 1 → 9)</option>
+                    <option value="@PiperSortOrder.Descending">Descending (Z → A, 9 → 1)</option>
+                </select>
+            </div>
+
+            <label class="check-row">
+                <input type="checkbox" @bind="SplitOnNewlinesOnly" />
+                <span>Auto-detect: split on new lines only</span>
+            </label>
+            <label class="check-row">
+                <input type="checkbox" @bind="TrimItems" />
+                <span>Trim whitespace around items</span>
+            </label>
+            <label class="check-row">
+                <input type="checkbox" @bind="SkipEmpty" />
+                <span>Skip empty items</span>
+            </label>
+            <label class="check-row">
+                <input type="checkbox" @bind="RemoveDuplicates" />
+                <span>Remove duplicate items</span>
+            </label>
+        </aside>
+    </div>
+</div>
+
+@code {
+    // Heavy lifting (delimiter detection, format application, sort, escape
+    // handling) lives in PiperTransform — see Services/PiperTransform.cs.
+    // The @code block here is just Blazor plumbing: bindings, the JS
+    // clipboard call, and the meta strings that aren't part of the
+    // transform contract.
+
+    private string _input = "";
+    private string _output = "";
+    private string _inputMetaText = "Awaiting input…";
+    private string _separatorPlaceholder = DefaultSeparatorPlaceholder;
+
+    private PiperOptions _options = new();
+
+    private bool _justCopied;
+    private CancellationTokenSource? _copyTimer;
+    private ElementReference _inputRef;
+
+    private const string DefaultSeparatorPlaceholder = "leave blank to auto-detect";
+
+    private string Input { get => _input; set { _input = value; Transform(); } }
+    private PiperOutputFormat Format { get => _options.Format; set { _options = _options with { Format = value }; Transform(); } }
+    private string CustomPrefix { get => _options.CustomPrefix; set { _options = _options with { CustomPrefix = value }; Transform(); } }
+    private string CustomSuffix { get => _options.CustomSuffix; set { _options = _options with { CustomSuffix = value }; Transform(); } }
+    private string CustomJoin { get => _options.CustomJoin; set { _options = _options with { CustomJoin = value }; Transform(); } }
+    private string ResultPrefix { get => _options.ResultPrefix; set { _options = _options with { ResultPrefix = value }; Transform(); } }
+    private string ResultSuffix { get => _options.ResultSuffix; set { _options = _options with { ResultSuffix = value }; Transform(); } }
+    private string SeparatorOverride { get => _options.SeparatorOverride; set { _options = _options with { SeparatorOverride = value }; Transform(); } }
+    private PiperSortOrder Sort { get => _options.Sort; set { _options = _options with { Sort = value }; Transform(); } }
+    private bool SplitOnNewlinesOnly { get => _options.SplitOnNewlinesOnly; set { _options = _options with { SplitOnNewlinesOnly = value }; Transform(); } }
+    private bool TrimItems { get => _options.TrimItems; set { _options = _options with { TrimItems = value }; Transform(); } }
+    private bool SkipEmpty { get => _options.SkipEmpty; set { _options = _options with { SkipEmpty = value }; Transform(); } }
+    private bool RemoveDuplicates { get => _options.RemoveDuplicates; set { _options = _options with { RemoveDuplicates = value }; Transform(); } }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        // Routes.razor's <FocusOnNavigate Selector="h1" /> announces the page
+        // title for screen readers; once that's done, hand focus to the input
+        // so a keyboard user can just start typing.
+        try { await _inputRef.FocusAsync(); }
+        catch { /* element gone — nothing to focus */ }
+    }
+
+    private void Transform()
+    {
+        var result = PiperTransform.Run(_input, _options);
+        _output = result.Output;
+        _inputMetaText = string.IsNullOrEmpty(_input)
+            ? result.DelimiterDescription
+            : $"{result.ItemCount} item{(result.ItemCount == 1 ? "" : "s")} · {result.DelimiterDescription}";
+        _separatorPlaceholder = result.DetectedSeparatorDisplay is null
+            ? DefaultSeparatorPlaceholder
+            : $"auto-detected: {result.DetectedSeparatorDisplay}";
+    }
+
+    private async Task CopyAsync()
+    {
+        if (string.IsNullOrEmpty(_output)) return;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _output);
+            _justCopied = true;
+            _copyTimer?.Cancel();
+            _copyTimer = new CancellationTokenSource();
+            var token = _copyTimer.Token;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(1500, token);
+                    if (token.IsCancellationRequested) return;
+                    await InvokeAsync(() =>
+                    {
+                        _justCopied = false;
+                        StateHasChanged();
+                    });
+                }
+                catch (TaskCanceledException) { }
+            });
+        }
+        catch
+        {
+            // Clipboard write can fail (insecure context, denied permission).
+            // Surface nothing — the textarea is still selectable.
+        }
+    }
+
+    private void SwapInputOutput()
+    {
+        if (string.IsNullOrEmpty(_output)) return;
+        _input = _output;
+        Transform();
+    }
+
+    private void ClearAll()
+    {
+        _input = "";
+        _output = "";
+        _inputMetaText = "Awaiting input…";
+        _separatorPlaceholder = DefaultSeparatorPlaceholder;
+    }
+}
