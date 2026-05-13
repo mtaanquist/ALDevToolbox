@@ -276,8 +276,11 @@
                 <textarea id="tpl-cop" class="json-editor" rows="6" spellcheck="false"
                           @bind="_form.AppSourceCopJson" @bind:event="oninput"></textarea>
                 <small class="muted">
-                    Written verbatim into <code>AppSourceCop.json</code>. Fields:
-                    <code>mandatoryPrefix</code>, <code>supportedCountries</code>.
+                    Set <code>"include": false</code> to suppress
+                    <code>AppSourceCop.json</code> in generated extensions. When
+                    included, the remaining fields are written verbatim. Fields:
+                    <code>include</code>, <code>mandatoryPrefix</code>,
+                    <code>supportedCountries</code>.
                 </small>
                 <FieldError Field="AppSourceCopJson" Errors="_fieldErrors" />
             </section>
@@ -1230,24 +1233,45 @@
         }
 
         var rootName = string.IsNullOrWhiteSpace(_form.Key) ? "template" : _form.Key;
+        var includeCop = ParseIncludeAppSourceCop(_form.AppSourceCopJson);
 
         var children = new List<PreviewNode>();
         foreach (var ext in _form.Extensions)
         {
-            children.Add(BuildExtensionPreview(ext));
+            children.Add(BuildExtensionPreview(ext, includeCop));
         }
 
         return PreviewTreeBuilder.SortForDisplay(
             new PreviewNode(rootName, PreviewNodeKind.Workspace, children));
     }
 
-    private static PreviewNode BuildExtensionPreview(ExtensionForm ext)
+    /// <summary>
+    /// Reads <c>include</c> from the AppSourceCop JSON textarea. Tolerates a
+    /// malformed buffer (the user might be mid-edit) and defaults to true so
+    /// the preview matches the generator's default behaviour.
+    /// </summary>
+    private static bool ParseIncludeAppSourceCop(string json)
     {
-        var contents = new List<PreviewNode>
+        if (string.IsNullOrWhiteSpace(json)) return true;
+        try
         {
-            PreviewNode.File("app.json"),
-            PreviewNode.File("AppSourceCop.json"),
-        };
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("include", out var prop) && prop.ValueKind == System.Text.Json.JsonValueKind.False)
+            {
+                return false;
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Mid-edit malformed JSON; surface the default.
+        }
+        return true;
+    }
+
+    private static PreviewNode BuildExtensionPreview(ExtensionForm ext, bool includeAppSourceCop)
+    {
+        var contents = new List<PreviewNode> { PreviewNode.File("app.json") };
+        if (includeAppSourceCop) contents.Add(PreviewNode.File("AppSourceCop.json"));
 
         foreach (var folder in ext.Folders.Where(f => !string.IsNullOrWhiteSpace(f.Path)))
         {

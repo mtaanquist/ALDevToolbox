@@ -10,8 +10,7 @@ namespace ALDevToolbox.Tests.Extensions;
 /// New Workspace / New Extension / Template Detail keeps reflecting what
 /// <c>GenerationService</c> actually emits: recursive folder walk, example
 /// filtering, <c>.gitkeep</c> stand-ins for empty leaves, and the
-/// libs/permissionsets/Translations fallback for any names the template
-/// didn't already declare.
+/// <see cref="AppSourceCopSettings.Include"/>-gated <c>AppSourceCop.json</c>.
 /// </summary>
 public sealed class ExtensionPreviewBuilderTests
 {
@@ -29,7 +28,7 @@ public sealed class ExtensionPreviewBuilderTests
         });
         root.Folders.Add(nested);
 
-        var contents = ExtensionPreviewBuilder.BuildContents(new[] { root }, includeExamples: true);
+        var contents = ExtensionPreviewBuilder.BuildContents(new[] { root }, includeExamples: true, includeAppSourceCop: true);
 
         var source = contents.Single(n => n.Name == "Source");
         var codeunits = source.Children.Single(n => n.Name == "Codeunits");
@@ -49,7 +48,7 @@ public sealed class ExtensionPreviewBuilderTests
             OrganizationId = 1, Path = "Example.al", Content = string.Empty, IsExample = true,
         });
 
-        var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: false);
+        var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: false, includeAppSourceCop: true);
 
         var source = contents.Single(n => n.Name == "Source");
         source.Children.Select(c => c.Name).Should().Contain("Real.al");
@@ -61,25 +60,32 @@ public sealed class ExtensionPreviewBuilderTests
     {
         var folder = new WorkspaceExtensionFolder { OrganizationId = 1, Path = "Empty" };
 
-        var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: true);
+        var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: true, includeAppSourceCop: true);
 
         var emptyFolder = contents.Single(n => n.Name == "Empty");
         emptyFolder.Children.Should().ContainSingle(c => c.Name == ".gitkeep");
     }
 
     [Fact]
-    public void BuildContents_skips_fallback_folders_that_collide_case_insensitively()
+    public void BuildContents_does_not_add_fallback_folders()
     {
-        var declared = new WorkspaceExtensionFolder { OrganizationId = 1, Path = "translations" };
+        var declared = new WorkspaceExtensionFolder { OrganizationId = 1, Path = "Source" };
 
-        var contents = ExtensionPreviewBuilder.BuildContents(new[] { declared }, includeExamples: true);
+        var contents = ExtensionPreviewBuilder.BuildContents(new[] { declared }, includeExamples: true, includeAppSourceCop: true);
 
-        // The fallback "Translations" must not appear alongside the existing
-        // case-insensitive match — Windows would treat both as the same folder.
-        contents.Count(c => string.Equals(c.Name, "translations", StringComparison.OrdinalIgnoreCase))
-            .Should().Be(1);
-        contents.Should().Contain(c => c.Name == "libs");
-        contents.Should().Contain(c => c.Name == "permissionsets");
+        contents.Select(c => c.Name).Should()
+            .BeEquivalentTo(new[] { "app.json", "AppSourceCop.json", "Source" });
+    }
+
+    [Fact]
+    public void BuildContents_omits_AppSourceCop_when_disabled()
+    {
+        var folder = new WorkspaceExtensionFolder { OrganizationId = 1, Path = "Source" };
+
+        var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: true, includeAppSourceCop: false);
+
+        contents.Select(c => c.Name).Should().NotContain("AppSourceCop.json");
+        contents.Select(c => c.Name).Should().Contain("app.json");
     }
 
     [Fact]
@@ -91,9 +97,9 @@ public sealed class ExtensionPreviewBuilderTests
             OrganizationId = 1, Path = "Helper.al", Content = string.Empty,
         });
 
-        var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: true);
+        var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: true, includeAppSourceCop: true);
 
-        contents.Select(c => c.Name).Should().Contain(new[] { "app.json", "AppSourceCop.json", "Source", "libs", "permissionsets", "Translations" });
+        contents.Select(c => c.Name).Should().Contain(new[] { "app.json", "AppSourceCop.json", "Source" });
         contents.Single(n => n.Name == "Source")
             .Children.Should().ContainSingle(c => c.Name == "Helper.al");
     }

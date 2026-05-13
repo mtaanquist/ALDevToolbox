@@ -104,6 +104,7 @@ public static class TemplateTomlMapper
         Defaults = BuildDefaultsSeed(defaults),
         AppSourceCop = new AppSourceCopSeed
         {
+            Include = appSourceCop.Include,
             MandatoryPrefix = appSourceCop.MandatoryPrefix,
             SupportedCountries = appSourceCop.SupportedCountries.ToList(),
         },
@@ -137,6 +138,7 @@ public static class TemplateTomlMapper
             Defaults = BuildDefaultsSeed(defaults),
             AppSourceCop = new AppSourceCopSeed
             {
+                Include = appSourceCop.Include,
                 MandatoryPrefix = appSourceCop.MandatoryPrefix,
                 SupportedCountries = appSourceCop.SupportedCountries.ToList(),
             },
@@ -358,6 +360,7 @@ public static class TemplateTomlMapper
 
         var appSourceCop = new AppSourceCopSettings
         {
+            Include = seed.AppSourceCop.Include,
             MandatoryPrefix = seed.AppSourceCop.MandatoryPrefix,
             SupportedCountries = seed.AppSourceCop.SupportedCountries.ToList(),
         };
@@ -515,9 +518,12 @@ allowDownloadingSource = false
 includeSourceInSymbolFile = false
 
 [appSourceCop]
-# Written verbatim into each extension's AppSourceCop.json. Set
-# mandatoryPrefix to your AL object-name prefix when shipping to
-# AppSource; leave both empty otherwise.
+# Set include = false to suppress AppSourceCop.json in every generated
+# extension (useful for non-AppSource templates). When true, the
+# remaining fields are written verbatim into each extension's
+# AppSourceCop.json — set mandatoryPrefix to your AL object-name prefix
+# when shipping to AppSource; leave both empty otherwise.
+include = true
 mandatoryPrefix = ""
 supportedCountries = ["US"]
 

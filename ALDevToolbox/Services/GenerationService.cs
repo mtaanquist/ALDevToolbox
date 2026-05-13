@@ -186,6 +186,12 @@ public class GenerationService
             WriteString(archive, $"{folderName}/app.json", appJson);
             fileCount++;
 
+            if (template.AppSourceCop.Include)
+            {
+                WriteString(archive, $"{folderName}/AppSourceCop.json", BuildAppSourceCopJson(template.AppSourceCop));
+                fileCount++;
+            }
+
             var substitutionCtx = new MustacheContext(
                 Name: plan.ExtensionName,
                 WorkspaceName: plan.ExtensionName,
@@ -196,7 +202,6 @@ public class GenerationService
                 Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
                 FolderPath: string.Empty);
             fileCount += EmitFolderTree(archive, folderName, folderRoots, plan.IncludeExamples, substitutionCtx);
-            EmitFallbackFolders(archive, folderName, folderRoots, ref fileCount);
 
             WriteString(archive, $"{folderName}/{WorkspaceConfigService.FileName}", _config.BuildExtension(plan));
             fileCount++;
@@ -592,6 +597,12 @@ public class GenerationService
         WriteString(archive, $"{extPath}/app.json", appJson);
         var fileCount = 1;
 
+        if (template.AppSourceCop.Include)
+        {
+            WriteString(archive, $"{extPath}/AppSourceCop.json", BuildAppSourceCopJson(template.AppSourceCop));
+            fileCount++;
+        }
+
         var substitutionCtx = new MustacheContext(
             Name: ext.Name,
             WorkspaceName: plan.WorkspaceName,
@@ -603,7 +614,6 @@ public class GenerationService
             FolderPath: string.Empty);
 
         fileCount += EmitFolderTree(archive, extPath, ext.FolderRoots, plan.IncludeExamples, substitutionCtx);
-        EmitFallbackFolders(archive, extPath, ext.FolderRoots, ref fileCount);
         return fileCount;
     }
 
@@ -654,25 +664,22 @@ public class GenerationService
         return fileCount;
     }
 
-    /// <summary>
-    /// Fallback folders (<c>libs</c>, <c>permissionsets</c>, <c>Translations</c>)
-    /// — placed at the extension root for any name the template didn't already
-    /// declare (case-insensitive). Mirrors the pre-unified behaviour so
-    /// extensions that don't customise their layout still look like an AL
-    /// project on disk.
-    /// </summary>
-    private static void EmitFallbackFolders(ZipArchive archive, string extPath, IReadOnlyList<FolderNode> rootFolders, ref int fileCount)
-    {
-        var declared = new HashSet<string>(rootFolders.Select(f => f.Path), StringComparer.OrdinalIgnoreCase);
-        foreach (var fallback in new[] { "libs", "permissionsets", "Translations" })
-        {
-            if (declared.Contains(fallback)) continue;
-            WriteEmptyFile(archive, $"{extPath}/{fallback}/.gitkeep");
-            fileCount++;
-        }
-    }
-
     // ===== app.json builders =====
+
+    /// <summary>
+    /// Builds the per-extension <c>AppSourceCop.json</c> contents. The
+    /// <see cref="AppSourceCopSettings.Include"/> flag is stripped — it's our
+    /// authoring toggle, not an AL concept; AL would reject an unknown field.
+    /// </summary>
+    private static string BuildAppSourceCopJson(AppSourceCopSettings settings)
+    {
+        var node = new JsonObject
+        {
+            ["mandatoryPrefix"] = settings.MandatoryPrefix,
+            ["supportedCountries"] = new JsonArray(settings.SupportedCountries.Select(c => (JsonNode)c).ToArray()),
+        };
+        return SerializeIndented(node);
+    }
 
     private string BuildAppJson(
         EmittableExtension ext,

@@ -112,9 +112,13 @@ public class ResourceExposurePolicySeed
     public bool IncludeSourceInSymbolFile { get; set; }
 }
 
-/// <summary>The <c>[appSourceCop]</c> table — copied verbatim into <c>AppSourceCop.json</c>.</summary>
+/// <summary>The <c>[appSourceCop]</c> table — copied verbatim into <c>AppSourceCop.json</c> when <see cref="Include"/> is true; otherwise the file is omitted from generated workspaces.</summary>
 public class AppSourceCopSeed
 {
+    /// <summary>Whether to emit <c>AppSourceCop.json</c>. Defaults to true.</summary>
+    [TomlPropertyName("include")]
+    public bool Include { get; set; } = true;
+
     [TomlPropertyName("mandatoryPrefix")]
     public string MandatoryPrefix { get; set; } = string.Empty;
 

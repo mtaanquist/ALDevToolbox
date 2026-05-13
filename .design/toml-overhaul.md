@@ -163,9 +163,9 @@ per-extension folder tree.
   imported module trees + the new extension tagged `IsNew`.
 
 All three share `Components/Shared/ExtensionPreviewBuilder` — recursive
-folder walk, example filtering, `.gitkeep` for empty leaves, and the
-libs/permissionsets/Translations fallback. Pinned by
-`ALDevToolbox.Tests/Extensions/ExtensionPreviewBuilderTests.cs`.
+folder walk, example filtering, `.gitkeep` for empty leaves, and an
+`includeAppSourceCop` toggle that mirrors `template.AppSourceCop.Include`.
+Pinned by `ALDevToolbox.Tests/Extensions/ExtensionPreviewBuilderTests.cs`.
 
 Folder trees aren't pulled by the default `GetTemplatesAsync` /
 `GetModulesAsync` / `GetByKeyAsync` reads; the preview pages call
