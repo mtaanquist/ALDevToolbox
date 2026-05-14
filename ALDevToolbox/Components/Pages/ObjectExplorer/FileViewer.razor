@@ -259,7 +259,7 @@
             return;
         }
 
-        await JumpToTargetAsync(target.FileId, target.LineNumber);
+        JumpToTarget(target.FileId, target.LineNumber);
     }
 
     private ValueTask OnLocationChanging(LocationChangingContext context)
@@ -304,38 +304,40 @@
     /// the viewer re-flashes). Cross-file hits fall through to Nav.NavigateTo
     /// so OnParametersSet reloads the page.
     /// </summary>
-    private Task OnPanelScrollTo((long FileId, int LineNumber) hit) =>
-        JumpToTargetAsync(hit.FileId, hit.LineNumber);
+    private void OnPanelScrollTo((long FileId, int LineNumber) hit) =>
+        JumpToTarget(hit.FileId, hit.LineNumber);
 
     /// <summary>
     /// Centralised "scroll to a target line, possibly in a different file"
-    /// routine. Same-file jumps update the URL via <c>history.replaceState</c>
-    /// so Blazor's enhanced navigation never engages — its document-streaming
-    /// diff strips CodeMirror's injected <c>&lt;style&gt;</c> tags from
-    /// <c>&lt;head&gt;</c>, leaving the editor with class names that reference
-    /// rules no longer present. Cross-file jumps still go through
-    /// <see cref="NavigationManager.NavigateTo(string, bool, bool)"/> because
-    /// we actually want <c>OnParametersSet</c> to fire and reload.
+    /// routine.
+    ///
+    /// Same-file jumps deliberately don't update the URL. We tried
+    /// <c>history.replaceState</c> to keep the address bar in sync, but
+    /// Blazor's enhanced navigation in .NET 8+ intercepts both anchor
+    /// clicks <em>and</em> programmatic <c>history.replaceState</c> calls
+    /// and runs its document-diff pipeline on them — which strips
+    /// CodeMirror's runtime-injected <c>&lt;style&gt;</c> tags from
+    /// <c>&lt;head&gt;</c>, leaving the editor unstyled. Browser
+    /// back/forward through accumulated entries amplifies the damage.
+    ///
+    /// The simplest fix is to side-step Blazor's nav machinery entirely
+    /// for in-file scrolls: just update internal state and re-render.
+    /// Trade-off: refresh restores the deep-link line (from the URL
+    /// fragment present on initial load), not the last in-file scroll
+    /// position. Acceptable.
+    ///
+    /// Cross-file jumps still go through <see cref="NavigationManager.NavigateTo(string, bool, bool)"/>
+    /// because we actually want <c>OnParametersSet</c> to fire and reload.
     /// </summary>
-    private async Task JumpToTargetAsync(long targetFileId, int targetLine)
+    private void JumpToTarget(long targetFileId, int targetLine)
     {
         if (targetFileId == FileId)
         {
             SetScrollTarget(targetLine);
-            await JS.InvokeVoidAsync(
-                "history.replaceState",
-                null,
-                "",
-                $"/object-explorer/{VersionId}/files/{FileId}#L{targetLine}");
-            // Browser-level URL change doesn't fire Blazor's LocationChanged
-            // (we didn't go through NavigationManager), so push the re-render
-            // ourselves to get the new ScrollSequence down to CodeViewer.
             StateHasChanged();
+            return;
         }
-        else
-        {
-            Nav.NavigateTo($"/object-explorer/{VersionId}/files/{targetFileId}#L{targetLine}");
-        }
+        Nav.NavigateTo($"/object-explorer/{VersionId}/files/{targetFileId}#L{targetLine}");
     }
 
     public void Dispose()
