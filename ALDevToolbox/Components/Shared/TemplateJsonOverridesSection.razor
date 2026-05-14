@@ -1,0 +1,64 @@
+@*
+    The three JSON-textarea overrides on the structured template editor:
+    defaults_json, app_source_cop_json, and the optional code_workspace_json
+    overlay. Each pairs the textarea with its help text and a <FieldError>
+    keyed off the same field name the server-side validator uses.
+
+    Extracted from AdminTemplateEdit.razor in #83 so the template-edit page
+    can compose the form from focused sub-sections; the textareas all read
+    and write directly against the parent's <see cref="TemplateFormState"/>
+    instance, so two-way binding is implicit via the shared reference.
+*@
+
+<section class="form-section">
+    <label class="section-label" for="tpl-defaults">Defaults JSON</label>
+    <textarea id="tpl-defaults" class="json-editor" rows="10" spellcheck="false"
+              @bind="Form.DefaultsJson" @bind:event="oninput"></textarea>
+    <small class="muted">
+        Merged into every generated <code>app.json</code>. Fields:
+        <code>publisher</code>, <code>target</code>, <code>features</code>,
+        <code>supportedLocales</code>, <code>url</code>, <code>logo</code>,
+        <code>extension_prefix</code>, <code>affix</code>, <code>affix_type</code>,
+        <code>resourceExposurePolicy</code>. The Default application /
+        platform fields above are spliced in automatically on save.
+    </small>
+    <FieldError Field="DefaultsJson" Errors="Errors" />
+</section>
+
+<section class="form-section">
+    <label class="section-label" for="tpl-cop">AppSourceCop JSON</label>
+    <textarea id="tpl-cop" class="json-editor" rows="6" spellcheck="false"
+              @bind="Form.AppSourceCopJson" @bind:event="oninput"></textarea>
+    <small class="muted">
+        Set <code>"include": false</code> to suppress
+        <code>AppSourceCop.json</code> in generated extensions. When
+        included, the remaining fields are written verbatim. Fields:
+        <code>include</code>, <code>mandatoryPrefix</code>,
+        <code>supportedCountries</code>.
+    </small>
+    <FieldError Field="AppSourceCopJson" Errors="Errors" />
+</section>
+
+<section class="form-section">
+    <label class="section-label" for="tpl-workspace">Workspace settings overlay (optional)</label>
+    <MustacheVarsHint />
+    <textarea id="tpl-workspace" class="json-editor" rows="8" spellcheck="false"
+              placeholder='{ "settings": { "al.newSetting": "..." } }'
+              @bind="Form.CodeWorkspaceJson" @bind:event="oninput"></textarea>
+    <small class="muted">
+        Per-template additions to <code>{ShortName}.code-workspace</code>.
+        Deep-merged on top of the organisation's
+        <a href="/admin/configuration/workspace">workspace settings</a>:
+        keys inside <code>settings</code> are merged individually
+        (template wins on conflict), other top-level keys replace
+        the org's wholesale. Leave blank to inherit the org base
+        unchanged. The generator always writes the <code>folders</code>
+        array regardless of what either layer contains.
+    </small>
+    <FieldError Field="CodeWorkspaceJson" Errors="Errors" />
+</section>
+
+@code {
+    [Parameter, EditorRequired] public TemplateFormState Form { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyDictionary<string, string> Errors { get; set; } = default!;
+}
