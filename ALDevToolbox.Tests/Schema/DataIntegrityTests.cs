@@ -4,7 +4,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
-namespace ALDevToolbox.Tests.Data;
+namespace ALDevToolbox.Tests.Schema;
 
 /// <summary>
 /// Schema-level invariants from issue #74: the audit chain refuses cascading
