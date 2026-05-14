@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services.Generation;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services;
@@ -21,7 +22,6 @@ namespace ALDevToolbox.Services;
 /// </summary>
 public class GenerationService
 {
-    private static readonly Regex MustacheRegex = new(@"\{\{(\w+)\}\}", RegexOptions.Compiled);
     private static readonly Regex WorkspaceNameRegex = new(@"^[A-Za-z][A-Za-z0-9 ]*$", RegexOptions.Compiled);
     private static readonly Regex ExtensionNameRegex = new(@"^[A-Za-z][A-Za-z0-9]*$", RegexOptions.Compiled);
 
@@ -36,6 +36,7 @@ public class GenerationService
     private readonly OrganizationConfigService _orgConfig;
     private readonly TemplateService _templates;
     private readonly IOrganizationContext _orgContext;
+    private readonly MustacheRenderer _mustache;
     private readonly ILogger<GenerationService> _logger;
 
     public GenerationService(
@@ -44,6 +45,7 @@ public class GenerationService
         OrganizationConfigService orgConfig,
         TemplateService templates,
         IOrganizationContext orgContext,
+        MustacheRenderer mustache,
         ILogger<GenerationService> logger)
     {
         _db = db;
@@ -51,6 +53,7 @@ public class GenerationService
         _orgConfig = orgConfig;
         _templates = templates;
         _orgContext = orgContext;
+        _mustache = mustache;
         _logger = logger;
     }
 
@@ -565,7 +568,7 @@ public class GenerationService
             {
                 var dest = $"{folderPath}/{file.Path}";
                 var content = file.Path.EndsWith(".al", StringComparison.OrdinalIgnoreCase)
-                    ? SubstituteMustache(file.Content, folderCtx)
+                    ? _mustache.Render(file.Content, folderCtx)
                     : file.Content;
                 WriteString(archive, dest, content);
                 fileCount++;
@@ -800,7 +803,7 @@ public class GenerationService
         foreach (var file in files)
         {
             var content = file.MustacheEnabled
-                ? SubstituteMustache(file.Content, ctx with { FolderPath = file.Path })
+                ? _mustache.Render(file.Content, ctx with { FolderPath = file.Path })
                 : file.Content;
             WriteString(archive, $"{rootFolder}/{file.Path}", content);
             written++;
@@ -855,7 +858,7 @@ public class GenerationService
     /// </summary>
     private JsonObject ParseSubstitutedJsonObject(string source, MustacheContext ctx, string fieldKey)
     {
-        var substituted = SubstituteMustache(source, ctx);
+        var substituted = _mustache.Render(source, ctx);
         JsonNode? parsed;
         try
         {
@@ -927,43 +930,10 @@ public class GenerationService
     // ===== Mustache substitution =====
 
     /// <summary>
-    /// Substitutes the supported placeholders inside <paramref name="source"/>.
-    /// The table is: <c>{{name}}</c>, <c>{{workspaceName}}</c>,
-    /// <c>{{shortName}}</c>, <c>{{moduleName}}</c>, <c>{{publisher}}</c>,
-    /// <c>{{extension_prefix}}</c>, <c>{{affix}}</c>, <c>{{namespace}}</c>,
-    /// <c>{{guid}}</c>. Unknown keys log a warning and pass through verbatim.
-    /// </summary>
-    private string SubstituteMustache(string source, MustacheContext ctx) =>
-        MustacheRegex.Replace(source, match =>
-        {
-            var key = match.Groups[1].Value;
-            return key switch
-            {
-                "name" => ctx.Name,
-                "workspaceName" => ctx.WorkspaceName,
-                "shortName" => ctx.ShortName,
-                "moduleName" => ctx.ModuleName,
-                "publisher" => ctx.Publisher,
-                "extension_prefix" => ctx.ExtensionPrefix,
-                "affix" => ctx.Affix,
-                "namespace" => ctx.FolderPath.Replace('/', '.'),
-                "guid" => Guid.NewGuid().ToString(),
-                _ => UnknownVariable(match.Value, key),
-            };
-        });
-
-    private string UnknownVariable(string original, string key)
-    {
-        _logger.LogWarning("Unknown mustache variable {{{{{Key}}}}} encountered during generation; left as-is.", key);
-        return original;
-    }
-
-    /// <summary>
     /// Scalar substitution used for the extension name (no folder-context
-    /// awareness yet — names are built before folder traversal). Delegates
-    /// to <see cref="SubstituteMustache"/> with an empty FolderPath so
-    /// <c>{{namespace}}</c> resolves to the empty string; #81 collapses the
-    /// previously duplicated switch.
+    /// awareness yet — names are built before folder traversal). Builds an
+    /// empty-FolderPath context so <c>{{namespace}}</c> resolves to the empty
+    /// string and delegates to <see cref="MustacheRenderer.Render"/>.
     /// </summary>
     private string SubstituteScalar(string source, ProjectPlan plan, RuntimeTemplate template)
     {
@@ -976,18 +946,8 @@ public class GenerationService
             ExtensionPrefix: plan.ExtensionPrefix,
             Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
             FolderPath: string.Empty);
-        return SubstituteMustache(source, ctx);
+        return _mustache.Render(source, ctx);
     }
-
-    private record MustacheContext(
-        string Name,
-        string WorkspaceName,
-        string ShortName,
-        string ModuleName,
-        string Publisher,
-        string ExtensionPrefix,
-        string Affix,
-        string FolderPath);
 
     // ===== ZIP helpers =====
 
