@@ -1,0 +1,138 @@
+@page "/admin/object-explorer"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject BaseAppService BaseApp
+@inject NavigationManager Nav
+@inject IAntiforgery Antiforgery
+@inject IHttpContextAccessor Http
+@using ALDevToolbox.Domain.Entities
+@using Microsoft.AspNetCore.Antiforgery
+
+<PageTitle>Object Explorer · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Object Explorer</h1>
+            <p class="muted">
+                Imported Microsoft Base Application source bundles. Each row
+                holds the AL files for one Business Central version + cumulative
+                update; users browse and search them at
+                <a href="/object-explorer">Object Explorer</a>.
+            </p>
+        </div>
+        <a class="btn" href="/admin/object-explorer/new">
+            <Icon Name="upload" Width="16" Height="16" />
+            <span>Upload version</span>
+        </a>
+    </header>
+
+    @if (Status is { } s)
+    {
+        @if (s.Kind == StatusKind.Ok)
+        {
+            <p class="form-success" role="status">@s.Message</p>
+        }
+        else
+        {
+            <div class="form-error" role="alert"><p>@s.Message</p></div>
+        }
+    }
+
+    @if (_versions is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_versions.Count == 0)
+    {
+        <p class="muted">No versions imported yet.</p>
+    }
+    else
+    {
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th scope="col">Major.Minor</th>
+                    <th scope="col">CU</th>
+                    <th scope="col" class="num">Files</th>
+                    <th scope="col">Uploaded</th>
+                    <th scope="col">Notes</th>
+                    <th scope="col"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var v in _versions)
+                {
+                    <tr>
+                        <td><strong>@v.Major.@v.Minor</strong></td>
+                        <td>CU @v.CumulativeUpdate</td>
+                        <td class="num">@v.FileCount.ToString("N0")</td>
+                        <td>@v.UploadedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td class="muted">@(string.IsNullOrWhiteSpace(v.Notes) ? "—" : v.Notes)</td>
+                        <td>
+                            <form method="post"
+                                  action="@($"/admin/object-explorer/{v.Id}/delete")"
+                                  onsubmit="return confirm('Delete this version? Browser pages will hide it; the rows stay in the database.')">
+                                @if (_antiforgeryToken is not null)
+                                {
+                                    <input type="hidden" name="@_antiforgeryToken.FormFieldName" value="@_antiforgeryToken.RequestToken" />
+                                }
+                                <button type="submit" class="btn btn--danger btn--sm">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "ok")]
+    public string? Ok { get; set; }
+
+    [SupplyParameterFromQuery(Name = "err")]
+    public string? Err { get; set; }
+
+    [SupplyParameterFromQuery(Name = "msg")]
+    public string? Msg { get; set; }
+
+    [SupplyParameterFromQuery(Name = "parsed")]
+    public int? Parsed { get; set; }
+
+    [SupplyParameterFromQuery(Name = "failed")]
+    public int? Failed { get; set; }
+
+    [SupplyParameterFromQuery(Name = "replaced")]
+    public int? Replaced { get; set; }
+
+    private List<BaseAppVersion>? _versions;
+    private AntiforgeryTokenSet? _antiforgeryToken;
+
+    private (StatusKind Kind, string Message)? Status =>
+        !string.IsNullOrEmpty(Ok) ? (StatusKind.Ok, FormatOk(Ok)) :
+        !string.IsNullOrEmpty(Err) ? (StatusKind.Err, string.IsNullOrEmpty(Msg) ? $"{Err}: failed." : Msg!) :
+        null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _versions = await BaseApp.ListVersionsAsync();
+        if (Http.HttpContext is not null)
+        {
+            _antiforgeryToken = Antiforgery.GetAndStoreTokens(Http.HttpContext);
+        }
+    }
+
+    private string FormatOk(string ok) => ok switch
+    {
+        "imported" => $"Imported successfully. Parsed {Parsed ?? 0} object(s)."
+            + (Failed > 0 ? $" {Failed} file(s) couldn't be parsed." : ""),
+        "appended" => $"Appended {Parsed ?? 0} object(s) to the existing version."
+            + (Replaced > 0 ? $" {Replaced} file(s) with overlapping paths were replaced." : "")
+            + (Failed > 0 ? $" {Failed} file(s) couldn't be parsed." : ""),
+        "deleted" => "Version deleted.",
+        _ => "Done.",
+    };
+
+    public enum StatusKind { Ok, Err }
+}

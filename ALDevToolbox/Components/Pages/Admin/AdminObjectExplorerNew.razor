@@ -1,0 +1,128 @@
+@page "/admin/object-explorer/new"
+@attribute [Authorize(Roles = "Admin")]
+@inject ApplicationVersionService AppVersions
+@inject IAntiforgery Antiforgery
+@inject IHttpContextAccessor Http
+@using ALDevToolbox.Domain.Entities
+@using Microsoft.AspNetCore.Antiforgery
+
+@*
+    Multipart upload form for a Microsoft Base Application source ZIP. Posts
+    straight to the /admin/object-explorer/import endpoint (see
+    BaseAppEndpoints) so the 100–200 MB body streams through Kestrel rather
+    than the Blazor SignalR circuit. Static-rendered: no @rendermode, no
+    interactivity — Blazor would buffer the upload through interop and choke.
+*@
+
+<PageTitle>Upload base app · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Upload Base Application</h1>
+            <p class="muted">
+                Pick a ZIP that contains a Microsoft Base Application source tree
+                — typically one top-level folder per app (Base Application,
+                System Application, etc.). Files are stored as text; binary
+                entries are skipped. Cap is 500 MB.
+            </p>
+        </div>
+        <a class="btn btn--sm" href="/admin/object-explorer">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back</span>
+        </a>
+    </header>
+
+    <form method="post"
+          action="/admin/object-explorer/import"
+          enctype="multipart/form-data"
+          class="form-grid">
+        @if (_antiforgeryToken is not null)
+        {
+            <input type="hidden" name="@_antiforgeryToken.FormFieldName" value="@_antiforgeryToken.RequestToken" />
+        }
+
+        <section class="form-section">
+            <label class="field">
+                <span class="field__label">ZIP file</span>
+                <input type="file" name="Zip" accept=".zip,application/zip" required />
+            </label>
+
+            <div class="form-row">
+                <label class="field">
+                    <span class="field__label">Major</span>
+                    <input type="number" name="Major" min="1" max="999" required placeholder="28" />
+                </label>
+                <label class="field">
+                    <span class="field__label">Minor</span>
+                    <input type="number" name="Minor" min="0" max="99" required value="0" />
+                </label>
+                <label class="field">
+                    <span class="field__label">Cumulative update</span>
+                    <input type="number" name="CumulativeUpdate" min="0" max="99" required value="0" />
+                </label>
+            </div>
+
+            <label class="field">
+                <span class="field__label">Application version (catalogue link, optional)</span>
+                <select name="ApplicationVersionId" class="field__input">
+                    <option value="">— none —</option>
+                    @if (_appVersions is not null)
+                    {
+                        @foreach (var v in _appVersions)
+                        {
+                            <option value="@v.Id">@v.Name (@v.Application)</option>
+                        }
+                    }
+                </select>
+                <small class="field__caption muted">
+                    Use this to associate the source bundle with an existing
+                    Application Versions catalogue entry. Doesn't change any
+                    other behaviour.
+                </small>
+            </label>
+
+            <label class="field">
+                <span class="field__label">Notes (optional)</span>
+                <textarea name="Notes" rows="3" maxlength="4000" placeholder="Release engineering link, source URL, …"></textarea>
+            </label>
+
+            <label class="field">
+                <span class="field__label">If this version already exists</span>
+                <select name="Mode" class="field__input">
+                    <option value="Reject" selected>Reject (default) — refuse the upload</option>
+                    <option value="Append">Append — add these files to the existing version</option>
+                    <option value="Replace">Replace — soft-delete the existing version and start fresh</option>
+                </select>
+                <small class="field__caption muted">
+                    Use <strong>Append</strong> when you're uploading separate
+                    Microsoft apps (Base Application, System Application, …) into
+                    the same Business Central release. Files with the same path
+                    overwrite within the version.
+                </small>
+            </label>
+        </section>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn--primary">
+                <Icon Name="upload" Width="16" Height="16" />
+                <span>Upload &amp; import</span>
+            </button>
+            <a class="btn btn--outline" href="/admin/object-explorer">Cancel</a>
+        </div>
+    </form>
+</div>
+
+@code {
+    private List<ApplicationVersion>? _appVersions;
+    private AntiforgeryTokenSet? _antiforgeryToken;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _appVersions = await AppVersions.GetAllForAdminAsync();
+        if (Http.HttpContext is not null)
+        {
+            _antiforgeryToken = Antiforgery.GetAndStoreTokens(Http.HttpContext);
+        }
+    }
+}
