@@ -28,33 +28,38 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     // LoginAttempt is intentionally excluded: it's append-only telemetry written
     // on every login/forgot-password attempt and is already its own record. An
     // audit row for each insert would just duplicate the table.
-    private static readonly HashSet<Type> AuditedTypes = new()
-    {
-        typeof(RuntimeTemplate),
-        typeof(WorkspaceExtension),
-        typeof(WorkspaceExtensionFolder),
-        typeof(WorkspaceExtensionFile),
-        typeof(WorkspaceExtensionDependency),
-        typeof(ModuleExtensionFolder),
-        typeof(ModuleExtensionFile),
-        typeof(RuntimeTemplateDefaultModule),
-        typeof(Module),
-        typeof(ModuleDependency),
-        typeof(WellKnownDependency),
-        typeof(ApplicationVersion),
-        typeof(User),
-        typeof(SignupRequest),
-        typeof(OrganizationSettings),
-        typeof(OrganizationAsset),
-        typeof(OrganizationFile),
-        typeof(SystemSettings),
-        typeof(Backup),
-        typeof(Invite),
-        typeof(Snippet),
-        typeof(SnippetFile),
-        typeof(SnippetSuggestion),
-        typeof(SnippetSuggestionFile),
-    };
+    //
+    // Single source of truth — both the audit gate and the entity-type
+    // discriminator read from this dictionary (#78). Adding a new audited
+    // entity needs one entry here, not two.
+    private static readonly IReadOnlyDictionary<Type, AuditEntityType> AuditedTypeMap =
+        new Dictionary<Type, AuditEntityType>
+        {
+            [typeof(RuntimeTemplate)] = AuditEntityType.RuntimeTemplate,
+            [typeof(WorkspaceExtension)] = AuditEntityType.WorkspaceExtension,
+            [typeof(WorkspaceExtensionFolder)] = AuditEntityType.WorkspaceExtensionFolder,
+            [typeof(WorkspaceExtensionFile)] = AuditEntityType.WorkspaceExtensionFile,
+            [typeof(WorkspaceExtensionDependency)] = AuditEntityType.WorkspaceExtensionDependency,
+            [typeof(ModuleExtensionFolder)] = AuditEntityType.ModuleExtensionFolder,
+            [typeof(ModuleExtensionFile)] = AuditEntityType.ModuleExtensionFile,
+            [typeof(RuntimeTemplateDefaultModule)] = AuditEntityType.RuntimeTemplateDefaultModule,
+            [typeof(Module)] = AuditEntityType.Module,
+            [typeof(ModuleDependency)] = AuditEntityType.ModuleDependency,
+            [typeof(WellKnownDependency)] = AuditEntityType.WellKnownDependency,
+            [typeof(ApplicationVersion)] = AuditEntityType.ApplicationVersion,
+            [typeof(User)] = AuditEntityType.User,
+            [typeof(SignupRequest)] = AuditEntityType.SignupRequest,
+            [typeof(OrganizationSettings)] = AuditEntityType.OrganizationSettings,
+            [typeof(OrganizationAsset)] = AuditEntityType.OrganizationAsset,
+            [typeof(OrganizationFile)] = AuditEntityType.OrganizationFile,
+            [typeof(SystemSettings)] = AuditEntityType.SystemSettings,
+            [typeof(Backup)] = AuditEntityType.Backup,
+            [typeof(Invite)] = AuditEntityType.Invite,
+            [typeof(Snippet)] = AuditEntityType.Snippet,
+            [typeof(SnippetFile)] = AuditEntityType.SnippetFile,
+            [typeof(SnippetSuggestion)] = AuditEntityType.SnippetSuggestion,
+            [typeof(SnippetSuggestionFile)] = AuditEntityType.SnippetSuggestionFile,
+        };
 
     private readonly IHttpContextAccessor _http;
     private List<PendingAddition> _pendingAdditions = new();
@@ -86,7 +91,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
 
         foreach (var entry in entries)
         {
-            if (!AuditedTypes.Contains(entry.Entity.GetType()))
+            if (!AuditedTypeMap.ContainsKey(entry.Entity.GetType()))
             {
                 continue;
             }
@@ -191,105 +196,53 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     private static string BuildOriginalSnapshot(EntityEntry entry, List<EntityEntry> allEntries)
     {
         var snapshot = OriginalValuesToDict(entry);
+        var parentId = (int)entry.OriginalValues["Id"]!;
 
-        if (entry.Entity is RuntimeTemplate)
+        switch (entry.Entity)
         {
-            var templateId = (int)entry.OriginalValues["Id"]!;
-            snapshot["extensions"] = allEntries
-                .Where(e => e.Entity is WorkspaceExtension
-                            && e.State != EntityState.Added
-                            && (int)e.OriginalValues["TemplateId"]! == templateId)
-                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
-                .Select(OriginalValuesToDict)
-                .ToList();
-        }
-        else if (entry.Entity is WorkspaceExtension)
-        {
-            // Recursive folder tree + dependencies are tracked at the
-            // extension level; per-folder details fan out to file lists when
-            // an admin edits one folder, so capturing a top-level snapshot
-            // here is enough.
-            var extensionId = (int)entry.OriginalValues["Id"]!;
-            snapshot["folders"] = allEntries
-                .Where(e => e.Entity is WorkspaceExtensionFolder
-                            && e.State != EntityState.Added
-                            && (int)e.OriginalValues["WorkspaceExtensionId"]! == extensionId)
-                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
-                .Select(OriginalValuesToDict)
-                .ToList();
-            snapshot["dependencies"] = allEntries
-                .Where(e => e.Entity is WorkspaceExtensionDependency
-                            && e.State != EntityState.Added
-                            && (int)e.OriginalValues["WorkspaceExtensionId"]! == extensionId)
-                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
-                .Select(OriginalValuesToDict)
-                .ToList();
-        }
-        else if (entry.Entity is WorkspaceExtensionFolder)
-        {
-            var folderId = (int)entry.OriginalValues["Id"]!;
-            snapshot["files"] = allEntries
-                .Where(e => e.Entity is WorkspaceExtensionFile
-                            && e.State != EntityState.Added
-                            && (int)e.OriginalValues["WorkspaceExtensionFolderId"]! == folderId)
-                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
-                .Select(OriginalValuesToDict)
-                .ToList();
-        }
-        else if (entry.Entity is ModuleExtensionFolder)
-        {
-            var folderId = (int)entry.OriginalValues["Id"]!;
-            snapshot["files"] = allEntries
-                .Where(e => e.Entity is ModuleExtensionFile
-                            && e.State != EntityState.Added
-                            && (int)e.OriginalValues["ModuleExtensionFolderId"]! == folderId)
-                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
-                .Select(OriginalValuesToDict)
-                .ToList();
-        }
-        else if (entry.Entity is Module)
-        {
-            var moduleId = (int)entry.OriginalValues["Id"]!;
-            snapshot["dependencies"] = allEntries
-                .Where(e => e.Entity is ModuleDependency
-                            && e.State != EntityState.Added
-                            && (int)e.OriginalValues["ModuleId"]! == moduleId)
-                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
-                .Select(OriginalValuesToDict)
-                .ToList();
-            snapshot["extension_folders"] = allEntries
-                .Where(e => e.Entity is ModuleExtensionFolder
-                            && e.State != EntityState.Added
-                            && (int)e.OriginalValues["ModuleId"]! == moduleId)
-                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
-                .Select(OriginalValuesToDict)
-                .ToList();
-        }
-        else if (entry.Entity is Snippet)
-        {
-            var snippetId = (int)entry.OriginalValues["Id"]!;
-            snapshot["files"] = allEntries
-                .Where(e => e.Entity is SnippetFile
-                            && e.State != EntityState.Added
-                            && (int)e.OriginalValues["SnippetId"]! == snippetId)
-                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
-                .Select(OriginalValuesToDict)
-                .ToList();
-        }
-        else if (entry.Entity is SnippetSuggestion)
-        {
-            var suggestionId = (int)entry.OriginalValues["Id"]!;
-            snapshot["files"] = allEntries
-                .Where(e => e.Entity is SnippetSuggestionFile
-                            && e.State != EntityState.Added
-                            && (int)e.OriginalValues["SnippetSuggestionId"]! == suggestionId)
-                .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
-                .Select(OriginalValuesToDict)
-                .ToList();
+            case RuntimeTemplate:
+                snapshot["extensions"] = CollectChildren<WorkspaceExtension>(allEntries, "TemplateId", parentId);
+                break;
+            case WorkspaceExtension:
+                snapshot["folders"] = CollectChildren<WorkspaceExtensionFolder>(allEntries, "WorkspaceExtensionId", parentId);
+                snapshot["dependencies"] = CollectChildren<WorkspaceExtensionDependency>(allEntries, "WorkspaceExtensionId", parentId);
+                break;
+            case WorkspaceExtensionFolder:
+                snapshot["files"] = CollectChildren<WorkspaceExtensionFile>(allEntries, "WorkspaceExtensionFolderId", parentId);
+                break;
+            case ModuleExtensionFolder:
+                snapshot["files"] = CollectChildren<ModuleExtensionFile>(allEntries, "ModuleExtensionFolderId", parentId);
+                break;
+            case Module:
+                snapshot["dependencies"] = CollectChildren<ModuleDependency>(allEntries, "ModuleId", parentId);
+                snapshot["extension_folders"] = CollectChildren<ModuleExtensionFolder>(allEntries, "ModuleId", parentId);
+                break;
+            case Snippet:
+                snapshot["files"] = CollectChildren<SnippetFile>(allEntries, "SnippetId", parentId);
+                break;
+            case SnippetSuggestion:
+                snapshot["files"] = CollectChildren<SnippetSuggestionFile>(allEntries, "SnippetSuggestionId", parentId);
+                break;
         }
 
         return JsonSerializer.Serialize(snapshot, JsonOptions);
     }
+
+    /// <summary>
+    /// Pre-save snapshot of every modified-or-deleted child of <typeparamref name="TChild"/>
+    /// pointing at <paramref name="parentId"/> via <paramref name="fkName"/>,
+    /// ordered by the child's <c>Ordering</c> column. Six places used to
+    /// inline this; one method now.
+    /// </summary>
+    private static List<Dictionary<string, object?>> CollectChildren<TChild>(
+        IReadOnlyList<EntityEntry> entries, string fkName, int parentId) =>
+        entries
+            .Where(e => e.Entity is TChild
+                        && e.State != EntityState.Added
+                        && (int)e.OriginalValues[fkName]! == parentId)
+            .OrderBy(e => (int)e.OriginalValues["Ordering"]!)
+            .Select(OriginalValuesToDict)
+            .ToList();
 
     /// <summary>
     /// Materialises an entry's original values into a dictionary, replacing
@@ -345,34 +298,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
-    private static AuditEntityType MapEntityType(Type t)
-    {
-        if (t == typeof(RuntimeTemplate)) return AuditEntityType.RuntimeTemplate;
-        if (t == typeof(WorkspaceExtension)) return AuditEntityType.WorkspaceExtension;
-        if (t == typeof(WorkspaceExtensionFolder)) return AuditEntityType.WorkspaceExtensionFolder;
-        if (t == typeof(WorkspaceExtensionFile)) return AuditEntityType.WorkspaceExtensionFile;
-        if (t == typeof(WorkspaceExtensionDependency)) return AuditEntityType.WorkspaceExtensionDependency;
-        if (t == typeof(ModuleExtensionFolder)) return AuditEntityType.ModuleExtensionFolder;
-        if (t == typeof(ModuleExtensionFile)) return AuditEntityType.ModuleExtensionFile;
-        if (t == typeof(RuntimeTemplateDefaultModule)) return AuditEntityType.RuntimeTemplateDefaultModule;
-        if (t == typeof(Module)) return AuditEntityType.Module;
-        if (t == typeof(ModuleDependency)) return AuditEntityType.ModuleDependency;
-        if (t == typeof(WellKnownDependency)) return AuditEntityType.WellKnownDependency;
-        if (t == typeof(ApplicationVersion)) return AuditEntityType.ApplicationVersion;
-        if (t == typeof(User)) return AuditEntityType.User;
-        if (t == typeof(SignupRequest)) return AuditEntityType.SignupRequest;
-        if (t == typeof(OrganizationSettings)) return AuditEntityType.OrganizationSettings;
-        if (t == typeof(OrganizationAsset)) return AuditEntityType.OrganizationAsset;
-        if (t == typeof(OrganizationFile)) return AuditEntityType.OrganizationFile;
-        if (t == typeof(SystemSettings)) return AuditEntityType.SystemSettings;
-        if (t == typeof(Backup)) return AuditEntityType.Backup;
-        if (t == typeof(Invite)) return AuditEntityType.Invite;
-        if (t == typeof(Snippet)) return AuditEntityType.Snippet;
-        if (t == typeof(SnippetFile)) return AuditEntityType.SnippetFile;
-        if (t == typeof(SnippetSuggestion)) return AuditEntityType.SnippetSuggestion;
-        if (t == typeof(SnippetSuggestionFile)) return AuditEntityType.SnippetSuggestionFile;
-        throw new InvalidOperationException($"Entity type {t.Name} is not audited.");
-    }
+    private static AuditEntityType MapEntityType(Type t) =>
+        AuditedTypeMap.TryGetValue(t, out var kind)
+            ? kind
+            : throw new InvalidOperationException($"Entity type {t.Name} is not audited.");
 
     /// <summary>
     /// Composes <c>"display_name &lt;email&gt;"</c> for the audit row when both
