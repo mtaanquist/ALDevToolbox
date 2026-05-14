@@ -1,5 +1,6 @@
 @page "/piper"
 @rendermode InteractiveServer
+@implements IDisposable
 @inject IJSRuntime JS
 
 <PageTitle>Piper · AL Dev Toolbox</PageTitle>
@@ -200,6 +201,7 @@
             await JS.InvokeVoidAsync("navigator.clipboard.writeText", _output);
             _justCopied = true;
             _copyTimer?.Cancel();
+            _copyTimer?.Dispose();
             _copyTimer = new CancellationTokenSource();
             var token = _copyTimer.Token;
             _ = Task.Run(async () =>
@@ -237,5 +239,11 @@
         _output = "";
         _inputMetaText = "Awaiting input…";
         _separatorPlaceholder = DefaultSeparatorPlaceholder;
+    }
+
+    public void Dispose()
+    {
+        _copyTimer?.Cancel();
+        _copyTimer?.Dispose();
     }
 }

@@ -695,6 +695,12 @@
     private bool _isDeleted;
     private bool _loadFailed;
     private bool _saving;
+    // Tracks the route key the editor was last hydrated for. When the user
+    // navigates between two /admin/templates/{Key} pages without leaving the
+    // component, OnParametersSetAsync needs to tear down the stale CodeMirror
+    // mount so the next render doesn't shovel new content into the previous
+    // template's editor instance.
+    private string? _lastHydratedKey;
     private List<ALDevToolbox.Domain.Entities.Module> _availableModules = new();
     private List<ApplicationVersion> _availableApplicationVersions = new();
     private ConfirmDialog? _deleteConfirm;
@@ -769,6 +775,21 @@
         _fieldErrors = new Dictionary<string, string>();
         _tomlIssues = new();
         _editorIssueSyncPending = false;
+
+        // Route changed (or we landed on /new from another template's edit
+        // page). Drop the CodeMirror mount and the cached TOML so the next
+        // render doesn't pump fresh content into the previous template's
+        // editor instance.
+        if (_lastHydratedKey != Key)
+        {
+            if (_editorId != 0)
+            {
+                await DisposeEditorAsync();
+            }
+            _editorMountedToml = string.Empty;
+            _toml = string.Empty;
+            _lastHydratedKey = Key;
+        }
 
         // Module list drives the default-module multi-select. Include
         // deprecated entries so admins can keep them ticked on legacy

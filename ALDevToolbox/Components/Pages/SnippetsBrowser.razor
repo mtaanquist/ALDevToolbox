@@ -1,6 +1,7 @@
 @page "/snippets"
 @attribute [Authorize]
 @rendermode InteractiveServer
+@implements IDisposable
 @inject SnippetService Snippets
 @inject NavigationManager Nav
 @using ALDevToolbox.Domain.Entities
@@ -103,6 +104,7 @@
     private void DebouncedReload()
     {
         _debounce?.Cancel();
+        _debounce?.Dispose();
         _debounce = new CancellationTokenSource();
         var token = _debounce.Token;
         _ = Task.Run(async () =>
@@ -121,5 +123,11 @@
     {
         _results = await Snippets.SearchAsync(_query, _includeDeprecated);
         StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        _debounce?.Cancel();
+        _debounce?.Dispose();
     }
 }
