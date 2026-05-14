@@ -3,6 +3,7 @@ using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
+using ALDevToolbox.Services.Account;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -20,7 +21,7 @@ internal static class AccountEndpoints
         // seeding for orgs being touched by their first admin login.
         app.MapPost("/auth/login", async (
             HttpContext ctx,
-            AccountService accounts,
+            AuthenticationService auth,
             IAntiforgery antiforgery,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
@@ -35,7 +36,7 @@ internal static class AccountEndpoints
             var safeReturn = ResolveSafeReturn(requestedReturn);
             var ip = ResolveIp(ctx);
 
-            var (outcome, user) = await accounts.TryLoginAsync(email, password, ip, ct);
+            var (outcome, user) = await auth.TryLoginAsync(email, password, ip, ct);
             if (outcome != LoginOutcome.Success || user is null)
             {
                 var code = outcome switch
@@ -147,7 +148,7 @@ internal static class AccountEndpoints
 
         app.MapPost("/auth/forgot-password", async (
             HttpContext ctx,
-            AccountService accounts,
+            PasswordResetService passwordReset,
             AppDbContext db,
             IEmailService email,
             IAntiforgery antiforgery,
@@ -165,7 +166,7 @@ internal static class AccountEndpoints
             var addr = form["Email"].ToString();
             try
             {
-                var token = await accounts.CreatePasswordResetTokenAsync(addr, ct);
+                var token = await passwordReset.CreatePasswordResetTokenAsync(addr, ct);
                 if (token is not null)
                 {
                     var user = await db.Users.IgnoreQueryFilters().FirstAsync(u => u.Email == addr.Trim().ToLowerInvariant(), ct);
@@ -184,10 +185,10 @@ internal static class AccountEndpoints
         // /auth/login/magic — issues a single-use magic-link sign-in token.
         // Always redirects to "ok=1" so the response is identical for known
         // and unknown emails. Per-email and per-IP rate limits applied in
-        // AccountService.CreateMagicLoginTokenAsync.
+        // PasswordResetService.CreateMagicLoginTokenAsync.
         app.MapPost("/auth/login/magic", async (
             HttpContext ctx,
-            AccountService accounts,
+            PasswordResetService passwordReset,
             AppDbContext db,
             IEmailService email,
             IAntiforgery antiforgery,
@@ -205,7 +206,7 @@ internal static class AccountEndpoints
             var addr = form["Email"].ToString();
             try
             {
-                var token = await accounts.CreateMagicLoginTokenAsync(addr, ResolveIp(ctx), ct);
+                var token = await passwordReset.CreateMagicLoginTokenAsync(addr, ResolveIp(ctx), ct);
                 if (token is not null)
                 {
                     var user = await db.Users.IgnoreQueryFilters()
@@ -224,7 +225,7 @@ internal static class AccountEndpoints
 
         app.MapGet("/auth/login/magic/consume", async (
             HttpContext ctx,
-            AccountService accounts,
+            PasswordResetService passwordReset,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -237,7 +238,7 @@ internal static class AccountEndpoints
             }
             try
             {
-                var user = await accounts.ConsumeMagicLoginTokenAsync(token, ct);
+                var user = await passwordReset.ConsumeMagicLoginTokenAsync(token, ct);
                 await ctx.SignInAsync(
                     CookieAuthenticationDefaults.AuthenticationScheme,
                     new ClaimsPrincipal(BuildIdentity(user)));
@@ -290,7 +291,7 @@ internal static class AccountEndpoints
         // /auth/reset-password — consumes the token and applies the new password.
         app.MapPost("/auth/reset-password", async (
             HttpContext ctx,
-            AccountService accounts,
+            PasswordResetService passwordReset,
             IAntiforgery antiforgery,
             CancellationToken ct) =>
         {
@@ -300,7 +301,7 @@ internal static class AccountEndpoints
             var password = form["Password"].ToString();
             try
             {
-                await accounts.ConsumePasswordResetTokenAsync(token, password, ct);
+                await passwordReset.ConsumePasswordResetTokenAsync(token, password, ct);
                 ctx.Response.Redirect($"{RouteConstants.Login}?{RouteConstants.OkQuery}=password-reset");
             }
             catch (PlanValidationException ex)

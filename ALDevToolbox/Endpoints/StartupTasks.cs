@@ -18,7 +18,7 @@ internal static class StartupTasks
         using var scope = app.Services.CreateScope();
         var stopping = app.Lifetime.ApplicationStopping;
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var accounts = scope.ServiceProvider.GetRequiredService<AccountService>();
+        var auth = scope.ServiceProvider.GetRequiredService<ALDevToolbox.Services.Account.AuthenticationService>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
         await db.Database.MigrateAsync(stopping);
 
@@ -53,7 +53,7 @@ internal static class StartupTasks
         var anyUsers = await db.Users.IgnoreQueryFilters().AnyAsync(stopping);
         if (!anyUsers && !string.IsNullOrWhiteSpace(bootstrapEmail) && !string.IsNullOrWhiteSpace(bootstrapPassword))
         {
-            var hash = accounts.HashPassword(bootstrapPassword);
+            var hash = auth.HashPassword(bootstrapPassword);
             db.Users.Add(new User
             {
                 OrganizationId = defaultOrg.Id,
