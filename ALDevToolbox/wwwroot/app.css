@@ -2890,7 +2890,9 @@ ul.form-field-error {
 }
 
 .inspector-panel {
-    flex: 0 0 320px;
+    /* Scale with viewport — narrow browser still gets the minimum, wide
+       monitors get more room for reference snippets. */
+    flex: 0 0 clamp(280px, 28vw, 520px);
     display: flex;
     flex-direction: column;
     height: 75vh;

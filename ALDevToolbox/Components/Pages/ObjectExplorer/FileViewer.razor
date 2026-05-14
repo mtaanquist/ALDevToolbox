@@ -7,6 +7,7 @@
 @implements IDisposable
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Services.Al
 
 @*
     The body splits into the code viewer on the left and the inspector panel
@@ -52,8 +53,8 @@
                     }
                     <span>
                         · <strong>Cmd/Ctrl-click</strong> any name to go to its definition
-                        · <strong>Right-click</strong> for Go to definition + Find references
-                        · <strong>Right rail</strong> for outline + reference results
+                        · <strong>Right-click</strong> for Go to definition, Find references, Find in file
+                        · <strong>Right rail</strong> for outline + results
                     </span>
                 </p>
             </div>
@@ -89,6 +90,7 @@
                         Resolvables="_resolvables"
                         OnFindReferences="OnFindReferences"
                         OnGoToDefinition="OnGoToDefinition"
+                        OnFindInFile="OnFindInFile"
                         ScrollToLine="_initialScrollLine" />
 
             <InspectorPanel Stack="_panelHistory.Stack"
@@ -126,6 +128,11 @@
     {
         await LoadAsync();
         _locationChangedSubscription = Nav.RegisterLocationChangingHandler(OnLocationChanging);
+        // LocationChanged is the post-navigation event. It fires reliably for
+        // fragment-only changes, where LocationChangingHandler doesn't always
+        // — this is the path that catches an outline-link click or a Go to
+        // definition that lands inside the currently mounted file.
+        Nav.LocationChanged += OnLocationChanged;
     }
 
     protected override async Task OnParametersSetAsync()
@@ -210,6 +217,17 @@
 
     private void PopPanelTo(int index) => _panelHistory.PopTo(index);
 
+    private void OnFindInFile(CodeViewerClick click)
+    {
+        // Extract the token at the click position so the panel has the actual
+        // word to search for — the JS side only sees line/column. The locator
+        // already handles quoted identifiers (Sales-Post) and bare ones.
+        if (_file is null) return;
+        var inspected = AlGoToDefinitionLocator.Inspect(_file.Content, click.Line, click.Column);
+        if (inspected is null || string.IsNullOrWhiteSpace(inspected.Word)) return;
+        _panelHistory.Push(new FileSearchPanelView(inspected.Word));
+    }
+
     private async Task OnGoToDefinition(CodeViewerClick click)
     {
         _lastDefinitionMissed = null;
@@ -243,8 +261,26 @@
         return ValueTask.CompletedTask;
     }
 
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        // Post-navigation safety net: LocationChangingHandler in Blazor Server
+        // can miss fragment-only updates, leaving the editor stuck on the
+        // previous line. LocationChanged always fires, so this is the path
+        // that consistently catches "Go to definition on a target in the
+        // currently mounted file".
+        if (_file is null) return;
+        var path = $"/object-explorer/{VersionId}/files/{FileId}";
+        // e.Location is an absolute URI; check the relative-path slice.
+        if (!e.Location.Contains(path, StringComparison.Ordinal)) return;
+        var newScroll = ExtractLineAnchor(e.Location);
+        if (newScroll == _initialScrollLine) return;
+        _initialScrollLine = newScroll;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
     public void Dispose()
     {
         _locationChangedSubscription?.Dispose();
+        Nav.LocationChanged -= OnLocationChanged;
     }
 }

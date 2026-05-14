@@ -1,11 +1,16 @@
 namespace ALDevToolbox.Services.Al;
 
 /// <summary>
-/// Scans an AL file for identifier tokens (bare or double-quoted) whose name
-/// matches a known vocabulary of resolvable names — object names declared in
-/// the version and procedure/event symbols callable from the file. The result
-/// drives the "this name has a definition you can jump to" underline in the
-/// Object Explorer file viewer.
+/// Scans an AL file for identifier tokens whose name matches the resolvable
+/// vocabulary, and emits the ranges that the file viewer should underline.
+/// Two classes of resolvable token are recognised:
+///
+/// - <b>Symbol references</b> (procedures, event publishers, event subscribers).
+///   These resolve standalone — a bare <c>Post(</c> call site is jumpable.
+/// - <b>Object references</b> (table, codeunit, page, etc. names). These only
+///   resolve when preceded by an object keyword (<c>Record "Sales Header"</c>,
+///   <c>Codeunit::"Sales-Post"</c>) — a bare <c>Item</c> appearing as a
+///   variable name or text would otherwise drag a misleading underline.
 ///
 /// Not a full parser. Comments and string literals are stripped (replaced
 /// with spaces so column offsets stay stable) before tokenising. Comparisons
@@ -13,15 +18,25 @@ namespace ALDevToolbox.Services.Al;
 /// </summary>
 public static class AlResolvableTokenScanner
 {
+    private static readonly HashSet<string> ObjectKeywords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "codeunit", "table", "page", "report", "query", "xmlport",
+        "enum", "interface", "permissionset", "profile", "controladdin",
+        "record", "recordref", "fieldref",
+        "pageextension", "tableextension", "reportextension", "enumextension",
+        "permissionsetextension",
+    };
+
     /// <summary>
-    /// Walks <paramref name="source"/> and emits one range per identifier
-    /// whose unquoted name appears in <paramref name="vocabulary"/>. Ranges
-    /// are 1-based and emitted in document order (ascending line then column).
+    /// Walks <paramref name="source"/> and emits one range per identifier whose
+    /// unquoted name appears in either vocabulary set. Ranges are 1-based and
+    /// emitted in document order (ascending line then column).
     /// </summary>
     public static IReadOnlyList<ResolvableTokenRange> Scan(
-        string source, IReadOnlySet<string> vocabulary)
+        string source, ResolvableVocabulary vocabulary)
     {
-        if (string.IsNullOrEmpty(source) || vocabulary.Count == 0)
+        if (string.IsNullOrEmpty(source)) return Array.Empty<ResolvableTokenRange>();
+        if (vocabulary.ObjectNames.Count == 0 && vocabulary.SymbolNames.Count == 0)
         {
             return Array.Empty<ResolvableTokenRange>();
         }
@@ -43,7 +58,7 @@ public static class AlResolvableTokenScanner
 
     private static void ScanLine(
         string lineText, int oneBasedLineNumber,
-        IReadOnlySet<string> vocabulary, List<ResolvableTokenRange> ranges)
+        ResolvableVocabulary vocab, List<ResolvableTokenRange> ranges)
     {
         var i = 0;
         var n = lineText.Length;
@@ -56,7 +71,7 @@ public static class AlResolvableTokenScanner
                 var end = lineText.IndexOf('"', i + 1);
                 if (end < 0) break;
                 var name = lineText.Substring(i + 1, end - i - 1);
-                if (name.Length > 0 && vocabulary.Contains(name))
+                if (name.Length > 0 && IsResolvable(lineText, i, name, vocab))
                 {
                     ranges.Add(new ResolvableTokenRange(
                         oneBasedLineNumber, i + 1, end + 2));
@@ -70,7 +85,7 @@ public static class AlResolvableTokenScanner
                 var start = i;
                 while (i < n && IsIdentifierChar(lineText[i])) i++;
                 var name = lineText.Substring(start, i - start);
-                if (vocabulary.Contains(name))
+                if (IsResolvable(lineText, start, name, vocab))
                 {
                     ranges.Add(new ResolvableTokenRange(
                         oneBasedLineNumber, start + 1, i + 1));
@@ -80,6 +95,42 @@ public static class AlResolvableTokenScanner
 
             i++;
         }
+    }
+
+    private static bool IsResolvable(
+        string lineText, int tokenStart, string name, ResolvableVocabulary vocab)
+    {
+        // Symbol references (procedures, events) resolve standalone — a bare
+        // `Post(` or `OnAfterPost(` is enough.
+        if (vocab.SymbolNames.Contains(name)) return true;
+
+        // Object references only resolve in a keyword-preceded context:
+        // `Record "Sales Header"`, `Codeunit::"Sales-Post"`. Without the
+        // context, the token is most likely a variable name or unrelated
+        // text, and underlining it sets the wrong expectation.
+        if (vocab.ObjectNames.Contains(name))
+        {
+            return HasObjectKeywordContext(lineText, tokenStart);
+        }
+
+        return false;
+    }
+
+    private static bool HasObjectKeywordContext(string lineText, int tokenStart)
+    {
+        var i = tokenStart - 1;
+        while (i >= 0 && char.IsWhiteSpace(lineText[i])) i--;
+        if (i < 0) return false;
+
+        // `::` operator — typed reference, e.g. `Codeunit::"Sales-Post"`.
+        if (i >= 1 && lineText[i] == ':' && lineText[i - 1] == ':') return true;
+
+        // Trailing identifier — is it an object keyword like `Codeunit`?
+        if (!IsIdentifierChar(lineText[i])) return false;
+        var kend = i;
+        while (kend >= 0 && IsIdentifierChar(lineText[kend])) kend--;
+        var keyword = lineText.Substring(kend + 1, i - kend);
+        return ObjectKeywords.Contains(keyword);
     }
 
     private static bool IsIdentifierStart(char c) => char.IsLetter(c) || c == '_';
@@ -150,6 +201,17 @@ public static class AlResolvableTokenScanner
         return sb.ToString();
     }
 }
+
+/// <summary>
+/// Vocabulary buckets fed to <see cref="AlResolvableTokenScanner.Scan"/>.
+/// <see cref="ObjectNames"/> are file-level identifiers (Sales Header,
+/// Sales-Post) — only resolvable in a keyword-preceded context.
+/// <see cref="SymbolNames"/> are callable identifiers (procedures, events)
+/// — resolvable standalone.
+/// </summary>
+public sealed record ResolvableVocabulary(
+    IReadOnlySet<string> ObjectNames,
+    IReadOnlySet<string> SymbolNames);
 
 /// <summary>
 /// One range that the file viewer should underline as resolvable. Columns are

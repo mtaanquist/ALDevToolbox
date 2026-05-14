@@ -50,6 +50,13 @@
     [Parameter] public EventCallback<CodeViewerClick> OnGoToDefinition { get; set; }
 
     /// <summary>
+    /// Invoked when the user picks "Find in this file" from the right-click
+    /// menu. The callback receives the click position; the page extracts the
+    /// word and runs the in-file occurrence search.
+    /// </summary>
+    [Parameter] public EventCallback<CodeViewerClick> OnFindInFile { get; set; }
+
+    /// <summary>
     /// Optional 1-based line number to scroll to (and flash) after mount.
     /// FileViewer reads this from the URL's <c>#L&lt;n&gt;</c> fragment.
     /// </summary>
@@ -136,6 +143,14 @@
         if (OnGoToDefinition.HasDelegate)
         {
             await OnGoToDefinition.InvokeAsync(new CodeViewerClick(line, column));
+        }
+    }
+
+    internal async Task TriggerFindInFileAsync(int line, int column)
+    {
+        if (OnFindInFile.HasDelegate)
+        {
+            await OnFindInFile.InvokeAsync(new CodeViewerClick(line, column));
         }
     }
 

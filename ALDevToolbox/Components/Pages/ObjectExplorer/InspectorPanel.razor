@@ -51,6 +51,10 @@
         {
             @RenderReferences(refs)
         }
+        else if (Stack[Cursor] is FileSearchPanelView search)
+        {
+            @RenderFileSearch(search)
+        }
     </div>
 </aside>
 
@@ -71,6 +75,8 @@
     private long _lastFileId;
     // Per-file cache of references results; null entry means "loading".
     private Dictionary<long, BaseAppReferenceResult?> _referencesCache = new();
+    // Per-file cache of in-file search hits; null entry means "loading".
+    private Dictionary<string, FileSearchResult?> _fileSearchCache = new(StringComparer.Ordinal);
 
     protected override async Task OnParametersSetAsync()
     {
@@ -79,6 +85,7 @@
             _lastFileId = FileId;
             _outlineFilter = string.Empty;
             _referencesCache.Clear();
+            _fileSearchCache.Clear();
         }
 
         if (Stack.Count == 0) return;
@@ -91,12 +98,20 @@
             var result = await BaseApp.FindReferencesAsync(refs.SymbolId);
             _referencesCache[refs.SymbolId] = result;
         }
+        else if (Stack[Cursor] is FileSearchPanelView search && !_fileSearchCache.ContainsKey(search.Word))
+        {
+            _fileSearchCache[search.Word] = null;
+            StateHasChanged();
+            var result = await BaseApp.FindInFileAsync(FileId, search.Word);
+            _fileSearchCache[search.Word] = result;
+        }
     }
 
     private static string CrumbLabel(InspectorPanelView view) => view switch
     {
         OutlinePanelView => "Outline",
         ReferencesPanelView r => $"Refs: {r.SymbolName}",
+        FileSearchPanelView s => $"In file: {s.Word}",
         _ => "?",
     };
 
@@ -160,7 +175,7 @@
                                     <a class="inspector-panel__item-link"
                                        href="@($"/object-explorer/{VersionId}/files/{FileId}#L{sym.LineNumber}")">
                                         <span class="inspector-panel__item-name">@sym.Name</span>
-                                        <span class="muted small inspector-panel__item-line">L@sym.LineNumber</span>
+                                        <span class="muted small inspector-panel__item-line">L@(sym.LineNumber)</span>
                                     </a>
                                     @if (CanFindReferences(sym.Kind))
                                     {
@@ -240,6 +255,42 @@
         }
     };
 
+    private RenderFragment RenderFileSearch(FileSearchPanelView search) => __builder =>
+    {
+        var hasEntry = _fileSearchCache.TryGetValue(search.Word, out var result);
+        if (!hasEntry || result is null)
+        {
+            <p class="muted small inspector-panel__empty">Searching…</p>
+            return;
+        }
+
+        <p class="muted small inspector-panel__refs-meta">
+            Occurrences of <code>@search.Word</code> in this file
+            <span class="muted small">· @result.Hits.Count hit@(result.Hits.Count == 1 ? "" : "s")</span>
+        </p>
+
+        if (result.Hits.Count == 0)
+        {
+            <p class="muted small inspector-panel__empty">
+                No occurrences found.
+            </p>
+            return;
+        }
+
+        <ul class="inspector-panel__refs-hits">
+            @foreach (var hit in result.Hits)
+            {
+                <li>
+                    <a class="inspector-panel__refs-hit"
+                       href="@($"/object-explorer/{VersionId}/files/{FileId}#L{hit.LineNumber}")">
+                        <span class="inspector-panel__refs-hit-line">L@(hit.LineNumber)</span>
+                        <code class="inspector-panel__refs-hit-snippet">@hit.Snippet</code>
+                    </a>
+                </li>
+            }
+        </ul>
+    };
+
     private RenderFragment RenderHits(IReadOnlyList<BaseAppReferenceHit> hits) => __builder =>
     {
         var grouped = hits
@@ -265,7 +316,7 @@
                             <li>
                                 <a class="inspector-panel__refs-hit"
                                    href="@($"/object-explorer/{VersionId}/files/{hit.FileId}#L{hit.LineNumber}")">
-                                    <span class="inspector-panel__refs-hit-line">L@hit.LineNumber</span>
+                                    <span class="inspector-panel__refs-hit-line">L@(hit.LineNumber)</span>
                                     <code class="inspector-panel__refs-hit-snippet">@hit.Snippet</code>
                                 </a>
                             </li>

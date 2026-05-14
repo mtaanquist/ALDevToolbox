@@ -371,6 +371,14 @@ export function mountReadOnly(container, value, language, options) {
             action: () => opts.dotNetRef.invokeMethodAsync(
                 "OnGoToDefinition", line.number, colInLine),
         });
+        // "Find in this file" is the only gesture for variables / fields that
+        // don't have a symbol-table entry. Always offered so users have a
+        // reliable way to scan within a long file.
+        items.push({
+            label: "Find in this file",
+            action: () => opts.dotNetRef.invokeMethodAsync(
+                "OnFindInFile", line.number, colInLine),
+        });
 
         event.preventDefault();
         closeMenu();

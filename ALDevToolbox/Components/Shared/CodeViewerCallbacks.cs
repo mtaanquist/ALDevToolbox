@@ -23,6 +23,10 @@ public sealed class CodeViewerCallbacks
     [JSInvokable]
     public Task OnGoToDefinition(int line, int column) =>
         _owner.TriggerGoToDefinitionAsync(line, column);
+
+    [JSInvokable]
+    public Task OnFindInFile(int line, int column) =>
+        _owner.TriggerFindInFileAsync(line, column);
 }
 
 /// <summary>

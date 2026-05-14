@@ -16,6 +16,13 @@ public sealed record OutlinePanelView : InspectorPanelView;
 public sealed record ReferencesPanelView(long SymbolId, string SymbolName, string SymbolKind) : InspectorPanelView;
 
 /// <summary>
+/// In-file occurrences of a literal word. Backs the "Find in this file"
+/// gesture — useful for variables, fields, and labels that <c>BaseAppSymbol</c>
+/// doesn't index. Hits are computed lazily on the panel.
+/// </summary>
+public sealed record FileSearchPanelView(string Word) : InspectorPanelView;
+
+/// <summary>
 /// Mutable navigation history backing the inspector panel. Mirrors the
 /// browser's back/forward stack: pushing always truncates any forward entries
 /// past the current cursor, popping just moves the cursor without forgetting
