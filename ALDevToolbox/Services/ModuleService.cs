@@ -208,10 +208,13 @@ public class ModuleService
         RequireOrganizationId();
         var succeeded = new List<int>();
         var failures = new List<BulkActionFailure>();
-        foreach (var id in ids.Distinct())
+        var distinctIds = ids.Distinct().ToList();
+        var rows = await _db.Modules
+            .Where(m => distinctIds.Contains(m.Id))
+            .ToDictionaryAsync(m => m.Id, ct);
+        foreach (var id in distinctIds)
         {
-            var row = await _db.Modules.FirstOrDefaultAsync(m => m.Id == id, ct);
-            if (row is null)
+            if (!rows.TryGetValue(id, out var row))
             {
                 failures.Add(new BulkActionFailure(id, $"#{id}", "Not found in this organisation."));
                 continue;

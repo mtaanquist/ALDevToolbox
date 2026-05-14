@@ -722,10 +722,13 @@ public class TemplateService
         RequireOrganizationId();
         var succeeded = new List<int>();
         var failures = new List<BulkActionFailure>();
-        foreach (var id in ids.Distinct())
+        var distinctIds = ids.Distinct().ToList();
+        var rows = await _db.RuntimeTemplates
+            .Where(t => distinctIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, ct);
+        foreach (var id in distinctIds)
         {
-            var row = await _db.RuntimeTemplates.FirstOrDefaultAsync(t => t.Id == id, ct);
-            if (row is null)
+            if (!rows.TryGetValue(id, out var row))
             {
                 failures.Add(new BulkActionFailure(id, $"#{id}", "Not found in this organisation."));
                 continue;
