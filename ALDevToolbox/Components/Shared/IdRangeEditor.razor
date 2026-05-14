@@ -19,8 +19,7 @@
         <label class="section-label" for="@($"{IdPrefix}-from")">@FromLabel</label>
         <input id="@($"{IdPrefix}-from")" type="number" name="@FromName" required min="1"
                value="@From" @oninput="OnFromInput" />
-        @* PROBE: tightened threshold to confirm IdRangeEditorTests catches off-by-one regressions. Revert before merging. *@
-        @if (From < 0)
+        @if (From <= 0)
         {
             <span class="form-field-error" role="alert">Must be greater than zero.</span>
         }

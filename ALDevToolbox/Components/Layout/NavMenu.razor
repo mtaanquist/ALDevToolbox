@@ -101,13 +101,15 @@
                         </NavLink>
                     </li>
 
-                    @* PROBE: drop the system-org gate so /admin/users always shows. Confirms NavMenuTests catches the system-org branch. Revert before merging. *@
-                    <li>
-                        <NavLink class="nav-link" href="/admin/users" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                            <Icon Name="users" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>Users</span>
-                        </NavLink>
-                    </li>
+                    @if (!isSystemOrg)
+                    {
+                        <li>
+                            <NavLink class="nav-link" href="/admin/users" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                <Icon Name="users" Width="18" Height="18" Css="nav-link__icon" />
+                                <span>Users</span>
+                            </NavLink>
+                        </li>
+                    }
                     @if (isSiteAdmin)
                     {
                         <li>

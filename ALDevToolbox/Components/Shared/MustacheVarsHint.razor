@@ -21,8 +21,7 @@
         <code>{{publisher}}</code>.
     </p>
     <dl class="mustache-hint__list">
-        @* PROBE: leaks per-file variables to confirm MustacheVarsHintTests catches drift. Revert before merging. *@
-        @foreach (var v in MustacheVariableCatalog.All)
+        @foreach (var v in MustacheVariableCatalog.ForAdminContent)
         {
             <dt><code>@($"{{{{{v.Name}}}}}")</code></dt>
             <dd>@v.Caption</dd>
