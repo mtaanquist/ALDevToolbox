@@ -277,6 +277,13 @@ export function mount(container, initialValue, language) {
 export function mountReadOnly(container, value, language, options) {
     if (!container) return 0;
     const id = nextId++;
+    console.log(`[CV mountReadOnly id=${id}]`, {
+        contentLength: (value ?? "").length,
+        language,
+        scrollToLine: options?.scrollToLine,
+        declarations: options?.declarations?.length,
+        resolvables: options?.resolvables?.length,
+    });
     const themeCompartment = new Compartment();
     const initial = value ?? "";
     const lang = typeof language === "string" ? language : "al";
@@ -462,37 +469,61 @@ export function mountReadOnly(container, value, language, options) {
 
 // Public: scroll the editor to a 1-based line number, with an optional
 // short fade-out highlight so the eye lands in the right place.
-//
-// Bypasses CodeMirror's scrollIntoView effect entirely — every attempt
-// to use that effect from outside CM's own update cycle was leaving
-// the viewport in a broken state for reasons we couldn't pin down.
-// Instead, we compute the line's pixel offset via view.lineBlockAt
-// (which uses CM's internal height map, falling back to estimates for
-// unmeasured lines) and set view.scrollDOM.scrollTop directly. CM
-// reacts to the scroll event the same way it does to a user scroll,
-// rendering the now-visible viewport. The double-pass lets the second
-// scroll correct against measurements CM updated during the first.
 export function scrollToLine(id, lineNumber, flash) {
+    const tag = `[CV scrollToLine id=${id} line=${lineNumber}]`;
     const e = editors.get(id);
-    if (!e) return;
+    if (!e) {
+        console.warn(`${tag} no editor for id`);
+        return;
+    }
     const view = e.view;
-    if (!Number.isInteger(lineNumber) || lineNumber < 1) return;
+    if (!Number.isInteger(lineNumber) || lineNumber < 1) {
+        console.warn(`${tag} invalid line number`);
+        return;
+    }
     const totalLines = view.state.doc.lines;
     const safeLine = Math.min(lineNumber, totalLines);
+    console.log(`${tag} entry`, {
+        totalLines,
+        safeLine,
+        flash,
+        scrollDOMConnected: view.scrollDOM.isConnected,
+        contentDOMConnected: view.contentDOM.isConnected,
+        viewportFrom: view.viewport.from,
+        viewportTo: view.viewport.to,
+        scrollTop: view.scrollDOM.scrollTop,
+        scrollHeight: view.scrollDOM.scrollHeight,
+        clientHeight: view.scrollDOM.clientHeight,
+    });
 
-    const doScroll = () => {
+    const doScroll = (pass) => {
         const line = view.state.doc.line(safeLine);
         const block = view.lineBlockAt(line.from);
         const scroller = view.scrollDOM;
         const scrollMax = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
         const target = block.top - scroller.clientHeight / 2 + block.height / 2;
-        scroller.scrollTop = Math.max(0, Math.min(scrollMax, target));
+        const clamped = Math.max(0, Math.min(scrollMax, target));
+        const before = scroller.scrollTop;
+        scroller.scrollTop = clamped;
+        console.log(`${tag} pass${pass}`, {
+            blockTop: block.top,
+            blockHeight: block.height,
+            scrollHeight: scroller.scrollHeight,
+            clientHeight: scroller.clientHeight,
+            scrollMax,
+            target,
+            clamped,
+            scrollTopBefore: before,
+            scrollTopAfter: scroller.scrollTop,
+            viewportFrom: view.viewport.from,
+            viewportTo: view.viewport.to,
+        });
     };
 
     requestAnimationFrame(() => {
-        doScroll();
+        doScroll(1);
         requestAnimationFrame(() => {
-            doScroll();
+            doScroll(2);
             if (!flash) return;
             requestAnimationFrame(() => {
                 const line = view.state.doc.line(safeLine);
@@ -501,6 +532,12 @@ export function scrollToLine(id, lineNumber, flash) {
                 while (lineEl && !(lineEl.classList && lineEl.classList.contains("cm-line"))) {
                     lineEl = lineEl.parentElement;
                 }
+                console.log(`${tag} flash`, {
+                    domNodeFound: !!dom?.node,
+                    lineElFound: !!lineEl,
+                    scrollDOMConnected: view.scrollDOM.isConnected,
+                    contentDOMConnected: view.contentDOM.isConnected,
+                });
                 if (!lineEl) return;
                 lineEl.classList.remove("cm-line--flash");
                 // eslint-disable-next-line no-unused-expressions
@@ -641,9 +678,18 @@ export function getValue(id) {
 
 export function setValue(id, value) {
     const e = editors.get(id);
-    if (!e) return;
+    if (!e) {
+        console.warn(`[CV setValue id=${id}] no editor for id`);
+        return;
+    }
     const next = value ?? "";
-    if (e.view.state.doc.toString() === next) return;
+    const sameContent = e.view.state.doc.toString() === next;
+    console.log(`[CV setValue id=${id}]`, {
+        valueLength: next.length,
+        sameContent,
+        currentDocLines: e.view.state.doc.lines,
+    });
+    if (sameContent) return;
     e.view.dispatch({
         changes: { from: 0, to: e.view.state.doc.length, insert: next },
     });
@@ -682,8 +728,43 @@ export function setIssues(id, issues) {
 
 export function dispose(id) {
     const e = editors.get(id);
-    if (!e) return;
-    try { e.dispose(); } catch { /* ignore */ }
+    if (!e) {
+        console.warn(`[CV dispose id=${id}] no editor for id`);
+        return;
+    }
+    console.log(`[CV dispose id=${id}]`, {
+        scrollDOMConnected: e.view?.scrollDOM?.isConnected,
+        contentDOMConnected: e.view?.contentDOM?.isConnected,
+    });
+    try { e.dispose(); } catch (err) { console.error(`[CV dispose id=${id}] threw`, err); }
     editors.delete(id);
     syncBeforeUnload();
 }
+
+// Expose a global inspector so the user can poke at the editor state
+// from the console while the bug is on screen:
+//   __cvInspect()        — dump every live editor's scroll / viewport state
+//   __cvInspect(true)    — also dump a snippet of contentDOM.outerHTML
+window.__cvInspect = function (verbose) {
+    for (const [id, e] of editors.entries()) {
+        const view = e.view;
+        const snapshot = {
+            id,
+            scrollTop: view.scrollDOM.scrollTop,
+            scrollHeight: view.scrollDOM.scrollHeight,
+            clientHeight: view.scrollDOM.clientHeight,
+            docLines: view.state.doc.lines,
+            viewport: `${view.viewport.from}..${view.viewport.to}`,
+            scrollDOMConnected: view.scrollDOM.isConnected,
+            contentDOMConnected: view.contentDOM.isConnected,
+            scrollDOMChildren: view.scrollDOM.children.length,
+            contentDOMChildren: view.contentDOM.children.length,
+            host: view.dom.parentElement?.className,
+        };
+        console.log("[CV inspect]", snapshot);
+        if (verbose) {
+            console.log("[CV inspect] scrollDOM.outerHTML head:",
+                view.scrollDOM.outerHTML.substring(0, 800));
+        }
+    }
+};
