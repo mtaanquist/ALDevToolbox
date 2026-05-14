@@ -18,11 +18,13 @@ App folders are relative to `ALDevToolbox/`.
 | `Components/Pages/`          | Routable pages (one `.razor` per route).                                     |
 | `Components/Layout/`         | Shell layout, sidebar, top bar, reconnect modal.                             |
 | `Components/Shared/`         | Reusable components (`TabBar`, future `FolderTreePreview`, `DependencyPicker`). |
+| `Endpoints/`                 | Minimal-API endpoint groups (`AccountEndpoints`, `GenerationEndpoints`, `SiteAdminEndpoints`, …) registered from `Program.cs` via `Map*Endpoints()` extensions. |
 | `Services/`                  | Application services (`GenerationService`, `TemplateImportService`, `TemplateService`, …). |
 | `Domain/Entities/`           | EF Core entity classes (mutable, persisted).                                 |
 | `Domain/ValueObjects/`       | Immutable records / JSON-mapped value objects, exceptions, plans.            |
 | `Domain/Seed/`               | Tomlyn POCOs that mirror the TOML schema for the admin editor and export.   |
 | `Data/`                      | `AppDbContext`, design-time factory, migrations.                             |
+| `Data/Configurations/`       | Per-entity `IEntityTypeConfiguration<T>` classes (one file per entity).      |
 | `Resources/`                 | Embedded static assets (ruleset, `.gitignore` template).                     |
 | `wwwroot/`                   | Global CSS, favicon.                                                         |
 
