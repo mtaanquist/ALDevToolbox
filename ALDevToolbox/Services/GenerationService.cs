@@ -313,7 +313,7 @@ public class GenerationService
     /// <see cref="EmittableExtension"/> carries a fresh GUID, its resolved
     /// id-range, the substituted display name, and the source folder tree.
     /// </summary>
-    private static List<EmittableExtension> BuildExtensionList(RuntimeTemplate template, ProjectPlan plan, IReadOnlyList<Module> modules)
+    private List<EmittableExtension> BuildExtensionList(RuntimeTemplate template, ProjectPlan plan, IReadOnlyList<Module> modules)
     {
         var selectedOptional = new HashSet<string>(plan.SelectedExtensionPaths, StringComparer.Ordinal);
         var list = new List<EmittableExtension>();
@@ -365,7 +365,7 @@ public class GenerationService
         return (cursor, cursor + size - 1, cursor + size);
     }
 
-    private static EmittableExtension BuildFromTemplate(WorkspaceExtension ext, RuntimeTemplate template, ProjectPlan plan, int from, int to)
+    private EmittableExtension BuildFromTemplate(WorkspaceExtension ext, RuntimeTemplate template, ProjectPlan plan, int from, int to)
     {
         var name = SubstituteScalar(ext.NameTemplate, plan, template);
         return new EmittableExtension(
@@ -387,7 +387,7 @@ public class GenerationService
                 .ToList());
     }
 
-    private static EmittableExtension BuildFromModule(Module module, RuntimeTemplate template, ProjectPlan plan, int from, int to)
+    private EmittableExtension BuildFromModule(Module module, RuntimeTemplate template, ProjectPlan plan, int from, int to)
     {
         // Module-cloned extension name defaults to "{{extension_prefix}} {module.name}".
         // The substitution happens up-front so the resolved name is stable for
