@@ -44,7 +44,9 @@ public sealed class AuthenticationRequiredTests : IDisposable
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Redirect, HttpStatusCode.BadRequest);
         if (response.StatusCode == HttpStatusCode.Redirect)
         {
-            response.Headers.Location!.OriginalString.Should().StartWith("/login");
+            // Cookie auth redirects to an absolute URL ("https://localhost/login?ReturnUrl=...");
+            // assert the login path is in there rather than pinning to a relative shape.
+            response.Headers.Location!.OriginalString.Should().Contain("/login");
         }
     }
 

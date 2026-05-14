@@ -51,7 +51,7 @@ public sealed class TemplatesBrowserTests : IDisposable
     [Fact]
     public void Empty_template_set_renders_a_useful_empty_state_with_a_link_to_the_admin_importer()
     {
-        var cut = _ctx.Render<TemplatesBrowser>(parameters => { });
+        var cut = _ctx.RenderComponent<TemplatesBrowser>();
 
         // Tick the dispatcher so OnInitializedAsync's await on the DB
         // settles before we assert; bUnit's WaitForAssertion handles the

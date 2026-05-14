@@ -106,7 +106,10 @@ public sealed class DataIntegrityTests : IDisposable
         del.Organizations.Remove(toDelete);
         Func<Task> save = () => del.SaveChangesAsync();
         var ex = await save.Should().ThrowAsync<DbUpdateException>();
+        // Postgres surfaces ON DELETE RESTRICT as 23001 (restrict_violation),
+        // not the more general 23503 (foreign_key_violation). Accept either —
+        // the contract is "the delete is refused", not the specific sql state.
         ex.Which.InnerException.Should().BeOfType<PostgresException>()
-            .Which.SqlState.Should().Be("23503");
+            .Which.SqlState.Should().BeOneOf("23001", "23503");
     }
 }
