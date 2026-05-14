@@ -77,7 +77,10 @@ public sealed class AdminConfigurationDefaultsTests : IDisposable
         cut.Find("#cfg-from").GetAttribute("value").Should().Be("80000");
         cut.Find("#cfg-to").GetAttribute("value").Should().Be("80999");
         cut.Find("#cfg-brief").GetAttribute("value").Should().Be("Acme customisations.");
-        cut.Find("#cfg-desc").TextContent.Should().Be("Long description here.");
+        // Blazor's @bind on a textarea emits the value via the value= attribute
+        // rather than inner content (the runtime sets the property after the
+        // browser hydrates); TextContent is empty in the initial render.
+        cut.Find("#cfg-desc").GetAttribute("value").Should().Be("Long description here.");
     }
 
     [Fact]
