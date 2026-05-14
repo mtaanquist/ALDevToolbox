@@ -13,7 +13,6 @@ internal sealed class BaseAppVersionConfiguration : IEntityTypeConfiguration<Bas
         entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
         entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
         entity.Property(e => e.Major).HasColumnName("major").IsRequired();
-        entity.Property(e => e.Minor).HasColumnName("minor").IsRequired();
         entity.Property(e => e.CumulativeUpdate).HasColumnName("cumulative_update").IsRequired();
         entity.Property(e => e.ApplicationVersionId).HasColumnName("application_version_id");
         entity.Property(e => e.Notes).HasColumnName("notes");
@@ -39,10 +38,10 @@ internal sealed class BaseAppVersionConfiguration : IEntityTypeConfiguration<Bas
             .HasForeignKey(f => f.VersionId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // One active version per (org, major, minor, cumulative_update).
-        // Filter on DeletedAt IS NULL so a soft-deleted row doesn't block
-        // re-importing the same CU.
-        entity.HasIndex(e => new { e.OrganizationId, e.Major, e.Minor, e.CumulativeUpdate })
+        // One active version per (org, major, cumulative_update). Filter
+        // on DeletedAt IS NULL so a soft-deleted row doesn't block re-importing
+        // the same CU.
+        entity.HasIndex(e => new { e.OrganizationId, e.Major, e.CumulativeUpdate })
             .HasFilter("deleted_at IS NULL")
             .IsUnique();
     }

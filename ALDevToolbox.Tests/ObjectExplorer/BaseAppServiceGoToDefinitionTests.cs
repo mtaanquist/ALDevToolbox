@@ -204,7 +204,7 @@ public sealed class BaseAppServiceGoToDefinitionTests : IDisposable
         }
         ms.Position = 0;
         var summary = await importer.ImportAsync(ms, new BaseAppImportRequest(
-            Major: major, Minor: 0, CumulativeUpdate: 0,
+            Major: major, CumulativeUpdate: 0,
             ApplicationVersionId: null, Notes: null, Mode: BaseAppImportMode.Reject));
         return summary.VersionId;
     }

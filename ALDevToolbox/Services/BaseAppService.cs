@@ -41,7 +41,6 @@ public class BaseAppService
             .AsNoTracking()
             .Where(v => v.DeletedAt == null)
             .OrderByDescending(v => v.Major)
-            .ThenByDescending(v => v.Minor)
             .ThenByDescending(v => v.CumulativeUpdate)
             .ToListAsync(ct);
     }
@@ -58,7 +57,9 @@ public class BaseAppService
     /// <summary>
     /// Returns one page of files for the browser table, applying optional
     /// filter and search terms. Search hits content, object name, and object
-    /// id (cast to text), reusing the trigram GIN indexes.
+    /// id. Content search is excluded so the browser stays focused on
+    /// "find an object"; the file viewer is where full-text search will
+    /// eventually live.
     /// </summary>
     public async Task<BaseAppFilePage> ListFilesAsync(
         int versionId, BaseAppFileFilter filter, int skip, int take, CancellationToken ct = default)
@@ -82,6 +83,12 @@ public class BaseAppService
             query = query.Where(f => f.Module == module);
         }
 
+        if (!string.IsNullOrWhiteSpace(filter.Namespace))
+        {
+            var ns = filter.Namespace.Trim();
+            query = query.Where(f => f.Namespace == ns);
+        }
+
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
             var trimmed = filter.Search.Trim();
@@ -90,20 +97,34 @@ public class BaseAppService
                 trimmed = trimmed.Substring(0, MaxSearchQueryLength);
             }
             var pattern = "%" + trimmed + "%";
-            // Try matching the raw search string as an object id too — when
-            // the user types "80" we want codeunit 80 to land top of the list.
             int.TryParse(trimmed, out var idCandidate);
             query = query.Where(f =>
                 EF.Functions.ILike(f.ObjectName, pattern)
-                || EF.Functions.ILike(f.Content, pattern)
                 || (idCandidate != 0 && f.ObjectId == idCandidate));
         }
 
         var total = await query.CountAsync(ct);
 
+        // Sort key chosen by the page; ascending or descending picked by the
+        // header click. Falls back to a stable secondary by ObjectName so the
+        // grid doesn't shuffle within ties between page loads.
+        query = (filter.SortBy, filter.SortDescending) switch
+        {
+            (BaseAppFileSort.ObjectName, true) => query.OrderByDescending(f => f.ObjectName),
+            (BaseAppFileSort.ObjectName, _) => query.OrderBy(f => f.ObjectName),
+            (BaseAppFileSort.ObjectId, true) => query.OrderByDescending(f => f.ObjectId).ThenBy(f => f.ObjectName),
+            (BaseAppFileSort.ObjectId, _) => query.OrderBy(f => f.ObjectId).ThenBy(f => f.ObjectName),
+            (BaseAppFileSort.Module, true) => query.OrderByDescending(f => f.Module).ThenBy(f => f.ObjectName),
+            (BaseAppFileSort.Module, _) => query.OrderBy(f => f.Module).ThenBy(f => f.ObjectName),
+            (BaseAppFileSort.Namespace, true) => query.OrderByDescending(f => f.Namespace).ThenBy(f => f.ObjectName),
+            (BaseAppFileSort.Namespace, _) => query.OrderBy(f => f.Namespace).ThenBy(f => f.ObjectName),
+            (BaseAppFileSort.LineCount, true) => query.OrderByDescending(f => f.LineCount).ThenBy(f => f.ObjectName),
+            (BaseAppFileSort.LineCount, _) => query.OrderBy(f => f.LineCount).ThenBy(f => f.ObjectName),
+            (_, true) => query.OrderByDescending(f => f.ObjectType).ThenByDescending(f => f.ObjectName),
+            _ => query.OrderBy(f => f.ObjectType).ThenBy(f => f.ObjectName),
+        };
+
         var rows = await query
-            .OrderBy(f => f.ObjectType)
-            .ThenBy(f => f.ObjectName)
             .Skip(skip)
             .Take(take)
             // Don't haul Content over the wire on list views — it's only
@@ -122,6 +143,18 @@ public class BaseAppService
             .ToListAsync(ct);
 
         return new BaseAppFilePage(rows, total);
+    }
+
+    /// <summary>Distinct namespaces in a version, sorted alphabetically.</summary>
+    public Task<List<string>> ListNamespacesAsync(int versionId, CancellationToken ct = default)
+    {
+        return _db.BaseAppFiles
+            .AsNoTracking()
+            .Where(f => f.VersionId == versionId && f.Namespace != null && f.Namespace != string.Empty)
+            .Select(f => f.Namespace!)
+            .Distinct()
+            .OrderBy(n => n)
+            .ToListAsync(ct);
     }
 
     /// <summary>
@@ -545,9 +578,26 @@ public class BaseAppService
 }
 
 /// <summary>Filter inputs from the version-browser table.</summary>
-public sealed record BaseAppFileFilter(string? ObjectType, string? Module, string? Search)
+public sealed record BaseAppFileFilter(
+    string? ObjectType = null,
+    string? Module = null,
+    string? Search = null,
+    string? Namespace = null,
+    BaseAppFileSort SortBy = BaseAppFileSort.ObjectType,
+    bool SortDescending = false)
 {
-    public static BaseAppFileFilter Empty { get; } = new(null, null, null);
+    public static BaseAppFileFilter Empty { get; } = new();
+}
+
+/// <summary>Sortable columns on the version-browser file table.</summary>
+public enum BaseAppFileSort
+{
+    ObjectType,
+    ObjectId,
+    ObjectName,
+    Module,
+    Namespace,
+    LineCount,
 }
 
 /// <summary>One page of file rows plus the unfiltered total count.</summary>

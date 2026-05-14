@@ -15,7 +15,7 @@
         <a href="/object-explorer">Object Explorer</a>
         <span>›</span>
         <a href="@($"/object-explorer/{VersionId}")">
-            @(_version is null ? VersionId.ToString() : $"{_version.Major}.{_version.Minor} CU{_version.CumulativeUpdate}")
+            @(_version is null ? VersionId.ToString() : $"BC {_version.Major}.{_version.CumulativeUpdate}")
         </a>
         <span>›</span>
         <span>@(_file?.ObjectName ?? "")</span>
@@ -43,14 +43,10 @@
                     {
                         <span> · @_file.Namespace</span>
                     }
-                    @if (_declarations.Count > 0)
-                    {
-                        <span> · <strong>Right-click</strong> a procedure name to find references · <strong>Cmd/Ctrl-click</strong> any name to go to its definition.</span>
-                    }
-                    else
-                    {
-                        <span> · <strong>Cmd/Ctrl-click</strong> a name to go to its definition.</span>
-                    }
+                    <span>
+                        · <strong>Cmd/Ctrl-click</strong> any name to go to its definition
+                        · <strong>Right-click</strong> for a context menu (Go to definition + Find references on procedure declarations).
+                    </span>
                 </p>
             </div>
 
@@ -63,7 +59,7 @@
                             <option value="">Pick a version…</option>
                             @foreach (var v in _otherVersions)
                             {
-                                <option value="@v.Id">@v.Major.@v.Minor CU@v.CumulativeUpdate</option>
+                                <option value="@v.Id">BC @v.Major.@v.CumulativeUpdate</option>
                             }
                         </select>
                     </label>

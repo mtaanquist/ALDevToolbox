@@ -31,10 +31,10 @@
             <span class="field__label">Search</span>
             <input type="search"
                    class="admin-search-input"
-                   placeholder="Codeunit name, procedure, variable…"
+                   placeholder="Object name or ID"
                    value="@_search"
                    @oninput="OnSearchChanged"
-                   aria-label="Search objects and content" />
+                   aria-label="Search by object name or ID" />
         </label>
 
         <label class="field">
@@ -64,6 +64,20 @@
                 }
             </select>
         </label>
+
+        <label class="field">
+            <span class="field__label">Namespace</span>
+            <select class="field__input" @bind="_namespace" @bind:after="ReloadAsync">
+                <option value="">All</option>
+                @if (_namespaces is not null)
+                {
+                    @foreach (var n in _namespaces)
+                    {
+                        <option value="@n">@n</option>
+                    }
+                }
+            </select>
+        </label>
     </div>
 
     @if (_page is null)
@@ -87,12 +101,12 @@
         <table class="data-table object-explorer__objects">
             <thead>
                 <tr>
-                    <th scope="col">Type</th>
-                    <th scope="col">ID</th>
-                    <th scope="col">Name</th>
-                    <th scope="col">Module</th>
-                    <th scope="col">Namespace</th>
-                    <th scope="col" class="num">Lines</th>
+                    @SortableHeader(BaseAppFileSort.ObjectType, "Type")
+                    @SortableHeader(BaseAppFileSort.ObjectId, "ID", numeric: true)
+                    @SortableHeader(BaseAppFileSort.ObjectName, "Name")
+                    @SortableHeader(BaseAppFileSort.Module, "Module")
+                    @SortableHeader(BaseAppFileSort.Namespace, "Namespace")
+                    @SortableHeader(BaseAppFileSort.LineCount, "Lines", numeric: true)
                 </tr>
             </thead>
             <tbody>
@@ -118,19 +132,24 @@
     private BaseAppVersion? _version;
     private List<string>? _objectTypes;
     private List<string>? _modules;
+    private List<string>? _namespaces;
     private BaseAppFilePage? _page;
     private string _search = string.Empty;
     private string _objectType = string.Empty;
     private string _module = string.Empty;
+    private string _namespace = string.Empty;
+    private BaseAppFileSort _sortBy = BaseAppFileSort.ObjectType;
+    private bool _sortDescending;
     private CancellationTokenSource? _debounce;
 
     private string PageHeading => _version is null
         ? "Object Explorer"
-        : $"Business Central {_version.Major}.{_version.Minor} · CU {_version.CumulativeUpdate}";
+        : $"Business Central {_version.Major}.{_version.CumulativeUpdate}";
 
     private bool HasFilters => !string.IsNullOrWhiteSpace(_search)
         || !string.IsNullOrWhiteSpace(_objectType)
-        || !string.IsNullOrWhiteSpace(_module);
+        || !string.IsNullOrWhiteSpace(_module)
+        || !string.IsNullOrWhiteSpace(_namespace);
 
     protected override async Task OnInitializedAsync()
     {
@@ -142,6 +161,7 @@
         }
         _objectTypes = await BaseApp.ListObjectTypesAsync(VersionId);
         _modules = await BaseApp.ListModulesAsync(VersionId);
+        _namespaces = await BaseApp.ListNamespacesAsync(VersionId);
         await ReloadAsync();
     }
 
@@ -174,7 +194,10 @@
         var filter = new BaseAppFileFilter(
             ObjectType: string.IsNullOrWhiteSpace(_objectType) ? null : _objectType,
             Module: string.IsNullOrWhiteSpace(_module) ? null : _module,
-            Search: string.IsNullOrWhiteSpace(_search) ? null : _search);
+            Search: string.IsNullOrWhiteSpace(_search) ? null : _search,
+            Namespace: string.IsNullOrWhiteSpace(_namespace) ? null : _namespace,
+            SortBy: _sortBy,
+            SortDescending: _sortDescending);
         _page = await BaseApp.ListFilesAsync(VersionId, filter, skip: 0, take: 500);
         StateHasChanged();
     }
@@ -183,6 +206,43 @@
     {
         Nav.NavigateTo($"/object-explorer/{VersionId}/files/{fileId}");
     }
+
+    private async Task ToggleSort(BaseAppFileSort column)
+    {
+        if (_sortBy == column)
+        {
+            _sortDescending = !_sortDescending;
+        }
+        else
+        {
+            _sortBy = column;
+            _sortDescending = false;
+        }
+        await ReloadAsync();
+    }
+
+    private RenderFragment SortableHeader(BaseAppFileSort column, string label, bool numeric = false) => builder =>
+    {
+        var classes = numeric ? "num" : null;
+        builder.OpenElement(0, "th");
+        builder.AddAttribute(1, "scope", "col");
+        if (classes is not null) builder.AddAttribute(2, "class", classes);
+        builder.OpenElement(3, "button");
+        builder.AddAttribute(4, "type", "button");
+        builder.AddAttribute(5, "class", "data-table__sort-button" + (_sortBy == column ? " is-active" : ""));
+        builder.AddAttribute(6, "onclick", EventCallback.Factory.Create(this, () => ToggleSort(column)));
+        builder.AddContent(7, label);
+        if (_sortBy == column)
+        {
+            builder.OpenElement(8, "span");
+            builder.AddAttribute(9, "class", "data-table__sort-indicator");
+            builder.AddAttribute(10, "aria-hidden", "true");
+            builder.AddContent(11, _sortDescending ? " ▼" : " ▲");
+            builder.CloseElement();
+        }
+        builder.CloseElement();
+        builder.CloseElement();
+    };
 
     public void Dispose()
     {

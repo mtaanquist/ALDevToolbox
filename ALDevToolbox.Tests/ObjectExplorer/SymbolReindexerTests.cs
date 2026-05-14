@@ -122,7 +122,7 @@ public sealed class SymbolReindexerTests : IDisposable
         ms.Position = 0;
 
         var summary = await importer.ImportAsync(ms, new BaseAppImportRequest(
-            Major: major, Minor: 0, CumulativeUpdate: 0,
+            Major: major, CumulativeUpdate: 0,
             ApplicationVersionId: null, Notes: null, Mode: BaseAppImportMode.Reject));
 
         // Wipe the inline-extracted symbols and reset the indexed flag so

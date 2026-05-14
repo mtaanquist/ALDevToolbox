@@ -36,7 +36,6 @@
             <thead>
                 <tr>
                     <th scope="col">Version</th>
-                    <th scope="col">Cumulative update</th>
                     <th scope="col">Files</th>
                     <th scope="col">Uploaded</th>
                     <th scope="col">Notes</th>
@@ -48,10 +47,9 @@
                     <tr>
                         <td>
                             <a href="@($"/object-explorer/{v.Id}")">
-                                <strong>@v.Major.@v.Minor</strong>
+                                <strong>BC @v.Major.@v.CumulativeUpdate</strong>
                             </a>
                         </td>
-                        <td>CU @v.CumulativeUpdate</td>
                         <td>@v.FileCount.ToString("N0")</td>
                         <td>@v.UploadedAt.ToString("yyyy-MM-dd")</td>
                         <td class="muted">@(string.IsNullOrWhiteSpace(v.Notes) ? "—" : v.Notes)</td>
