@@ -7,6 +7,7 @@
 @inject ILogger<AdminSnippets> Log
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
+@using static ALDevToolbox.Components.Shared.AdminPageHelpers
 
 <PageTitle>Snippets · Admin · AL Dev Toolbox</PageTitle>
 
@@ -70,7 +71,7 @@
                         <td>@s.Title</td>
                         <td>@s.Files.Count</td>
                         <td class="muted">@s.Keywords</td>
-                        <td>@StatusFor(s)</td>
+                        <td>@SoftDeleteStatus(s.DeletedAt, s.Deprecated)</td>
                         <td><time datetime="@s.UpdatedAt.ToString("O")">@s.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                         <td class="data-table__actions">
                             <a class="btn btn--sm" href="@($"/admin/snippets/{s.Id}")">
@@ -226,10 +227,4 @@
         }
     }
 
-    private static string StatusFor(Snippet s)
-    {
-        if (s.DeletedAt is not null) return "Deleted";
-        if (s.Deprecated) return "Deprecated";
-        return "Active";
-    }
 }

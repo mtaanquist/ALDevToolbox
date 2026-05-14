@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
@@ -89,9 +88,7 @@ public sealed class InviteService
             s.RevokedAt = now;
         }
 
-        var rawBytes = RandomNumberGenerator.GetBytes(32);
-        var raw = Convert.ToHexString(rawBytes).ToLowerInvariant();
-        var hash = Sha256Hex(raw);
+        var (raw, hash) = TokenIssuer.Issue();
         var trimmedMessage = string.IsNullOrWhiteSpace(welcomeMessage) ? null : welcomeMessage.Trim();
         var invite = new Invite
         {
@@ -136,7 +133,7 @@ public sealed class InviteService
     public async Task<Invite?> FindValidByTokenAsync(string token, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(token)) return null;
-        var hash = Sha256Hex(token);
+        var hash = TokenIssuer.Sha256Hex(token);
         var now = _clock.GetUtcNow().UtcDateTime;
         var row = await _db.Invites.IgnoreQueryFilters()
             .Include(i => i.Organization)
@@ -165,7 +162,7 @@ public sealed class InviteService
         var errors = new Dictionary<string, string>();
         var trimmedName = (displayName ?? string.Empty).Trim();
         if (trimmedName.Length is < 2 or > 80) errors["DisplayName"] = "Display name must be 2–80 characters.";
-        AccountService.ValidatePassword(password, errors);
+        ALDevToolbox.Services.Account.AuthService.ValidatePassword(password, errors);
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
         var invite = await FindValidByTokenAsync(token, ct)
@@ -188,7 +185,7 @@ public sealed class InviteService
             return existing;
         }
 
-        var passwordHash = BCrypt.Net.BCrypt.HashPassword(password, AccountService.BcryptWorkFactor);
+        var passwordHash = BCrypt.Net.BCrypt.HashPassword(password, ALDevToolbox.Services.Account.AuthService.BcryptWorkFactor);
         var user = new User
         {
             OrganizationId = invite.OrganizationId,
@@ -209,9 +206,4 @@ public sealed class InviteService
         return user;
     }
 
-    private static string Sha256Hex(string value)
-    {
-        var bytes = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value));
-        return Convert.ToHexString(bytes).ToLowerInvariant();
-    }
 }

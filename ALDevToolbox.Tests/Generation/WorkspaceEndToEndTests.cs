@@ -213,11 +213,15 @@ path = "codeunits"
     private async Task<ZipArchive> GenerateAsync(ProjectPlan plan)
     {
         await using var ctx = _db.NewContext();
+        var mustache = new ALDevToolbox.Services.Generation.MustacheRenderer(
+            NullLogger<ALDevToolbox.Services.Generation.MustacheRenderer>.Instance);
         var service = new GenerationService(
             ctx,
-            new WorkspaceConfigService(ctx),
             _db.NewOrganizationConfigService(ctx),
+            new TemplateService(ctx, NullLogger<TemplateService>.Instance, _db.OrgContext),
             _db.OrgContext,
+            mustache,
+            new ALDevToolbox.Services.Generation.WorkspaceZipBuilder(mustache, new WorkspaceConfigService(ctx)),
             NullLogger<GenerationService>.Instance);
         var archive = await service.GenerateWorkspaceAsync(plan);
         return new ZipArchive(archive.Stream, ZipArchiveMode.Read, leaveOpen: false);

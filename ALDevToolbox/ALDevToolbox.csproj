@@ -37,4 +37,11 @@
     <PackageReference Include="Tomlyn" Version="2.3.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Test access to internal seams kept narrow on purpose: BackupScheduler
+         exposes TickOnceAsync (#71) so schedule-decision tests can drive
+         it without the Task.Delay loop. -->
+    <InternalsVisibleTo Include="ALDevToolbox.Tests" />
+  </ItemGroup>
+
 </Project>

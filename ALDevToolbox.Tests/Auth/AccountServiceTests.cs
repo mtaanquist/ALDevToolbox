@@ -1,6 +1,7 @@
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
+using ALDevToolbox.Services.Account;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -9,9 +10,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace ALDevToolbox.Tests.Auth;
 
 /// <summary>
-/// Behavioural tests for <see cref="AccountService"/>: BCrypt round-trip,
-/// signup flow, last-active-admin protection, lockout / rate-limit logic
-/// against a fake clock, and password reset token single-use semantics.
+/// Behavioural tests for the (post-#88) account surface: BCrypt round-trip
+/// and login lockout/rate-limit on <see cref="AuthService"/>,
+/// signup + last-active-admin on <see cref="AccountService"/> /
+/// <see cref="UserAdministrationService"/>, and reset-token single-use on
+/// <see cref="PasswordResetService"/>.
 /// </summary>
 public sealed class AccountServiceTests : IDisposable
 {
@@ -20,14 +23,26 @@ public sealed class AccountServiceTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
+    private AuthService NewAuth(Data.AppDbContext ctx) =>
+        new(ctx, NullLogger<AuthService>.Instance, _clock);
+
+    private AccountService NewAccounts(Data.AppDbContext ctx) =>
+        new(ctx, NewAuth(ctx), NullLogger<AccountService>.Instance, _clock);
+
+    private UserAdministrationService NewUserAdmin(Data.AppDbContext ctx) =>
+        new(ctx, _clock);
+
+    private PasswordResetService NewPasswordReset(Data.AppDbContext ctx) =>
+        new(ctx, NewAuth(ctx), _clock);
+
     [Fact]
     public void BCrypt_round_trip_verifies_only_the_original_password()
     {
         using var ctx = _db.NewContext();
-        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
-        var hash = svc.HashPassword("correct-horse-battery");
-        svc.VerifyPassword("correct-horse-battery", hash).Should().BeTrue();
-        svc.VerifyPassword("wrong-horse-battery", hash).Should().BeFalse();
+        var auth = NewAuth(ctx);
+        var hash = auth.HashPassword("correct-horse-battery");
+        auth.VerifyPassword("correct-horse-battery", hash).Should().BeTrue();
+        auth.VerifyPassword("wrong-horse-battery", hash).Should().BeFalse();
     }
 
     [Fact]
@@ -44,7 +59,7 @@ public sealed class AccountServiceTests : IDisposable
         }
 
         var ctx = _db.NewContext();
-        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
+        var svc = NewAccounts(ctx);
         var (outcome, user, org) = await svc.SignupAsync(
             "alice@example.com", "Alice", "verylongpassword12345", "acme");
 
@@ -59,7 +74,7 @@ public sealed class AccountServiceTests : IDisposable
     public async Task Signup_with_blank_slug_auto_approves_as_new_org_admin()
     {
         var ctx = _db.NewContext();
-        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
+        var svc = NewAccounts(ctx);
         var (outcome, user, org) = await svc.SignupAsync(
             "bob@example.com", "Bob", "verylongpassword12345", null);
 
@@ -83,7 +98,7 @@ public sealed class AccountServiceTests : IDisposable
     public async Task Signup_rejects_short_passwords()
     {
         var ctx = _db.NewContext();
-        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
+        var svc = NewAccounts(ctx);
         Func<Task> act = () => svc.SignupAsync("c@example.com", "Carol", "short", null);
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("Password");
@@ -110,8 +125,8 @@ public sealed class AccountServiceTests : IDisposable
         }
 
         var ctx = _db.NewContext();
-        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
-        Func<Task> demote = () => svc.ChangeRoleAsync(100, UserRole.User, orgId);
+        var users = NewUserAdmin(ctx);
+        Func<Task> demote = () => users.ChangeRoleAsync(100, UserRole.User, orgId);
         var ex = await demote.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("LastAdmin");
     }
@@ -122,8 +137,7 @@ public sealed class AccountServiceTests : IDisposable
         var orgId = TestDb.DefaultOrgId;
         await using (var seed = _db.NewContext())
         {
-            var hash = new AccountService(seed, NullLogger<AccountService>.Instance, _clock)
-                .HashPassword("rightpasswordlong");
+            var hash = NewAuth(seed).HashPassword("rightpasswordlong");
             seed.Users.Add(new User
             {
                 OrganizationId = orgId,
@@ -138,36 +152,105 @@ public sealed class AccountServiceTests : IDisposable
         }
 
         var ctx = _db.NewContext();
-        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
-        for (var i = 0; i < AccountService.LockoutThreshold; i++)
+        var auth = NewAuth(ctx);
+        for (var i = 0; i < AuthService.LockoutThreshold; i++)
         {
-            var (outcome, _) = await svc.TryLoginAsync("lockme@example.com", "wrongpassword12345", "1.2.3.4");
+            var (outcome, _) = await auth.TryLoginAsync("lockme@example.com", "wrongpassword12345", "1.2.3.4");
             outcome.Should().Be(LoginOutcome.InvalidCredentials);
         }
 
         // Sixth attempt — now the right password — gets locked out.
-        var (next, _) = await svc.TryLoginAsync("lockme@example.com", "rightpasswordlong", "1.2.3.4");
+        var (next, _) = await auth.TryLoginAsync("lockme@example.com", "rightpasswordlong", "1.2.3.4");
         next.Should().Be(LoginOutcome.LockedOut);
 
         // Advance the clock past the lockout window.
-        _clock.Advance(AccountService.LockoutWindow + TimeSpan.FromSeconds(1));
-        var (later, user) = await svc.TryLoginAsync("lockme@example.com", "rightpasswordlong", "1.2.3.4");
+        _clock.Advance(AuthService.LockoutWindow + TimeSpan.FromSeconds(1));
+        var (later, user) = await auth.TryLoginAsync("lockme@example.com", "rightpasswordlong", "1.2.3.4");
         later.Should().Be(LoginOutcome.Success);
         user.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Fourth_failure_still_allows_a_correct_login_on_the_fifth_attempt()
+    {
+        var orgId = TestDb.DefaultOrgId;
+        await using (var seed = _db.NewContext())
+        {
+            var hash = NewAuth(seed).HashPassword("rightpasswordlong");
+            seed.Users.Add(new User
+            {
+                OrganizationId = orgId,
+                Email = "boundary@example.com",
+                PasswordHash = hash,
+                DisplayName = "Boundary",
+                Role = UserRole.User,
+                Status = UserStatus.Active,
+                CreatedAt = _clock.GetUtcNow().UtcDateTime,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var ctx = _db.NewContext();
+        var auth = NewAuth(ctx);
+
+        for (var i = 0; i < AuthService.LockoutThreshold - 1; i++)
+        {
+            var (failed, _) = await auth.TryLoginAsync("boundary@example.com", "wrongpassword12345", "1.2.3.4");
+            failed.Should().Be(LoginOutcome.InvalidCredentials);
+        }
+
+        // N-1 failures should still allow the correct password through.
+        var (outcome, user) = await auth.TryLoginAsync("boundary@example.com", "rightpasswordlong", "1.2.3.4");
+        outcome.Should().Be(LoginOutcome.Success);
+        user.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Wrong_password_attempts_past_the_threshold_also_lock_out()
+    {
+        // Regression: previously the lockout check only ran on the success
+        // path, so an attacker spamming wrong passwords could keep failing
+        // past the threshold without ever being told they were locked.
+        var orgId = TestDb.DefaultOrgId;
+        await using (var seed = _db.NewContext())
+        {
+            var hash = NewAuth(seed).HashPassword("rightpasswordlong");
+            seed.Users.Add(new User
+            {
+                OrganizationId = orgId,
+                Email = "spammed@example.com",
+                PasswordHash = hash,
+                DisplayName = "Spammed",
+                Role = UserRole.User,
+                Status = UserStatus.Active,
+                CreatedAt = _clock.GetUtcNow().UtcDateTime,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var ctx = _db.NewContext();
+        var auth = NewAuth(ctx);
+        for (var i = 0; i < AuthService.LockoutThreshold; i++)
+        {
+            await auth.TryLoginAsync("spammed@example.com", "wrongpassword12345", "1.2.3.4");
+        }
+
+        var (next, _) = await auth.TryLoginAsync("spammed@example.com", "stillwrongpassword", "1.2.3.4");
+        next.Should().Be(LoginOutcome.LockedOut);
     }
 
     [Fact]
     public async Task Per_email_rate_limit_blocks_more_than_ten_attempts_in_fifteen_minutes()
     {
         var ctx = _db.NewContext();
-        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
+        var auth = NewAuth(ctx);
 
-        for (var i = 0; i < AccountService.MaxAttemptsPerEmail; i++)
+        for (var i = 0; i < AuthService.MaxAttemptsPerEmail; i++)
         {
-            await svc.TryLoginAsync("noone@example.com", "wrong", "1.2.3.4");
+            await auth.TryLoginAsync("noone@example.com", "wrong", "1.2.3.4");
         }
 
-        var (outcome, _) = await svc.TryLoginAsync("noone@example.com", "wrong", "1.2.3.4");
+        var (outcome, _) = await auth.TryLoginAsync("noone@example.com", "wrong", "1.2.3.4");
         outcome.Should().Be(LoginOutcome.RateLimited);
     }
 
@@ -192,7 +275,7 @@ public sealed class AccountServiceTests : IDisposable
         }
 
         var ctx = _db.NewContext();
-        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
+        var svc = NewPasswordReset(ctx);
         var token = await svc.CreatePasswordResetTokenAsync("reset@example.com");
         token.Should().NotBeNull();
 
@@ -207,7 +290,7 @@ public sealed class AccountServiceTests : IDisposable
     public async Task Reset_token_for_unknown_email_returns_null_so_we_dont_leak_existence()
     {
         var ctx = _db.NewContext();
-        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
+        var svc = NewPasswordReset(ctx);
         var token = await svc.CreatePasswordResetTokenAsync("ghost@example.com");
         token.Should().BeNull();
         (await ctx.PasswordResetTokens.AnyAsync()).Should().BeFalse();

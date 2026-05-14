@@ -6,9 +6,10 @@
 @using ALDevToolbox.Domain.ValueObjects
 @using ALDevToolbox.Services
 @using Microsoft.EntityFrameworkCore
+@using static ALDevToolbox.Components.Shared.AdminPageHelpers
 @inject AppDbContext Db
 @inject IOrganizationContext Org
-@inject AccountService Accounts
+@inject ALDevToolbox.Services.Account.UserAdministrationService Accounts
 @inject ILogger<AdminUsers> Log
 
 <PageTitle>Users · AL Dev Toolbox</PageTitle>
@@ -476,5 +477,4 @@ else
         }
     }
 
-    private static string Capitalize(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpperInvariant(s[0]) + s[1..];
 }

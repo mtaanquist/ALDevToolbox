@@ -70,11 +70,15 @@ public sealed class CrossOrgConfigIsolationTests : IDisposable
         var plan = PlanBuilder.WorkspacePlan(templateKey: "runtime-default");
 
         await using var genCtx = _db.NewContext();
+        var mustache = new ALDevToolbox.Services.Generation.MustacheRenderer(
+            NullLogger<ALDevToolbox.Services.Generation.MustacheRenderer>.Instance);
         var gen = new GenerationService(
             genCtx,
-            new WorkspaceConfigService(genCtx),
             _db.NewOrganizationConfigService(genCtx),
+            new TemplateService(genCtx, NullLogger<TemplateService>.Instance, _db.OrgContext),
             _db.OrgContext,
+            mustache,
+            new ALDevToolbox.Services.Generation.WorkspaceZipBuilder(mustache, new WorkspaceConfigService(genCtx)),
             NullLogger<GenerationService>.Instance);
 
         var archive = await gen.GenerateWorkspaceAsync(plan);

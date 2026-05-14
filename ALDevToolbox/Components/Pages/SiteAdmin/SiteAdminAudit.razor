@@ -1,8 +1,8 @@
 @page "/site-admin/audit"
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
-@using System.Text.Json
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Services
+@using static ALDevToolbox.Components.Shared.AdminPageHelpers
 @inject SiteAdminService SiteAdmin
 
 <PageTitle>Site Admin · Audit · AL Dev Toolbox</PageTitle>
@@ -147,16 +147,4 @@
         _rows = await SiteAdmin.SearchAuditAsync(entity, OrganizationId, Actor, from, to);
     }
 
-    private static string PrettyJson(string raw)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(raw);
-            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
-        }
-        catch (JsonException)
-        {
-            return raw;
-        }
-    }
 }

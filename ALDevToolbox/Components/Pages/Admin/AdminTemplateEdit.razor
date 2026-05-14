@@ -256,53 +256,7 @@
                 </div>
             </section>
 
-            <section class="form-section">
-                <label class="section-label" for="tpl-defaults">Defaults JSON</label>
-                <textarea id="tpl-defaults" class="json-editor" rows="10" spellcheck="false"
-                          @bind="_form.DefaultsJson" @bind:event="oninput"></textarea>
-                <small class="muted">
-                    Merged into every generated <code>app.json</code>. Fields:
-                    <code>publisher</code>, <code>target</code>, <code>features</code>,
-                    <code>supportedLocales</code>, <code>url</code>, <code>logo</code>,
-                    <code>extension_prefix</code>, <code>affix</code>, <code>affix_type</code>,
-                    <code>resourceExposurePolicy</code>. The Default application /
-                    platform fields above are spliced in automatically on save.
-                </small>
-                <FieldError Field="DefaultsJson" Errors="_fieldErrors" />
-            </section>
-
-            <section class="form-section">
-                <label class="section-label" for="tpl-cop">AppSourceCop JSON</label>
-                <textarea id="tpl-cop" class="json-editor" rows="6" spellcheck="false"
-                          @bind="_form.AppSourceCopJson" @bind:event="oninput"></textarea>
-                <small class="muted">
-                    Set <code>"include": false</code> to suppress
-                    <code>AppSourceCop.json</code> in generated extensions. When
-                    included, the remaining fields are written verbatim. Fields:
-                    <code>include</code>, <code>mandatoryPrefix</code>,
-                    <code>supportedCountries</code>.
-                </small>
-                <FieldError Field="AppSourceCopJson" Errors="_fieldErrors" />
-            </section>
-
-            <section class="form-section">
-                <label class="section-label" for="tpl-workspace">Workspace settings overlay (optional)</label>
-                <MustacheVarsHint />
-                <textarea id="tpl-workspace" class="json-editor" rows="8" spellcheck="false"
-                          placeholder='{ "settings": { "al.newSetting": "..." } }'
-                          @bind="_form.CodeWorkspaceJson" @bind:event="oninput"></textarea>
-                <small class="muted">
-                    Per-template additions to <code>{ShortName}.code-workspace</code>.
-                    Deep-merged on top of the organisation's
-                    <a href="/admin/configuration/workspace">workspace settings</a>:
-                    keys inside <code>settings</code> are merged individually
-                    (template wins on conflict), other top-level keys replace
-                    the org's wholesale. Leave blank to inherit the org base
-                    unchanged. The generator always writes the <code>folders</code>
-                    array regardless of what either layer contains.
-                </small>
-                <FieldError Field="CodeWorkspaceJson" Errors="_fieldErrors" />
-            </section>
+            <TemplateJsonOverridesSection Form="_form" Errors="_fieldErrors" />
 
             <section class="form-section">
                 <label class="check-row">
@@ -351,237 +305,7 @@
                 }
             </section>
 
-            <section class="form-section">
-                <div class="folder-editor__header">
-                    <label class="section-label">Extensions</label>
-                    <button type="button" class="btn btn--sm" @onclick="AddExtension">
-                        <Icon Name="plus" Width="14" Height="14" />
-                        <span>Add extension</span>
-                    </button>
-                </div>
-                <small class="muted">
-                    Each entry is one extension generated into the workspace.
-                    <strong>Required</strong> extensions are always emitted;
-                    <strong>optional</strong> ones surface as opt-in checkboxes
-                    on the New Workspace form. Catalogue modules contribute a
-                    cloned extension on top — those aren't authored here.
-                </small>
-                @if (_form.Extensions.Count == 0)
-                {
-                    <p class="muted">
-                        No extensions yet. Add at least one — most templates start
-                        with a <code>Core</code> required extension.
-                    </p>
-                }
-                else
-                {
-                    <div class="folder-editor__list extension-editor__list">
-                        @for (var i = 0; i < _form.Extensions.Count; i++)
-                        {
-                            var extIndex = i;
-                            var ext = _form.Extensions[extIndex];
-                            var extKey = $"Extensions[{extIndex}]";
-                            <div class="folder-editor__row extension-editor__row">
-                                <div class="folder-editor__row-head">
-                                    <div class="folder-editor__order">
-                                        <button type="button" class="btn btn--sm" disabled="@(extIndex == 0)"
-                                                @onclick="() => MoveExtension(extIndex, -1)" title="Move up">
-                                            <Icon Name="arrow-up" Width="12" Height="12" />
-                                        </button>
-                                        <button type="button" class="btn btn--sm" disabled="@(extIndex == _form.Extensions.Count - 1)"
-                                                @onclick="() => MoveExtension(extIndex, 1)" title="Move down">
-                                            <Icon Name="arrow-down" Width="12" Height="12" />
-                                        </button>
-                                    </div>
-                                    <div class="folder-editor__path">
-                                        <input type="text" required placeholder="e.g. Core"
-                                               @bind="ext.Path" @bind:event="oninput" />
-                                        <FieldError Field="@($"{extKey}.Path")" Errors="_fieldErrors" />
-                                    </div>
-                                    <button type="button" class="btn btn--sm" @onclick="() => RemoveExtension(extIndex)" title="Remove extension">
-                                        <Icon Name="trash-2" Width="12" Height="12" />
-                                    </button>
-                                </div>
-
-                                <div class="extension-editor__body">
-                                    <div class="form-section form-section--row">
-                                        <div>
-                                            <label class="section-label">Name template</label>
-                                            <input type="text" required placeholder="e.g. {{extension_prefix}} Core"
-                                                   @bind="ext.NameTemplate" @bind:event="oninput" />
-                                            <FieldError Field="@($"{extKey}.NameTemplate")" Errors="_fieldErrors" />
-                                        </div>
-                                        <div>
-                                            <label class="check-row">
-                                                <input type="checkbox" @bind="ext.Required" />
-                                                <span>Required (always emitted)</span>
-                                            </label>
-                                            <small class="muted">
-                                                Untick to expose as a checkbox on New Workspace.
-                                            </small>
-                                        </div>
-                                    </div>
-
-                                    <div class="form-section form-section--row">
-                                        <div>
-                                            <label class="section-label">Application override</label>
-                                            <input type="text" placeholder="(use template default)"
-                                                   @bind="ext.Application" @bind:event="oninput" />
-                                        </div>
-                                        <div>
-                                            <label class="section-label">Runtime override</label>
-                                            <input type="text" placeholder="(use template runtime)"
-                                                   @bind="ext.Runtime" @bind:event="oninput" />
-                                        </div>
-                                    </div>
-
-                                    <div class="form-section form-section--row">
-                                        <div>
-                                            <label class="section-label">ID range from</label>
-                                            <input type="number" min="1" placeholder="(auto-allocate)"
-                                                   @bind="ext.IdRangeFrom" @bind:event="oninput" />
-                                            <FieldError Field="@($"{extKey}.IdRangeFrom")" Errors="_fieldErrors" />
-                                            <FieldError Field="@($"{extKey}.IdRange")" Errors="_fieldErrors" />
-                                        </div>
-                                        <div>
-                                            <label class="section-label">ID range to</label>
-                                            <input type="number" min="1" placeholder="(auto-allocate)"
-                                                   @bind="ext.IdRangeTo" @bind:event="oninput" />
-                                            <FieldError Field="@($"{extKey}.IdRangeTo")" Errors="_fieldErrors" />
-                                        </div>
-                                    </div>
-
-                                    <div class="form-section">
-                                        <div class="folder-editor__header">
-                                            <label class="section-label">Dependencies</label>
-                                            <button type="button" class="btn btn--sm" @onclick="() => AddDependency(extIndex)">
-                                                <Icon Name="plus" Width="12" Height="12" />
-                                                <span>Add dependency</span>
-                                            </button>
-                                        </div>
-                                        @if (ext.Dependencies.Count == 0)
-                                        {
-                                            <p class="muted">No dependencies on this extension.</p>
-                                        }
-                                        else
-                                        {
-                                            <div class="folder-editor__list">
-                                                @for (var d = 0; d < ext.Dependencies.Count; d++)
-                                                {
-                                                    var depIndex = d;
-                                                    var dep = ext.Dependencies[depIndex];
-                                                    var depKey = $"{extKey}.Dependencies[{depIndex}]";
-                                                    <div class="folder-editor__row dep-row">
-                                                        <div class="folder-editor__row-head">
-                                                            <div class="folder-editor__order">
-                                                                <button type="button" class="btn btn--sm" disabled="@(depIndex == 0)"
-                                                                        @onclick="() => MoveDependency(extIndex, depIndex, -1)" title="Move up">
-                                                                    <Icon Name="arrow-up" Width="12" Height="12" />
-                                                                </button>
-                                                                <button type="button" class="btn btn--sm" disabled="@(depIndex == ext.Dependencies.Count - 1)"
-                                                                        @onclick="() => MoveDependency(extIndex, depIndex, 1)" title="Move down">
-                                                                    <Icon Name="arrow-down" Width="12" Height="12" />
-                                                                </button>
-                                                            </div>
-                                                            <div class="folder-editor__path">
-                                                                <select @bind="dep.Kind">
-                                                                    <option value="@DependencyFormKind.Extension">Reference an extension in this template</option>
-                                                                    <option value="@DependencyFormKind.Module">Reference a catalogue module</option>
-                                                                    <option value="@DependencyFormKind.Literal">Literal dependency (id + name + publisher + version)</option>
-                                                                </select>
-                                                            </div>
-                                                            <button type="button" class="btn btn--sm" @onclick="() => RemoveDependency(extIndex, depIndex)" title="Remove dependency">
-                                                                <Icon Name="trash-2" Width="12" Height="12" />
-                                                            </button>
-                                                        </div>
-
-                                                        <div class="dep-editor__fields">
-                                                            @switch (dep.Kind)
-                                                            {
-                                                                case DependencyFormKind.Extension:
-                                                                    <div>
-                                                                        <label class="section-label">Extension path</label>
-                                                                        <input type="text" placeholder="e.g. Core"
-                                                                               @bind="dep.RefExtensionPath" @bind:event="oninput" />
-                                                                        <FieldError Field="@($"{depKey}.Extension")" Errors="_fieldErrors" />
-                                                                    </div>
-                                                                    break;
-                                                                case DependencyFormKind.Module:
-                                                                    <div>
-                                                                        <label class="section-label">Module key</label>
-                                                                        <input type="text" placeholder="e.g. system-application"
-                                                                               @bind="dep.RefModuleKey" @bind:event="oninput" />
-                                                                    </div>
-                                                                    break;
-                                                                default:
-                                                                    <div>
-                                                                        <label class="section-label">ID (GUID)</label>
-                                                                        <input type="text" @bind="dep.LitId" @bind:event="oninput" />
-                                                                        <FieldError Field="@($"{depKey}.Id")" Errors="_fieldErrors" />
-                                                                    </div>
-                                                                    <div>
-                                                                        <label class="section-label">Name</label>
-                                                                        <input type="text" @bind="dep.LitName" @bind:event="oninput" />
-                                                                        <FieldError Field="@($"{depKey}.Name")" Errors="_fieldErrors" />
-                                                                    </div>
-                                                                    <div>
-                                                                        <label class="section-label">Publisher</label>
-                                                                        <input type="text" @bind="dep.LitPublisher" @bind:event="oninput" />
-                                                                        <FieldError Field="@($"{depKey}.Publisher")" Errors="_fieldErrors" />
-                                                                    </div>
-                                                                    <div>
-                                                                        <label class="section-label">Version</label>
-                                                                        <input type="text" placeholder="e.g. 1.0.0.0"
-                                                                               @bind="dep.LitVersion" @bind:event="oninput" />
-                                                                        <FieldError Field="@($"{depKey}.Version")" Errors="_fieldErrors" />
-                                                                    </div>
-                                                                    break;
-                                                            }
-                                                        </div>
-                                                        <FieldError Field="@depKey" Errors="_fieldErrors" />
-                                                    </div>
-                                                }
-                                            </div>
-                                        }
-                                    </div>
-
-                                    <div class="form-section">
-                                        <div class="folder-editor__header">
-                                            <label class="section-label">Folders</label>
-                                            <button type="button" class="btn btn--sm" @onclick="() => AddRootFolder(extIndex)">
-                                                <Icon Name="folder-plus" Width="12" Height="12" />
-                                                <span>Add folder</span>
-                                            </button>
-                                        </div>
-                                        @if (ext.Folders.Count == 0)
-                                        {
-                                            <p class="muted">No folders. Generation still produces <code>app.json</code> + the static fallback folders.</p>
-                                        }
-                                        else
-                                        {
-                                            <div class="folder-editor__list">
-                                                @for (var f = 0; f < ext.Folders.Count; f++)
-                                                {
-                                                    var folderIndex = f;
-                                                    var folder = ext.Folders[folderIndex];
-                                                    <RecursiveFolderEditor Folder="folder"
-                                                                           Index="folderIndex"
-                                                                           SiblingCount="ext.Folders.Count"
-                                                                           Depth="0"
-                                                                           FieldKeyPrefix="@($"{extKey}.Folders[{folderIndex}]")"
-                                                                           Errors="_fieldErrors"
-                                                                           OnMove="d => MoveRootFolder(extIndex, folderIndex, d)"
-                                                                           OnRemove="() => RemoveRootFolder(extIndex, folderIndex)" />
-                                                }
-                                            </div>
-                                        }
-                                    </div>
-                                </div>
-                            </div>
-                        }
-                    </div>
-                }
-            </section>
+            <TemplateExtensionsEditor Form="_form" Errors="_fieldErrors" />
 
             <div class="admin-template-edit__actions">
                 <button type="submit" class="btn btn--primary" disabled="@_saving">
@@ -695,6 +419,12 @@
     private bool _isDeleted;
     private bool _loadFailed;
     private bool _saving;
+    // Tracks the route key the editor was last hydrated for. When the user
+    // navigates between two /admin/templates/{Key} pages without leaving the
+    // component, OnParametersSetAsync needs to tear down the stale CodeMirror
+    // mount so the next render doesn't shovel new content into the previous
+    // template's editor instance.
+    private string? _lastHydratedKey;
     private List<ALDevToolbox.Domain.Entities.Module> _availableModules = new();
     private List<ApplicationVersion> _availableApplicationVersions = new();
     private ConfirmDialog? _deleteConfirm;
@@ -769,6 +499,21 @@
         _fieldErrors = new Dictionary<string, string>();
         _tomlIssues = new();
         _editorIssueSyncPending = false;
+
+        // Route changed (or we landed on /new from another template's edit
+        // page). Drop the CodeMirror mount and the cached TOML so the next
+        // render doesn't pump fresh content into the previous template's
+        // editor instance.
+        if (_lastHydratedKey != Key)
+        {
+            if (_editorId != 0)
+            {
+                await DisposeEditorAsync();
+            }
+            _editorMountedToml = string.Empty;
+            _toml = string.Empty;
+            _lastHydratedKey = Key;
+        }
 
         // Module list drives the default-module multi-select. Include
         // deprecated entries so admins can keep them ticked on legacy
@@ -847,90 +592,6 @@
         {
             _form.DefaultModuleKeys.Remove(key);
         }
-    }
-
-    // ===== Extension list handlers =====
-
-    private void AddExtension()
-    {
-        if (_form is null) return;
-        _form.Extensions.Add(new ExtensionForm
-        {
-            Path = string.Empty,
-            NameTemplate = "{{extension_prefix}} Extension",
-            Required = true,
-        });
-    }
-
-    private void RemoveExtension(int index)
-    {
-        if (_form is null) return;
-        if (index < 0 || index >= _form.Extensions.Count) return;
-        _form.Extensions.RemoveAt(index);
-    }
-
-    private void MoveExtension(int index, int delta)
-    {
-        if (_form is null) return;
-        var target = index + delta;
-        if (index < 0 || index >= _form.Extensions.Count) return;
-        if (target < 0 || target >= _form.Extensions.Count) return;
-        (_form.Extensions[index], _form.Extensions[target]) = (_form.Extensions[target], _form.Extensions[index]);
-    }
-
-    // ===== Top-level folder handlers (recursive editor owns nested ops) =====
-
-    private void AddRootFolder(int extIndex)
-    {
-        if (_form is null || extIndex < 0 || extIndex >= _form.Extensions.Count) return;
-        _form.Extensions[extIndex].Folders.Add(new TemplateFolderForm());
-    }
-
-    private void RemoveRootFolder(int extIndex, int folderIndex)
-    {
-        if (_form is null || extIndex < 0 || extIndex >= _form.Extensions.Count) return;
-        var folders = _form.Extensions[extIndex].Folders;
-        if (folderIndex < 0 || folderIndex >= folders.Count) return;
-        folders.RemoveAt(folderIndex);
-    }
-
-    private void MoveRootFolder(int extIndex, int folderIndex, int delta)
-    {
-        if (_form is null || extIndex < 0 || extIndex >= _form.Extensions.Count) return;
-        var folders = _form.Extensions[extIndex].Folders;
-        var target = folderIndex + delta;
-        if (folderIndex < 0 || folderIndex >= folders.Count) return;
-        if (target < 0 || target >= folders.Count) return;
-        (folders[folderIndex], folders[target]) = (folders[target], folders[folderIndex]);
-    }
-
-    // ===== Dependency handlers =====
-
-    private void AddDependency(int extIndex)
-    {
-        if (_form is null || extIndex < 0 || extIndex >= _form.Extensions.Count) return;
-        _form.Extensions[extIndex].Dependencies.Add(new DependencyForm
-        {
-            Kind = DependencyFormKind.Extension,
-        });
-    }
-
-    private void RemoveDependency(int extIndex, int depIndex)
-    {
-        if (_form is null || extIndex < 0 || extIndex >= _form.Extensions.Count) return;
-        var deps = _form.Extensions[extIndex].Dependencies;
-        if (depIndex < 0 || depIndex >= deps.Count) return;
-        deps.RemoveAt(depIndex);
-    }
-
-    private void MoveDependency(int extIndex, int depIndex, int delta)
-    {
-        if (_form is null || extIndex < 0 || extIndex >= _form.Extensions.Count) return;
-        var deps = _form.Extensions[extIndex].Dependencies;
-        var target = depIndex + delta;
-        if (depIndex < 0 || depIndex >= deps.Count) return;
-        if (target < 0 || target >= deps.Count) return;
-        (deps[depIndex], deps[target]) = (deps[target], deps[depIndex]);
     }
 
     // ===== Save / delete / restore =====

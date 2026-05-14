@@ -14,6 +14,9 @@ public class RuntimeTemplateDefaultModule
     /// <summary>Denormalised owning organisation; mirrors the template's value.</summary>
     public int OrganizationId { get; set; }
 
+    /// <summary>Owning organisation navigation; cascade-deletes with the org.</summary>
+    public Organization? Organization { get; set; }
+
     public int RuntimeTemplateId { get; set; }
 
     /// <summary>The owning template. Cascade-deletes with the template.</summary>

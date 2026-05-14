@@ -1,6 +1,6 @@
 @inject AuditService Audit
-@using System.Text.Json
 @using ALDevToolbox.Domain.Entities
+@using static ALDevToolbox.Components.Shared.AdminPageHelpers
 
 @*
     Embeddable audit history panel. Drop it on an admin edit page and it'll show
@@ -117,16 +117,4 @@
         _ => "entity"
     };
 
-    private static string PrettyJson(string raw)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(raw);
-            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
-        }
-        catch (JsonException)
-        {
-            return raw;
-        }
-    }
 }

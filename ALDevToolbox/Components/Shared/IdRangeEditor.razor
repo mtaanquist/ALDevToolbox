@@ -1,0 +1,71 @@
+@*
+    From / to numeric pair for an AL extension's id range. Used by the New
+    Workspace page (template Core range) and the New Extension page (the
+    standalone extension's range). The component renders the same two inputs
+    + inline validation that both pages used to inline; the parent owns the
+    int fields and listens for FromChanged / ToChanged.
+
+    Lives in Components/Shared/ per the CLAUDE.md folder map. Issue #92.
+
+    The AdminTemplateEdit per-extension id-range editor uses a different
+    validation rendering surface (FieldError + _fieldErrors dictionary) and
+    is intentionally NOT a consumer of this component; sharing would force
+    one of the two pages to switch validation styles, which is part of the
+    in-flight EditContext refactor (#91).
+*@
+
+<section class="form-section form-section--row">
+    <div>
+        <label class="section-label" for="@($"{IdPrefix}-from")">@FromLabel</label>
+        <input id="@($"{IdPrefix}-from")" type="number" name="@FromName" required min="1"
+               value="@From" @oninput="OnFromInput" />
+        @if (From <= 0)
+        {
+            <span class="form-field-error" role="alert">Must be greater than zero.</span>
+        }
+    </div>
+    <div>
+        <label class="section-label" for="@($"{IdPrefix}-to")">@ToLabel</label>
+        <input id="@($"{IdPrefix}-to")" type="number" name="@ToName" required min="1"
+               value="@To" @oninput="OnToInput" />
+        @if (To <= From)
+        {
+            <span class="form-field-error" role="alert">Must be greater than the 'from' value.</span>
+        }
+    </div>
+</section>
+
+@code {
+    /// <summary>Prefix for the two HTML <c>id</c> attributes (e.g. "ws-core" → "ws-core-from", "ws-core-to").</summary>
+    [Parameter, EditorRequired] public string IdPrefix { get; set; } = string.Empty;
+
+    /// <summary>Form-post name for the "from" input (the value submitted in the POST body).</summary>
+    [Parameter, EditorRequired] public string FromName { get; set; } = string.Empty;
+
+    /// <summary>Form-post name for the "to" input.</summary>
+    [Parameter, EditorRequired] public string ToName { get; set; } = string.Empty;
+
+    [Parameter] public string FromLabel { get; set; } = "ID range — from";
+    [Parameter] public string ToLabel { get; set; } = "ID range — to";
+
+    [Parameter] public int From { get; set; }
+    [Parameter] public EventCallback<int> FromChanged { get; set; }
+    [Parameter] public int To { get; set; }
+    [Parameter] public EventCallback<int> ToChanged { get; set; }
+
+    private async Task OnFromInput(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var v) && v != From)
+        {
+            await FromChanged.InvokeAsync(v);
+        }
+    }
+
+    private async Task OnToInput(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var v) && v != To)
+        {
+            await ToChanged.InvokeAsync(v);
+        }
+    }
+}

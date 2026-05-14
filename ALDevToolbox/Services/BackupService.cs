@@ -360,12 +360,5 @@ public sealed class BackupService
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private void RequireSiteAdmin()
-    {
-        if (!_orgContext.IsSiteAdmin)
-        {
-            throw new InvalidOperationException(
-                "SiteAdmin context is required for this operation. The endpoint should already be 404-guarded.");
-        }
-    }
+    private void RequireSiteAdmin() => _orgContext.RequireSiteAdmin();
 }

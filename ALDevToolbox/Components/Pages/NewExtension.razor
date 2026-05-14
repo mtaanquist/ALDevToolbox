@@ -105,26 +105,10 @@
                            title="Required." @bind="_publisher" @bind:event="oninput" />
                 </section>
 
-                <section class="form-section form-section--row">
-                    <div>
-                        <label class="section-label" for="ext-id-from">ID range — from</label>
-                        <input id="ext-id-from" type="number" name="IdRangeFrom" required min="1"
-                               @bind="_idRangeFrom" @bind:event="oninput" />
-                        @if (_idRangeFrom <= 0)
-                        {
-                            <span class="form-field-error" role="alert">Must be greater than zero.</span>
-                        }
-                    </div>
-                    <div>
-                        <label class="section-label" for="ext-id-to">ID range — to</label>
-                        <input id="ext-id-to" type="number" name="IdRangeTo" required min="1"
-                               @bind="_idRangeTo" @bind:event="oninput" />
-                        @if (_idRangeTo <= _idRangeFrom)
-                        {
-                            <span class="form-field-error" role="alert">Must be greater than the 'from' value.</span>
-                        }
-                    </div>
-                </section>
+                <IdRangeEditor IdPrefix="ext-id"
+                               FromName="IdRangeFrom" ToName="IdRangeTo"
+                               From="_idRangeFrom" FromChanged="v => _idRangeFrom = v"
+                               To="_idRangeTo" ToChanged="v => _idRangeTo = v" />
                 <p class="caption muted">
                     You're responsible for choosing a range that doesn't collide with the rest of your workspace.
                 </p>
