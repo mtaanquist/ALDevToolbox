@@ -464,14 +464,14 @@ export function mountReadOnly(container, value, language, options) {
 // short fade-out highlight so the eye lands in the right place. Called by
 // the FileViewer when a #L<n> fragment is in the URL.
 //
-// Because the host (.code-viewer-host) is the scroll container — not
-// CodeMirror's internal .cm-scroller — we ignore CM's scrollIntoView
-// effect (which targets .cm-scroller and is a no-op here) and compute
-// the line's pixel position via view.coordsAtPos. Every line is rendered
-// up front (see CodeViewer.razor.css), so coordsAtPos works for any
-// position in the document. The outer requestAnimationFrame lets CM
-// finish any pending content / decoration update before we measure;
-// without it, far-down targets can land on stale coords.
+// CodeMirror estimates heights for unmeasured lines, so a single
+// scrollIntoView dispatch can land at a stale position for far-down
+// targets — CM hasn't measured the destination yet, so its scrollTop
+// calculation is off. The fix is to dispatch twice with a frame
+// between: the first dispatch brings the target into view (and renders
+// new lines as a side effect), the second dispatch corrects against
+// CM's now-accurate measurements. Both dispatches sit inside a
+// requestAnimationFrame so we're never racing CM's own measure cycle.
 export function scrollToLine(id, lineNumber, flash) {
     const e = editors.get(id);
     if (!e) return;
@@ -480,39 +480,32 @@ export function scrollToLine(id, lineNumber, flash) {
     const totalLines = view.state.doc.lines;
     const safeLine = Math.min(lineNumber, totalLines);
 
-    const host = view.dom.parentElement;
-    if (!host) return;
+    const dispatchScroll = () => {
+        const line = view.state.doc.line(safeLine);
+        view.dispatch({
+            effects: EditorView.scrollIntoView(line.from, { y: "center" }),
+        });
+    };
 
     requestAnimationFrame(() => {
-        const line = view.state.doc.line(safeLine);
-        const coords = view.coordsAtPos(line.from);
-        if (!coords) return;
-        const hostRect = host.getBoundingClientRect();
-        const lineHeight = Math.max(coords.bottom - coords.top, 16);
-        // coords.top is in viewport coords; translate to host-internal
-        // coords so we can park scrollTop with the target line centred.
-        const yInHost = coords.top - hostRect.top + host.scrollTop;
-        const target = yInHost - host.clientHeight / 2 + lineHeight / 2;
-        host.scrollTop = Math.max(0, Math.min(
-            host.scrollHeight - host.clientHeight,
-            target));
-
-        if (!flash) return;
+        dispatchScroll();
         requestAnimationFrame(() => {
-            const dom = view.domAtPos(line.from);
-            let lineEl = dom?.node instanceof Element ? dom.node : dom?.node?.parentElement;
-            while (lineEl && !(lineEl.classList && lineEl.classList.contains("cm-line"))) {
-                lineEl = lineEl.parentElement;
-            }
-            if (!lineEl) return;
-            // Adding a class that's already present doesn't restart its CSS
-            // animation. Remove → force a reflow → re-add so repeated clicks
-            // on the same reference re-flash the line.
-            lineEl.classList.remove("cm-line--flash");
-            // eslint-disable-next-line no-unused-expressions
-            lineEl.offsetWidth;
-            lineEl.classList.add("cm-line--flash");
-            setTimeout(() => lineEl.classList.remove("cm-line--flash"), 1500);
+            dispatchScroll();
+            if (!flash) return;
+            requestAnimationFrame(() => {
+                const line = view.state.doc.line(safeLine);
+                const dom = view.domAtPos(line.from);
+                let lineEl = dom?.node instanceof Element ? dom.node : dom?.node?.parentElement;
+                while (lineEl && !(lineEl.classList && lineEl.classList.contains("cm-line"))) {
+                    lineEl = lineEl.parentElement;
+                }
+                if (!lineEl) return;
+                lineEl.classList.remove("cm-line--flash");
+                // eslint-disable-next-line no-unused-expressions
+                lineEl.offsetWidth;
+                lineEl.classList.add("cm-line--flash");
+                setTimeout(() => lineEl.classList.remove("cm-line--flash"), 1500);
+            });
         });
     });
 }
