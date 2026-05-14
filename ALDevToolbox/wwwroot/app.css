@@ -2788,13 +2788,18 @@ ul.form-field-error {
 /* Click affordance on procedure/trigger/event declarations in the Object
    Explorer file viewer. Hover gives a faint underline so users see what's
    right-clickable; the menu lives in .cm-symbol-menu below. */
-.cm-symbol-decl {
-    cursor: context-menu;
-    text-decoration: underline dotted transparent;
+.cm-symbol-decl,
+.cm-symbol-ref {
+    text-decoration: underline dotted currentColor;
+    text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
     text-underline-offset: 3px;
     transition: text-decoration-color 80ms ease-out;
 }
-.cm-symbol-decl:hover {
+.cm-symbol-decl {
+    cursor: context-menu;
+}
+.cm-symbol-decl:hover,
+.cm-symbol-ref:hover {
     text-decoration-color: currentColor;
 }
 
@@ -2813,7 +2818,8 @@ ul.form-field-error {
 .cm-modifier-down .tok-propertyName,
 .cm-modifier-down .tok-className,
 .cm-modifier-down .tok-keyword,
-.cm-modifier-down .cm-symbol-decl {
+.cm-modifier-down .cm-symbol-decl,
+.cm-modifier-down .cm-symbol-ref {
     text-decoration: underline;
     text-decoration-style: solid;
     text-decoration-color: currentColor;
@@ -2845,8 +2851,13 @@ ul.form-field-error {
     font: inherit;
 }
 
-.cm-symbol-menu__item:hover {
+.cm-symbol-menu__item:hover:not(.cm-symbol-menu__item--disabled) {
     background: var(--surface-hover, rgba(124, 124, 144, 0.16));
+}
+
+.cm-symbol-menu__item--disabled {
+    color: var(--text-muted, rgba(216, 216, 224, 0.45));
+    cursor: not-allowed;
 }
 
 /* Brief flash on the line the user navigated to via a #L<n> deep link. */
@@ -2856,6 +2867,262 @@ ul.form-field-error {
 @keyframes cm-line-flash {
     0%   { background: rgba(254, 215, 102, 0.55); }
     100% { background: transparent; }
+}
+
+/* File viewer layout: code editor + right-rail inspector panel. The
+   editor fills the remaining width; the panel sits at a fixed width
+   matched to its content. Stack vertically on narrow viewports. */
+.object-explorer__file-layout {
+    display: flex;
+    gap: 16px;
+    align-items: stretch;
+}
+
+.object-explorer__file-layout > .code-viewer-host {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+@media (max-width: 1100px) {
+    .object-explorer__file-layout {
+        flex-direction: column;
+    }
+}
+
+.inspector-panel {
+    /* Scale with viewport — narrow browser still gets the minimum, wide
+       monitors get more room for reference snippets. */
+    flex: 0 0 clamp(280px, 28vw, 520px);
+    display: flex;
+    flex-direction: column;
+    height: 75vh;
+    border: 1px solid var(--border, #2a2a35);
+    border-radius: 6px;
+    background: var(--surface-1, #1a1c22);
+    overflow: hidden;
+    font-size: 13px;
+}
+
+.inspector-panel__crumbs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border, #2a2a35);
+    background: var(--surface-2, rgba(124, 124, 144, 0.08));
+    font-size: 12.5px;
+}
+
+.inspector-panel__crumb {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: inherit;
+    font: inherit;
+    cursor: default;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.inspector-panel__crumb--link {
+    color: var(--text-2, #b0b0c2);
+    cursor: pointer;
+}
+
+.inspector-panel__crumb--link:hover {
+    background: var(--surface-hover, rgba(124, 124, 144, 0.16));
+    color: var(--text-1, #d8d8e0);
+}
+
+.inspector-panel__crumb--current {
+    color: var(--text-1, #d8d8e0);
+    font-weight: 600;
+}
+
+.inspector-panel__crumb-sep {
+    color: var(--text-3, #6b6b80);
+}
+
+.inspector-panel__body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 8px 10px 12px;
+}
+
+.inspector-panel__empty {
+    margin: 12px 4px;
+}
+
+.inspector-panel__filter {
+    margin-bottom: 8px;
+}
+
+.inspector-panel__filter-input {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--border, #2a2a35);
+    border-radius: 4px;
+    background: var(--surface-2, rgba(124, 124, 144, 0.08));
+    color: var(--text-1, #d8d8e0);
+    font: inherit;
+    font-size: 12.5px;
+}
+
+.inspector-panel__filter-input::placeholder {
+    color: var(--text-3, #6b6b80);
+}
+
+.inspector-panel__sections,
+.inspector-panel__items,
+.inspector-panel__refs-files,
+.inspector-panel__refs-hits {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.inspector-panel__section + .inspector-panel__section {
+    margin-top: 12px;
+}
+
+.inspector-panel__section-title {
+    margin: 0 0 4px 0;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-2, #b0b0c2);
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+}
+
+.inspector-panel__item {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    border-radius: 4px;
+}
+
+.inspector-panel__item:hover {
+    background: var(--surface-hover, rgba(124, 124, 144, 0.10));
+}
+
+.inspector-panel__item-link {
+    flex: 1 1 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 6px;
+    color: inherit;
+    text-decoration: none;
+    font-family: var(--mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+    font-size: 12.5px;
+    min-width: 0;
+}
+
+/* Override the global `a:hover { text-decoration: underline }` — the row
+   already changes background on hover, the redundant underline reads as
+   noise. */
+.inspector-panel__item-link:hover {
+    text-decoration: none;
+}
+
+.inspector-panel__item-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.inspector-panel__item-line {
+    flex-shrink: 0;
+}
+
+.inspector-panel__item-action {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    padding: 4px 6px;
+    border-radius: 4px;
+    color: var(--text-3, #6b6b80);
+    cursor: pointer;
+    /* Only reveal the find-references button while the row is hovered or
+       the button itself is focused — keeps the row visually quiet at rest. */
+    opacity: 0;
+    transition: opacity 80ms ease-out;
+}
+
+.inspector-panel__item:hover .inspector-panel__item-action,
+.inspector-panel__item-action:focus {
+    opacity: 1;
+}
+
+.inspector-panel__item-action:hover {
+    background: var(--surface-hover, rgba(124, 124, 144, 0.16));
+    color: var(--text-1, #d8d8e0);
+}
+
+.inspector-panel__refs-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    margin: 4px 0 12px 0;
+}
+
+.inspector-panel__refs-section + .inspector-panel__refs-section {
+    margin-top: 14px;
+}
+
+.inspector-panel__refs-file {
+    border: 1px solid var(--border, #2a2a35);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.inspector-panel__refs-file-header {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 4px 8px;
+    background: var(--surface-2, rgba(124, 124, 144, 0.08));
+    font-size: 12px;
+}
+
+.inspector-panel__refs-hit {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 8px;
+    padding: 4px 8px;
+    border-top: 1px solid var(--border, #2a2a35);
+    text-decoration: none;
+    color: inherit;
+    font-family: var(--mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+    font-size: 12px;
+}
+
+.inspector-panel__refs-hit:hover {
+    background: var(--surface-hover, rgba(124, 124, 144, 0.10));
+    /* Suppress the global `a:hover` underline — background change is enough. */
+    text-decoration: none;
+}
+
+.inspector-panel__refs-hit-line {
+    color: var(--text-3, #6b6b80);
+    text-align: right;
+}
+
+.inspector-panel__refs-hit-snippet {
+    color: var(--text-1, #d8d8e0);
+    white-space: pre;
+    overflow-x: auto;
 }
 
 /* References page layout */

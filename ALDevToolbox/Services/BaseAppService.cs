@@ -267,6 +267,106 @@ public class BaseAppService
             .ToListAsync(ct);
     }
 
+    /// <summary>
+    /// Returns ranges in a file whose token text matches a name the symbol
+    /// index can resolve to a definition — object names anywhere in the
+    /// version plus procedure/trigger/event symbols callable from this file.
+    /// Used by the file viewer to draw the "this is jumpable" underline on
+    /// reference sites; the actual <see cref="GoToDefinitionAsync"/> still
+    /// runs server-side when the user clicks.
+    /// </summary>
+    public async Task<List<ResolvableTokenRange>> ListResolvableTokensInFileAsync(
+        long fileId, CancellationToken ct = default)
+    {
+        var file = await _db.BaseAppFiles
+            .AsNoTracking()
+            .Select(f => new { f.Id, f.VersionId, f.Content })
+            .FirstOrDefaultAsync(f => f.Id == fileId, ct);
+        if (file is null) return new List<ResolvableTokenRange>();
+
+        var objectNames = await _db.BaseAppFiles
+            .AsNoTracking()
+            .Where(f => f.VersionId == file.VersionId)
+            .Select(f => f.ObjectName)
+            .Distinct()
+            .ToListAsync(ct);
+
+        // Cross-file callable symbols. Skip `local_procedure` (only callable
+        // in their own file) and `trigger` (fired by the framework, never
+        // called by name) so we don't paint underlines on tokens that
+        // wouldn't actually navigate anywhere.
+        var publicSymbolNames = await _db.BaseAppSymbols
+            .AsNoTracking()
+            .Where(s => s.VersionId == file.VersionId
+                && s.Kind != "local_procedure"
+                && s.Kind != "trigger")
+            .Select(s => s.Name)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var localSymbolNames = await _db.BaseAppSymbols
+            .AsNoTracking()
+            .Where(s => s.FileId == fileId && s.Kind != "trigger")
+            .Select(s => s.Name)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var objects = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var n in objectNames) if (!string.IsNullOrEmpty(n)) objects.Add(n);
+
+        var symbols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var n in publicSymbolNames) if (!string.IsNullOrEmpty(n)) symbols.Add(n);
+        foreach (var n in localSymbolNames) if (!string.IsNullOrEmpty(n)) symbols.Add(n);
+
+        var vocab = new ResolvableVocabulary(objects, symbols);
+        return AlResolvableTokenScanner.Scan(file.Content ?? string.Empty, vocab).ToList();
+    }
+
+    /// <summary>
+    /// Finds every line in <paramref name="fileId"/> whose source contains the
+    /// supplied <paramref name="word"/> with word-boundary delimiters.
+    /// Backs the inspector panel's "Find in this file" gesture — useful for
+    /// variables, fields, and labels that <c>BaseAppSymbol</c> doesn't index.
+    /// Quoted-identifier matching falls out of the same regex because AL
+    /// quotes are treated as boundary characters by <c>\b</c>.
+    /// </summary>
+    public async Task<FileSearchResult> FindInFileAsync(
+        long fileId, string word, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(word))
+        {
+            return new FileSearchResult(word ?? string.Empty, Array.Empty<FileSearchHit>());
+        }
+
+        var file = await _db.BaseAppFiles
+            .AsNoTracking()
+            .Select(f => new { f.Id, f.Content })
+            .FirstOrDefaultAsync(f => f.Id == fileId, ct);
+        if (file is null) return new FileSearchResult(word, Array.Empty<FileSearchHit>());
+
+        var escaped = System.Text.RegularExpressions.Regex.Escape(word);
+        // Quoted AL identifiers can contain spaces/hyphens, so anchor on
+        // either word boundaries or an opening/closing quote.
+        var pattern = $@"(?<![A-Za-z0-9_]){escaped}(?![A-Za-z0-9_])";
+        var rx = new System.Text.RegularExpressions.Regex(
+            pattern,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        var hits = new List<FileSearchHit>();
+        var lines = (file.Content ?? string.Empty).Replace("\r\n", "\n").Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var match = rx.Match(lines[i]);
+            if (!match.Success) continue;
+            hits.Add(new FileSearchHit(
+                LineNumber: i + 1,
+                ColumnStart: match.Index + 1,
+                Snippet: TrimSnippet(lines[i])));
+        }
+        return new FileSearchResult(word, hits);
+    }
+
     /// <summary>Returns one symbol by id (with its file + version loaded) or <c>null</c>.</summary>
     public Task<BaseAppSymbol?> GetSymbolAsync(long id, CancellationToken ct = default)
     {
@@ -437,7 +537,10 @@ public class BaseAppService
     private const int SnippetMaxLength = 240;
     private static string TrimSnippet(string line)
     {
-        var trimmed = line.TrimEnd();
+        // Trim both sides — leading whitespace on indented call sites adds
+        // nothing readable to the snippet column and wastes horizontal space
+        // in the inspector panel.
+        var trimmed = line.Trim();
         if (trimmed.Length <= SnippetMaxLength) return trimmed;
         return trimmed.Substring(0, SnippetMaxLength) + "…";
     }
@@ -488,7 +591,7 @@ public class BaseAppService
             var declaringFile = await _db.BaseAppFiles
                 .AsNoTracking()
                 .Where(f => f.VersionId == file.VersionId && f.ObjectName == declaringObjectName)
-                .Select(f => new { f.Id })
+                .Select(f => new { f.Id, f.ObjectType, f.ObjectName })
                 .FirstOrDefaultAsync(ct);
 
             if (declaringFile is not null)
@@ -504,6 +607,14 @@ public class BaseAppService
                         declaringFile.Id, symbol.LineNumber,
                         $"procedure {symbol.Name} on \"{declaringObjectName}\"");
                 }
+                // Field access (e.g. `MfgSetup."Dynamic Low-Level Code"`) lands
+                // here because we don't extract table fields as symbols yet.
+                // Sending the user to the declaring file's header is still the
+                // most useful answer — they're one folded section away from
+                // the right field.
+                return new GoToDefinitionTarget(
+                    declaringFile.Id, 1,
+                    $"{declaringFile.ObjectType} \"{declaringFile.ObjectName}\"");
             }
             // Fall through to bare-name search if the qualifier didn't resolve.
         }
@@ -689,3 +800,9 @@ public enum BaseAppReferenceConfidence
 /// "procedure Post on Sales-Post").
 /// </summary>
 public sealed record GoToDefinitionTarget(long FileId, int LineNumber, string Description);
+
+/// <summary>Result of <see cref="BaseAppService.FindInFileAsync"/>.</summary>
+public sealed record FileSearchResult(string Word, IReadOnlyList<FileSearchHit> Hits);
+
+/// <summary>One occurrence of the search word inside the file content.</summary>
+public sealed record FileSearchHit(int LineNumber, int ColumnStart, string Snippet);

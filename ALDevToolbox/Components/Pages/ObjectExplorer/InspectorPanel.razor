@@ -1,0 +1,348 @@
+@inject BaseAppService BaseApp
+@using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Services
+
+@*
+    Right-rail aside on the Object Explorer file viewer. Owns rendering of
+    the navigation stack (Outline → Refs → Refs …) and dispatches push / pop
+    events back to the host page, which owns the stack state itself.
+
+    The breadcrumb above the body lets the user jump to any earlier view;
+    clicking an earlier chip pops the stack (truncating forward history).
+    Outline rows scroll the editor via the existing #L<n> URL fragment;
+    cross-file hits fall back to a full anchor navigation so FileViewer's
+    OnParametersSet reloads cleanly.
+*@
+
+<aside class="inspector-panel" aria-label="File inspector">
+    <nav class="inspector-panel__crumbs" aria-label="Inspector history">
+        @for (var i = 0; i < Stack.Count; i++)
+        {
+            var idx = i;
+            var isCurrent = idx == Cursor;
+            if (i > 0)
+            {
+                <span class="inspector-panel__crumb-sep" aria-hidden="true">›</span>
+            }
+            if (isCurrent)
+            {
+                <span class="inspector-panel__crumb inspector-panel__crumb--current">
+                    @CrumbLabel(Stack[i])
+                </span>
+            }
+            else
+            {
+                <button type="button"
+                        class="inspector-panel__crumb inspector-panel__crumb--link"
+                        @onclick="() => OnPopTo.InvokeAsync(idx)">
+                    @CrumbLabel(Stack[i])
+                </button>
+            }
+        }
+    </nav>
+
+    <div class="inspector-panel__body">
+        @if (Stack.Count == 0 || Stack[Cursor] is OutlinePanelView)
+        {
+            @RenderOutline()
+        }
+        else if (Stack[Cursor] is ReferencesPanelView refs)
+        {
+            @RenderReferences(refs)
+        }
+        else if (Stack[Cursor] is FileSearchPanelView search)
+        {
+            @RenderFileSearch(search)
+        }
+    </div>
+</aside>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<InspectorPanelView> Stack { get; set; } = default!;
+    [Parameter, EditorRequired] public int Cursor { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<BaseAppSymbol> Symbols { get; set; } = default!;
+    [Parameter, EditorRequired] public int VersionId { get; set; }
+    [Parameter, EditorRequired] public long FileId { get; set; }
+
+    /// <summary>Raised when a breadcrumb chip earlier than the cursor is clicked.</summary>
+    [Parameter] public EventCallback<int> OnPopTo { get; set; }
+
+    /// <summary>Raised when an outline row's "Find references" affordance is clicked.</summary>
+    [Parameter] public EventCallback<BaseAppSymbol> OnPushReferences { get; set; }
+
+    /// <summary>
+    /// Raised when a navigation link in any panel view is clicked. Receives
+    /// the target <c>(FileId, LineNumber)</c>. The host page decides whether
+    /// to scroll in-place (same file) or run a full page navigation
+    /// (different file).
+    /// </summary>
+    [Parameter] public EventCallback<(long FileId, int LineNumber)> OnScrollTo { get; set; }
+
+    private string _outlineFilter = string.Empty;
+    private long _lastFileId;
+    // Per-file cache of references results; null entry means "loading".
+    private Dictionary<long, BaseAppReferenceResult?> _referencesCache = new();
+    // Per-file cache of in-file search hits; null entry means "loading".
+    private Dictionary<string, FileSearchResult?> _fileSearchCache = new(StringComparer.Ordinal);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_lastFileId != FileId)
+        {
+            _lastFileId = FileId;
+            _outlineFilter = string.Empty;
+            _referencesCache.Clear();
+            _fileSearchCache.Clear();
+        }
+
+        if (Stack.Count == 0) return;
+        if (Stack[Cursor] is ReferencesPanelView refs && !_referencesCache.ContainsKey(refs.SymbolId))
+        {
+            // Mark as loading first so the body renders the spinner instead of
+            // a transient "no references" message while we wait for the query.
+            _referencesCache[refs.SymbolId] = null;
+            StateHasChanged();
+            var result = await BaseApp.FindReferencesAsync(refs.SymbolId);
+            _referencesCache[refs.SymbolId] = result;
+        }
+        else if (Stack[Cursor] is FileSearchPanelView search && !_fileSearchCache.ContainsKey(search.Word))
+        {
+            _fileSearchCache[search.Word] = null;
+            StateHasChanged();
+            var result = await BaseApp.FindInFileAsync(FileId, search.Word);
+            _fileSearchCache[search.Word] = result;
+        }
+    }
+
+    private static string CrumbLabel(InspectorPanelView view) => view switch
+    {
+        OutlinePanelView => "Outline",
+        ReferencesPanelView r => $"Refs: {r.SymbolName}",
+        FileSearchPanelView s => $"In file: {s.Word}",
+        _ => "?",
+    };
+
+    // Categories shown in the outline, in render order. Trigger and event
+    // subscribers are framework-fired but still useful to see at a glance —
+    // they just don't get a Find-references button.
+    private static readonly (string Kind, string Label)[] OutlineCategories =
+    {
+        ("procedure", "Procedures"),
+        ("internal_procedure", "Internal procedures"),
+        ("protected_procedure", "Protected procedures"),
+        ("local_procedure", "Local procedures"),
+        ("event_publisher", "Event publishers"),
+        ("event_subscriber", "Event subscribers"),
+        ("trigger", "Triggers"),
+    };
+
+    private RenderFragment RenderOutline() => __builder =>
+    {
+        var filtered = string.IsNullOrWhiteSpace(_outlineFilter)
+            ? Symbols
+            : Symbols.Where(s => s.Name.Contains(_outlineFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        <div class="inspector-panel__filter">
+            <input type="search"
+                   class="inspector-panel__filter-input"
+                   placeholder="Filter symbols…"
+                   value="@_outlineFilter"
+                   @oninput="@(e => _outlineFilter = e.Value?.ToString() ?? string.Empty)" />
+        </div>
+
+        @if (Symbols.Count == 0)
+        {
+            <p class="muted small inspector-panel__empty">
+                No symbols extracted for this file.
+            </p>
+        }
+        else if (filtered.Count == 0)
+        {
+            <p class="muted small inspector-panel__empty">
+                No matches for "<strong>@_outlineFilter</strong>".
+            </p>
+        }
+        else
+        {
+            <ul class="inspector-panel__sections">
+                @foreach (var (kind, label) in OutlineCategories)
+                {
+                    var rows = filtered.Where(s => s.Kind == kind).ToList();
+                    if (rows.Count == 0) continue;
+
+                    <li class="inspector-panel__section">
+                        <h3 class="inspector-panel__section-title">
+                            @label
+                            <span class="muted small">(@rows.Count)</span>
+                        </h3>
+                        <ul class="inspector-panel__items">
+                            @foreach (var sym in rows)
+                            {
+                                <li class="inspector-panel__item">
+                                    <a class="inspector-panel__item-link"
+                                       href="@($"/object-explorer/{VersionId}/files/{FileId}#L{sym.LineNumber}")"
+                                       @onclick="@(() => OnScrollTo.InvokeAsync((FileId, sym.LineNumber)))"
+                                       @onclick:preventDefault="true"
+                                       @onclick:stopPropagation="true">
+                                        <span class="inspector-panel__item-name">@sym.Name</span>
+                                        <span class="muted small inspector-panel__item-line">L@(sym.LineNumber)</span>
+                                    </a>
+                                    @if (CanFindReferences(sym.Kind))
+                                    {
+                                        <button type="button"
+                                                class="inspector-panel__item-action"
+                                                title="Find references"
+                                                @onclick="() => OnPushReferences.InvokeAsync(sym)">
+                                            <Icon Name="search" Width="13" Height="13" />
+                                        </button>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    </li>
+                }
+            </ul>
+        }
+    };
+
+    private static bool CanFindReferences(string kind)
+    {
+        // Triggers are framework-fired by name pattern, not by user-written
+        // call sites — the references query would never produce useful hits.
+        return kind != "trigger";
+    }
+
+    private RenderFragment RenderReferences(ReferencesPanelView refs) => __builder =>
+    {
+        var hasEntry = _referencesCache.TryGetValue(refs.SymbolId, out var result);
+        if (!hasEntry || result is null)
+        {
+            <p class="muted small inspector-panel__empty">Loading references…</p>
+            return;
+        }
+
+        if (result.Symbol.Id == 0)
+        {
+            <p class="muted small inspector-panel__empty">Symbol not found.</p>
+            return;
+        }
+
+        <p class="muted small inspector-panel__refs-meta">
+            <span class="object-explorer__type">@refs.SymbolKind</span>
+            @refs.SymbolName
+            @if (result.OverloadCount > 1)
+            {
+                <span> · @result.OverloadCount overloads</span>
+            }
+        </p>
+
+        if (result.Likely.Count == 0 && result.PossiblyRelated.Count == 0)
+        {
+            <p class="muted small inspector-panel__empty">
+                No references found in this version.
+            </p>
+            return;
+        }
+
+        if (result.Likely.Count > 0)
+        {
+            <section class="inspector-panel__refs-section">
+                <h3 class="inspector-panel__section-title">
+                    Likely <span class="muted small">(@result.Likely.Count)</span>
+                </h3>
+                @RenderHits(result.Likely)
+            </section>
+        }
+
+        if (result.PossiblyRelated.Count > 0)
+        {
+            <section class="inspector-panel__refs-section">
+                <h3 class="inspector-panel__section-title">
+                    Possibly related <span class="muted small">(@result.PossiblyRelated.Count)</span>
+                </h3>
+                @RenderHits(result.PossiblyRelated)
+            </section>
+        }
+    };
+
+    private RenderFragment RenderFileSearch(FileSearchPanelView search) => __builder =>
+    {
+        var hasEntry = _fileSearchCache.TryGetValue(search.Word, out var result);
+        if (!hasEntry || result is null)
+        {
+            <p class="muted small inspector-panel__empty">Searching…</p>
+            return;
+        }
+
+        <p class="muted small inspector-panel__refs-meta">
+            Occurrences of <code>@search.Word</code> in this file
+            <span class="muted small">· @result.Hits.Count hit@(result.Hits.Count == 1 ? "" : "s")</span>
+        </p>
+
+        if (result.Hits.Count == 0)
+        {
+            <p class="muted small inspector-panel__empty">
+                No occurrences found.
+            </p>
+            return;
+        }
+
+        <ul class="inspector-panel__refs-hits">
+            @foreach (var hit in result.Hits)
+            {
+                <li>
+                    <a class="inspector-panel__refs-hit"
+                       href="@($"/object-explorer/{VersionId}/files/{FileId}#L{hit.LineNumber}")"
+                       @onclick="@(() => OnScrollTo.InvokeAsync((FileId, hit.LineNumber)))"
+                       @onclick:preventDefault="true"
+                       @onclick:stopPropagation="true">
+                        <span class="inspector-panel__refs-hit-line">L@(hit.LineNumber)</span>
+                        <code class="inspector-panel__refs-hit-snippet">@hit.Snippet</code>
+                    </a>
+                </li>
+            }
+        </ul>
+    };
+
+    private RenderFragment RenderHits(IReadOnlyList<BaseAppReferenceHit> hits) => __builder =>
+    {
+        var grouped = hits
+            .GroupBy(h => (h.FileId, h.ObjectType, h.ObjectId, h.ObjectName))
+            .ToList();
+
+        <ul class="inspector-panel__refs-files">
+            @foreach (var group in grouped)
+            {
+                <li class="inspector-panel__refs-file">
+                    <header class="inspector-panel__refs-file-header">
+                        <span class="object-explorer__type">@group.Key.ObjectType</span>
+                        @if (group.Key.ObjectId is { } objId)
+                        {
+                            <span class="muted small">@objId</span>
+                        }
+                        <strong>@group.Key.ObjectName</strong>
+                        <span class="muted small">· @group.Count() hit@(group.Count() == 1 ? "" : "s")</span>
+                    </header>
+                    <ul class="inspector-panel__refs-hits">
+                        @foreach (var hit in group)
+                        {
+                            var hitFileId = hit.FileId;
+                            var hitLine = hit.LineNumber;
+                            <li>
+                                <a class="inspector-panel__refs-hit"
+                                   href="@($"/object-explorer/{VersionId}/files/{hitFileId}#L{hitLine}")"
+                                   @onclick="@(() => OnScrollTo.InvokeAsync((hitFileId, hitLine)))"
+                                   @onclick:preventDefault="true"
+                                   @onclick:stopPropagation="true">
+                                    <span class="inspector-panel__refs-hit-line">L@(hitLine)</span>
+                                    <code class="inspector-panel__refs-hit-snippet">@hit.Snippet</code>
+                                </a>
+                            </li>
+                        }
+                    </ul>
+                </li>
+            }
+        </ul>
+    };
+}

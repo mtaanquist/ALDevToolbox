@@ -19,12 +19,17 @@ namespace ALDevToolbox.Services.Al;
 /// </summary>
 public static class AlGoToDefinitionLocator
 {
+    // Keep this in sync with AlResolvableTokenScanner.ObjectKeywords — both
+    // lists drive "this token is an object reference" detection from the
+    // same left-context check.
     private static readonly HashSet<string> ObjectKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
         "codeunit", "table", "page", "report", "query", "xmlport", "controladdin",
-        "enum", "interface", "permissionset", "profile",
+        "enum", "interface", "permissionset", "profile", "record",
+        "requestpage", "testpage", "testpart", "testrequestpage",
         "pageextension", "tableextension", "reportextension", "enumextension",
         "permissionsetextension",
+        "extends",
     };
 
     /// <summary>
@@ -70,10 +75,11 @@ public static class AlGoToDefinitionLocator
     {
         if (string.IsNullOrEmpty(fileContent) || string.IsNullOrEmpty(variableName)) return null;
         // Match `VarName: Codeunit "Some Name"` or `VarName: Codeunit Identifier`.
-        // The `(?:[^"\r\n;,)]+)` branch catches the unquoted form for
-        // single-word object names; we strip trailing whitespace afterwards.
+        // Record is by far the most common form for field-access targets and
+        // was missing here — `MfgSetup."Dynamic Low-Level Code"` couldn't
+        // resolve because the qualifier walked off `Record "Manufacturing Setup"`.
         var escaped = Regex.Escape(variableName);
-        var pattern = $@"\b{escaped}\s*:\s*(?:Codeunit|Page|Report|Query|XmlPort|Interface|Enum)\s+(""(?<q>[^""]+)""|(?<u>[A-Za-z_][A-Za-z0-9_]*))";
+        var pattern = $@"\b{escaped}\s*:\s*(?:Record|Codeunit|Page|Report|Query|XmlPort|Interface|Enum|RequestPage|TestPage|TestPart|TestRequestPage|ControlAddIn|PermissionSet|Profile)\s+(""(?<q>[^""]+)""|(?<u>[A-Za-z_][A-Za-z0-9_]*))";
         var match = Regex.Match(fileContent, pattern, RegexOptions.IgnoreCase);
         if (!match.Success) return null;
         return match.Groups["q"].Success

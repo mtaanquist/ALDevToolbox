@@ -115,7 +115,15 @@
                     <tr @onclick="() => OpenFile(row.Id)" class="object-explorer__row">
                         <td><span class="object-explorer__type">@row.ObjectType</span></td>
                         <td class="num">@(row.ObjectId?.ToString() ?? "")</td>
-                        <td><a href="@($"/object-explorer/{VersionId}/files/{row.Id}")">@row.ObjectName</a></td>
+                        @* stopPropagation: the anchor's own navigation is enough.
+                           Without it the row's @onclick also fires and we end up
+                           with two history entries for the same URL, which makes
+                           browser Back go "nowhere" once before returning to the
+                           list. *@
+                        <td>
+                            <a href="@($"/object-explorer/{VersionId}/files/{row.Id}")"
+                               @onclick:stopPropagation="true">@row.ObjectName</a>
+                        </td>
                         <td class="muted">@(row.Module ?? "")</td>
                         <td class="muted small">@(row.Namespace ?? "")</td>
                         <td class="num muted">@row.LineCount</td>
