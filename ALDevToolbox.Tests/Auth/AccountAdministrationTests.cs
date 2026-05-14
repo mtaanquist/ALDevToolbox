@@ -1,6 +1,7 @@
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
+using ALDevToolbox.Services.Account;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -32,7 +33,7 @@ public sealed class AccountAdministrationTests : IDisposable
 
         await using (var ctx = _db.NewContext())
         {
-            await NewService(ctx).ApproveSignupAsync(signupId, adminId, TestDb.OtherOrgId);
+            await NewUserAdmin(ctx).ApproveSignupAsync(signupId, adminId, TestDb.OtherOrgId);
         }
 
         await using var read = _db.NewContext();
@@ -52,7 +53,7 @@ public sealed class AccountAdministrationTests : IDisposable
 
         await using (var ctx = _db.NewContext())
         {
-            await NewService(ctx).RejectSignupAsync(signupId, adminId, TestDb.OtherOrgId);
+            await NewUserAdmin(ctx).RejectSignupAsync(signupId, adminId, TestDb.OtherOrgId);
         }
 
         await using var read = _db.NewContext();
@@ -69,7 +70,7 @@ public sealed class AccountAdministrationTests : IDisposable
         var adminId = await SeedActiveAdminAsync(TestDb.DefaultOrgId, "admin@example.com");
 
         await using var ctx = _db.NewContext();
-        Func<Task> act = () => NewService(ctx).ApproveSignupAsync(signupId, adminId, TestDb.DefaultOrgId);
+        Func<Task> act = () => NewUserAdmin(ctx).ApproveSignupAsync(signupId, adminId, TestDb.DefaultOrgId);
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("RequestId");
     }
@@ -81,11 +82,11 @@ public sealed class AccountAdministrationTests : IDisposable
         var adminId = await SeedActiveAdminAsync(TestDb.OtherOrgId, "admin@example.com");
         await using (var ctx = _db.NewContext())
         {
-            await NewService(ctx).ApproveSignupAsync(signupId, adminId, TestDb.OtherOrgId);
+            await NewUserAdmin(ctx).ApproveSignupAsync(signupId, adminId, TestDb.OtherOrgId);
         }
 
         await using var ctx2 = _db.NewContext();
-        Func<Task> act = () => NewService(ctx2).ApproveSignupAsync(signupId, adminId, TestDb.OtherOrgId);
+        Func<Task> act = () => NewUserAdmin(ctx2).ApproveSignupAsync(signupId, adminId, TestDb.OtherOrgId);
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("Decision");
     }
@@ -99,14 +100,14 @@ public sealed class AccountAdministrationTests : IDisposable
         await SeedActiveAdminAsync(orgId, "primary@example.com");
         var subjectId = await SeedActiveUserAsync(orgId, "subject@example.com", UserRole.User);
 
-        await using (var ctx = _db.NewContext()) await NewService(ctx).DisableUserAsync(subjectId, orgId);
+        await using (var ctx = _db.NewContext()) await NewUserAdmin(ctx).DisableUserAsync(subjectId, orgId);
         await using (var read1 = _db.NewContext())
         {
             (await read1.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == subjectId)).Status
                 .Should().Be(UserStatus.Disabled);
         }
 
-        await using (var ctx = _db.NewContext()) await NewService(ctx).EnableUserAsync(subjectId, orgId);
+        await using (var ctx = _db.NewContext()) await NewUserAdmin(ctx).EnableUserAsync(subjectId, orgId);
         await using var read2 = _db.NewContext();
         (await read2.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == subjectId)).Status
             .Should().Be(UserStatus.Active);
@@ -119,7 +120,7 @@ public sealed class AccountAdministrationTests : IDisposable
         var soloAdmin = await SeedActiveAdminAsync(orgId, "lonely@example.com");
 
         await using var ctx = _db.NewContext();
-        Func<Task> act = () => NewService(ctx).DisableUserAsync(soloAdmin, orgId);
+        Func<Task> act = () => NewUserAdmin(ctx).DisableUserAsync(soloAdmin, orgId);
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("LastAdmin");
     }
@@ -131,7 +132,7 @@ public sealed class AccountAdministrationTests : IDisposable
         var soloAdmin = await SeedActiveAdminAsync(orgId, "lonely@example.com");
 
         await using var ctx = _db.NewContext();
-        Func<Task> act = () => NewService(ctx).ChangeRoleAsync(soloAdmin, UserRole.User, orgId);
+        Func<Task> act = () => NewUserAdmin(ctx).ChangeRoleAsync(soloAdmin, UserRole.User, orgId);
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("LastAdmin");
     }
@@ -144,7 +145,7 @@ public sealed class AccountAdministrationTests : IDisposable
         var subjectId = await SeedActiveUserAsync(TestDb.OtherOrgId, "victim@example.com", UserRole.User);
 
         await using var ctx = _db.NewContext();
-        Func<Task> act = () => NewService(ctx).DisableUserAsync(subjectId, TestDb.DefaultOrgId);
+        Func<Task> act = () => NewUserAdmin(ctx).DisableUserAsync(subjectId, TestDb.DefaultOrgId);
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("UserId");
     }
@@ -185,9 +186,9 @@ public sealed class AccountAdministrationTests : IDisposable
 
         await using var read = _db.NewContext();
         var user = await read.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
-        var svc = new AccountService(read, NullLogger<AccountService>.Instance, _clock);
-        svc.VerifyPassword("newcorrectpasswordlong", user.PasswordHash).Should().BeTrue();
-        svc.VerifyPassword("correctpasswordlong", user.PasswordHash).Should().BeFalse();
+        var auth = NewAuth(read);
+        auth.VerifyPassword("newcorrectpasswordlong", user.PasswordHash).Should().BeTrue();
+        auth.VerifyPassword("correctpasswordlong", user.PasswordHash).Should().BeFalse();
     }
 
     // ===== ChangeDisplayNameAsync =====
@@ -267,8 +268,22 @@ public sealed class AccountAdministrationTests : IDisposable
 
     // ===== Fixture helpers =====
 
+    private AuthService NewAuth(Data.AppDbContext ctx) =>
+        new(ctx, NullLogger<AuthService>.Instance, _clock);
+
+    /// <summary>
+    /// Slim AccountService — signup + self-service. Used for ChangePassword,
+    /// ChangeDisplayName, DeleteAccount.
+    /// </summary>
     private AccountService NewService(Data.AppDbContext ctx) =>
-        new(ctx, NullLogger<AccountService>.Instance, _clock);
+        new(ctx, NewAuth(ctx), NullLogger<AccountService>.Instance, _clock);
+
+    /// <summary>
+    /// UserAdministrationService — admin actions on existing users. Used for
+    /// ApproveSignup / RejectSignup / Disable / Enable / ChangeRole.
+    /// </summary>
+    private UserAdministrationService NewUserAdmin(Data.AppDbContext ctx) =>
+        new(ctx, _clock);
 
     private async Task<int> SeedActiveAdminAsync(int orgId, string email) =>
         await SeedActiveUserAsync(orgId, email, UserRole.Admin);
@@ -294,13 +309,13 @@ public sealed class AccountAdministrationTests : IDisposable
     private async Task<int> SeedActiveUserWithPasswordAsync(int orgId, string email, string password)
     {
         await using var ctx = _db.NewContext();
-        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
+        var auth = NewAuth(ctx);
         var user = new User
         {
             OrganizationId = orgId,
             Email = email,
             DisplayName = email,
-            PasswordHash = svc.HashPassword(password),
+            PasswordHash = auth.HashPassword(password),
             Role = UserRole.User,
             Status = UserStatus.Active,
             CreatedAt = _clock.GetUtcNow().UtcDateTime,

@@ -1,6 +1,7 @@
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
+using ALDevToolbox.Services.Account;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -10,9 +11,9 @@ namespace ALDevToolbox.Tests.Auth;
 
 /// <summary>
 /// Behavioural tests for the magic-link sign-in extensions to
-/// <see cref="AccountService"/> (P4.19): 15-minute expiry, single-use semantics,
-/// purpose separation from password-reset tokens, opaque response for unknown
-/// emails, and the per-email rate limit.
+/// <see cref="PasswordResetService"/> (P4.19): 15-minute expiry, single-use
+/// semantics, purpose separation from password-reset tokens, opaque response
+/// for unknown emails, and the per-email rate limit.
 /// </summary>
 public sealed class MagicLinkLoginTests : IDisposable
 {
@@ -20,6 +21,11 @@ public sealed class MagicLinkLoginTests : IDisposable
     private readonly FakeTimeProvider _clock = new(new DateTimeOffset(2026, 5, 11, 9, 0, 0, TimeSpan.Zero));
 
     public void Dispose() => _db.Dispose();
+
+    private PasswordResetService NewSvc(Data.AppDbContext ctx) =>
+        new(ctx,
+            new AuthService(ctx, NullLogger<AuthService>.Instance, _clock),
+            _clock);
 
     private async Task<User> SeedActiveUserAsync(string email = "user@example.com", int id = 700)
     {
@@ -45,7 +51,7 @@ public sealed class MagicLinkLoginTests : IDisposable
     {
         await SeedActiveUserAsync();
         await using var ctx = _db.NewContext();
-        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
+        var svc = NewSvc(ctx);
 
         var token = await svc.CreateMagicLoginTokenAsync("user@example.com", "1.2.3.4");
         token.Should().NotBeNull();
@@ -63,12 +69,12 @@ public sealed class MagicLinkLoginTests : IDisposable
     {
         await SeedActiveUserAsync();
         await using var ctx = _db.NewContext();
-        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
+        var svc = NewSvc(ctx);
 
         var token = await svc.CreateMagicLoginTokenAsync("user@example.com", "1.2.3.4");
         token.Should().NotBeNull();
 
-        _clock.Advance(AccountService.MagicLinkTokenLifetime + TimeSpan.FromSeconds(1));
+        _clock.Advance(PasswordResetService.MagicLinkTokenLifetime + TimeSpan.FromSeconds(1));
 
         Func<Task> act = () => svc.ConsumeMagicLoginTokenAsync(token!);
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
@@ -79,7 +85,7 @@ public sealed class MagicLinkLoginTests : IDisposable
     public async Task Unknown_email_returns_null_so_response_is_opaque()
     {
         await using var ctx = _db.NewContext();
-        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
+        var svc = NewSvc(ctx);
 
         var token = await svc.CreateMagicLoginTokenAsync("ghost@example.com", "1.2.3.4");
         token.Should().BeNull();
@@ -107,7 +113,7 @@ public sealed class MagicLinkLoginTests : IDisposable
         }
 
         await using var ctx = _db.NewContext();
-        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
+        var svc = NewSvc(ctx);
 
         var token = await svc.CreateMagicLoginTokenAsync("off@example.com", "1.2.3.4");
         token.Should().BeNull();
@@ -118,7 +124,7 @@ public sealed class MagicLinkLoginTests : IDisposable
     {
         await SeedActiveUserAsync();
         await using var ctx = _db.NewContext();
-        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
+        var svc = NewSvc(ctx);
 
         var token = await svc.CreateMagicLoginTokenAsync("user@example.com", "1.2.3.4");
         token.Should().NotBeNull();
@@ -133,7 +139,7 @@ public sealed class MagicLinkLoginTests : IDisposable
     {
         await SeedActiveUserAsync();
         await using var ctx = _db.NewContext();
-        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
+        var svc = NewSvc(ctx);
 
         var token = await svc.CreatePasswordResetTokenAsync("user@example.com");
         token.Should().NotBeNull();
@@ -148,9 +154,9 @@ public sealed class MagicLinkLoginTests : IDisposable
     {
         await SeedActiveUserAsync();
         await using var ctx = _db.NewContext();
-        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
+        var svc = NewSvc(ctx);
 
-        for (var i = 0; i < AccountService.MaxAttemptsPerEmail; i++)
+        for (var i = 0; i < AuthService.MaxAttemptsPerEmail; i++)
         {
             var t = await svc.CreateMagicLoginTokenAsync("user@example.com", "1.2.3.4");
             t.Should().NotBeNull("attempt {0} is within the rate window", i);
@@ -162,7 +168,7 @@ public sealed class MagicLinkLoginTests : IDisposable
         var rows = await ctx.PasswordResetTokens
             .Where(t => t.Purpose == TokenPurpose.MagicLogin)
             .CountAsync();
-        rows.Should().Be(AccountService.MaxAttemptsPerEmail, "rate-limited requests must not persist tokens");
+        rows.Should().Be(AuthService.MaxAttemptsPerEmail, "rate-limited requests must not persist tokens");
     }
 
     [Fact]
@@ -170,7 +176,7 @@ public sealed class MagicLinkLoginTests : IDisposable
     {
         await SeedActiveUserAsync();
         await using var ctx = _db.NewContext();
-        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
+        var svc = NewSvc(ctx);
 
         var resetToken = await svc.CreatePasswordResetTokenAsync("user@example.com");
         var magicToken = await svc.CreateMagicLoginTokenAsync("user@example.com", "1.2.3.4");
