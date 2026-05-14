@@ -748,6 +748,11 @@ export function dispose(id) {
 window.__cvInspect = function (verbose) {
     for (const [id, e] of editors.entries()) {
         const view = e.view;
+        const host = view.dom.parentElement;
+        const hostRect = host?.getBoundingClientRect();
+        const editorRect = view.dom.getBoundingClientRect();
+        const scrollRect = view.scrollDOM.getBoundingClientRect();
+        const contentRect = view.contentDOM.getBoundingClientRect();
         const snapshot = {
             id,
             scrollTop: view.scrollDOM.scrollTop,
@@ -759,12 +764,65 @@ window.__cvInspect = function (verbose) {
             contentDOMConnected: view.contentDOM.isConnected,
             scrollDOMChildren: view.scrollDOM.children.length,
             contentDOMChildren: view.contentDOM.children.length,
-            host: view.dom.parentElement?.className,
+            host: host?.className,
+            hostClasses: host?.className,
+            editorClasses: view.dom.className,
+            scrollClasses: view.scrollDOM.className,
+            hostRect: hostRect && {
+                w: hostRect.width, h: hostRect.height,
+                top: hostRect.top, left: hostRect.left,
+            },
+            editorRect: { w: editorRect.width, h: editorRect.height },
+            scrollRect: { w: scrollRect.width, h: scrollRect.height },
+            contentRect: { w: contentRect.width, h: contentRect.height },
+            hostStyle: host && window.getComputedStyle(host).cssText.substring(0, 400),
         };
         console.log("[CV inspect]", snapshot);
         if (verbose) {
+            console.log("[CV inspect] host.outerHTML head:",
+                host?.outerHTML.substring(0, 1200));
             console.log("[CV inspect] scrollDOM.outerHTML head:",
                 view.scrollDOM.outerHTML.substring(0, 800));
         }
     }
+};
+
+// Watch the editor DOM for changes after a click. Logs anything that
+// modifies the editor's class, style, or child set. Call __cvWatch(id)
+// once and leave it running; it'll print [CV mut] entries as the bug
+// unfolds. Pass true as second arg to also watch every descendant
+// (chatty, but catches CSS class flips deep in CM's DOM).
+window.__cvWatch = function (id, deep) {
+    const e = editors.get(id ?? [...editors.keys()][0]);
+    if (!e) {
+        console.warn("[CV watch] no editor");
+        return null;
+    }
+    const view = e.view;
+    const host = view.dom.parentElement;
+    const targets = [host, view.dom, view.scrollDOM, view.contentDOM];
+    const obs = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+            const tag = m.target?.className || m.target?.nodeName;
+            console.log("[CV mut]", {
+                type: m.type,
+                target: tag,
+                attribute: m.attributeName,
+                oldValue: m.oldValue,
+                newValue: m.attributeName ? m.target.getAttribute(m.attributeName) : null,
+                addedNodes: m.addedNodes.length,
+                removedNodes: m.removedNodes.length,
+            });
+        }
+    });
+    for (const t of targets) {
+        obs.observe(t, {
+            attributes: true,
+            attributeOldValue: true,
+            childList: true,
+            subtree: !!deep,
+        });
+    }
+    console.log("[CV watch] observing editor", id, "deep:", !!deep);
+    return obs;
 };

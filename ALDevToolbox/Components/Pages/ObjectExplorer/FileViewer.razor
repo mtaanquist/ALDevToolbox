@@ -307,7 +307,17 @@
     /// </summary>
     private void OnPanelScrollTo((long FileId, int LineNumber) hit)
     {
-        if (hit.FileId == FileId)
+        var sameFile = hit.FileId == FileId;
+        _ = JS.InvokeVoidAsync("console.log", "[CV razor OnPanelScrollTo]", new
+        {
+            sameFile,
+            hitFileId = hit.FileId,
+            currentFileId = FileId,
+            lineNumber = hit.LineNumber,
+            currentScrollLine = _initialScrollLine,
+            currentScrollSequence = _scrollSequence,
+        });
+        if (sameFile)
         {
             SetScrollTarget(hit.LineNumber);
             // `replace` keeps the back-stack from filling up with one entry
