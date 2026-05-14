@@ -110,7 +110,11 @@ public sealed class AdminCatalogTests : IDisposable
             .Click();
 
         // The new row should now be rendered with all four fields empty.
-        cut.FindAll("div.folder-editor__row").Should().HaveCount(1);
+        // Click()'s re-render is async, so wait — a bare FindAll races the
+        // renderer and intermittently sees zero rows (CI run 25865334267
+        // failed exactly this way on the same SHA a push-trigger run passed).
+        cut.WaitForAssertion(() =>
+            cut.FindAll("div.folder-editor__row").Should().HaveCount(1));
 
         // Submit the form; CatalogService.SaveAsync collects one error per
         // missing field and throws PlanValidationException, which the page
