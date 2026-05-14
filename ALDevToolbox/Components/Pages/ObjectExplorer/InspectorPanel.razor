@@ -183,7 +183,8 @@
                                     <a class="inspector-panel__item-link"
                                        href="@($"/object-explorer/{VersionId}/files/{FileId}#L{sym.LineNumber}")"
                                        @onclick="@(() => OnScrollTo.InvokeAsync((FileId, sym.LineNumber)))"
-                                       @onclick:preventDefault="true">
+                                       @onclick:preventDefault="true"
+                                       @onclick:stopPropagation="true">
                                         <span class="inspector-panel__item-name">@sym.Name</span>
                                         <span class="muted small inspector-panel__item-line">L@(sym.LineNumber)</span>
                                     </a>
@@ -294,7 +295,8 @@
                     <a class="inspector-panel__refs-hit"
                        href="@($"/object-explorer/{VersionId}/files/{FileId}#L{hit.LineNumber}")"
                        @onclick="@(() => OnScrollTo.InvokeAsync((FileId, hit.LineNumber)))"
-                       @onclick:preventDefault="true">
+                       @onclick:preventDefault="true"
+                       @onclick:stopPropagation="true">
                         <span class="inspector-panel__refs-hit-line">L@(hit.LineNumber)</span>
                         <code class="inspector-panel__refs-hit-snippet">@hit.Snippet</code>
                     </a>
@@ -331,7 +333,8 @@
                                 <a class="inspector-panel__refs-hit"
                                    href="@($"/object-explorer/{VersionId}/files/{hitFileId}#L{hitLine}")"
                                    @onclick="@(() => OnScrollTo.InvokeAsync((hitFileId, hitLine)))"
-                                   @onclick:preventDefault="true">
+                                   @onclick:preventDefault="true"
+                                   @onclick:stopPropagation="true">
                                     <span class="inspector-panel__refs-hit-line">L@(hitLine)</span>
                                     <code class="inspector-panel__refs-hit-snippet">@hit.Snippet</code>
                                 </a>

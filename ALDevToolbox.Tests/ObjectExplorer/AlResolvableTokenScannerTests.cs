@@ -4,12 +4,12 @@ using FluentAssertions;
 namespace ALDevToolbox.Tests.ObjectExplorer;
 
 /// <summary>
-/// Unit tests for <see cref="AlResolvableTokenScanner"/>. Pins the two
-/// resolution rules: <em>symbol names</em> resolve standalone (procedure
-/// calls, event handlers), <em>object names</em> only resolve in a
+/// Unit tests for <see cref="AlResolvableTokenScanner"/>. Pins the
+/// resolution rules: <em>symbol names</em> resolve only at call sites
+/// (token followed by <c>(</c>), <em>object names</em> only resolve in a
 /// keyword-preceded context (<c>Record "Sales Header"</c>,
-/// <c>Codeunit::"Sales-Post"</c>) so a stray variable named <c>Item</c>
-/// doesn't get a misleading underline.
+/// <c>Codeunit::"Sales-Post"</c>). Lines starting with <c>using</c> /
+/// <c>namespace</c> are skipped entirely.
 /// </summary>
 public sealed class AlResolvableTokenScannerTests
 {
@@ -138,10 +138,10 @@ public sealed class AlResolvableTokenScannerTests
     [Fact]
     public void Same_name_in_both_buckets_resolves_either_way()
     {
-        // `Item` is both an object (table) and a symbol (procedure) — the
-        // standalone bucket wins, so any call site resolves regardless of
-        // whether a keyword precedes it.
-        var source = "    Item.Get(); Cu: Codeunit Item;\n";
+        // `Item` is both an object (table) and a symbol (procedure). The
+        // call site `Item(` resolves via the symbol rule, the keyword-
+        // preceded `Codeunit Item` resolves via the object rule.
+        var source = "    Item(rec); Cu: Codeunit Item;\n";
         var vocab = new ResolvableVocabulary(
             ObjectNames: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Item" },
             SymbolNames: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Item" });
@@ -149,6 +149,54 @@ public sealed class AlResolvableTokenScannerTests
         var ranges = AlResolvableTokenScanner.Scan(source, vocab);
 
         ranges.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Symbol_name_does_NOT_resolve_without_trailing_paren()
+    {
+        // Naked `Post` (no `(`) could be a variable name, a property key,
+        // a namespace segment, etc. Only treat it as a call site when the
+        // parens make the intent unambiguous.
+        var source = "    var Post: Text; Caption = 'Post';\n";
+
+        var ranges = AlResolvableTokenScanner.Scan(source, Symbols("Post"));
+
+        ranges.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Symbol_name_resolves_with_whitespace_before_paren()
+    {
+        var source = "    Post (Header);\n";
+
+        var ranges = AlResolvableTokenScanner.Scan(source, Symbols("Post"));
+
+        ranges.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Using_lines_are_skipped_entirely()
+    {
+        // `using Microsoft.Sales.Setup;` shouldn't underline `Sales` even
+        // if some procedure happens to be called Sales — namespace imports
+        // aren't symbol references.
+        var source = "using Microsoft.Sales.Setup;\nSales(rec);\n";
+
+        var ranges = AlResolvableTokenScanner.Scan(source, Symbols("Sales"));
+
+        ranges.Should().ContainSingle();
+        ranges[0].Line.Should().Be(2, "only the call site on line 2 should match");
+    }
+
+    [Fact]
+    public void Namespace_lines_are_skipped_entirely()
+    {
+        var source = "namespace Microsoft.Sales;\n    Sales(rec);\n";
+
+        var ranges = AlResolvableTokenScanner.Scan(source, Symbols("Sales"));
+
+        ranges.Should().ContainSingle();
+        ranges[0].Line.Should().Be(2);
     }
 
     [Fact]
