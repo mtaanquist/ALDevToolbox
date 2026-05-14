@@ -464,13 +464,14 @@ export function mountReadOnly(container, value, language, options) {
 // short fade-out highlight so the eye lands in the right place. Called by
 // the FileViewer when a #L<n> fragment is in the URL.
 //
-// Single dispatch only — multiple scrollIntoView dispatches in succession
-// were confusing CodeMirror's virtual scroller and leaving the viewport
-// empty after a far-down navigation. The flash + DOM lookup waits one
-// requestAnimationFrame so CM has had a chance to render the now-visible
-// lines: `.cm-line:nth-of-type(N)` counts rendered children (not document
-// line numbers), so after scrolling far down we have to walk to the
-// target line via view.domAtPos instead.
+// Because the host (.code-viewer-host) is the scroll container — not
+// CodeMirror's internal .cm-scroller — we ignore CM's scrollIntoView
+// effect (which targets .cm-scroller and is a no-op here) and compute
+// the line's pixel position via view.coordsAtPos. Every line is rendered
+// up front (see CodeViewer.razor.css), so coordsAtPos works for any
+// position in the document. The outer requestAnimationFrame lets CM
+// finish any pending content / decoration update before we measure;
+// without it, far-down targets can land on stale coords.
 export function scrollToLine(id, lineNumber, flash) {
     const e = editors.get(id);
     if (!e) return;
@@ -479,28 +480,40 @@ export function scrollToLine(id, lineNumber, flash) {
     const totalLines = view.state.doc.lines;
     const safeLine = Math.min(lineNumber, totalLines);
 
-    const line = view.state.doc.line(safeLine);
-    view.dispatch({
-        effects: EditorView.scrollIntoView(line.from, { y: "center" }),
-    });
-    if (!flash) return;
+    const host = view.dom.parentElement;
+    if (!host) return;
 
     requestAnimationFrame(() => {
-        const lineNow = view.state.doc.line(safeLine);
-        const dom = view.domAtPos(lineNow.from);
-        let lineEl = dom?.node instanceof Element ? dom.node : dom?.node?.parentElement;
-        while (lineEl && !(lineEl.classList && lineEl.classList.contains("cm-line"))) {
-            lineEl = lineEl.parentElement;
-        }
-        if (!lineEl) return;
-        // Adding a class that's already present doesn't restart its CSS
-        // animation. Remove → force a reflow → re-add so repeated clicks
-        // on the same reference re-flash the line.
-        lineEl.classList.remove("cm-line--flash");
-        // eslint-disable-next-line no-unused-expressions
-        lineEl.offsetWidth;
-        lineEl.classList.add("cm-line--flash");
-        setTimeout(() => lineEl.classList.remove("cm-line--flash"), 1500);
+        const line = view.state.doc.line(safeLine);
+        const coords = view.coordsAtPos(line.from);
+        if (!coords) return;
+        const hostRect = host.getBoundingClientRect();
+        const lineHeight = Math.max(coords.bottom - coords.top, 16);
+        // coords.top is in viewport coords; translate to host-internal
+        // coords so we can park scrollTop with the target line centred.
+        const yInHost = coords.top - hostRect.top + host.scrollTop;
+        const target = yInHost - host.clientHeight / 2 + lineHeight / 2;
+        host.scrollTop = Math.max(0, Math.min(
+            host.scrollHeight - host.clientHeight,
+            target));
+
+        if (!flash) return;
+        requestAnimationFrame(() => {
+            const dom = view.domAtPos(line.from);
+            let lineEl = dom?.node instanceof Element ? dom.node : dom?.node?.parentElement;
+            while (lineEl && !(lineEl.classList && lineEl.classList.contains("cm-line"))) {
+                lineEl = lineEl.parentElement;
+            }
+            if (!lineEl) return;
+            // Adding a class that's already present doesn't restart its CSS
+            // animation. Remove → force a reflow → re-add so repeated clicks
+            // on the same reference re-flash the line.
+            lineEl.classList.remove("cm-line--flash");
+            // eslint-disable-next-line no-unused-expressions
+            lineEl.offsetWidth;
+            lineEl.classList.add("cm-line--flash");
+            setTimeout(() => lineEl.classList.remove("cm-line--flash"), 1500);
+        });
     });
 }
 

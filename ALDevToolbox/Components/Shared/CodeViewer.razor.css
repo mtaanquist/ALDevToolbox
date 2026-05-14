@@ -1,19 +1,22 @@
+/* The host is the scroll container, not CodeMirror's internal .cm-scroller.
+   With cm-scroller set to overflow: visible, CM6 thinks its scroller has
+   effectively infinite room and renders every line up front instead of
+   virtualising. Larger DOM, but jumping to a far-down target via the
+   outline / find-references is fast and reliable — no more height
+   estimates landing the viewport in an empty region. */
 .code-viewer-host {
     border: 1px solid var(--border, #2a2a35);
     border-radius: 6px;
-    overflow: hidden;
-    /* CodeMirror needs a concrete height to let its internal .cm-scroller
-       take over; max-height alone leaves it auto-sized to content and the
-       container's overflow:hidden then clips long files. */
+    overflow: auto;
     height: 75vh;
-    display: flex;
 }
 
 ::deep .cm-editor {
-    height: 100%;
     width: 100%;
+    /* No fixed height — cm-editor grows to fit its content so every line
+       lives in the DOM. The host's overflow:auto provides the scroll. */
 }
 
 ::deep .cm-scroller {
-    overflow: auto;
+    overflow: visible;
 }
