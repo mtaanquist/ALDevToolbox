@@ -1,0 +1,12 @@
+.code-viewer-host {
+    border: 1px solid var(--border, #2a2a35);
+    border-radius: 6px;
+    overflow: hidden;
+    max-height: 75vh;
+}
+
+/* CodeMirror injects its own .cm-editor / .cm-gutters under code-viewer-host
+   and styles them via the theme extension; we only override the line-class
+   decoration backgrounds used by the diff viewer here. The selectors live on
+   the cm-line element (not behind ::deep) because CodeMirror appends them
+   outside the component's scope-id wrapper. */

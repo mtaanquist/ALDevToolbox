@@ -1,0 +1,201 @@
+@page "/object-explorer/{VersionId:int}/files/{FileId:long}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject BaseAppService BaseApp
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@implements IDisposable
+@using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Domain.Entities
+
+<PageTitle>@(_file?.ObjectName ?? "Object") · AL Dev Toolbox</PageTitle>
+
+<div class="object-explorer__file">
+    <nav class="object-explorer__crumbs">
+        <a href="/object-explorer">Object Explorer</a>
+        <span>›</span>
+        <a href="@($"/object-explorer/{VersionId}")">
+            @(_version is null ? VersionId.ToString() : $"{_version.Major}.{_version.Minor} CU{_version.CumulativeUpdate}")
+        </a>
+        <span>›</span>
+        <span>@(_file?.ObjectName ?? "")</span>
+    </nav>
+
+    @if (_file is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        <header class="object-explorer__file-header">
+            <div>
+                <h1>
+                    <span class="object-explorer__type">@_file.ObjectType</span>
+                    @if (_file.ObjectId is { } id)
+                    {
+                        <span class="muted">@id</span>
+                    }
+                    @_file.ObjectName
+                </h1>
+                <p class="muted small">
+                    @_file.Path
+                    @if (!string.IsNullOrWhiteSpace(_file.Namespace))
+                    {
+                        <span> · @_file.Namespace</span>
+                    }
+                    @if (_declarations.Count > 0)
+                    {
+                        <span> · <strong>Right-click</strong> a procedure name to find references · <strong>Cmd/Ctrl-click</strong> any name to go to its definition.</span>
+                    }
+                    else
+                    {
+                        <span> · <strong>Cmd/Ctrl-click</strong> a name to go to its definition.</span>
+                    }
+                </p>
+            </div>
+
+            @if (_otherVersions is not null && _otherVersions.Count > 0)
+            {
+                <div class="object-explorer__compare">
+                    <label class="field">
+                        <span class="field__label">Compare with</span>
+                        <select class="field__input" @bind="_compareTarget" @bind:after="OpenCompareAsync">
+                            <option value="">Pick a version…</option>
+                            @foreach (var v in _otherVersions)
+                            {
+                                <option value="@v.Id">@v.Major.@v.Minor CU@v.CumulativeUpdate</option>
+                            }
+                        </select>
+                    </label>
+                </div>
+            }
+        </header>
+
+        @if (_lastDefinitionMissed is { } missed)
+        {
+            <p class="form-error" role="status">
+                Couldn't resolve "@missed" in this version.
+            </p>
+        }
+
+        <CodeViewer Content="@_file.Content"
+                    Language="al"
+                    Declarations="_declarations"
+                    OnFindReferences="OnFindReferences"
+                    OnGoToDefinition="OnGoToDefinition"
+                    ScrollToLine="_initialScrollLine" />
+    }
+</div>
+
+@code {
+    [Parameter] public int VersionId { get; set; }
+    [Parameter] public long FileId { get; set; }
+
+    private BaseAppFile? _file;
+    private BaseAppVersion? _version;
+    private List<BaseAppVersion>? _otherVersions;
+    private string _compareTarget = string.Empty;
+    private IReadOnlyList<CodeViewerDeclaration> _declarations = Array.Empty<CodeViewerDeclaration>();
+    private int? _initialScrollLine;
+    private string? _lastDefinitionMissed;
+    private IDisposable? _locationChangedSubscription;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _locationChangedSubscription = Nav.RegisterLocationChangingHandler(OnLocationChanging);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Reload when the route's FileId changes (navigation within Object
+        // Explorer keeps the page mounted and just re-renders).
+        if (_file is not null && _file.Id != FileId)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _file = await BaseApp.GetFileAsync(FileId);
+        if (_file is null || _file.VersionId != VersionId)
+        {
+            Nav.NavigateTo($"/object-explorer/{VersionId}");
+            return;
+        }
+        _version = await BaseApp.GetVersionAsync(VersionId);
+        var all = await BaseApp.ListVersionsAsync();
+        _otherVersions = all.Where(v => v.Id != VersionId).ToList();
+
+        var symbols = await BaseApp.ListSymbolsInFileAsync(FileId);
+        _declarations = symbols
+            .Select(s => new CodeViewerDeclaration(
+                s.Id, s.LineNumber, s.ColumnStart, s.ColumnEnd, s.Kind, s.Name))
+            .ToList();
+
+        _initialScrollLine = ExtractLineAnchor(Nav.Uri);
+    }
+
+    /// <summary>
+    /// Pulls the 1-based line number out of a <c>#L&lt;n&gt;</c> URL fragment.
+    /// Returns <c>null</c> if the fragment is missing or malformed.
+    /// </summary>
+    private static int? ExtractLineAnchor(string uri)
+    {
+        var hashIdx = uri.IndexOf('#');
+        if (hashIdx < 0 || hashIdx == uri.Length - 1) return null;
+        var fragment = uri.Substring(hashIdx + 1);
+        if (fragment.Length < 2 || (fragment[0] != 'L' && fragment[0] != 'l')) return null;
+        if (!int.TryParse(fragment.AsSpan(1), out var line) || line < 1) return null;
+        return line;
+    }
+
+    private void OpenCompareAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_compareTarget)) return;
+        if (!int.TryParse(_compareTarget, out var otherId)) return;
+        Nav.NavigateTo($"/object-explorer/{VersionId}/files/{FileId}/diff/{otherId}");
+    }
+
+    private void OnFindReferences(long symbolId)
+    {
+        Nav.NavigateTo($"/object-explorer/{VersionId}/symbols/{symbolId}/references");
+    }
+
+    private async Task OnGoToDefinition(CodeViewerClick click)
+    {
+        _lastDefinitionMissed = null;
+        var target = await BaseApp.GoToDefinitionAsync(FileId, click.Line, click.Column);
+        if (target is null)
+        {
+            // Surface a small hint so the user knows the click was received
+            // even though resolution failed. We can't echo the clicked word
+            // (the click position is the only thing we have) — keeping the
+            // message generic.
+            _lastDefinitionMissed = $"line {click.Line}, column {click.Column}";
+            StateHasChanged();
+            return;
+        }
+
+        var url = $"/object-explorer/{VersionId}/files/{target.FileId}#L{target.LineNumber}";
+        Nav.NavigateTo(url);
+    }
+
+    private ValueTask OnLocationChanging(LocationChangingContext context)
+    {
+        // Same page, different fragment: re-pull the line anchor so the
+        // viewer scrolls again. (CodeMirror keeps its content; we just want
+        // the scroll-to-line side effect.)
+        if (context.TargetLocation.StartsWith($"/object-explorer/{VersionId}/files/{FileId}", StringComparison.Ordinal))
+        {
+            _initialScrollLine = ExtractLineAnchor(context.TargetLocation);
+        }
+        return ValueTask.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        _locationChangedSubscription?.Dispose();
+    }
+}

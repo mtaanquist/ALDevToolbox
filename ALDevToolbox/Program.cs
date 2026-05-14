@@ -94,6 +94,8 @@ builder.Services.AddScoped<SnippetSuggestionService>();
 builder.Services.AddScoped<ModuleService>();
 builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<ApplicationVersionService>();
+builder.Services.AddScoped<BaseAppService>();
+builder.Services.AddScoped<BaseAppImportService>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<TemplateImportService>();
 builder.Services.AddScoped<WorkspaceConfigService>();
@@ -123,6 +125,17 @@ builder.Services.AddSingleton<IconCatalog>();
 if (Environment.GetEnvironmentVariable("DISABLE_BACKUP_SCHEDULER") != "1")
 {
     builder.Services.AddHostedService<BackupScheduler>();
+}
+// SymbolReindexer backfills the Object Explorer symbol index for versions
+// imported before the symbol feature shipped. Same opt-out pattern as the
+// backup scheduler so CI / tests can skip it. The queue is a singleton
+// because the admin endpoint and the hosted service share the same instance
+// — clicking "Reindex now" signals the worker immediately instead of
+// waiting for the next 5-minute poll.
+builder.Services.AddSingleton<SymbolReindexQueue>();
+if (Environment.GetEnvironmentVariable("DISABLE_SYMBOL_REINDEXER") != "1")
+{
+    builder.Services.AddHostedService<SymbolReindexer>();
 }
 // Email shares the AppDbContext lifetime (Scoped) so it can read the
 // hybrid SMTP override from system_settings.
@@ -237,6 +250,7 @@ app.MapGenerationEndpoints();
 app.MapAdminEndpoints();
 app.MapAccountEndpoints();
 app.MapAdminUserEndpoints();
+app.MapBaseAppEndpoints();
 app.MapSiteAdminEndpoints();
 
 // Run migrations + bootstrap, then flip /readyz to green.

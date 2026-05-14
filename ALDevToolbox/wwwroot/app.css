@@ -2531,3 +2531,217 @@ ul.form-field-error {
     min-width: 220px;
 }
 
+/* Object Explorer */
+.object-explorer__filters {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 16px;
+    align-items: end;
+    margin: 16px 0;
+}
+
+.object-explorer__row {
+    cursor: pointer;
+}
+
+.object-explorer__row:hover {
+    background: var(--surface-hover, rgba(124, 124, 144, 0.08));
+}
+
+.object-explorer__type {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    background: var(--surface-2, rgba(124, 124, 144, 0.12));
+    color: var(--text-2, #b0b0c2);
+    font-size: 11.5px;
+    font-weight: 600;
+    text-transform: lowercase;
+    letter-spacing: 0.02em;
+}
+
+.object-explorer__crumbs {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-size: 13px;
+    color: var(--text-2, #b0b0c2);
+    margin-bottom: 12px;
+}
+
+.object-explorer__crumbs a {
+    color: var(--text-2, #b0b0c2);
+    text-decoration: none;
+}
+
+.object-explorer__crumbs a:hover {
+    text-decoration: underline;
+}
+
+.object-explorer__file-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+
+.object-explorer__file-header h1 {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    margin: 0;
+}
+
+.object-explorer__compare {
+    min-width: 240px;
+}
+
+.object-explorer__row-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+/* Diff line decorations applied by CodeMirror's Decoration.line(). Selectors
+   live in the global stylesheet (not the scoped CodeDiffViewer.razor.css)
+   because CodeMirror renders .cm-line outside the Blazor component's scope-id
+   wrapper, so ::deep can't reach it. */
+.cm-line--diff-added { background: rgba(46, 160, 67, 0.18); }
+.cm-line--diff-removed { background: rgba(248, 81, 73, 0.18); }
+.cm-line--diff-modified { background: rgba(210, 153, 34, 0.18); }
+
+/* Click affordance on procedure/trigger/event declarations in the Object
+   Explorer file viewer. Hover gives a faint underline so users see what's
+   right-clickable; the menu lives in .cm-symbol-menu below. */
+.cm-symbol-decl {
+    cursor: context-menu;
+    text-decoration: underline dotted transparent;
+    text-underline-offset: 3px;
+    transition: text-decoration-color 80ms ease-out;
+}
+.cm-symbol-decl:hover {
+    text-decoration-color: currentColor;
+}
+
+.cm-symbol-menu {
+    position: fixed;
+    z-index: 1000;
+    background: var(--surface-1, #1a1c22);
+    border: 1px solid var(--border, #2a2a35);
+    border-radius: 6px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    padding: 4px;
+    min-width: 160px;
+    font-size: 13px;
+}
+
+.cm-symbol-menu__item {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    width: 100%;
+    text-align: left;
+    padding: 6px 10px;
+    border-radius: 4px;
+    color: var(--text-1, #d8d8e0);
+    cursor: pointer;
+    font: inherit;
+}
+
+.cm-symbol-menu__item:hover {
+    background: var(--surface-hover, rgba(124, 124, 144, 0.16));
+}
+
+/* Brief flash on the line the user navigated to via a #L<n> deep link. */
+.cm-line--flash {
+    animation: cm-line-flash 1.4s ease-out 1;
+}
+@keyframes cm-line-flash {
+    0%   { background: rgba(254, 215, 102, 0.55); }
+    100% { background: transparent; }
+}
+
+/* References page layout */
+.object-explorer__references .references__section {
+    margin-top: 24px;
+}
+
+.references__section h2 {
+    font-size: 15px;
+    margin: 0 0 12px 0;
+}
+
+.references__toggle {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: inherit;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.references__possibly-related-explainer {
+    margin: 4px 0 12px 22px;
+}
+
+.references__file {
+    border: 1px solid var(--border, #2a2a35);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 12px;
+}
+
+.references__file-header {
+    padding: 8px 12px;
+    background: var(--surface-2, rgba(124, 124, 144, 0.08));
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.references__hits {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.references__hit {
+    border-top: 1px solid var(--border, #2a2a35);
+}
+
+.references__hit-link {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    gap: 12px;
+    padding: 6px 12px;
+    text-decoration: none;
+    color: inherit;
+    font-family: var(--mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+    font-size: 12.5px;
+}
+
+.references__hit-link:hover {
+    background: var(--surface-hover, rgba(124, 124, 144, 0.12));
+}
+
+.references__hit-line {
+    color: var(--text-3, #6b6b80);
+    text-align: right;
+    user-select: none;
+}
+
+.references__hit-snippet {
+    color: var(--text-1, #d8d8e0);
+    white-space: pre;
+    overflow-x: auto;
+}
+
+

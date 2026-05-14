@@ -1,0 +1,192 @@
+@page "/object-explorer/{VersionId:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@implements IDisposable
+@inject BaseAppService BaseApp
+@inject NavigationManager Nav
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Services
+
+<PageTitle>@PageHeading · AL Dev Toolbox</PageTitle>
+
+<div class="object-explorer__browser">
+    <header class="admin-page__header">
+        <div>
+            <h1>@PageHeading</h1>
+            <p class="muted">
+                @if (_version is not null)
+                {
+                    <span>@_version.FileCount.ToString("N0") objects · uploaded @_version.UploadedAt.ToString("yyyy-MM-dd")</span>
+                }
+            </p>
+        </div>
+        <a class="btn" href="/object-explorer">
+            <Icon Name="arrow-left" Width="16" Height="16" />
+            <span>All versions</span>
+        </a>
+    </header>
+
+    <div class="object-explorer__filters">
+        <label class="field">
+            <span class="field__label">Search</span>
+            <input type="search"
+                   class="admin-search-input"
+                   placeholder="Codeunit name, procedure, variable…"
+                   value="@_search"
+                   @oninput="OnSearchChanged"
+                   aria-label="Search objects and content" />
+        </label>
+
+        <label class="field">
+            <span class="field__label">Object type</span>
+            <select class="field__input" @bind="_objectType" @bind:after="ReloadAsync">
+                <option value="">All</option>
+                @if (_objectTypes is not null)
+                {
+                    @foreach (var type in _objectTypes)
+                    {
+                        <option value="@type">@type</option>
+                    }
+                }
+            </select>
+        </label>
+
+        <label class="field">
+            <span class="field__label">Module</span>
+            <select class="field__input" @bind="_module" @bind:after="ReloadAsync">
+                <option value="">All</option>
+                @if (_modules is not null)
+                {
+                    @foreach (var m in _modules)
+                    {
+                        <option value="@m">@m</option>
+                    }
+                }
+            </select>
+        </label>
+    </div>
+
+    @if (_page is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_page.Rows.Count == 0)
+    {
+        @if (HasFilters)
+        {
+            <p class="muted">No objects match the current filter.</p>
+        }
+        else
+        {
+            <p class="muted">This version is empty.</p>
+        }
+    }
+    else
+    {
+        <p class="muted small">Showing @_page.Rows.Count of @_page.TotalCount object@(_page.TotalCount == 1 ? "" : "s").</p>
+        <table class="data-table object-explorer__objects">
+            <thead>
+                <tr>
+                    <th scope="col">Type</th>
+                    <th scope="col">ID</th>
+                    <th scope="col">Name</th>
+                    <th scope="col">Module</th>
+                    <th scope="col">Namespace</th>
+                    <th scope="col" class="num">Lines</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _page.Rows)
+                {
+                    <tr @onclick="() => OpenFile(row.Id)" class="object-explorer__row">
+                        <td><span class="object-explorer__type">@row.ObjectType</span></td>
+                        <td class="num">@(row.ObjectId?.ToString() ?? "")</td>
+                        <td><a href="@($"/object-explorer/{VersionId}/files/{row.Id}")">@row.ObjectName</a></td>
+                        <td class="muted">@(row.Module ?? "")</td>
+                        <td class="muted small">@(row.Namespace ?? "")</td>
+                        <td class="num muted">@row.LineCount</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [Parameter] public int VersionId { get; set; }
+
+    private BaseAppVersion? _version;
+    private List<string>? _objectTypes;
+    private List<string>? _modules;
+    private BaseAppFilePage? _page;
+    private string _search = string.Empty;
+    private string _objectType = string.Empty;
+    private string _module = string.Empty;
+    private CancellationTokenSource? _debounce;
+
+    private string PageHeading => _version is null
+        ? "Object Explorer"
+        : $"Business Central {_version.Major}.{_version.Minor} · CU {_version.CumulativeUpdate}";
+
+    private bool HasFilters => !string.IsNullOrWhiteSpace(_search)
+        || !string.IsNullOrWhiteSpace(_objectType)
+        || !string.IsNullOrWhiteSpace(_module);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _version = await BaseApp.GetVersionAsync(VersionId);
+        if (_version is null)
+        {
+            Nav.NavigateTo("/object-explorer");
+            return;
+        }
+        _objectTypes = await BaseApp.ListObjectTypesAsync(VersionId);
+        _modules = await BaseApp.ListModulesAsync(VersionId);
+        await ReloadAsync();
+    }
+
+    private void OnSearchChanged(ChangeEventArgs e)
+    {
+        _search = e.Value?.ToString() ?? string.Empty;
+        DebouncedReload();
+    }
+
+    private void DebouncedReload()
+    {
+        _debounce?.Cancel();
+        _debounce?.Dispose();
+        _debounce = new CancellationTokenSource();
+        var token = _debounce.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(250, token);
+                if (token.IsCancellationRequested) return;
+                await InvokeAsync(ReloadAsync);
+            }
+            catch (TaskCanceledException) { }
+        });
+    }
+
+    private async Task ReloadAsync()
+    {
+        var filter = new BaseAppFileFilter(
+            ObjectType: string.IsNullOrWhiteSpace(_objectType) ? null : _objectType,
+            Module: string.IsNullOrWhiteSpace(_module) ? null : _module,
+            Search: string.IsNullOrWhiteSpace(_search) ? null : _search);
+        _page = await BaseApp.ListFilesAsync(VersionId, filter, skip: 0, take: 500);
+        StateHasChanged();
+    }
+
+    private void OpenFile(long fileId)
+    {
+        Nav.NavigateTo($"/object-explorer/{VersionId}/files/{fileId}");
+    }
+
+    public void Dispose()
+    {
+        _debounce?.Cancel();
+        _debounce?.Dispose();
+    }
+}

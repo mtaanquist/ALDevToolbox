@@ -1,0 +1,122 @@
+@page "/object-explorer/{VersionId:int}/files/{FileId:long}/diff/{OtherVersionId:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject BaseAppService BaseApp
+@inject NavigationManager Nav
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Services
+
+<PageTitle>Diff @(_left?.ObjectName) · AL Dev Toolbox</PageTitle>
+
+<div class="object-explorer__diff-page">
+    <nav class="object-explorer__crumbs">
+        <a href="/object-explorer">Object Explorer</a>
+        <span>›</span>
+        <a href="@($"/object-explorer/{VersionId}")">@(_leftVersion is null ? VersionId.ToString() : $"{_leftVersion.Major}.{_leftVersion.Minor} CU{_leftVersion.CumulativeUpdate}")</a>
+        <span>›</span>
+        <a href="@($"/object-explorer/{VersionId}/files/{FileId}")">@(_left?.ObjectName ?? FileId.ToString())</a>
+        <span>›</span>
+        <span>Compare</span>
+    </nav>
+
+    @if (_left is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_right is null)
+    {
+        <p class="muted">
+            No matching object found in the other version.
+            @if (_left.ObjectId is { } id)
+            {
+                <span>We looked for <strong>@_left.ObjectType @id</strong> and then for the name <strong>@_left.ObjectName</strong>.</span>
+            }
+            else
+            {
+                <span>We looked for <strong>@_left.ObjectType @_left.ObjectName</strong>.</span>
+            }
+        </p>
+    }
+    else
+    {
+        <header class="object-explorer__file-header">
+            <div>
+                <h1>
+                    <span class="object-explorer__type">@_left.ObjectType</span>
+                    @if (_left.ObjectId is { } id)
+                    {
+                        <span class="muted">@id</span>
+                    }
+                    @_left.ObjectName
+                </h1>
+                <p class="muted small">Side-by-side line diff.</p>
+            </div>
+        </header>
+
+        <CodeDiffViewer Diff="@(_diff!)"
+                        LeftLabel="@LeftLabel"
+                        RightLabel="@RightLabel" />
+    }
+</div>
+
+@code {
+    [Parameter] public int VersionId { get; set; }
+    [Parameter] public long FileId { get; set; }
+    [Parameter] public int OtherVersionId { get; set; }
+
+    private BaseAppFile? _left;
+    private BaseAppFile? _right;
+    private BaseAppVersion? _leftVersion;
+    private BaseAppVersion? _rightVersion;
+    private BaseAppDiffResult? _diff;
+
+    private string LeftLabel =>
+        _leftVersion is null ? "Before" : $"{_leftVersion.Major}.{_leftVersion.Minor} CU{_leftVersion.CumulativeUpdate}";
+    private string RightLabel =>
+        _rightVersion is null ? "After" : $"{_rightVersion.Major}.{_rightVersion.Minor} CU{_rightVersion.CumulativeUpdate}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var current = await BaseApp.GetFileAsync(FileId);
+        if (current is null || current.VersionId != VersionId)
+        {
+            Nav.NavigateTo($"/object-explorer/{VersionId}");
+            return;
+        }
+        var currentVersion = await BaseApp.GetVersionAsync(VersionId);
+        var otherVersion = await BaseApp.GetVersionAsync(OtherVersionId);
+        var counterpart = await BaseApp.FindCounterpartAsync(OtherVersionId, current);
+
+        // Convention: older version on the left ("before"), newer on the right
+        // ("after"). When versions are tied we keep the page's version on the right.
+        var currentIsNewer = currentVersion is not null && otherVersion is not null
+            && CompareVersions(currentVersion, otherVersion) >= 0;
+
+        if (currentIsNewer || counterpart is null)
+        {
+            _left = counterpart;
+            _leftVersion = otherVersion;
+            _right = current;
+            _rightVersion = currentVersion;
+        }
+        else
+        {
+            _left = current;
+            _leftVersion = currentVersion;
+            _right = counterpart;
+            _rightVersion = otherVersion;
+        }
+
+        if (_left is not null && _right is not null)
+        {
+            _diff = BaseApp.ComputeDiff(_left.Content, _right.Content);
+        }
+    }
+
+    private static int CompareVersions(BaseAppVersion a, BaseAppVersion b)
+    {
+        if (a.Major != b.Major) return a.Major - b.Major;
+        if (a.Minor != b.Minor) return a.Minor - b.Minor;
+        return a.CumulativeUpdate - b.CumulativeUpdate;
+    }
+}
