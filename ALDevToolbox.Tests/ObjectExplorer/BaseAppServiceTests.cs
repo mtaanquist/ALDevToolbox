@@ -142,6 +142,80 @@ public sealed class BaseAppServiceTests : IDisposable
         (await svc.ListModulesAsync(versionId)).Should().BeEquivalentTo(new[] { "Base Application", "System Application" });
     }
 
+    [Fact]
+    public async Task FindReferences_groups_hits_by_confidence()
+    {
+        var versionId = await SeedVersionAsync(28, new Dictionary<string, string>
+        {
+            ["Sales/SalesPost.Codeunit.al"] = """
+                codeunit 80 "Sales-Post"
+                {
+                    procedure Post(var H: Record "Sales Header"): Boolean
+                    begin
+                        InternalHelper();
+                        exit(true);
+                    end;
+
+                    local procedure InternalHelper()
+                    begin
+                        Post(SalesHeader);
+                    end;
+                }
+                """,
+            ["Sales/SalesPostHook.Codeunit.al"] = """
+                codeunit 81 "Sales Post Hook"
+                {
+                    procedure RunPost()
+                    var
+                        SalesPostCu: Codeunit "Sales-Post";
+                    begin
+                        SalesPostCu.Post(SalesHeader);
+                    end;
+                }
+                """,
+            ["Other/UnrelatedFoo.Codeunit.al"] = """
+                codeunit 82 "Unrelated Foo"
+                {
+                    procedure DoWork()
+                    var
+                        OtherPoster: Codeunit "Other Poster";
+                    begin
+                        OtherPoster.Post();
+                    end;
+                }
+                """,
+        });
+
+        var svc = NewService();
+        var allFiles = await svc.ListFilesAsync(versionId, BaseAppFileFilter.Empty, 0, 50);
+        var salesPostFileId = allFiles.Rows.Single(r => r.ObjectName == "Sales-Post").Id;
+        var symbol = (await svc.ListSymbolsInFileAsync(salesPostFileId))
+            .Single(s => s.Name == "Post" && s.Kind == "procedure");
+
+        var result = await svc.FindReferencesAsync(symbol.Id);
+
+        // Self-call inside Sales-Post is "SameObject" — high confidence.
+        result.Likely.Should().Contain(h =>
+            h.ObjectName == "Sales-Post"
+            && h.Confidence == BaseAppReferenceConfidence.SameObject);
+
+        // The hook codeunit mentions "Sales-Post" on the same call line —
+        // "Qualified" confidence.
+        result.Likely.Should().Contain(h =>
+            h.ObjectName == "Sales Post Hook"
+            && h.Confidence == BaseAppReferenceConfidence.Qualified);
+
+        // The unrelated codeunit's `OtherPoster.Post()` is a bare match
+        // with no mention of "Sales-Post" — "PossiblyRelated".
+        result.PossiblyRelated.Should().Contain(h =>
+            h.ObjectName == "Unrelated Foo");
+
+        // The declaration line itself is excluded.
+        result.Likely.Should().NotContain(h =>
+            h.ObjectName == "Sales-Post"
+            && h.LineNumber == symbol.LineNumber);
+    }
+
     private BaseAppService NewService()
     {
         var ctx = _db.NewContext();

@@ -218,6 +218,52 @@ public sealed class BaseAppImportServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Import_extracts_symbols_and_stamps_indexed_timestamp()
+    {
+        var svc = NewService();
+        var zip = BuildZip(new Dictionary<string, string>
+        {
+            ["Base Application/Sales/SalesPost.Codeunit.al"] = """
+                codeunit 80 "Sales-Post"
+                {
+                    procedure Post(var SalesHeader: Record "Sales Header"; Commit: Boolean)
+                    begin
+                    end;
+
+                    procedure Post(var SalesHeader: Record "Sales Header")
+                    begin
+                    end;
+
+                    [IntegrationEvent(false, false)]
+                    local procedure OnAfterPostSalesDoc(var SalesHeader: Record "Sales Header")
+                    begin
+                    end;
+
+                    trigger OnRun()
+                    begin
+                    end;
+                }
+                """,
+        });
+
+        var summary = await svc.ImportAsync(zip, NewRequest(major: 28));
+
+        using var ctx = _db.NewContext();
+        var version = await ctx.BaseAppVersions.SingleAsync(v => v.Id == summary.VersionId);
+        version.SymbolsIndexedAt.Should().NotBeNull();
+
+        var symbols = await ctx.BaseAppSymbols
+            .Where(s => s.VersionId == summary.VersionId)
+            .OrderBy(s => s.LineNumber)
+            .ToListAsync();
+        symbols.Should().HaveCount(4); // 2 overloads + 1 publisher + 1 trigger
+
+        symbols.Count(s => s.Name == "Post").Should().Be(2, "overloads land as separate rows");
+        symbols.Should().Contain(s => s.Kind == "event_publisher" && s.Name == "OnAfterPostSalesDoc");
+        symbols.Should().Contain(s => s.Kind == "trigger" && s.Name == "OnRun");
+    }
+
+    [Fact]
     public async Task Delete_marks_version_soft_deleted()
     {
         var svc = NewService();

@@ -158,6 +158,25 @@ public class BaseAppImportService
                     LineCount = CountLines(content),
                 };
 
+                // Extract symbol declarations and attach as nav children so
+                // EF cascade-inserts them when the file row lands; FileId is
+                // wired via the relationship and doesn't need to be set
+                // explicitly.
+                foreach (var symbol in AlSymbolExtractor.Extract(content))
+                {
+                    file.Symbols.Add(new BaseAppSymbol
+                    {
+                        OrganizationId = orgId,
+                        VersionId = version.Id,
+                        Kind = symbol.Kind,
+                        Name = symbol.Name,
+                        Signature = symbol.Signature,
+                        LineNumber = symbol.LineNumber,
+                        ColumnStart = symbol.ColumnStart,
+                        ColumnEnd = symbol.ColumnEnd,
+                    });
+                }
+
                 batch.Add(file);
                 if (batch.Count >= BatchSize)
                 {
@@ -174,6 +193,9 @@ public class BaseAppImportService
             // rather than just this ZIP's contribution.
             version.FileCount = await _db.BaseAppFiles.CountAsync(f => f.VersionId == version.Id, ct);
             version.UpdatedAt = DateTime.UtcNow;
+            // Symbols were extracted inline as part of the import, so the
+            // version is fully indexed once SaveChanges commits.
+            version.SymbolsIndexedAt = version.UpdatedAt;
             _db.BaseAppVersions.Update(version);
             await _db.SaveChangesAsync(ct);
 

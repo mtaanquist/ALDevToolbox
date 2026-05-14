@@ -18,6 +18,7 @@ internal sealed class BaseAppVersionConfiguration : IEntityTypeConfiguration<Bas
         entity.Property(e => e.ApplicationVersionId).HasColumnName("application_version_id");
         entity.Property(e => e.Notes).HasColumnName("notes");
         entity.Property(e => e.FileCount).HasColumnName("file_count").IsRequired();
+        entity.Property(e => e.SymbolsIndexedAt).HasColumnName("symbols_indexed_at");
         entity.Property(e => e.UploadedAt).HasColumnName("uploaded_at").IsRequired();
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();

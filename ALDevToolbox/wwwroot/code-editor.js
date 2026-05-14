@@ -264,14 +264,22 @@ export function mount(container, initialValue, language) {
 // dirty tracking — just the language colouriser, line numbers, search,
 // folding, and an EditorView.editable.of(false) so cursor placement still
 // works but typing is rejected.
-export function mountReadOnly(container, value, language, lineDecorations) {
+// options:
+//   lineDecorations: { [1-basedLineNumber]: cssClass }  — full-line backgrounds (diff view)
+//   declarations:    [{ line, columnStart, columnEnd, symbolId, kind, name }]
+//                     ranges that get a click affordance + right-click "Find references"
+//   dotNetRef:        Blazor DotNetObjectReference; callbacks fire `OnFindReferences(symbolId)`
+//   scrollToLine:     1-based line to scroll to + flash after mount (deep-link from references)
+export function mountReadOnly(container, value, language, options) {
     if (!container) return 0;
     const id = nextId++;
     const themeCompartment = new Compartment();
     const initial = value ?? "";
     const lang = typeof language === "string" ? language : "al";
+    const opts = options ?? {};
 
-    const decorationExtensions = buildLineDecorationExtensions(lineDecorations);
+    const decorationExtensions = buildLineDecorationExtensions(opts.lineDecorations);
+    const declarationExtensions = buildDeclarationDecorationExtensions(opts.declarations);
 
     const view = new EditorView({
         parent: container,
@@ -291,6 +299,7 @@ export function mountReadOnly(container, value, language, lineDecorations) {
                 keymap.of([...defaultKeymap, ...searchKeymap, ...foldKeymap]),
                 languageExtensionFor(lang),
                 ...decorationExtensions,
+                ...declarationExtensions,
                 themeCompartment.of(themeExtensions()),
             ],
         }),
@@ -309,17 +318,129 @@ export function mountReadOnly(container, value, language, lineDecorations) {
     const mql = window.matchMedia?.("(prefers-color-scheme: dark)");
     mql?.addEventListener?.("change", reconfigureTheme);
 
+    // Context-menu wiring for click-to-find. Listens for right-clicks on the
+    // editor DOM; if the click hits a declaration's name range, surface a
+    // small floating menu and stop the browser's default menu. Anything
+    // outside a declaration falls through (browser menu kept).
+    const declarations = Array.isArray(opts.declarations) ? opts.declarations : [];
+    let openMenu = null;
+    const onContextMenu = (event) => {
+        if (declarations.length === 0 || !opts.dotNetRef) return;
+        const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+        if (pos === null) return;
+        const line = view.state.doc.lineAt(pos);
+        const colInLine = pos - line.from + 1; // 1-based to match C# columns
+        const hit = declarations.find(d =>
+            d.line === line.number
+            && colInLine >= d.columnStart
+            && colInLine <= d.columnEnd);
+        if (!hit) return;
+        event.preventDefault();
+        closeMenu();
+        openMenu = renderFindReferencesMenu(event.clientX, event.clientY, hit, opts.dotNetRef);
+    };
+    const closeMenu = () => {
+        if (openMenu) {
+            openMenu.remove();
+            openMenu = null;
+        }
+    };
+    container.addEventListener("contextmenu", onContextMenu);
+    document.addEventListener("click", closeMenu);
+    document.addEventListener("scroll", closeMenu, true);
+
     editors.set(id, {
         view,
         pristine: initial,
         dirty: false,
         dispose: () => {
+            container.removeEventListener("contextmenu", onContextMenu);
+            document.removeEventListener("click", closeMenu);
+            document.removeEventListener("scroll", closeMenu, true);
+            closeMenu();
             themeObserver.disconnect();
             mql?.removeEventListener?.("change", reconfigureTheme);
             view.destroy();
         },
     });
+
+    // Deferred scroll-and-flash: wait one rAF so CodeMirror has laid out
+    // and our height measurements are correct before we ask it to scroll.
+    if (typeof opts.scrollToLine === "number" && opts.scrollToLine >= 1) {
+        requestAnimationFrame(() => scrollToLine(id, opts.scrollToLine, /*flash*/ true));
+    }
+
     return id;
+}
+
+// Public: scroll the editor to a 1-based line number, with an optional
+// short fade-out highlight so the eye lands in the right place. Called by
+// the FileViewer when a #L<n> fragment is in the URL.
+export function scrollToLine(id, lineNumber, flash) {
+    const e = editors.get(id);
+    if (!e) return;
+    const view = e.view;
+    if (!Number.isInteger(lineNumber) || lineNumber < 1) return;
+    const totalLines = view.state.doc.lines;
+    const safeLine = Math.min(lineNumber, totalLines);
+    const line = view.state.doc.line(safeLine);
+    view.dispatch({
+        effects: EditorView.scrollIntoView(line.from, { y: "center" }),
+    });
+    if (flash) {
+        const dom = view.dom.querySelector(
+            `.cm-line:nth-of-type(${safeLine})`);
+        if (dom) {
+            dom.classList.add("cm-line--flash");
+            setTimeout(() => dom.classList.remove("cm-line--flash"), 1500);
+        }
+    }
+}
+
+// Builds a CodeMirror extension that wraps each declaration name range
+// with a `cm-symbol-decl` class so users see what's clickable.
+function buildDeclarationDecorationExtensions(declarations) {
+    if (!Array.isArray(declarations) || declarations.length === 0) return [];
+    return [EditorView.decorations.of((view) => {
+        const builder = new RangeSetBuilder();
+        for (const decl of declarations) {
+            const lineNo = decl.line;
+            if (!Number.isInteger(lineNo) || lineNo < 1 || lineNo > view.state.doc.lines) continue;
+            const line = view.state.doc.line(lineNo);
+            const from = line.from + Math.max(0, (decl.columnStart ?? 1) - 1);
+            const toCol = decl.columnEnd ?? (decl.columnStart ?? 1);
+            const to = Math.min(line.to, line.from + Math.max(from - line.from, toCol - 1));
+            if (to <= from) continue;
+            builder.add(from, to, Decoration.mark({
+                class: "cm-symbol-decl",
+                attributes: { "data-symbol-id": String(decl.symbolId) },
+            }));
+        }
+        return builder.finish();
+    })];
+}
+
+// Renders the right-click "Find references" menu near the click point.
+// Returned element is removed by the caller on close.
+function renderFindReferencesMenu(x, y, declaration, dotNetRef) {
+    const menu = document.createElement("div");
+    menu.className = "cm-symbol-menu";
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "cm-symbol-menu__item";
+    item.textContent = "Find references";
+    item.addEventListener("click", () => {
+        menu.remove();
+        dotNetRef.invokeMethodAsync("OnFindReferences", declaration.symbolId)
+            .catch(err => console.warn("Find references callback failed:", err));
+    });
+    menu.appendChild(item);
+
+    document.body.appendChild(menu);
+    return menu;
 }
 
 // Translates the C# {lineNumber: cssClass} map into a CodeMirror extension

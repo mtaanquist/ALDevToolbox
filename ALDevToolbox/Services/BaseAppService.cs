@@ -217,6 +217,196 @@ public class BaseAppService
                 },
                 l.Text ?? string.Empty)).ToList();
     }
+
+    /// <summary>
+    /// Returns all symbols declared in the given file ordered by line, so
+    /// the file viewer's CodeMirror mount can decorate each declaration's
+    /// name token with a click affordance.
+    /// </summary>
+    public Task<List<BaseAppSymbol>> ListSymbolsInFileAsync(long fileId, CancellationToken ct = default)
+    {
+        return _db.BaseAppSymbols
+            .AsNoTracking()
+            .Where(s => s.FileId == fileId)
+            .OrderBy(s => s.LineNumber)
+            .ThenBy(s => s.ColumnStart)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>Returns one symbol by id (with its file + version loaded) or <c>null</c>.</summary>
+    public Task<BaseAppSymbol?> GetSymbolAsync(long id, CancellationToken ct = default)
+    {
+        return _db.BaseAppSymbols
+            .AsNoTracking()
+            .Include(s => s.File)
+            .Include(s => s.Version)
+            .FirstOrDefaultAsync(s => s.Id == id, ct);
+    }
+
+    /// <summary>
+    /// Finds every place in the symbol's version that textually calls
+    /// <c>name(</c>. Hits are classified by confidence so the UI can split
+    /// likely matches from possibly-related ones (different overloads on
+    /// other objects with the same name).
+    /// </summary>
+    public async Task<BaseAppReferenceResult> FindReferencesAsync(long symbolId, CancellationToken ct = default)
+    {
+        var symbol = await GetSymbolAsync(symbolId, ct);
+        if (symbol is null || symbol.File is null)
+        {
+            return BaseAppReferenceResult.Empty;
+        }
+
+        var declaringObjectName = symbol.File.ObjectName;
+        // Other overloads on the same object — the UI surfaces "N overloads"
+        // and the references query covers all of them via the shared name.
+        var overloadCount = await _db.BaseAppSymbols
+            .AsNoTracking()
+            .CountAsync(s => s.FileId == symbol.FileId && s.Name == symbol.Name, ct);
+
+        // Coarse candidate pass via ILIKE: trigram GIN on lower(content) is
+        // already in place, so substring matches are fast even on a real
+        // Base Application. Fine-grained word-boundary check happens in C#
+        // afterwards so a procedure called "Post" doesn't drag in "Posting"
+        // or "Reposted".
+        var ilikePattern = "%" + symbol.Name + "(%";
+
+        var candidateFiles = await _db.BaseAppFiles
+            .AsNoTracking()
+            .Where(f => f.VersionId == symbol.VersionId)
+            .Where(f => EF.Functions.ILike(f.Content, ilikePattern))
+            .Select(f => new
+            {
+                f.Id,
+                f.ObjectType,
+                f.ObjectId,
+                f.ObjectName,
+                f.Path,
+                f.Content,
+            })
+            .ToListAsync(ct);
+
+        var escapedName = System.Text.RegularExpressions.Regex.Escape(symbol.Name);
+        var lineRegex = new System.Text.RegularExpressions.Regex(
+            $@"\b{escapedName}\s*\(",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        var likely = new List<BaseAppReferenceHit>();
+        var possiblyRelated = new List<BaseAppReferenceHit>();
+
+        foreach (var file in candidateFiles)
+        {
+            var lines = file.Content.Replace("\r\n", "\n").Split('\n');
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var match = lineRegex.Match(lines[i]);
+                if (!match.Success) continue;
+
+                // Skip the declaration line itself (file is the declaring
+                // file and the line number matches an overload row).
+                if (file.Id == symbol.FileId)
+                {
+                    var declHere = await _db.BaseAppSymbols
+                        .AsNoTracking()
+                        .AnyAsync(s => s.FileId == symbol.FileId
+                            && s.Name == symbol.Name
+                            && s.LineNumber == i + 1, ct);
+                    if (declHere) continue;
+                }
+
+                var confidence = ClassifyConfidence(
+                    file.ObjectName, declaringObjectName, file.Content);
+
+                var hit = new BaseAppReferenceHit(
+                    FileId: file.Id,
+                    ObjectType: file.ObjectType,
+                    ObjectId: file.ObjectId,
+                    ObjectName: file.ObjectName,
+                    Path: file.Path,
+                    LineNumber: i + 1,
+                    ColumnStart: match.Index + 1,
+                    Snippet: TrimSnippet(lines[i]),
+                    Confidence: confidence);
+
+                if (confidence == BaseAppReferenceConfidence.PossiblyRelated)
+                {
+                    possiblyRelated.Add(hit);
+                }
+                else
+                {
+                    likely.Add(hit);
+                }
+            }
+        }
+
+        // Order: same-object calls first, then qualified, then by file +
+        // line. Possibly-related at the end of their bucket.
+        static int Rank(BaseAppReferenceConfidence c) => c switch
+        {
+            BaseAppReferenceConfidence.SameObject => 0,
+            BaseAppReferenceConfidence.Qualified => 1,
+            _ => 2,
+        };
+        likely = likely
+            .OrderBy(h => Rank(h.Confidence))
+            .ThenBy(h => h.ObjectName)
+            .ThenBy(h => h.LineNumber)
+            .ToList();
+        possiblyRelated = possiblyRelated
+            .OrderBy(h => h.ObjectName)
+            .ThenBy(h => h.LineNumber)
+            .ToList();
+
+        return new BaseAppReferenceResult(
+            Symbol: symbol,
+            OverloadCount: overloadCount,
+            Likely: likely,
+            PossiblyRelated: possiblyRelated);
+    }
+
+    /// <summary>
+    /// Decides how confident we are that a textual <c>Name(</c> in
+    /// <paramref name="fileContent"/> is really a call to the declared
+    /// symbol. We look at the whole file rather than just the matched line
+    /// because AL's call-site syntax (<c>varname.Proc(</c>) uses the
+    /// variable name, while the type-qualifier (<c>Codeunit "Sales-Post"</c>)
+    /// usually lives in a <c>var</c> block elsewhere in the file.
+    /// </summary>
+    private static BaseAppReferenceConfidence ClassifyConfidence(
+        string callerObjectName, string declaringObjectName, string fileContent)
+    {
+        if (string.Equals(callerObjectName, declaringObjectName, StringComparison.Ordinal))
+        {
+            return BaseAppReferenceConfidence.SameObject;
+        }
+
+        // Quoted reference anywhere in the file — `Codeunit "Sales-Post"`,
+        // `Codeunit::"Sales-Post"`, or just `"Sales-Post"` itself.
+        if (fileContent.Contains('"' + declaringObjectName + '"', StringComparison.Ordinal))
+        {
+            return BaseAppReferenceConfidence.Qualified;
+        }
+
+        // Bare identifier reference for single-word object names (AL allows
+        // hyphens and spaces inside quotes only, so multi-word names won't
+        // appear unquoted). Covers `Codeunit ItemMgt` and similar.
+        if (!declaringObjectName.Contains(' ') && !declaringObjectName.Contains('-')
+            && fileContent.Contains(declaringObjectName, StringComparison.Ordinal))
+        {
+            return BaseAppReferenceConfidence.Qualified;
+        }
+
+        return BaseAppReferenceConfidence.PossiblyRelated;
+    }
+
+    private const int SnippetMaxLength = 240;
+    private static string TrimSnippet(string line)
+    {
+        var trimmed = line.TrimEnd();
+        if (trimmed.Length <= SnippetMaxLength) return trimmed;
+        return trimmed.Substring(0, SnippetMaxLength) + "…";
+    }
 }
 
 /// <summary>Filter inputs from the version-browser table.</summary>
@@ -264,4 +454,46 @@ public enum BaseAppDiffChange
     Modified,
     /// <summary>Padding row inserted to align the two sides; nothing actually exists here.</summary>
     Imaginary,
+}
+
+/// <summary>Result of <see cref="BaseAppService.FindReferencesAsync"/>.</summary>
+public sealed record BaseAppReferenceResult(
+    BaseAppSymbol Symbol,
+    int OverloadCount,
+    IReadOnlyList<BaseAppReferenceHit> Likely,
+    IReadOnlyList<BaseAppReferenceHit> PossiblyRelated)
+{
+    public static BaseAppReferenceResult Empty { get; } = new(
+        Symbol: new BaseAppSymbol(),
+        OverloadCount: 0,
+        Likely: Array.Empty<BaseAppReferenceHit>(),
+        PossiblyRelated: Array.Empty<BaseAppReferenceHit>());
+}
+
+/// <summary>One call-site hit found by the references search.</summary>
+public sealed record BaseAppReferenceHit(
+    long FileId,
+    string ObjectType,
+    int? ObjectId,
+    string ObjectName,
+    string Path,
+    int LineNumber,
+    int ColumnStart,
+    string Snippet,
+    BaseAppReferenceConfidence Confidence);
+
+/// <summary>
+/// How sure we are that a textual match is a real call to the declared
+/// symbol. Classification is heuristic — we don't have a full AL parser —
+/// but separating "Likely" from "PossiblyRelated" keeps false positives
+/// from drowning out real hits.
+/// </summary>
+public enum BaseAppReferenceConfidence
+{
+    /// <summary>Match lives in the same object as the declaration — almost certainly a self-call.</summary>
+    SameObject,
+    /// <summary>Match line mentions the declaring object's name (quoted or bare).</summary>
+    Qualified,
+    /// <summary>Bare <c>Name(</c> with no qualifier — could be a different overload on another object.</summary>
+    PossiblyRelated,
 }

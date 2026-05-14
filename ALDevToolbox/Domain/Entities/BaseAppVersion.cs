@@ -38,6 +38,15 @@ public class BaseAppVersion
     /// <summary>Denormalised file count so version-list rows don't COUNT(*) on every row.</summary>
     public int FileCount { get; set; }
 
+    /// <summary>
+    /// Timestamp of the last successful symbol-index pass over this version.
+    /// <c>null</c> means the version's symbols haven't been extracted yet —
+    /// the <c>SymbolReindexer</c> background service picks these up and
+    /// stamps the column when done. Re-imports clear it so the next pass
+    /// re-extracts.
+    /// </summary>
+    public DateTime? SymbolsIndexedAt { get; set; }
+
     public DateTime UploadedAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

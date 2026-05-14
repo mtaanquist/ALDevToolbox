@@ -53,4 +53,6 @@ public class BaseAppFile
 
     /// <summary>Denormalised line count for display in the browser table.</summary>
     public int LineCount { get; set; }
+
+    public ICollection<BaseAppSymbol> Symbols { get; set; } = new List<BaseAppSymbol>();
 }

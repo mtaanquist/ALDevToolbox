@@ -3,6 +3,9 @@
 @rendermode InteractiveServer
 @inject BaseAppService BaseApp
 @inject NavigationManager Nav
+@inject IJSRuntime JS
+@implements IDisposable
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Entities
 
 <PageTitle>@(_file?.ObjectName ?? "Object") · AL Dev Toolbox</PageTitle>
@@ -40,6 +43,10 @@
                     {
                         <span> · @_file.Namespace</span>
                     }
+                    @if (_declarations.Count > 0)
+                    {
+                        <span> · <strong>Right-click</strong> a procedure name to find references.</span>
+                    }
                 </p>
             </div>
 
@@ -62,7 +69,9 @@
 
         <CodeViewer Content="@_file.Content"
                     Language="al"
-                    AriaLabel="@($"Source of {_file.ObjectName}")" />
+                    Declarations="_declarations"
+                    OnFindReferences="OnFindReferences"
+                    ScrollToLine="_initialScrollLine" />
     }
 </div>
 
@@ -74,8 +83,27 @@
     private BaseAppVersion? _version;
     private List<BaseAppVersion>? _otherVersions;
     private string _compareTarget = string.Empty;
+    private IReadOnlyList<CodeViewerDeclaration> _declarations = Array.Empty<CodeViewerDeclaration>();
+    private int? _initialScrollLine;
+    private IDisposable? _locationChangedSubscription;
 
     protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _locationChangedSubscription = Nav.RegisterLocationChangingHandler(OnLocationChanging);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Reload when the route's FileId changes (navigation within Object
+        // Explorer keeps the page mounted and just re-renders).
+        if (_file is not null && _file.Id != FileId)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
     {
         _file = await BaseApp.GetFileAsync(FileId);
         if (_file is null || _file.VersionId != VersionId)
@@ -86,6 +114,28 @@
         _version = await BaseApp.GetVersionAsync(VersionId);
         var all = await BaseApp.ListVersionsAsync();
         _otherVersions = all.Where(v => v.Id != VersionId).ToList();
+
+        var symbols = await BaseApp.ListSymbolsInFileAsync(FileId);
+        _declarations = symbols
+            .Select(s => new CodeViewerDeclaration(
+                s.Id, s.LineNumber, s.ColumnStart, s.ColumnEnd, s.Kind, s.Name))
+            .ToList();
+
+        _initialScrollLine = ExtractLineAnchor(Nav.Uri);
+    }
+
+    /// <summary>
+    /// Pulls the 1-based line number out of a <c>#L&lt;n&gt;</c> URL fragment.
+    /// Returns <c>null</c> if the fragment is missing or malformed.
+    /// </summary>
+    private static int? ExtractLineAnchor(string uri)
+    {
+        var hashIdx = uri.IndexOf('#');
+        if (hashIdx < 0 || hashIdx == uri.Length - 1) return null;
+        var fragment = uri.Substring(hashIdx + 1);
+        if (fragment.Length < 2 || (fragment[0] != 'L' && fragment[0] != 'l')) return null;
+        if (!int.TryParse(fragment.AsSpan(1), out var line) || line < 1) return null;
+        return line;
     }
 
     private void OpenCompareAsync()
@@ -93,5 +143,27 @@
         if (string.IsNullOrWhiteSpace(_compareTarget)) return;
         if (!int.TryParse(_compareTarget, out var otherId)) return;
         Nav.NavigateTo($"/object-explorer/{VersionId}/files/{FileId}/diff/{otherId}");
+    }
+
+    private void OnFindReferences(long symbolId)
+    {
+        Nav.NavigateTo($"/object-explorer/{VersionId}/symbols/{symbolId}/references");
+    }
+
+    private ValueTask OnLocationChanging(LocationChangingContext context)
+    {
+        // Same page, different fragment: re-pull the line anchor so the
+        // viewer scrolls again. (CodeMirror keeps its content; we just want
+        // the scroll-to-line side effect.)
+        if (context.TargetLocation.StartsWith($"/object-explorer/{VersionId}/files/{FileId}", StringComparison.Ordinal))
+        {
+            _initialScrollLine = ExtractLineAnchor(context.TargetLocation);
+        }
+        return ValueTask.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        _locationChangedSubscription?.Dispose();
     }
 }

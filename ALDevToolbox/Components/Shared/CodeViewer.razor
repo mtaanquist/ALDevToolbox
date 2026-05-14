@@ -1,11 +1,16 @@
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 @implements IAsyncDisposable
 
 @*
     Read-only CodeMirror 6 viewer. Mounts the same /code-editor.js module the
     TOML editor uses (Admin/AdminTemplateEdit, Admin/AdminConfigurationWorkspace)
-    via its mountReadOnly export. AL syntax is highlighted by the inline AL
-    StreamLanguage parser declared inside code-editor.js — no extra modules.
+    via its mountReadOnly export.
+
+    Carries the Object Explorer click-to-find gesture: pass Declarations and
+    the component decorates each declaration name with a hoverable class
+    plus a right-click "Find references" menu. The Razor side handles the
+    navigation via NavigationManager (no SymbolReferences URL leakage into JS).
 *@
 
 <div class="code-viewer-host" @ref="_container"></div>
@@ -17,28 +22,58 @@
     /// <summary>Language mode for highlighting (<c>al</c>, <c>toml</c>, <c>json</c>, or empty).</summary>
     [Parameter] public string Language { get; set; } = "al";
 
-    /// <summary>
-    /// Optional per-line CSS classes keyed by 1-based line number. Lets the
-    /// diff viewer flag added / removed / modified lines without pre-processing
-    /// the source.
-    /// </summary>
+    /// <summary>Optional per-line CSS classes keyed by 1-based line number (diff highlighting).</summary>
     [Parameter] public IReadOnlyDictionary<int, string>? LineClasses { get; set; }
+
+    /// <summary>
+    /// Optional declaration ranges. When supplied (and <see cref="OnFindReferences"/>
+    /// is set), the viewer draws a faint underline on each declaration name and
+    /// shows a "Find references" menu on right-click.
+    /// </summary>
+    [Parameter] public IReadOnlyList<CodeViewerDeclaration>? Declarations { get; set; }
+
+    /// <summary>Invoked from the right-click menu when the user picks "Find references".</summary>
+    [Parameter] public EventCallback<long> OnFindReferences { get; set; }
+
+    /// <summary>
+    /// Optional 1-based line number to scroll to (and flash) after mount.
+    /// FileViewer reads this from the URL's <c>#L&lt;n&gt;</c> fragment.
+    /// </summary>
+    [Parameter] public int? ScrollToLine { get; set; }
 
     private ElementReference _container;
     private IJSObjectReference? _module;
     private int _editorId;
     private string? _mountedContent;
+    private DotNetObjectReference<CodeViewerCallbacks>? _callbacks;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
             _module = await JS.InvokeAsync<IJSObjectReference>("import", "/code-editor.js");
-            object? decorations = LineClasses is null
-                ? null
-                : LineClasses.ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value);
+            _callbacks = DotNetObjectReference.Create(new CodeViewerCallbacks(this));
+
+            var options = new
+            {
+                lineDecorations = LineClasses is null
+                    ? null
+                    : LineClasses.ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value),
+                declarations = Declarations?.Select(d => new
+                {
+                    line = d.Line,
+                    columnStart = d.ColumnStart,
+                    columnEnd = d.ColumnEnd,
+                    symbolId = d.SymbolId,
+                    kind = d.Kind,
+                    name = d.Name,
+                }).ToArray(),
+                dotNetRef = Declarations is { Count: > 0 } ? _callbacks : null,
+                scrollToLine = ScrollToLine,
+            };
+
             _editorId = await _module.InvokeAsync<int>(
-                "mountReadOnly", _container, Content ?? string.Empty, Language, decorations);
+                "mountReadOnly", _container, Content ?? string.Empty, Language, options);
             _mountedContent = Content;
             return;
         }
@@ -47,6 +82,14 @@
         {
             await _module.InvokeVoidAsync("setValue", _editorId, Content ?? string.Empty);
             _mountedContent = Content;
+        }
+    }
+
+    internal async Task TriggerFindReferencesAsync(long symbolId)
+    {
+        if (OnFindReferences.HasDelegate)
+        {
+            await OnFindReferences.InvokeAsync(symbolId);
         }
     }
 
@@ -64,5 +107,6 @@
             catch (JSDisconnectedException) { }
             catch (TaskCanceledException) { }
         }
+        _callbacks?.Dispose();
     }
 }

@@ -2605,4 +2605,136 @@ ul.form-field-error {
 .cm-line--diff-removed { background: rgba(248, 81, 73, 0.18); }
 .cm-line--diff-modified { background: rgba(210, 153, 34, 0.18); }
 
+/* Click affordance on procedure/trigger/event declarations in the Object
+   Explorer file viewer. Hover gives a faint underline so users see what's
+   right-clickable; the menu lives in .cm-symbol-menu below. */
+.cm-symbol-decl {
+    cursor: context-menu;
+    text-decoration: underline dotted transparent;
+    text-underline-offset: 3px;
+    transition: text-decoration-color 80ms ease-out;
+}
+.cm-symbol-decl:hover {
+    text-decoration-color: currentColor;
+}
+
+.cm-symbol-menu {
+    position: fixed;
+    z-index: 1000;
+    background: var(--surface-1, #1a1c22);
+    border: 1px solid var(--border, #2a2a35);
+    border-radius: 6px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    padding: 4px;
+    min-width: 160px;
+    font-size: 13px;
+}
+
+.cm-symbol-menu__item {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    width: 100%;
+    text-align: left;
+    padding: 6px 10px;
+    border-radius: 4px;
+    color: var(--text-1, #d8d8e0);
+    cursor: pointer;
+    font: inherit;
+}
+
+.cm-symbol-menu__item:hover {
+    background: var(--surface-hover, rgba(124, 124, 144, 0.16));
+}
+
+/* Brief flash on the line the user navigated to via a #L<n> deep link. */
+.cm-line--flash {
+    animation: cm-line-flash 1.4s ease-out 1;
+}
+@keyframes cm-line-flash {
+    0%   { background: rgba(254, 215, 102, 0.55); }
+    100% { background: transparent; }
+}
+
+/* References page layout */
+.object-explorer__references .references__section {
+    margin-top: 24px;
+}
+
+.references__section h2 {
+    font-size: 15px;
+    margin: 0 0 12px 0;
+}
+
+.references__toggle {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: inherit;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.references__possibly-related-explainer {
+    margin: 4px 0 12px 22px;
+}
+
+.references__file {
+    border: 1px solid var(--border, #2a2a35);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 12px;
+}
+
+.references__file-header {
+    padding: 8px 12px;
+    background: var(--surface-2, rgba(124, 124, 144, 0.08));
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.references__hits {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.references__hit {
+    border-top: 1px solid var(--border, #2a2a35);
+}
+
+.references__hit-link {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    gap: 12px;
+    padding: 6px 12px;
+    text-decoration: none;
+    color: inherit;
+    font-family: var(--mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+    font-size: 12.5px;
+}
+
+.references__hit-link:hover {
+    background: var(--surface-hover, rgba(124, 124, 144, 0.12));
+}
+
+.references__hit-line {
+    color: var(--text-3, #6b6b80);
+    text-align: right;
+    user-select: none;
+}
+
+.references__hit-snippet {
+    color: var(--text-1, #d8d8e0);
+    white-space: pre;
+    overflow-x: auto;
+}
+
 

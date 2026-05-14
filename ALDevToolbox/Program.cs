@@ -126,6 +126,13 @@ if (Environment.GetEnvironmentVariable("DISABLE_BACKUP_SCHEDULER") != "1")
 {
     builder.Services.AddHostedService<BackupScheduler>();
 }
+// SymbolReindexer backfills the Object Explorer symbol index for versions
+// imported before the symbol feature shipped. Same opt-out pattern as the
+// backup scheduler so CI / tests can skip it.
+if (Environment.GetEnvironmentVariable("DISABLE_SYMBOL_REINDEXER") != "1")
+{
+    builder.Services.AddHostedService<SymbolReindexer>();
+}
 // Email shares the AppDbContext lifetime (Scoped) so it can read the
 // hybrid SMTP override from system_settings.
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
