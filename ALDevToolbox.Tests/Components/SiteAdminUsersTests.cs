@@ -6,6 +6,7 @@ using ALDevToolbox.Tests.Infrastructure;
 using Bunit;
 using Bunit.TestDoubles;
 using FluentAssertions;
+using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -62,8 +63,14 @@ public sealed class SiteAdminUsersTests : IDisposable
     [Fact]
     public void Empty_user_set_with_a_query_renders_the_no_match_copy()
     {
-        var cut = _ctx.RenderComponent<SiteAdminUsers>(p => p
-            .Add(c => c.Query, "alice"));
+        // SupplyParameterFromQuery parameters can't be passed via RenderComponent's
+        // builder — Blazor binds them from NavigationManager.Uri. Navigate the
+        // FakeNavigationManager to the URL with the query string and the
+        // component picks Query up the same way it would in production.
+        var nav = _ctx.Services.GetRequiredService<NavigationManager>();
+        nav.NavigateTo("/site-admin/users?q=alice");
+
+        var cut = _ctx.RenderComponent<SiteAdminUsers>();
 
         cut.WaitForAssertion(() =>
         {
