@@ -45,6 +45,17 @@ public static class AlResolvableTokenScanner
         "pageextension", "tableextension", "reportextension", "enumextension",
         "permissionsetextension",
         "extends",
+        // Permission-property keyword: `Permissions = tabledata "Item" = m;` —
+        // the name after `tabledata` is a table reference.
+        "tabledata",
+    };
+
+    // Pseudo-variables inside a table / tableextension body that mean "the
+    // current record". `Rec."No."` / `xRec."No."` resolve to a field of this
+    // file's own table.
+    private static readonly HashSet<string> RecordPseudoVariables = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Rec", "xRec",
     };
 
     // AL language built-ins — Record / Codeunit instance methods and global
@@ -130,7 +141,10 @@ public static class AlResolvableTokenScanner
         string source, ResolvableVocabulary vocabulary)
     {
         if (string.IsNullOrEmpty(source)) return Array.Empty<ResolvableTokenRange>();
-        if (vocabulary.ObjectNames.Count == 0 && vocabulary.SymbolNames.Count == 0)
+        if (vocabulary.ObjectNames.Count == 0
+            && vocabulary.SymbolNames.Count == 0
+            && vocabulary.FieldNamesInThisFile.Count == 0
+            && vocabulary.FieldsByVariable.Count == 0)
         {
             return Array.Empty<ResolvableTokenRange>();
         }
@@ -252,8 +266,68 @@ public static class AlResolvableTokenScanner
             return true;
         }
 
+        // Dot-qualified field reference: `<varname>.<token>` where the
+        // variable was declared as `Record "<Table>"` and the token names
+        // one of that table's fields. Also catches the pseudo-variables
+        // `Rec` / `xRec` which mean "this file's own table" inside a
+        // table/tableextension.
+        if (TryGetDotQualifier(lineText, tokenStart, out var qualifier))
+        {
+            if (vocab.FieldsByVariable.TryGetValue(qualifier, out var fields)
+                && fields.Contains(name))
+            {
+                return true;
+            }
+            if (RecordPseudoVariables.Contains(qualifier)
+                && vocab.FieldNamesInThisFile.Contains(name))
+            {
+                return true;
+            }
+        }
+
+        // Intra-table field reference: a *quoted* identifier inside a
+        // table/tableextension file whose name matches one of this file's
+        // own fields. Covers `"No." := ''`, `xRec."No." <> ''`,
+        // `DataCaptionFields = "No.", "Name";`, and built-in calls like
+        // `Validate("No.")`. Restricted to quoted form to avoid the false
+        // positives that bare-identifier matching would invite (every
+        // `Customer` token in a comment-stripped position would otherwise
+        // trip the check).
+        if (vocab.FieldNamesInThisFile.Contains(name)
+            && IsQuotedToken(lineText, tokenStart, tokenEnd))
+        {
+            return true;
+        }
+
         return false;
     }
+
+    /// <summary>
+    /// When the token at <paramref name="tokenStart"/> is preceded by
+    /// <c>&lt;qualifier&gt;.</c> (whitespace ignored), returns the qualifier
+    /// identifier. The qualifier itself must be a bare identifier — quoted
+    /// qualifiers (<c>"Sales-Post".Post</c>) are object-name access and
+    /// don't go through the field-vocabulary path.
+    /// </summary>
+    private static bool TryGetDotQualifier(string lineText, int tokenStart, out string qualifier)
+    {
+        qualifier = string.Empty;
+        var i = tokenStart - 1;
+        while (i >= 0 && char.IsWhiteSpace(lineText[i])) i--;
+        if (i < 0 || lineText[i] != '.') return false;
+        i--;
+        while (i >= 0 && char.IsWhiteSpace(lineText[i])) i--;
+        if (i < 0 || !IsIdentifierChar(lineText[i])) return false;
+        var end = i;
+        while (i >= 0 && IsIdentifierChar(lineText[i])) i--;
+        qualifier = lineText.Substring(i + 1, end - i);
+        return true;
+    }
+
+    private static bool IsQuotedToken(string lineText, int tokenStart, int tokenEnd)
+        => tokenStart >= 0 && tokenEnd <= lineText.Length
+            && tokenStart < lineText.Length && lineText[tokenStart] == '"'
+            && tokenEnd >= 1 && lineText[tokenEnd - 1] == '"';
 
     private static bool IsFollowedByOpenParen(string lineText, int tokenEnd)
     {
@@ -270,6 +344,18 @@ public static class AlResolvableTokenScanner
 
         // `::` operator — typed reference, e.g. `Codeunit::"Sales-Post"`.
         if (i >= 1 && lineText[i] == ':' && lineText[i - 1] == ':') return true;
+
+        // Skip an optional numeric object ID between the keyword and the
+        // name — `table 36 "Sales Header"`, `codeunit 80 "Sales-Post"`.
+        // Without this, the declaration line of every object fails the
+        // keyword check because `36` (a digit) sits where the keyword
+        // would otherwise be.
+        if (char.IsDigit(lineText[i]))
+        {
+            while (i >= 0 && char.IsDigit(lineText[i])) i--;
+            while (i >= 0 && char.IsWhiteSpace(lineText[i])) i--;
+            if (i < 0) return false;
+        }
 
         // Trailing identifier — is it an object keyword like `Codeunit`?
         if (!IsIdentifierChar(lineText[i])) return false;
@@ -353,11 +439,27 @@ public static class AlResolvableTokenScanner
 /// <see cref="ObjectNames"/> are file-level identifiers (Sales Header,
 /// Sales-Post) — only resolvable in a keyword-preceded context.
 /// <see cref="SymbolNames"/> are callable identifiers (procedures, events)
-/// — resolvable standalone.
+/// — resolvable at call sites.
+/// <see cref="FieldNamesInThisFile"/> are fields of the file's own table
+/// (only populated when the file is a <c>table</c> or <c>tableextension</c>)
+/// — quoted occurrences resolve as intra-table field references, plus
+/// dot-qualified access via the <c>Rec</c> / <c>xRec</c> pseudo-variables.
+/// <see cref="FieldsByVariable"/> maps a variable name to the field set of
+/// its declared <c>Record "Table"</c> type so <c>SalesHdr."No."</c> resolves
+/// across files.
 /// </summary>
 public sealed record ResolvableVocabulary(
     IReadOnlySet<string> ObjectNames,
-    IReadOnlySet<string> SymbolNames);
+    IReadOnlySet<string> SymbolNames,
+    IReadOnlySet<string> FieldNamesInThisFile,
+    IReadOnlyDictionary<string, IReadOnlySet<string>> FieldsByVariable)
+{
+    public static ResolvableVocabulary Empty { get; } = new(
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+        new Dictionary<string, IReadOnlySet<string>>(StringComparer.OrdinalIgnoreCase));
+}
 
 /// <summary>
 /// One range that the file viewer should underline as resolvable. Columns are

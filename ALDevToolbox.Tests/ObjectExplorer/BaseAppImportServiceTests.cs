@@ -255,11 +255,13 @@ public sealed class BaseAppImportServiceTests : IDisposable
             .Where(s => s.VersionId == summary.VersionId)
             .OrderBy(s => s.LineNumber)
             .ToListAsync();
-        symbols.Should().HaveCount(4); // 2 overloads + 1 publisher + 1 trigger
+        // 2 overloads + 1 publisher + 1 trigger + 1 object_declaration header.
+        symbols.Should().HaveCount(5);
 
         symbols.Count(s => s.Name == "Post").Should().Be(2, "overloads land as separate rows");
         symbols.Should().Contain(s => s.Kind == "event_publisher" && s.Name == "OnAfterPostSalesDoc");
         symbols.Should().Contain(s => s.Kind == "trigger" && s.Name == "OnRun");
+        symbols.Should().Contain(s => s.Kind == "object_declaration" && s.Name == "Sales-Post");
     }
 
     [Fact]

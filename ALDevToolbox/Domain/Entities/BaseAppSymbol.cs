@@ -27,20 +27,31 @@ public class BaseAppSymbol
     /// <summary>
     /// One of: <c>procedure</c>, <c>local_procedure</c>,
     /// <c>internal_procedure</c>, <c>protected_procedure</c>, <c>trigger</c>,
-    /// <c>event_publisher</c>, <c>event_subscriber</c>. Stored as a string so
-    /// new AL declaration kinds don't need a migration.
+    /// <c>event_publisher</c>, <c>event_subscriber</c>, <c>field</c>,
+    /// <c>object_declaration</c>. Stored as a string so new AL declaration
+    /// kinds don't need a migration.
     /// </summary>
     public string Kind { get; set; } = string.Empty;
 
-    /// <summary>Unquoted procedure or trigger name.</summary>
+    /// <summary>Unquoted procedure / trigger / field / object name.</summary>
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
-    /// Parameter list as written, including the surrounding parentheses
-    /// (e.g. <c>(var SalesHeader: Record "Sales Header"; Commit: Boolean)</c>).
-    /// <c>null</c> for triggers without a parameter list captured.
+    /// Procedures: parameter list as written, including the surrounding
+    /// parentheses (e.g. <c>(var SalesHeader: Record "Sales Header"; Commit:
+    /// Boolean)</c>). Fields: the AL data type of the field (e.g. <c>Code[20]</c>
+    /// or <c>Enum "Sales Document Type"</c>). <c>null</c> for triggers without
+    /// a parameter list captured and for <c>object_declaration</c> rows.
     /// </summary>
     public string? Signature { get; set; }
+
+    /// <summary>
+    /// AL field number for <c>field</c> rows (1, 2, 3 …); <c>null</c> for
+    /// every other kind. Stored separately from <see cref="Signature"/> so
+    /// the inspector can show "(1) No." rather than parsing the field number
+    /// back out of a free-form string.
+    /// </summary>
+    public int? FieldId { get; set; }
 
     /// <summary>1-based line where the declaration appears.</summary>
     public int LineNumber { get; set; }

@@ -22,6 +22,26 @@ public static class AlSymbolExtractor
         @"\s*(?<sig>\([^)]*\))?",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // Field declaration inside a table / tableextension fields block.
+    // `field(1; "No."; Code[20])` — the type runs to the closing paren but
+    // may itself contain brackets (e.g. `Code[20]`). The regex matches up
+    // to the *first* `)` that closes the field declaration; trailing
+    // content like `{ ... }` or a same-line `{ }` is left alone.
+    private static readonly Regex FieldDeclarationRegex = new(
+        @"^\s*field\s*\(\s*(?<id>\d+)\s*;\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*;\s*(?<type>[^)]+?)\s*\)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // The object-header declaration line: `table 36 "Sales Header"`,
+    // `codeunit 80 "Sales-Post"`, `tableextension 7300 "ItemExt" extends "Item"`
+    // etc. We only care about the *primary* object name (not the `extends`
+    // target — that's already covered by the reference scanner). Mirrors the
+    // shape used by `AlDeclarationParser.DeclarationRegex`.
+    private static readonly Regex ObjectDeclarationRegex = new(
+        @"^\s*(?<type>codeunit|tableextension|pageextension|reportextension|enumextension|permissionsetextension|pagecustomization|table|page|report|query|xmlport|controladdin|enum|interface|permissionset|profile|dotnet)\b" +
+        @"(?:\s+(?<id>\d+))?" +
+        @"\s+(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private static readonly Regex IntegrationEventAttrRegex = new(
         @"^\s*\[\s*(IntegrationEvent|BusinessEvent)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -51,6 +71,7 @@ public static class AlSymbolExtractor
 
         var inBlockComment = false;
         var pendingEventKind = (string?)null; // "publisher" / "subscriber" / null
+        var objectDeclEmitted = false;
 
         for (var i = 0; i < lines.Length; i++)
         {
@@ -62,6 +83,32 @@ public static class AlSymbolExtractor
                 // Pure-whitespace / pure-comment line — keep the pending
                 // attribute marker so the decl can still bind to it.
                 continue;
+            }
+
+            // Object header (`table 36 "Sales Header"`). Only the first match
+            // counts; later occurrences of the same shape inside the body —
+            // unlikely but defensible — are ignored. Emitted before the
+            // attribute branch because the header line never carries an
+            // attribute.
+            if (!objectDeclEmitted)
+            {
+                var objMatch = ObjectDeclarationRegex.Match(stripped);
+                if (objMatch.Success)
+                {
+                    var objRawName = objMatch.Groups["name"].Value;
+                    var objName = Unquote(objRawName);
+                    var (objColStart, objColEnd) = FindNameColumns(rawLine, objRawName);
+                    results.Add(new AlSymbol(
+                        Kind: "object_declaration",
+                        Name: objName,
+                        Signature: null,
+                        FieldId: null,
+                        LineNumber: i + 1,
+                        ColumnStart: objColStart,
+                        ColumnEnd: objColEnd));
+                    objectDeclEmitted = true;
+                    continue;
+                }
             }
 
             // Attribute line: classify it and skip without resetting the
@@ -80,6 +127,34 @@ public static class AlSymbolExtractor
                 continue;
             }
 
+            // Field declarations. Independent of the procedure regex — they
+            // only appear inside a `fields { ... }` block in practice, and
+            // any false match outside that block (vanishingly rare) is still
+            // a harmless symbol row.
+            var fieldMatch = FieldDeclarationRegex.Match(stripped);
+            if (fieldMatch.Success)
+            {
+                var fieldRawName = fieldMatch.Groups["name"].Value;
+                var fieldName = Unquote(fieldRawName);
+                var fieldType = fieldMatch.Groups["type"].Value.Trim();
+                int? fieldId = null;
+                if (int.TryParse(fieldMatch.Groups["id"].Value, out var parsedId))
+                {
+                    fieldId = parsedId;
+                }
+                var (fColStart, fColEnd) = FindNameColumns(rawLine, fieldRawName);
+                results.Add(new AlSymbol(
+                    Kind: "field",
+                    Name: fieldName,
+                    Signature: string.IsNullOrEmpty(fieldType) ? null : fieldType,
+                    FieldId: fieldId,
+                    LineNumber: i + 1,
+                    ColumnStart: fColStart,
+                    ColumnEnd: fColEnd));
+                pendingEventKind = null;
+                continue;
+            }
+
             var match = DeclarationRegex.Match(stripped);
             if (!match.Success)
             {
@@ -93,9 +168,7 @@ public static class AlSymbolExtractor
                 ? match.Groups["scope"].Value.Trim().ToLowerInvariant()
                 : string.Empty;
             var rawName = match.Groups["name"].Value;
-            var name = rawName.StartsWith('"') && rawName.EndsWith('"') && rawName.Length >= 2
-                ? rawName.Substring(1, rawName.Length - 2)
-                : rawName;
+            var name = Unquote(rawName);
             var signature = match.Groups["sig"].Success ? match.Groups["sig"].Value : null;
 
             var kind = ClassifyKind(rawKind, scope, pendingEventKind);
@@ -109,6 +182,7 @@ public static class AlSymbolExtractor
                 Kind: kind,
                 Name: name,
                 Signature: signature,
+                FieldId: null,
                 LineNumber: i + 1,
                 ColumnStart: columnStart,
                 ColumnEnd: columnEnd));
@@ -118,6 +192,11 @@ public static class AlSymbolExtractor
 
         return results;
     }
+
+    private static string Unquote(string raw)
+        => raw.StartsWith('"') && raw.EndsWith('"') && raw.Length >= 2
+            ? raw.Substring(1, raw.Length - 2)
+            : raw;
 
     private static string ClassifyKind(string rawKind, string scope, string? pendingEventKind)
     {
@@ -236,12 +315,15 @@ public static class AlSymbolExtractor
 
 /// <summary>
 /// One declaration found by <see cref="AlSymbolExtractor.Extract"/>.
-/// Line/column are 1-based against the original source.
+/// Line/column are 1-based against the original source. <see cref="FieldId"/>
+/// is populated for <c>field</c> rows (the AL field number) and <c>null</c>
+/// for every other kind.
 /// </summary>
 public sealed record AlSymbol(
     string Kind,
     string Name,
     string? Signature,
+    int? FieldId,
     int LineNumber,
     int ColumnStart,
     int ColumnEnd);

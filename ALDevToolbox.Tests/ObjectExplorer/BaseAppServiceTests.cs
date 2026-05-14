@@ -218,6 +218,147 @@ public sealed class BaseAppServiceTests : IDisposable
             && h.LineNumber == symbol.LineNumber);
     }
 
+    [Fact]
+    public async Task FindReferences_on_local_procedure_only_searches_declaring_file()
+    {
+        // Two files in the same version each have a `local procedure
+        // CommonHelper()` — the second file's procedure is unrelated to
+        // the first's. A local procedure is only callable inside its
+        // declaring file, so the references query must not return the
+        // second file's call site even though the names match.
+        var versionId = await SeedVersionAsync(28, new Dictionary<string, string>
+        {
+            ["A/FooA.Codeunit.al"] = """
+                codeunit 100 "Foo A"
+                {
+                    local procedure CommonHelper()
+                    begin
+                    end;
+
+                    procedure DoIt()
+                    begin
+                        CommonHelper();
+                    end;
+                }
+                """,
+            ["B/FooB.Codeunit.al"] = """
+                codeunit 101 "Foo B"
+                {
+                    local procedure CommonHelper()
+                    begin
+                    end;
+
+                    procedure DoOther()
+                    begin
+                        CommonHelper();
+                    end;
+                }
+                """,
+        });
+
+        var svc = NewService();
+        var allFiles = await svc.ListFilesAsync(versionId, BaseAppFileFilter.Empty, 0, 50);
+        var fooAId = allFiles.Rows.Single(r => r.ObjectName == "Foo A").Id;
+        var localProc = (await svc.ListSymbolsInFileAsync(fooAId))
+            .Single(s => s.Name == "CommonHelper" && s.Kind == "local_procedure");
+
+        var result = await svc.FindReferencesAsync(localProc.Id);
+
+        // The Foo A call site is included; nothing from Foo B.
+        result.Likely.Concat(result.PossiblyRelated)
+            .Should().OnlyContain(h => h.ObjectName == "Foo A");
+    }
+
+    [Fact]
+    public async Task FindReferences_on_field_returns_quoted_use_sites_classified()
+    {
+        var versionId = await SeedVersionAsync(28, new Dictionary<string, string>
+        {
+            ["Sales/SalesHeader.Table.al"] = """
+                table 36 "Sales Header"
+                {
+                    fields
+                    {
+                        field(1; "No."; Code[20]) { }
+                    }
+                }
+                """,
+            ["Sales/SalesPost.Codeunit.al"] = """
+                codeunit 80 "Sales-Post"
+                {
+                    procedure Post()
+                    var
+                        SalesHdr: Record "Sales Header";
+                    begin
+                        SalesHdr."No." := '';
+                    end;
+                }
+                """,
+            ["Other/Unrelated.Codeunit.al"] = """
+                codeunit 82 "Unrelated"
+                {
+                    procedure DoWork()
+                    begin
+                        // Mentions "No." in a string-y context that
+                        // happens to ILIKE-match without a typed-var
+                        // back reference to the Sales Header table.
+                        Message('"No." is the field caption');
+                    end;
+                }
+                """,
+        });
+
+        var svc = NewService();
+        var allFiles = await svc.ListFilesAsync(versionId, BaseAppFileFilter.Empty, 0, 50);
+        var tableFileId = allFiles.Rows.Single(r => r.ObjectName == "Sales Header").Id;
+        var fieldSymbol = (await svc.ListSymbolsInFileAsync(tableFileId))
+            .Single(s => s.Kind == "field" && s.Name == "No.");
+
+        var result = await svc.FindReferencesAsync(fieldSymbol.Id);
+
+        // The Sales-Post codeunit declares `Record "Sales Header"` —
+        // that's a Qualified hit. The unrelated codeunit doesn't, so
+        // it's PossiblyRelated.
+        result.Likely.Should().Contain(h =>
+            h.ObjectName == "Sales-Post"
+            && h.Confidence == BaseAppReferenceConfidence.Qualified);
+        result.PossiblyRelated.Should().Contain(h => h.ObjectName == "Unrelated");
+    }
+
+    [Fact]
+    public async Task ListResolvableTokens_underlines_intra_table_quoted_field_reference()
+    {
+        var versionId = await SeedVersionAsync(28, new Dictionary<string, string>
+        {
+            ["Sales/SalesHeader.Table.al"] = """
+                table 36 "Sales Header"
+                {
+                    fields
+                    {
+                        field(1; "No."; Code[20]) { }
+                    }
+
+                    trigger OnInsert()
+                    begin
+                        if "No." = '' then
+                            "No." := '???';
+                    end;
+                }
+                """,
+        });
+
+        var svc = NewService();
+        var allFiles = await svc.ListFilesAsync(versionId, BaseAppFileFilter.Empty, 0, 50);
+        var tableFileId = allFiles.Rows.Single(r => r.ObjectName == "Sales Header").Id;
+
+        var ranges = await svc.ListResolvableTokensInFileAsync(tableFileId);
+
+        // Two quoted `"No."` use sites in the trigger body. The field
+        // declaration line itself isn't a "resolvable" — that's a
+        // `cm-symbol-decl` declaration row from the symbol list.
+        ranges.Where(r => r.Line >= 9).Should().HaveCount(2);
+    }
+
     private BaseAppService NewService()
     {
         var ctx = _db.NewContext();

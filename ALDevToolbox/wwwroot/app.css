@@ -3002,6 +3002,46 @@ ul.form-field-error {
     align-items: baseline;
 }
 
+/* Collapsible section header — same typography as the static title, plus
+   a leading chevron and a button cursor so it's discoverable. The chevron
+   itself is a vendored Lucide icon, so no rotation animation; we swap
+   chevron-right / chevron-down between collapsed and expanded states. */
+.inspector-panel__section-toggle {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    padding: 4px 0;
+    margin: 0 0 4px 0;
+    width: 100%;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-2, #b0b0c2);
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    cursor: pointer;
+    text-align: left;
+}
+.inspector-panel__section-toggle:hover {
+    color: var(--text-1, #d8d8e0);
+}
+.inspector-panel__section-title-text {
+    flex: 0 0 auto;
+}
+
+/* Full-viewport invisible backdrop used to dismiss the outline row's
+   right-click menu on outside-click. Sits below the menu (z-index 999
+   vs the menu's 1000). Pointer-events: auto so the click is caught. */
+.cm-symbol-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    background: transparent;
+}
+
 .inspector-panel__item {
     display: flex;
     align-items: center;

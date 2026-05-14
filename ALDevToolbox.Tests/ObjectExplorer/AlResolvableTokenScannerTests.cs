@@ -15,11 +15,30 @@ public sealed class AlResolvableTokenScannerTests
 {
     private static ResolvableVocabulary Symbols(params string[] names) =>
         new(ObjectNames: new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-            SymbolNames: new HashSet<string>(names, StringComparer.OrdinalIgnoreCase));
+            SymbolNames: new HashSet<string>(names, StringComparer.OrdinalIgnoreCase),
+            FieldNamesInThisFile: new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            FieldsByVariable: new Dictionary<string, IReadOnlySet<string>>(StringComparer.OrdinalIgnoreCase));
 
     private static ResolvableVocabulary Objects(params string[] names) =>
         new(ObjectNames: new HashSet<string>(names, StringComparer.OrdinalIgnoreCase),
-            SymbolNames: new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            SymbolNames: new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            FieldNamesInThisFile: new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            FieldsByVariable: new Dictionary<string, IReadOnlySet<string>>(StringComparer.OrdinalIgnoreCase));
+
+    private static ResolvableVocabulary FieldsInFile(params string[] names) =>
+        new(ObjectNames: new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            SymbolNames: new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            FieldNamesInThisFile: new HashSet<string>(names, StringComparer.OrdinalIgnoreCase),
+            FieldsByVariable: new Dictionary<string, IReadOnlySet<string>>(StringComparer.OrdinalIgnoreCase));
+
+    private static ResolvableVocabulary FieldsByVar(string varName, params string[] fieldNames) =>
+        new(ObjectNames: new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            SymbolNames: new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            FieldNamesInThisFile: new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            FieldsByVariable: new Dictionary<string, IReadOnlySet<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                [varName] = new HashSet<string>(fieldNames, StringComparer.OrdinalIgnoreCase),
+            });
 
     [Fact]
     public void Symbol_name_resolves_in_bare_call_site()
@@ -144,7 +163,9 @@ public sealed class AlResolvableTokenScannerTests
         var source = "    Item(rec); Cu: Codeunit Item;\n";
         var vocab = new ResolvableVocabulary(
             ObjectNames: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Item" },
-            SymbolNames: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Item" });
+            SymbolNames: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Item" },
+            FieldNamesInThisFile: new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            FieldsByVariable: new Dictionary<string, IReadOnlySet<string>>(StringComparer.OrdinalIgnoreCase));
 
         var ranges = AlResolvableTokenScanner.Scan(source, vocab);
 
@@ -301,13 +322,10 @@ public sealed class AlResolvableTokenScannerTests
     }
 
     [Fact]
-    public void Returns_empty_when_both_buckets_are_empty()
+    public void Returns_empty_when_all_buckets_are_empty()
     {
-        var vocab = new ResolvableVocabulary(
-            ObjectNames: new HashSet<string>(),
-            SymbolNames: new HashSet<string>());
-
-        AlResolvableTokenScanner.Scan("Post();\n", vocab).Should().BeEmpty();
+        AlResolvableTokenScanner.Scan("Post();\n", ResolvableVocabulary.Empty)
+            .Should().BeEmpty();
     }
 
     [Fact]
@@ -322,5 +340,108 @@ public sealed class AlResolvableTokenScannerTests
         ranges[1].ColumnStart.Should().Be(6);  // A
         ranges[2].Line.Should().Be(2);
         ranges[2].ColumnStart.Should().Be(1);  // B
+    }
+
+    [Fact]
+    public void Object_name_resolves_on_declaration_line_with_numeric_id()
+    {
+        // `table 36 "Sales Header"` — the numeric ID between the keyword
+        // and the name used to break the keyword-context check.
+        var source = "table 36 \"Sales Header\"\n";
+
+        var ranges = AlResolvableTokenScanner.Scan(source, Objects("Sales Header"));
+
+        ranges.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Object_name_resolves_after_tabledata_keyword()
+    {
+        // `Permissions = tabledata "Assembly Header" = m;` — the `tabledata`
+        // property keyword introduces a table-name reference.
+        var source = "    Permissions = tabledata \"Assembly Header\" = m;\n";
+
+        var ranges = AlResolvableTokenScanner.Scan(source, Objects("Assembly Header"));
+
+        ranges.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Quoted_field_name_in_table_file_resolves_as_intra_table_reference()
+    {
+        // Inside a table file, a quoted identifier matching one of this
+        // file's fields resolves — covers `"No." := ''`, `Validate("No.")`,
+        // `DataCaptionFields = "No.", "Name";`, and other intra-table uses.
+        var source = """
+                if "No." = '' then
+                    Validate("No.");
+            """;
+
+        var ranges = AlResolvableTokenScanner.Scan(source, FieldsInFile("No."));
+
+        ranges.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void DataCaptionFields_property_resolves_each_quoted_field()
+    {
+        var source = "    DataCaptionFields = \"No.\", \"Sell-to Customer Name\";\n";
+
+        var ranges = AlResolvableTokenScanner.Scan(
+            source, FieldsInFile("No.", "Sell-to Customer Name"));
+
+        ranges.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Bare_field_name_in_table_file_does_NOT_resolve()
+    {
+        // Quoted form only — bare matches drag in too many false positives
+        // (variable names sharing a field's name) without enough payoff.
+        var source = "    No := 0;\n";
+
+        var ranges = AlResolvableTokenScanner.Scan(source, FieldsInFile("No"));
+
+        ranges.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Quoted_field_inside_string_literal_does_NOT_resolve()
+    {
+        // The scanner strips string content before tokenising, so `"No."`
+        // inside a `Message('No.')` text isn't seen.
+        var source = "    Message('No. is required');\n";
+
+        var ranges = AlResolvableTokenScanner.Scan(source, FieldsInFile("No."));
+
+        ranges.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Dot_qualified_field_access_resolves_via_FieldsByVariable()
+    {
+        // `SalesHdr."No."` — variable `SalesHdr` is typed as a Record
+        // holding `No.`, so the quoted identifier underlines.
+        var source = "    SalesHdr.\"No.\" := '';\n";
+
+        var ranges = AlResolvableTokenScanner.Scan(
+            source, FieldsByVar("SalesHdr", "No."));
+
+        ranges.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Dot_qualified_access_via_Rec_pseudo_variable_resolves()
+    {
+        // Inside a table, `Rec."No."` and `xRec."No."` access the current
+        // table's own fields. The pseudo-variables aren't in the
+        // FieldsByVariable map; they fall back to FieldNamesInThisFile.
+        var source = """
+                Rec."No." := xRec."No.";
+            """;
+
+        var ranges = AlResolvableTokenScanner.Scan(source, FieldsInFile("No."));
+
+        ranges.Should().HaveCount(2);
     }
 }

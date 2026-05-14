@@ -292,24 +292,47 @@ public class BaseAppService
             .ToListAsync(ct);
 
         // Cross-file callable symbols. Skip `local_procedure` (only callable
-        // in their own file) and `trigger` (fired by the framework, never
-        // called by name) so we don't paint underlines on tokens that
+        // in their own file), `trigger` (fired by the framework, never
+        // called by name), `field` (resolved separately via the per-table
+        // vocabulary) and `object_declaration` (already covered by the
+        // ObjectNames bucket) so we don't paint underlines on tokens that
         // wouldn't actually navigate anywhere.
         var publicSymbolNames = await _db.BaseAppSymbols
             .AsNoTracking()
             .Where(s => s.VersionId == file.VersionId
                 && s.Kind != "local_procedure"
-                && s.Kind != "trigger")
+                && s.Kind != "trigger"
+                && s.Kind != "field"
+                && s.Kind != "object_declaration")
             .Select(s => s.Name)
             .Distinct()
             .ToListAsync(ct);
 
         var localSymbolNames = await _db.BaseAppSymbols
             .AsNoTracking()
-            .Where(s => s.FileId == fileId && s.Kind != "trigger")
+            .Where(s => s.FileId == fileId
+                && s.Kind != "trigger"
+                && s.Kind != "field"
+                && s.Kind != "object_declaration")
             .Select(s => s.Name)
             .Distinct()
             .ToListAsync(ct);
+
+        // Fields of this file's own table (table / tableextension files only).
+        // Quoted occurrences of these names anywhere in the file resolve as
+        // intra-table field references; `Rec.` / `xRec.` access does too.
+        var ownFieldNames = await _db.BaseAppSymbols
+            .AsNoTracking()
+            .Where(s => s.FileId == fileId && s.Kind == "field")
+            .Select(s => s.Name)
+            .Distinct()
+            .ToListAsync(ct);
+
+        // For every `Var: Record "Table"` in the file, pre-resolve the
+        // table's field-name set so `Var."FieldName"` can be underlined in
+        // a single pass.
+        var fieldsByVariable = await BuildFieldsByVariableAsync(
+            file.Content ?? string.Empty, file.VersionId, ct);
 
         var objects = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var n in objectNames) if (!string.IsNullOrEmpty(n)) objects.Add(n);
@@ -318,8 +341,64 @@ public class BaseAppService
         foreach (var n in publicSymbolNames) if (!string.IsNullOrEmpty(n)) symbols.Add(n);
         foreach (var n in localSymbolNames) if (!string.IsNullOrEmpty(n)) symbols.Add(n);
 
-        var vocab = new ResolvableVocabulary(objects, symbols);
+        var ownFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var n in ownFieldNames) if (!string.IsNullOrEmpty(n)) ownFields.Add(n);
+
+        var vocab = new ResolvableVocabulary(objects, symbols, ownFields, fieldsByVariable);
         return AlResolvableTokenScanner.Scan(file.Content ?? string.Empty, vocab).ToList();
+    }
+
+    /// <summary>
+    /// Walks the file for <c>VarName: Record "Table"</c> declarations and
+    /// returns a map from <c>VarName</c> to the field-name set of the
+    /// referenced table (looked up once per distinct table name in the
+    /// current version). Empty when the file has no Record variables.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, IReadOnlySet<string>>> BuildFieldsByVariableAsync(
+        string fileContent, int versionId, CancellationToken ct)
+    {
+        var varToTable = AlGoToDefinitionLocator.ResolveAllRecordVariableTypes(fileContent);
+        if (varToTable.Count == 0)
+        {
+            return new Dictionary<string, IReadOnlySet<string>>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var distinctTables = varToTable.Values
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // One query: every field symbol whose declaring file's object name
+        // is one of the tables we care about. Filtering on ObjectType lets
+        // a table extension's fields contribute too — but they live in a
+        // different file, so we'd need to union. For v1 just match by
+        // object name; tableextension-only fields will appear once we add
+        // a second pass.
+        var rows = await _db.BaseAppSymbols
+            .AsNoTracking()
+            .Where(s => s.VersionId == versionId
+                && s.Kind == "field"
+                && s.File != null
+                && distinctTables.Contains(s.File.ObjectName))
+            .Select(s => new { TableName = s.File!.ObjectName, FieldName = s.Name })
+            .ToListAsync(ct);
+
+        var fieldsByTable = rows
+            .GroupBy(r => r.TableName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlySet<string>)new HashSet<string>(
+                    g.Select(r => r.FieldName), StringComparer.OrdinalIgnoreCase),
+                StringComparer.OrdinalIgnoreCase);
+
+        var result = new Dictionary<string, IReadOnlySet<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (varName, tableName) in varToTable)
+        {
+            if (fieldsByTable.TryGetValue(tableName, out var fields))
+            {
+                result[varName] = fields;
+            }
+        }
+        return result;
     }
 
     /// <summary>
@@ -378,10 +457,14 @@ public class BaseAppService
     }
 
     /// <summary>
-    /// Finds every place in the symbol's version that textually calls
-    /// <c>name(</c>. Hits are classified by confidence so the UI can split
-    /// likely matches from possibly-related ones (different overloads on
-    /// other objects with the same name).
+    /// Finds every place in the symbol's version that references
+    /// <see cref="BaseAppSymbol.Name"/>. The exact shape of "reference"
+    /// depends on the symbol kind — procedures match <c>name(</c>, fields
+    /// match <c>"name"</c> and <c>.name</c>, object declarations match the
+    /// quoted-or-bare object name in any context. Hits are classified by
+    /// confidence so the UI can split likely matches from possibly-related
+    /// ones (different overloads / different table's same-name field /
+    /// unrelated identifier collision).
     /// </summary>
     public async Task<BaseAppReferenceResult> FindReferencesAsync(long symbolId, CancellationToken ct = default)
     {
@@ -396,18 +479,50 @@ public class BaseAppService
         // and the references query covers all of them via the shared name.
         var overloadCount = await _db.BaseAppSymbols
             .AsNoTracking()
-            .CountAsync(s => s.FileId == symbol.FileId && s.Name == symbol.Name, ct);
+            .CountAsync(s => s.FileId == symbol.FileId
+                && s.Kind == symbol.Kind
+                && s.Name == symbol.Name, ct);
+
+        var escapedName = System.Text.RegularExpressions.Regex.Escape(symbol.Name);
+        var quotedName = "\"" + symbol.Name + "\"";
+
+        // Kind-specific search shapes. Procedures match call sites,
+        // fields match quoted occurrences and bare dot-qualified access,
+        // object declarations match quoted references in any context.
+        // local_procedure is scoped to its declaring file because it can
+        // never be called from elsewhere.
+        // Fields and object declarations are referenced by their *quoted*
+        // form virtually everywhere — `Validate("No.")`, `Rec."No."`,
+        // `Codeunit "Sales-Post"`, `tabledata "Sales Header"`. Matching the
+        // bare identifier would drag in every variable named after a field
+        // (`No`, `Description`, …) without a way to filter false positives.
+        var quotedRegex = new System.Text.RegularExpressions.Regex(
+            "\"" + escapedName + "\"",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            | System.Text.RegularExpressions.RegexOptions.Compiled);
+        var procRegex = new System.Text.RegularExpressions.Regex(
+            $@"\b{escapedName}\s*\(",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        var (ilikePattern, lineRegex, scopeToFileOnly) = symbol.Kind switch
+        {
+            "field" or "object_declaration" => ("%" + quotedName + "%", quotedRegex, false),
+            "local_procedure" => ("%" + symbol.Name + "(%", procRegex, true),
+            _ => ("%" + symbol.Name + "(%", procRegex, false),
+        };
 
         // Coarse candidate pass via ILIKE: trigram GIN on lower(content) is
         // already in place, so substring matches are fast even on a real
         // Base Application. Fine-grained word-boundary check happens in C#
         // afterwards so a procedure called "Post" doesn't drag in "Posting"
-        // or "Reposted".
-        var ilikePattern = "%" + symbol.Name + "(%";
-
+        // or "Reposted". `local_procedure` short-circuits to the declaring
+        // file — by definition the only caller is the same file.
         var candidateFiles = await _db.BaseAppFiles
             .AsNoTracking()
-            .Where(f => f.VersionId == symbol.VersionId)
+            .Where(f => scopeToFileOnly
+                ? f.Id == symbol.FileId
+                : f.VersionId == symbol.VersionId)
             .Where(f => EF.Functions.ILike(f.Content, ilikePattern))
             .Select(f => new
             {
@@ -419,12 +534,6 @@ public class BaseAppService
                 f.Content,
             })
             .ToListAsync(ct);
-
-        var escapedName = System.Text.RegularExpressions.Regex.Escape(symbol.Name);
-        var lineRegex = new System.Text.RegularExpressions.Regex(
-            $@"\b{escapedName}\s*\(",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase
-            | System.Text.RegularExpressions.RegexOptions.Compiled);
 
         var likely = new List<BaseAppReferenceHit>();
         var possiblyRelated = new List<BaseAppReferenceHit>();
@@ -438,19 +547,20 @@ public class BaseAppService
                 if (!match.Success) continue;
 
                 // Skip the declaration line itself (file is the declaring
-                // file and the line number matches an overload row).
+                // file and the line number matches the overload / field row).
                 if (file.Id == symbol.FileId)
                 {
                     var declHere = await _db.BaseAppSymbols
                         .AsNoTracking()
                         .AnyAsync(s => s.FileId == symbol.FileId
+                            && s.Kind == symbol.Kind
                             && s.Name == symbol.Name
                             && s.LineNumber == i + 1, ct);
                     if (declHere) continue;
                 }
 
-                var confidence = ClassifyConfidence(
-                    file.ObjectName, declaringObjectName, file.Content);
+                var confidence = ClassifyHitConfidence(
+                    symbol.Kind, file.ObjectName, declaringObjectName, file.Content);
 
                 var hit = new BaseAppReferenceHit(
                     FileId: file.Id,
@@ -534,6 +644,42 @@ public class BaseAppService
         return BaseAppReferenceConfidence.PossiblyRelated;
     }
 
+    /// <summary>
+    /// Confidence shaping for a single hit. Dispatches by kind: procedure
+    /// calls reuse <see cref="ClassifyConfidence"/>; field hits are
+    /// SameObject when the file declares the field, Qualified when the
+    /// file imports the field's table by name (a <c>Record "Table"</c>
+    /// declaration or a quoted occurrence of the table name), and
+    /// PossiblyRelated otherwise (different table's same-name field);
+    /// object-declaration hits use the existing object-name classifier.
+    /// </summary>
+    private static BaseAppReferenceConfidence ClassifyHitConfidence(
+        string symbolKind, string callerObjectName, string declaringObjectName, string fileContent)
+    {
+        if (symbolKind != "field")
+        {
+            return ClassifyConfidence(callerObjectName, declaringObjectName, fileContent);
+        }
+
+        // Field hits: declaringObjectName is the *table* that holds the
+        // field. The field lives on the table file itself (SameObject when
+        // the candidate file *is* that table). Other files are Qualified
+        // when they have an obvious typed-var or namespace reference to
+        // the table, PossiblyRelated otherwise.
+        if (string.Equals(callerObjectName, declaringObjectName, StringComparison.Ordinal))
+        {
+            return BaseAppReferenceConfidence.SameObject;
+        }
+
+        var quotedTable = '"' + declaringObjectName + '"';
+        if (fileContent.Contains(quotedTable, StringComparison.Ordinal))
+        {
+            return BaseAppReferenceConfidence.Qualified;
+        }
+
+        return BaseAppReferenceConfidence.PossiblyRelated;
+    }
+
     private const int SnippetMaxLength = 240;
     private static string TrimSnippet(string line)
     {
@@ -596,9 +742,29 @@ public class BaseAppService
 
             if (declaringFile is not null)
             {
+                // Prefer a field match over a procedure with the same name —
+                // `Rec."No."` and `SalesHdr."No."` are field accesses, and
+                // BaseApp does happen to have procedures called `No` too.
+                var fieldSymbol = await _db.BaseAppSymbols
+                    .AsNoTracking()
+                    .Where(s => s.FileId == declaringFile.Id
+                        && s.Kind == "field"
+                        && s.Name == click.Word)
+                    .OrderBy(s => s.LineNumber)
+                    .FirstOrDefaultAsync(ct);
+                if (fieldSymbol is not null)
+                {
+                    return new GoToDefinitionTarget(
+                        declaringFile.Id, fieldSymbol.LineNumber,
+                        $"field {fieldSymbol.Name} on \"{declaringObjectName}\"");
+                }
+
                 var symbol = await _db.BaseAppSymbols
                     .AsNoTracking()
-                    .Where(s => s.FileId == declaringFile.Id && s.Name == click.Word)
+                    .Where(s => s.FileId == declaringFile.Id
+                        && s.Kind != "field"
+                        && s.Kind != "object_declaration"
+                        && s.Name == click.Word)
                     .OrderBy(s => s.LineNumber)
                     .FirstOrDefaultAsync(ct);
                 if (symbol is not null)
@@ -607,11 +773,10 @@ public class BaseAppService
                         declaringFile.Id, symbol.LineNumber,
                         $"procedure {symbol.Name} on \"{declaringObjectName}\"");
                 }
-                // Field access (e.g. `MfgSetup."Dynamic Low-Level Code"`) lands
-                // here because we don't extract table fields as symbols yet.
-                // Sending the user to the declaring file's header is still the
-                // most useful answer — they're one folded section away from
-                // the right field.
+                // Last-resort fallback — send the user to the declaring
+                // file's header. Almost never hit now that fields are
+                // indexed, but kept for the unusual case of a member that
+                // we haven't extracted (e.g. a page action's procedure).
                 return new GoToDefinitionTarget(
                     declaringFile.Id, 1,
                     $"{declaringFile.ObjectType} \"{declaringFile.ObjectName}\"");
@@ -630,9 +795,47 @@ public class BaseAppService
         }
 
         // ── Case D: unqualified — search same file first, then version-wide.
+        // Field declarations and the file's own object declaration take
+        // priority over procedure matches here because in a table file the
+        // user is almost always clicking a field name when there's no left
+        // context. The Rec / xRec pseudo-variables route through the
+        // dot-qualified path above; this branch catches bare `"No."` uses.
+        var sameFileFieldSymbol = await _db.BaseAppSymbols
+            .AsNoTracking()
+            .Where(s => s.FileId == fileId
+                && s.Kind == "field"
+                && s.Name == click.Word)
+            .OrderBy(s => s.LineNumber)
+            .FirstOrDefaultAsync(ct);
+        if (sameFileFieldSymbol is not null)
+        {
+            return new GoToDefinitionTarget(
+                fileId, sameFileFieldSymbol.LineNumber, $"field {sameFileFieldSymbol.Name}");
+        }
+
+        // Clicking the object name on the declaration line resolves to
+        // itself — primarily useful for keyboard navigation symmetry, and
+        // for the right-click "Find references" entry on the underlined
+        // declaration token to work.
+        var sameFileObjectDecl = await _db.BaseAppSymbols
+            .AsNoTracking()
+            .Where(s => s.FileId == fileId
+                && s.Kind == "object_declaration"
+                && s.Name == click.Word)
+            .FirstOrDefaultAsync(ct);
+        if (sameFileObjectDecl is not null)
+        {
+            return new GoToDefinitionTarget(
+                fileId, sameFileObjectDecl.LineNumber,
+                $"\"{sameFileObjectDecl.Name}\"");
+        }
+
         var sameFileSymbol = await _db.BaseAppSymbols
             .AsNoTracking()
-            .Where(s => s.FileId == fileId && s.Name == click.Word)
+            .Where(s => s.FileId == fileId
+                && s.Kind != "field"
+                && s.Kind != "object_declaration"
+                && s.Name == click.Word)
             .OrderBy(s => s.LineNumber)
             .FirstOrDefaultAsync(ct);
         if (sameFileSymbol is not null)
@@ -644,7 +847,10 @@ public class BaseAppService
         var anySymbol = await _db.BaseAppSymbols
             .AsNoTracking()
             .Include(s => s.File)
-            .Where(s => s.VersionId == file.VersionId && s.Name == click.Word)
+            .Where(s => s.VersionId == file.VersionId
+                && s.Kind != "field"
+                && s.Kind != "object_declaration"
+                && s.Name == click.Word)
             .OrderBy(s => s.FileId)
             .ThenBy(s => s.LineNumber)
             .FirstOrDefaultAsync(ct);
