@@ -47,6 +47,80 @@ public static class AlResolvableTokenScanner
         "extends",
     };
 
+    // AL language built-ins — Record / Codeunit instance methods and global
+    // helper functions. Even when a user-defined procedure happens to share
+    // a name with one of these (someone wrote a `Format` codeunit, etc.),
+    // call sites of the built-in dominate by far in real BaseApp code, and
+    // underlining them sets the wrong expectation — there's no jumpable
+    // declaration to land on. List drawn from the AL methods reference.
+    private static readonly HashSet<string> AlSystemFunctions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Record / table methods: Get, Find, Next, SetRange/SetFilter,
+        // Insert/Modify/Delete, LockTable, field calculation, etc.
+        "Get", "Find", "FindFirst", "FindLast", "FindSet", "Next",
+        "SetRange", "SetFilter", "GetFilter", "GetFilters",
+        "GetRangeMin", "GetRangeMax",
+        "Insert", "Modify", "ModifyAll", "Delete", "DeleteAll", "Rename",
+        "LockTable",
+        "CalcFields", "CalcSums",
+        "FieldCaption", "FieldName", "FieldNo", "FieldClass", "FieldActive",
+        "TableName", "TableCaption",
+        "Reset", "Init", "Validate",
+        "Count", "CountApprox", "IsEmpty", "IsTemporary",
+        "Mark", "MarkedOnly", "ClearMarks",
+        "SetCurrentKey", "SetAscending", "Ascending", "CurrentKey",
+        "HasFilter", "GetView", "SetView",
+        "TestField", "FieldError",
+        "AddLoadFields", "SetLoadFields",
+        "TransferFields",
+        "ChangeCompany", "CurrentCompany",
+        "SetAutoCalcFields",
+        "Copy", "CopyFilter", "CopyFilters", "CopyLinks",
+        "RecordLevelLocking",
+        "ReadIsolation", "ReadPermission", "WritePermission",
+        "RecordId", "RecRef",
+        "SecurityFiltering",
+        // Dialog / interaction
+        "Message", "Error", "Confirm", "StrMenu", "Dialog", "Beep",
+        "Open", "Close", "Update", "Input",
+        // Global functions from the methods table
+        "Abs", "ApplicationPath", "ArrayLen",
+        "CalcDate", "CanLoadType", "CaptionClassTranslate",
+        "Clear", "ClearAll", "ClearLastError", "ClearCollectedErrors",
+        "ClosingDate",
+        "CodeCoverageInclude", "CodeCoverageLoad", "CodeCoverageLog",
+        "CodeCoverageRefresh",
+        "CompressArray", "CopyArray", "CopyStream",
+        "CreateDateTime", "CreateEncryptionKey", "CreateGuid",
+        "CurrentDateTime",
+        "Date2DMY", "Date2DWY", "DT2Variant",
+        "Decrypt", "DeleteEncryptionKey",
+        "DMY2Date", "DT2Date", "DT2Time", "DWY2Date",
+        "Encrypt", "EncryptionEnabled", "EncryptionKeyExists",
+        "Evaluate", "ExportEncryptionKey", "ExportObjects",
+        "Format",
+        "GetCollectedErrors", "GetDocumentUrl", "GetDotNetType",
+        "GetLastErrorCallStack", "GetLastErrorCode", "GetLastErrorObject",
+        "GetLastErrorText", "GetLastErrorType",
+        "GetUrl",
+        "GlobalLanguage", "GuiAllowed",
+        "HasCollectedErrors", "Hyperlink",
+        "ImportEncryptionKey", "ImportObjects", "ImportStreamWithMlAccess",
+        "IsCollectingErrors", "IsNull", "IsNullGuid", "IsServiceTier",
+        "NormalDate",
+        "Power",
+        "Random", "Randomize",
+        "Round", "RoundDateTime",
+        "Sleep",
+        "TemporaryPath", "Time", "Today",
+        "Variant2Date", "Variant2Time",
+        "WindowsLanguage", "WorkDate",
+        // Common conversion / string helpers usually called bare
+        "StrLen", "StrPos", "StrSubstNo", "SelectStr", "CopyStr",
+        "ConvertStr", "DelChr", "DelStr", "IncStr", "LowerCase", "UpperCase",
+        "PadStr", "MaxStrLen", "TextToBinary",
+    };
+
     /// <summary>
     /// Walks <paramref name="source"/> and emits one range per identifier whose
     /// unquoted name appears in either vocabulary set. Ranges are 1-based and
@@ -147,6 +221,14 @@ public static class AlResolvableTokenScanner
     private static bool IsResolvable(
         string lineText, int tokenStart, int tokenEnd, string name, ResolvableVocabulary vocab)
     {
+        // AL built-ins (Get, Find, SetRange, Format, Message, etc.) live
+        // in the language, not in the symbol index. Even when a user-
+        // defined procedure shares the name, the overwhelming majority of
+        // call sites in BaseApp code are the built-in — underlining sets
+        // the wrong expectation, since there's no real declaration to
+        // navigate to.
+        if (AlSystemFunctions.Contains(name)) return false;
+
         // Symbol references (procedures, events) only resolve at call sites
         // — the token must be followed by `(`. Without that check we'd
         // underline every identifier that happens to share a procedure

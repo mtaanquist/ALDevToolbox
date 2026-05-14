@@ -199,6 +199,56 @@ public sealed class AlResolvableTokenScannerTests
         ranges[0].Line.Should().Be(2);
     }
 
+    [Theory]
+    // Record / table instance methods.
+    [InlineData("Get")]
+    [InlineData("Find")]
+    [InlineData("FindFirst")]
+    [InlineData("FindLast")]
+    [InlineData("FindSet")]
+    [InlineData("Next")]
+    [InlineData("SetRange")]
+    [InlineData("SetFilter")]
+    [InlineData("GetRangeMin")]
+    [InlineData("GetRangeMax")]
+    [InlineData("Insert")]
+    [InlineData("Modify")]
+    [InlineData("ModifyAll")]
+    [InlineData("Delete")]
+    [InlineData("DeleteAll")]
+    [InlineData("LockTable")]
+    [InlineData("CalcFields")]
+    [InlineData("CalcSums")]
+    [InlineData("TestField")]
+    [InlineData("Reset")]
+    [InlineData("Init")]
+    [InlineData("Validate")]
+    // Dialog / interaction.
+    [InlineData("Message")]
+    [InlineData("Error")]
+    [InlineData("Confirm")]
+    [InlineData("StrMenu")]
+    // Global system functions.
+    [InlineData("Format")]
+    [InlineData("Evaluate")]
+    [InlineData("Sleep")]
+    [InlineData("CalcDate")]
+    [InlineData("CreateGuid")]
+    [InlineData("Today")]
+    [InlineData("CurrentDateTime")]
+    [InlineData("StrSubstNo")]
+    public void AL_system_functions_are_never_underlined(string name)
+    {
+        // Even when the user-defined symbol index contains a procedure with
+        // the same name (some app wrote a `Format` codeunit), call sites of
+        // the built-in dominate; underlining sets the wrong expectation.
+        var source = $"    {name}(arg);\n";
+
+        var ranges = AlResolvableTokenScanner.Scan(source, Symbols(name));
+
+        ranges.Should().BeEmpty($"AL built-in '{name}' should never be underlined");
+    }
+
     [Fact]
     public void Skips_tokens_inside_line_comments()
     {
