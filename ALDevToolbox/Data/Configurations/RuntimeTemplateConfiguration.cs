@@ -1,7 +1,6 @@
 using System.Text.Json;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
-using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -10,8 +9,6 @@ namespace ALDevToolbox.Data.Configurations;
 
 internal sealed class RuntimeTemplateConfiguration : IEntityTypeConfiguration<RuntimeTemplate>
 {
-    private readonly IOrganizationContext _orgContext;
-    public RuntimeTemplateConfiguration(IOrganizationContext orgContext) => _orgContext = orgContext;
 
     public void Configure(EntityTypeBuilder<RuntimeTemplate> entity)
     {
@@ -89,6 +86,5 @@ internal sealed class RuntimeTemplateConfiguration : IEntityTypeConfiguration<Ru
             .HasForeignKey(e => e.DefaultApplicationVersionId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        entity.ScopeToOrganization(_orgContext);
     }
 }

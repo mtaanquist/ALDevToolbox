@@ -1,5 +1,4 @@
 using ALDevToolbox.Domain.Entities;
-using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -7,8 +6,6 @@ namespace ALDevToolbox.Data.Configurations;
 
 internal sealed class WellKnownDependencyConfiguration : IEntityTypeConfiguration<WellKnownDependency>
 {
-    private readonly IOrganizationContext _orgContext;
-    public WellKnownDependencyConfiguration(IOrganizationContext orgContext) => _orgContext = orgContext;
 
     public void Configure(EntityTypeBuilder<WellKnownDependency> entity)
     {
@@ -29,6 +26,5 @@ internal sealed class WellKnownDependencyConfiguration : IEntityTypeConfiguratio
             .HasForeignKey(e => e.OrganizationId)
             .OnDelete(DeleteBehavior.Cascade);
         entity.HasIndex(e => new { e.OrganizationId, e.Ordering });
-        entity.ScopeToOrganization(_orgContext);
     }
 }

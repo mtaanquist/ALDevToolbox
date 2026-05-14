@@ -1,5 +1,4 @@
 using ALDevToolbox.Domain.Entities;
-using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -7,8 +6,6 @@ namespace ALDevToolbox.Data.Configurations;
 
 internal sealed class SignupRequestConfiguration : IEntityTypeConfiguration<SignupRequest>
 {
-    private readonly IOrganizationContext _orgContext;
-    public SignupRequestConfiguration(IOrganizationContext orgContext) => _orgContext = orgContext;
 
     public void Configure(EntityTypeBuilder<SignupRequest> entity)
     {
@@ -40,6 +37,5 @@ internal sealed class SignupRequestConfiguration : IEntityTypeConfiguration<Sign
         // Defense in depth: pre-login flows (Program.cs decide endpoints)
         // already call IgnoreQueryFilters explicitly; this filter catches
         // any post-login read that forgets to scope by org.
-        entity.ScopeToOrganization(_orgContext);
     }
 }

@@ -1,5 +1,4 @@
 using ALDevToolbox.Domain.Entities;
-using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -7,8 +6,6 @@ namespace ALDevToolbox.Data.Configurations;
 
 internal sealed class RuntimeTemplateDefaultModuleConfiguration : IEntityTypeConfiguration<RuntimeTemplateDefaultModule>
 {
-    private readonly IOrganizationContext _orgContext;
-    public RuntimeTemplateDefaultModuleConfiguration(IOrganizationContext orgContext) => _orgContext = orgContext;
 
     public void Configure(EntityTypeBuilder<RuntimeTemplateDefaultModule> entity)
     {
@@ -31,6 +28,5 @@ internal sealed class RuntimeTemplateDefaultModuleConfiguration : IEntityTypeCon
             .HasForeignKey(e => e.OrganizationId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        entity.ScopeToOrganization(_orgContext);
     }
 }

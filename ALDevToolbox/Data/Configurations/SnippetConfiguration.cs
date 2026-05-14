@@ -1,5 +1,4 @@
 using ALDevToolbox.Domain.Entities;
-using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -7,8 +6,6 @@ namespace ALDevToolbox.Data.Configurations;
 
 internal sealed class SnippetConfiguration : IEntityTypeConfiguration<Snippet>
 {
-    private readonly IOrganizationContext _orgContext;
-    public SnippetConfiguration(IOrganizationContext orgContext) => _orgContext = orgContext;
 
     public void Configure(EntityTypeBuilder<Snippet> entity)
     {
@@ -32,6 +29,5 @@ internal sealed class SnippetConfiguration : IEntityTypeConfiguration<Snippet>
             .WithOne(f => f.Snippet!)
             .HasForeignKey(f => f.SnippetId)
             .OnDelete(DeleteBehavior.Cascade);
-        entity.ScopeToOrganization(_orgContext);
     }
 }

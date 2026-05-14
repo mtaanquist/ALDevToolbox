@@ -1,5 +1,4 @@
 using ALDevToolbox.Domain.Entities;
-using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -7,8 +6,6 @@ namespace ALDevToolbox.Data.Configurations;
 
 internal sealed class SnippetSuggestionConfiguration : IEntityTypeConfiguration<SnippetSuggestion>
 {
-    private readonly IOrganizationContext _orgContext;
-    public SnippetSuggestionConfiguration(IOrganizationContext orgContext) => _orgContext = orgContext;
 
     public void Configure(EntityTypeBuilder<SnippetSuggestion> entity)
     {
@@ -47,6 +44,5 @@ internal sealed class SnippetSuggestionConfiguration : IEntityTypeConfiguration<
             .WithOne(f => f.Suggestion!)
             .HasForeignKey(f => f.SnippetSuggestionId)
             .OnDelete(DeleteBehavior.Cascade);
-        entity.ScopeToOrganization(_orgContext);
     }
 }

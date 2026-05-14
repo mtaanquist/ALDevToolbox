@@ -139,40 +139,61 @@ public class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        // Stateless configurations (no IOrganizationContext dependency) are
-        // applied via assembly scan; tenant-scoped ones are instantiated with
-        // the context's IOrganizationContext so each entity's query filter
-        // captures the right runtime value.
-        modelBuilder.ApplyConfiguration(new OrganizationConfiguration());
-        modelBuilder.ApplyConfiguration(new LoginAttemptConfiguration());
-        modelBuilder.ApplyConfiguration(new SystemSettingsConfiguration());
-        modelBuilder.ApplyConfiguration(new BackupConfiguration());
-        modelBuilder.ApplyConfiguration(new AuditLogEntryConfiguration());
+        // Per-entity fluent config lives in Data/Configurations/. The
+        // configurations themselves are stateless — they don't install the
+        // multi-tenant query filter. EF Core only re-parameterises a query
+        // filter when its expression references a field/property of the
+        // DbContext class itself; capturing _orgContext from a configuration
+        // class would freeze the value at model-build time and leak data
+        // across orgs. So filters live here, where _orgContext is "this._orgContext".
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
 
-        modelBuilder.ApplyConfiguration(new UserConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new SignupRequestConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new PasswordResetTokenConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new InviteConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new RuntimeTemplateConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new ApplicationVersionConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new RuntimeTemplateDefaultModuleConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new WorkspaceExtensionConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new WorkspaceExtensionFolderConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new WorkspaceExtensionFileConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new WorkspaceExtensionDependencyConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new ModuleExtensionFolderConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new ModuleExtensionFileConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new ModuleConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new ModuleDependencyConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new WellKnownDependencyConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new OrganizationSettingsConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new OrganizationAssetConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new OrganizationFileConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new SnippetConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new SnippetFileConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new SnippetSuggestionConfiguration(_orgContext));
-        modelBuilder.ApplyConfiguration(new SnippetSuggestionFileConfiguration(_orgContext));
+        // Standard tenant filter: scope every entity with an OrganizationId
+        // column to the current organisation. Pre-login flows must call
+        // IgnoreQueryFilters() explicitly.
+        ScopeToOrganization<User>(modelBuilder);
+        ScopeToOrganization<SignupRequest>(modelBuilder);
+        ScopeToOrganization<Invite>(modelBuilder, i => i.OrganizationId == _orgContext.OrganizationIdForFilter);
+        ScopeToOrganization<RuntimeTemplate>(modelBuilder);
+        ScopeToOrganization<ApplicationVersion>(modelBuilder);
+        ScopeToOrganization<RuntimeTemplateDefaultModule>(modelBuilder);
+        ScopeToOrganization<WorkspaceExtension>(modelBuilder);
+        ScopeToOrganization<WorkspaceExtensionFolder>(modelBuilder);
+        ScopeToOrganization<WorkspaceExtensionFile>(modelBuilder);
+        ScopeToOrganization<WorkspaceExtensionDependency>(modelBuilder);
+        ScopeToOrganization<ModuleExtensionFolder>(modelBuilder);
+        ScopeToOrganization<ModuleExtensionFile>(modelBuilder);
+        ScopeToOrganization<Module>(modelBuilder);
+        ScopeToOrganization<ModuleDependency>(modelBuilder);
+        ScopeToOrganization<WellKnownDependency>(modelBuilder);
+        ScopeToOrganization<OrganizationSettings>(modelBuilder);
+        ScopeToOrganization<OrganizationAsset>(modelBuilder);
+        ScopeToOrganization<OrganizationFile>(modelBuilder);
+        ScopeToOrganization<Snippet>(modelBuilder);
+        ScopeToOrganization<SnippetFile>(modelBuilder);
+        ScopeToOrganization<SnippetSuggestion>(modelBuilder);
+        ScopeToOrganization<SnippetSuggestionFile>(modelBuilder);
+
+        // PasswordResetToken scopes via its required User principal: tokens
+        // don't carry organization_id themselves, so the filter walks the nav.
+        modelBuilder.Entity<PasswordResetToken>()
+            .HasQueryFilter(t => t.User!.OrganizationId == _orgContext.OrganizationIdForFilter);
     }
+
+    /// <summary>
+    /// Installs the standard organization-scoped query filter on
+    /// <typeparamref name="T"/>. Lives on the DbContext (not on a
+    /// configuration class) so the captured <c>_orgContext</c> resolves at
+    /// query time via the DbContext instance — see comment in
+    /// <see cref="OnModelCreating"/>.
+    /// </summary>
+    private void ScopeToOrganization<T>(ModelBuilder modelBuilder) where T : class
+        => modelBuilder.Entity<T>().HasQueryFilter(e =>
+            EF.Property<int>(e, "OrganizationId") == _orgContext.OrganizationIdForFilter);
+
+    private void ScopeToOrganization<T>(ModelBuilder modelBuilder, System.Linq.Expressions.Expression<Func<T, bool>> filter)
+        where T : class
+        => modelBuilder.Entity<T>().HasQueryFilter(filter);
 
     /// <summary>
     /// M16: pin every <see cref="DateTime"/> column to

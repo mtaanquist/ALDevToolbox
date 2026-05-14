@@ -1,5 +1,4 @@
 using ALDevToolbox.Domain.Entities;
-using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -7,9 +6,6 @@ namespace ALDevToolbox.Data.Configurations;
 
 internal sealed class InviteConfiguration : IEntityTypeConfiguration<Invite>
 {
-    private readonly IOrganizationContext _orgContext;
-    public InviteConfiguration(IOrganizationContext orgContext) => _orgContext = orgContext;
-
     public void Configure(EntityTypeBuilder<Invite> entity)
     {
         entity.ToTable("invites");
@@ -35,9 +31,8 @@ internal sealed class InviteConfiguration : IEntityTypeConfiguration<Invite>
             .WithMany()
             .HasForeignKey(e => e.InvitedByUserId)
             .OnDelete(DeleteBehavior.Restrict);
-        // Token lookups (accept-invite) bypass org filter; admin listings
-        // explicitly filter by OrganizationId. Apply a query filter that
-        // mirrors User's so admin-facing reads stay org-scoped.
-        entity.HasQueryFilter(i => i.OrganizationId == _orgContext.OrganizationIdForFilter);
+        // Query filter installed in AppDbContext.OnModelCreating — see the
+        // note there. The filter must reference the DbContext's _orgContext
+        // field so EF re-parameterises it per DbContext instance.
     }
 }

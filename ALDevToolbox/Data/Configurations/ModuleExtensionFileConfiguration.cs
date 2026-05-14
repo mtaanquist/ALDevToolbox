@@ -1,5 +1,4 @@
 using ALDevToolbox.Domain.Entities;
-using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -7,8 +6,6 @@ namespace ALDevToolbox.Data.Configurations;
 
 internal sealed class ModuleExtensionFileConfiguration : IEntityTypeConfiguration<ModuleExtensionFile>
 {
-    private readonly IOrganizationContext _orgContext;
-    public ModuleExtensionFileConfiguration(IOrganizationContext orgContext) => _orgContext = orgContext;
 
     public void Configure(EntityTypeBuilder<ModuleExtensionFile> entity)
     {
@@ -23,6 +20,5 @@ internal sealed class ModuleExtensionFileConfiguration : IEntityTypeConfiguratio
         entity.Property(e => e.IsExample).HasColumnName("is_example").IsRequired();
         entity.HasIndex(e => new { e.ModuleExtensionFolderId, e.Ordering });
         entity.HasIndex(e => new { e.ModuleExtensionFolderId, e.Path }).IsUnique();
-        entity.ScopeToOrganization(_orgContext);
     }
 }

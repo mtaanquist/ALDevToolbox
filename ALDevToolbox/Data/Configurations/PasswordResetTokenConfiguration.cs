@@ -1,5 +1,4 @@
 using ALDevToolbox.Domain.Entities;
-using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -7,9 +6,6 @@ namespace ALDevToolbox.Data.Configurations;
 
 internal sealed class PasswordResetTokenConfiguration : IEntityTypeConfiguration<PasswordResetToken>
 {
-    private readonly IOrganizationContext _orgContext;
-    public PasswordResetTokenConfiguration(IOrganizationContext orgContext) => _orgContext = orgContext;
-
     public void Configure(EntityTypeBuilder<PasswordResetToken> entity)
     {
         entity.ToTable("password_reset_tokens");
@@ -27,9 +23,8 @@ internal sealed class PasswordResetTokenConfiguration : IEntityTypeConfiguration
             .WithMany()
             .HasForeignKey(e => e.UserId)
             .OnDelete(DeleteBehavior.Cascade);
-        // Mirror the User principal's org filter so EF's required-nav
-        // model-validation passes; pre-login flows already bypass with
-        // IgnoreQueryFilters().
-        entity.HasQueryFilter(t => t.User!.OrganizationId == _orgContext.OrganizationIdForFilter);
+        // Query filter installed in AppDbContext.OnModelCreating — see the
+        // note there. The filter must reference the DbContext's _orgContext
+        // field so EF re-parameterises it per DbContext instance.
     }
 }

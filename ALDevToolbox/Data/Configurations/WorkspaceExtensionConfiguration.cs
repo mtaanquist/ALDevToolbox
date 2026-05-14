@@ -1,5 +1,4 @@
 using ALDevToolbox.Domain.Entities;
-using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -7,8 +6,6 @@ namespace ALDevToolbox.Data.Configurations;
 
 internal sealed class WorkspaceExtensionConfiguration : IEntityTypeConfiguration<WorkspaceExtension>
 {
-    private readonly IOrganizationContext _orgContext;
-    public WorkspaceExtensionConfiguration(IOrganizationContext orgContext) => _orgContext = orgContext;
 
     public void Configure(EntityTypeBuilder<WorkspaceExtension> entity)
     {
@@ -38,6 +35,5 @@ internal sealed class WorkspaceExtensionConfiguration : IEntityTypeConfiguration
             .HasForeignKey(d => d.WorkspaceExtensionId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        entity.ScopeToOrganization(_orgContext);
     }
 }

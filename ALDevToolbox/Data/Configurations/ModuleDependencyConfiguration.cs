@@ -1,5 +1,4 @@
 using ALDevToolbox.Domain.Entities;
-using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -7,8 +6,6 @@ namespace ALDevToolbox.Data.Configurations;
 
 internal sealed class ModuleDependencyConfiguration : IEntityTypeConfiguration<ModuleDependency>
 {
-    private readonly IOrganizationContext _orgContext;
-    public ModuleDependencyConfiguration(IOrganizationContext orgContext) => _orgContext = orgContext;
 
     public void Configure(EntityTypeBuilder<ModuleDependency> entity)
     {
@@ -23,6 +20,5 @@ internal sealed class ModuleDependencyConfiguration : IEntityTypeConfiguration<M
         entity.Property(e => e.DepPublisher).HasColumnName("dep_publisher").IsRequired();
         entity.Property(e => e.DepVersion).HasColumnName("dep_version").IsRequired();
         entity.HasIndex(e => new { e.OrganizationId, e.ModuleId, e.Ordering });
-        entity.ScopeToOrganization(_orgContext);
     }
 }

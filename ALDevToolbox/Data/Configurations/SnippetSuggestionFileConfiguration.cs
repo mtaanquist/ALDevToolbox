@@ -1,5 +1,4 @@
 using ALDevToolbox.Domain.Entities;
-using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -7,8 +6,6 @@ namespace ALDevToolbox.Data.Configurations;
 
 internal sealed class SnippetSuggestionFileConfiguration : IEntityTypeConfiguration<SnippetSuggestionFile>
 {
-    private readonly IOrganizationContext _orgContext;
-    public SnippetSuggestionFileConfiguration(IOrganizationContext orgContext) => _orgContext = orgContext;
 
     public void Configure(EntityTypeBuilder<SnippetSuggestionFile> entity)
     {
@@ -21,6 +18,5 @@ internal sealed class SnippetSuggestionFileConfiguration : IEntityTypeConfigurat
         entity.Property(e => e.FileName).HasColumnName("file_name").IsRequired();
         entity.Property(e => e.Content).HasColumnName("content").IsRequired();
         entity.HasIndex(e => new { e.OrganizationId, e.SnippetSuggestionId, e.Ordering });
-        entity.ScopeToOrganization(_orgContext);
     }
 }

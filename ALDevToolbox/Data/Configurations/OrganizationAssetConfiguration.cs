@@ -1,5 +1,4 @@
 using ALDevToolbox.Domain.Entities;
-using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -7,8 +6,6 @@ namespace ALDevToolbox.Data.Configurations;
 
 internal sealed class OrganizationAssetConfiguration : IEntityTypeConfiguration<OrganizationAsset>
 {
-    private readonly IOrganizationContext _orgContext;
-    public OrganizationAssetConfiguration(IOrganizationContext orgContext) => _orgContext = orgContext;
 
     public void Configure(EntityTypeBuilder<OrganizationAsset> entity)
     {
@@ -25,6 +22,5 @@ internal sealed class OrganizationAssetConfiguration : IEntityTypeConfiguration<
             .WithMany()
             .HasForeignKey(e => e.OrganizationId)
             .OnDelete(DeleteBehavior.Cascade);
-        entity.ScopeToOrganization(_orgContext);
     }
 }
