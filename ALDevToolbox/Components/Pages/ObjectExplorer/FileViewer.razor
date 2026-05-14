@@ -266,30 +266,34 @@
     private ValueTask OnLocationChanging(LocationChangingContext context)
     {
         // Same page, different fragment: re-pull the line anchor so the
-        // viewer scrolls again. (CodeMirror keeps its content; we just want
-        // the scroll-to-line side effect.) StateHasChanged forces a re-render
-        // so CodeViewer's OnAfterRender notices the new ScrollToLine value.
+        // viewer scrolls again. Skip if the line is already the current
+        // target — our own @onclick handler usually beat us to it, and
+        // re-bumping the sequence would queue a redundant scroll dispatch.
         if (context.TargetLocation.StartsWith($"/object-explorer/{VersionId}/files/{FileId}", StringComparison.Ordinal))
         {
-            SetScrollTarget(ExtractLineAnchor(context.TargetLocation));
-            StateHasChanged();
+            var newScroll = ExtractLineAnchor(context.TargetLocation);
+            if (newScroll != _initialScrollLine)
+            {
+                SetScrollTarget(newScroll);
+                StateHasChanged();
+            }
         }
         return ValueTask.CompletedTask;
     }
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
-        // Post-navigation safety net: LocationChangingHandler in Blazor Server
-        // can miss fragment-only updates, leaving the editor stuck on the
-        // previous line. LocationChanged always fires, so this is the path
-        // that consistently catches "Go to definition on a target in the
-        // currently mounted file".
+        // Post-navigation safety net for URL changes we didn't initiate
+        // ourselves — direct URL-bar edits, browser back/forward, etc. For
+        // clicks routed through OnPanelScrollTo / OnGoToDefinition, the
+        // scroll target has already been set; bumping the sequence again
+        // here would dispatch a second scrollToLine and is what was
+        // causing CodeMirror to thrash on far-down navigations.
         if (_file is null) return;
         var path = $"/object-explorer/{VersionId}/files/{FileId}";
-        // e.Location is an absolute URI; check the relative-path slice.
         if (!e.Location.Contains(path, StringComparison.Ordinal)) return;
         var newScroll = ExtractLineAnchor(e.Location);
-        if (newScroll is null) return;
+        if (newScroll is null || newScroll == _initialScrollLine) return;
         SetScrollTarget(newScroll);
         _ = InvokeAsync(StateHasChanged);
     }
