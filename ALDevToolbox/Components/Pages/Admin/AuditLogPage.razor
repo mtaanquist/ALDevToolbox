@@ -1,8 +1,9 @@
 @page "/admin/audit"
 @attribute [Authorize(Roles = "Admin")]
 @inject AuditService Audit
-@using System.Text.Json
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Entities
+@using static ALDevToolbox.Components.Shared.AdminPageHelpers
 
 <PageTitle>Audit log · AL Dev Toolbox</PageTitle>
 
@@ -113,16 +114,4 @@
         _ => type.ToString()
     };
 
-    private static string PrettyJson(string raw)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(raw);
-            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
-        }
-        catch (JsonException)
-        {
-            return raw;
-        }
-    }
 }

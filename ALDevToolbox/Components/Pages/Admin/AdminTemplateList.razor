@@ -8,6 +8,7 @@
 @inject ILogger<AdminTemplateList> Log
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
+@using static ALDevToolbox.Components.Shared.AdminPageHelpers
 
 <PageTitle>Templates · Admin · AL Dev Toolbox</PageTitle>
 
@@ -222,7 +223,7 @@
                         <td>@t.Runtime</td>
                         <td>@t.Name</td>
                         <td>@t.WorkspaceExtensions.Count</td>
-                        <td>@StatusFor(t)</td>
+                        <td>@SoftDeleteStatus(t.DeletedAt, t.Deprecated)</td>
                         <td><time datetime="@t.UpdatedAt.ToString("O")">@t.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                         <td class="data-table__actions">
                             @if (!t.IsDefault && t.DeletedAt is null && !t.Deprecated)
@@ -431,12 +432,4 @@
         }
     }
 
-    private static string Capitalize(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpperInvariant(s[0]) + s[1..];
-
-    private static string StatusFor(RuntimeTemplate t)
-    {
-        if (t.DeletedAt is not null) return "Deleted";
-        if (t.Deprecated) return "Deprecated";
-        return "Active";
-    }
 }
