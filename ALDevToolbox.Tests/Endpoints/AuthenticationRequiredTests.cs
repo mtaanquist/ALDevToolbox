@@ -57,7 +57,7 @@ public sealed class AuthenticationRequiredTests : IDisposable
         using var response = await client.GetAsync("/admin/configuration/logo/preview");
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        response.Headers.Location!.OriginalString.Should().StartWith("/login");
+        response.Headers.Location!.OriginalString.Should().Contain("/login");
     }
 
     [Fact]

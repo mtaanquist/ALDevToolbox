@@ -32,8 +32,10 @@ public sealed class TemplatesBrowserTests : IDisposable
 
         // Real services against the per-fixture Postgres. Resolving via DI
         // mirrors production wiring rather than mocking a single method
-        // (CLAUDE.md: no interfaces just for tests).
-        _ctx.Services.AddSingleton(_db.OrgContext);
+        // (CLAUDE.md: no interfaces just for tests). Bind the ambient context
+        // to the IOrganizationContext interface — TemplateService asks for the
+        // interface, not the concrete type.
+        _ctx.Services.AddSingleton<ALDevToolbox.Services.IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString));
         _ctx.Services.AddScoped<TemplateService>();
