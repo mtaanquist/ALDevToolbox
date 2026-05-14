@@ -141,6 +141,17 @@
         {
             var json = await ReadEditorAsync();
             await Config.SaveCodeWorkspaceJsonAsync(json);
+            // Clear the editor's dirty flag before navigating so the JS
+            // beforeunload guard doesn't trip the browser's "leave page?"
+            // prompt on the force-reload below.
+            if (_editorModule is not null && _editorId != 0)
+            {
+                try
+                {
+                    await _editorModule.InvokeVoidAsync("markPristine", _editorId);
+                }
+                catch (JSDisconnectedException) { }
+            }
             // Force-reload so the redirect picks up the new value via
             // OrganizationConfigService's cache invalidation. Matches the
             // pattern used by the other configuration sub-pages.
