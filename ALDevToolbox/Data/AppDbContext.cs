@@ -872,22 +872,20 @@ public class AppDbContext : DbContext
             ScopeToOrganization<SnippetSuggestionFile>(entity);
         });
 
-        // M16: pin every DateTime column to `timestamp with time zone`. Npgsql
-        // requires DateTime values to have Kind=Utc when targeting timestamptz,
-        // and the codebase is already disciplined about that — every write goes
-        // through DateTime.UtcNow or a `DateTimeKind.Utc` literal in the
-        // builders. Pinning the column type here makes the contract explicit
-        // and rules out timestamp-without-time-zone drift.
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
-        {
-            foreach (var property in entityType.GetProperties())
-            {
-                if (property.ClrType == typeof(DateTime) || property.ClrType == typeof(DateTime?))
-                {
-                    property.SetColumnType("timestamp with time zone");
-                }
-            }
-        }
+    }
+
+    /// <summary>
+    /// M16: pin every <see cref="DateTime"/> column to
+    /// <c>timestamp with time zone</c>. Npgsql requires <c>DateTimeKind.Utc</c>
+    /// when targeting timestamptz, and the codebase already routes every
+    /// write through <c>DateTime.UtcNow</c> or a UTC literal. Doing this via
+    /// <see cref="ConfigureConventions"/> rather than iterating every
+    /// property on every entity type keeps the model creator small (#81).
+    /// </summary>
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        configurationBuilder.Properties<DateTime>().HaveColumnType("timestamp with time zone");
+        configurationBuilder.Properties<DateTime?>().HaveColumnType("timestamp with time zone");
     }
 
     /// <summary>

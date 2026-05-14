@@ -335,52 +335,29 @@ public sealed class AccountService
     /// instead of halting the whole batch. See <c>.design/milestones.md</c>
     /// Milestone 20.
     /// </summary>
-    public async Task<BulkActionResult> BulkDisableUsersAsync(IReadOnlyList<int> userIds, int actingOrgId, CancellationToken ct = default)
-    {
-        var succeeded = new List<int>();
-        var failures = new List<BulkActionFailure>();
-        foreach (var id in userIds.Distinct())
-        {
-            try
-            {
-                await DisableUserAsync(id, actingOrgId, ct);
-                succeeded.Add(id);
-            }
-            catch (PlanValidationException ex)
-            {
-                failures.Add(new BulkActionFailure(id, await LookupDisplayNameAsync(id, ct), ex.Errors.First().Value));
-            }
-        }
-        return new BulkActionResult(userIds.Count, succeeded, failures);
-    }
+    public Task<BulkActionResult> BulkDisableUsersAsync(IReadOnlyList<int> userIds, int actingOrgId, CancellationToken ct = default) =>
+        BulkAsync(userIds, id => DisableUserAsync(id, actingOrgId, ct), ct);
 
     /// <summary>Bulk variant of <see cref="EnableUserAsync"/>.</summary>
-    public async Task<BulkActionResult> BulkEnableUsersAsync(IReadOnlyList<int> userIds, int actingOrgId, CancellationToken ct = default)
-    {
-        var succeeded = new List<int>();
-        var failures = new List<BulkActionFailure>();
-        foreach (var id in userIds.Distinct())
-        {
-            try
-            {
-                await EnableUserAsync(id, actingOrgId, ct);
-                succeeded.Add(id);
-            }
-            catch (PlanValidationException ex)
-            {
-                failures.Add(new BulkActionFailure(id, await LookupDisplayNameAsync(id, ct), ex.Errors.First().Value));
-            }
-        }
-        return new BulkActionResult(userIds.Count, succeeded, failures);
-    }
+    public Task<BulkActionResult> BulkEnableUsersAsync(IReadOnlyList<int> userIds, int actingOrgId, CancellationToken ct = default) =>
+        BulkAsync(userIds, id => EnableUserAsync(id, actingOrgId, ct), ct);
 
     /// <summary>
     /// Bulk variant of <see cref="ChangeRoleAsync"/>. Each role flip carries
     /// the same last-admin guard — failures bubble up per user so an admin can
-    /// see exactly which row blocked the operation. See
-    /// <c>.design/milestones.md</c> Milestone 20.
+    /// see exactly which row blocked the operation.
     /// </summary>
-    public async Task<BulkActionResult> BulkChangeRoleAsync(IReadOnlyList<int> userIds, UserRole newRole, int actingOrgId, CancellationToken ct = default)
+    public Task<BulkActionResult> BulkChangeRoleAsync(IReadOnlyList<int> userIds, UserRole newRole, int actingOrgId, CancellationToken ct = default) =>
+        BulkAsync(userIds, id => ChangeRoleAsync(id, newRole, actingOrgId, ct), ct);
+
+    /// <summary>
+    /// Shared shape for the bulk-action trio (#81). Iterates ids in input
+    /// order (with duplicates collapsed), runs the per-user delegate, and
+    /// turns a <see cref="PlanValidationException"/> into a row failure
+    /// rather than halting the whole batch.
+    /// </summary>
+    private async Task<BulkActionResult> BulkAsync(
+        IReadOnlyList<int> userIds, Func<int, Task> op, CancellationToken ct)
     {
         var succeeded = new List<int>();
         var failures = new List<BulkActionFailure>();
@@ -388,7 +365,7 @@ public sealed class AccountService
         {
             try
             {
-                await ChangeRoleAsync(id, newRole, actingOrgId, ct);
+                await op(id);
                 succeeded.Add(id);
             }
             catch (PlanValidationException ex)

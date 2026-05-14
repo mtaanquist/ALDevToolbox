@@ -750,7 +750,7 @@ public class GenerationService
         // too — the per-extension layering overwrites application / platform
         // with plan values; the affix / extension_prefix entries are
         // mustache-template inputs, not app.json content.
-        var defaults = JsonNode.Parse(JsonSerializer.Serialize(template.Defaults, JsonOptions))?.AsObject();
+        var defaults = JsonSerializer.SerializeToNode(template.Defaults, JsonOptions)?.AsObject();
         if (defaults is not null)
         {
             foreach (var kvp in defaults.ToList())
@@ -960,11 +960,12 @@ public class GenerationService
 
     /// <summary>
     /// Scalar substitution used for the extension name (no folder-context
-    /// awareness yet — names are built before folder traversal). The
-    /// substitution table is the same as the file-content path but
-    /// <c>{{namespace}}</c> resolves to the empty string here.
+    /// awareness yet — names are built before folder traversal). Delegates
+    /// to <see cref="SubstituteMustache"/> with an empty FolderPath so
+    /// <c>{{namespace}}</c> resolves to the empty string; #81 collapses the
+    /// previously duplicated switch.
     /// </summary>
-    private static string SubstituteScalar(string source, ProjectPlan plan, RuntimeTemplate template)
+    private string SubstituteScalar(string source, ProjectPlan plan, RuntimeTemplate template)
     {
         var ctx = new MustacheContext(
             Name: source,
@@ -975,23 +976,7 @@ public class GenerationService
             ExtensionPrefix: plan.ExtensionPrefix,
             Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
             FolderPath: string.Empty);
-        return MustacheRegex.Replace(source, match =>
-        {
-            var key = match.Groups[1].Value;
-            return key switch
-            {
-                "name" => ctx.Name,
-                "workspaceName" => ctx.WorkspaceName,
-                "shortName" => ctx.ShortName,
-                "moduleName" => ctx.ModuleName,
-                "publisher" => ctx.Publisher,
-                "extension_prefix" => ctx.ExtensionPrefix,
-                "affix" => ctx.Affix,
-                "namespace" => string.Empty,
-                "guid" => Guid.NewGuid().ToString(),
-                _ => match.Value,
-            };
-        });
+        return SubstituteMustache(source, ctx);
     }
 
     private record MustacheContext(
