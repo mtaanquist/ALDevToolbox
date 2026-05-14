@@ -36,6 +36,13 @@
     [Parameter] public EventCallback<long> OnFindReferences { get; set; }
 
     /// <summary>
+    /// Invoked when the user Cmd/Ctrl-clicks a token in the viewer. The
+    /// callback receives a 1-based <c>(line, column)</c> pair; the page
+    /// resolves the click against the symbol tables and navigates.
+    /// </summary>
+    [Parameter] public EventCallback<CodeViewerClick> OnGoToDefinition { get; set; }
+
+    /// <summary>
     /// Optional 1-based line number to scroll to (and flash) after mount.
     /// FileViewer reads this from the URL's <c>#L&lt;n&gt;</c> fragment.
     /// </summary>
@@ -68,7 +75,11 @@
                     kind = d.Kind,
                     name = d.Name,
                 }).ToArray(),
-                dotNetRef = Declarations is { Count: > 0 } ? _callbacks : null,
+                // Pass the .NET reference when either gesture is wired up.
+                // Right-click only fires when declarations exist, but
+                // Cmd/Ctrl-click is meaningful even without a symbol index.
+                dotNetRef = (Declarations is { Count: > 0 } || OnGoToDefinition.HasDelegate)
+                    ? _callbacks : null,
                 scrollToLine = ScrollToLine,
             };
 
@@ -90,6 +101,14 @@
         if (OnFindReferences.HasDelegate)
         {
             await OnFindReferences.InvokeAsync(symbolId);
+        }
+    }
+
+    internal async Task TriggerGoToDefinitionAsync(int line, int column)
+    {
+        if (OnGoToDefinition.HasDelegate)
+        {
+            await OnGoToDefinition.InvokeAsync(new CodeViewerClick(line, column));
         }
     }
 

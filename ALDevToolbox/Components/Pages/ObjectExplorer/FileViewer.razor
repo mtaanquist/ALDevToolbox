@@ -45,7 +45,11 @@
                     }
                     @if (_declarations.Count > 0)
                     {
-                        <span> · <strong>Right-click</strong> a procedure name to find references.</span>
+                        <span> · <strong>Right-click</strong> a procedure name to find references · <strong>Cmd/Ctrl-click</strong> any name to go to its definition.</span>
+                    }
+                    else
+                    {
+                        <span> · <strong>Cmd/Ctrl-click</strong> a name to go to its definition.</span>
                     }
                 </p>
             </div>
@@ -67,10 +71,18 @@
             }
         </header>
 
+        @if (_lastDefinitionMissed is { } missed)
+        {
+            <p class="form-error" role="status">
+                Couldn't resolve "@missed" in this version.
+            </p>
+        }
+
         <CodeViewer Content="@_file.Content"
                     Language="al"
                     Declarations="_declarations"
                     OnFindReferences="OnFindReferences"
+                    OnGoToDefinition="OnGoToDefinition"
                     ScrollToLine="_initialScrollLine" />
     }
 </div>
@@ -85,6 +97,7 @@
     private string _compareTarget = string.Empty;
     private IReadOnlyList<CodeViewerDeclaration> _declarations = Array.Empty<CodeViewerDeclaration>();
     private int? _initialScrollLine;
+    private string? _lastDefinitionMissed;
     private IDisposable? _locationChangedSubscription;
 
     protected override async Task OnInitializedAsync()
@@ -148,6 +161,25 @@
     private void OnFindReferences(long symbolId)
     {
         Nav.NavigateTo($"/object-explorer/{VersionId}/symbols/{symbolId}/references");
+    }
+
+    private async Task OnGoToDefinition(CodeViewerClick click)
+    {
+        _lastDefinitionMissed = null;
+        var target = await BaseApp.GoToDefinitionAsync(FileId, click.Line, click.Column);
+        if (target is null)
+        {
+            // Surface a small hint so the user knows the click was received
+            // even though resolution failed. We can't echo the clicked word
+            // (the click position is the only thing we have) — keeping the
+            // message generic.
+            _lastDefinitionMissed = $"line {click.Line}, column {click.Column}";
+            StateHasChanged();
+            return;
+        }
+
+        var url = $"/object-explorer/{VersionId}/files/{target.FileId}#L{target.LineNumber}";
+        Nav.NavigateTo(url);
     }
 
     private ValueTask OnLocationChanging(LocationChangingContext context)

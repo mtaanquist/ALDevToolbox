@@ -349,12 +349,31 @@ export function mountReadOnly(container, value, language, options) {
     document.addEventListener("click", closeMenu);
     document.addEventListener("scroll", closeMenu, true);
 
+    // Cmd/Ctrl-click anywhere in the editor fires the "Go to definition"
+    // callback. We resolve the token server-side via the click position
+    // because the JS-side word boundaries don't understand AL's quoted
+    // identifiers; passing (line, column) keeps the JS dumb and the C#
+    // parser unit-testable.
+    const onClickForDefinition = (event) => {
+        if (!event.metaKey && !event.ctrlKey) return;
+        if (!opts.dotNetRef) return;
+        const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+        if (pos === null) return;
+        const line = view.state.doc.lineAt(pos);
+        const colInLine = pos - line.from + 1; // 1-based
+        event.preventDefault();
+        opts.dotNetRef.invokeMethodAsync("OnGoToDefinition", line.number, colInLine)
+            .catch(err => console.warn("Go to definition callback failed:", err));
+    };
+    container.addEventListener("click", onClickForDefinition);
+
     editors.set(id, {
         view,
         pristine: initial,
         dirty: false,
         dispose: () => {
             container.removeEventListener("contextmenu", onContextMenu);
+            container.removeEventListener("click", onClickForDefinition);
             document.removeEventListener("click", closeMenu);
             document.removeEventListener("scroll", closeMenu, true);
             closeMenu();

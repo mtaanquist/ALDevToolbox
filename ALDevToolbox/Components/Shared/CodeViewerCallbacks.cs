@@ -19,6 +19,10 @@ public sealed class CodeViewerCallbacks
 
     [JSInvokable]
     public Task OnFindReferences(long symbolId) => _owner.TriggerFindReferencesAsync(symbolId);
+
+    [JSInvokable]
+    public Task OnGoToDefinition(int line, int column) =>
+        _owner.TriggerGoToDefinitionAsync(line, column);
 }
 
 /// <summary>
@@ -32,3 +36,6 @@ public sealed record CodeViewerDeclaration(
     int ColumnEnd,
     string Kind,
     string Name);
+
+/// <summary>A 1-based click position inside the viewer's source.</summary>
+public sealed record CodeViewerClick(int Line, int Column);

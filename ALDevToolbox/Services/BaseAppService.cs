@@ -1,6 +1,7 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services.Al;
 using DiffPlex.DiffBuilder;
 using DiffPlex.DiffBuilder.Model;
 using Microsoft.EntityFrameworkCore;
@@ -407,6 +408,140 @@ public class BaseAppService
         if (trimmed.Length <= SnippetMaxLength) return trimmed;
         return trimmed.Substring(0, SnippetMaxLength) + "…";
     }
+
+    /// <summary>
+    /// Resolves a "Go to definition" click in the file viewer. Walks the
+    /// click position via <see cref="AlGoToDefinitionLocator"/>, then asks
+    /// the symbol / file tables for the matching declaration. Returns
+    /// <c>null</c> when nothing resolves; callers treat that as a no-op so
+    /// the user doesn't get a jarring redirect after a stray Ctrl-click.
+    /// </summary>
+    public async Task<GoToDefinitionTarget?> GoToDefinitionAsync(
+        long fileId, int line, int column, CancellationToken ct = default)
+    {
+        var file = await _db.BaseAppFiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(f => f.Id == fileId, ct);
+        if (file is null) return null;
+
+        var click = AlGoToDefinitionLocator.Inspect(file.Content, line, column);
+        if (click is null) return null;
+
+        // ── Case A: the click sits in an object-reference context.
+        //
+        //   * `Codeunit "Sales-Post"`            (LeftContext = keyword Codeunit)
+        //   * `Codeunit::"Sales-Post"`           (LeftContext = ::)
+        //   * `"Sales-Post".Post(...)` — Word is "Sales-Post" with no left ctx,
+        //     but the right side is a method access. We catch this via a
+        //     fallback check below.
+        var isObjectKeywordContext = click.LeftContext.Operator == "keyword"
+            || click.LeftContext.Operator == "::";
+        if (isObjectKeywordContext)
+        {
+            return await ResolveObjectByNameAsync(file.VersionId, click.Word, ct);
+        }
+
+        // ── Case B: qualified call `X.Word(...)` — Word is the procedure
+        // name, Qualifier is the type or variable identifier we need to
+        // resolve to a declaring object.
+        if (click.LeftContext.Operator == "." && click.LeftContext.Qualifier is { } qualifier)
+        {
+            // The qualifier may itself be an object name (`"Sales-Post".Post()`)
+            // or a variable typed as one (`SalesPostCu.Post()`).
+            string declaringObjectName = qualifier;
+            var asVar = AlGoToDefinitionLocator.ResolveVariableType(file.Content, qualifier);
+            if (asVar is not null) declaringObjectName = asVar;
+
+            var declaringFile = await _db.BaseAppFiles
+                .AsNoTracking()
+                .Where(f => f.VersionId == file.VersionId && f.ObjectName == declaringObjectName)
+                .Select(f => new { f.Id })
+                .FirstOrDefaultAsync(ct);
+
+            if (declaringFile is not null)
+            {
+                var symbol = await _db.BaseAppSymbols
+                    .AsNoTracking()
+                    .Where(s => s.FileId == declaringFile.Id && s.Name == click.Word)
+                    .OrderBy(s => s.LineNumber)
+                    .FirstOrDefaultAsync(ct);
+                if (symbol is not null)
+                {
+                    return new GoToDefinitionTarget(
+                        declaringFile.Id, symbol.LineNumber,
+                        $"procedure {symbol.Name} on \"{declaringObjectName}\"");
+                }
+            }
+            // Fall through to bare-name search if the qualifier didn't resolve.
+        }
+
+        // ── Case C: same-line member access where the word is the object,
+        // not the procedure (e.g. click landed on `Sales-Post` in
+        // `"Sales-Post".Post(...)`). Detect by looking at what's just after
+        // the word on the line.
+        if (LooksLikeObjectFollowedByMember(click.LineText, click.Word))
+        {
+            var target = await ResolveObjectByNameAsync(file.VersionId, click.Word, ct);
+            if (target is not null) return target;
+        }
+
+        // ── Case D: unqualified — search same file first, then version-wide.
+        var sameFileSymbol = await _db.BaseAppSymbols
+            .AsNoTracking()
+            .Where(s => s.FileId == fileId && s.Name == click.Word)
+            .OrderBy(s => s.LineNumber)
+            .FirstOrDefaultAsync(ct);
+        if (sameFileSymbol is not null)
+        {
+            return new GoToDefinitionTarget(
+                fileId, sameFileSymbol.LineNumber, $"procedure {sameFileSymbol.Name}");
+        }
+
+        var anySymbol = await _db.BaseAppSymbols
+            .AsNoTracking()
+            .Include(s => s.File)
+            .Where(s => s.VersionId == file.VersionId && s.Name == click.Word)
+            .OrderBy(s => s.FileId)
+            .ThenBy(s => s.LineNumber)
+            .FirstOrDefaultAsync(ct);
+        if (anySymbol is not null)
+        {
+            return new GoToDefinitionTarget(
+                anySymbol.FileId, anySymbol.LineNumber,
+                anySymbol.File is null
+                    ? $"procedure {anySymbol.Name}"
+                    : $"procedure {anySymbol.Name} on \"{anySymbol.File.ObjectName}\"");
+        }
+
+        // Word may itself be an object name even without keyword context —
+        // covers `"Sales-Post"` standing alone (e.g. inside a comment-link
+        // or a string literal we still want to follow).
+        return await ResolveObjectByNameAsync(file.VersionId, click.Word, ct);
+    }
+
+    private async Task<GoToDefinitionTarget?> ResolveObjectByNameAsync(
+        int versionId, string objectName, CancellationToken ct)
+    {
+        var match = await _db.BaseAppFiles
+            .AsNoTracking()
+            .Where(f => f.VersionId == versionId && f.ObjectName == objectName)
+            .Select(f => new { f.Id, f.ObjectType, f.ObjectName })
+            .FirstOrDefaultAsync(ct);
+        if (match is null) return null;
+        return new GoToDefinitionTarget(
+            match.Id, 1, $"{match.ObjectType} \"{match.ObjectName}\"");
+    }
+
+    private static bool LooksLikeObjectFollowedByMember(string lineText, string word)
+    {
+        var idx = lineText.IndexOf(word, StringComparison.Ordinal);
+        if (idx < 0) return false;
+        var after = idx + word.Length;
+        // Quoted: skip a trailing `"`.
+        if (after < lineText.Length && lineText[after] == '"') after++;
+        while (after < lineText.Length && char.IsWhiteSpace(lineText[after])) after++;
+        return after < lineText.Length && lineText[after] == '.';
+    }
 }
 
 /// <summary>Filter inputs from the version-browser table.</summary>
@@ -497,3 +632,10 @@ public enum BaseAppReferenceConfidence
     /// <summary>Bare <c>Name(</c> with no qualifier — could be a different overload on another object.</summary>
     PossiblyRelated,
 }
+
+/// <summary>
+/// Where a "Go to definition" click should navigate. <see cref="Description"/>
+/// is a short human label used in toasts and accessibility text (e.g.
+/// "procedure Post on Sales-Post").
+/// </summary>
+public sealed record GoToDefinitionTarget(long FileId, int LineNumber, string Description);
