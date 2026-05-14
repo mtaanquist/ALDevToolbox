@@ -98,6 +98,7 @@ builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<TemplateImportService>();
 builder.Services.AddScoped<WorkspaceConfigService>();
 builder.Services.AddSingleton<ALDevToolbox.Services.Generation.MustacheRenderer>();
+builder.Services.AddScoped<ALDevToolbox.Services.Generation.WorkspaceZipBuilder>();
 builder.Services.AddScoped<GenerationService>();
 builder.Services.AddScoped<ExportService>();
 builder.Services.AddMemoryCache();
