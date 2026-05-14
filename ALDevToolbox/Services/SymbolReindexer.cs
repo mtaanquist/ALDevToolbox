@@ -25,11 +25,14 @@ public sealed class SymbolReindexer : BackgroundService
     private const int BatchSize = 200;
 
     private readonly IServiceProvider _services;
+    private readonly SymbolReindexQueue _queue;
     private readonly ILogger<SymbolReindexer> _logger;
 
-    public SymbolReindexer(IServiceProvider services, ILogger<SymbolReindexer> logger)
+    public SymbolReindexer(
+        IServiceProvider services, SymbolReindexQueue queue, ILogger<SymbolReindexer> logger)
     {
         _services = services;
+        _queue = queue;
         _logger = logger;
     }
 
@@ -54,8 +57,14 @@ public sealed class SymbolReindexer : BackgroundService
                 _logger.LogError(ex, "SymbolReindexer tick threw; will retry on the next poll.");
             }
 
-            try { await Task.Delay(PollInterval, stoppingToken); }
-            catch (OperationCanceledException) { return; }
+            // Wait for either a wakeup signal (e.g. admin clicked "Reindex
+            // now") or the poll timeout, whichever fires first. Using a
+            // linked CTS so the timer disposes cleanly when a wakeup arrives.
+            using var timer = new CancellationTokenSource(PollInterval);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+                stoppingToken, timer.Token);
+            await _queue.WaitAsync(linked.Token);
+            if (stoppingToken.IsCancellationRequested) return;
         }
     }
 

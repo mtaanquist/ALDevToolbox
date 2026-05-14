@@ -56,6 +56,7 @@
                     <th scope="col">CU</th>
                     <th scope="col" class="num">Files</th>
                     <th scope="col">Uploaded</th>
+                    <th scope="col">Symbols</th>
                     <th scope="col">Notes</th>
                     <th scope="col"></th>
                 </tr>
@@ -68,8 +69,27 @@
                         <td>CU @v.CumulativeUpdate</td>
                         <td class="num">@v.FileCount.ToString("N0")</td>
                         <td>@v.UploadedAt.ToString("yyyy-MM-dd HH:mm")</td>
-                        <td class="muted">@(string.IsNullOrWhiteSpace(v.Notes) ? "—" : v.Notes)</td>
                         <td>
+                            @if (v.SymbolsIndexedAt is null)
+                            {
+                                <span class="muted small">Pending…</span>
+                            }
+                            else
+                            {
+                                <span class="muted small">@v.SymbolsIndexedAt.Value.ToString("yyyy-MM-dd HH:mm")</span>
+                            }
+                        </td>
+                        <td class="muted">@(string.IsNullOrWhiteSpace(v.Notes) ? "—" : v.Notes)</td>
+                        <td class="object-explorer__row-actions">
+                            <form method="post"
+                                  action="@($"/admin/object-explorer/{v.Id}/reindex")"
+                                  title="Re-extract symbols from stored content. Picked up by the background worker within a few seconds.">
+                                @if (_antiforgeryToken is not null)
+                                {
+                                    <input type="hidden" name="@_antiforgeryToken.FormFieldName" value="@_antiforgeryToken.RequestToken" />
+                                }
+                                <button type="submit" class="btn btn--outline btn--sm">Reindex</button>
+                            </form>
                             <form method="post"
                                   action="@($"/admin/object-explorer/{v.Id}/delete")"
                                   onsubmit="return confirm('Delete this version? Browser pages will hide it; the rows stay in the database.')">
@@ -106,6 +126,12 @@
     [SupplyParameterFromQuery(Name = "replaced")]
     public int? Replaced { get; set; }
 
+    [SupplyParameterFromQuery(Name = "zips")]
+    public int? Zips { get; set; }
+
+    [SupplyParameterFromQuery(Name = "warn")]
+    public string? Warn { get; set; }
+
     private List<BaseAppVersion>? _versions;
     private AntiforgeryTokenSet? _antiforgeryToken;
 
@@ -123,16 +149,29 @@
         }
     }
 
-    private string FormatOk(string ok) => ok switch
+    private string FormatOk(string ok)
     {
-        "imported" => $"Imported successfully. Parsed {Parsed ?? 0} object(s)."
-            + (Failed > 0 ? $" {Failed} file(s) couldn't be parsed." : ""),
-        "appended" => $"Appended {Parsed ?? 0} object(s) to the existing version."
-            + (Replaced > 0 ? $" {Replaced} file(s) with overlapping paths were replaced." : "")
-            + (Failed > 0 ? $" {Failed} file(s) couldn't be parsed." : ""),
-        "deleted" => "Version deleted.",
-        _ => "Done.",
-    };
+        var zipCount = Zips ?? 1;
+        var zipPart = zipCount > 1 ? $" from {zipCount} ZIPs" : "";
+        var baseMsg = ok switch
+        {
+            "imported" => $"Imported {Parsed ?? 0} object(s){zipPart}.",
+            "appended" => $"Imported {Parsed ?? 0} object(s){zipPart}."
+                + (Replaced > 0 ? $" {Replaced} file(s) with overlapping paths were replaced." : ""),
+            "deleted" => "Version deleted.",
+            "reindex-queued" => "Reindex queued. The background worker picks it up within a few seconds; refresh in a moment to see the updated timestamp.",
+            _ => "Done.",
+        };
+        if (Failed > 0)
+        {
+            baseMsg += $" {Failed} file(s) couldn't be parsed.";
+        }
+        if (!string.IsNullOrEmpty(Warn))
+        {
+            baseMsg += $" Warning: {Warn}";
+        }
+        return baseMsg;
+    }
 
     public enum StatusKind { Ok, Err }
 }

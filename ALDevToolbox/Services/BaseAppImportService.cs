@@ -29,12 +29,18 @@ public class BaseAppImportService
     private readonly AppDbContext _db;
     private readonly ILogger<BaseAppImportService> _logger;
     private readonly IOrganizationContext _orgContext;
+    private readonly SymbolReindexQueue? _reindexQueue;
 
-    public BaseAppImportService(AppDbContext db, ILogger<BaseAppImportService> logger, IOrganizationContext orgContext)
+    public BaseAppImportService(
+        AppDbContext db,
+        ILogger<BaseAppImportService> logger,
+        IOrganizationContext orgContext,
+        SymbolReindexQueue? reindexQueue = null)
     {
         _db = db;
         _logger = logger;
         _orgContext = orgContext;
+        _reindexQueue = reindexQueue;
     }
 
     private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
@@ -221,6 +227,35 @@ public class BaseAppImportService
             duration,
             isAppend,
             replacedPaths);
+    }
+
+    /// <summary>
+    /// Marks the version as needing reindexing and pokes the
+    /// <see cref="SymbolReindexer"/> so it picks the row up immediately
+    /// instead of waiting for its next poll. The reindexer's existing
+    /// logic does the rest — query for rows with
+    /// <see cref="BaseAppVersion.SymbolsIndexedAt"/> null, drop the old
+    /// symbols, re-extract from stored content, restamp the timestamp.
+    /// </summary>
+    public async Task RequestReindexAsync(int versionId, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var existing = await _db.BaseAppVersions
+            .FirstOrDefaultAsync(v => v.Id == versionId, ct)
+            ?? throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Id"] = $"Version with id {versionId} was not found.",
+            });
+
+        existing.SymbolsIndexedAt = null;
+        existing.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        _reindexQueue?.Signal();
+
+        _logger.LogInformation(
+            "Queued symbol reindex for Object Explorer version {Major}.{Minor} CU{Cu} (id={Id}).",
+            existing.Major, existing.Minor, existing.CumulativeUpdate, existing.Id);
     }
 
     /// <summary>

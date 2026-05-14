@@ -30,10 +30,10 @@ internal static class BaseAppEndpoints
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
 
             var form = await ctx.Request.ReadFormAsync(ct);
-            var zipFile = form.Files["Zip"];
-            if (zipFile is null || zipFile.Length == 0)
+            var zipFiles = form.Files.GetFiles("Zip").Where(f => f.Length > 0).ToArray();
+            if (zipFiles.Length == 0)
             {
-                Redirect(ctx, "Zip", "Choose a ZIP file before submitting.");
+                Redirect(ctx, "Zip", "Choose at least one ZIP file before submitting.");
                 return;
             }
 
@@ -53,36 +53,73 @@ internal static class BaseAppEndpoints
             }
 
             var modeRaw = form["Mode"].ToString();
-            if (!Enum.TryParse<BaseAppImportMode>(modeRaw, ignoreCase: true, out var mode))
+            if (!Enum.TryParse<BaseAppImportMode>(modeRaw, ignoreCase: true, out var firstMode))
             {
-                mode = BaseAppImportMode.Reject;
+                firstMode = BaseAppImportMode.Reject;
             }
 
-            var request = new BaseAppImportRequest(
-                Major: major,
-                Minor: minor,
-                CumulativeUpdate: cu,
-                ApplicationVersionId: applicationVersionId,
-                Notes: form["Notes"].ToString(),
-                Mode: mode);
+            var notes = form["Notes"].ToString();
+            var totalParsed = 0;
+            var totalFailed = 0;
+            var totalReplaced = 0;
+            int? versionId = null;
+            string? firstError = null;
+            string? firstErrorKey = null;
 
-            try
+            for (var i = 0; i < zipFiles.Length; i++)
             {
-                await using var stream = zipFile.OpenReadStream();
-                var summary = await importer.ImportAsync(stream, request, ct);
-                var okKind = summary.WasAppend ? "appended" : "imported";
-                ctx.Response.Redirect(
-                    $"/admin/object-explorer?ok={okKind}"
-                    + $"&parsed={summary.ParsedFiles}"
-                    + $"&failed={summary.FailedFiles}"
-                    + $"&replaced={summary.ReplacedPaths}"
-                    + $"&id={summary.VersionId}");
+                // First ZIP gets the user's chosen mode; subsequent uploads
+                // stack into the same version row via Append. The submission
+                // form's caption tells the user this happens — no surprises.
+                var mode = i == 0 ? firstMode : BaseAppImportMode.Append;
+                var request = new BaseAppImportRequest(
+                    Major: major,
+                    Minor: minor,
+                    CumulativeUpdate: cu,
+                    ApplicationVersionId: applicationVersionId,
+                    // Notes only attached to the first ZIP — Append concatenates
+                    // notes from subsequent uploads which we don't want here.
+                    Notes: i == 0 ? notes : null,
+                    Mode: mode);
+
+                try
+                {
+                    await using var stream = zipFiles[i].OpenReadStream();
+                    var summary = await importer.ImportAsync(stream, request, ct);
+                    versionId ??= summary.VersionId;
+                    totalParsed += summary.ParsedFiles;
+                    totalFailed += summary.FailedFiles;
+                    totalReplaced += summary.ReplacedPaths;
+                }
+                catch (PlanValidationException ex) when (firstError is null)
+                {
+                    var pair = ex.Errors.First();
+                    firstErrorKey = pair.Key;
+                    firstError = $"{zipFiles[i].FileName}: {pair.Value}";
+                }
             }
-            catch (PlanValidationException ex)
+
+            if (firstError is not null && versionId is null)
             {
-                var first = ex.Errors.First();
-                Redirect(ctx, first.Key, first.Value);
+                // Every ZIP failed; surface the first error and stay on the form.
+                Redirect(ctx, firstErrorKey ?? "Zip", firstError);
+                return;
             }
+
+            // Stack outcome on the admin page. okKind picks "imported" when
+            // only one ZIP landed and "appended" when several stacked.
+            var okKind = zipFiles.Length > 1 ? "appended" : "imported";
+            var query = $"/admin/object-explorer?ok={okKind}"
+                + $"&parsed={totalParsed}"
+                + $"&failed={totalFailed}"
+                + $"&replaced={totalReplaced}"
+                + $"&zips={zipFiles.Length}"
+                + $"&id={versionId}";
+            if (firstError is not null)
+            {
+                query += $"&warn={Uri.EscapeDataString(firstError)}";
+            }
+            ctx.Response.Redirect(query);
         })
         .RequireAuthorization(policy => policy.RequireRole("Admin"))
         .WithMetadata(new RequestSizeLimitAttribute(MaxUploadBytes))
@@ -91,6 +128,27 @@ internal static class BaseAppEndpoints
             MultipartBodyLengthLimit = MaxUploadBytes,
             MultipartHeadersLengthLimit = 32 * 1024,
         });
+
+        app.MapPost("/admin/object-explorer/{id:int}/reindex", async (
+            int id,
+            HttpContext ctx,
+            BaseAppImportService importer,
+            IAntiforgery antiforgery,
+            CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+
+            try
+            {
+                await importer.RequestReindexAsync(id, ct);
+                ctx.Response.Redirect("/admin/object-explorer?ok=reindex-queued");
+            }
+            catch (PlanValidationException ex)
+            {
+                var first = ex.Errors.First();
+                Redirect(ctx, first.Key, first.Value);
+            }
+        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
         app.MapPost("/admin/object-explorer/{id:int}/delete", async (
             int id,

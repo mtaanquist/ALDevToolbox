@@ -27,7 +27,7 @@ public sealed class SymbolReindexerTests : IDisposable
     {
         var versionId = await SeedVersionWithoutSymbolsAsync();
 
-        var reindexer = new SymbolReindexer(null!, NullLogger<SymbolReindexer>.Instance);
+        var reindexer = new SymbolReindexer(null!, new SymbolReindexQueue(), NullLogger<SymbolReindexer>.Instance);
         using var ctx = _db.NewContext();
         var count = await reindexer.ReindexVersionAsync(ctx, versionId, default);
 
@@ -55,7 +55,7 @@ public sealed class SymbolReindexerTests : IDisposable
             await prep.SaveChangesAsync();
         }
 
-        var reindexer = new SymbolReindexer(null!, NullLogger<SymbolReindexer>.Instance);
+        var reindexer = new SymbolReindexer(null!, new SymbolReindexQueue(), NullLogger<SymbolReindexer>.Instance);
         using var ctx = _db.NewContext();
         await reindexer.TickOnceAsync(ctx, default);
 
@@ -71,7 +71,7 @@ public sealed class SymbolReindexerTests : IDisposable
         var v1 = await SeedVersionWithoutSymbolsAsync(major: 27);
         var v2 = await SeedVersionWithoutSymbolsAsync(major: 28);
 
-        var reindexer = new SymbolReindexer(null!, NullLogger<SymbolReindexer>.Instance);
+        var reindexer = new SymbolReindexer(null!, new SymbolReindexQueue(), NullLogger<SymbolReindexer>.Instance);
 
         // First tick processes v1 (earliest UploadedAt).
         using (var ctx = _db.NewContext()) await reindexer.TickOnceAsync(ctx, default);

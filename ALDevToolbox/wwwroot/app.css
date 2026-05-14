@@ -2597,6 +2597,13 @@ ul.form-field-error {
     min-width: 240px;
 }
 
+.object-explorer__row-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
 /* Diff line decorations applied by CodeMirror's Decoration.line(). Selectors
    live in the global stylesheet (not the scoped CodeDiffViewer.razor.css)
    because CodeMirror renders .cm-line outside the Blazor component's scope-id

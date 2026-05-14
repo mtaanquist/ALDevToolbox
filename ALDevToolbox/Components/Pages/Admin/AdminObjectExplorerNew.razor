@@ -44,8 +44,16 @@
 
         <section class="form-section">
             <label class="field">
-                <span class="field__label">ZIP file</span>
-                <input type="file" name="Zip" accept=".zip,application/zip" required />
+                <span class="field__label">ZIP file(s)</span>
+                <input type="file" name="Zip" accept=".zip,application/zip" multiple required />
+                <small class="field__caption muted">
+                    Pick one ZIP, or hold Shift / Cmd while selecting to pick several at
+                    once. When multiple ZIPs are uploaded for the same Business
+                    Central version, the first one uses the mode you chose
+                    below; the rest are forced to <strong>Append</strong> so
+                    Base Application, System Application, and other first-party
+                    apps land into a single version row.
+                </small>
             </label>
 
             <div class="form-row">

@@ -128,7 +128,11 @@ if (Environment.GetEnvironmentVariable("DISABLE_BACKUP_SCHEDULER") != "1")
 }
 // SymbolReindexer backfills the Object Explorer symbol index for versions
 // imported before the symbol feature shipped. Same opt-out pattern as the
-// backup scheduler so CI / tests can skip it.
+// backup scheduler so CI / tests can skip it. The queue is a singleton
+// because the admin endpoint and the hosted service share the same instance
+// — clicking "Reindex now" signals the worker immediately instead of
+// waiting for the next 5-minute poll.
+builder.Services.AddSingleton<SymbolReindexQueue>();
 if (Environment.GetEnvironmentVariable("DISABLE_SYMBOL_REINDEXER") != "1")
 {
     builder.Services.AddHostedService<SymbolReindexer>();
