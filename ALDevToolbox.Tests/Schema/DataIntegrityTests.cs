@@ -39,8 +39,9 @@ public sealed class DataIntegrityTests : IDisposable
         });
 
         Func<Task> save = () => ctx.SaveChangesAsync();
-        await save.Should().ThrowAsync<DbUpdateException>()
-            .Where(ex => ex.InnerException is PostgresException pg && pg.SqlState == "23505");
+        var ex = await save.Should().ThrowAsync<DbUpdateException>();
+        ex.Which.InnerException.Should().BeOfType<PostgresException>()
+            .Which.SqlState.Should().Be("23505");
     }
 
     [Fact]
@@ -104,7 +105,8 @@ public sealed class DataIntegrityTests : IDisposable
         var toDelete = await del.Organizations.IgnoreQueryFilters().FirstAsync(o => o.Id == orgId);
         del.Organizations.Remove(toDelete);
         Func<Task> save = () => del.SaveChangesAsync();
-        await save.Should().ThrowAsync<DbUpdateException>()
-            .Where(ex => ex.InnerException is PostgresException pg && pg.SqlState == "23503");
+        var ex = await save.Should().ThrowAsync<DbUpdateException>();
+        ex.Which.InnerException.Should().BeOfType<PostgresException>()
+            .Which.SqlState.Should().Be("23503");
     }
 }
