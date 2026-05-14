@@ -1,6 +1,7 @@
 using System.Net;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace ALDevToolbox.Tests.Endpoints;
 
@@ -44,9 +45,7 @@ public sealed class AuthenticationRequiredTests : IDisposable
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Redirect, HttpStatusCode.BadRequest);
         if (response.StatusCode == HttpStatusCode.Redirect)
         {
-            // Cookie auth redirects to an absolute URL ("https://localhost/login?ReturnUrl=...");
-            // assert the login path is in there rather than pinning to a relative shape.
-            response.Headers.Location!.OriginalString.Should().Contain("/login");
+            AssertRedirectsToLogin(response, expectedReturn: path);
         }
     }
 
@@ -57,7 +56,7 @@ public sealed class AuthenticationRequiredTests : IDisposable
         using var response = await client.GetAsync("/admin/configuration/logo/preview");
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        response.Headers.Location!.OriginalString.Should().Contain("/login");
+        AssertRedirectsToLogin(response, expectedReturn: "/admin/configuration/logo/preview");
     }
 
     [Fact]
@@ -69,5 +68,27 @@ public sealed class AuthenticationRequiredTests : IDisposable
         using var response = await client.GetAsync("/site-admin/users");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    /// <summary>
+    /// Cookie auth issues an absolute Location ("https://localhost/login?ReturnUrl=…")
+    /// when running through <see cref="WebApplicationFactory{T}"/>. Parse the URI
+    /// and pin the path exactly so a regression to e.g. "/admin/login" or a
+    /// different host can't pass the test, then verify the ReturnUrl carries
+    /// the original request path back so post-login redirect works end-to-end.
+    /// </summary>
+    private static void AssertRedirectsToLogin(HttpResponseMessage response, string expectedReturn)
+    {
+        var location = response.Headers.Location;
+        location.Should().NotBeNull("a redirect response must carry a Location header");
+        var uri = location!.IsAbsoluteUri
+            ? location
+            : new Uri(new Uri("https://localhost/"), location);
+        uri.AbsolutePath.Should().Be("/login",
+            "the cookie auth handler is configured with LoginPath = \"/login\"");
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        query.Should().ContainKey("ReturnUrl");
+        query["ReturnUrl"].ToString().Should().Be(expectedReturn,
+            "the original request path must round-trip via ReturnUrl so post-login lands the user back where they started");
     }
 }
