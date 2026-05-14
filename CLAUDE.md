@@ -18,6 +18,7 @@ App folders are relative to `ALDevToolbox/`.
 | `Components/Pages/`          | Routable pages (one `.razor` per route).                                     |
 | `Components/Layout/`         | Shell layout, sidebar, top bar, reconnect modal.                             |
 | `Components/Shared/`         | Reusable components (`TabBar`, future `FolderTreePreview`, `DependencyPicker`). |
+| `Endpoints/`                 | Minimal-API endpoint groups (`AccountEndpoints`, `GenerationEndpoints`, `SiteAdminEndpoints`, …) registered from `Program.cs` via `Map*Endpoints()` extensions. |
 | `Services/`                  | Application services (`GenerationService`, `TemplateImportService`, `TemplateService`, …). |
 | `Domain/Entities/`           | EF Core entity classes (mutable, persisted).                                 |
 | `Domain/ValueObjects/`       | Immutable records / JSON-mapped value objects, exceptions, plans.            |
