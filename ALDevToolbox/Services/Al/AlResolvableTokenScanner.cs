@@ -18,13 +18,25 @@ namespace ALDevToolbox.Services.Al;
 /// </summary>
 public static class AlResolvableTokenScanner
 {
+    // Keywords whose immediately-following token is a user-defined object
+    // name the symbol index can resolve to a file. Drawn from the AL data
+    // type catalogue — only the keywords that actually take a named object
+    // are listed. Primitive types (Text, Integer, …) are deliberately
+    // excluded so `var Msg: Text "Lbl"` doesn't mark "Lbl" as jumpable.
+    // RecordRef / FieldRef / KeyRef don't take a name either.
     private static readonly HashSet<string> ObjectKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
+        // Top-level object types that can be referenced by name from a
+        // variable declaration, property, or `Codeunit::"X"` typed expression.
         "codeunit", "table", "page", "report", "query", "xmlport",
         "enum", "interface", "permissionset", "profile", "controladdin",
-        "record", "recordref", "fieldref",
+        "record",
+        // Test-only references — `TestPage "Customer Card"` ⇒ resolve to page.
+        "requestpage", "testpage", "testpart", "testrequestpage",
+        // Extension declarations: the name after `extends` is the base object.
         "pageextension", "tableextension", "reportextension", "enumextension",
         "permissionsetextension",
+        "extends",
     };
 
     /// <summary>

@@ -66,6 +66,53 @@ public sealed class AlResolvableTokenScannerTests
         ranges.Should().ContainSingle();
     }
 
+    [Theory]
+    [InlineData("page")]
+    [InlineData("report")]
+    [InlineData("query")]
+    [InlineData("xmlport")]
+    [InlineData("enum")]
+    [InlineData("interface")]
+    [InlineData("testpage")]
+    [InlineData("testpart")]
+    [InlineData("testrequestpage")]
+    [InlineData("requestpage")]
+    [InlineData("permissionset")]
+    [InlineData("profile")]
+    [InlineData("controladdin")]
+    public void Object_name_resolves_after_each_recognised_keyword(string keyword)
+    {
+        var source = $"    X: {keyword} \"Some Object\";\n";
+
+        var ranges = AlResolvableTokenScanner.Scan(source, Objects("Some Object"));
+
+        ranges.Should().ContainSingle($"keyword '{keyword}' should set object-reference context");
+    }
+
+    [Fact]
+    public void Object_name_resolves_after_extends_keyword()
+    {
+        // pageextension declarations name their base via `extends "Base"` —
+        // clicking the base name should jump to the underlying object.
+        var source = "pageextension 50100 \"My Ext\" extends \"Customer Card\"\n";
+
+        var ranges = AlResolvableTokenScanner.Scan(source, Objects("Customer Card"));
+
+        ranges.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Object_name_does_NOT_resolve_after_primitive_type_keyword()
+    {
+        // `Text` is a primitive type and must not act as object-reference
+        // context — otherwise `Msg: Text "Label"` would underline "Label".
+        var source = "    Msg: Text \"Label\";\n";
+
+        var ranges = AlResolvableTokenScanner.Scan(source, Objects("Label"));
+
+        ranges.Should().BeEmpty();
+    }
+
     [Fact]
     public void Object_name_does_NOT_resolve_without_keyword_context()
     {
