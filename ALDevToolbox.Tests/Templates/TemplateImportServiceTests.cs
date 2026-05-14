@@ -118,6 +118,46 @@ public sealed class TemplateImportServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Import_leaves_source_template_folder_rows_untouched()
+    {
+        // Regression for #75: the source template was loaded tracked, then
+        // its Folders nav was rewritten with untracked clones during tree
+        // hydration. EF could try to persist those edits against the source
+        // org's rows on SaveChanges, duplicating folders or leaking the
+        // importing org's data back into the system org.
+        await SeedSystemCatalogueAsync();
+        _db.OrgContext.CurrentOrganizationId = TestDb.OtherOrgId;
+
+        int systemTemplateId = await ResolveSystemTemplateIdAsync("runtime-system");
+
+        List<int> beforeFolderIds;
+        await using (var snap = _db.NewContext())
+        {
+            beforeFolderIds = await snap.WorkspaceExtensionFolders
+                .IgnoreQueryFilters()
+                .Where(f => f.OrganizationId == TestDb.DefaultOrgId)
+                .Select(f => f.Id)
+                .OrderBy(id => id)
+                .ToListAsync();
+        }
+
+        await using (var ctx = _db.NewContext())
+        {
+            await NewService(ctx).ImportTemplateAsync(systemTemplateId);
+        }
+
+        await using var verify = _db.NewContext();
+        var afterFolderIds = await verify.WorkspaceExtensionFolders
+            .IgnoreQueryFilters()
+            .Where(f => f.OrganizationId == TestDb.DefaultOrgId)
+            .Select(f => f.Id)
+            .OrderBy(id => id)
+            .ToListAsync();
+        afterFolderIds.Should().Equal(beforeFolderIds,
+            "the source org's folder rows must be untouched by an import into another org");
+    }
+
+    [Fact]
     public async Task Import_reuses_existing_local_module_when_key_already_present()
     {
         await SeedSystemCatalogueAsync();

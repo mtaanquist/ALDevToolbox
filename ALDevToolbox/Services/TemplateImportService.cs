@@ -127,8 +127,14 @@ public sealed class TemplateImportService
             });
         }
 
+        // AsNoTracking: the source is read-only — we fork it into the acting
+        // org. Hydrating the folder tree mutates the source's nav collections
+        // in memory; with tracking on, EF would try to persist those edits
+        // (including the untracked folder rows shoved into them) against the
+        // source. CLAUDE.md: AsNoTracking on every read-only EF query.
         var source = await _db.RuntimeTemplates
             .IgnoreQueryFilters()
+            .AsNoTracking()
             .Where(t => t.Id == systemTemplateId && t.OrganizationId == systemOrgId.Value)
             .Include(t => t.WorkspaceExtensions.OrderBy(e => e.Ordering))
                 .ThenInclude(e => e.Dependencies.OrderBy(d => d.Ordering))
