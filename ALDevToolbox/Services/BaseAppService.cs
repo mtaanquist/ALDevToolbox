@@ -537,7 +537,10 @@ public class BaseAppService
     private const int SnippetMaxLength = 240;
     private static string TrimSnippet(string line)
     {
-        var trimmed = line.TrimEnd();
+        // Trim both sides — leading whitespace on indented call sites adds
+        // nothing readable to the snippet column and wastes horizontal space
+        // in the inspector panel.
+        var trimmed = line.Trim();
         if (trimmed.Length <= SnippetMaxLength) return trimmed;
         return trimmed.Substring(0, SnippetMaxLength) + "…";
     }

@@ -3027,6 +3027,13 @@ ul.form-field-error {
     min-width: 0;
 }
 
+/* Override the global `a:hover { text-decoration: underline }` — the row
+   already changes background on hover, the redundant underline reads as
+   noise. */
+.inspector-panel__item-link:hover {
+    text-decoration: none;
+}
+
 .inspector-panel__item-name {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -3103,6 +3110,8 @@ ul.form-field-error {
 
 .inspector-panel__refs-hit:hover {
     background: var(--surface-hover, rgba(124, 124, 144, 0.10));
+    /* Suppress the global `a:hover` underline — background change is enough. */
+    text-decoration: none;
 }
 
 .inspector-panel__refs-hit-line {

@@ -478,6 +478,12 @@ export function scrollToLine(id, lineNumber, flash) {
         const dom = view.dom.querySelector(
             `.cm-line:nth-of-type(${safeLine})`);
         if (dom) {
+            // Adding a class that's already present doesn't restart its
+            // CSS animation. Remove first, force a reflow, then re-add so
+            // repeated clicks on the same reference re-flash the line.
+            dom.classList.remove("cm-line--flash");
+            // eslint-disable-next-line no-unused-expressions
+            dom.offsetWidth;
             dom.classList.add("cm-line--flash");
             setTimeout(() => dom.classList.remove("cm-line--flash"), 1500);
         }

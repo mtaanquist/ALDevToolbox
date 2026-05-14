@@ -62,11 +62,20 @@
     /// </summary>
     [Parameter] public int? ScrollToLine { get; set; }
 
+    /// <summary>
+    /// Monotonic token that the parent bumps each time it wants the viewer to
+    /// re-scroll to <see cref="ScrollToLine"/>. Without it, clicking the same
+    /// reference twice (or clicking the line you're already on) is a no-op
+    /// — the line value didn't change so the viewer thought there was
+    /// nothing to do.
+    /// </summary>
+    [Parameter] public int ScrollSequence { get; set; }
+
     private ElementReference _container;
     private IJSObjectReference? _module;
     private int _editorId;
     private string? _mountedContent;
-    private int? _mountedScrollToLine;
+    private int _mountedScrollSequence = -1;
     private DotNetObjectReference<CodeViewerCallbacks>? _callbacks;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -107,7 +116,7 @@
             _editorId = await _module.InvokeAsync<int>(
                 "mountReadOnly", _container, Content ?? string.Empty, Language, options);
             _mountedContent = Content;
-            _mountedScrollToLine = ScrollToLine;
+            _mountedScrollSequence = ScrollSequence;
             return;
         }
 
@@ -119,14 +128,13 @@
             _mountedContent = Content;
         }
 
-        // Re-scroll when the parent re-pushes ScrollToLine (e.g. Go to
-        // definition that lands inside the currently mounted file — the
-        // page stays put and only the URL fragment changes, so the editor
-        // never re-mounts otherwise).
-        if (ScrollToLine is { } line && line >= 1 && _mountedScrollToLine != line)
+        // Re-scroll whenever the parent bumps the sequence — covers both
+        // "go to definition lands inside the current file" and "user clicks
+        // the same outline / reference link again after scrolling away".
+        if (ScrollToLine is { } line && line >= 1 && _mountedScrollSequence != ScrollSequence)
         {
             await _module.InvokeVoidAsync("scrollToLine", _editorId, line, true);
-            _mountedScrollToLine = line;
+            _mountedScrollSequence = ScrollSequence;
         }
     }
 

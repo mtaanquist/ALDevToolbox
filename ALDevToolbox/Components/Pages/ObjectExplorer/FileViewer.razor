@@ -91,7 +91,8 @@
                         OnFindReferences="OnFindReferences"
                         OnGoToDefinition="OnGoToDefinition"
                         OnFindInFile="OnFindInFile"
-                        ScrollToLine="_initialScrollLine" />
+                        ScrollToLine="_initialScrollLine"
+                        ScrollSequence="_scrollSequence" />
 
             <InspectorPanel Stack="_panelHistory.Stack"
                             Cursor="_panelHistory.Cursor"
@@ -99,7 +100,8 @@
                             VersionId="VersionId"
                             FileId="FileId"
                             OnPopTo="PopPanelTo"
-                            OnPushReferences="PushReferencesView" />
+                            OnPushReferences="PushReferencesView"
+                            OnScrollTo="OnPanelScrollTo" />
         </div>
     }
 </div>
@@ -116,6 +118,10 @@
     private IReadOnlyList<CodeViewerResolvable> _resolvables = Array.Empty<CodeViewerResolvable>();
     private IReadOnlyList<BaseAppSymbol> _symbols = Array.Empty<BaseAppSymbol>();
     private int? _initialScrollLine;
+    // Monotonic counter passed through to CodeViewer so identical
+    // scroll-to-line requests still trigger the flash + re-center. Bumped
+    // every time we update _initialScrollLine.
+    private int _scrollSequence;
     private string? _lastDefinitionMissed;
     private IDisposable? _locationChangedSubscription;
 
@@ -172,11 +178,21 @@
             .Select(r => new CodeViewerResolvable(r.Line, r.ColumnStart, r.ColumnEnd))
             .ToList();
 
-        _initialScrollLine = ExtractLineAnchor(Nav.Uri);
+        SetScrollTarget(ExtractLineAnchor(Nav.Uri));
 
         // Fresh file, fresh stack — references state from the previous file
         // wouldn't make sense here.
         _panelHistory.Reset();
+    }
+
+    /// <summary>
+    /// Updates the scroll target and bumps the sequence so CodeViewer flashes
+    /// even if the line value is the same as the previous request.
+    /// </summary>
+    private void SetScrollTarget(int? line)
+    {
+        _initialScrollLine = line;
+        _scrollSequence++;
     }
 
     /// <summary>
@@ -255,7 +271,7 @@
         // so CodeViewer's OnAfterRender notices the new ScrollToLine value.
         if (context.TargetLocation.StartsWith($"/object-explorer/{VersionId}/files/{FileId}", StringComparison.Ordinal))
         {
-            _initialScrollLine = ExtractLineAnchor(context.TargetLocation);
+            SetScrollTarget(ExtractLineAnchor(context.TargetLocation));
             StateHasChanged();
         }
         return ValueTask.CompletedTask;
@@ -273,9 +289,33 @@
         // e.Location is an absolute URI; check the relative-path slice.
         if (!e.Location.Contains(path, StringComparison.Ordinal)) return;
         var newScroll = ExtractLineAnchor(e.Location);
-        if (newScroll == _initialScrollLine) return;
-        _initialScrollLine = newScroll;
+        if (newScroll is null) return;
+        SetScrollTarget(newScroll);
         _ = InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Click from an inspector-panel anchor. Same-file hits scroll without
+    /// a full navigation (browser nav for a same-URL anchor is a no-op, which
+    /// would leave the editor stuck — this path always bumps the sequence so
+    /// the viewer re-flashes). Cross-file hits fall through to Nav.NavigateTo
+    /// so OnParametersSet reloads the page.
+    /// </summary>
+    private void OnPanelScrollTo((long FileId, int LineNumber) hit)
+    {
+        if (hit.FileId == FileId)
+        {
+            SetScrollTarget(hit.LineNumber);
+            // `replace` keeps the back-stack from filling up with one entry
+            // per outline click within the same file.
+            Nav.NavigateTo(
+                $"/object-explorer/{VersionId}/files/{FileId}#L{hit.LineNumber}",
+                replace: true);
+        }
+        else
+        {
+            Nav.NavigateTo($"/object-explorer/{VersionId}/files/{hit.FileId}#L{hit.LineNumber}");
+        }
     }
 
     public void Dispose()

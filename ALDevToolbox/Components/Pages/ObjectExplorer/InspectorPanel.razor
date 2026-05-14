@@ -71,6 +71,14 @@
     /// <summary>Raised when an outline row's "Find references" affordance is clicked.</summary>
     [Parameter] public EventCallback<BaseAppSymbol> OnPushReferences { get; set; }
 
+    /// <summary>
+    /// Raised when a navigation link in any panel view is clicked. Receives
+    /// the target <c>(FileId, LineNumber)</c>. The host page decides whether
+    /// to scroll in-place (same file) or run a full page navigation
+    /// (different file).
+    /// </summary>
+    [Parameter] public EventCallback<(long FileId, int LineNumber)> OnScrollTo { get; set; }
+
     private string _outlineFilter = string.Empty;
     private long _lastFileId;
     // Per-file cache of references results; null entry means "loading".
@@ -173,7 +181,9 @@
                             {
                                 <li class="inspector-panel__item">
                                     <a class="inspector-panel__item-link"
-                                       href="@($"/object-explorer/{VersionId}/files/{FileId}#L{sym.LineNumber}")">
+                                       href="@($"/object-explorer/{VersionId}/files/{FileId}#L{sym.LineNumber}")"
+                                       @onclick="@(() => OnScrollTo.InvokeAsync((FileId, sym.LineNumber)))"
+                                       @onclick:preventDefault="true">
                                         <span class="inspector-panel__item-name">@sym.Name</span>
                                         <span class="muted small inspector-panel__item-line">L@(sym.LineNumber)</span>
                                     </a>
@@ -282,7 +292,9 @@
             {
                 <li>
                     <a class="inspector-panel__refs-hit"
-                       href="@($"/object-explorer/{VersionId}/files/{FileId}#L{hit.LineNumber}")">
+                       href="@($"/object-explorer/{VersionId}/files/{FileId}#L{hit.LineNumber}")"
+                       @onclick="@(() => OnScrollTo.InvokeAsync((FileId, hit.LineNumber)))"
+                       @onclick:preventDefault="true">
                         <span class="inspector-panel__refs-hit-line">L@(hit.LineNumber)</span>
                         <code class="inspector-panel__refs-hit-snippet">@hit.Snippet</code>
                     </a>
@@ -313,10 +325,14 @@
                     <ul class="inspector-panel__refs-hits">
                         @foreach (var hit in group)
                         {
+                            var hitFileId = hit.FileId;
+                            var hitLine = hit.LineNumber;
                             <li>
                                 <a class="inspector-panel__refs-hit"
-                                   href="@($"/object-explorer/{VersionId}/files/{hit.FileId}#L{hit.LineNumber}")">
-                                    <span class="inspector-panel__refs-hit-line">L@(hit.LineNumber)</span>
+                                   href="@($"/object-explorer/{VersionId}/files/{hitFileId}#L{hitLine}")"
+                                   @onclick="@(() => OnScrollTo.InvokeAsync((hitFileId, hitLine)))"
+                                   @onclick:preventDefault="true">
+                                    <span class="inspector-panel__refs-hit-line">L@(hitLine)</span>
                                     <code class="inspector-panel__refs-hit-snippet">@hit.Snippet</code>
                                 </a>
                             </li>
