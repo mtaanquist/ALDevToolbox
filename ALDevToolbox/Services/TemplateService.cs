@@ -769,6 +769,23 @@ public class TemplateService
     {
         var errors = new Dictionary<string, string>();
 
+        await ValidateMetadataAsync(input, existingId, errors, ct);
+        var (defaults, appSourceCop) = ParseJsonOverrides(input, errors);
+        ValidateExtensions(input.Extensions, errors);
+        var defaultModuleIds = await ResolveDefaultModuleIdsAsync(input, errors, ct);
+        var defaultApplicationVersionId = await ResolveApplicationVersionIdAsync(input, errors, ct);
+
+        if (errors.Count > 0) throw new PlanValidationException(errors);
+        return (defaults, appSourceCop, defaultModuleIds, defaultApplicationVersionId);
+    }
+
+    /// <summary>
+    /// Key/runtime/name/id-range validation, plus the per-org Key uniqueness
+    /// guard. The Key clash check is the only DB hit here; the rest are pure.
+    /// </summary>
+    private async Task ValidateMetadataAsync(
+        TemplateAuthoring input, int? existingId, Dictionary<string, string> errors, CancellationToken ct)
+    {
         var key = input.Key?.Trim() ?? string.Empty;
         if (string.IsNullOrEmpty(key))
         {
@@ -809,7 +826,16 @@ public class TemplateService
         if (input.CoreIdRangeTo <= input.CoreIdRangeFrom) errors[nameof(input.CoreIdRangeTo)] = "Core ID range end must be greater than the start.";
         if (input.ModuleIdRangeStart <= 0) errors[nameof(input.ModuleIdRangeStart)] = "Module ID range start must be greater than zero.";
         if (input.ModuleIdRangeSize <= 0) errors[nameof(input.ModuleIdRangeSize)] = "Module ID range size must be greater than zero.";
+    }
 
+    /// <summary>
+    /// Deserialises the three JSON columns (defaults, app-source-cop, optional
+    /// code-workspace overlay). Field-keyed errors are collected; deserialised
+    /// shapes are returned for the caller to assign onto the entity.
+    /// </summary>
+    private static (TemplateDefaults Defaults, AppSourceCopSettings AppSourceCop) ParseJsonOverrides(
+        TemplateAuthoring input, Dictionary<string, string> errors)
+    {
         TemplateDefaults defaults = new();
         try
         {
@@ -853,61 +879,65 @@ public class TemplateService
             }
         }
 
-        ValidateExtensions(input.Extensions, errors);
+        return (defaults, appSourceCop);
+    }
 
-        // Default modules: resolve to ids, refuse unknown or soft-deleted keys.
-        var defaultModuleIds = new List<int>();
-        if (input.DefaultModuleKeys.Count > 0)
+    /// <summary>
+    /// Resolves the requested default-module keys to ids. Unknown / soft-
+    /// deleted keys land in <paramref name="errors"/>; on success the returned
+    /// list preserves the caller's order (deduplicated).
+    /// </summary>
+    private async Task<IReadOnlyList<int>> ResolveDefaultModuleIdsAsync(
+        TemplateAuthoring input, Dictionary<string, string> errors, CancellationToken ct)
+    {
+        if (input.DefaultModuleKeys.Count == 0) return Array.Empty<int>();
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var orderedUnique = new List<string>();
+        foreach (var k in input.DefaultModuleKeys)
         {
-            var trimmed = input.DefaultModuleKeys
-                .Select(k => k?.Trim() ?? string.Empty)
-                .Where(k => !string.IsNullOrEmpty(k))
-                .ToList();
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            var orderedUnique = new List<string>();
-            foreach (var k in trimmed)
-            {
-                if (seen.Add(k)) orderedUnique.Add(k);
-            }
-            var matched = await _db.Modules
-                .AsNoTracking()
-                .Where(m => orderedUnique.Contains(m.Key) && m.DeletedAt == null)
-                .Select(m => new { m.Key, m.Id })
-                .ToListAsync(ct);
-            var idByKey = matched.ToDictionary(m => m.Key, m => m.Id, StringComparer.Ordinal);
-
-            var missing = orderedUnique.Where(k => !idByKey.ContainsKey(k)).ToList();
-            if (missing.Count > 0)
-            {
-                errors[nameof(input.DefaultModuleKeys)] = $"Unknown default module(s): {string.Join(", ", missing)}.";
-            }
-            else
-            {
-                defaultModuleIds = orderedUnique.Select(k => idByKey[k]).ToList();
-            }
+            var trimmed = k?.Trim();
+            if (!string.IsNullOrEmpty(trimmed) && seen.Add(trimmed)) orderedUnique.Add(trimmed);
         }
+        if (orderedUnique.Count == 0) return Array.Empty<int>();
 
-        int? defaultApplicationVersionId = null;
+        var matched = await _db.Modules
+            .AsNoTracking()
+            .Where(m => orderedUnique.Contains(m.Key) && m.DeletedAt == null)
+            .Select(m => new { m.Key, m.Id })
+            .ToListAsync(ct);
+        var idByKey = matched.ToDictionary(m => m.Key, m => m.Id, StringComparer.Ordinal);
+
+        var missing = orderedUnique.Where(k => !idByKey.ContainsKey(k)).ToList();
+        if (missing.Count > 0)
+        {
+            errors[nameof(input.DefaultModuleKeys)] = $"Unknown default module(s): {string.Join(", ", missing)}.";
+            return Array.Empty<int>();
+        }
+        return orderedUnique.Select(k => idByKey[k]).ToList();
+    }
+
+    /// <summary>
+    /// Resolves the optional default application-version key to an id. Empty
+    /// returns null; an unknown / soft-deleted key lands in <paramref name="errors"/>.
+    /// </summary>
+    private async Task<int?> ResolveApplicationVersionIdAsync(
+        TemplateAuthoring input, Dictionary<string, string> errors, CancellationToken ct)
+    {
         var versionKey = input.DefaultApplicationVersionKey?.Trim();
-        if (!string.IsNullOrEmpty(versionKey))
-        {
-            var resolved = await _db.ApplicationVersions
-                .AsNoTracking()
-                .Where(a => a.Key == versionKey && a.DeletedAt == null)
-                .Select(a => (int?)a.Id)
-                .FirstOrDefaultAsync(ct);
-            if (resolved is null)
-            {
-                errors[nameof(input.DefaultApplicationVersionKey)] = $"Unknown application version '{versionKey}'.";
-            }
-            else
-            {
-                defaultApplicationVersionId = resolved;
-            }
-        }
+        if (string.IsNullOrEmpty(versionKey)) return null;
 
-        if (errors.Count > 0) throw new PlanValidationException(errors);
-        return (defaults, appSourceCop, defaultModuleIds, defaultApplicationVersionId);
+        var resolved = await _db.ApplicationVersions
+            .AsNoTracking()
+            .Where(a => a.Key == versionKey && a.DeletedAt == null)
+            .Select(a => (int?)a.Id)
+            .FirstOrDefaultAsync(ct);
+        if (resolved is null)
+        {
+            errors[nameof(input.DefaultApplicationVersionKey)] = $"Unknown application version '{versionKey}'.";
+            return null;
+        }
+        return resolved;
     }
 
     /// <summary>
