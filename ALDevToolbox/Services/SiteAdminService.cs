@@ -146,13 +146,19 @@ public sealed class SiteAdminService
         var user = await LoadUserAsync(userId, ct);
         if (!user.IsSiteAdmin) return;
 
-        var siteAdminCount = await _db.Users.IgnoreQueryFilters()
-            .CountAsync(u => u.IsSiteAdmin && u.Status != UserStatus.Disabled, ct);
-        if (siteAdminCount <= 1)
+        // Require at least one OTHER active SiteAdmin to remain. Counting all
+        // non-disabled SiteAdmins (the previous shape) misbehaved at the
+        // boundary: it includes the subject when they're active, and it
+        // counts pending users (who can't actually act) toward the quorum.
+        var otherActiveSiteAdmins = await _db.Users.IgnoreQueryFilters()
+            .CountAsync(u => u.Id != user.Id
+                             && u.IsSiteAdmin
+                             && u.Status == UserStatus.Active, ct);
+        if (otherActiveSiteAdmins < 1)
         {
             throw new PlanValidationException(new Dictionary<string, string>
             {
-                ["LastSiteAdmin"] = "You can't demote the last remaining SiteAdmin."
+                ["LastSiteAdmin"] = "You can't demote the last active SiteAdmin."
             });
         }
 

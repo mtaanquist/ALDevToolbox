@@ -57,6 +57,12 @@ public sealed class AccountService
 
     private static readonly Regex SlugRegex = new("^[a-z0-9-]+$", RegexOptions.Compiled);
 
+    // Used to pay the BCrypt cost when the supplied email doesn't match a
+    // user, so the response-time profile doesn't leak whether the email is
+    // registered (timing oracle). Computed once per process.
+    private static readonly Lazy<string> DummyPasswordHash = new(() =>
+        BCrypt.Net.BCrypt.HashPassword("not-a-real-password", BcryptWorkFactor));
+
     private readonly AppDbContext _db;
     private readonly ILogger<AccountService> _logger;
     private readonly TimeProvider _clock;
@@ -87,21 +93,36 @@ public sealed class AccountService
             return (LoginOutcome.RateLimited, null);
         }
 
+        // Lockout is checked before password verification so that an attacker
+        // hammering the same email with wrong passwords also gets locked out,
+        // not just somebody who finally guesses the right one. The current
+        // attempt is not yet recorded, so IsLockedOutAsync counts strictly
+        // prior attempts (LockoutThreshold consecutive failures → next
+        // attempt locked).
+        if (await IsLockedOutAsync(normalised, now, ct))
+        {
+            await RecordAttemptAsync(normalised, ip, succeeded: false, now, ct);
+            return (LoginOutcome.LockedOut, null);
+        }
+
         var user = await _db.Users
             .IgnoreQueryFilters()
             .Include(u => u.Organization)
             .FirstOrDefaultAsync(u => u.Email == normalised, ct);
 
-        if (user is null || !VerifyPassword(password, user.PasswordHash))
+        if (user is null)
         {
+            // Pay the BCrypt cost against a dummy hash so the response time
+            // doesn't leak whether the email is registered (timing oracle).
+            _ = VerifyPassword(password, DummyPasswordHash.Value);
             await RecordAttemptAsync(normalised, ip, succeeded: false, now, ct);
             return (LoginOutcome.InvalidCredentials, null);
         }
 
-        if (await IsLockedOutAsync(normalised, now, ct))
+        if (!VerifyPassword(password, user.PasswordHash))
         {
             await RecordAttemptAsync(normalised, ip, succeeded: false, now, ct);
-            return (LoginOutcome.LockedOut, null);
+            return (LoginOutcome.InvalidCredentials, null);
         }
 
         if (user.Status == UserStatus.Pending)

@@ -95,6 +95,31 @@ public sealed class SiteAdminServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Demote_refuses_when_only_remaining_other_site_admin_is_disabled()
+    {
+        // The previous count included non-disabled SiteAdmins only and used
+        // `<= 1`, so an active subject + a disabled other looked like a
+        // single-row count and threw correctly — but an active subject + a
+        // pending other counted as two and allowed the demote, leaving zero
+        // active SiteAdmins. Pin the stricter "needs at least one OTHER
+        // active SiteAdmin" rule from both sides.
+        var firstId = await SeedSingleUser(siteAdmin: true);
+        var secondId = await SeedSingleUser(email: "second@example.com", siteAdmin: true);
+        await using (var ctx = _db.NewContext())
+        {
+            var second = await ctx.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == secondId);
+            second.Status = UserStatus.Disabled;
+            await ctx.SaveChangesAsync();
+        }
+
+        var ctxAct = _db.NewContext();
+        var svc = new SiteAdminService(ctxAct, NewSiteAdminContext(), NullLogger<SiteAdminService>.Instance);
+        Func<Task> demote = () => svc.DemoteAsync(firstId);
+        var ex = await demote.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("LastSiteAdmin");
+    }
+
+    [Fact]
     public async Task Promote_without_site_admin_context_throws()
     {
         var userId = await SeedSingleUser();
