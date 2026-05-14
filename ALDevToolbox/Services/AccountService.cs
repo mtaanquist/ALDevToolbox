@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
@@ -499,9 +498,7 @@ public sealed class AccountService
             return null;
         }
 
-        var rawBytes = RandomNumberGenerator.GetBytes(32);
-        var raw = Convert.ToHexString(rawBytes).ToLowerInvariant();
-        var hash = Sha256Hex(raw);
+        var (raw, hash) = TokenIssuer.Issue();
         var now = _clock.GetUtcNow().UtcDateTime;
         _db.PasswordResetTokens.Add(new PasswordResetToken
         {
@@ -527,7 +524,7 @@ public sealed class AccountService
         ValidatePassword(newPassword, errors, fieldName: "Password");
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
-        var hash = Sha256Hex(token);
+        var hash = TokenIssuer.Sha256Hex(token);
         var now = _clock.GetUtcNow().UtcDateTime;
         var row = await _db.PasswordResetTokens.IgnoreQueryFilters()
             .Include(t => t.User)
@@ -570,9 +567,7 @@ public sealed class AccountService
             return null;
         }
 
-        var rawBytes = RandomNumberGenerator.GetBytes(32);
-        var raw = Convert.ToHexString(rawBytes).ToLowerInvariant();
-        var hash = Sha256Hex(raw);
+        var (raw, hash) = TokenIssuer.Issue();
         _db.PasswordResetTokens.Add(new PasswordResetToken
         {
             UserId = user.Id,
@@ -596,7 +591,7 @@ public sealed class AccountService
     /// </summary>
     public async Task<User> ConsumeMagicLoginTokenAsync(string token, CancellationToken ct = default)
     {
-        var hash = Sha256Hex(token);
+        var hash = TokenIssuer.Sha256Hex(token);
         var now = _clock.GetUtcNow().UtcDateTime;
         var row = await _db.PasswordResetTokens.IgnoreQueryFilters()
             .Include(t => t.User)
@@ -764,9 +759,4 @@ public sealed class AccountService
         return hyphenated.Length == 0 ? "org" : hyphenated;
     }
 
-    private static string Sha256Hex(string value)
-    {
-        var bytes = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value));
-        return Convert.ToHexString(bytes).ToLowerInvariant();
-    }
 }

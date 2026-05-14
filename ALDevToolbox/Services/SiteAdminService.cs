@@ -231,17 +231,5 @@ public sealed class SiteAdminService
         return user;
     }
 
-    /// <summary>
-    /// Throws when the acting principal is not a SiteAdmin. Guards every
-    /// mutation in this service so an organisation admin who happens to
-    /// reach a SiteAdmin endpoint by URL guessing can't do anything.
-    /// </summary>
-    private void RequireSiteAdmin()
-    {
-        if (!_orgContext.IsSiteAdmin)
-        {
-            throw new InvalidOperationException(
-                "SiteAdmin context is required for this operation. The endpoint should already be 404-guarded.");
-        }
-    }
+    private void RequireSiteAdmin() => _orgContext.RequireSiteAdmin();
 }

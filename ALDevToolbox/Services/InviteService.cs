@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
@@ -89,9 +88,7 @@ public sealed class InviteService
             s.RevokedAt = now;
         }
 
-        var rawBytes = RandomNumberGenerator.GetBytes(32);
-        var raw = Convert.ToHexString(rawBytes).ToLowerInvariant();
-        var hash = Sha256Hex(raw);
+        var (raw, hash) = TokenIssuer.Issue();
         var trimmedMessage = string.IsNullOrWhiteSpace(welcomeMessage) ? null : welcomeMessage.Trim();
         var invite = new Invite
         {
@@ -136,7 +133,7 @@ public sealed class InviteService
     public async Task<Invite?> FindValidByTokenAsync(string token, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(token)) return null;
-        var hash = Sha256Hex(token);
+        var hash = TokenIssuer.Sha256Hex(token);
         var now = _clock.GetUtcNow().UtcDateTime;
         var row = await _db.Invites.IgnoreQueryFilters()
             .Include(i => i.Organization)
@@ -209,9 +206,4 @@ public sealed class InviteService
         return user;
     }
 
-    private static string Sha256Hex(string value)
-    {
-        var bytes = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value));
-        return Convert.ToHexString(bytes).ToLowerInvariant();
-    }
 }
