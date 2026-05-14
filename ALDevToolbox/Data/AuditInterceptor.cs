@@ -106,8 +106,12 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                     // otherwise add a noise row to the audit log. Treat "only UpdatedAt
                     // changed" as a no-op for audit purposes; deletions always pass
                     // through because their OriginalValues represent the row that's
-                    // about to disappear.
+                    // about to disappear. Only apply this filter to entity types that
+                    // actually declare an UpdatedAt property — otherwise the predicate
+                    // collapses to "no properties modified" and accidentally suppresses
+                    // legitimate single-field updates on other entities.
                     if (entry.State == EntityState.Modified
+                        && entry.Metadata.FindProperty(nameof(RuntimeTemplate.UpdatedAt)) is not null
                         && !entry.Properties.Any(p => p.IsModified && p.Metadata.Name != nameof(RuntimeTemplate.UpdatedAt)))
                     {
                         break;

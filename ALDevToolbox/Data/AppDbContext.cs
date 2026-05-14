@@ -200,6 +200,12 @@ public class AppDbContext : DbContext
             entity.Property(e => e.DecidedByUserId).HasColumnName("decided_by_user_id");
             entity.Property(e => e.Decision).HasColumnName("decision").HasConversion<string>().IsRequired();
             entity.HasIndex(e => new { e.OrganizationId, e.Decision });
+            // Pending signups are unique per (org, email) — the service-level
+            // duplicate check loses a concurrency race without this guard.
+            entity.HasIndex(e => new { e.OrganizationId, e.Email })
+                .IsUnique()
+                .HasFilter("decision = 'Pending'")
+                .HasDatabaseName("ux_signup_requests_org_email_pending");
             entity.HasOne(e => e.Organization)
                 .WithMany()
                 .HasForeignKey(e => e.OrganizationId)
@@ -390,6 +396,10 @@ public class AppDbContext : DbContext
             entity.HasOne(e => e.Module!)
                 .WithMany()
                 .HasForeignKey(e => e.ModuleId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.Organization)
+                .WithMany()
+                .HasForeignKey(e => e.OrganizationId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             ScopeToOrganization<RuntimeTemplateDefaultModule>(entity);
@@ -750,14 +760,20 @@ public class AppDbContext : DbContext
                 .HasDatabaseName("ix_audit_log_timestamp");
             entity.HasIndex(e => new { e.OrganizationId, e.Timestamp })
                 .HasDatabaseName("ix_audit_log_org_timestamp");
+            // Audit history is durable: refuse to delete an organisation or
+            // user while audit rows still reference them. The previous
+            // SetNull behaviour wiped both subject and actor at once on org
+            // delete, leaving rows with no recoverable provenance. A
+            // deliberate "anonymise" flow can surface later; we'd rather
+            // refuse the delete than silently lose the audit chain.
             entity.HasOne(e => e.Organization)
                 .WithMany()
                 .HasForeignKey(e => e.OrganizationId)
-                .OnDelete(DeleteBehavior.SetNull);
+                .OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(e => e.ChangedByUser)
                 .WithMany()
                 .HasForeignKey(e => e.ChangedByUserId)
-                .OnDelete(DeleteBehavior.SetNull);
+                .OnDelete(DeleteBehavior.Restrict);
             // AuditLog scoping is service-layer (AuditService filters by org
             // explicitly) — we don't apply a query filter here because seed
             // and bootstrap inserts can have a null OrganizationId.

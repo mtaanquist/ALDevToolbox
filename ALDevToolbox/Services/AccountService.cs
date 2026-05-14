@@ -281,6 +281,12 @@ public sealed class AccountService
         if (req.UserId is int userId)
         {
             var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId, ct);
+            // Audit FKs are Restrict (#74). Pending users rarely have audit
+            // rows pointing at them, but anonymise defensively rather than
+            // gamble on the rejection failing at SaveChanges.
+            await _db.Database.ExecuteSqlRawAsync(
+                "UPDATE audit_log SET changed_by_user_id = NULL WHERE changed_by_user_id = {0}",
+                new object[] { user.Id }, ct);
             _db.Users.Remove(user);
         }
         req.Decision = SignupDecision.Rejected;
@@ -455,10 +461,22 @@ public sealed class AccountService
                 });
             }
             var org = await _db.Organizations.IgnoreQueryFilters().FirstAsync(o => o.Id == user.OrganizationId, ct);
+            // Audit FKs are Restrict (#74): anonymise referencing rows so the
+            // cascade can complete. The display-name string in `changed_by`
+            // is preserved so the history still reads usefully.
+            await _db.Database.ExecuteSqlRawAsync(
+                "UPDATE audit_log SET changed_by_user_id = NULL WHERE changed_by_user_id IN (SELECT id FROM users WHERE organization_id = {0})",
+                new object[] { org.Id }, ct);
+            await _db.Database.ExecuteSqlRawAsync(
+                "UPDATE audit_log SET organization_id = NULL WHERE organization_id = {0}",
+                new object[] { org.Id }, ct);
             _db.Organizations.Remove(org);
         }
         else
         {
+            await _db.Database.ExecuteSqlRawAsync(
+                "UPDATE audit_log SET changed_by_user_id = NULL WHERE changed_by_user_id = {0}",
+                new object[] { user.Id }, ct);
             _db.Users.Remove(user);
         }
         await _db.SaveChangesAsync(ct);
