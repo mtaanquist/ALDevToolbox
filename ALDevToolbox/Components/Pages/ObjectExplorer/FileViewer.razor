@@ -304,19 +304,18 @@
     /// the viewer re-flashes). Cross-file hits fall through to Nav.NavigateTo
     /// so OnParametersSet reloads the page.
     /// </summary>
-    private async Task OnPanelScrollTo((long FileId, int LineNumber) hit)
-    {
-        await JumpToTargetAsync(hit.FileId, hit.LineNumber);
-    }
+    private Task OnPanelScrollTo((long FileId, int LineNumber) hit) =>
+        JumpToTargetAsync(hit.FileId, hit.LineNumber);
 
     /// <summary>
     /// Centralised "scroll to a target line, possibly in a different file"
-    /// routine. Same-file jumps update the URL via history.replaceState so
-    /// Blazor's enhanced navigation never engages — its document-streaming
-    /// diff was stripping CodeMirror's injected <style> tags from <head>,
-    /// leaving the editor with class names referencing rules that no
-    /// longer exist. Cross-file jumps still go through Nav.NavigateTo
-    /// because we actually want OnParametersSet to fire and reload.
+    /// routine. Same-file jumps update the URL via <c>history.replaceState</c>
+    /// so Blazor's enhanced navigation never engages — its document-streaming
+    /// diff strips CodeMirror's injected <c>&lt;style&gt;</c> tags from
+    /// <c>&lt;head&gt;</c>, leaving the editor with class names that reference
+    /// rules no longer present. Cross-file jumps still go through
+    /// <see cref="NavigationManager.NavigateTo(string, bool, bool)"/> because
+    /// we actually want <c>OnParametersSet</c> to fire and reload.
     /// </summary>
     private async Task JumpToTargetAsync(long targetFileId, int targetLine)
     {
@@ -328,10 +327,9 @@
                 null,
                 "",
                 $"/object-explorer/{VersionId}/files/{FileId}#L{targetLine}");
-            // Browser-level URL change won't fire Blazor's LocationChanged
-            // (we didn't go through NavigationManager), so push the
-            // re-render ourselves to get the new ScrollSequence down to
-            // CodeViewer.
+            // Browser-level URL change doesn't fire Blazor's LocationChanged
+            // (we didn't go through NavigationManager), so push the re-render
+            // ourselves to get the new ScrollSequence down to CodeViewer.
             StateHasChanged();
         }
         else
