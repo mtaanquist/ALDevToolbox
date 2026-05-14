@@ -259,8 +259,7 @@
             return;
         }
 
-        var url = $"/object-explorer/{VersionId}/files/{target.FileId}#L{target.LineNumber}";
-        Nav.NavigateTo(url);
+        await JumpToTargetAsync(target.FileId, target.LineNumber);
     }
 
     private ValueTask OnLocationChanging(LocationChangingContext context)
@@ -305,30 +304,39 @@
     /// the viewer re-flashes). Cross-file hits fall through to Nav.NavigateTo
     /// so OnParametersSet reloads the page.
     /// </summary>
-    private void OnPanelScrollTo((long FileId, int LineNumber) hit)
+    private async Task OnPanelScrollTo((long FileId, int LineNumber) hit)
     {
-        var sameFile = hit.FileId == FileId;
-        _ = JS.InvokeVoidAsync("console.log", "[CV razor OnPanelScrollTo]", new
+        await JumpToTargetAsync(hit.FileId, hit.LineNumber);
+    }
+
+    /// <summary>
+    /// Centralised "scroll to a target line, possibly in a different file"
+    /// routine. Same-file jumps update the URL via history.replaceState so
+    /// Blazor's enhanced navigation never engages — its document-streaming
+    /// diff was stripping CodeMirror's injected <style> tags from <head>,
+    /// leaving the editor with class names referencing rules that no
+    /// longer exist. Cross-file jumps still go through Nav.NavigateTo
+    /// because we actually want OnParametersSet to fire and reload.
+    /// </summary>
+    private async Task JumpToTargetAsync(long targetFileId, int targetLine)
+    {
+        if (targetFileId == FileId)
         {
-            sameFile,
-            hitFileId = hit.FileId,
-            currentFileId = FileId,
-            lineNumber = hit.LineNumber,
-            currentScrollLine = _initialScrollLine,
-            currentScrollSequence = _scrollSequence,
-        });
-        if (sameFile)
-        {
-            SetScrollTarget(hit.LineNumber);
-            // `replace` keeps the back-stack from filling up with one entry
-            // per outline click within the same file.
-            Nav.NavigateTo(
-                $"/object-explorer/{VersionId}/files/{FileId}#L{hit.LineNumber}",
-                replace: true);
+            SetScrollTarget(targetLine);
+            await JS.InvokeVoidAsync(
+                "history.replaceState",
+                null,
+                "",
+                $"/object-explorer/{VersionId}/files/{FileId}#L{targetLine}");
+            // Browser-level URL change won't fire Blazor's LocationChanged
+            // (we didn't go through NavigationManager), so push the
+            // re-render ourselves to get the new ScrollSequence down to
+            // CodeViewer.
+            StateHasChanged();
         }
         else
         {
-            Nav.NavigateTo($"/object-explorer/{VersionId}/files/{hit.FileId}#L{hit.LineNumber}");
+            Nav.NavigateTo($"/object-explorer/{VersionId}/files/{targetFileId}#L{targetLine}");
         }
     }
 
