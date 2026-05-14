@@ -8,6 +8,13 @@
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Entities
 
+@*
+    The body splits into the code viewer on the left and the inspector panel
+    on the right. The inspector hosts a stack of views — Outline by default,
+    with Find references pushed on top as the user explores — and we keep the
+    stack here so it survives FileId-stable re-renders.
+*@
+
 <PageTitle>@(_file?.ObjectName ?? "Object") · AL Dev Toolbox</PageTitle>
 
 <div class="object-explorer__file">
@@ -45,7 +52,8 @@
                     }
                     <span>
                         · <strong>Cmd/Ctrl-click</strong> any name to go to its definition
-                        · <strong>Right-click</strong> for a context menu (Go to definition + Find references on procedure declarations).
+                        · <strong>Right-click</strong> for Go to definition + Find references
+                        · <strong>Right rail</strong> for outline + reference results
                     </span>
                 </p>
             </div>
@@ -74,13 +82,23 @@
             </p>
         }
 
-        <CodeViewer Content="@_file.Content"
-                    Language="al"
-                    Declarations="_declarations"
-                    Resolvables="_resolvables"
-                    OnFindReferences="OnFindReferences"
-                    OnGoToDefinition="OnGoToDefinition"
-                    ScrollToLine="_initialScrollLine" />
+        <div class="object-explorer__file-layout">
+            <CodeViewer Content="@_file.Content"
+                        Language="al"
+                        Declarations="_declarations"
+                        Resolvables="_resolvables"
+                        OnFindReferences="OnFindReferences"
+                        OnGoToDefinition="OnGoToDefinition"
+                        ScrollToLine="_initialScrollLine" />
+
+            <InspectorPanel Stack="_panelHistory.Stack"
+                            Cursor="_panelHistory.Cursor"
+                            Symbols="_symbols"
+                            VersionId="VersionId"
+                            FileId="FileId"
+                            OnPopTo="PopPanelTo"
+                            OnPushReferences="PushReferencesView" />
+        </div>
     }
 </div>
 
@@ -94,9 +112,15 @@
     private string _compareTarget = string.Empty;
     private IReadOnlyList<CodeViewerDeclaration> _declarations = Array.Empty<CodeViewerDeclaration>();
     private IReadOnlyList<CodeViewerResolvable> _resolvables = Array.Empty<CodeViewerResolvable>();
+    private IReadOnlyList<BaseAppSymbol> _symbols = Array.Empty<BaseAppSymbol>();
     private int? _initialScrollLine;
     private string? _lastDefinitionMissed;
     private IDisposable? _locationChangedSubscription;
+
+    // Inspector panel navigation stack. Resets to a fresh Outline view on
+    // every file load — references state is per-file and doesn't survive
+    // cross-file navigation (see the design discussion in the PR thread).
+    private readonly InspectorPanelHistory _panelHistory = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -126,8 +150,8 @@
         var all = await BaseApp.ListVersionsAsync();
         _otherVersions = all.Where(v => v.Id != VersionId).ToList();
 
-        var symbols = await BaseApp.ListSymbolsInFileAsync(FileId);
-        _declarations = symbols
+        _symbols = await BaseApp.ListSymbolsInFileAsync(FileId);
+        _declarations = _symbols
             // Triggers are always local — there's nowhere to navigate to and
             // no "find references" worth running, so skip the underline /
             // right-click menu entirely.
@@ -142,6 +166,10 @@
             .ToList();
 
         _initialScrollLine = ExtractLineAnchor(Nav.Uri);
+
+        // Fresh file, fresh stack — references state from the previous file
+        // wouldn't make sense here.
+        _panelHistory.Reset();
     }
 
     /// <summary>
@@ -167,8 +195,20 @@
 
     private void OnFindReferences(long symbolId)
     {
-        Nav.NavigateTo($"/object-explorer/{VersionId}/symbols/{symbolId}/references");
+        // Right-click "Find references" inside the editor — push a panel view
+        // rather than navigating away. The standalone /symbols/{id}/references
+        // route still exists for deep-linking but isn't the primary surface.
+        var symbol = _symbols.FirstOrDefault(s => s.Id == symbolId);
+        if (symbol is null) return;
+        _panelHistory.Push(new ReferencesPanelView(symbol.Id, symbol.Name, symbol.Kind));
     }
+
+    private void PushReferencesView(BaseAppSymbol symbol)
+    {
+        _panelHistory.Push(new ReferencesPanelView(symbol.Id, symbol.Name, symbol.Kind));
+    }
+
+    private void PopPanelTo(int index) => _panelHistory.PopTo(index);
 
     private async Task OnGoToDefinition(CodeViewerClick click)
     {
