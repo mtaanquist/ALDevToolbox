@@ -34,6 +34,7 @@ public class GenerationService
     private readonly AppDbContext _db;
     private readonly WorkspaceConfigService _config;
     private readonly OrganizationConfigService _orgConfig;
+    private readonly TemplateService _templates;
     private readonly IOrganizationContext _orgContext;
     private readonly ILogger<GenerationService> _logger;
 
@@ -41,12 +42,14 @@ public class GenerationService
         AppDbContext db,
         WorkspaceConfigService config,
         OrganizationConfigService orgConfig,
+        TemplateService templates,
         IOrganizationContext orgContext,
         ILogger<GenerationService> logger)
     {
         _db = db;
         _config = config;
         _orgConfig = orgConfig;
+        _templates = templates;
         _orgContext = orgContext;
         _logger = logger;
     }
@@ -271,67 +274,11 @@ public class GenerationService
                 ["TemplateKey"] = $"Template '{key}' was not found.",
             });
 
-        // Load every folder + file for this template in two flat queries, then
-        // wire up the recursive tree client-side. AsNoTracking + FK fixup
-        // doesn't fire, so we build the parent/child links by hand.
-        var extensionIds = template.WorkspaceExtensions.Select(e => e.Id).ToList();
-        var folders = await _db.WorkspaceExtensionFolders
-            .AsNoTracking()
-            .Where(f => extensionIds.Contains(f.WorkspaceExtensionId))
-            .OrderBy(f => f.Ordering)
-            .ToListAsync(ct);
-        var folderIds = folders.Select(f => f.Id).ToList();
-        var files = await _db.WorkspaceExtensionFiles
-            .AsNoTracking()
-            .Where(f => folderIds.Contains(f.WorkspaceExtensionFolderId))
-            .OrderBy(f => f.Ordering)
-            .ToListAsync(ct);
-
-        AssembleFolderTree(template, folders, files);
+        // Folder tree hydration is delegated to TemplateService so workspace
+        // generation, template authoring loads, and cross-org imports share
+        // one implementation (#77).
+        await _templates.HydrateExtensionFolderTreeAsync(new[] { template }, ct);
         return template;
-    }
-
-    /// <summary>
-    /// Wires up the in-memory recursive tree on each extension. The DB stores
-    /// the folders as a flat list with parent links; here we attach each
-    /// folder to its parent's <see cref="WorkspaceExtensionFolder.Folders"/>
-    /// collection (or the extension's <see cref="WorkspaceExtension.Folders"/>
-    /// when it's a root), and each file to its folder's
-    /// <see cref="WorkspaceExtensionFolder.Files"/> collection.
-    /// </summary>
-    private static void AssembleFolderTree(RuntimeTemplate template, List<WorkspaceExtensionFolder> folders, List<WorkspaceExtensionFile> files)
-    {
-        var foldersById = folders.ToDictionary(f => f.Id);
-        var extensionsById = template.WorkspaceExtensions.ToDictionary(e => e.Id);
-
-        // Reset any nav collections EF may have hydrated half-way and rebuild
-        // them deterministically.
-        foreach (var ext in template.WorkspaceExtensions) ext.Folders.Clear();
-        foreach (var folder in folders)
-        {
-            folder.Folders.Clear();
-            folder.Files.Clear();
-        }
-
-        foreach (var folder in folders)
-        {
-            if (folder.ParentFolderId is int parentId && foldersById.TryGetValue(parentId, out var parent))
-            {
-                parent.Folders.Add(folder);
-            }
-            else if (extensionsById.TryGetValue(folder.WorkspaceExtensionId, out var ext))
-            {
-                ext.Folders.Add(folder);
-            }
-        }
-
-        foreach (var file in files)
-        {
-            if (foldersById.TryGetValue(file.WorkspaceExtensionFolderId, out var folder))
-            {
-                folder.Files.Add(file);
-            }
-        }
     }
 
     private async Task<List<Module>> LoadSelectedModulesAsync(IReadOnlyList<string> moduleKeys, CancellationToken ct)
@@ -344,21 +291,7 @@ public class GenerationService
             .Include(m => m.Dependencies.OrderBy(d => d.Ordering))
             .ToListAsync(ct);
 
-        // Module folder/file trees, same flat-then-reassemble pattern as
-        // workspace extensions.
-        var moduleIds = modules.Select(m => m.Id).ToList();
-        var folders = await _db.ModuleExtensionFolders
-            .AsNoTracking()
-            .Where(f => moduleIds.Contains(f.ModuleId))
-            .OrderBy(f => f.Ordering)
-            .ToListAsync(ct);
-        var folderIds = folders.Select(f => f.Id).ToList();
-        var files = await _db.ModuleExtensionFiles
-            .AsNoTracking()
-            .Where(f => folderIds.Contains(f.ModuleExtensionFolderId))
-            .OrderBy(f => f.Ordering)
-            .ToListAsync(ct);
-        AssembleModuleFolderTree(modules, folders, files);
+        await _templates.HydrateModuleExtensionFolderTreeAsync(modules, ct);
 
         // Preserve user-selected ordering — EF returns them in whatever
         // order the IN-clause matched.
@@ -369,39 +302,6 @@ public class GenerationService
             if (byKey.TryGetValue(key, out var module)) ordered.Add(module);
         }
         return ordered;
-    }
-
-    private static void AssembleModuleFolderTree(List<Module> modules, List<ModuleExtensionFolder> folders, List<ModuleExtensionFile> files)
-    {
-        var foldersById = folders.ToDictionary(f => f.Id);
-        var modulesById = modules.ToDictionary(m => m.Id);
-
-        foreach (var module in modules) module.ExtensionFolders.Clear();
-        foreach (var folder in folders)
-        {
-            folder.Folders.Clear();
-            folder.Files.Clear();
-        }
-
-        foreach (var folder in folders)
-        {
-            if (folder.ParentFolderId is int parentId && foldersById.TryGetValue(parentId, out var parent))
-            {
-                parent.Folders.Add(folder);
-            }
-            else if (modulesById.TryGetValue(folder.ModuleId, out var module))
-            {
-                module.ExtensionFolders.Add(folder);
-            }
-        }
-
-        foreach (var file in files)
-        {
-            if (foldersById.TryGetValue(file.ModuleExtensionFolderId, out var folder))
-            {
-                folder.Files.Add(file);
-            }
-        }
     }
 
     // ===== Extension list building =====

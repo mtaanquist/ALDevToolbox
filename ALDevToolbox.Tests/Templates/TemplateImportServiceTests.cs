@@ -277,5 +277,7 @@ public sealed class TemplateImportServiceTests : IDisposable
     }
 
     private TemplateImportService NewService(Data.AppDbContext ctx) =>
-        new(ctx, _db.OrgContext, NullLogger<TemplateImportService>.Instance);
+        new(ctx, _db.OrgContext,
+            new TemplateService(ctx, NullLogger<TemplateService>.Instance, _db.OrgContext),
+            NullLogger<TemplateImportService>.Instance);
 }

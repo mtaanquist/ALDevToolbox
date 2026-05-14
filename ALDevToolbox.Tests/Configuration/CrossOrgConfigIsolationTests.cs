@@ -74,6 +74,7 @@ public sealed class CrossOrgConfigIsolationTests : IDisposable
             genCtx,
             new WorkspaceConfigService(genCtx),
             _db.NewOrganizationConfigService(genCtx),
+            new TemplateService(genCtx, NullLogger<TemplateService>.Instance, _db.OrgContext),
             _db.OrgContext,
             NullLogger<GenerationService>.Instance);
 

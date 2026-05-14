@@ -158,6 +158,7 @@ public sealed class PlanValidationTests : IDisposable
             ctx,
             new WorkspaceConfigService(ctx),
             _db.NewOrganizationConfigService(ctx),
+            new TemplateService(ctx, NullLogger<TemplateService>.Instance, _db.OrgContext),
             _db.OrgContext,
             NullLogger<GenerationService>.Instance);
     }
