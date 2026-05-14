@@ -94,6 +94,8 @@ builder.Services.AddScoped<SnippetSuggestionService>();
 builder.Services.AddScoped<ModuleService>();
 builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<ApplicationVersionService>();
+builder.Services.AddScoped<BaseAppService>();
+builder.Services.AddScoped<BaseAppImportService>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<TemplateImportService>();
 builder.Services.AddScoped<WorkspaceConfigService>();
@@ -237,6 +239,7 @@ app.MapGenerationEndpoints();
 app.MapAdminEndpoints();
 app.MapAccountEndpoints();
 app.MapAdminUserEndpoints();
+app.MapBaseAppEndpoints();
 app.MapSiteAdminEndpoints();
 
 // Run migrations + bootstrap, then flip /readyz to green.
