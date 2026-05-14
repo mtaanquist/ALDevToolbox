@@ -33,7 +33,7 @@ public sealed class SnippetsBrowserTests : IDisposable
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString));
         _ctx.Services.AddScoped<SnippetService>();
-        _ctx.Services.AddSingleton(new IconCatalog(NullLoggerFactory.Instance.CreateLogger<IconCatalog>()));
+        _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),
             typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
