@@ -73,26 +73,11 @@
                               @bind="_description" @bind:event="oninput"></textarea>
                 </section>
 
-                <section class="form-section form-section--row">
-                    <div>
-                        <label class="section-label" for="ws-core-from">Core ID range — from</label>
-                        <input id="ws-core-from" type="number" name="CoreIdRangeFrom" required min="1"
-                               @bind="_coreIdRangeFrom" @bind:event="oninput" />
-                        @if (_coreIdRangeFrom <= 0)
-                        {
-                            <span class="form-field-error" role="alert">Must be greater than zero.</span>
-                        }
-                    </div>
-                    <div>
-                        <label class="section-label" for="ws-core-to">Core ID range — to</label>
-                        <input id="ws-core-to" type="number" name="CoreIdRangeTo" required min="1"
-                               @bind="_coreIdRangeTo" @bind:event="oninput" />
-                        @if (_coreIdRangeTo <= _coreIdRangeFrom)
-                        {
-                            <span class="form-field-error" role="alert">Must be greater than the 'from' value.</span>
-                        }
-                    </div>
-                </section>
+                <IdRangeEditor IdPrefix="ws-core"
+                               FromName="CoreIdRangeFrom" ToName="CoreIdRangeTo"
+                               FromLabel="Core ID range — from" ToLabel="Core ID range — to"
+                               From="_coreIdRangeFrom" FromChanged="v => _coreIdRangeFrom = v"
+                               To="_coreIdRangeTo" ToChanged="v => _coreIdRangeTo = v" />
 
                 <section class="form-section">
                     <label class="section-label" for="ws-app-version">Application version</label>
