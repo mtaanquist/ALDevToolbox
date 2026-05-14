@@ -461,17 +461,17 @@ export function mountReadOnly(container, value, language, options) {
 }
 
 // Public: scroll the editor to a 1-based line number, with an optional
-// short fade-out highlight so the eye lands in the right place. Called by
-// the FileViewer when a #L<n> fragment is in the URL.
+// short fade-out highlight so the eye lands in the right place.
 //
-// CodeMirror estimates heights for unmeasured lines, so a single
-// scrollIntoView dispatch can land at a stale position for far-down
-// targets — CM hasn't measured the destination yet, so its scrollTop
-// calculation is off. The fix is to dispatch twice with a frame
-// between: the first dispatch brings the target into view (and renders
-// new lines as a side effect), the second dispatch corrects against
-// CM's now-accurate measurements. Both dispatches sit inside a
-// requestAnimationFrame so we're never racing CM's own measure cycle.
+// Bypasses CodeMirror's scrollIntoView effect entirely — every attempt
+// to use that effect from outside CM's own update cycle was leaving
+// the viewport in a broken state for reasons we couldn't pin down.
+// Instead, we compute the line's pixel offset via view.lineBlockAt
+// (which uses CM's internal height map, falling back to estimates for
+// unmeasured lines) and set view.scrollDOM.scrollTop directly. CM
+// reacts to the scroll event the same way it does to a user scroll,
+// rendering the now-visible viewport. The double-pass lets the second
+// scroll correct against measurements CM updated during the first.
 export function scrollToLine(id, lineNumber, flash) {
     const e = editors.get(id);
     if (!e) return;
@@ -480,17 +480,19 @@ export function scrollToLine(id, lineNumber, flash) {
     const totalLines = view.state.doc.lines;
     const safeLine = Math.min(lineNumber, totalLines);
 
-    const dispatchScroll = () => {
+    const doScroll = () => {
         const line = view.state.doc.line(safeLine);
-        view.dispatch({
-            effects: EditorView.scrollIntoView(line.from, { y: "center" }),
-        });
+        const block = view.lineBlockAt(line.from);
+        const scroller = view.scrollDOM;
+        const scrollMax = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+        const target = block.top - scroller.clientHeight / 2 + block.height / 2;
+        scroller.scrollTop = Math.max(0, Math.min(scrollMax, target));
     };
 
     requestAnimationFrame(() => {
-        dispatchScroll();
+        doScroll();
         requestAnimationFrame(() => {
-            dispatchScroll();
+            doScroll();
             if (!flash) return;
             requestAnimationFrame(() => {
                 const line = view.state.doc.line(safeLine);
