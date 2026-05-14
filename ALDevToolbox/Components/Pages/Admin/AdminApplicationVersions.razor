@@ -106,13 +106,13 @@
                                         <div class="app-versions-editor__order-row">
                                             <button type="button" class="btn btn--sm app-versions-editor__order-btn"
                                                     disabled="@(index == _form.Entries.Count - 1)"
-                                                    @onclick="() => MoveEntry(index, 1)" title="Move down">
-                                                <Icon Name="chevron-down" Width="12" Height="12" />
+                                                    @onclick="() => MoveEntryToBottom(index)" title="Move to bottom">
+                                                <Icon Name="chevrons-down" Width="12" Height="12" />
                                             </button>
                                             <button type="button" class="btn btn--sm app-versions-editor__order-btn"
                                                     disabled="@(index == _form.Entries.Count - 1)"
-                                                    @onclick="() => MoveEntryToBottom(index)" title="Move to bottom">
-                                                <Icon Name="chevrons-down" Width="12" Height="12" />
+                                                    @onclick="() => MoveEntry(index, 1)" title="Move down">
+                                                <Icon Name="chevron-down" Width="12" Height="12" />
                                             </button>
                                         </div>
                                     </div>
