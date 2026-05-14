@@ -16,7 +16,7 @@ namespace ALDevToolbox.Services.Generation;
 /// generation service in #86 so the ZIP-shape contract sits behind a single
 /// API and can be unit-tested without standing up the full DI graph.
 /// </summary>
-internal sealed class WorkspaceZipBuilder
+public sealed class WorkspaceZipBuilder
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -37,7 +37,7 @@ internal sealed class WorkspaceZipBuilder
     /// Emits the full workspace ZIP. Returns the byte stream (rewound) and the
     /// file count for telemetry.
     /// </summary>
-    public async Task<(MemoryStream Stream, int FileCount)> BuildWorkspaceAsync(
+    internal async Task<(MemoryStream Stream, int FileCount)> BuildWorkspaceAsync(
         ProjectPlan plan,
         RuntimeTemplate template,
         IReadOnlyList<EmittableExtension> extensions,
@@ -108,7 +108,7 @@ internal sealed class WorkspaceZipBuilder
     /// extension) and an optional sibling-workspace context for the case where
     /// the new extension is being added to an existing workspace.
     /// </summary>
-    public async Task<(MemoryStream Stream, int FileCount, string FolderName)> BuildStandaloneAsync(
+    internal async Task<(MemoryStream Stream, int FileCount, string FolderName)> BuildStandaloneAsync(
         StandaloneExtensionPlan plan,
         RuntimeTemplate template,
         IReadOnlyList<FolderNode> scaffoldFolderRoots,
