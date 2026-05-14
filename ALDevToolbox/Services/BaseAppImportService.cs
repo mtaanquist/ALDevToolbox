@@ -19,8 +19,6 @@ public class BaseAppImportService
 {
     public const int MinMajor = 1;
     public const int MaxMajor = 999;
-    public const int MinMinor = 0;
-    public const int MaxMinor = 99;
     public const int MinCu = 0;
     public const int MaxCu = 99;
     public const int MaxNotesLength = 4000;
@@ -73,7 +71,6 @@ public class BaseAppImportService
             {
                 OrganizationId = orgId,
                 Major = request.Major,
-                Minor = request.Minor,
                 CumulativeUpdate = request.CumulativeUpdate,
                 ApplicationVersionId = request.ApplicationVersionId,
                 Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes!.Trim(),
@@ -215,8 +212,8 @@ public class BaseAppImportService
 
         var duration = DateTime.UtcNow - startedAt;
         _logger.LogInformation(
-            "Imported Object Explorer version {Major}.{Minor} CU{Cu} for org {OrgId}: {ParsedFiles}/{TotalFiles} file(s) in {Seconds:F1}s.",
-            request.Major, request.Minor, request.CumulativeUpdate, orgId, parsedFiles, totalFiles, duration.TotalSeconds);
+            "Imported Object Explorer version {Major}.{Cu} for org {OrgId}: {ParsedFiles}/{TotalFiles} file(s) in {Seconds:F1}s.",
+            request.Major, request.CumulativeUpdate, orgId, parsedFiles, totalFiles, duration.TotalSeconds);
 
         return new BaseAppImportSummary(
             version.Id,
@@ -254,8 +251,8 @@ public class BaseAppImportService
         _reindexQueue?.Signal();
 
         _logger.LogInformation(
-            "Queued symbol reindex for Object Explorer version {Major}.{Minor} CU{Cu} (id={Id}).",
-            existing.Major, existing.Minor, existing.CumulativeUpdate, existing.Id);
+            "Queued symbol reindex for Object Explorer version {Major}.{Cu} (id={Id}).",
+            existing.Major, existing.CumulativeUpdate, existing.Id);
     }
 
     /// <summary>
@@ -282,8 +279,8 @@ public class BaseAppImportService
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Soft-deleted Object Explorer version {Major}.{Minor} CU{Cu} (id={Id}).",
-            existing.Major, existing.Minor, existing.CumulativeUpdate, existing.Id);
+            "Soft-deleted Object Explorer version {Major}.{Cu} (id={Id}).",
+            existing.Major, existing.CumulativeUpdate, existing.Id);
     }
 
     /// <summary>
@@ -323,10 +320,6 @@ public class BaseAppImportService
         {
             errors[nameof(request.Major)] = $"Major must be between {MinMajor} and {MaxMajor}.";
         }
-        if (request.Minor < MinMinor || request.Minor > MaxMinor)
-        {
-            errors[nameof(request.Minor)] = $"Minor must be between {MinMinor} and {MaxMinor}.";
-        }
         if (request.CumulativeUpdate < MinCu || request.CumulativeUpdate > MaxCu)
         {
             errors[nameof(request.CumulativeUpdate)] = $"Cumulative update must be between {MinCu} and {MaxCu}.";
@@ -353,14 +346,13 @@ public class BaseAppImportService
             existing = await _db.BaseAppVersions
                 .FirstOrDefaultAsync(v => v.OrganizationId == orgId
                     && v.Major == request.Major
-                    && v.Minor == request.Minor
                     && v.CumulativeUpdate == request.CumulativeUpdate
                     && v.DeletedAt == null, ct);
 
             if (existing is not null && request.Mode == BaseAppImportMode.Reject)
             {
                 errors[nameof(request.Major)] =
-                    $"Version {request.Major}.{request.Minor} CU{request.CumulativeUpdate} is already imported. "
+                    $"Version {request.Major}.{request.CumulativeUpdate} is already imported. "
                     + "Pick 'Replace' to overwrite or 'Append' to add this ZIP's files to the existing version.";
             }
         }
@@ -378,7 +370,6 @@ public class BaseAppImportService
         var existing = await _db.BaseAppVersions
             .Where(v => v.OrganizationId == orgId
                 && v.Major == request.Major
-                && v.Minor == request.Minor
                 && v.CumulativeUpdate == request.CumulativeUpdate
                 && v.DeletedAt == null)
             .ToListAsync(ct);
@@ -425,7 +416,6 @@ public class BaseAppImportService
 /// </summary>
 public sealed record BaseAppImportRequest(
     int Major,
-    int Minor,
     int CumulativeUpdate,
     int? ApplicationVersionId,
     string? Notes,

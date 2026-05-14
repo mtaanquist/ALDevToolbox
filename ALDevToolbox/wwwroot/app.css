@@ -2572,10 +2572,66 @@ ul.form-field-error {
 /* Object Explorer */
 .object-explorer__filters {
     display: grid;
-    grid-template-columns: 2fr 1fr 1fr;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
     gap: 16px;
     align-items: end;
     margin: 16px 0;
+}
+
+/* Sortable column headers in the version browser. Keeps the <th>'s
+   default look but turns the inner button into a hover-able click target
+   with a small arrow on the active sort. */
+.data-table__sort-button {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    font-weight: inherit;
+    text-align: inherit;
+    text-transform: inherit;
+    letter-spacing: inherit;
+}
+
+.data-table__sort-button:hover {
+    color: var(--text-1, #d8d8e0);
+}
+
+.data-table__sort-button.is-active {
+    color: var(--text-1, #d8d8e0);
+}
+
+.data-table__sort-indicator {
+    font-size: 10px;
+    margin-left: 2px;
+}
+
+/* `.field` is referenced from a handful of forms but never defined globally
+   until now. Stack label + control vertically with consistent spacing so
+   the Object Explorer filter row lines up evenly across search inputs and
+   select boxes. */
+.object-explorer__filters .field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.object-explorer__filters .field__label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-2, #b0b0c2);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.object-explorer__filters .field__input,
+.object-explorer__filters .admin-search-input {
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .object-explorer__row {
@@ -2642,6 +2698,85 @@ ul.form-field-error {
     flex-wrap: wrap;
 }
 
+/* Upload form: native file inputs are ugly and inconsistent across browsers.
+   Hide the input visually and let the <label for=...> button stand in.
+   `.file-picker__status` gets the filename(s) written by the page script. */
+.object-explorer-upload .file-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.object-explorer-upload .file-picker input[type="file"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    border: 0;
+}
+
+.object-explorer-upload .file-picker__button {
+    cursor: pointer;
+}
+
+.object-explorer-upload .file-picker__status {
+    font-size: 13px;
+}
+
+.object-explorer-upload .field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 16px;
+}
+
+.object-explorer-upload .field__label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-2, #b0b0c2);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.object-explorer-upload .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.upload-progress {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: var(--surface-2, rgba(124, 124, 144, 0.08));
+    border: 1px solid var(--border, #2a2a35);
+    border-radius: 6px;
+}
+
+.upload-progress p {
+    margin: 0;
+}
+
+.upload-progress__spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--border, #2a2a35);
+    border-top-color: var(--text-1, #d8d8e0);
+    border-radius: 50%;
+    animation: upload-spin 0.8s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes upload-spin {
+    to { transform: rotate(360deg); }
+}
+
 /* Diff line decorations applied by CodeMirror's Decoration.line(). Selectors
    live in the global stylesheet (not the scoped CodeDiffViewer.razor.css)
    because CodeMirror renders .cm-line outside the Blazor component's scope-id
@@ -2661,6 +2796,28 @@ ul.form-field-error {
 }
 .cm-symbol-decl:hover {
     text-decoration-color: currentColor;
+}
+
+/* When the user holds Cmd/Ctrl over the editor, hint that identifier-
+   shaped tokens are clickable for "Go to definition". We can't pre-
+   resolve which tokens have a target without running a parser, so this is
+   an honest "anything could be navigable" affordance — the click itself
+   does the resolution. The selectors hit CodeMirror's syntax-highlight
+   tok-* classes plus our declaration marks. */
+.cm-modifier-down,
+.cm-modifier-down .cm-line {
+    cursor: pointer;
+}
+.cm-modifier-down .tok-variableName,
+.cm-modifier-down .tok-typeName,
+.cm-modifier-down .tok-propertyName,
+.cm-modifier-down .tok-className,
+.cm-modifier-down .tok-keyword,
+.cm-modifier-down .cm-symbol-decl {
+    text-decoration: underline;
+    text-decoration-style: solid;
+    text-decoration-color: currentColor;
+    text-underline-offset: 2px;
 }
 
 .cm-symbol-menu {

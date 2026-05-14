@@ -114,7 +114,7 @@
 
     private string VersionLabel => _version is null
         ? VersionId.ToString()
-        : $"{_version.Major}.{_version.Minor} CU{_version.CumulativeUpdate}";
+        : $"BC {_version.Major}.{_version.CumulativeUpdate}";
 
     protected override async Task OnInitializedAsync()
     {

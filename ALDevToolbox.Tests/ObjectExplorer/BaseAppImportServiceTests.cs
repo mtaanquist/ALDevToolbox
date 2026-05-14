@@ -35,7 +35,7 @@ public sealed class BaseAppImportServiceTests : IDisposable
         });
 
         var summary = await svc.ImportAsync(zip, new BaseAppImportRequest(
-            Major: 28, Minor: 0, CumulativeUpdate: 1,
+            Major: 28, CumulativeUpdate: 1,
             ApplicationVersionId: null, Notes: "Test upload", Mode: BaseAppImportMode.Reject));
 
         summary.TotalFiles.Should().Be(3);
@@ -45,7 +45,6 @@ public sealed class BaseAppImportServiceTests : IDisposable
         using var ctx = _db.NewContext();
         var version = await ctx.BaseAppVersions.SingleAsync(v => v.Id == summary.VersionId);
         version.Major.Should().Be(28);
-        version.Minor.Should().Be(0);
         version.CumulativeUpdate.Should().Be(1);
         version.FileCount.Should().Be(3);
         version.Notes.Should().Be("Test upload");
@@ -193,7 +192,7 @@ public sealed class BaseAppImportServiceTests : IDisposable
         var zip = BuildZip(new Dictionary<string, string>());
 
         var act = () => svc.ImportAsync(zip, new BaseAppImportRequest(
-            Major: 0, Minor: 0, CumulativeUpdate: 0,
+            Major: 0, CumulativeUpdate: 0,
             ApplicationVersionId: null, Notes: null, Mode: BaseAppImportMode.Reject));
 
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
@@ -294,9 +293,9 @@ public sealed class BaseAppImportServiceTests : IDisposable
     }
 
     private static BaseAppImportRequest NewRequest(
-        int major = 28, int minor = 0, int cu = 1,
+        int major = 28, int cu = 1,
         BaseAppImportMode mode = BaseAppImportMode.Reject)
-        => new(major, minor, cu, ApplicationVersionId: null, Notes: null, Mode: mode);
+        => new(major, cu, ApplicationVersionId: null, Notes: null, Mode: mode);
 
     private static Stream BuildZip(Dictionary<string, string> entries)
     {

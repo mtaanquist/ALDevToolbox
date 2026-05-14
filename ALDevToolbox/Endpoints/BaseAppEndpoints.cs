@@ -38,10 +38,9 @@ internal static class BaseAppEndpoints
             }
 
             if (!int.TryParse(form["Major"], out var major)
-                || !int.TryParse(form["Minor"], out var minor)
                 || !int.TryParse(form["CumulativeUpdate"], out var cu))
             {
-                Redirect(ctx, "Version", "Major, Minor, and CumulativeUpdate must be integers.");
+                Redirect(ctx, "Version", "Major and CumulativeUpdate must be integers.");
                 return;
             }
 
@@ -74,7 +73,6 @@ internal static class BaseAppEndpoints
                 var mode = i == 0 ? firstMode : BaseAppImportMode.Append;
                 var request = new BaseAppImportRequest(
                     Major: major,
-                    Minor: minor,
                     CumulativeUpdate: cu,
                     ApplicationVersionId: applicationVersionId,
                     // Notes only attached to the first ZIP — Append concatenates

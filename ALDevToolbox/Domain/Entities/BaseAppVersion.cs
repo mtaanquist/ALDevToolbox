@@ -1,11 +1,12 @@
 namespace ALDevToolbox.Domain.Entities;
 
 /// <summary>
-/// One imported Microsoft Base Application source dump, identified by the
-/// (major, minor, cumulative_update) triple. Object Explorer pages browse
-/// the <see cref="BaseAppFile"/> rows that hang off this version. Six-monthly
-/// major releases come in as a new (major, minor) pair; monthly cumulative
-/// updates share major.minor and bump <see cref="CumulativeUpdate"/>.
+/// One imported Microsoft application source dump, identified by the
+/// (major, cumulative_update) pair. Object Explorer pages browse the
+/// <see cref="BaseAppFile"/> rows that hang off this version. In BC's
+/// versioning the second segment of the four-part <c>application</c> field
+/// is the cumulative-update counter — there's no separate minor — so the
+/// schema collapses them into one column.
 /// </summary>
 public class BaseAppVersion
 {
@@ -17,9 +18,6 @@ public class BaseAppVersion
 
     /// <summary>BC major version, e.g. <c>28</c>.</summary>
     public int Major { get; set; }
-
-    /// <summary>BC minor version, e.g. <c>0</c>.</summary>
-    public int Minor { get; set; }
 
     /// <summary>Cumulative update number. <c>0</c> means RTM.</summary>
     public int CumulativeUpdate { get; set; }

@@ -12,7 +12,7 @@
     <nav class="object-explorer__crumbs">
         <a href="/object-explorer">Object Explorer</a>
         <span>›</span>
-        <a href="@($"/object-explorer/{VersionId}")">@(_leftVersion is null ? VersionId.ToString() : $"{_leftVersion.Major}.{_leftVersion.Minor} CU{_leftVersion.CumulativeUpdate}")</a>
+        <a href="@($"/object-explorer/{VersionId}")">@(_leftVersion is null ? VersionId.ToString() : $"BC {_leftVersion.Major}.{_leftVersion.CumulativeUpdate}")</a>
         <span>›</span>
         <a href="@($"/object-explorer/{VersionId}/files/{FileId}")">@(_left?.ObjectName ?? FileId.ToString())</a>
         <span>›</span>
@@ -71,9 +71,9 @@
     private BaseAppDiffResult? _diff;
 
     private string LeftLabel =>
-        _leftVersion is null ? "Before" : $"{_leftVersion.Major}.{_leftVersion.Minor} CU{_leftVersion.CumulativeUpdate}";
+        _leftVersion is null ? "Before" : $"BC {_leftVersion.Major}.{_leftVersion.CumulativeUpdate}";
     private string RightLabel =>
-        _rightVersion is null ? "After" : $"{_rightVersion.Major}.{_rightVersion.Minor} CU{_rightVersion.CumulativeUpdate}";
+        _rightVersion is null ? "After" : $"BC {_rightVersion.Major}.{_rightVersion.CumulativeUpdate}";
 
     protected override async Task OnInitializedAsync()
     {
@@ -116,7 +116,6 @@
     private static int CompareVersions(BaseAppVersion a, BaseAppVersion b)
     {
         if (a.Major != b.Major) return a.Major - b.Major;
-        if (a.Minor != b.Minor) return a.Minor - b.Minor;
         return a.CumulativeUpdate - b.CumulativeUpdate;
     }
 }

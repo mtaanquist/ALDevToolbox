@@ -324,48 +324,80 @@ export function mountReadOnly(container, value, language, options) {
     // outside a declaration falls through (browser menu kept).
     const declarations = Array.isArray(opts.declarations) ? opts.declarations : [];
     let openMenu = null;
-    const onContextMenu = (event) => {
-        if (declarations.length === 0 || !opts.dotNetRef) return;
-        const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
-        if (pos === null) return;
-        const line = view.state.doc.lineAt(pos);
-        const colInLine = pos - line.from + 1; // 1-based to match C# columns
-        const hit = declarations.find(d =>
-            d.line === line.number
-            && colInLine >= d.columnStart
-            && colInLine <= d.columnEnd);
-        if (!hit) return;
-        event.preventDefault();
-        closeMenu();
-        openMenu = renderFindReferencesMenu(event.clientX, event.clientY, hit, opts.dotNetRef);
-    };
     const closeMenu = () => {
         if (openMenu) {
             openMenu.remove();
             openMenu = null;
         }
     };
+
+    // Right-click anywhere offers "Go to definition" when a callback is wired;
+    // additionally offers "Find references" when the click lands inside a
+    // declaration name range. Click outside either menu item to dismiss.
+    const onContextMenu = (event) => {
+        if (!opts.dotNetRef) return;
+        const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+        if (pos === null) return;
+        const line = view.state.doc.lineAt(pos);
+        const colInLine = pos - line.from + 1; // 1-based to match C# columns
+        const onDeclaration = declarations.find(d =>
+            d.line === line.number
+            && colInLine >= d.columnStart
+            && colInLine <= d.columnEnd);
+
+        const items = [];
+        if (onDeclaration) {
+            items.push({
+                label: "Find references",
+                action: () => opts.dotNetRef.invokeMethodAsync(
+                    "OnFindReferences", onDeclaration.symbolId),
+            });
+        }
+        items.push({
+            label: "Go to definition",
+            action: () => opts.dotNetRef.invokeMethodAsync(
+                "OnGoToDefinition", line.number, colInLine),
+        });
+
+        event.preventDefault();
+        closeMenu();
+        openMenu = renderMenu(event.clientX, event.clientY, items);
+    };
     container.addEventListener("contextmenu", onContextMenu);
     document.addEventListener("click", closeMenu);
     document.addEventListener("scroll", closeMenu, true);
 
-    // Cmd/Ctrl-click anywhere in the editor fires the "Go to definition"
-    // callback. We resolve the token server-side via the click position
-    // because the JS-side word boundaries don't understand AL's quoted
-    // identifiers; passing (line, column) keeps the JS dumb and the C#
-    // parser unit-testable.
+    // Cmd/Ctrl-click anywhere in the editor fires Go to definition.
+    // Holding the modifier (without clicking) toggles a class on the editor
+    // body so identifier-shaped tokens get a hover affordance — gives users
+    // the IDE-style "what's clickable" feedback even though we can't
+    // pre-resolve which tokens have a definition without a full parse.
     const onClickForDefinition = (event) => {
         if (!event.metaKey && !event.ctrlKey) return;
         if (!opts.dotNetRef) return;
         const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
         if (pos === null) return;
         const line = view.state.doc.lineAt(pos);
-        const colInLine = pos - line.from + 1; // 1-based
+        const colInLine = pos - line.from + 1;
         event.preventDefault();
         opts.dotNetRef.invokeMethodAsync("OnGoToDefinition", line.number, colInLine)
             .catch(err => console.warn("Go to definition callback failed:", err));
     };
     container.addEventListener("click", onClickForDefinition);
+
+    const updateModifierClass = (event) => {
+        if (event.metaKey || event.ctrlKey) {
+            container.classList.add("cm-modifier-down");
+        } else {
+            container.classList.remove("cm-modifier-down");
+        }
+    };
+    container.addEventListener("mousemove", updateModifierClass);
+    container.addEventListener("keydown", updateModifierClass);
+    container.addEventListener("keyup", updateModifierClass);
+    container.addEventListener("mouseleave", () => container.classList.remove("cm-modifier-down"));
+    // Modifier release outside the editor still needs to clear the class.
+    window.addEventListener("blur", () => container.classList.remove("cm-modifier-down"));
 
     editors.set(id, {
         view,
@@ -374,8 +406,12 @@ export function mountReadOnly(container, value, language, options) {
         dispose: () => {
             container.removeEventListener("contextmenu", onContextMenu);
             container.removeEventListener("click", onClickForDefinition);
+            container.removeEventListener("mousemove", updateModifierClass);
+            container.removeEventListener("keydown", updateModifierClass);
+            container.removeEventListener("keyup", updateModifierClass);
             document.removeEventListener("click", closeMenu);
             document.removeEventListener("scroll", closeMenu, true);
+            container.classList.remove("cm-modifier-down");
             closeMenu();
             themeObserver.disconnect();
             mql?.removeEventListener?.("change", reconfigureTheme);
@@ -439,24 +475,35 @@ function buildDeclarationDecorationExtensions(declarations) {
     })];
 }
 
-// Renders the right-click "Find references" menu near the click point.
-// Returned element is removed by the caller on close.
-function renderFindReferencesMenu(x, y, declaration, dotNetRef) {
+// Renders a small floating context menu at (x, y). Each item is
+// `{ label, action }`; `action` returns the promise from a DotNet
+// invokeMethodAsync call. The menu removes itself when an item is
+// clicked or when the document-level click handler in mountReadOnly
+// closes it.
+function renderMenu(x, y, items) {
     const menu = document.createElement("div");
     menu.className = "cm-symbol-menu";
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;
 
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = "cm-symbol-menu__item";
-    item.textContent = "Find references";
-    item.addEventListener("click", () => {
-        menu.remove();
-        dotNetRef.invokeMethodAsync("OnFindReferences", declaration.symbolId)
-            .catch(err => console.warn("Find references callback failed:", err));
-    });
-    menu.appendChild(item);
+    for (const item of items) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "cm-symbol-menu__item";
+        btn.textContent = item.label;
+        btn.addEventListener("click", () => {
+            menu.remove();
+            try {
+                const result = item.action();
+                if (result && typeof result.catch === "function") {
+                    result.catch(err => console.warn(`${item.label} failed:`, err));
+                }
+            } catch (err) {
+                console.warn(`${item.label} threw:`, err);
+            }
+        });
+        menu.appendChild(btn);
+    }
 
     document.body.appendChild(menu);
     return menu;

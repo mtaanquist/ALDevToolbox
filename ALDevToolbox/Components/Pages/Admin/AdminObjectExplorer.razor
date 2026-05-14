@@ -52,8 +52,7 @@
         <table class="data-table">
             <thead>
                 <tr>
-                    <th scope="col">Major.Minor</th>
-                    <th scope="col">CU</th>
+                    <th scope="col">Version</th>
                     <th scope="col" class="num">Files</th>
                     <th scope="col">Uploaded</th>
                     <th scope="col">Symbols</th>
@@ -65,8 +64,7 @@
                 @foreach (var v in _versions)
                 {
                     <tr>
-                        <td><strong>@v.Major.@v.Minor</strong></td>
-                        <td>CU @v.CumulativeUpdate</td>
+                        <td><strong>BC @v.Major.@v.CumulativeUpdate</strong></td>
                         <td class="num">@v.FileCount.ToString("N0")</td>
                         <td>@v.UploadedAt.ToString("yyyy-MM-dd HH:mm")</td>
                         <td>
