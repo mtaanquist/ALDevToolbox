@@ -88,4 +88,46 @@ public sealed class AdminCatalogTests : IDisposable
                 "the pattern must accept hex GUIDs in 8-4-4-4-12 form");
         });
     }
+
+    [Fact]
+    public void Submitting_with_an_empty_required_field_renders_FieldError_inline_under_that_field()
+    {
+        // Pins the contract that backs #91: when the service throws a
+        // PlanValidationException with a field-keyed error dictionary, the
+        // page surfaces each message inline via <FieldError>. The test
+        // adds an empty row and submits — every required field on the row
+        // should bounce back with an inline message, plus the
+        // top-of-form summary banner.
+        var cut = _ctx.RenderComponent<AdminCatalog>();
+
+        // The form hydrates from the DB on OnInitializedAsync; wait until
+        // the "Add entry" button is rendered before interacting.
+        cut.WaitForState(() =>
+            cut.FindAll("button").Any(b => b.TextContent.Contains("Add entry")));
+
+        cut.FindAll("button")
+            .First(b => b.TextContent.Contains("Add entry"))
+            .Click();
+
+        // The new row should now be rendered with all four fields empty.
+        cut.FindAll("div.folder-editor__row").Should().HaveCount(1);
+
+        // Submit the form; CatalogService.SaveAsync collects one error per
+        // missing field and throws PlanValidationException, which the page
+        // catches and stashes in _fieldErrors.
+        cut.Find("form").Submit();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Dependency id is required.",
+                "DepId is empty → CatalogService keys the error under Entries[0].DepId → "
+                + "<FieldError Field='Entries[0].DepId'> renders the message inline");
+            cut.Markup.Should().Contain("Dependency name is required.");
+            cut.Markup.Should().Contain("Dependency publisher is required.");
+            cut.Markup.Should().Contain("Default version is required.");
+            cut.Markup.Should().Contain("4 validation error(s)",
+                "the top-of-form summary copy counts the errors so the user "
+                + "knows what to scroll back to");
+        });
+    }
 }

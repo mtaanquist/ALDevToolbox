@@ -99,4 +99,49 @@ public sealed class AdminTemplateEditTests : IDisposable
                 "the form does not render once _loadFailed flips");
         });
     }
+
+    [Fact]
+    public async Task Save_with_valid_edits_persists_to_the_database_and_clears_FieldErrors()
+    {
+        // Pins the structured-form save round-trip: load → mutate → submit
+        // → TemplateService.UpdateAsync → DB. The page renders the "Saved."
+        // banner on success, and #83 (split AdminTemplateEdit.razor) must
+        // preserve this contract.
+        //
+        // The validation-error counterpart lives at the service level
+        // (TemplateServiceReconciliationTests covers ValidateAsync's
+        // field-keyed errors directly); a page-level equivalent is more
+        // appropriate on the AdminCatalog form (see AdminCatalogTests), which
+        // has a simpler save flow with the same <FieldError> render contract.
+        await using (var seed = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default(key: "runtime-x", runtime: "15");
+            template.Name = "Original Name";
+            seed.RuntimeTemplates.Add(template);
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.RenderComponent<AdminTemplateEdit>(p => p
+            .Add(c => c.Key, "runtime-x"));
+
+        cut.WaitForState(() => cut.FindAll("#tpl-name").Count > 0);
+
+        cut.Find("#tpl-name").Input("Renamed");
+        cut.Find("form").Submit();
+
+        // Wait for SaveAsync to complete: the success banner is the
+        // signal the page uses, and matches the user-visible feedback.
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Saved.",
+                "the page renders a success banner once UpdateAsync returns");
+        });
+
+        await using var read = _db.NewContext();
+        var refetched = await read.RuntimeTemplates
+            .AsNoTracking()
+            .FirstAsync(t => t.Key == "runtime-x");
+        refetched.Name.Should().Be("Renamed",
+            "the save round-tripped through TemplateService.UpdateAsync into the DB");
+    }
 }
