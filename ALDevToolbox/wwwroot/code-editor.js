@@ -463,6 +463,15 @@ export function mountReadOnly(container, value, language, options) {
 // Public: scroll the editor to a 1-based line number, with an optional
 // short fade-out highlight so the eye lands in the right place. Called by
 // the FileViewer when a #L<n> fragment is in the URL.
+//
+// CodeMirror 6 estimates heights for unmeasured lines, so a single
+// scrollIntoView dispatch for a far-away target lands at an approximate
+// position. We dispatch once to bring the target roughly into view, wait
+// for CM to measure the now-visible lines via requestAnimationFrame, then
+// dispatch a second time for an accurate centre. The flash + DOM lookup
+// also happens in the rAF callback — `.cm-line:nth-of-type(N)` only works
+// when the viewport starts at line 1; after scrolling far down we need
+// view.domAtPos to find the rendered line element.
 export function scrollToLine(id, lineNumber, flash) {
     const e = editors.get(id);
     if (!e) return;
@@ -470,24 +479,34 @@ export function scrollToLine(id, lineNumber, flash) {
     if (!Number.isInteger(lineNumber) || lineNumber < 1) return;
     const totalLines = view.state.doc.lines;
     const safeLine = Math.min(lineNumber, totalLines);
-    const line = view.state.doc.line(safeLine);
-    view.dispatch({
-        effects: EditorView.scrollIntoView(line.from, { y: "center" }),
-    });
-    if (flash) {
-        const dom = view.dom.querySelector(
-            `.cm-line:nth-of-type(${safeLine})`);
-        if (dom) {
-            // Adding a class that's already present doesn't restart its
-            // CSS animation. Remove first, force a reflow, then re-add so
-            // repeated clicks on the same reference re-flash the line.
-            dom.classList.remove("cm-line--flash");
-            // eslint-disable-next-line no-unused-expressions
-            dom.offsetWidth;
-            dom.classList.add("cm-line--flash");
-            setTimeout(() => dom.classList.remove("cm-line--flash"), 1500);
+
+    const dispatchScroll = () => {
+        const line = view.state.doc.line(safeLine);
+        view.dispatch({
+            effects: EditorView.scrollIntoView(line.from, { y: "center" }),
+        });
+    };
+
+    dispatchScroll();
+    requestAnimationFrame(() => {
+        dispatchScroll();
+        if (!flash) return;
+        const line = view.state.doc.line(safeLine);
+        const node = view.domAtPos(line.from)?.node;
+        let lineEl = node instanceof Element ? node : node?.parentElement;
+        while (lineEl && !(lineEl.classList && lineEl.classList.contains("cm-line"))) {
+            lineEl = lineEl.parentElement;
         }
-    }
+        if (!lineEl) return;
+        // Adding a class that's already present doesn't restart its
+        // CSS animation. Remove first, force a reflow, then re-add so
+        // repeated clicks on the same reference re-flash the line.
+        lineEl.classList.remove("cm-line--flash");
+        // eslint-disable-next-line no-unused-expressions
+        lineEl.offsetWidth;
+        lineEl.classList.add("cm-line--flash");
+        setTimeout(() => lineEl.classList.remove("cm-line--flash"), 1500);
+    });
 }
 
 // Builds a CodeMirror extension that wraps each declaration name range
