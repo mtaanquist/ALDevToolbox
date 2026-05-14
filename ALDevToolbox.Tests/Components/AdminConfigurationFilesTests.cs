@@ -109,10 +109,17 @@ public sealed class AdminConfigurationFilesTests : IDisposable
         // top-level button in the form-actions row.
         cut.Find("div.form-actions button.btn").Click();
 
-        cut.Find("span.form-field-error").TextContent.Should().Contain("Path is required",
-            "client-side validation must surface before round-tripping to the server");
-        cut.FindAll("li.org-file-row").Should().BeEmpty(
-            "the failed apply must leave the file list untouched");
+        // WaitForAssertion: the click handler runs Apply(), sets _editError,
+        // and re-renders; under timing pressure the assertion can fire
+        // before the re-render lands. CI was flaky on the sibling test
+        // below for exactly this reason.
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("span.form-field-error").TextContent.Should().Contain("Path is required",
+                "client-side validation must surface before round-tripping to the server");
+            cut.FindAll("li.org-file-row").Should().BeEmpty(
+                "the failed apply must leave the file list untouched");
+        });
     }
 
     [Fact]
@@ -126,8 +133,13 @@ public sealed class AdminConfigurationFilesTests : IDisposable
         cut.Find("#cfg-file-path").Input("../etc/passwd");
         cut.Find("div.form-actions button.btn").Click();
 
-        cut.Find("span.form-field-error").TextContent.Should().Contain("'..'",
-            "the path traversal guard runs client-side too — generation writes "
-            + "these files at the workspace root, so '..' segments are flatly refused");
+        // WaitForAssertion: the bare Find() raced the re-render and CI
+        // surfaced this as a flake — same commit, two runs, mixed results.
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("span.form-field-error").TextContent.Should().Contain("'..'",
+                "the path traversal guard runs client-side too — generation writes "
+                + "these files at the workspace root, so '..' segments are flatly refused");
+        });
     }
 }
