@@ -67,14 +67,17 @@ public sealed class AdminConfigurationDefaultsTests : IDisposable
 
         var cut = _ctx.RenderComponent<AdminConfigurationDefaults>();
 
-        cut.WaitForAssertion(() =>
-        {
-            cut.Find("#cfg-publisher").GetAttribute("value").Should().Be("Acme");
-            cut.Find("#cfg-from").GetAttribute("value").Should().Be("80000");
-            cut.Find("#cfg-to").GetAttribute("value").Should().Be("80999");
-            cut.Find("#cfg-brief").GetAttribute("value").Should().Be("Acme customisations.");
-            cut.Find("#cfg-desc").TextContent.Should().Be("Long description here.");
-        });
+        // The page shows "Loading…" until OnInitializedAsync resolves three
+        // DB reads inside OrganizationConfigService. WaitForState is cheaper
+        // than WaitForAssertion (no exception suppression) and points at the
+        // exact transition we care about.
+        cut.WaitForState(() => cut.FindAll("#cfg-publisher").Any(), TimeSpan.FromSeconds(5));
+
+        cut.Find("#cfg-publisher").GetAttribute("value").Should().Be("Acme");
+        cut.Find("#cfg-from").GetAttribute("value").Should().Be("80000");
+        cut.Find("#cfg-to").GetAttribute("value").Should().Be("80999");
+        cut.Find("#cfg-brief").GetAttribute("value").Should().Be("Acme customisations.");
+        cut.Find("#cfg-desc").TextContent.Should().Be("Long description here.");
     }
 
     [Fact]
@@ -82,16 +85,15 @@ public sealed class AdminConfigurationDefaultsTests : IDisposable
     {
         var cut = _ctx.RenderComponent<AdminConfigurationDefaults>();
 
-        cut.WaitForAssertion(() =>
-        {
-            cut.Find("#cfg-publisher").HasAttribute("required").Should().BeTrue(
-                "OrganizationConfigService.SaveSettingsAsync rejects empty publisher; "
-                + "the form must surface that to the user");
+        cut.WaitForState(() => cut.FindAll("#cfg-publisher").Any(), TimeSpan.FromSeconds(5));
 
-            var from = cut.Find("#cfg-from");
-            from.GetAttribute("type").Should().Be("number");
-            from.GetAttribute("min").Should().Be("1");
-            from.HasAttribute("required").Should().BeTrue();
-        });
+        cut.Find("#cfg-publisher").HasAttribute("required").Should().BeTrue(
+            "OrganizationConfigService.SaveSettingsAsync rejects empty publisher; "
+            + "the form must surface that to the user");
+
+        var from = cut.Find("#cfg-from");
+        from.GetAttribute("type").Should().Be("number");
+        from.GetAttribute("min").Should().Be("1");
+        from.HasAttribute("required").Should().BeTrue();
     }
 }

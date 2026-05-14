@@ -121,7 +121,9 @@ public sealed class AdminConfigurationFilesTests : IDisposable
         var cut = _ctx.RenderComponent<AdminConfigurationFiles>();
         cut.WaitForAssertion(() => cut.Find("#cfg-file-path"));
 
-        cut.Find("#cfg-file-path").Change("../etc/passwd");
+        // Path input binds on `oninput`, not `change` — Input() triggers the
+        // right event so the field's value reaches _editPath before Apply.
+        cut.Find("#cfg-file-path").Input("../etc/passwd");
         cut.Find("div.form-actions button.btn").Click();
 
         cut.Find("span.form-field-error").TextContent.Should().Contain("'..'",

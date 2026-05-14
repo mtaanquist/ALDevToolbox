@@ -33,6 +33,11 @@ public sealed class SiteAdminAuditTests : IDisposable
         _auth.SetAuthorized("siteadmin@example.com");
         _auth.SetRoles(HttpOrganizationContext.SiteAdminRole);
 
+        // SiteAdminService.RequireSiteAdmin() checks the org-context flag in
+        // addition to the role claim; the page hits ListOrganizationsAsync in
+        // OnInitializedAsync, so the flag must be set or the page throws.
+        _db.OrgContext.IsSiteAdmin = true;
+
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString));

@@ -140,11 +140,13 @@ public sealed class DependencyPickerTests : IDisposable
             .Add(c => c.Value, Array.Empty<DependencyEntry>())
             .Add(c => c.ValueChanged, v => observed = v));
 
-        var inputs = cut.FindAll("div.dep-picker__manual input[type=text]");
-        inputs[0].Change("66666666-6666-6666-6666-666666666666");
-        inputs[1].Change("Custom");
-        inputs[2].Change("PubCo");
-        inputs[3].Change("1.0.0.0");
+        // @bind="_manualId" etc. trigger a re-render after each change, which
+        // invalidates earlier element references. Re-query the input on every
+        // Change so we don't trip UnknownEventHandlerIdException.
+        cut.Find("div.dep-picker__manual input[placeholder='GUID']").Change("66666666-6666-6666-6666-666666666666");
+        cut.Find("div.dep-picker__manual input[placeholder='Name']").Change("Custom");
+        cut.Find("div.dep-picker__manual input[placeholder='Publisher']").Change("PubCo");
+        cut.Find("div.dep-picker__manual input[placeholder='Version']").Change("1.0.0.0");
 
         await cut.InvokeAsync(() => cut.Find("div.dep-picker__manual button.btn").Click());
 
@@ -167,11 +169,10 @@ public sealed class DependencyPickerTests : IDisposable
             .Add(c => c.Value, Array.Empty<DependencyEntry>())
             .Add(c => c.ValueChanged, _ => emitted = true));
 
-        var inputs = cut.FindAll("div.dep-picker__manual input[type=text]");
-        inputs[0].Change("not-a-guid");
-        inputs[1].Change("Custom");
-        inputs[2].Change("PubCo");
-        inputs[3].Change("1.0.0.0");
+        cut.Find("div.dep-picker__manual input[placeholder='GUID']").Change("not-a-guid");
+        cut.Find("div.dep-picker__manual input[placeholder='Name']").Change("Custom");
+        cut.Find("div.dep-picker__manual input[placeholder='Publisher']").Change("PubCo");
+        cut.Find("div.dep-picker__manual input[placeholder='Version']").Change("1.0.0.0");
 
         cut.Find("div.dep-picker__manual button.btn").Click();
 

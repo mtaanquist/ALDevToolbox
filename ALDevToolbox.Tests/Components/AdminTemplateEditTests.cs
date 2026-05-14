@@ -42,6 +42,10 @@ public sealed class AdminTemplateEditTests : IDisposable
             opts.UseNpgsql(_db.ConnectionString));
         _ctx.Services.AddScoped<TemplateService>();
         _ctx.Services.AddScoped<ApplicationVersionService>();
+        // AuditHistoryPanel renders only when _existingId is set (edit mode)
+        // and injects AuditService. Register it so the page doesn't crash on
+        // edit-mode hydration.
+        _ctx.Services.AddScoped<AuditService>();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),
