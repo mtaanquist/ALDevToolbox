@@ -23,6 +23,7 @@ App folders are relative to `ALDevToolbox/`.
 | `Domain/ValueObjects/`       | Immutable records / JSON-mapped value objects, exceptions, plans.            |
 | `Domain/Seed/`               | Tomlyn POCOs that mirror the TOML schema for the admin editor and export.   |
 | `Data/`                      | `AppDbContext`, design-time factory, migrations.                             |
+| `Data/Configurations/`       | Per-entity `IEntityTypeConfiguration<T>` classes (one file per entity).      |
 | `Resources/`                 | Embedded static assets (ruleset, `.gitignore` template).                     |
 | `wwwroot/`                   | Global CSS, favicon.                                                         |
 
