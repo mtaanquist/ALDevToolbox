@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
@@ -33,10 +34,12 @@ public sealed class DataProtectionHealthCheck : IHealthCheck
                 ? HealthCheckResult.Healthy("Data Protection key ring is readable.")
                 : HealthCheckResult.Unhealthy("Data Protection round-trip returned unexpected payload."));
         }
-        catch (Exception ex)
+        catch (CryptographicException ex)
         {
             return Task.FromResult(HealthCheckResult.Unhealthy(
                 "Data Protection key ring is not readable.", ex));
         }
+        // Anything else (NRE, configuration bug, etc.) is a real bug and should
+        // surface as an unhandled exception, not a masked "unhealthy" signal.
     }
 }
