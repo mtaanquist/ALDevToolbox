@@ -1,6 +1,7 @@
 @page "/snippets/{Id:int}"
 @attribute [Authorize]
 @rendermode InteractiveServer
+@implements IDisposable
 @inject SnippetService Snippets
 @inject IJSRuntime JS
 @using ALDevToolbox.Domain.Entities
@@ -90,6 +91,7 @@
             await JS.InvokeVoidAsync("navigator.clipboard.writeText", content);
             _justCopied = fileName;
             _copyTimer?.Cancel();
+            _copyTimer?.Dispose();
             _copyTimer = new CancellationTokenSource();
             var token = _copyTimer.Token;
             _ = Task.Run(async () =>
@@ -112,5 +114,11 @@
             // Clipboard write can fail (insecure context, denied permission).
             // Surface nothing — the textarea is still selectable.
         }
+    }
+
+    public void Dispose()
+    {
+        _copyTimer?.Cancel();
+        _copyTimer?.Dispose();
     }
 }

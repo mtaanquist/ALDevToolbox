@@ -157,6 +157,77 @@ public sealed class AccountServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Fourth_failure_still_allows_a_correct_login_on_the_fifth_attempt()
+    {
+        var orgId = TestDb.DefaultOrgId;
+        await using (var seed = _db.NewContext())
+        {
+            var hash = new AccountService(seed, NullLogger<AccountService>.Instance, _clock)
+                .HashPassword("rightpasswordlong");
+            seed.Users.Add(new User
+            {
+                OrganizationId = orgId,
+                Email = "boundary@example.com",
+                PasswordHash = hash,
+                DisplayName = "Boundary",
+                Role = UserRole.User,
+                Status = UserStatus.Active,
+                CreatedAt = _clock.GetUtcNow().UtcDateTime,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var ctx = _db.NewContext();
+        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
+
+        for (var i = 0; i < AccountService.LockoutThreshold - 1; i++)
+        {
+            var (failed, _) = await svc.TryLoginAsync("boundary@example.com", "wrongpassword12345", "1.2.3.4");
+            failed.Should().Be(LoginOutcome.InvalidCredentials);
+        }
+
+        // N-1 failures should still allow the correct password through.
+        var (outcome, user) = await svc.TryLoginAsync("boundary@example.com", "rightpasswordlong", "1.2.3.4");
+        outcome.Should().Be(LoginOutcome.Success);
+        user.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Wrong_password_attempts_past_the_threshold_also_lock_out()
+    {
+        // Regression: previously the lockout check only ran on the success
+        // path, so an attacker spamming wrong passwords could keep failing
+        // past the threshold without ever being told they were locked.
+        var orgId = TestDb.DefaultOrgId;
+        await using (var seed = _db.NewContext())
+        {
+            var hash = new AccountService(seed, NullLogger<AccountService>.Instance, _clock)
+                .HashPassword("rightpasswordlong");
+            seed.Users.Add(new User
+            {
+                OrganizationId = orgId,
+                Email = "spammed@example.com",
+                PasswordHash = hash,
+                DisplayName = "Spammed",
+                Role = UserRole.User,
+                Status = UserStatus.Active,
+                CreatedAt = _clock.GetUtcNow().UtcDateTime,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var ctx = _db.NewContext();
+        var svc = new AccountService(ctx, NullLogger<AccountService>.Instance, _clock);
+        for (var i = 0; i < AccountService.LockoutThreshold; i++)
+        {
+            await svc.TryLoginAsync("spammed@example.com", "wrongpassword12345", "1.2.3.4");
+        }
+
+        var (next, _) = await svc.TryLoginAsync("spammed@example.com", "stillwrongpassword", "1.2.3.4");
+        next.Should().Be(LoginOutcome.LockedOut);
+    }
+
+    [Fact]
     public async Task Per_email_rate_limit_blocks_more_than_ten_attempts_in_fifteen_minutes()
     {
         var ctx = _db.NewContext();

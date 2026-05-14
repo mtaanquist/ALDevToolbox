@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
@@ -57,6 +56,12 @@ public sealed class AccountService
 
     private static readonly Regex SlugRegex = new("^[a-z0-9-]+$", RegexOptions.Compiled);
 
+    // Used to pay the BCrypt cost when the supplied email doesn't match a
+    // user, so the response-time profile doesn't leak whether the email is
+    // registered (timing oracle). Computed once per process.
+    private static readonly Lazy<string> DummyPasswordHash = new(() =>
+        BCrypt.Net.BCrypt.HashPassword("not-a-real-password", BcryptWorkFactor));
+
     private readonly AppDbContext _db;
     private readonly ILogger<AccountService> _logger;
     private readonly TimeProvider _clock;
@@ -87,21 +92,36 @@ public sealed class AccountService
             return (LoginOutcome.RateLimited, null);
         }
 
+        // Lockout is checked before password verification so that an attacker
+        // hammering the same email with wrong passwords also gets locked out,
+        // not just somebody who finally guesses the right one. The current
+        // attempt is not yet recorded, so IsLockedOutAsync counts strictly
+        // prior attempts (LockoutThreshold consecutive failures → next
+        // attempt locked).
+        if (await IsLockedOutAsync(normalised, now, ct))
+        {
+            await RecordAttemptAsync(normalised, ip, succeeded: false, now, ct);
+            return (LoginOutcome.LockedOut, null);
+        }
+
         var user = await _db.Users
             .IgnoreQueryFilters()
             .Include(u => u.Organization)
             .FirstOrDefaultAsync(u => u.Email == normalised, ct);
 
-        if (user is null || !VerifyPassword(password, user.PasswordHash))
+        if (user is null)
         {
+            // Pay the BCrypt cost against a dummy hash so the response time
+            // doesn't leak whether the email is registered (timing oracle).
+            _ = VerifyPassword(password, DummyPasswordHash.Value);
             await RecordAttemptAsync(normalised, ip, succeeded: false, now, ct);
             return (LoginOutcome.InvalidCredentials, null);
         }
 
-        if (await IsLockedOutAsync(normalised, now, ct))
+        if (!VerifyPassword(password, user.PasswordHash))
         {
             await RecordAttemptAsync(normalised, ip, succeeded: false, now, ct);
-            return (LoginOutcome.LockedOut, null);
+            return (LoginOutcome.InvalidCredentials, null);
         }
 
         if (user.Status == UserStatus.Pending)
@@ -260,6 +280,12 @@ public sealed class AccountService
         if (req.UserId is int userId)
         {
             var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId, ct);
+            // Audit FKs are Restrict (#74). Pending users rarely have audit
+            // rows pointing at them, but anonymise defensively rather than
+            // gamble on the rejection failing at SaveChanges.
+            await _db.Database.ExecuteSqlRawAsync(
+                "UPDATE audit_log SET changed_by_user_id = NULL WHERE changed_by_user_id = {0}",
+                new object[] { user.Id }, ct);
             _db.Users.Remove(user);
         }
         req.Decision = SignupDecision.Rejected;
@@ -309,52 +335,29 @@ public sealed class AccountService
     /// instead of halting the whole batch. See <c>.design/milestones.md</c>
     /// Milestone 20.
     /// </summary>
-    public async Task<BulkActionResult> BulkDisableUsersAsync(IReadOnlyList<int> userIds, int actingOrgId, CancellationToken ct = default)
-    {
-        var succeeded = new List<int>();
-        var failures = new List<BulkActionFailure>();
-        foreach (var id in userIds.Distinct())
-        {
-            try
-            {
-                await DisableUserAsync(id, actingOrgId, ct);
-                succeeded.Add(id);
-            }
-            catch (PlanValidationException ex)
-            {
-                failures.Add(new BulkActionFailure(id, await LookupDisplayNameAsync(id, ct), ex.Errors.First().Value));
-            }
-        }
-        return new BulkActionResult(userIds.Count, succeeded, failures);
-    }
+    public Task<BulkActionResult> BulkDisableUsersAsync(IReadOnlyList<int> userIds, int actingOrgId, CancellationToken ct = default) =>
+        BulkAsync(userIds, id => DisableUserAsync(id, actingOrgId, ct), ct);
 
     /// <summary>Bulk variant of <see cref="EnableUserAsync"/>.</summary>
-    public async Task<BulkActionResult> BulkEnableUsersAsync(IReadOnlyList<int> userIds, int actingOrgId, CancellationToken ct = default)
-    {
-        var succeeded = new List<int>();
-        var failures = new List<BulkActionFailure>();
-        foreach (var id in userIds.Distinct())
-        {
-            try
-            {
-                await EnableUserAsync(id, actingOrgId, ct);
-                succeeded.Add(id);
-            }
-            catch (PlanValidationException ex)
-            {
-                failures.Add(new BulkActionFailure(id, await LookupDisplayNameAsync(id, ct), ex.Errors.First().Value));
-            }
-        }
-        return new BulkActionResult(userIds.Count, succeeded, failures);
-    }
+    public Task<BulkActionResult> BulkEnableUsersAsync(IReadOnlyList<int> userIds, int actingOrgId, CancellationToken ct = default) =>
+        BulkAsync(userIds, id => EnableUserAsync(id, actingOrgId, ct), ct);
 
     /// <summary>
     /// Bulk variant of <see cref="ChangeRoleAsync"/>. Each role flip carries
     /// the same last-admin guard — failures bubble up per user so an admin can
-    /// see exactly which row blocked the operation. See
-    /// <c>.design/milestones.md</c> Milestone 20.
+    /// see exactly which row blocked the operation.
     /// </summary>
-    public async Task<BulkActionResult> BulkChangeRoleAsync(IReadOnlyList<int> userIds, UserRole newRole, int actingOrgId, CancellationToken ct = default)
+    public Task<BulkActionResult> BulkChangeRoleAsync(IReadOnlyList<int> userIds, UserRole newRole, int actingOrgId, CancellationToken ct = default) =>
+        BulkAsync(userIds, id => ChangeRoleAsync(id, newRole, actingOrgId, ct), ct);
+
+    /// <summary>
+    /// Shared shape for the bulk-action trio (#81). Iterates ids in input
+    /// order (with duplicates collapsed), runs the per-user delegate, and
+    /// turns a <see cref="PlanValidationException"/> into a row failure
+    /// rather than halting the whole batch.
+    /// </summary>
+    private async Task<BulkActionResult> BulkAsync(
+        IReadOnlyList<int> userIds, Func<int, Task> op, CancellationToken ct)
     {
         var succeeded = new List<int>();
         var failures = new List<BulkActionFailure>();
@@ -362,7 +365,7 @@ public sealed class AccountService
         {
             try
             {
-                await ChangeRoleAsync(id, newRole, actingOrgId, ct);
+                await op(id);
                 succeeded.Add(id);
             }
             catch (PlanValidationException ex)
@@ -434,10 +437,22 @@ public sealed class AccountService
                 });
             }
             var org = await _db.Organizations.IgnoreQueryFilters().FirstAsync(o => o.Id == user.OrganizationId, ct);
+            // Audit FKs are Restrict (#74): anonymise referencing rows so the
+            // cascade can complete. The display-name string in `changed_by`
+            // is preserved so the history still reads usefully.
+            await _db.Database.ExecuteSqlRawAsync(
+                "UPDATE audit_log SET changed_by_user_id = NULL WHERE changed_by_user_id IN (SELECT id FROM users WHERE organization_id = {0})",
+                new object[] { org.Id }, ct);
+            await _db.Database.ExecuteSqlRawAsync(
+                "UPDATE audit_log SET organization_id = NULL WHERE organization_id = {0}",
+                new object[] { org.Id }, ct);
             _db.Organizations.Remove(org);
         }
         else
         {
+            await _db.Database.ExecuteSqlRawAsync(
+                "UPDATE audit_log SET changed_by_user_id = NULL WHERE changed_by_user_id = {0}",
+                new object[] { user.Id }, ct);
             _db.Users.Remove(user);
         }
         await _db.SaveChangesAsync(ct);
@@ -460,9 +475,7 @@ public sealed class AccountService
             return null;
         }
 
-        var rawBytes = RandomNumberGenerator.GetBytes(32);
-        var raw = Convert.ToHexString(rawBytes).ToLowerInvariant();
-        var hash = Sha256Hex(raw);
+        var (raw, hash) = TokenIssuer.Issue();
         var now = _clock.GetUtcNow().UtcDateTime;
         _db.PasswordResetTokens.Add(new PasswordResetToken
         {
@@ -488,7 +501,7 @@ public sealed class AccountService
         ValidatePassword(newPassword, errors, fieldName: "Password");
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
-        var hash = Sha256Hex(token);
+        var hash = TokenIssuer.Sha256Hex(token);
         var now = _clock.GetUtcNow().UtcDateTime;
         var row = await _db.PasswordResetTokens.IgnoreQueryFilters()
             .Include(t => t.User)
@@ -531,9 +544,7 @@ public sealed class AccountService
             return null;
         }
 
-        var rawBytes = RandomNumberGenerator.GetBytes(32);
-        var raw = Convert.ToHexString(rawBytes).ToLowerInvariant();
-        var hash = Sha256Hex(raw);
+        var (raw, hash) = TokenIssuer.Issue();
         _db.PasswordResetTokens.Add(new PasswordResetToken
         {
             UserId = user.Id,
@@ -557,7 +568,7 @@ public sealed class AccountService
     /// </summary>
     public async Task<User> ConsumeMagicLoginTokenAsync(string token, CancellationToken ct = default)
     {
-        var hash = Sha256Hex(token);
+        var hash = TokenIssuer.Sha256Hex(token);
         var now = _clock.GetUtcNow().UtcDateTime;
         var row = await _db.PasswordResetTokens.IgnoreQueryFilters()
             .Include(t => t.User)
@@ -725,9 +736,4 @@ public sealed class AccountService
         return hyphenated.Length == 0 ? "org" : hyphenated;
     }
 
-    private static string Sha256Hex(string value)
-    {
-        var bytes = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value));
-        return Convert.ToHexString(bytes).ToLowerInvariant();
-    }
 }

@@ -170,16 +170,24 @@ public static class PiperTransform
 
     // Sorts numerically when every item parses as a decimal (typical for AL
     // ID lists where lexical order would put "999" after "1001"); otherwise
-    // case-insensitive ordinal.
+    // case-insensitive ordinal. Parses once into a (original, parsed) tuple
+    // and sorts on the parsed value — the previous shape reparsed on every
+    // comparison via OrderBy's key selector (#81).
     private static string[] SortItems(string[] items, PiperSortOrder order)
     {
-        var allNumeric = items.All(i => decimal.TryParse(
-            i, NumberStyles.Number, CultureInfo.InvariantCulture, out _));
+        var parsed = new (string Original, decimal Value, bool Ok)[items.Length];
+        var allNumeric = true;
+        for (var i = 0; i < items.Length; i++)
+        {
+            var ok = decimal.TryParse(items[i], NumberStyles.Number, CultureInfo.InvariantCulture, out var value);
+            parsed[i] = (items[i], value, ok);
+            if (!ok) allNumeric = false;
+        }
 
         IEnumerable<string> sorted = allNumeric
             ? (order == PiperSortOrder.Ascending
-                ? items.OrderBy(i => decimal.Parse(i, CultureInfo.InvariantCulture))
-                : items.OrderByDescending(i => decimal.Parse(i, CultureInfo.InvariantCulture)))
+                ? parsed.OrderBy(t => t.Value).Select(t => t.Original)
+                : parsed.OrderByDescending(t => t.Value).Select(t => t.Original))
             : (order == PiperSortOrder.Ascending
                 ? items.OrderBy(i => i, StringComparer.OrdinalIgnoreCase)
                 : items.OrderByDescending(i => i, StringComparer.OrdinalIgnoreCase));

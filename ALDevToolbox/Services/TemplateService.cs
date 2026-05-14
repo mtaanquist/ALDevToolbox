@@ -136,22 +136,30 @@ public class TemplateService
     /// uses, because EF's <c>ThenInclude</c> only recurses two hops. Safe to
     /// call on <c>AsNoTracking</c> reads.
     /// </summary>
-    public async Task HydrateExtensionFolderTreeAsync(IEnumerable<RuntimeTemplate> templates, CancellationToken ct = default)
+    public async Task HydrateExtensionFolderTreeAsync(
+        IEnumerable<RuntimeTemplate> templates,
+        CancellationToken ct = default,
+        bool ignoreOrgFilter = false)
     {
         var allExtensions = templates.SelectMany(t => t.WorkspaceExtensions).ToList();
         if (allExtensions.Count == 0) return;
 
         var extensionIds = allExtensions.Select(e => e.Id).ToList();
-        var folders = await _db.WorkspaceExtensionFolders
-            .AsNoTracking()
+        IQueryable<WorkspaceExtensionFolder> folderQuery = _db.WorkspaceExtensionFolders.AsNoTracking();
+        IQueryable<WorkspaceExtensionFile> fileQuery = _db.WorkspaceExtensionFiles.AsNoTracking();
+        if (ignoreOrgFilter)
+        {
+            folderQuery = folderQuery.IgnoreQueryFilters();
+            fileQuery = fileQuery.IgnoreQueryFilters();
+        }
+        var folders = await folderQuery
             .Where(f => extensionIds.Contains(f.WorkspaceExtensionId))
             .OrderBy(f => f.Ordering)
             .ToListAsync(ct);
         var folderIds = folders.Select(f => f.Id).ToList();
         var files = folderIds.Count == 0
             ? new List<WorkspaceExtensionFile>()
-            : await _db.WorkspaceExtensionFiles
-                .AsNoTracking()
+            : await fileQuery
                 .Where(f => folderIds.Contains(f.WorkspaceExtensionFolderId))
                 .OrderBy(f => f.Ordering)
                 .ToListAsync(ct);
@@ -190,22 +198,30 @@ public class TemplateService
     /// every supplied module. Same flat-query + client-side reassembly pattern
     /// as <see cref="HydrateExtensionFolderTreeAsync(IEnumerable{RuntimeTemplate}, CancellationToken)"/>.
     /// </summary>
-    public async Task HydrateModuleExtensionFolderTreeAsync(IEnumerable<Module> modules, CancellationToken ct = default)
+    public async Task HydrateModuleExtensionFolderTreeAsync(
+        IEnumerable<Module> modules,
+        CancellationToken ct = default,
+        bool ignoreOrgFilter = false)
     {
         var moduleList = modules.ToList();
         if (moduleList.Count == 0) return;
 
         var moduleIds = moduleList.Select(m => m.Id).ToList();
-        var folders = await _db.ModuleExtensionFolders
-            .AsNoTracking()
+        IQueryable<ModuleExtensionFolder> folderQuery = _db.ModuleExtensionFolders.AsNoTracking();
+        IQueryable<ModuleExtensionFile> fileQuery = _db.ModuleExtensionFiles.AsNoTracking();
+        if (ignoreOrgFilter)
+        {
+            folderQuery = folderQuery.IgnoreQueryFilters();
+            fileQuery = fileQuery.IgnoreQueryFilters();
+        }
+        var folders = await folderQuery
             .Where(f => moduleIds.Contains(f.ModuleId))
             .OrderBy(f => f.Ordering)
             .ToListAsync(ct);
         var folderIds = folders.Select(f => f.Id).ToList();
         var files = folderIds.Count == 0
             ? new List<ModuleExtensionFile>()
-            : await _db.ModuleExtensionFiles
-                .AsNoTracking()
+            : await fileQuery
                 .Where(f => folderIds.Contains(f.ModuleExtensionFolderId))
                 .OrderBy(f => f.Ordering)
                 .ToListAsync(ct);

@@ -40,6 +40,13 @@ copy rather than reinvent.
 | `Routing/`        | End-to-end endpoint inspection — boots the app via                  |
 |                   | `WebApplicationFactory<Program>` and asserts the endpoint map is    |
 |                   | unambiguous (catches `MapPost` / `@page` collisions at build time). |
+| `Endpoints/`      | HTTP-layer behaviour for the minimal-API handlers in `Program.cs`   |
+|                   | (antiforgery enforcement, anonymous → redirect, /site-admin 404).   |
+|                   | Boots via the shared `EndpointFactory` in `Infrastructure/`.        |
+| `Components/`     | bUnit smoke tests for the highest-risk `.razor` pages. Use          |
+|                   | `Bunit.TestContext`; stub auth via `AddTestAuthorization()` and     |
+|                   | register real services against `TestDb` rather than mocking a       |
+|                   | single method (CLAUDE.md: no interfaces just for tests).            |
 
 When you add a new test file, match the folder. Resist creating new
 top-level folders for one-off tests — pick the closest existing bucket.

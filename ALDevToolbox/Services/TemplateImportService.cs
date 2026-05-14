@@ -22,15 +22,18 @@ public sealed class TemplateImportService
 {
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
+    private readonly TemplateService _templates;
     private readonly ILogger<TemplateImportService> _logger;
 
     public TemplateImportService(
         AppDbContext db,
         IOrganizationContext orgContext,
+        TemplateService templates,
         ILogger<TemplateImportService> logger)
     {
         _db = db;
         _orgContext = orgContext;
+        _templates = templates;
         _logger = logger;
     }
 
@@ -127,8 +130,14 @@ public sealed class TemplateImportService
             });
         }
 
+        // AsNoTracking: the source is read-only — we fork it into the acting
+        // org. Hydrating the folder tree mutates the source's nav collections
+        // in memory; with tracking on, EF would try to persist those edits
+        // (including the untracked folder rows shoved into them) against the
+        // source. CLAUDE.md: AsNoTracking on every read-only EF query.
         var source = await _db.RuntimeTemplates
             .IgnoreQueryFilters()
+            .AsNoTracking()
             .Where(t => t.Id == systemTemplateId && t.OrganizationId == systemOrgId.Value)
             .Include(t => t.WorkspaceExtensions.OrderBy(e => e.Ordering))
                 .ThenInclude(e => e.Dependencies.OrderBy(d => d.Ordering))
@@ -166,15 +175,20 @@ public sealed class TemplateImportService
         // Source extensions only carry their dependencies via Include. The
         // recursive folder/file tree is loaded flat below and reassembled —
         // EF doesn't recurse on Include and AsNoTracking doesn't do fixup.
-        await HydrateExtensionTreeAsync(source, ct);
+        // Delegate to TemplateService so workspace generation, template
+        // authoring, and cross-org imports share one implementation (#77).
+        // ignoreOrgFilter: the source is the system org, not the acting one.
+        await _templates.HydrateExtensionFolderTreeAsync(new[] { source }, ct, ignoreOrgFilter: true);
 
         var localModulesByKey = new Dictionary<string, Module>(StringComparer.Ordinal);
-        foreach (var defaultModule in source.DefaultModules)
+        var sourceModules = source.DefaultModules
+            .Select(dm => dm.Module ?? throw new InvalidOperationException("Default-module row has no module loaded."))
+            .GroupBy(m => m.Key)
+            .Select(g => g.First())
+            .ToList();
+        await _templates.HydrateModuleExtensionFolderTreeAsync(sourceModules, ct, ignoreOrgFilter: true);
+        foreach (var sourceModule in sourceModules)
         {
-            var sourceModule = defaultModule.Module
-                ?? throw new InvalidOperationException("Default-module row has no module loaded.");
-            if (localModulesByKey.ContainsKey(sourceModule.Key)) continue;
-            await HydrateModuleExtensionTreeAsync(sourceModule, ct);
             localModulesByKey[sourceModule.Key] = await EnsureModuleAsync(sourceModule, actingOrgId, now, ct);
         }
 
@@ -225,110 +239,6 @@ public sealed class TemplateImportService
             stopwatch.ElapsedMilliseconds);
 
         return clone;
-    }
-
-    /// <summary>
-    /// Loads the source template's recursive folder + file rows in two flat
-    /// queries and rebuilds the parent/child links on the in-memory graph.
-    /// Mirrors <c>GenerationService.AssembleFolderTree</c>; pulled inline here
-    /// because the import flow only needs it at this entry point and
-    /// extracting a shared helper would couple two unrelated services.
-    /// </summary>
-    private async Task HydrateExtensionTreeAsync(RuntimeTemplate template, CancellationToken ct)
-    {
-        var extensionIds = template.WorkspaceExtensions.Select(e => e.Id).ToList();
-        if (extensionIds.Count == 0) return;
-
-        var folders = await _db.WorkspaceExtensionFolders
-            .IgnoreQueryFilters()
-            .AsNoTracking()
-            .Where(f => extensionIds.Contains(f.WorkspaceExtensionId))
-            .OrderBy(f => f.Ordering)
-            .ToListAsync(ct);
-        var folderIds = folders.Select(f => f.Id).ToList();
-        var files = folderIds.Count == 0
-            ? new List<WorkspaceExtensionFile>()
-            : await _db.WorkspaceExtensionFiles
-                .IgnoreQueryFilters()
-                .AsNoTracking()
-                .Where(f => folderIds.Contains(f.WorkspaceExtensionFolderId))
-                .OrderBy(f => f.Ordering)
-                .ToListAsync(ct);
-
-        var foldersById = folders.ToDictionary(f => f.Id);
-        var extensionsById = template.WorkspaceExtensions.ToDictionary(e => e.Id);
-
-        foreach (var ext in template.WorkspaceExtensions) ext.Folders.Clear();
-        foreach (var folder in folders)
-        {
-            folder.Folders.Clear();
-            folder.Files.Clear();
-        }
-
-        foreach (var folder in folders)
-        {
-            if (folder.ParentFolderId is int parentId && foldersById.TryGetValue(parentId, out var parent))
-            {
-                parent.Folders.Add(folder);
-            }
-            else if (extensionsById.TryGetValue(folder.WorkspaceExtensionId, out var ext))
-            {
-                ext.Folders.Add(folder);
-            }
-        }
-        foreach (var file in files)
-        {
-            if (foldersById.TryGetValue(file.WorkspaceExtensionFolderId, out var folder))
-            {
-                folder.Files.Add(file);
-            }
-        }
-    }
-
-    private async Task HydrateModuleExtensionTreeAsync(Module module, CancellationToken ct)
-    {
-        var folders = await _db.ModuleExtensionFolders
-            .IgnoreQueryFilters()
-            .AsNoTracking()
-            .Where(f => f.ModuleId == module.Id)
-            .OrderBy(f => f.Ordering)
-            .ToListAsync(ct);
-        var folderIds = folders.Select(f => f.Id).ToList();
-        var files = folderIds.Count == 0
-            ? new List<ModuleExtensionFile>()
-            : await _db.ModuleExtensionFiles
-                .IgnoreQueryFilters()
-                .AsNoTracking()
-                .Where(f => folderIds.Contains(f.ModuleExtensionFolderId))
-                .OrderBy(f => f.Ordering)
-                .ToListAsync(ct);
-
-        var foldersById = folders.ToDictionary(f => f.Id);
-        module.ExtensionFolders.Clear();
-        foreach (var folder in folders)
-        {
-            folder.Folders.Clear();
-            folder.Files.Clear();
-        }
-
-        foreach (var folder in folders)
-        {
-            if (folder.ParentFolderId is int parentId && foldersById.TryGetValue(parentId, out var parent))
-            {
-                parent.Folders.Add(folder);
-            }
-            else
-            {
-                module.ExtensionFolders.Add(folder);
-            }
-        }
-        foreach (var file in files)
-        {
-            if (foldersById.TryGetValue(file.ModuleExtensionFolderId, out var folder))
-            {
-                folder.Files.Add(file);
-            }
-        }
     }
 
     /// <summary>Deep-clones a workspace extension into a fresh entity graph owned by the importing org.</summary>

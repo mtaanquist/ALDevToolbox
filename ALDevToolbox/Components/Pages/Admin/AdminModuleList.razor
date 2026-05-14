@@ -5,6 +5,7 @@
 @inject ILogger<AdminModuleList> Log
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
+@using static ALDevToolbox.Components.Shared.AdminPageHelpers
 
 <PageTitle>Modules · Admin · AL Dev Toolbox</PageTitle>
 
@@ -132,7 +133,7 @@
                         <td>@m.Name</td>
                         <td>@m.Dependencies.Count</td>
                         <td>@(m.IdRangeSize?.ToString() ?? "—")</td>
-                        <td>@StatusFor(m)</td>
+                        <td>@SoftDeleteStatus(m.DeletedAt, m.Deprecated)</td>
                         <td><time datetime="@m.UpdatedAt.ToString("O")">@m.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                         <td class="data-table__actions">
                             <a class="btn btn--sm" href="@($"/admin/modules/{Uri.EscapeDataString(m.Key)}")">
@@ -272,12 +273,4 @@
         }
     }
 
-    private static string Capitalize(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpperInvariant(s[0]) + s[1..];
-
-    private static string StatusFor(Module m)
-    {
-        if (m.DeletedAt is not null) return "Deleted";
-        if (m.Deprecated) return "Deprecated";
-        return "Active";
-    }
 }

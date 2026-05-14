@@ -66,7 +66,17 @@ public sealed class BackupScheduler : BackgroundService
         await using var scope = _services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var backups = scope.ServiceProvider.GetRequiredService<BackupService>();
+        await TickOnceAsync(db, backups, ct);
+    }
 
+    /// <summary>
+    /// One scheduler decision against the supplied scope. Public for tests
+    /// (Issue #71): they drive the schedule decision matrix directly with a
+    /// <see cref="TimeProvider"/> they control, bypassing the
+    /// <c>Task.Delay</c> loop in <see cref="ExecuteAsync"/>.
+    /// </summary>
+    internal async Task TickOnceAsync(AppDbContext db, BackupService backups, CancellationToken ct)
+    {
         var settings = await db.SystemSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == 1, ct);
         if (settings is null || !settings.BackupScheduleEnabled) return;

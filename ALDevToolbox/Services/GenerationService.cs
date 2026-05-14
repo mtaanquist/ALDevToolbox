@@ -34,6 +34,7 @@ public class GenerationService
     private readonly AppDbContext _db;
     private readonly WorkspaceConfigService _config;
     private readonly OrganizationConfigService _orgConfig;
+    private readonly TemplateService _templates;
     private readonly IOrganizationContext _orgContext;
     private readonly ILogger<GenerationService> _logger;
 
@@ -41,12 +42,14 @@ public class GenerationService
         AppDbContext db,
         WorkspaceConfigService config,
         OrganizationConfigService orgConfig,
+        TemplateService templates,
         IOrganizationContext orgContext,
         ILogger<GenerationService> logger)
     {
         _db = db;
         _config = config;
         _orgConfig = orgConfig;
+        _templates = templates;
         _orgContext = orgContext;
         _logger = logger;
     }
@@ -271,67 +274,11 @@ public class GenerationService
                 ["TemplateKey"] = $"Template '{key}' was not found.",
             });
 
-        // Load every folder + file for this template in two flat queries, then
-        // wire up the recursive tree client-side. AsNoTracking + FK fixup
-        // doesn't fire, so we build the parent/child links by hand.
-        var extensionIds = template.WorkspaceExtensions.Select(e => e.Id).ToList();
-        var folders = await _db.WorkspaceExtensionFolders
-            .AsNoTracking()
-            .Where(f => extensionIds.Contains(f.WorkspaceExtensionId))
-            .OrderBy(f => f.Ordering)
-            .ToListAsync(ct);
-        var folderIds = folders.Select(f => f.Id).ToList();
-        var files = await _db.WorkspaceExtensionFiles
-            .AsNoTracking()
-            .Where(f => folderIds.Contains(f.WorkspaceExtensionFolderId))
-            .OrderBy(f => f.Ordering)
-            .ToListAsync(ct);
-
-        AssembleFolderTree(template, folders, files);
+        // Folder tree hydration is delegated to TemplateService so workspace
+        // generation, template authoring loads, and cross-org imports share
+        // one implementation (#77).
+        await _templates.HydrateExtensionFolderTreeAsync(new[] { template }, ct);
         return template;
-    }
-
-    /// <summary>
-    /// Wires up the in-memory recursive tree on each extension. The DB stores
-    /// the folders as a flat list with parent links; here we attach each
-    /// folder to its parent's <see cref="WorkspaceExtensionFolder.Folders"/>
-    /// collection (or the extension's <see cref="WorkspaceExtension.Folders"/>
-    /// when it's a root), and each file to its folder's
-    /// <see cref="WorkspaceExtensionFolder.Files"/> collection.
-    /// </summary>
-    private static void AssembleFolderTree(RuntimeTemplate template, List<WorkspaceExtensionFolder> folders, List<WorkspaceExtensionFile> files)
-    {
-        var foldersById = folders.ToDictionary(f => f.Id);
-        var extensionsById = template.WorkspaceExtensions.ToDictionary(e => e.Id);
-
-        // Reset any nav collections EF may have hydrated half-way and rebuild
-        // them deterministically.
-        foreach (var ext in template.WorkspaceExtensions) ext.Folders.Clear();
-        foreach (var folder in folders)
-        {
-            folder.Folders.Clear();
-            folder.Files.Clear();
-        }
-
-        foreach (var folder in folders)
-        {
-            if (folder.ParentFolderId is int parentId && foldersById.TryGetValue(parentId, out var parent))
-            {
-                parent.Folders.Add(folder);
-            }
-            else if (extensionsById.TryGetValue(folder.WorkspaceExtensionId, out var ext))
-            {
-                ext.Folders.Add(folder);
-            }
-        }
-
-        foreach (var file in files)
-        {
-            if (foldersById.TryGetValue(file.WorkspaceExtensionFolderId, out var folder))
-            {
-                folder.Files.Add(file);
-            }
-        }
     }
 
     private async Task<List<Module>> LoadSelectedModulesAsync(IReadOnlyList<string> moduleKeys, CancellationToken ct)
@@ -344,21 +291,7 @@ public class GenerationService
             .Include(m => m.Dependencies.OrderBy(d => d.Ordering))
             .ToListAsync(ct);
 
-        // Module folder/file trees, same flat-then-reassemble pattern as
-        // workspace extensions.
-        var moduleIds = modules.Select(m => m.Id).ToList();
-        var folders = await _db.ModuleExtensionFolders
-            .AsNoTracking()
-            .Where(f => moduleIds.Contains(f.ModuleId))
-            .OrderBy(f => f.Ordering)
-            .ToListAsync(ct);
-        var folderIds = folders.Select(f => f.Id).ToList();
-        var files = await _db.ModuleExtensionFiles
-            .AsNoTracking()
-            .Where(f => folderIds.Contains(f.ModuleExtensionFolderId))
-            .OrderBy(f => f.Ordering)
-            .ToListAsync(ct);
-        AssembleModuleFolderTree(modules, folders, files);
+        await _templates.HydrateModuleExtensionFolderTreeAsync(modules, ct);
 
         // Preserve user-selected ordering — EF returns them in whatever
         // order the IN-clause matched.
@@ -371,39 +304,6 @@ public class GenerationService
         return ordered;
     }
 
-    private static void AssembleModuleFolderTree(List<Module> modules, List<ModuleExtensionFolder> folders, List<ModuleExtensionFile> files)
-    {
-        var foldersById = folders.ToDictionary(f => f.Id);
-        var modulesById = modules.ToDictionary(m => m.Id);
-
-        foreach (var module in modules) module.ExtensionFolders.Clear();
-        foreach (var folder in folders)
-        {
-            folder.Folders.Clear();
-            folder.Files.Clear();
-        }
-
-        foreach (var folder in folders)
-        {
-            if (folder.ParentFolderId is int parentId && foldersById.TryGetValue(parentId, out var parent))
-            {
-                parent.Folders.Add(folder);
-            }
-            else if (modulesById.TryGetValue(folder.ModuleId, out var module))
-            {
-                module.ExtensionFolders.Add(folder);
-            }
-        }
-
-        foreach (var file in files)
-        {
-            if (foldersById.TryGetValue(file.ModuleExtensionFolderId, out var folder))
-            {
-                folder.Files.Add(file);
-            }
-        }
-    }
-
     // ===== Extension list building =====
 
     /// <summary>
@@ -413,7 +313,7 @@ public class GenerationService
     /// <see cref="EmittableExtension"/> carries a fresh GUID, its resolved
     /// id-range, the substituted display name, and the source folder tree.
     /// </summary>
-    private static List<EmittableExtension> BuildExtensionList(RuntimeTemplate template, ProjectPlan plan, IReadOnlyList<Module> modules)
+    private List<EmittableExtension> BuildExtensionList(RuntimeTemplate template, ProjectPlan plan, IReadOnlyList<Module> modules)
     {
         var selectedOptional = new HashSet<string>(plan.SelectedExtensionPaths, StringComparer.Ordinal);
         var list = new List<EmittableExtension>();
@@ -465,7 +365,7 @@ public class GenerationService
         return (cursor, cursor + size - 1, cursor + size);
     }
 
-    private static EmittableExtension BuildFromTemplate(WorkspaceExtension ext, RuntimeTemplate template, ProjectPlan plan, int from, int to)
+    private EmittableExtension BuildFromTemplate(WorkspaceExtension ext, RuntimeTemplate template, ProjectPlan plan, int from, int to)
     {
         var name = SubstituteScalar(ext.NameTemplate, plan, template);
         return new EmittableExtension(
@@ -487,7 +387,7 @@ public class GenerationService
                 .ToList());
     }
 
-    private static EmittableExtension BuildFromModule(Module module, RuntimeTemplate template, ProjectPlan plan, int from, int to)
+    private EmittableExtension BuildFromModule(Module module, RuntimeTemplate template, ProjectPlan plan, int from, int to)
     {
         // Module-cloned extension name defaults to "{{extension_prefix}} {module.name}".
         // The substitution happens up-front so the resolved name is stable for
@@ -850,7 +750,7 @@ public class GenerationService
         // too — the per-extension layering overwrites application / platform
         // with plan values; the affix / extension_prefix entries are
         // mustache-template inputs, not app.json content.
-        var defaults = JsonNode.Parse(JsonSerializer.Serialize(template.Defaults, JsonOptions))?.AsObject();
+        var defaults = JsonSerializer.SerializeToNode(template.Defaults, JsonOptions)?.AsObject();
         if (defaults is not null)
         {
             foreach (var kvp in defaults.ToList())
@@ -1060,11 +960,12 @@ public class GenerationService
 
     /// <summary>
     /// Scalar substitution used for the extension name (no folder-context
-    /// awareness yet — names are built before folder traversal). The
-    /// substitution table is the same as the file-content path but
-    /// <c>{{namespace}}</c> resolves to the empty string here.
+    /// awareness yet — names are built before folder traversal). Delegates
+    /// to <see cref="SubstituteMustache"/> with an empty FolderPath so
+    /// <c>{{namespace}}</c> resolves to the empty string; #81 collapses the
+    /// previously duplicated switch.
     /// </summary>
-    private static string SubstituteScalar(string source, ProjectPlan plan, RuntimeTemplate template)
+    private string SubstituteScalar(string source, ProjectPlan plan, RuntimeTemplate template)
     {
         var ctx = new MustacheContext(
             Name: source,
@@ -1075,23 +976,7 @@ public class GenerationService
             ExtensionPrefix: plan.ExtensionPrefix,
             Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
             FolderPath: string.Empty);
-        return MustacheRegex.Replace(source, match =>
-        {
-            var key = match.Groups[1].Value;
-            return key switch
-            {
-                "name" => ctx.Name,
-                "workspaceName" => ctx.WorkspaceName,
-                "shortName" => ctx.ShortName,
-                "moduleName" => ctx.ModuleName,
-                "publisher" => ctx.Publisher,
-                "extension_prefix" => ctx.ExtensionPrefix,
-                "affix" => ctx.Affix,
-                "namespace" => string.Empty,
-                "guid" => Guid.NewGuid().ToString(),
-                _ => match.Value,
-            };
-        });
+        return SubstituteMustache(source, ctx);
     }
 
     private record MustacheContext(

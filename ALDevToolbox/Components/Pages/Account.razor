@@ -1,13 +1,16 @@
 @page "/account"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
 @using ALDevToolbox.Data
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Services
+@using ALDevToolbox.Components.Shared
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.EntityFrameworkCore
 @inject AppDbContext Db
 @inject IOrganizationContext Org
 @inject AuthenticationStateProvider AuthState
+@inject IJSRuntime JS
 
 <PageTitle>Your account · AL Dev Toolbox</PageTitle>
 
@@ -78,7 +81,7 @@ else
         {
             <p class="muted">Removes your user row. The organisation keeps running.</p>
         }
-        <form method="post" action="/auth/account/delete" class="form-grid">
+        <form method="post" action="/auth/account/delete" class="form-grid" id="delete-account-form">
             <AntiforgeryToken />
             @if (_isLastActiveAdmin)
             {
@@ -87,10 +90,12 @@ else
                     I understand the organisation will be deleted.
                 </label>
             }
-            <button type="submit" class="btn btn--danger">Delete my account</button>
+            <button type="button" class="btn btn--danger" @onclick="ConfirmDeleteAsync">Delete my account</button>
         </form>
     </section>
 }
+
+<ConfirmDialog @ref="_confirmDelete" />
 
 @code {
     [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }
@@ -100,6 +105,24 @@ else
     private User? _user;
     private Organization? _organization;
     private bool _isLastActiveAdmin;
+    private ConfirmDialog? _confirmDelete;
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (_confirmDelete is null) return;
+        var message = _isLastActiveAdmin
+            ? $"This will delete the {_organization?.Name} organisation and every template, module and audit row in it. There is no undo."
+            : "Your user row will be removed. The organisation keeps running.";
+        var confirmed = await _confirmDelete.OpenAsync(
+            title: "Delete your account?",
+            message: message,
+            confirmLabel: "Delete account",
+            confirmButtonClass: "btn--danger");
+        if (!confirmed) return;
+        // Submit the underlying form natively so the existing antiforgery +
+        // sign-out flow at /auth/account/delete runs unchanged.
+        await JS.InvokeVoidAsync("document.getElementById('delete-account-form').submit");
+    }
 
     protected override async Task OnInitializedAsync()
     {
