@@ -88,27 +88,44 @@
                         {
                             var index = i;
                             var row = _form.Entries[index];
-                            <div class="folder-editor__row">
-                                <div class="folder-editor__row-head">
-                                    <div class="folder-editor__order">
-                                        <button type="button" class="btn btn--sm" disabled="@(index == 0)"
-                                                @onclick="() => MoveEntry(index, -1)" title="Move up">
-                                            <Icon Name="arrow-up" Width="12" Height="12" />
-                                        </button>
-                                        <button type="button" class="btn btn--sm" disabled="@(index == _form.Entries.Count - 1)"
-                                                @onclick="() => MoveEntry(index, 1)" title="Move down">
-                                            <Icon Name="arrow-down" Width="12" Height="12" />
-                                        </button>
+                            <div class="folder-editor__row app-versions-editor__row">
+                                <div class="folder-editor__row-head app-versions-editor__row-head">
+                                    <div class="folder-editor__order app-versions-editor__order">
+                                        <div class="app-versions-editor__order-row">
+                                            <button type="button" class="btn btn--sm app-versions-editor__order-btn"
+                                                    disabled="@(index == 0)"
+                                                    @onclick="() => MoveEntryToTop(index)" title="Move to top">
+                                                <Icon Name="chevrons-up" Width="12" Height="12" />
+                                            </button>
+                                            <button type="button" class="btn btn--sm app-versions-editor__order-btn"
+                                                    disabled="@(index == 0)"
+                                                    @onclick="() => MoveEntry(index, -1)" title="Move up">
+                                                <Icon Name="chevron-up" Width="12" Height="12" />
+                                            </button>
+                                        </div>
+                                        <div class="app-versions-editor__order-row">
+                                            <button type="button" class="btn btn--sm app-versions-editor__order-btn"
+                                                    disabled="@(index == _form.Entries.Count - 1)"
+                                                    @onclick="() => MoveEntry(index, 1)" title="Move down">
+                                                <Icon Name="chevron-down" Width="12" Height="12" />
+                                            </button>
+                                            <button type="button" class="btn btn--sm app-versions-editor__order-btn"
+                                                    disabled="@(index == _form.Entries.Count - 1)"
+                                                    @onclick="() => MoveEntryToBottom(index)" title="Move to bottom">
+                                                <Icon Name="chevrons-down" Width="12" Height="12" />
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div class="folder-editor__path">
+                                    <div class="folder-editor__path app-versions-editor__path">
                                         <input type="text" required placeholder="Key (e.g. bc-2026-w1)"
                                                pattern="[a-z0-9-]+"
                                                title="Lowercase letters, digits, hyphens."
                                                @bind="row.Key" @bind:event="oninput" />
                                         <FieldError Field="@($"Entries[{index}].Key")" Errors="_fieldErrors" />
                                     </div>
-                                    <button type="button" class="btn btn--sm" @onclick="() => RemoveEntry(index)" title="Remove entry">
-                                        <Icon Name="trash-2" Width="12" Height="12" />
+                                    <button type="button" class="btn btn--sm btn--danger app-versions-editor__remove"
+                                            @onclick="() => RemoveEntry(index)" title="Remove entry">
+                                        <Icon Name="trash-2" Width="14" Height="14" />
                                     </button>
                                 </div>
                                 <div class="dep-editor__fields">
@@ -250,6 +267,24 @@
         }
         (_form.Entries[index], _form.Entries[target]) =
             (_form.Entries[target], _form.Entries[index]);
+    }
+
+    private void MoveEntryToTop(int index)
+    {
+        if (_form is null) return;
+        if (index <= 0 || index >= _form.Entries.Count) return;
+        var row = _form.Entries[index];
+        _form.Entries.RemoveAt(index);
+        _form.Entries.Insert(0, row);
+    }
+
+    private void MoveEntryToBottom(int index)
+    {
+        if (_form is null) return;
+        if (index < 0 || index >= _form.Entries.Count - 1) return;
+        var row = _form.Entries[index];
+        _form.Entries.RemoveAt(index);
+        _form.Entries.Add(row);
     }
 
     private async Task SaveAsync()
