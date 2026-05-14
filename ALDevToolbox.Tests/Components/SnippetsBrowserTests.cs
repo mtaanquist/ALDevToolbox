@@ -105,8 +105,11 @@ public sealed class SnippetsBrowserTests : IDisposable
             cut.Markup.Should().NotContain("Old pattern");
         });
 
-        var checkbox = cut.Find("input[type=checkbox]");
-        checkbox.Change(true);
+        // Find-then-Change can race a re-render and invalidate the event
+        // handler id between calls; wrap both in InvokeAsync so the renderer
+        // sees them as a single synchronised operation. See the bUnit error
+        // message for UnknownEventHandlerIdException, which spells this out.
+        cut.InvokeAsync(() => cut.Find("input[type=checkbox]").Change(true));
 
         cut.WaitForAssertion(() =>
         {
