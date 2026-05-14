@@ -11,7 +11,7 @@ namespace ALDevToolbox.Services.Account;
 /// magic-link flow). Carved out of the original AccountService in #88 so the
 /// security-sensitive part of the auth surface can be reviewed in isolation.
 /// </summary>
-public sealed class AuthenticationService
+public sealed class AuthService
 {
     public const int MaxAttemptsPerEmail = 10;
     public const int MaxAttemptsPerIp = 30;
@@ -28,10 +28,10 @@ public sealed class AuthenticationService
         BCrypt.Net.BCrypt.HashPassword("not-a-real-password", BcryptWorkFactor));
 
     private readonly AppDbContext _db;
-    private readonly ILogger<AuthenticationService> _logger;
+    private readonly ILogger<AuthService> _logger;
     private readonly TimeProvider _clock;
 
-    public AuthenticationService(AppDbContext db, ILogger<AuthenticationService> logger, TimeProvider clock)
+    public AuthService(AppDbContext db, ILogger<AuthService> logger, TimeProvider clock)
     {
         _db = db;
         _logger = logger;

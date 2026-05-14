@@ -268,8 +268,8 @@ public sealed class AccountAdministrationTests : IDisposable
 
     // ===== Fixture helpers =====
 
-    private AuthenticationService NewAuth(Data.AppDbContext ctx) =>
-        new(ctx, NullLogger<AuthenticationService>.Instance, _clock);
+    private AuthService NewAuth(Data.AppDbContext ctx) =>
+        new(ctx, NullLogger<AuthService>.Instance, _clock);
 
     /// <summary>
     /// Slim AccountService — signup + self-service. Used for ChangePassword,

@@ -11,7 +11,7 @@ namespace ALDevToolbox.Tests.Auth;
 
 /// <summary>
 /// Behavioural tests for the (post-#88) account surface: BCrypt round-trip
-/// and login lockout/rate-limit on <see cref="AuthenticationService"/>,
+/// and login lockout/rate-limit on <see cref="AuthService"/>,
 /// signup + last-active-admin on <see cref="AccountService"/> /
 /// <see cref="UserAdministrationService"/>, and reset-token single-use on
 /// <see cref="PasswordResetService"/>.
@@ -23,8 +23,8 @@ public sealed class AccountServiceTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
-    private AuthenticationService NewAuth(Data.AppDbContext ctx) =>
-        new(ctx, NullLogger<AuthenticationService>.Instance, _clock);
+    private AuthService NewAuth(Data.AppDbContext ctx) =>
+        new(ctx, NullLogger<AuthService>.Instance, _clock);
 
     private AccountService NewAccounts(Data.AppDbContext ctx) =>
         new(ctx, NewAuth(ctx), NullLogger<AccountService>.Instance, _clock);
@@ -153,7 +153,7 @@ public sealed class AccountServiceTests : IDisposable
 
         var ctx = _db.NewContext();
         var auth = NewAuth(ctx);
-        for (var i = 0; i < AuthenticationService.LockoutThreshold; i++)
+        for (var i = 0; i < AuthService.LockoutThreshold; i++)
         {
             var (outcome, _) = await auth.TryLoginAsync("lockme@example.com", "wrongpassword12345", "1.2.3.4");
             outcome.Should().Be(LoginOutcome.InvalidCredentials);
@@ -164,7 +164,7 @@ public sealed class AccountServiceTests : IDisposable
         next.Should().Be(LoginOutcome.LockedOut);
 
         // Advance the clock past the lockout window.
-        _clock.Advance(AuthenticationService.LockoutWindow + TimeSpan.FromSeconds(1));
+        _clock.Advance(AuthService.LockoutWindow + TimeSpan.FromSeconds(1));
         var (later, user) = await auth.TryLoginAsync("lockme@example.com", "rightpasswordlong", "1.2.3.4");
         later.Should().Be(LoginOutcome.Success);
         user.Should().NotBeNull();
@@ -193,7 +193,7 @@ public sealed class AccountServiceTests : IDisposable
         var ctx = _db.NewContext();
         var auth = NewAuth(ctx);
 
-        for (var i = 0; i < AuthenticationService.LockoutThreshold - 1; i++)
+        for (var i = 0; i < AuthService.LockoutThreshold - 1; i++)
         {
             var (failed, _) = await auth.TryLoginAsync("boundary@example.com", "wrongpassword12345", "1.2.3.4");
             failed.Should().Be(LoginOutcome.InvalidCredentials);
@@ -230,7 +230,7 @@ public sealed class AccountServiceTests : IDisposable
 
         var ctx = _db.NewContext();
         var auth = NewAuth(ctx);
-        for (var i = 0; i < AuthenticationService.LockoutThreshold; i++)
+        for (var i = 0; i < AuthService.LockoutThreshold; i++)
         {
             await auth.TryLoginAsync("spammed@example.com", "wrongpassword12345", "1.2.3.4");
         }
@@ -245,7 +245,7 @@ public sealed class AccountServiceTests : IDisposable
         var ctx = _db.NewContext();
         var auth = NewAuth(ctx);
 
-        for (var i = 0; i < AuthenticationService.MaxAttemptsPerEmail; i++)
+        for (var i = 0; i < AuthService.MaxAttemptsPerEmail; i++)
         {
             await auth.TryLoginAsync("noone@example.com", "wrong", "1.2.3.4");
         }

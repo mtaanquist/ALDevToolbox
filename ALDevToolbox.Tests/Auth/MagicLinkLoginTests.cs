@@ -24,7 +24,7 @@ public sealed class MagicLinkLoginTests : IDisposable
 
     private PasswordResetService NewSvc(Data.AppDbContext ctx) =>
         new(ctx,
-            new AuthenticationService(ctx, NullLogger<AuthenticationService>.Instance, _clock),
+            new AuthService(ctx, NullLogger<AuthService>.Instance, _clock),
             _clock);
 
     private async Task<User> SeedActiveUserAsync(string email = "user@example.com", int id = 700)
@@ -156,7 +156,7 @@ public sealed class MagicLinkLoginTests : IDisposable
         await using var ctx = _db.NewContext();
         var svc = NewSvc(ctx);
 
-        for (var i = 0; i < AuthenticationService.MaxAttemptsPerEmail; i++)
+        for (var i = 0; i < AuthService.MaxAttemptsPerEmail; i++)
         {
             var t = await svc.CreateMagicLoginTokenAsync("user@example.com", "1.2.3.4");
             t.Should().NotBeNull("attempt {0} is within the rate window", i);
@@ -168,7 +168,7 @@ public sealed class MagicLinkLoginTests : IDisposable
         var rows = await ctx.PasswordResetTokens
             .Where(t => t.Purpose == TokenPurpose.MagicLogin)
             .CountAsync();
-        rows.Should().Be(AuthenticationService.MaxAttemptsPerEmail, "rate-limited requests must not persist tokens");
+        rows.Should().Be(AuthService.MaxAttemptsPerEmail, "rate-limited requests must not persist tokens");
     }
 
     [Fact]

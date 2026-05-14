@@ -10,12 +10,6 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using static ALDevToolbox.Endpoints.EndpointHelpers;
 
-// `AuthenticationService` exists in both ALDevToolbox.Services.Account and
-// Microsoft.AspNetCore.Authentication; alias the former so the unqualified
-// name in this file refers to ours, and the framework one stays reachable as
-// the (rarely-used) fully-qualified name when needed.
-using AuthenticationService = ALDevToolbox.Services.Account.AuthenticationService;
-
 namespace ALDevToolbox.Endpoints;
 
 internal static class AccountEndpoints
@@ -27,7 +21,7 @@ internal static class AccountEndpoints
         // seeding for orgs being touched by their first admin login.
         app.MapPost("/auth/login", async (
             HttpContext ctx,
-            AuthenticationService auth,
+            AuthService auth,
             IAntiforgery antiforgery,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>

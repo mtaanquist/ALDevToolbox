@@ -36,12 +36,12 @@ public enum SignupOutcome
 /// User-initiated lifecycle on the account: signup (pending or auto-provision)
 /// and the signed-in self-service surface (change password, change display
 /// name, delete account). Slimmed in #88: login + lockout live in
-/// <see cref="AuthenticationService"/>, admin user management in
+/// <see cref="AuthService"/>, admin user management in
 /// <see cref="UserAdministrationService"/>, credential-recovery tokens in
 /// <see cref="PasswordResetService"/>.
 /// </summary>
 /// <remarks>
-/// Depends on <see cref="AuthenticationService"/> for password hashing /
+/// Depends on <see cref="AuthService"/> for password hashing /
 /// verification so the BCrypt work factor and the password policy live in
 /// exactly one place.
 /// </remarks>
@@ -50,11 +50,11 @@ public sealed class AccountService
     private static readonly Regex SlugRegex = new("^[a-z0-9-]+$", RegexOptions.Compiled);
 
     private readonly AppDbContext _db;
-    private readonly AuthenticationService _auth;
+    private readonly AuthService _auth;
     private readonly ILogger<AccountService> _logger;
     private readonly TimeProvider _clock;
 
-    public AccountService(AppDbContext db, AuthenticationService auth, ILogger<AccountService> logger, TimeProvider clock)
+    public AccountService(AppDbContext db, AuthService auth, ILogger<AccountService> logger, TimeProvider clock)
     {
         _db = db;
         _auth = auth;
@@ -75,7 +75,7 @@ public sealed class AccountService
         var errors = new Dictionary<string, string>();
         ValidateEmail(email, errors);
         ValidateDisplayName(displayName, errors);
-        AuthenticationService.ValidatePassword(password, errors);
+        AuthService.ValidatePassword(password, errors);
         var slug = (organizationSlug ?? string.Empty).Trim().ToLowerInvariant();
         if (slug.Length > 0 && !SlugRegex.IsMatch(slug))
         {
@@ -83,7 +83,7 @@ public sealed class AccountService
         }
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
-        var normalised = AuthenticationService.NormaliseEmail(email);
+        var normalised = AuthService.NormaliseEmail(email);
         var existingUser = await _db.Users
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Email == normalised, ct);
@@ -172,7 +172,7 @@ public sealed class AccountService
             throw new PlanValidationException(new Dictionary<string, string> { ["CurrentPassword"] = "Current password is incorrect." });
         }
         var errors = new Dictionary<string, string>();
-        AuthenticationService.ValidatePassword(newPassword, errors, fieldName: "NewPassword");
+        AuthService.ValidatePassword(newPassword, errors, fieldName: "NewPassword");
         if (errors.Count > 0) throw new PlanValidationException(errors);
         user.PasswordHash = _auth.HashPassword(newPassword);
         await _db.SaveChangesAsync(ct);

@@ -18,7 +18,7 @@ internal static class StartupTasks
         using var scope = app.Services.CreateScope();
         var stopping = app.Lifetime.ApplicationStopping;
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var auth = scope.ServiceProvider.GetRequiredService<ALDevToolbox.Services.Account.AuthenticationService>();
+        var auth = scope.ServiceProvider.GetRequiredService<ALDevToolbox.Services.Account.AuthService>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
         await db.Database.MigrateAsync(stopping);
 

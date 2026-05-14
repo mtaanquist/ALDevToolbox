@@ -18,10 +18,10 @@ public sealed class PasswordResetService
     public static readonly TimeSpan MagicLinkTokenLifetime = TimeSpan.FromMinutes(15);
 
     private readonly AppDbContext _db;
-    private readonly AuthenticationService _auth;
+    private readonly AuthService _auth;
     private readonly TimeProvider _clock;
 
-    public PasswordResetService(AppDbContext db, AuthenticationService auth, TimeProvider clock)
+    public PasswordResetService(AppDbContext db, AuthService auth, TimeProvider clock)
     {
         _db = db;
         _auth = auth;
@@ -38,7 +38,7 @@ public sealed class PasswordResetService
     /// </summary>
     public async Task<string?> CreatePasswordResetTokenAsync(string email, CancellationToken ct = default)
     {
-        var normalised = AuthenticationService.NormaliseEmail(email);
+        var normalised = AuthService.NormaliseEmail(email);
         var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Email == normalised, ct);
         if (user is null || user.Status == UserStatus.Disabled)
         {
@@ -68,7 +68,7 @@ public sealed class PasswordResetService
     public async Task ConsumePasswordResetTokenAsync(string token, string newPassword, CancellationToken ct = default)
     {
         var errors = new Dictionary<string, string>();
-        AuthenticationService.ValidatePassword(newPassword, errors, fieldName: "Password");
+        AuthService.ValidatePassword(newPassword, errors, fieldName: "Password");
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
         var hash = TokenIssuer.Sha256Hex(token);
@@ -98,7 +98,7 @@ public sealed class PasswordResetService
     /// </summary>
     public async Task<string?> CreateMagicLoginTokenAsync(string email, string ip, CancellationToken ct = default)
     {
-        var normalised = AuthenticationService.NormaliseEmail(email);
+        var normalised = AuthService.NormaliseEmail(email);
         var now = _clock.GetUtcNow().UtcDateTime;
 
         if (await _auth.IsRateLimitedAsync(normalised, ip, now, ct))
