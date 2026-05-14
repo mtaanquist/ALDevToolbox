@@ -2055,6 +2055,44 @@ ul.form-field-error {
 .folder-editor__row--depth-2 { border-left: 2px solid var(--color-border-strong, var(--color-border)); margin-left: 4px; }
 .folder-editor__row--depth-3 { border-left: 2px solid var(--color-border-strong, var(--color-border)); margin-left: 8px; }
 
+/* Application versions editor: the reorder block has four buttons in a 2x2
+   grid (top row moves up, bottom row moves down), and the input box plus
+   the destructive Remove button stretch to match its height so the
+   row-head reads as a single aligned strip. */
+.app-versions-editor__row-head {
+    align-items: stretch;
+}
+
+.app-versions-editor__order {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.app-versions-editor__order-row {
+    display: flex;
+    gap: 2px;
+}
+
+.app-versions-editor__order-btn {
+    width: 28px;
+    height: 14px;
+    padding: 0;
+    justify-content: center;
+    gap: 0;
+}
+
+.app-versions-editor__path {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.app-versions-editor__remove {
+    align-self: stretch;
+    padding: 0 10px;
+}
+
 /* Extension list — each extension is a folder-editor-style row with a richer
    body of nested sections (metadata, dependencies, folders). */
 .extension-editor__list {
