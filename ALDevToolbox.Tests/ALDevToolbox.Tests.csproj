@@ -26,6 +26,10 @@
          is exercised. Used by Routing/EndpointAmbiguityTests to detect route
          collisions at build time instead of at request time. -->
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.*" />
+    <!-- bUnit renders Blazor components without a browser. Issue #72:
+         pins the three-state-list and primary-button invariants from
+         CLAUDE.md that the service-layer tests can't see. -->
+    <PackageReference Include="bunit" Version="1.*" />
     <!-- Testcontainers drives the local-dev path; CI bypasses it by setting
          ALDT_TEST_POSTGRES_CONNECTION to the runner-provided service container,
          so the package is restored but not exercised on the CI runner. -->
