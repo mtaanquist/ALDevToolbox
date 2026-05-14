@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject CatalogService Catalog
 @inject ILogger<AdminCatalog> Log
+@using System.Text.RegularExpressions
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 
@@ -10,6 +11,13 @@
     Flat editor for the well-known dependency catalogue. The whole list is
     submitted on Save; the service reconciles row by row so unchanged entries
     keep their primary keys and the audit log only records real changes.
+
+    Validation rendering uses Blazor's EditContext + ValidationMessageStore
+    (#91): server-side PlanValidationException errors are translated into
+    per-field FieldIdentifiers so <ValidationMessage> picks them up next to
+    each input. This is the proof-of-concept migration; the other admin
+    forms (AdminTemplateEdit, AdminModuleEdit, AdminApplicationVersions)
+    can follow the same pattern.
 *@
 
 <PageTitle>Catalogue · Admin · AL Dev Toolbox</PageTitle>
@@ -30,7 +38,7 @@
         </a>
     </header>
 
-    @if (_form is null)
+    @if (_form is null || _editContext is null)
     {
         <p class="muted">Loading…</p>
     }
@@ -45,7 +53,7 @@
             <p class="form-success" role="status">@_saveSuccess</p>
         }
 
-        <form class="form-grid admin-template-edit__form" @onsubmit="SaveAsync" @onsubmit:preventDefault>
+        <EditForm EditContext="_editContext" OnValidSubmit="SaveAsync" class="form-grid admin-template-edit__form">
             <section class="form-section">
                 <div class="folder-editor__header">
                     <label class="section-label">Catalogue entries</label>
@@ -81,11 +89,11 @@
                                         </button>
                                     </div>
                                     <div class="folder-editor__path">
-                                        <input type="text" required placeholder="GUID (e.g. 12345678-1234-1234-1234-1234567890ab)"
-                                               pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-                                               title="Must be a GUID in 8-4-4-4-12 hex form."
-                                               @bind="row.DepId" @bind:event="oninput" />
-                                        <FieldError Field="@($"Entries[{index}].DepId")" Errors="_fieldErrors" />
+                                        <InputText required placeholder="GUID (e.g. 12345678-1234-1234-1234-1234567890ab)"
+                                                   pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                                                   title="Must be a GUID in 8-4-4-4-12 hex form."
+                                                   @bind-Value="row.DepId" />
+                                        <ValidationMessage For="@(() => row.DepId)" />
                                     </div>
                                     <button type="button" class="btn btn--sm" @onclick="() => RemoveEntry(index)" title="Remove entry">
                                         <Icon Name="trash-2" Width="12" Height="12" />
@@ -93,23 +101,20 @@
                                 </div>
                                 <div class="dep-editor__fields">
                                     <div>
-                                        <input type="text" required placeholder="Name"
-                                               @bind="row.DepName" @bind:event="oninput" />
-                                        <FieldError Field="@($"Entries[{index}].DepName")" Errors="_fieldErrors" />
+                                        <InputText required placeholder="Name" @bind-Value="row.DepName" />
+                                        <ValidationMessage For="@(() => row.DepName)" />
                                     </div>
                                     <div>
-                                        <input type="text" required placeholder="Publisher"
-                                               @bind="row.DepPublisher" @bind:event="oninput" />
-                                        <FieldError Field="@($"Entries[{index}].DepPublisher")" Errors="_fieldErrors" />
+                                        <InputText required placeholder="Publisher" @bind-Value="row.DepPublisher" />
+                                        <ValidationMessage For="@(() => row.DepPublisher)" />
                                     </div>
                                     <div>
-                                        <input type="text" required placeholder="Default version (e.g. 1.0.0.0)"
-                                               @bind="row.DepVersionDefault" @bind:event="oninput" />
-                                        <FieldError Field="@($"Entries[{index}].DepVersionDefault")" Errors="_fieldErrors" />
+                                        <InputText required placeholder="Default version (e.g. 1.0.0.0)"
+                                                   @bind-Value="row.DepVersionDefault" />
+                                        <ValidationMessage For="@(() => row.DepVersionDefault)" />
                                     </div>
                                     <div>
-                                        <input type="text" placeholder="Category (e.g. Continia)"
-                                               @bind="row.Category" @bind:event="oninput" />
+                                        <InputText placeholder="Category (e.g. Continia)" @bind-Value="row.Category" />
                                     </div>
                                 </div>
                             </div>
@@ -133,29 +138,40 @@
                     <span>Discard changes</span>
                 </button>
             </div>
-        </form>
+        </EditForm>
     }
 </div>
 
 @code {
+    // Matches the field-key path that CatalogService emits for nested errors,
+    // e.g. "Entries[0].DepId". Captured groups: 1 = index, 2 = property name.
+    private static readonly Regex EntryFieldKeyRegex = new(@"^Entries\[(\d+)\]\.(\w+)$", RegexOptions.Compiled);
+
     private FormState? _form;
+    private EditContext? _editContext;
+    private ValidationMessageStore? _messageStore;
     private bool _saving;
     private string? _saveError;
     private string? _saveSuccess;
-    private IReadOnlyDictionary<string, string> _fieldErrors = new Dictionary<string, string>();
 
     protected override Task OnInitializedAsync() => ReloadAsync();
 
     private async Task ReloadAsync()
     {
         _form = null;
+        _editContext = null;
+        _messageStore = null;
         _saving = false;
         _saveError = null;
         _saveSuccess = null;
-        _fieldErrors = new Dictionary<string, string>();
         StateHasChanged();
         var rows = await Catalog.GetAllAsync();
         _form = FormState.From(rows);
+        // Fresh EditContext bound to the new FormState instance — keeping
+        // the same instance across reloads would leak stale field
+        // identifiers tied to the previous EntryRow references.
+        _editContext = new EditContext(_form);
+        _messageStore = new ValidationMessageStore(_editContext);
     }
 
     private void AddEntry()
@@ -186,11 +202,12 @@
 
     private async Task SaveAsync()
     {
-        if (_form is null || _saving) return;
+        if (_form is null || _editContext is null || _messageStore is null || _saving) return;
         _saving = true;
         _saveError = null;
         _saveSuccess = null;
-        _fieldErrors = new Dictionary<string, string>();
+        _messageStore.Clear();
+        _editContext.NotifyValidationStateChanged();
 
         var payload = _form.ToInputs();
 
@@ -201,11 +218,13 @@
             // assigned primary key and ordering reflects the saved state.
             var rows = await Catalog.GetAllAsync();
             _form = FormState.From(rows);
+            _editContext = new EditContext(_form);
+            _messageStore = new ValidationMessageStore(_editContext);
             _saveSuccess = "Saved.";
         }
         catch (PlanValidationException ex)
         {
-            _fieldErrors = ex.Errors;
+            PushServerErrorsIntoStore(ex.Errors);
             _saveError = $"Couldn't save: {ex.Errors.Count} validation error(s). See messages next to each field.";
         }
         catch (Exception ex)
@@ -217,6 +236,36 @@
         {
             _saving = false;
         }
+    }
+
+    /// <summary>
+    /// Translates the service's flat field-key dictionary into
+    /// <see cref="FieldIdentifier"/>s on the right EntryRow instance so
+    /// <see cref="ValidationMessage"/> renders each message inline next to
+    /// the input it belongs to. Keys that don't match the
+    /// <c>Entries[N].Field</c> shape fall back to the form-level identifier
+    /// (rare, but keeps stray errors visible somewhere rather than dropping them).
+    /// </summary>
+    private void PushServerErrorsIntoStore(IReadOnlyDictionary<string, string> errors)
+    {
+        if (_form is null || _editContext is null || _messageStore is null) return;
+        foreach (var (key, message) in errors)
+        {
+            var match = EntryFieldKeyRegex.Match(key);
+            if (match.Success
+                && int.TryParse(match.Groups[1].Value, out var index)
+                && index >= 0 && index < _form.Entries.Count)
+            {
+                var row = _form.Entries[index];
+                var field = new FieldIdentifier(row, match.Groups[2].Value);
+                _messageStore.Add(field, message);
+            }
+            else
+            {
+                _messageStore.Add(_editContext.Field(key), message);
+            }
+        }
+        _editContext.NotifyValidationStateChanged();
     }
 
     private sealed class FormState
