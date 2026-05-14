@@ -4,10 +4,8 @@
     nothing when there is no message for that key — keeps the call sites tidy.
 *@
 
-@if (Errors is not null && Errors.TryGetValue(Field, out var message))
-{
-    <span class="form-field-error" role="alert">@message</span>
-}
+@* PROBE: always-render variant to confirm FieldErrorTests catches regressions. Revert before merging. *@
+<span class="form-field-error" role="alert">probe-always</span>
 
 @code {
     [Parameter, EditorRequired] public string Field { get; set; } = string.Empty;
