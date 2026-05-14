@@ -99,4 +99,81 @@ public sealed class AdminTemplateEditTests : IDisposable
                 "the form does not render once _loadFailed flips");
         });
     }
+
+    [Fact]
+    public async Task Save_with_blank_required_field_surfaces_a_FieldError_inline_under_that_field()
+    {
+        // Pins the contract that backs #91: the page round-trips a
+        // PlanValidationException from TemplateService into the FieldError
+        // component next to the offending input. Clearing Name is the
+        // smallest reproduction; the same path covers every other field
+        // ValidateMetadataAsync rejects.
+        await using (var seed = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default(key: "runtime-x", runtime: "15");
+            template.Name = "Test Runtime X";
+            seed.RuntimeTemplates.Add(template);
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.RenderComponent<AdminTemplateEdit>(p => p
+            .Add(c => c.Key, "runtime-x"));
+
+        cut.WaitForState(() => cut.FindAll("#tpl-name").Count > 0);
+
+        // Drop the Name input to blank — TemplateService.ValidateMetadataAsync
+        // emits errors["Name"] = "Name is required." for this case. The
+        // input is bound on the `oninput` event, so use Input() to match.
+        cut.Find("#tpl-name").Input(string.Empty);
+
+        // The structured form is the only <form> rendered while the page is
+        // in EditorMode.Form (its default).
+        cut.Find("form").Submit();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Name is required.",
+                "the service emits errors[\"Name\"] = \"Name is required.\"; "
+                + "<FieldError Field=\"Name\" Errors=\"_fieldErrors\" /> must render it inline");
+        });
+    }
+
+    [Fact]
+    public async Task Save_with_valid_edits_persists_to_the_database_and_clears_FieldErrors()
+    {
+        // Happy-path counterpart to the validation-error test above. Pins
+        // the contract that the structured form's save round-trip writes
+        // through to TemplateService.UpdateAsync and that the page leaves
+        // no stale FieldError text on the page afterwards.
+        await using (var seed = _db.NewContext())
+        {
+            var template = TemplateBuilder.Default(key: "runtime-x", runtime: "15");
+            template.Name = "Original Name";
+            seed.RuntimeTemplates.Add(template);
+            await seed.SaveChangesAsync();
+        }
+
+        var cut = _ctx.RenderComponent<AdminTemplateEdit>(p => p
+            .Add(c => c.Key, "runtime-x"));
+
+        cut.WaitForState(() => cut.FindAll("#tpl-name").Count > 0);
+
+        cut.Find("#tpl-name").Input("Renamed");
+        cut.Find("form").Submit();
+
+        // Wait for SaveAsync to complete: the success banner is the
+        // signal the page uses, and matches the user-visible feedback.
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Saved.",
+                "the page renders a success banner once UpdateAsync returns");
+        });
+
+        await using var read = _db.NewContext();
+        var refetched = await read.RuntimeTemplates
+            .AsNoTracking()
+            .FirstAsync(t => t.Key == "runtime-x");
+        refetched.Name.Should().Be("Renamed",
+            "the save round-tripped through TemplateService.UpdateAsync into the DB");
+    }
 }
