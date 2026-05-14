@@ -89,7 +89,7 @@
                                         </button>
                                     </div>
                                     <div class="folder-editor__path">
-                                        <InputText required placeholder="GUID (e.g. 12345678-1234-1234-1234-1234567890ab)"
+                                        <InputText type="text" required placeholder="GUID (e.g. 12345678-1234-1234-1234-1234567890ab)"
                                                    pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
                                                    title="Must be a GUID in 8-4-4-4-12 hex form."
                                                    @bind-Value="row.DepId" />
@@ -101,20 +101,20 @@
                                 </div>
                                 <div class="dep-editor__fields">
                                     <div>
-                                        <InputText required placeholder="Name" @bind-Value="row.DepName" />
+                                        <InputText type="text" required placeholder="Name" @bind-Value="row.DepName" />
                                         <ValidationMessage For="@(() => row.DepName)" />
                                     </div>
                                     <div>
-                                        <InputText required placeholder="Publisher" @bind-Value="row.DepPublisher" />
+                                        <InputText type="text" required placeholder="Publisher" @bind-Value="row.DepPublisher" />
                                         <ValidationMessage For="@(() => row.DepPublisher)" />
                                     </div>
                                     <div>
-                                        <InputText required placeholder="Default version (e.g. 1.0.0.0)"
+                                        <InputText type="text" required placeholder="Default version (e.g. 1.0.0.0)"
                                                    @bind-Value="row.DepVersionDefault" />
                                         <ValidationMessage For="@(() => row.DepVersionDefault)" />
                                     </div>
                                     <div>
-                                        <InputText placeholder="Category (e.g. Continia)" @bind-Value="row.Category" />
+                                        <InputText type="text" placeholder="Category (e.g. Continia)" @bind-Value="row.Category" />
                                     </div>
                                 </div>
                             </div>

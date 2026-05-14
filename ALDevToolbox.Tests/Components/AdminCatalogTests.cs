@@ -110,11 +110,14 @@ public sealed class AdminCatalogTests : IDisposable
             .Click();
 
         // The new row should now be rendered with all four fields empty.
-        cut.FindAll("div.folder-editor__row").Should().HaveCount(1);
+        // WaitForAssertion: with EditForm's cascading EditContext there's an
+        // extra render boundary that a bare FindAll can race past.
+        cut.WaitForAssertion(() =>
+            cut.FindAll("div.folder-editor__row").Should().HaveCount(1));
 
         // Submit the form; CatalogService.SaveAsync collects one error per
         // missing field and throws PlanValidationException, which the page
-        // catches and stashes in _fieldErrors.
+        // catches and pushes into the ValidationMessageStore.
         cut.Find("form").Submit();
 
         cut.WaitForAssertion(() =>
