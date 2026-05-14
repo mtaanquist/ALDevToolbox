@@ -26,7 +26,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab }
 import { syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatching,
     foldGutter, foldKeymap, StreamLanguage }
     from "https://esm.sh/@codemirror/language@6.10.6?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
-import { searchKeymap, highlightSelectionMatches }
+import { search, searchKeymap, highlightSelectionMatches }
     from "https://esm.sh/@codemirror/search@6.5.7?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap }
     from "https://esm.sh/@codemirror/autocomplete@6.18.3?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6";
@@ -268,6 +268,10 @@ export function mount(container, initialValue, language) {
 //   lineDecorations: { [1-basedLineNumber]: cssClass }  — full-line backgrounds (diff view)
 //   declarations:    [{ line, columnStart, columnEnd, symbolId, kind, name }]
 //                     ranges that get a click affordance + right-click "Find references"
+//   resolvables:     [{ line, columnStart, columnEnd }] — extra ranges that
+//                     show the resolvable-token underline (object references,
+//                     procedure calls). Cosmetic only; the actual Go to
+//                     definition still runs through the server.
 //   dotNetRef:        Blazor DotNetObjectReference; callbacks fire `OnFindReferences(symbolId)`
 //   scrollToLine:     1-based line to scroll to + flash after mount (deep-link from references)
 export function mountReadOnly(container, value, language, options) {
@@ -280,6 +284,7 @@ export function mountReadOnly(container, value, language, options) {
 
     const decorationExtensions = buildLineDecorationExtensions(opts.lineDecorations);
     const declarationExtensions = buildDeclarationDecorationExtensions(opts.declarations);
+    const resolvableExtensions = buildResolvableDecorationExtensions(opts.resolvables);
 
     const view = new EditorView({
         parent: container,
@@ -296,10 +301,14 @@ export function mountReadOnly(container, value, language, options) {
                 syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
                 highlightActiveLine(),
                 highlightSelectionMatches(),
+                // Ctrl/Cmd-F brings up CodeMirror's search panel. `search()`
+                // registers the panel state; searchKeymap binds the key.
+                search({ top: true }),
                 keymap.of([...defaultKeymap, ...searchKeymap, ...foldKeymap]),
                 languageExtensionFor(lang),
                 ...decorationExtensions,
                 ...declarationExtensions,
+                ...resolvableExtensions,
                 themeCompartment.of(themeExtensions()),
             ],
         }),
@@ -353,8 +362,12 @@ export function mountReadOnly(container, value, language, options) {
                     "OnFindReferences", onDeclaration.symbolId),
             });
         }
+        // Disable "Go to definition" when the click lands on the declaration
+        // name itself — the target would be the click site, which causes the
+        // viewer to navigate to its current URL and break re-mounting state.
         items.push({
             label: "Go to definition",
+            disabled: Boolean(onDeclaration),
             action: () => opts.dotNetRef.invokeMethodAsync(
                 "OnGoToDefinition", line.number, colInLine),
         });
@@ -379,6 +392,17 @@ export function mountReadOnly(container, value, language, options) {
         if (pos === null) return;
         const line = view.state.doc.lineAt(pos);
         const colInLine = pos - line.from + 1;
+        // Cmd/Ctrl-click on the declaration name itself would resolve to the
+        // current location — same URL, same line — and break the viewer
+        // (see right-click handler above). Swallow the click instead.
+        const onDeclaration = declarations.find(d =>
+            d.line === line.number
+            && colInLine >= d.columnStart
+            && colInLine <= d.columnEnd);
+        if (onDeclaration) {
+            event.preventDefault();
+            return;
+        }
         event.preventDefault();
         opts.dotNetRef.invokeMethodAsync("OnGoToDefinition", line.number, colInLine)
             .catch(err => console.warn("Go to definition callback failed:", err));
@@ -475,6 +499,34 @@ function buildDeclarationDecorationExtensions(declarations) {
     })];
 }
 
+// Decorates every range the server identified as a "resolvable" reference
+// (object names, procedure call sites, etc.) with `cm-symbol-ref` so users
+// get the same dotted underline they see on declarations. Ranges are
+// pre-sorted server-side; the RangeSetBuilder still requires ascending order.
+function buildResolvableDecorationExtensions(resolvables) {
+    if (!Array.isArray(resolvables) || resolvables.length === 0) return [];
+    // Defensive sort: ranges must be added in order of `from` to the builder,
+    // and pre-sorted input is cheap to re-verify here.
+    const sorted = resolvables
+        .filter(r => Number.isInteger(r.line) && r.line >= 1)
+        .slice()
+        .sort((a, b) => (a.line - b.line) || ((a.columnStart ?? 1) - (b.columnStart ?? 1)));
+    return [EditorView.decorations.of((view) => {
+        const builder = new RangeSetBuilder();
+        const docLines = view.state.doc.lines;
+        for (const ref of sorted) {
+            if (ref.line > docLines) continue;
+            const line = view.state.doc.line(ref.line);
+            const from = line.from + Math.max(0, (ref.columnStart ?? 1) - 1);
+            const toCol = ref.columnEnd ?? (ref.columnStart ?? 1);
+            const to = Math.min(line.to, line.from + Math.max(from - line.from, toCol - 1));
+            if (to <= from) continue;
+            builder.add(from, to, Decoration.mark({ class: "cm-symbol-ref" }));
+        }
+        return builder.finish();
+    })];
+}
+
 // Renders a small floating context menu at (x, y). Each item is
 // `{ label, action }`; `action` returns the promise from a DotNet
 // invokeMethodAsync call. The menu removes itself when an item is
@@ -491,17 +543,22 @@ function renderMenu(x, y, items) {
         btn.type = "button";
         btn.className = "cm-symbol-menu__item";
         btn.textContent = item.label;
-        btn.addEventListener("click", () => {
-            menu.remove();
-            try {
-                const result = item.action();
-                if (result && typeof result.catch === "function") {
-                    result.catch(err => console.warn(`${item.label} failed:`, err));
+        if (item.disabled) {
+            btn.disabled = true;
+            btn.classList.add("cm-symbol-menu__item--disabled");
+        } else {
+            btn.addEventListener("click", () => {
+                menu.remove();
+                try {
+                    const result = item.action();
+                    if (result && typeof result.catch === "function") {
+                        result.catch(err => console.warn(`${item.label} failed:`, err));
+                    }
+                } catch (err) {
+                    console.warn(`${item.label} threw:`, err);
                 }
-            } catch (err) {
-                console.warn(`${item.label} threw:`, err);
-            }
-        });
+            });
+        }
         menu.appendChild(btn);
     }
 

@@ -267,6 +267,58 @@ public class BaseAppService
             .ToListAsync(ct);
     }
 
+    /// <summary>
+    /// Returns ranges in a file whose token text matches a name the symbol
+    /// index can resolve to a definition — object names anywhere in the
+    /// version plus procedure/trigger/event symbols callable from this file.
+    /// Used by the file viewer to draw the "this is jumpable" underline on
+    /// reference sites; the actual <see cref="GoToDefinitionAsync"/> still
+    /// runs server-side when the user clicks.
+    /// </summary>
+    public async Task<List<ResolvableTokenRange>> ListResolvableTokensInFileAsync(
+        long fileId, CancellationToken ct = default)
+    {
+        var file = await _db.BaseAppFiles
+            .AsNoTracking()
+            .Select(f => new { f.Id, f.VersionId, f.Content })
+            .FirstOrDefaultAsync(f => f.Id == fileId, ct);
+        if (file is null) return new List<ResolvableTokenRange>();
+
+        var objectNames = await _db.BaseAppFiles
+            .AsNoTracking()
+            .Where(f => f.VersionId == file.VersionId)
+            .Select(f => f.ObjectName)
+            .Distinct()
+            .ToListAsync(ct);
+
+        // Cross-file callable symbols. Skip `local_procedure` (only callable
+        // in their own file) and `trigger` (fired by the framework, never
+        // called by name) so we don't paint underlines on tokens that
+        // wouldn't actually navigate anywhere.
+        var publicSymbolNames = await _db.BaseAppSymbols
+            .AsNoTracking()
+            .Where(s => s.VersionId == file.VersionId
+                && s.Kind != "local_procedure"
+                && s.Kind != "trigger")
+            .Select(s => s.Name)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var localSymbolNames = await _db.BaseAppSymbols
+            .AsNoTracking()
+            .Where(s => s.FileId == fileId && s.Kind != "trigger")
+            .Select(s => s.Name)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var vocab = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var n in objectNames) if (!string.IsNullOrEmpty(n)) vocab.Add(n);
+        foreach (var n in publicSymbolNames) if (!string.IsNullOrEmpty(n)) vocab.Add(n);
+        foreach (var n in localSymbolNames) if (!string.IsNullOrEmpty(n)) vocab.Add(n);
+
+        return AlResolvableTokenScanner.Scan(file.Content ?? string.Empty, vocab).ToList();
+    }
+
     /// <summary>Returns one symbol by id (with its file + version loaded) or <c>null</c>.</summary>
     public Task<BaseAppSymbol?> GetSymbolAsync(long id, CancellationToken ct = default)
     {

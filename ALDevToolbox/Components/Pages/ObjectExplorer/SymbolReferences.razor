@@ -53,7 +53,7 @@
                     {
                         <span> · <strong>@_result.OverloadCount overloads</strong> merged into this search.</span>
                     }
-                    @if (!string.IsNullOrWhiteSpace(_result.Symbol.Signature))
+                    @if (!IsTrivialSignature(_result.Symbol.Signature))
                     {
                         <br />
                         <code class="small">@_result.Symbol.Signature</code>
@@ -115,6 +115,16 @@
     private string VersionLabel => _version is null
         ? VersionId.ToString()
         : $"BC {_version.Major}.{_version.CumulativeUpdate}";
+
+    // The signature regex captures `()` for parameterless procedures and
+    // triggers; showing a literal empty pair of parentheses adds noise but no
+    // information, so suppress it.
+    private static bool IsTrivialSignature(string? signature)
+    {
+        if (string.IsNullOrWhiteSpace(signature)) return true;
+        var stripped = signature.Replace(" ", "").Replace("\t", "");
+        return stripped is "" or "()";
+    }
 
     protected override async Task OnInitializedAsync()
     {

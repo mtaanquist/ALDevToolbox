@@ -2788,13 +2788,18 @@ ul.form-field-error {
 /* Click affordance on procedure/trigger/event declarations in the Object
    Explorer file viewer. Hover gives a faint underline so users see what's
    right-clickable; the menu lives in .cm-symbol-menu below. */
-.cm-symbol-decl {
-    cursor: context-menu;
-    text-decoration: underline dotted transparent;
+.cm-symbol-decl,
+.cm-symbol-ref {
+    text-decoration: underline dotted currentColor;
+    text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
     text-underline-offset: 3px;
     transition: text-decoration-color 80ms ease-out;
 }
-.cm-symbol-decl:hover {
+.cm-symbol-decl {
+    cursor: context-menu;
+}
+.cm-symbol-decl:hover,
+.cm-symbol-ref:hover {
     text-decoration-color: currentColor;
 }
 
@@ -2813,7 +2818,8 @@ ul.form-field-error {
 .cm-modifier-down .tok-propertyName,
 .cm-modifier-down .tok-className,
 .cm-modifier-down .tok-keyword,
-.cm-modifier-down .cm-symbol-decl {
+.cm-modifier-down .cm-symbol-decl,
+.cm-modifier-down .cm-symbol-ref {
     text-decoration: underline;
     text-decoration-style: solid;
     text-decoration-color: currentColor;
@@ -2845,8 +2851,13 @@ ul.form-field-error {
     font: inherit;
 }
 
-.cm-symbol-menu__item:hover {
+.cm-symbol-menu__item:hover:not(.cm-symbol-menu__item--disabled) {
     background: var(--surface-hover, rgba(124, 124, 144, 0.16));
+}
+
+.cm-symbol-menu__item--disabled {
+    color: var(--text-muted, rgba(216, 216, 224, 0.45));
+    cursor: not-allowed;
 }
 
 /* Brief flash on the line the user navigated to via a #L<n> deep link. */

@@ -32,6 +32,13 @@
     /// </summary>
     [Parameter] public IReadOnlyList<CodeViewerDeclaration>? Declarations { get; set; }
 
+    /// <summary>
+    /// Optional resolvable-token ranges. Cosmetic-only ranges that get a faint
+    /// underline so users see which call sites have a jump target; the actual
+    /// resolution still happens server-side on Cmd/Ctrl-click.
+    /// </summary>
+    [Parameter] public IReadOnlyList<CodeViewerResolvable>? Resolvables { get; set; }
+
     /// <summary>Invoked from the right-click menu when the user picks "Find references".</summary>
     [Parameter] public EventCallback<long> OnFindReferences { get; set; }
 
@@ -52,6 +59,7 @@
     private IJSObjectReference? _module;
     private int _editorId;
     private string? _mountedContent;
+    private int? _mountedScrollToLine;
     private DotNetObjectReference<CodeViewerCallbacks>? _callbacks;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -75,6 +83,12 @@
                     kind = d.Kind,
                     name = d.Name,
                 }).ToArray(),
+                resolvables = Resolvables?.Select(r => new
+                {
+                    line = r.Line,
+                    columnStart = r.ColumnStart,
+                    columnEnd = r.ColumnEnd,
+                }).ToArray(),
                 // Pass the .NET reference when either gesture is wired up.
                 // Right-click only fires when declarations exist, but
                 // Cmd/Ctrl-click is meaningful even without a symbol index.
@@ -86,13 +100,26 @@
             _editorId = await _module.InvokeAsync<int>(
                 "mountReadOnly", _container, Content ?? string.Empty, Language, options);
             _mountedContent = Content;
+            _mountedScrollToLine = ScrollToLine;
             return;
         }
 
-        if (_module is not null && _editorId != 0 && !string.Equals(_mountedContent, Content, StringComparison.Ordinal))
+        if (_module is null || _editorId == 0) return;
+
+        if (!string.Equals(_mountedContent, Content, StringComparison.Ordinal))
         {
             await _module.InvokeVoidAsync("setValue", _editorId, Content ?? string.Empty);
             _mountedContent = Content;
+        }
+
+        // Re-scroll when the parent re-pushes ScrollToLine (e.g. Go to
+        // definition that lands inside the currently mounted file — the
+        // page stays put and only the URL fragment changes, so the editor
+        // never re-mounts otherwise).
+        if (ScrollToLine is { } line && line >= 1 && _mountedScrollToLine != line)
+        {
+            await _module.InvokeVoidAsync("scrollToLine", _editorId, line, true);
+            _mountedScrollToLine = line;
         }
     }
 

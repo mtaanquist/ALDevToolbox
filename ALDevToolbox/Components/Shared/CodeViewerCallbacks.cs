@@ -39,3 +39,9 @@ public sealed record CodeViewerDeclaration(
 
 /// <summary>A 1-based click position inside the viewer's source.</summary>
 public sealed record CodeViewerClick(int Line, int Column);
+
+/// <summary>
+/// One range the viewer should underline as resolvable. Same column convention
+/// as <see cref="CodeViewerDeclaration"/>: 1-based, end-exclusive.
+/// </summary>
+public sealed record CodeViewerResolvable(int Line, int ColumnStart, int ColumnEnd);

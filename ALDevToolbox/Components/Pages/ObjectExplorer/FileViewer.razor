@@ -77,6 +77,7 @@
         <CodeViewer Content="@_file.Content"
                     Language="al"
                     Declarations="_declarations"
+                    Resolvables="_resolvables"
                     OnFindReferences="OnFindReferences"
                     OnGoToDefinition="OnGoToDefinition"
                     ScrollToLine="_initialScrollLine" />
@@ -92,6 +93,7 @@
     private List<BaseAppVersion>? _otherVersions;
     private string _compareTarget = string.Empty;
     private IReadOnlyList<CodeViewerDeclaration> _declarations = Array.Empty<CodeViewerDeclaration>();
+    private IReadOnlyList<CodeViewerResolvable> _resolvables = Array.Empty<CodeViewerResolvable>();
     private int? _initialScrollLine;
     private string? _lastDefinitionMissed;
     private IDisposable? _locationChangedSubscription;
@@ -126,8 +128,17 @@
 
         var symbols = await BaseApp.ListSymbolsInFileAsync(FileId);
         _declarations = symbols
+            // Triggers are always local — there's nowhere to navigate to and
+            // no "find references" worth running, so skip the underline /
+            // right-click menu entirely.
+            .Where(s => !string.Equals(s.Kind, "trigger", StringComparison.Ordinal))
             .Select(s => new CodeViewerDeclaration(
                 s.Id, s.LineNumber, s.ColumnStart, s.ColumnEnd, s.Kind, s.Name))
+            .ToList();
+
+        var resolvables = await BaseApp.ListResolvableTokensInFileAsync(FileId);
+        _resolvables = resolvables
+            .Select(r => new CodeViewerResolvable(r.Line, r.ColumnStart, r.ColumnEnd))
             .ToList();
 
         _initialScrollLine = ExtractLineAnchor(Nav.Uri);
@@ -182,10 +193,12 @@
     {
         // Same page, different fragment: re-pull the line anchor so the
         // viewer scrolls again. (CodeMirror keeps its content; we just want
-        // the scroll-to-line side effect.)
+        // the scroll-to-line side effect.) StateHasChanged forces a re-render
+        // so CodeViewer's OnAfterRender notices the new ScrollToLine value.
         if (context.TargetLocation.StartsWith($"/object-explorer/{VersionId}/files/{FileId}", StringComparison.Ordinal))
         {
             _initialScrollLine = ExtractLineAnchor(context.TargetLocation);
+            StateHasChanged();
         }
         return ValueTask.CompletedTask;
     }
