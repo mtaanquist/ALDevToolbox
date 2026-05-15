@@ -1,4 +1,4 @@
-@page "/releases/{ReleaseId:int}"
+@page "/object-explorer/release/{ReleaseId:int}"
 @attribute [Authorize]
 @rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
@@ -16,10 +16,10 @@
         <header class="admin-page__header">
             <div>
                 <p class="muted">
-                    <a href="/releases">Releases</a>
+                    <a href="/object-explorer">Releases</a>
                     @if (_release.ParentReleaseId is { } pid)
                     {
-                        <span> / <a href="@($"/releases/{pid}")">@_release.ParentLabel</a></span>
+                        <span> / <a href="@($"/object-explorer/release/{pid}")">@_release.ParentLabel</a></span>
                     }
                 </p>
                 <h1>@_release.Label</h1>
@@ -69,7 +69,7 @@
                     {
                         <tr>
                             <td>
-                                <a href="@($"/oe-modules/{m.Id}")"><strong>@m.Name</strong></a>
+                                <a href="@($"/object-explorer/module/{m.Id}")"><strong>@m.Name</strong></a>
                                 @if (m.IsTest)
                                 {
                                     <span class="badge muted">Test</span>

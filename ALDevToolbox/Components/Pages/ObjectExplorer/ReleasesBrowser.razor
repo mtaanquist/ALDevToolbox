@@ -1,4 +1,4 @@
-@page "/releases"
+@page "/object-explorer"
 @attribute [Authorize]
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @using ALDevToolbox.Services.ObjectExplorer
@@ -17,7 +17,7 @@
         </div>
         <AuthorizeView Roles="Admin">
             <Authorized>
-                <a class="btn" href="/admin/releases/new">
+                <a class="btn" href="/admin/object-explorer/new">
                     <Icon Name="upload" Width="16" Height="16" />
                     <span>Import Release</span>
                 </a>
@@ -35,7 +35,7 @@
             No Releases have been imported yet.
             <AuthorizeView Roles="Admin">
                 <Authorized>
-                    <a href="/admin/releases/new">Import one now</a>.
+                    <a href="/admin/object-explorer/new">Import one now</a>.
                 </Authorized>
                 <NotAuthorized>
                     Ask an admin to import one.
@@ -60,7 +60,7 @@
                 {
                     <tr>
                         <td>
-                            <a href="@($"/releases/{r.Id}")">
+                            <a href="@($"/object-explorer/release/{r.Id}")">
                                 <strong>@r.Label</strong>
                             </a>
                         </td>

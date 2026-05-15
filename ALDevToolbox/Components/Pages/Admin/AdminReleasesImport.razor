@@ -1,4 +1,4 @@
-@page "/admin/releases/new"
+@page "/admin/object-explorer/new"
 @attribute [Authorize(Roles = "Admin")]
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @inject IAntiforgery Antiforgery
@@ -8,7 +8,7 @@
 
 @*
     Bulk-upload form for a Release of BC application .app files. Posts to
-    /admin/releases/import (see ObjectExplorerEndpoints) so the multipart
+    /admin/object-explorer/import (see ObjectExplorerEndpoints) so the multipart
     body streams through Kestrel rather than the Blazor SignalR circuit —
     a full BC DVD is ~150 MB and would choke as an InputFile.
 
@@ -30,7 +30,7 @@
                 source, drop them in the second box and we'll match by name.
             </p>
         </div>
-        <a class="btn btn--sm" href="/releases">
+        <a class="btn btn--sm" href="/object-explorer">
             <Icon Name="arrow-left" Width="14" Height="14" />
             <span>Back to Releases</span>
         </a>
@@ -42,7 +42,7 @@
     }
 
     <form method="post"
-          action="/admin/releases/import"
+          action="/admin/object-explorer/import"
           enctype="multipart/form-data"
           class="form-grid">
         @if (_antiforgeryToken is not null)
