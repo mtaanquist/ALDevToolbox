@@ -607,19 +607,34 @@ export function scrollToLine(id, lineNumber, flash) {
         const block = view.lineBlockAt(line.from);
         const scroller = view.scrollDOM;
         const scrollMax = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+        console.log("[code-editor.js] doScroll", {
+            safeLine,
+            blockTop: block.top,
+            blockHeight: block.height,
+            scrollerScrollHeight: scroller.scrollHeight,
+            scrollerClientHeight: scroller.clientHeight,
+            scrollMax,
+            scrollerScrollTopBefore: scroller.scrollTop,
+            documentScrollY: window.scrollY,
+        });
         if (scrollMax > 0) {
             // Bounded editor (default mount) — scroll the editor's own
             // scroller. Direct scrollTop avoids the inconsistent viewport
             // state we used to see going through EditorView.scrollIntoView.
             const target = block.top - scroller.clientHeight / 2 + block.height / 2;
             scroller.scrollTop = Math.max(0, Math.min(scrollMax, target));
+            console.log("[code-editor.js] doScroll → bounded scroller, target", target, "applied", scroller.scrollTop);
         } else {
             // Fluid mount (`Fluid="true"`): the editor's scroller is the
             // same height as its content (overflow: visible), so it
             // can't scroll. Defer to the nearest scrolling ancestor
             // (the page's .content column) via the line element.
             const lineEl = findLineEl();
-            if (lineEl) lineEl.scrollIntoView({ block: "center", behavior: "auto" });
+            console.log("[code-editor.js] doScroll → fluid mount, lineEl found?", !!lineEl, lineEl);
+            if (lineEl) {
+                lineEl.scrollIntoView({ block: "center", behavior: "auto" });
+                console.log("[code-editor.js] doScroll → after scrollIntoView, window.scrollY", window.scrollY);
+            }
         }
     };
 
