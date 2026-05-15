@@ -4,6 +4,7 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @inject IHttpContextAccessor Http
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Components.Shared
 
@@ -95,14 +96,31 @@
                                     @foreach (var entry in group.Items)
                                     {
                                         <li class="source-viewer__outline-item @(entry.IsChild ? "source-viewer__outline-item--child" : null)">
-                                            <a href="@OutlineEntryHref(entry)" title="@entry.Item.Name">
-                                                <span class="source-viewer__outline-name">@entry.Item.Name</span>
-                                                @if (!string.IsNullOrEmpty(entry.Item.Signature))
-                                                {
-                                                    <span class="source-viewer__outline-sig muted">@FormatSignature(entry.Item.Signature)</span>
-                                                }
-                                                <span class="source-viewer__outline-line muted">L@(entry.Item.LineNumber)</span>
-                                            </a>
+                                            @if (entry.Item.ObjectId is { } oid)
+                                            {
+                                                <a href="@($"/object-explorer/object/{oid}")" title="@entry.Item.Name">
+                                                    <span class="source-viewer__outline-name">@entry.Item.Name</span>
+                                                    @if (!string.IsNullOrEmpty(entry.Item.Signature))
+                                                    {
+                                                        <span class="source-viewer__outline-sig muted">@FormatSignature(entry.Item.Signature)</span>
+                                                    }
+                                                    <span class="source-viewer__outline-line muted">L@(entry.Item.LineNumber)</span>
+                                                </a>
+                                            }
+                                            else
+                                            {
+                                                <button type="button"
+                                                        class="source-viewer__outline-link"
+                                                        title="@entry.Item.Name"
+                                                        @onclick="() => JumpToLineInThisFileAsync(entry.Item.LineNumber)">
+                                                    <span class="source-viewer__outline-name">@entry.Item.Name</span>
+                                                    @if (!string.IsNullOrEmpty(entry.Item.Signature))
+                                                    {
+                                                        <span class="source-viewer__outline-sig muted">@FormatSignature(entry.Item.Signature)</span>
+                                                    }
+                                                    <span class="source-viewer__outline-line muted">L@(entry.Item.LineNumber)</span>
+                                                </button>
+                                            }
                                         </li>
                                     }
                                 </ul>
@@ -125,10 +143,12 @@
                             @foreach (var occ in _findInFile.Occurrences)
                             {
                                 <li>
-                                    <a href="@($"/object-explorer/file/{FileId}?line={occ.Line}")">
+                                    <button type="button"
+                                            class="source-viewer__outline-link"
+                                            @onclick="() => JumpToLineInThisFileAsync(occ.Line)">
                                         <span class="source-viewer__outline-kind">L@(occ.Line)</span>
                                         <code class="source-viewer__find-snippet">@occ.LineText.Trim()</code>
-                                    </a>
+                                    </button>
                                 </li>
                             }
                         </ul>
@@ -193,7 +213,44 @@
             return;
         }
         _lastNavigationNotice = null;
+        if (target.FileId == FileId)
+        {
+            // Same-file jump: avoid Nav.NavigateTo (whose enhanced-nav
+            // streaming diff strips CodeMirror's runtime-injected
+            // <style> tags). Update the URL via history.replaceState
+            // and bump ScrollSequence so the editor re-scrolls in place.
+            await JumpToLineInThisFileAsync(target.LineNumber);
+            return;
+        }
         Nav.NavigateTo($"/object-explorer/file/{target.FileId}?line={target.LineNumber}");
+    }
+
+    /// <summary>
+    /// Scrolls the in-place CodeMirror viewer to <paramref name="line"/>
+    /// without going through <see cref="NavigationManager"/>. Blazor's
+    /// enhanced-navigation pipeline (which <c>NavigateTo</c> routes
+    /// through, even for fragment-only same-file URL changes) does a
+    /// streaming DOM diff against the server-rendered HTML; because the
+    /// server doesn't know about the <c>&lt;style&gt;</c> tags
+    /// CodeMirror injects at runtime, the diff strips them and the
+    /// editor loses every CSS rule it depends on (monospace font,
+    /// gutter layout, host overflow). Same-file scrolls update the URL
+    /// bar via <c>history.replaceState</c> instead — the document head
+    /// is untouched and the existing
+    /// <see cref="CodeViewer.ScrollSequence"/> token causes the viewer
+    /// to re-scroll. Cross-file jumps still go through
+    /// <c>Nav.NavigateTo</c> because the new file content needs a full
+    /// CodeMirror remount to land in any case.
+    /// </summary>
+    private async Task JumpToLineInThisFileAsync(int line)
+    {
+        _highlightLine = line;
+        _scrollSequence++;
+        await JS.InvokeVoidAsync(
+            "history.replaceState",
+            null,
+            string.Empty,
+            $"/object-explorer/file/{FileId}?line={line}");
     }
 
     private async Task HandleFindInFile(CodeViewerClick click)
@@ -218,17 +275,6 @@
         {
             _collapsedSections.Remove(key);
         }
-    }
-
-    private string OutlineEntryHref(OutlineEntry entry)
-    {
-        // Object header (the major declaration) navigates to the
-        // object detail page so Find references and the detail
-        // surfaces are reachable. Sub-symbols deep-link back to this
-        // same page with ?line= for CodeMirror to scroll to.
-        return entry.Item.ObjectId is { } oid
-            ? $"/object-explorer/object/{oid}"
-            : $"/object-explorer/file/{FileId}?line={entry.Item.LineNumber}";
     }
 
     /// <summary>
