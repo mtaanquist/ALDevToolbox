@@ -96,6 +96,7 @@ builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<ApplicationVersionService>();
 builder.Services.AddScoped<BaseAppService>();
 builder.Services.AddScoped<BaseAppImportService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseImportService>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<TemplateImportService>();
 builder.Services.AddScoped<WorkspaceConfigService>();
