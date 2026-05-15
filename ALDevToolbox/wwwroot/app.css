@@ -2628,7 +2628,33 @@ ul.form-field-error {
     letter-spacing: 0.03em;
 }
 
+/* Visual styling for the Object Explorer's select boxes — the filter
+   row on the version browser and the "Compare with" picker on the file
+   header both fall outside the .form-section / .admin-form scopes that
+   own the global input styling, so without this they render with
+   browser defaults (white background, system font) and clash with the
+   dark UI. The .admin-search-input on the filter row already brings
+   its own block. */
 .object-explorer__filters .field__input,
+.object-explorer__compare .field__input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    font-family: inherit;
+    font-size: 13.5px;
+    background: var(--color-surface);
+    color: var(--color-text);
+}
+
+.object-explorer__filters .field__input:focus,
+.object-explorer__compare .field__input:focus {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -1px;
+    border-color: var(--color-accent);
+}
+
 .object-explorer__filters .admin-search-input {
     width: 100%;
     box-sizing: border-box;
