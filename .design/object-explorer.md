@@ -100,9 +100,8 @@ A new endpoint, e.g. `POST /admin/object-explorer/releases`, accepts a multipart
    6. Extract source: prefer `src/` inside the `.app` (when `IncludeSourceInSymbolFile="true"`); otherwise look for a paired `.Source.zip` in the same archive folder and use its `src/` tree. Store every `.al` text file in `ModuleFile`. Discard everything else.
    7. Emit `ModuleSymbol` rows (procedures, triggers, event publishers, event subscribers) by combining the symbol package's `Methods` array (public/internal — line numbers absent) with a source-side line-number lookup using the existing `AlSymbolExtractor`. Locals not in the symbol package are picked up by the same source extractor.
    8. Emit `ModuleVariable` rows for every object-scoped variable (globals only — procedure-locals are not in the symbol package and stay in the source-driven heuristic path).
-   9. Emit `ModuleReference` rows for every fully-qualified type reference: variable subtypes, extension `TargetObject`, codeunit `TableNo` properties, report data items, event subscriber bindings (publisher event reference). Same-module refs whose Subtype omits `ModuleId` get stamped with the importing module's AppId.
-3. **Two-pass resolution.** First pass: collect every Module's `(AppId, Name, Version)` and emit rows. Second pass — purely in-memory join — resolve each `ModuleReference.target_module_id` to the Module row imported in pass one. References that point at AppIds we *didn't* import are kept with a null `target_module_id` and a `target_app_id` so the UI can render "external — module not imported".
-4. **Mark the Release ready.** Until the second pass completes, the Release is hidden from the version picker. Failure mid-ingest leaves a tombstone row (`status = 'failed'`, with an error message) that a SiteAdmin can clear.
+   9. Emit `ModuleReference` rows for every fully-qualified type reference: variable subtypes, extension `TargetObject`, codeunit `TableNo` properties, report data items, event subscriber bindings (publisher event reference). Same-module refs whose Subtype omits `ModuleId` get stamped with the importing module's AppId. Reference rows store the `target_app_id` triplet from the symbol package; they do **not** carry a resolved `target_module_id` — that's computed at query time via the parent-chain join above.
+3. **Mark the Release ready.** Once every `.app` in the archive has been processed, flip the Release row's `status` from `'ingesting'` to `'ready'`. Until then, the Release is hidden from the picker. Failure mid-ingest leaves a tombstone row (`status = 'failed'`, with an error message) that a SiteAdmin can clear.
 
 Re-upload of a full Release with the same label: same idempotency rule — every `(AppId, Version)` already present is skipped. To replace a Release entirely the user has to delete it first.
 
@@ -125,8 +124,8 @@ Organization ──┐
                                                      │                   ├── has many ──> ModuleSymbol   (oe_module_symbols — procedures, triggers, events, fields)
                                                      │                   └── has many ──> ModuleVariable (oe_module_variables — globals only; resolved type)
                                                      └── has many ──> ModuleReference (oe_module_references)
-                                                                       ├── (source_object_id, target_release_id,
-                                                                       │    target_module_id, target_object_kind,
+                                                                       ├── (source_object_id,
+                                                                       │    target_app_id, target_object_kind,
                                                                        │    target_object_id, target_object_name,
                                                                        │    reference_kind)
                                                                        └── reference_kind ∈ { variable_type, extends_target,
@@ -136,11 +135,12 @@ Organization ──┐
 
 Service rename in step with the schema: `BaseAppService` → `ObjectExplorerService` (or split if it grows past a comfortable size — the find-references query mechanics are now substantial enough that a sibling `ReferenceQueryService` may earn its own file).
 
-Three key design points:
+Four key design points:
 
 - **`Release` replaces `BaseAppVersion`.** The label (`"BC 25.18"`) and BC platform/application versions come from any one of the contained Modules' manifests (Base App is canonical when present). The unit the user picks in the UI is a Release.
 - **`Module.app_id` is the cross-Release identity.** Same AppId across two Releases lets us answer "how did `Codeunit 80 "Sales-Post"` evolve from BC 25.15 to 25.18" (Decision 5) without a separate evolution-tracking table.
-- **`Release.parent_release_id` enables layered third-party uploads.** A first-party DVD has `parent_release_id = NULL` and `kind = 'first_party'`. A third-party Release (a partner app, a customer's customisation set) has `parent_release_id` pointing at the first-party Release it sits on top of, and `kind = 'third_party'` (or `'customer'` — single short enum, exact values can be decided when the third-party UI lands). Reference resolution walks the chain: when a Module in the child Release names an AppId we don't have locally, the resolver looks up the parent Release's Modules; recurses to grandparent if needed. The schema column ships with the first milestone even though the upload UI for third-party Releases probably defers to a later one — adding the column now avoids a future migration and the resolver code is simpler with the parent pointer in place from day one.
+- **`Release.parent_release_id` enables layered third-party uploads.** A first-party DVD has `parent_release_id = NULL` and `kind = 'first_party'`. A third-party Release (a partner app, a customer's customisation set) has `parent_release_id` pointing at another Release and `kind = 'third_party'` (or `'customer'` — single short enum, final values decided when the third-party UI lands). Chains are arbitrary depth — Customer X → Continia Document Capture → Continia Core → Base Application is a real four-layer stack that the schema must support, since partner apps routinely depend on each other before bottoming out on Base App. Reference resolution walks the chain via a PostgreSQL recursive CTE; resolver code is depth-agnostic.
+- **Reference targets are stored as facts, not as resolved pointers.** `oe_module_references` carries the `(target_app_id, target_object_kind, target_object_id, target_object_name)` triplet exactly as the symbol package reports it. The actual target `Module` row is **resolved at query time** by joining against the parent-release chain. This makes retargeting a one-line `UPDATE oe_releases SET parent_release_id = …` instead of a bulk row rewrite, and it lets the same reference row resolve to *different* modules depending on which Release chain it's queried against — which is exactly what powers conflict detection on retarget (see "Retargeting and upgrade-conflict detection" below).
 
 A migration drops `base_app_versions` / `base_app_files` / `base_app_symbols` and any rows therein. The current single-version Object Explorer corpus is small and re-importable; the upgrade cost is "re-ingest your DVDs once".
 
@@ -148,7 +148,30 @@ A migration drops `base_app_versions` / `base_app_files` / `base_app_symbols` an
 
 Find references on a `ModuleObject` runs two queries in parallel and merges:
 
-1. **Cross-module exact (SQL).** `SELECT … FROM oe_module_references WHERE target_module_id = @id AND target_object_kind = @kind AND target_object_id = @objectId AND release_id IN (@release, @descendantReleases)`. The `release_id` filter is the resolution-chain piece: when browsing a first-party Release, we include any child Releases (`parent_release_id = @release`) so that third-party hits into the current Microsoft app surface up. When browsing a third-party Release, we include the parent so references *out* of the partner app into Base App are visible. Every row is an authoritative hit; the UI groups by source module and reference kind. No regex, no false positives.
+1. **Cross-module exact (SQL).** The resolution is a JOIN of `oe_module_references` against `oe_modules`, scoped by a recursive CTE over `parent_release_id` so the chain of Releases containing the current browse context plus its ancestors and descendants is in play. Outline:
+
+   ```sql
+   WITH RECURSIVE chain(release_id) AS (
+       SELECT id FROM oe_releases WHERE id = @currentRelease
+       UNION ALL
+       SELECT r.parent_release_id FROM oe_releases r
+       JOIN chain c ON r.id = c.release_id WHERE r.parent_release_id IS NOT NULL
+       UNION ALL
+       SELECT r.id FROM oe_releases r
+       JOIN chain c ON r.parent_release_id = c.release_id
+   )
+   SELECT mr.*, src.module_id AS src_module_id, src_m.name AS src_module_name
+   FROM oe_module_references mr
+   JOIN oe_module_objects src ON src.id = mr.source_object_id
+   JOIN oe_modules src_m ON src_m.id = src.module_id
+   JOIN oe_modules tgt_m ON tgt_m.app_id = mr.target_app_id
+                        AND tgt_m.release_id IN (SELECT release_id FROM chain)
+   WHERE tgt_m.id = @targetModuleId
+     AND mr.target_object_kind = @kind
+     AND mr.target_object_id   = @objectId;
+   ```
+
+   The recursive CTE walks both directions: ancestors (so a third-party Release's references *out* into Base App surface up) and descendants (so a first-party Release sees third-party hits *in*). Every row is an authoritative hit; the UI groups by source module and reference kind. No regex, no false positives. An index on `oe_module_references (target_app_id, target_object_kind, target_object_id)` keeps the join cheap.
 2. **Intra-module source scan.** The existing receiver-aware scanner (the band-aid plan) runs against the declaring module's source files. The global variable map is **read from `ModuleVariable`** instead of being regex-extracted — that's the upgrade. Procedure-local vars still come from the source-side regex. Results from this pass are split into the existing `Likely` / `PossiblyRelated` buckets.
 
 The "Possibly related" bucket becomes much smaller because the heuristic only runs against one module's source, where the symbol package's globals already eliminate most receiver ambiguity.
@@ -174,6 +197,43 @@ Find-references results page shows two sections:
 
 `_Exclude_`-flagged modules are styled the same as any other (Decision 4). A small badge ("internal" or similar) on the module chip is enough.
 
+### Upload flow for third-party Releases
+
+When the third-party upload UI lands (deferred milestone — schema ships earlier), the form is hybrid: it reads the uploaded `.app`'s `NavxManifest.xml`, pulls the `Dependencies` block plus the `Application` version constraint, and looks for existing Releases that satisfy them. The form's "Parent Release" dropdown defaults to the inferred match (annotated "(inferred from manifest)") with the full list of existing Releases available as an override. Multiple satisfying Releases — common when several BC versions are imported — surface the closest version match by default; the user can pick a different one. No automatic match available (no Release satisfies the dependencies) means the user must pick explicitly or the upload is refused.
+
+### Retargeting and upgrade-conflict detection
+
+A third-party Release's parent is mutable. `Releases › <release> › Settings` exposes a "Retarget to a different Release" action that runs `UPDATE oe_releases SET parent_release_id = @newParent WHERE id = @release`. Because reference rows store target facts (AppId + ObjectKind + ObjectId + ObjectName) rather than resolved Module pointers, every subsequent find-references query re-resolves transparently against the new parent chain. No row rewriting, no re-ingest.
+
+This makes upgrade-conflict detection a derived feature, no separate machinery needed. After retargeting Customer X from BC 25.18 to BC 25.20, the same query that powers Find references also answers "what *broke*":
+
+```sql
+-- References on a retargeted Release whose target no longer resolves
+SELECT mr.target_app_id, mr.target_object_kind, mr.target_object_name, COUNT(*) AS broken_count
+FROM oe_module_references mr
+JOIN oe_module_objects o ON o.id = mr.source_object_id
+JOIN oe_modules m ON m.id = o.module_id
+WHERE m.release_id = @retargetedRelease
+  AND NOT EXISTS (
+      SELECT 1 FROM oe_modules tgt
+      WHERE tgt.app_id = mr.target_app_id
+        AND tgt.release_id IN (SELECT release_id FROM chain_for(@retargetedRelease))
+        AND EXISTS (SELECT 1 FROM oe_module_objects to_
+                    WHERE to_.module_id = tgt.id
+                      AND to_.kind = mr.target_object_kind
+                      AND (to_.object_id = mr.target_object_id OR to_.name = mr.target_object_name))
+  )
+GROUP BY mr.target_app_id, mr.target_object_kind, mr.target_object_name
+ORDER BY broken_count DESC;
+```
+
+The result is exactly an upgrade compatibility report: "Codeunit X went away", "Field Y was renamed", "Procedure Z's signature changed and its overload no longer matches". The UI for this is a `Releases › <release> › Compatibility` page that runs the above against the current parent chain, grouped by target module. Empty result = the retarget is a clean lift. Non-empty result = work to do.
+
+Two design notes on retargeting:
+
+- Allow retarget only on Releases with `kind ∈ {'third_party', 'customer'}`. First-party Releases have `parent_release_id = NULL` by definition; the column stays null. The form refuses to expose retargeting on first-party rows.
+- Retargeting doesn't break the symmetric resolution from the parent's side. After Customer X moves from BC 25.18 to BC 25.20, BC 25.18 stops seeing Customer X's calls *into* it (because the chain no longer joins them) and BC 25.20 starts seeing them. Both directions are correct under the new chain.
+
 ## Migration from the current shape
 
 The current `base_app_*` tables and the `BaseAppImportService` source-ZIP path are dropped. Specifically:
@@ -190,11 +250,10 @@ Forward-only migration. No data preservation — re-ingest your DVDs. There's no
 ## Open questions
 
 1. **Dependency graph in the UI.** Each `Module` carries `dependencies_json` from its manifest. Worth surfacing a "what does this module depend on / what depends on this module" view, or defer? Leaning defer until someone asks.
-2. **Out-of-order ingest within a single Release.** A single Release is still atomic — its modules come together in one upload. If a user uploads just OIOUBL alone *as its own first-party Release* (no Base App), OIOUBL's references into Base App resolve to null `target_module_id` rows. That's the same "one upload = one Release" recommendation as before, just now with the parent_release_id escape hatch: the right pattern is to upload Base App as a first-party Release, then OIOUBL as a third-party Release with that Release as its parent. The resolver chases the parent chain and OIOUBL's `Record "General Ledger Setup"` resolves correctly.
-3. **Storage growth across many Releases.** Two BC versions = two full DVDs of source. Per-Release deletion is supported, but no automatic cleanup. Worth a SiteAdmin pruning UI from day one. Deletion of a parent Release should be refused while any child Release still points at it (PostgreSQL FK with `ON DELETE RESTRICT`).
-4. **Symbol package vs source disagreements.** When a `.app`'s embedded source and its `SymbolReference.json` disagree on object IDs or names (e.g. the source was edited after compilation, shouldn't happen for Microsoft-shipped `.app`s but could happen for partner-shipped ones with mismatched artifacts), which wins? Recommend: symbol package wins, log a warning per discrepancy.
-5. **Third-party Release UX (deferred but worth pre-flighting).** The first milestone ships the schema (`parent_release_id`, `kind`) and the resolution-chain query, but probably not the upload UI for third-party Releases. When that UI lands: does the user pick the parent from a dropdown of existing first-party Releases at upload time, or do we infer it from manifest dependencies (Continia's manifest declares `Application = 25.18.0.0` and lists `Base Application` as a dep — we could auto-match)? Inference is nicer when it works but ambiguous when multiple imported Releases satisfy the dependency; an explicit picker with an inferred default is probably the right shape.
-6. **Stacking depth.** Schema allows arbitrary parent chains (third-party → first-party, customer → third-party → first-party, etc.). Resolver code handles any depth. Whether the UI ever surfaces more than two layers (first-party + one overlay) is a product question for whoever picks up the third-party milestone.
+2. **Storage growth across many Releases.** Two BC versions = two full DVDs of source. Per-Release deletion is supported, but no automatic cleanup. Worth a SiteAdmin pruning UI from day one. Deletion of a parent Release should be refused while any child Release still points at it (PostgreSQL FK with `ON DELETE RESTRICT`).
+3. **Symbol package vs source disagreements.** When a `.app`'s embedded source and its `SymbolReference.json` disagree on object IDs or names (shouldn't happen for Microsoft-shipped `.app`s, could happen for partner-shipped ones with mismatched artifacts), which wins? Recommend: symbol package wins, log a warning per discrepancy.
+4. **Conflict-report fidelity.** The retarget conflict query above flags references whose `(target_app_id, target_object_kind, (target_object_id OR target_object_name))` no longer matches anything in the new chain. That catches object removals and renames but not deeper semantic breaks — a procedure that still exists with the same name but whose parameter list changed will not flag here. Worth picking up signature mismatches in a follow-up: the symbol package's `Methods[].Parameters` already gives us typed signatures per Release, so a procedure-signature-diff pass across two Releases of the same AppId is feasible but adds complexity. Defer until someone hits the case.
+5. **Multi-version Module presence under one Release.** Possible only via dependency: BC 25.18's Base App is `Version 25.18.x.y`, but a child third-party Release might pull in (via its own `.app` archive) a *replacement* Module with the same AppId at a different version. Idempotency rule today says skip duplicates by `(AppId, Version)` — which means two different versions both land. The resolver's chain join needs to pick one. Recommend: "closer to current Release wins" — a child Release's same-AppId Module shadows the parent's. Confirm.
 
 ## Verification
 
@@ -207,5 +266,8 @@ The ingest pipeline gets test coverage in `ALDevToolbox.Tests/ObjectExplorer/`:
 - `ReleaseImportServiceTests.HandlesPartnerAppWithSeparateSourceZip` — synthetic `.app` with `IncludeSourceInSymbolFile="false"`; assert source comes from the paired `.Source.zip`.
 - `ObjectExplorerServiceTests.FindReferences_returns_cross_module_exact_hits` — two-module single-Release fixture (a "consumer" module that declares `var X: Codeunit "Foo"; X.Bar()` plus a "library" module that declares `Codeunit "Foo" with procedure Bar`). Assert: the consumer's variable shows up as a cross-module reference with `reference_kind = variable_type`.
 - `ObjectExplorerServiceTests.FindReferences_resolves_across_parent_release` — two-Release fixture: parent first-party Release holds the library module declaring `Codeunit "Foo"`; child third-party Release holds the consumer module. Browsing the consumer's `Bar` procedure, assert the parent module shows up; browsing the library's `Bar` from the parent Release with the child attached, assert the child's call site shows up. Then assert that browsing the parent Release **without** the child attached doesn't surface the child's hits (releases are isolated unless linked by parent).
+- `ObjectExplorerServiceTests.FindReferences_resolves_through_multi_layer_chain` — three-Release fixture mirroring a real BC stack: layer 0 = "Base App" with `Codeunit "Foo"`; layer 1 = "Continia Core" (third-party) on top of layer 0, declaring `Codeunit "Cont Helper"` that calls Foo; layer 2 = "Continia Document Capture" (third-party) on top of layer 1, declaring a codeunit that calls Cont Helper. Assert: from layer 2, references to `Foo` resolve up through layer 0 (skipping nothing); from layer 0, browsing `Foo` shows the call site in layer 1 *and* the indirect reference is **not** doubled up from layer 2.
+- `ObjectExplorerServiceTests.Retarget_updates_resolution_without_rowrewrite` — start with a third-party Release whose `parent_release_id` points at BC 25.18. A reference into Base App resolves to that Release's `Codeunit "Foo"`. Update `parent_release_id` to a fixture "BC 25.20" Release (also containing `Codeunit "Foo"` but at a different `Module.id`). Same find-references query now returns the 25.20 Module without touching `oe_module_references` rows. Assert `oe_module_references` rows are byte-identical before and after.
+- `ObjectExplorerServiceTests.Retarget_surfaces_broken_references_in_compatibility_report` — retarget a third-party Release from a parent that has `Codeunit "Foo"` to a parent that has removed it (or renamed it). The compatibility-report query returns one broken-reference row keyed on the removed object; the same retarget back resolves to zero broken rows. Validates the "upgrade conflict detector" feature falls out of the resolution model without additional code.
 
 End-to-end smoke (manual, after CI green): import a real BC 25.18 DVD, open `Codeunit "Sales-Post"`, click Find references. Confirm hits from every Microsoft first-party extension that uses Sales-Post (Excel Reports, OIOUBL where applicable, EDocument connectors, etc.) appear in the cross-module section, with no false positives. Compare against the band-aid-only output of the current source-only Base App import to quantify precision lift.
