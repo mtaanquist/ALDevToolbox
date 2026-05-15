@@ -98,8 +98,28 @@
 
         <section class="form-section">
             <label class="field">
+                <span class="field__label">Application folder ZIP (recommended)</span>
+                <input type="file" name="FolderZip" accept=".zip" class="field__input" />
+                <small class="field__caption muted">
+                    Drop the DVD's <code>applications/</code> folder as one ZIP.
+                    We walk every <code>.app</code> entry, pair it with its
+                    sibling <code>.Source.zip</code>, and flag test apps
+                    (anything under a <code>Test*</code> folder), internal apps
+                    (Microsoft's <code>_Exclude_</code> marker), and language
+                    packs (translation-only modules) automatically.
+                    Up to 1 GB.
+                </small>
+            </label>
+        </section>
+
+        <section class="form-section">
+            <p class="muted">
+                — or pick individual files (useful for partner extensions you've built locally) —
+            </p>
+
+            <label class="field">
                 <span class="field__label">.app files</span>
-                <input type="file" name="AppFiles" accept=".app" multiple required
+                <input type="file" name="AppFiles" accept=".app" multiple
                        class="field__input" />
                 <small class="field__caption muted">
                     Pick every <code>.app</code> for this Release in one go. We

@@ -1,8 +1,12 @@
 namespace ALDevToolbox.Services.ObjectExplorer;
 
 /// <summary>
-/// One row in the Releases picker — minimal projection so the dropdown
-/// renders without loading modules eagerly.
+/// One row in the Releases picker. Carries denormalised file count and
+/// content-size totals so admins can spot which Release is dragging on
+/// storage without a per-row drill-down. The sizes are <em>character</em>
+/// counts (Postgres <c>LENGTH(content)</c>) rather than byte counts — close
+/// enough for ASCII-dominant AL source, off by 1–4× for the rare multi-byte
+/// run, which is fine for a "how much room is this taking" overview.
 /// </summary>
 public sealed record ReleaseListItem(
     int Id,
@@ -11,7 +15,9 @@ public sealed record ReleaseListItem(
     string Status,
     string? BcVersion,
     int? ParentReleaseId,
-    DateTime ImportedAt);
+    DateTime ImportedAt,
+    int SourceFileCount,
+    long SourceContentLength);
 
 /// <summary>
 /// Release detail surface for the header bar — adds module count and the

@@ -17,11 +17,19 @@ public sealed record ReleaseImportRequest(
 /// <summary>
 /// One <c>.app</c> file + optional paired source zip. Streams are owned by the
 /// caller; the service reads them to completion but does not close them.
+///
+/// The three flag fields default to <c>false</c> so the per-file upload path
+/// (where admins pick individual .apps without any path context) stays
+/// backward compatible. The folder-ZIP upload path infers them from the
+/// surrounding folder + filename conventions before construction.
 /// </summary>
 public sealed record AppFileUpload(
     string FileName,
     Stream AppStream,
-    Stream? SourceZipStream);
+    Stream? SourceZipStream,
+    bool IsTest = false,
+    bool IsInternal = false,
+    bool IsLanguagePack = false);
 
 /// <summary>
 /// Summary statistics from an import run — surfaced on the admin UI's

@@ -276,6 +276,42 @@ public sealed class ReleaseImportServiceTests : IDisposable
         release.StatusMessage.Should().Contain("NAVX");
     }
 
+    // ── Per-upload flag propagation ────────────────────────────────────
+
+    [Fact]
+    public async Task Threads_is_test_is_internal_is_language_pack_flags_through_to_module_rows()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+
+        await using var appStream = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        var summary = await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "Flag propagation",
+            Kind: "first_party",
+            ParentReleaseId: null,
+            ApplicationVersionId: null,
+            Uploads: new[]
+            {
+                // Pass the same fixture but mark it test+internal+language-pack —
+                // exercises the flag-propagation path the folder-ZIP upload
+                // layer relies on to surface DVD folder conventions.
+                new AppFileUpload(
+                    FileName: "Microsoft_DK_Core.app",
+                    AppStream: appStream,
+                    SourceZipStream: null,
+                    IsTest: true,
+                    IsInternal: true,
+                    IsLanguagePack: true),
+            }));
+
+        await using var read = _db.NewContext();
+        var module = await read.OeModules.AsNoTracking()
+            .SingleAsync(m => m.ReleaseId == summary.ReleaseId);
+        module.IsTest.Should().BeTrue();
+        module.IsInternal.Should().BeTrue();
+        module.IsLanguagePack.Should().BeTrue();
+    }
+
     // ── Parent-release linkage ──────────────────────────────────────────
 
     [Fact]

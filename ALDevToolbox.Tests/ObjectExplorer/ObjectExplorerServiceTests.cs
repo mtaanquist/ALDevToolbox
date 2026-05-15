@@ -67,6 +67,18 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ListReleasesAsync_includes_source_file_count_and_content_length()
+    {
+        await SeedSingleReleaseAsync();
+
+        await using var read = _db.NewContext();
+        var row = (await NewQuery(read).ListReleasesAsync()).Single();
+        row.SourceFileCount.Should().BeGreaterThan(0,
+            because: "both DK Core and OIOUBL ship .al source embedded in their .apps");
+        row.SourceContentLength.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
     public async Task GetReleaseAsync_returns_module_count_and_parent_label()
     {
         await using (var ctx = _db.NewContext())
