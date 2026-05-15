@@ -17,6 +17,7 @@ internal sealed class BaseAppSymbolConfiguration : IEntityTypeConfiguration<Base
         entity.Property(e => e.Kind).HasColumnName("kind").IsRequired();
         entity.Property(e => e.Name).HasColumnName("name").IsRequired();
         entity.Property(e => e.Signature).HasColumnName("signature");
+        entity.Property(e => e.FieldId).HasColumnName("field_id");
         entity.Property(e => e.LineNumber).HasColumnName("line_number").IsRequired();
         entity.Property(e => e.ColumnStart).HasColumnName("column_start").IsRequired();
         entity.Property(e => e.ColumnEnd).HasColumnName("column_end").IsRequired();

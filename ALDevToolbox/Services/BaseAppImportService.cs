@@ -174,6 +174,7 @@ public class BaseAppImportService
                         Kind = symbol.Kind,
                         Name = symbol.Name,
                         Signature = symbol.Signature,
+                        FieldId = symbol.FieldId,
                         LineNumber = symbol.LineNumber,
                         ColumnStart = symbol.ColumnStart,
                         ColumnEnd = symbol.ColumnEnd,

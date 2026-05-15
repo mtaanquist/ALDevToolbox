@@ -30,6 +30,7 @@ public static class AlGoToDefinitionLocator
         "pageextension", "tableextension", "reportextension", "enumextension",
         "permissionsetextension",
         "extends",
+        "tabledata",
     };
 
     /// <summary>
@@ -85,6 +86,36 @@ public static class AlGoToDefinitionLocator
         return match.Groups["q"].Success
             ? match.Groups["q"].Value
             : match.Groups["u"].Value;
+    }
+
+    private static readonly Regex AllRecordVarDeclsRegex = new(
+        @"\b(?<var>[A-Za-z_][A-Za-z0-9_]*)\s*:\s*Record\s+(""(?<q>[^""]+)""|(?<u>[A-Za-z_][A-Za-z0-9_]*))",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <summary>
+    /// Returns every <c>VarName: Record "Table"</c> pair in
+    /// <paramref name="fileContent"/>. Used by the resolvable scanner to
+    /// underline <c>VarName."FieldName"</c> field accesses across the file
+    /// in a single pass, rather than calling
+    /// <see cref="ResolveVariableType"/> per click. Only <c>Record</c>-typed
+    /// vars are returned because that's the only AL type that exposes
+    /// fields by dot-access. Last wins on duplicate variable names — AL
+    /// rarely reuses names across procedures, and even when it does the
+    /// duplicates usually share a type.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> ResolveAllRecordVariableTypes(string fileContent)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(fileContent)) return result;
+
+        foreach (Match m in AllRecordVarDeclsRegex.Matches(fileContent))
+        {
+            var varName = m.Groups["var"].Value;
+            var tableName = m.Groups["q"].Success ? m.Groups["q"].Value : m.Groups["u"].Value;
+            if (string.IsNullOrEmpty(varName) || string.IsNullOrEmpty(tableName)) continue;
+            result[varName] = tableName;
+        }
+        return result;
     }
 
     private static string? GetLine(string source, int line)

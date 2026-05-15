@@ -61,8 +61,22 @@ const AL_KEYWORDS = new Set([
     "raises", "obsolete", "subscribers", "subscriber",
 ]);
 
+// Keywords whose following identifier is an *object name* — colour the
+// next bare identifier (after any object-ID number) the same way we colour
+// quoted AL identifiers, so `table 5721 Purchasing` reads the same as
+// `table 36 "Sales Header"`. Kept narrower than AL_KEYWORDS itself; only
+// the keywords that introduce a typed reference.
+const AL_OBJECT_KEYWORDS = new Set([
+    "codeunit", "table", "tableextension", "page", "pageextension",
+    "pagecustomization", "report", "reportextension", "xmlport", "query",
+    "enum", "enumextension", "permissionset", "permissionsetextension",
+    "profile", "controladdin", "record",
+    "requestpage", "testpage", "testpart", "testrequestpage", "interface",
+    "extends", "tabledata",
+]);
+
 const alParser = {
-    startState() { return { inBlockComment: false }; },
+    startState() { return { inBlockComment: false, expectObjectName: false }; },
     token(stream, state) {
         if (state.inBlockComment) {
             while (!stream.eol()) {
@@ -90,6 +104,7 @@ const alParser = {
                 const ch = stream.next();
                 if (ch === '"') break;
             }
+            state.expectObjectName = false;
             return "variableName";
         }
         // Single-quoted string literal.
@@ -105,14 +120,32 @@ const alParser = {
                     break;
                 }
             }
+            state.expectObjectName = false;
             return "string";
         }
-        if (stream.match(/^\d+(\.\d+)?/)) return "number";
+        if (stream.match(/^\d+(\.\d+)?/)) {
+            // A numeric literal between an object keyword and the name
+            // (`table 5721 Purchasing`) is fine — keep the expectation
+            // alive so the next identifier still gets the variableName
+            // colour. Other numerics clear it.
+            return "number";
+        }
         if (stream.match(/^[A-Za-z_][A-Za-z0-9_]*/)) {
             const word = stream.current().toLowerCase();
-            if (AL_KEYWORDS.has(word)) return "keyword";
+            if (AL_KEYWORDS.has(word)) {
+                state.expectObjectName = AL_OBJECT_KEYWORDS.has(word);
+                return "keyword";
+            }
+            if (state.expectObjectName) {
+                state.expectObjectName = false;
+                return "variableName";
+            }
             return null;
         }
+        // Any other character — punctuation, operator — drops the
+        // object-name expectation. We hit this for `{`, `:`, `=`, etc.,
+        // any of which means the declaration has moved past its name.
+        state.expectObjectName = false;
         stream.next();
         return null;
     },

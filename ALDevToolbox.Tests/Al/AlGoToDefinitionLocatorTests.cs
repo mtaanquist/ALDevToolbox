@@ -114,4 +114,39 @@ public sealed class AlGoToDefinitionLocatorTests
 
         AlGoToDefinitionLocator.ResolveVariableType(source, "Mgt").Should().Be("ItemMgt");
     }
+
+    [Fact]
+    public void Resolve_all_record_variable_types_returns_every_record_var()
+    {
+        var source = """
+            codeunit 50100 "Caller"
+            {
+                procedure DoIt()
+                var
+                    SalesHdr: Record "Sales Header";
+                    Cust: Record Customer;
+                    Mgt: Codeunit ItemMgt;
+                begin
+                end;
+            }
+            """;
+
+        var map = AlGoToDefinitionLocator.ResolveAllRecordVariableTypes(source);
+
+        // Only Record-typed vars; codeunit / interface / etc. are dropped.
+        map.Should().HaveCount(2);
+        map["SalesHdr"].Should().Be("Sales Header");
+        map["Cust"].Should().Be("Customer");
+    }
+
+    [Fact]
+    public void Resolve_all_record_variable_types_is_case_insensitive_on_var_lookup()
+    {
+        var source = "    SalesHdr: Record \"Sales Header\";";
+
+        var map = AlGoToDefinitionLocator.ResolveAllRecordVariableTypes(source);
+
+        // AL is case-insensitive — `saleshdr` should hit the same row.
+        map.ContainsKey("saleshdr").Should().BeTrue();
+    }
 }

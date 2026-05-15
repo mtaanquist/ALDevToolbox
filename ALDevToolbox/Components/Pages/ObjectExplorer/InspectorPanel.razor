@@ -58,6 +58,41 @@
     </div>
 </aside>
 
+@if (_menuSymbolId is { } openMenuId && Symbols.FirstOrDefault(s => s.Id == openMenuId) is { } menuSymbol)
+{
+    // Full-viewport backdrop captures outside clicks so the menu dismisses
+    // on the next interaction — same pattern the editor's right-click menu
+    // uses. The menu itself sits on top via z-index in .cm-symbol-menu.
+    <div class="cm-symbol-menu-backdrop"
+         @onclick="CloseRowMenu"
+         @oncontextmenu="CloseRowMenu"
+         @oncontextmenu:preventDefault="true"></div>
+    <div class="cm-symbol-menu"
+         style="@($"left: {_menuX.ToString(System.Globalization.CultureInfo.InvariantCulture)}px; top: {_menuY.ToString(System.Globalization.CultureInfo.InvariantCulture)}px;")"
+         @onclick:stopPropagation="true"
+         @oncontextmenu:stopPropagation="true">
+        <button type="button"
+                class="cm-symbol-menu__item"
+                @onclick="() => GoToDefinitionFromMenu(menuSymbol)">
+            Go to definition
+        </button>
+        @if (CanFindReferences(menuSymbol.Kind))
+        {
+            <button type="button"
+                    class="cm-symbol-menu__item"
+                    @onclick="() => FindReferencesFromMenu(menuSymbol)">
+                Find references
+            </button>
+        }
+        else
+        {
+            <span class="cm-symbol-menu__item cm-symbol-menu__item--disabled">
+                Find references
+            </span>
+        }
+    </div>
+}
+
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<InspectorPanelView> Stack { get; set; } = default!;
     [Parameter, EditorRequired] public int Cursor { get; set; }
@@ -85,6 +120,17 @@
     private Dictionary<long, BaseAppReferenceResult?> _referencesCache = new();
     // Per-file cache of in-file search hits; null entry means "loading".
     private Dictionary<string, FileSearchResult?> _fileSearchCache = new(StringComparer.Ordinal);
+    // Outline section kinds the user has collapsed. Reset on file change so
+    // each file starts fully expanded — most files are short enough to
+    // scroll, and a stale "collapsed local procs" from a 2,000-line
+    // codeunit shouldn't hide a 3-proc page's outline.
+    private HashSet<string> _collapsedSections = new(StringComparer.Ordinal);
+    // Right-click context menu state. _menuSymbolId is the row the menu is
+    // anchored to; null means closed. x/y are viewport coordinates from
+    // the contextmenu event.
+    private long? _menuSymbolId;
+    private double _menuX;
+    private double _menuY;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -94,6 +140,8 @@
             _outlineFilter = string.Empty;
             _referencesCache.Clear();
             _fileSearchCache.Clear();
+            _collapsedSections.Clear();
+            _menuSymbolId = null;
         }
 
         if (Stack.Count == 0) return;
@@ -123,11 +171,14 @@
         _ => "?",
     };
 
-    // Categories shown in the outline, in render order. Trigger and event
-    // subscribers are framework-fired but still useful to see at a glance —
-    // they just don't get a Find-references button.
+    // Categories shown in the outline, in render order. Object header and
+    // fields lead so a table file reads top-down like the AL source itself.
+    // Trigger and event subscribers are framework-fired but still useful to
+    // see at a glance — they just don't get a Find-references button.
     private static readonly (string Kind, string Label)[] OutlineCategories =
     {
+        ("object_declaration", "Object"),
+        ("field", "Fields"),
         ("procedure", "Procedures"),
         ("internal_procedure", "Internal procedures"),
         ("protected_procedure", "Protected procedures"),
@@ -170,41 +221,85 @@
                 {
                     var rows = filtered.Where(s => s.Kind == kind).ToList();
                     if (rows.Count == 0) continue;
+                    var isCollapsed = _collapsedSections.Contains(kind);
+                    var sectionKind = kind;
 
-                    <li class="inspector-panel__section">
-                        <h3 class="inspector-panel__section-title">
-                            @label
+                    <li class="inspector-panel__section @(isCollapsed ? "inspector-panel__section--collapsed" : null)">
+                        <button type="button"
+                                class="inspector-panel__section-toggle"
+                                aria-expanded="@(!isCollapsed)"
+                                @onclick="() => ToggleSection(sectionKind)">
+                            <Icon Name="@(isCollapsed ? "chevron-right" : "chevron-down")" Width="12" Height="12" />
+                            <span class="inspector-panel__section-title-text">@label</span>
                             <span class="muted small">(@rows.Count)</span>
-                        </h3>
-                        <ul class="inspector-panel__items">
-                            @foreach (var sym in rows)
-                            {
-                                <li class="inspector-panel__item">
-                                    <a class="inspector-panel__item-link"
-                                       href="@($"/object-explorer/{VersionId}/files/{FileId}#L{sym.LineNumber}")"
-                                       @onclick="@(() => OnScrollTo.InvokeAsync((FileId, sym.LineNumber)))"
-                                       @onclick:preventDefault="true"
-                                       @onclick:stopPropagation="true">
-                                        <span class="inspector-panel__item-name">@sym.Name</span>
-                                        <span class="muted small inspector-panel__item-line">L@(sym.LineNumber)</span>
-                                    </a>
-                                    @if (CanFindReferences(sym.Kind))
-                                    {
-                                        <button type="button"
-                                                class="inspector-panel__item-action"
-                                                title="Find references"
-                                                @onclick="() => OnPushReferences.InvokeAsync(sym)">
-                                            <Icon Name="search" Width="13" Height="13" />
-                                        </button>
-                                    }
-                                </li>
-                            }
-                        </ul>
+                        </button>
+                        @if (!isCollapsed)
+                        {
+                            <ul class="inspector-panel__items">
+                                @foreach (var sym in rows)
+                                {
+                                    var symbol = sym;
+                                    <li class="inspector-panel__item"
+                                        @oncontextmenu="@(e => OpenRowMenu(e, symbol))"
+                                        @oncontextmenu:preventDefault="true">
+                                        <a class="inspector-panel__item-link"
+                                           href="@($"/object-explorer/{VersionId}/files/{FileId}#L{symbol.LineNumber}")"
+                                           @onclick="@(() => OnScrollTo.InvokeAsync((FileId, symbol.LineNumber)))"
+                                           @onclick:preventDefault="true"
+                                           @onclick:stopPropagation="true">
+                                            <span class="inspector-panel__item-name">@symbol.Name</span>
+                                            <span class="muted small inspector-panel__item-line">L@(symbol.LineNumber)</span>
+                                        </a>
+                                        @if (CanFindReferences(symbol.Kind))
+                                        {
+                                            <button type="button"
+                                                    class="inspector-panel__item-action"
+                                                    title="Find references"
+                                                    @onclick="() => OnPushReferences.InvokeAsync(symbol)">
+                                                <Icon Name="search" Width="13" Height="13" />
+                                            </button>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        }
                     </li>
                 }
             </ul>
         }
     };
+
+    private void ToggleSection(string kind)
+    {
+        if (!_collapsedSections.Add(kind))
+        {
+            _collapsedSections.Remove(kind);
+        }
+    }
+
+    private void OpenRowMenu(MouseEventArgs e, BaseAppSymbol symbol)
+    {
+        _menuSymbolId = symbol.Id;
+        _menuX = e.ClientX;
+        _menuY = e.ClientY;
+    }
+
+    private void CloseRowMenu()
+    {
+        _menuSymbolId = null;
+    }
+
+    private async Task GoToDefinitionFromMenu(BaseAppSymbol symbol)
+    {
+        CloseRowMenu();
+        await OnScrollTo.InvokeAsync((FileId, symbol.LineNumber));
+    }
+
+    private async Task FindReferencesFromMenu(BaseAppSymbol symbol)
+    {
+        CloseRowMenu();
+        await OnPushReferences.InvokeAsync(symbol);
+    }
 
     private static bool CanFindReferences(string kind)
     {
