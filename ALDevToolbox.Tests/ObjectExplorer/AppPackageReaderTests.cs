@@ -258,6 +258,104 @@ public sealed class AppPackageReaderTests
     }
 
     [Fact]
+    public async Task ReadAsync_unwraps_ready2run_wrapper_and_preserves_outer_hash()
+    {
+        // Microsoft's modern DVDs ship "Ready2Run" wrapper .app files: a
+        // NAVX-prefixed ZIP whose root holds readytorunappmanifest.json plus
+        // one nested .app that is the real Navx archive. AMC Banking was the
+        // visible failure (NavxManifest.xml not found on the wrapper). The
+        // reader has to peel off the wrapper, recurse, and surface the inner
+        // manifest while keeping the outer hash so the importer's idempotency
+        // check still keys off the operator's upload.
+        var innerPath = Path.Combine(FixtureRoot, "Microsoft_DK_Core.app");
+        var innerBytes = await File.ReadAllBytesAsync(innerPath);
+
+        var wrapperBytes = BuildReadyToRunWrapper(innerBytes, innerAppFileName: "inner_28.1.49838.app");
+
+        // Sanity-check: the wrapper is recognisably different from the inner.
+        wrapperBytes.SequenceEqual(innerBytes).Should().BeFalse();
+
+        await using var wrapperStream = new MemoryStream(wrapperBytes);
+        var pkg = await AppPackageReader.ReadAsync(wrapperStream);
+
+        // Inner manifest came through — same identity as reading the bare .app directly.
+        pkg.Manifest.AppId.Should().Be(Guid.Parse("40d64215-8abc-4d96-87dc-2894e5431115"));
+        pkg.Manifest.Name.Should().Be("DK Core");
+        pkg.Manifest.Publisher.Should().Be("Microsoft");
+
+        // Hash is over the *wrapper* bytes, not the inner blob, so the
+        // importer's (release, app, version, hash) idempotency check matches
+        // what the operator actually uploaded.
+        var expectedOuterHash = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(wrapperBytes));
+        pkg.AppFileHash.Should().Be(expectedOuterHash);
+
+        var innerHash = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(innerBytes));
+        pkg.AppFileHash.Should().NotBe(innerHash);
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_ready2run_wrapper_with_multiple_root_apps()
+    {
+        // A wrapper with two root-level .app entries is ambiguous — refuse
+        // it with a diagnostic rather than guessing which one is the real
+        // payload.
+        var innerBytes = await File.ReadAllBytesAsync(
+            Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        var wrapperBytes = BuildReadyToRunWrapper(
+            innerBytes,
+            innerAppFileName: "first.app",
+            extraRootAppName: "second.app");
+
+        await using var stream = new MemoryStream(wrapperBytes);
+        var act = async () => await AppPackageReader.ReadAsync(stream);
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*Ready2Run*");
+    }
+
+    /// <summary>
+    /// Builds a synthetic Ready2Run wrapper around a real inner .app: a
+    /// NAVX-prefixed ZIP containing readytorunappmanifest.json plus the
+    /// inner .app at the archive root. <paramref name="extraRootAppName"/>
+    /// produces an additional root-level .app entry for the ambiguity test.
+    /// </summary>
+    private static byte[] BuildReadyToRunWrapper(byte[] innerAppBytes, string innerAppFileName, string? extraRootAppName = null)
+    {
+        byte[] zipBytes;
+        using (var zipMs = new MemoryStream())
+        {
+            using (var zip = new System.IO.Compression.ZipArchive(zipMs, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+            {
+                var manifest = zip.CreateEntry("readytorunappmanifest.json");
+                using (var w = new StreamWriter(manifest.Open()))
+                {
+                    w.Write("{\"format\":\"ready2run\",\"inner\":\"" + innerAppFileName + "\"}");
+                }
+
+                var inner = zip.CreateEntry(innerAppFileName);
+                using (var s = inner.Open())
+                {
+                    s.Write(innerAppBytes, 0, innerAppBytes.Length);
+                }
+
+                if (extraRootAppName is not null)
+                {
+                    var extra = zip.CreateEntry(extraRootAppName);
+                    using var s = extra.Open();
+                    s.Write(innerAppBytes, 0, innerAppBytes.Length);
+                }
+            }
+            zipBytes = zipMs.ToArray();
+        }
+
+        var result = new byte[40 + zipBytes.Length];
+        result[0] = (byte)'N'; result[1] = (byte)'A'; result[2] = (byte)'V'; result[3] = (byte)'X';
+        Buffer.BlockCopy(zipBytes, 0, result, 40, zipBytes.Length);
+        return result;
+    }
+
+    [Fact]
     public async Task ReadAsync_produces_identical_hash_on_replay()
     {
         var path = Path.Combine(FixtureRoot, "Microsoft_DK_Core.app");

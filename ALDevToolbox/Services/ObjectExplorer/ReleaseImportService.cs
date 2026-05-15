@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
+using ALDevToolbox.Services.Al;
 using Microsoft.EntityFrameworkCore;
 using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
 using OeModuleFile = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleFile;
@@ -325,6 +326,16 @@ public class ReleaseImportService
         // so we can stamp ModuleObject.LineNumber without re-reading content.
         var declarationLines = ScanDeclarationLines(filesByPath);
 
+        // Same pass, deeper: run the AL symbol extractor over each file so we
+        // can stamp line/column on every sub-symbol (procedure / trigger /
+        // event publisher/subscriber / field) and emit rows for ones the
+        // symbol package doesn't ship (local procedures, triggers). Keyed by
+        // file path so the per-object loop below can grab its file's symbols
+        // in O(1). Files with no source — third-party modules built with
+        // IncludeSourceInSymbolFile="false" and no paired .Source.zip — have
+        // no entry here; sub-symbols for those objects stay at LineNumber=0.
+        var extractedByPath = ExtractSubSymbolsByFile(filesByPath);
+
         // Each chunk holds the object + every symbol/variable/reference row
         // that references it via navigation. Saving them together lets EF
         // resolve the dependent FKs from the principal's freshly-generated
@@ -368,7 +379,23 @@ public class ReleaseImportService
             _db.OeModuleObjects.Add(obj);
             totals.ObjectsImported++;
 
-            EmitSymbols(orgId, module, obj, symObj);
+            // Only feed the extractor's symbols in when the file's primary
+            // object_declaration matches this symObj — for multi-object .al
+            // files the extractor only marks the first object, so anything
+            // past that risks attributing the second object's procedures to
+            // the first. Bound the over-attribution by being strict here.
+            IReadOnlyList<AlSymbol> extractedForObject = Array.Empty<AlSymbol>();
+            if (sourceFile is not null && extractedByPath.TryGetValue(sourceFile.Path, out var extracted))
+            {
+                var primaryDecl = extracted.FirstOrDefault(s => s.Kind == "object_declaration");
+                if (primaryDecl is not null
+                    && string.Equals(primaryDecl.Name, symObj.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    extractedForObject = extracted;
+                }
+            }
+
+            EmitSymbols(orgId, module, obj, symObj, extractedForObject);
             EmitVariables(orgId, module, obj, symObj);
             EmitReferences(orgId, module, obj, symObj, totals);
 
@@ -399,26 +426,98 @@ public class ReleaseImportService
     private const int FileChunkSize = 50;
     private const int ObjectChunkSize = 50;
 
-    private void EmitSymbols(int orgId, OeModule module, OeModuleObject obj, SymbolObject symObj)
+    private void EmitSymbols(
+        int orgId, OeModule module, OeModuleObject obj, SymbolObject symObj,
+        IReadOnlyList<AlSymbol> extractedSymbols)
     {
+        // The symbol package only ships public + internal methods; locals,
+        // triggers, and event subscribers exist only in source. Index the
+        // extractor's findings so the symbol-package loop below can stamp
+        // line/column on matches, and so we can emit additional rows for
+        // anything the extractor saw that the package omitted. Procedures
+        // are kept as a queue per name so each overload of a method picks
+        // up a distinct line — symbol-package method ordering tracks the
+        // source declaration order in practice.
+        var procQueueByName = new Dictionary<string, Queue<AlSymbol>>(StringComparer.OrdinalIgnoreCase);
+        var fieldByName = new Dictionary<string, AlSymbol>(StringComparer.OrdinalIgnoreCase);
+        var fieldById = new Dictionary<int, AlSymbol>();
+        foreach (var sym in extractedSymbols)
+        {
+            switch (sym.Kind)
+            {
+                case "procedure":
+                case "local_procedure":
+                case "internal_procedure":
+                case "protected_procedure":
+                case "trigger":
+                case "event_publisher":
+                case "event_subscriber":
+                    if (!procQueueByName.TryGetValue(sym.Name, out var queue))
+                    {
+                        queue = new Queue<AlSymbol>();
+                        procQueueByName[sym.Name] = queue;
+                    }
+                    queue.Enqueue(sym);
+                    break;
+                case "field":
+                    fieldByName.TryAdd(sym.Name, sym);
+                    if (sym.FieldId is { } id) fieldById.TryAdd(id, sym);
+                    break;
+            }
+        }
+
+        var consumedExtracted = new HashSet<AlSymbol>();
+
         foreach (var method in symObj.Methods)
         {
+            var kind = method.IsInternal ? "internal_procedure" : "procedure";
+            int line = 0, colStart = 0, colEnd = 0;
+            if (procQueueByName.TryGetValue(method.Name, out var queue) && queue.Count > 0)
+            {
+                var extracted = queue.Dequeue();
+                consumedExtracted.Add(extracted);
+                line = extracted.LineNumber;
+                colStart = extracted.ColumnStart;
+                colEnd = extracted.ColumnEnd;
+                // event_publisher / event_subscriber / local_procedure /
+                // protected_procedure carry more specific intent than the
+                // package's IsInternal bit — prefer the extractor's kind
+                // when it's one of those, but never downgrade
+                // internal_procedure to plain procedure.
+                if (extracted.Kind is "event_publisher" or "event_subscriber" or "protected_procedure")
+                {
+                    kind = extracted.Kind;
+                }
+                else if (extracted.Kind == "internal_procedure")
+                {
+                    kind = "internal_procedure";
+                }
+            }
             _db.OeModuleSymbols.Add(new OeModuleSymbol
             {
                 OrganizationId = orgId,
                 ModuleId = module.Id,
                 Object = obj,
-                Kind = method.IsInternal ? "internal_procedure" : "procedure",
+                Kind = kind,
                 Name = method.Name,
                 Signature = RenderSignature(method),
                 ReturnType = method.ReturnType?.Name,
-                LineNumber = 0,    // Filled in by a source-scan pass later (PR 4 territory).
-                ColumnStart = 0,
-                ColumnEnd = 0,
+                LineNumber = line,
+                ColumnStart = colStart,
+                ColumnEnd = colEnd,
             });
         }
+
         foreach (var field in symObj.Fields)
         {
+            int line = 0, colStart = 0, colEnd = 0;
+            if (fieldById.TryGetValue(field.Id, out var extracted)
+                || fieldByName.TryGetValue(field.Name, out extracted))
+            {
+                line = extracted.LineNumber;
+                colStart = extracted.ColumnStart;
+                colEnd = extracted.ColumnEnd;
+            }
             _db.OeModuleSymbols.Add(new OeModuleSymbol
             {
                 OrganizationId = orgId,
@@ -428,9 +527,45 @@ public class ReleaseImportService
                 Name = field.Name,
                 Signature = field.Type.Name,
                 FieldId = field.Id,
-                LineNumber = 0,
-                ColumnStart = 0,
-                ColumnEnd = 0,
+                LineNumber = line,
+                ColumnStart = colStart,
+                ColumnEnd = colEnd,
+            });
+        }
+
+        // Locals / triggers / event subscribers / event publishers that the
+        // compiler stripped from the symbol package — pick them up from
+        // source so the outline shows them. consumedExtracted holds every
+        // AlSymbol already mapped into a symbol-package row above, which
+        // also correctly handles overloads (the queue dequeue gave each
+        // package method a distinct extractor row).
+        foreach (var sym in extractedSymbols)
+        {
+            switch (sym.Kind)
+            {
+                case "procedure":
+                case "local_procedure":
+                case "internal_procedure":
+                case "protected_procedure":
+                case "trigger":
+                case "event_publisher":
+                case "event_subscriber":
+                    break;
+                default:
+                    continue;
+            }
+            if (consumedExtracted.Contains(sym)) continue;
+            _db.OeModuleSymbols.Add(new OeModuleSymbol
+            {
+                OrganizationId = orgId,
+                ModuleId = module.Id,
+                Object = obj,
+                Kind = sym.Kind,
+                Name = sym.Name,
+                Signature = sym.Signature,
+                LineNumber = sym.LineNumber,
+                ColumnStart = sym.ColumnStart,
+                ColumnEnd = sym.ColumnEnd,
             });
         }
     }
@@ -685,6 +820,23 @@ public class ReleaseImportService
                 var name = m.Groups["quoted"].Success ? m.Groups["quoted"].Value : m.Groups["bare"].Value;
                 result.TryAdd((file.Path, kind, name), line);
             }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Runs <see cref="AlSymbolExtractor.Extract"/> over every imported
+    /// source file. The extractor is regex-based and cheap — one pass per
+    /// file at import time replaces the historical "filled in by a
+    /// source-scan pass later" placeholder and unblocks the outline panel.
+    /// </summary>
+    private static Dictionary<string, IReadOnlyList<AlSymbol>> ExtractSubSymbolsByFile(
+        IReadOnlyDictionary<string, OeModuleFile> filesByPath)
+    {
+        var result = new Dictionary<string, IReadOnlyList<AlSymbol>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (path, file) in filesByPath)
+        {
+            result[path] = AlSymbolExtractor.Extract(file.Content);
         }
         return result;
     }
