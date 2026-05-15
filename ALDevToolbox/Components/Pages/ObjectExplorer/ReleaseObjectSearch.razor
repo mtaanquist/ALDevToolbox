@@ -1,0 +1,163 @@
+@page "/object-explorer/release/{ReleaseId:int}/search"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer
+
+<PageTitle>Search · @(_release?.Label ?? "Release") · AL Dev Toolbox</PageTitle>
+
+<div class="object-explorer">
+    @if (_release is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        <header class="admin-page__header">
+            <div>
+                <p class="muted">
+                    <a href="/object-explorer">Releases</a>
+                    <span> / <a href="@($"/object-explorer/release/{ReleaseId}")">@_release.Label</a></span>
+                </p>
+                <h1>Search objects</h1>
+                <p class="muted">
+                    Searches every module in this Release. Use the kind filter to
+                    narrow to codeunits, tables, pages, etc. Empty search returns
+                    everything (capped at @ResultCap rows).
+                </p>
+            </div>
+        </header>
+
+        <section class="form-section">
+            <div class="form-row">
+                <label class="field">
+                    <span class="field__label">Kind</span>
+                    <select value="@_kind" @onchange="OnKindChange" class="field__input">
+                        <option value="">All kinds</option>
+                        <option value="codeunit">Codeunit</option>
+                        <option value="table">Table</option>
+                        <option value="page">Page</option>
+                        <option value="report">Report</option>
+                        <option value="xmlport">XmlPort</option>
+                        <option value="query">Query</option>
+                        <option value="interface">Interface</option>
+                        <option value="enum">Enum</option>
+                        <option value="tableextension">Table extension</option>
+                        <option value="pageextension">Page extension</option>
+                        <option value="reportextension">Report extension</option>
+                        <option value="enumextension">Enum extension</option>
+                        <option value="permissionset">Permission set</option>
+                        <option value="controladdin">Control add-in</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span class="field__label">Search</span>
+                    <input type="search"
+                           placeholder="Name or numeric object id"
+                           value="@_search"
+                           @oninput="OnSearch"
+                           class="field__input"
+                           autofocus />
+                </label>
+            </div>
+        </section>
+
+        @if (_results is null)
+        {
+            <p class="muted">Loading objects…</p>
+        }
+        else if (_results.Count == 0)
+        {
+            <p class="muted">No objects match. Try a different name or remove the kind filter.</p>
+        }
+        else
+        {
+            @if (_results.Count >= ResultCap)
+            {
+                <p class="form-error" role="status">
+                    Showing the first @ResultCap matches — narrow the search to see the rest.
+                </p>
+            }
+            else
+            {
+                <p class="muted">@_results.Count.ToString("N0") object(s).</p>
+            }
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Module</th>
+                        <th scope="col">Kind</th>
+                        <th scope="col">Id</th>
+                        <th scope="col">Name</th>
+                        <th scope="col">Source</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in _results)
+                    {
+                        <tr>
+                            <td>
+                                <a href="@($"/object-explorer/module/{r.ModuleId}")">@r.ModuleName</a>
+                            </td>
+                            <td>@r.Kind</td>
+                            <td>@(r.ObjectId?.ToString() ?? "—")</td>
+                            <td><a href="@($"/object-explorer/object/{r.Id}")">@r.Name</a></td>
+                            <td>
+                                @if (r.SourceFileId is { } fid)
+                                {
+                                    <a href="@($"/object-explorer/file/{fid}?line={r.LineNumber}")">View source</a>
+                                }
+                                else
+                                {
+                                    <span class="muted">—</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public int ReleaseId { get; set; }
+
+    private const int ResultCap = 200;
+
+    private ReleaseDetail? _release;
+    private List<ReleaseObjectMatch>? _results;
+    private string _kind = string.Empty;
+    private string _search = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _release = await ObjectExplorer.GetReleaseAsync(ReleaseId);
+        if (_release is not null)
+        {
+            await ReloadAsync();
+        }
+    }
+
+    private async Task OnSearch(ChangeEventArgs args)
+    {
+        _search = args.Value?.ToString() ?? string.Empty;
+        await ReloadAsync();
+    }
+
+    private async Task OnKindChange(ChangeEventArgs args)
+    {
+        _kind = args.Value?.ToString() ?? string.Empty;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _results = await ObjectExplorer.SearchObjectsInReleaseAsync(
+            ReleaseId,
+            new ObjectListFilter(
+                Kind: string.IsNullOrEmpty(_kind) ? null : _kind,
+                Search: string.IsNullOrWhiteSpace(_search) ? null : _search),
+            take: ResultCap);
+    }
+}

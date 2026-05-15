@@ -2891,6 +2891,55 @@ ul.form-field-error {
     line-height: 1.4;
 }
 
+/* Source-file viewer (SourceFileViewer.razor). Plain numbered lines —
+   syntax highlighting is deliberately out of scope until we revisit the
+   CodeMirror integration that PR 6 dropped. */
+.source-viewer__body {
+    padding: 0;
+    margin: 0;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    overflow-x: auto;
+    max-height: calc(100vh - 220px);
+    overflow-y: auto;
+}
+
+.source-viewer__body > code {
+    display: block;
+    font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+    font-size: 12.5px;
+    line-height: 1.5;
+}
+
+.source-viewer__line {
+    display: grid;
+    grid-template-columns: 4rem 1fr;
+    gap: 12px;
+    padding: 0 12px;
+    white-space: pre;
+}
+
+.source-viewer__line:hover {
+    background: rgba(124, 124, 144, 0.08);
+}
+
+.source-viewer__line--hit {
+    background: rgba(255, 213, 79, 0.14);
+    border-left: 3px solid var(--color-accent, #ffd54f);
+    padding-left: 9px;
+}
+
+.source-viewer__lineno {
+    text-align: right;
+    color: var(--text-2, #b0b0c2);
+    user-select: none;
+}
+
+.source-viewer__text {
+    white-space: pre;
+}
+
 .object-explorer-upload .field__label {
     font-size: 12.5px;
     font-weight: 600;

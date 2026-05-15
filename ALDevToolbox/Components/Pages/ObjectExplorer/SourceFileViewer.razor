@@ -1,0 +1,93 @@
+@page "/object-explorer/file/{FileId:long}"
+@attribute [Authorize]
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject IHttpContextAccessor Http
+@using ALDevToolbox.Services.ObjectExplorer
+
+@*
+    Source-file viewer for one .al file out of an imported Release. Reads the
+    body once via GetFileAsync, renders as a numbered table so a CSS hover
+    state can light up the line the URL pointed at (?line=N) — the find-
+    references panel and the per-object "View source" link both use that to
+    deep-link straight to the declaration.
+
+    No syntax highlighting yet — the legacy CodeMirror integration was scoped
+    out in PR 6 along with the in-source navigation. Plain <pre>-style lines
+    keep the page renderable without a JS bundle while still giving the
+    "click through to the actual code" payoff the rest of the surface lacks.
+*@
+
+<PageTitle>@(_header?.Path ?? "Source") · AL Dev Toolbox</PageTitle>
+
+<div class="object-explorer source-viewer">
+    @if (_header is null || _file is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        <header class="admin-page__header">
+            <div>
+                <p class="muted">
+                    <a href="/object-explorer">Releases</a>
+                    <span> / <a href="@($"/object-explorer/release/{_header.ReleaseId}")">@_header.ReleaseLabel</a></span>
+                    <span> / <a href="@($"/object-explorer/module/{_header.ModuleId}")">@_header.ModuleName</a></span>
+                </p>
+                <h1>@_header.Path</h1>
+                <p class="muted">@_header.LineCount.ToString("N0") line(s)</p>
+            </div>
+        </header>
+
+        <pre class="source-viewer__body"><code>@RenderNumberedLines(_file.Content, _highlightLine)</code></pre>
+    }
+</div>
+
+@code {
+    [Parameter] public long FileId { get; set; }
+
+    private SourceFileHeader? _header;
+    private SourceFileDetail? _file;
+    private int? _highlightLine;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Two queries: a small header projection for the breadcrumb and a
+        // separate body load. Lets the header render even if the body is
+        // somehow truncated, and keeps the AsNoTracking shapes narrow.
+        _header = await ObjectExplorer.GetFileHeaderAsync(FileId);
+        if (_header is null) return;
+        _file = await ObjectExplorer.GetFileAsync(FileId);
+
+        var ctx = Http.HttpContext;
+        if (ctx is not null && int.TryParse(ctx.Request.Query["line"], out var line) && line > 0)
+        {
+            _highlightLine = line;
+        }
+    }
+
+    /// <summary>
+    /// Splits the content into 1-based numbered lines and emits a tiny
+    /// table-shaped markup. The current renderer just stamps a CSS class on
+    /// the highlighted line so styling lives in the stylesheet; we don't try
+    /// to anchor-scroll yet — the deep-linked line is at the top of the
+    /// viewport for now.
+    /// </summary>
+    private static RenderFragment RenderNumberedLines(string content, int? highlight) => __builder =>
+    {
+        if (string.IsNullOrEmpty(content)) return;
+
+        // Split keeping the line endings consistent across LF / CRLF.
+        var lines = content.Replace("\r\n", "\n").Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var lineNo = i + 1;
+            var cssClass = highlight == lineNo
+                ? "source-viewer__line source-viewer__line--hit"
+                : "source-viewer__line";
+            <div class="@cssClass" id="@($"L{lineNo}")">
+                <span class="source-viewer__lineno">@lineNo</span>
+                <span class="source-viewer__text">@lines[i]</span>
+            </div>
+        }
+    };
+}

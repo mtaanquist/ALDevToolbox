@@ -223,6 +223,64 @@ public class ObjectExplorerService
             .Select(f => new SourceFileDetail(f.Id, f.ModuleId, f.Path, f.Content, f.LineCount))
             .SingleOrDefaultAsync(ct)!;
 
+    /// <summary>
+    /// Header projection for the source-file viewer's breadcrumb. Separate
+    /// from <see cref="GetFileAsync"/> so the breadcrumb call doesn't have
+    /// to drag the full Content blob through.
+    /// </summary>
+    public Task<SourceFileHeader?> GetFileHeaderAsync(long fileId, CancellationToken ct = default)
+        => _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == fileId)
+            .Select(f => new SourceFileHeader(
+                f.Id, f.ModuleId, f.Module!.Name,
+                f.Module.ReleaseId, f.Module.Release!.Label,
+                f.Path, f.LineCount))
+            .SingleOrDefaultAsync(ct)!;
+
+    // ── Cross-module search ────────────────────────────────────────────
+
+    /// <summary>
+    /// Searches every Module in a Release for objects matching the supplied
+    /// kind + name/id filter, ordered by module then kind then name. Bounded
+    /// by <paramref name="take"/> so a wide-open search ("just kind=table") on
+    /// a 100-app DVD doesn't dump 5000 rows into the browser at once. The UI
+    /// nudges the user to narrow the query when the cap is hit.
+    /// </summary>
+    public async Task<List<ReleaseObjectMatch>> SearchObjectsInReleaseAsync(
+        int releaseId, ObjectListFilter filter, int take = 200, CancellationToken ct = default)
+    {
+        var q = _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId);
+
+        if (!string.IsNullOrWhiteSpace(filter.Kind))
+        {
+            var k = filter.Kind.Trim().ToLowerInvariant();
+            q = q.Where(o => o.Kind == k);
+        }
+        if (!string.IsNullOrWhiteSpace(filter.Search))
+        {
+            var s = filter.Search.Trim();
+            var lower = s.ToLower();
+            if (int.TryParse(s, out var asInt))
+            {
+                q = q.Where(o => o.ObjectId == asInt || o.Name.ToLower().Contains(lower));
+            }
+            else
+            {
+                q = q.Where(o => o.Name.ToLower().Contains(lower));
+            }
+        }
+
+        return await q
+            .OrderBy(o => o.Module!.Name).ThenBy(o => o.Kind).ThenBy(o => o.Name)
+            .Take(take)
+            .Select(o => new ReleaseObjectMatch(
+                o.Id, o.Kind, o.ObjectId, o.Name, o.Namespace,
+                o.ModuleId, o.Module!.Name,
+                o.SourceFileId, o.LineNumber))
+            .ToListAsync(ct);
+    }
+
     // ── Find references ────────────────────────────────────────────────
 
     /// <summary>

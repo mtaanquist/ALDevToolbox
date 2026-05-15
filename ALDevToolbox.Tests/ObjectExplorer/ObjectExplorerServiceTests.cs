@@ -115,6 +115,54 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchObjectsInReleaseAsync_finds_objects_across_modules()
+    {
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var query = NewQuery(read);
+
+        // OIOUBL declares "OIOUBL-Profile" (table 13630). DK Core has no table
+        // named like that. A release-wide search for "OIOUBL-Profile" should
+        // return the OIOUBL hit only, with the module name joined inline.
+        var hits = await query.SearchObjectsInReleaseAsync(releaseId,
+            new ObjectListFilter(Search: "OIOUBL-Profile"));
+        hits.Should().NotBeEmpty();
+        hits.Should().Contain(h => h.Name == "OIOUBL-Profile" && h.ModuleName == "OIOUBL");
+    }
+
+    [Fact]
+    public async Task SearchObjectsInReleaseAsync_filters_by_kind_across_modules()
+    {
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var query = NewQuery(read);
+
+        // Both modules contribute codeunits. With kind=codeunit and no name
+        // filter, we should get every codeunit in the Release.
+        var all = await query.SearchObjectsInReleaseAsync(releaseId,
+            new ObjectListFilter(Kind: "codeunit"));
+        all.Should().OnlyContain(o => o.Kind == "codeunit");
+        all.Select(o => o.ModuleName).Distinct().Should().Contain(new[] { "DK Core", "OIOUBL" });
+    }
+
+    [Fact]
+    public async Task GetFileHeaderAsync_returns_release_and_module_context_without_loading_content()
+    {
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var ctx = read;
+
+        var fileId = ctx.OeModuleFiles.AsQueryable()
+            .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
+
+        var header = await NewQuery(ctx).GetFileHeaderAsync(fileId);
+        header.Should().NotBeNull();
+        header!.ModuleName.Should().Be("DK Core");
+        header.ReleaseLabel.Should().Be("BC 25.18 DK");
+        header.LineCount.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
     public async Task ListObjectsAsync_paginates_and_filters_by_kind()
     {
         var releaseId = await SeedSingleReleaseAsync();

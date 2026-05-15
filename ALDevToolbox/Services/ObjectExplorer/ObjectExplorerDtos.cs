@@ -157,3 +157,33 @@ public sealed record SourceFileDetail(
     string Path,
     string Content,
     int LineCount);
+
+/// <summary>
+/// One hit from a Release-wide object search. Carries the owning module so
+/// the result table can render "Module / Object" without a follow-up query,
+/// plus the source-file pointer + line number so the row can deep-link
+/// straight into the source viewer at the right line.
+/// </summary>
+public sealed record ReleaseObjectMatch(
+    long Id,
+    string Kind,
+    int? ObjectId,
+    string Name,
+    string? Namespace,
+    long ModuleId,
+    string ModuleName,
+    long? SourceFileId,
+    int LineNumber);
+
+/// <summary>
+/// Header info for the source-file viewer's breadcrumb — module + release
+/// names so the page renders the full path without two extra round trips.
+/// </summary>
+public sealed record SourceFileHeader(
+    long Id,
+    long ModuleId,
+    string ModuleName,
+    int ReleaseId,
+    string ReleaseLabel,
+    string Path,
+    int LineCount);
