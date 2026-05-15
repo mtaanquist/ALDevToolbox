@@ -19,6 +19,16 @@ public class BaseAppFile
     public int VersionId { get; set; }
     public BaseAppVersion? Version { get; set; }
 
+    /// <summary>
+    /// Owning extension — populated from <c>app.json</c> at import time.
+    /// Null on imports that didn't carry an <c>app.json</c> (legacy bundles
+    /// or hand-zipped folders) and on rows that pre-date the extension
+    /// column. A new import won't backfill the extension on existing
+    /// rows; users need to re-import to attribute them.
+    /// </summary>
+    public long? ExtensionId { get; set; }
+    public BaseAppExtension? Extension { get; set; }
+
     /// <summary>Relative path inside the imported ZIP.</summary>
     public string Path { get; set; } = string.Empty;
 
@@ -50,6 +60,17 @@ public class BaseAppFile
 
     /// <summary>UTF-8 source text. Matches the codebase's text-only persistence stance.</summary>
     public string Content { get; set; } = string.Empty;
+
+    /// <summary>
+    /// SHA-256 of <see cref="Content"/> as hex, stamped at import time.
+    /// Powers the version-compare query: two files match on
+    /// <c>(ObjectType, ObjectId/Name)</c> are "changed" iff their hashes
+    /// differ, which avoids a full content compare per pair. Nullable
+    /// because legacy imports (pre-feature) don't have the hash —
+    /// callers fall back to a direct content compare when either side
+    /// is null.
+    /// </summary>
+    public string? ContentHash { get; set; }
 
     /// <summary>Denormalised line count for display in the browser table.</summary>
     public int LineCount { get; set; }

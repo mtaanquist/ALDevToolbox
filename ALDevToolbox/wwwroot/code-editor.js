@@ -26,7 +26,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab }
 import { syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatching,
     foldGutter, foldKeymap, StreamLanguage }
     from "https://esm.sh/@codemirror/language@6.10.6?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
-import { searchKeymap, highlightSelectionMatches }
+import { search, searchKeymap, highlightSelectionMatches }
     from "https://esm.sh/@codemirror/search@6.5.7?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap }
     from "https://esm.sh/@codemirror/autocomplete@6.18.3?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6";
@@ -41,28 +41,97 @@ import { oneDark }
 
 // Lightweight AL StreamParser. Not a full AL grammar — recognises keywords,
 // strings, double-quoted identifiers (AL allows spaces inside `"..."`), comments
-// (line + block), and numeric literals. Same depth as the Prism `al` grammar;
-// shipped inline so we don't pull a third-party AL grammar package.
+// (line + block), and numeric literals. Categorisation cross-checked against
+// Microsoft's AL TextMate grammar (github.com/microsoft/AL/blob/master/grammar/
+// alsyntax.tmlanguage) so built-in types render distinctly from control
+// keywords, the same way the AL VS Code extension shows them.
 const AL_KEYWORDS = new Set([
+    // Control flow.
     "begin", "end", "if", "then", "else", "do", "while", "repeat", "until",
-    "for", "to", "downto", "foreach", "in", "case", "of", "exit",
+    "for", "to", "downto", "foreach", "in", "case", "of", "exit", "break",
+    // Declaration & scope.
     "procedure", "trigger", "local", "internal", "protected", "var",
     "with", "namespace", "using", "interface", "implements", "extends",
+    "implements", "raises", "obsolete", "subscribers", "subscriber",
+    "temporary", "rec", "xrec", "currfieldno", "currpage", "currreport",
+    // Object-type keywords (typed-reference introducers — also in
+    // AL_OBJECT_KEYWORDS below so the following identifier is coloured).
     "codeunit", "table", "tableextension", "page", "pageextension",
     "pagecustomization", "report", "reportextension", "xmlport", "query",
     "enum", "enumextension", "permissionset", "permissionsetextension",
     "profile", "controladdin", "dotnet",
-    "and", "or", "not", "xor", "div", "mod", "true", "false",
-    "record", "temporary", "label", "text", "integer", "biginteger",
-    "decimal", "boolean", "char", "date", "time", "datetime", "duration",
-    "guid", "code", "blob", "media", "mediaset", "option", "list", "dictionary",
-    "array", "variant", "instream", "outstream",
-    "rec", "xrec", "currfieldno", "currpage", "currreport",
-    "raises", "obsolete", "subscribers", "subscriber",
+    // Operator keywords.
+    "and", "or", "not", "xor", "div", "mod",
+    // Boolean / null literals.
+    "true", "false",
+    // Metadata / property keywords (from the MS grammar). Not exhaustive,
+    // but covers what's surprising-when-uncoloured in real BaseApp code.
+    "where", "ascending", "descending", "filter", "const", "average",
+    "count", "exist", "field", "min", "max", "sum",
+    "add", "addfirst", "addlast", "addbefore", "addafter",
+    "modify", "movebefore", "moveafter", "customizes",
+    "action", "actions", "fields", "keys", "schema", "values",
+    "elements", "textelement", "tableelement", "fieldattribute",
+    "textattribute", "requestpage",
+]);
+
+// Built-in AL types. Distinct from AL_KEYWORDS so they get `typeName`
+// styling — matches the AL VS Code extension's `keyword.other.builtintypes.al`
+// scope. Drawn from the MS grammar and the current AL methods reference.
+const AL_BUILTIN_TYPES = new Set([
+    // Primitives.
+    "boolean", "byte", "char", "code", "date", "dateformula", "datetime",
+    "decimal", "duration", "guid", "integer", "biginteger", "label", "option",
+    "text", "time", "variant",
+    // Streams / files.
+    "instream", "outstream", "file",
+    // Reference types and containers.
+    "array", "list", "dictionary", "blob", "media", "mediaset",
+    "recordid", "recordref", "fieldref", "keyref",
+    // Modern (HTTP / JSON / XML).
+    "httpclient", "httpcontent", "httpheaders", "httprequestmessage",
+    "httpresponsemessage",
+    "jsonarray", "jsonobject", "jsontoken", "jsonvalue",
+    "xmlattribute", "xmlattributecollection", "xmlcdata", "xmlcomment",
+    "xmldeclaration", "xmldocument", "xmldocumenttype", "xmlelement",
+    "xmlnamespacemanager", "xmlnamespacescope", "xmlnametable", "xmlnode",
+    "xmlnodelist", "xmlprocessinginstruction", "xmlreadoptions", "xmltext",
+    "xmlwriteoptions",
+    // UI / runtime.
+    "action", "dialog", "errorinfo", "filterpagebuilder", "notification",
+    "page", "report", "session", "sessionsettings", "textbuilder",
+    "textconst", "textencoding", "verbosity", "version", "testpage",
+    "clienttype", "tableconnectiontype",
+]);
+
+// Keywords whose following identifier is an *object name* — colour the
+// next bare identifier (after any object-ID number) the same way we colour
+// quoted AL identifiers, so `table 5721 Purchasing` reads the same as
+// `table 36 "Sales Header"`.
+const AL_OBJECT_KEYWORDS = new Set([
+    "codeunit", "table", "tableextension", "page", "pageextension",
+    "pagecustomization", "report", "reportextension", "xmlport", "query",
+    "enum", "enumextension", "permissionset", "permissionsetextension",
+    "profile", "controladdin", "record",
+    "requestpage", "testpage", "testpart", "testrequestpage", "interface",
+    "extends", "tabledata",
+]);
+
+// Keywords whose following identifier is the *name of a procedure or
+// trigger being declared* — gives the name a distinct colour (CodeMirror
+// maps `def` to a definition tag, typically bold/coloured).
+const AL_DEFINITION_KEYWORDS = new Set([
+    "procedure", "trigger",
 ]);
 
 const alParser = {
-    startState() { return { inBlockComment: false }; },
+    startState() {
+        return {
+            inBlockComment: false,
+            expectObjectName: false,
+            expectDefinitionName: false,
+        };
+    },
     token(stream, state) {
         if (state.inBlockComment) {
             while (!stream.eol()) {
@@ -90,7 +159,13 @@ const alParser = {
                 const ch = stream.next();
                 if (ch === '"') break;
             }
-            return "variableName";
+            // A quoted name in either expected-name slot is still the
+            // declared name — colour as definition if pending, otherwise
+            // a regular AL identifier.
+            const tok = state.expectDefinitionName ? "def" : "variableName";
+            state.expectObjectName = false;
+            state.expectDefinitionName = false;
+            return tok;
         }
         // Single-quoted string literal.
         if (stream.peek() === "'") {
@@ -105,14 +180,51 @@ const alParser = {
                     break;
                 }
             }
+            state.expectObjectName = false;
+            state.expectDefinitionName = false;
             return "string";
         }
-        if (stream.match(/^\d+(\.\d+)?/)) return "number";
+        if (stream.match(/^\d+(\.\d+)?/)) {
+            // A numeric literal between an object keyword and the name
+            // (`table 5721 Purchasing`) is fine — keep the expectation
+            // alive so the next identifier still gets the variableName
+            // colour. Other numerics clear it.
+            return "number";
+        }
         if (stream.match(/^[A-Za-z_][A-Za-z0-9_]*/)) {
             const word = stream.current().toLowerCase();
-            if (AL_KEYWORDS.has(word)) return "keyword";
+            // Built-in types come first so `Integer`, `Text`, `Boolean`,
+            // `HttpClient`, etc. render as types regardless of whether
+            // they appear in a declaration or a type-cast position.
+            if (AL_BUILTIN_TYPES.has(word)) {
+                state.expectObjectName = false;
+                state.expectDefinitionName = false;
+                return "typeName";
+            }
+            if (AL_KEYWORDS.has(word)) {
+                state.expectObjectName = AL_OBJECT_KEYWORDS.has(word);
+                state.expectDefinitionName = AL_DEFINITION_KEYWORDS.has(word);
+                return "keyword";
+            }
+            if (state.expectDefinitionName) {
+                // First identifier after `procedure` / `trigger` is the
+                // name being declared. `def` maps to CodeMirror's
+                // definition tag — typically bold or accent-coloured.
+                state.expectDefinitionName = false;
+                state.expectObjectName = false;
+                return "def";
+            }
+            if (state.expectObjectName) {
+                state.expectObjectName = false;
+                return "variableName";
+            }
             return null;
         }
+        // Any other character — punctuation, operator — drops the
+        // object-name expectation. We hit this for `{`, `:`, `=`, etc.,
+        // any of which means the declaration has moved past its name.
+        state.expectObjectName = false;
+        state.expectDefinitionName = false;
         stream.next();
         return null;
     },
@@ -268,6 +380,10 @@ export function mount(container, initialValue, language) {
 //   lineDecorations: { [1-basedLineNumber]: cssClass }  — full-line backgrounds (diff view)
 //   declarations:    [{ line, columnStart, columnEnd, symbolId, kind, name }]
 //                     ranges that get a click affordance + right-click "Find references"
+//   resolvables:     [{ line, columnStart, columnEnd }] — extra ranges that
+//                     show the resolvable-token underline (object references,
+//                     procedure calls). Cosmetic only; the actual Go to
+//                     definition still runs through the server.
 //   dotNetRef:        Blazor DotNetObjectReference; callbacks fire `OnFindReferences(symbolId)`
 //   scrollToLine:     1-based line to scroll to + flash after mount (deep-link from references)
 export function mountReadOnly(container, value, language, options) {
@@ -280,6 +396,7 @@ export function mountReadOnly(container, value, language, options) {
 
     const decorationExtensions = buildLineDecorationExtensions(opts.lineDecorations);
     const declarationExtensions = buildDeclarationDecorationExtensions(opts.declarations);
+    const resolvableExtensions = buildResolvableDecorationExtensions(opts.resolvables);
 
     const view = new EditorView({
         parent: container,
@@ -296,10 +413,14 @@ export function mountReadOnly(container, value, language, options) {
                 syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
                 highlightActiveLine(),
                 highlightSelectionMatches(),
+                // Ctrl/Cmd-F brings up CodeMirror's search panel. `search()`
+                // registers the panel state; searchKeymap binds the key.
+                search({ top: true }),
                 keymap.of([...defaultKeymap, ...searchKeymap, ...foldKeymap]),
                 languageExtensionFor(lang),
                 ...decorationExtensions,
                 ...declarationExtensions,
+                ...resolvableExtensions,
                 themeCompartment.of(themeExtensions()),
             ],
         }),
@@ -353,10 +474,22 @@ export function mountReadOnly(container, value, language, options) {
                     "OnFindReferences", onDeclaration.symbolId),
             });
         }
+        // Disable "Go to definition" when the click lands on the declaration
+        // name itself — the target would be the click site, which causes the
+        // viewer to navigate to its current URL and break re-mounting state.
         items.push({
             label: "Go to definition",
+            disabled: Boolean(onDeclaration),
             action: () => opts.dotNetRef.invokeMethodAsync(
                 "OnGoToDefinition", line.number, colInLine),
+        });
+        // "Find in this file" is the only gesture for variables / fields that
+        // don't have a symbol-table entry. Always offered so users have a
+        // reliable way to scan within a long file.
+        items.push({
+            label: "Find in this file",
+            action: () => opts.dotNetRef.invokeMethodAsync(
+                "OnFindInFile", line.number, colInLine),
         });
 
         event.preventDefault();
@@ -379,6 +512,17 @@ export function mountReadOnly(container, value, language, options) {
         if (pos === null) return;
         const line = view.state.doc.lineAt(pos);
         const colInLine = pos - line.from + 1;
+        // Cmd/Ctrl-click on the declaration name itself would resolve to the
+        // current location — same URL, same line — and break the viewer
+        // (see right-click handler above). Swallow the click instead.
+        const onDeclaration = declarations.find(d =>
+            d.line === line.number
+            && colInLine >= d.columnStart
+            && colInLine <= d.columnEnd);
+        if (onDeclaration) {
+            event.preventDefault();
+            return;
+        }
         event.preventDefault();
         opts.dotNetRef.invokeMethodAsync("OnGoToDefinition", line.number, colInLine)
             .catch(err => console.warn("Go to definition callback failed:", err));
@@ -429,8 +573,15 @@ export function mountReadOnly(container, value, language, options) {
 }
 
 // Public: scroll the editor to a 1-based line number, with an optional
-// short fade-out highlight so the eye lands in the right place. Called by
-// the FileViewer when a #L<n> fragment is in the URL.
+// short fade-out highlight so the eye lands in the right place.
+//
+// Two-pass scroll: CM6 estimates heights for unmeasured lines, so the
+// first scroll lands roughly in place (rendering new lines as a side
+// effect), and the second corrects against CM's now-accurate height
+// map. Both passes set view.scrollDOM.scrollTop directly rather than
+// dispatching EditorView.scrollIntoView — the effect path through CM's
+// transaction system was leaving the viewport in inconsistent states
+// when triggered from outside a CM-initiated update.
 export function scrollToLine(id, lineNumber, flash) {
     const e = editors.get(id);
     if (!e) return;
@@ -438,18 +589,57 @@ export function scrollToLine(id, lineNumber, flash) {
     if (!Number.isInteger(lineNumber) || lineNumber < 1) return;
     const totalLines = view.state.doc.lines;
     const safeLine = Math.min(lineNumber, totalLines);
-    const line = view.state.doc.line(safeLine);
-    view.dispatch({
-        effects: EditorView.scrollIntoView(line.from, { y: "center" }),
-    });
-    if (flash) {
-        const dom = view.dom.querySelector(
-            `.cm-line:nth-of-type(${safeLine})`);
-        if (dom) {
-            dom.classList.add("cm-line--flash");
-            setTimeout(() => dom.classList.remove("cm-line--flash"), 1500);
+
+    const findLineEl = () => {
+        const line = view.state.doc.line(safeLine);
+        const dom = view.domAtPos(line.from);
+        let lineEl = dom?.node instanceof Element ? dom.node : dom?.node?.parentElement;
+        while (lineEl && !(lineEl.classList && lineEl.classList.contains("cm-line"))) {
+            lineEl = lineEl.parentElement;
         }
-    }
+        return lineEl;
+    };
+
+    const doScroll = () => {
+        const line = view.state.doc.line(safeLine);
+        const block = view.lineBlockAt(line.from);
+        const scroller = view.scrollDOM;
+        const scrollMax = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+        if (scrollMax > 0) {
+            // Bounded editor (default mount) — scroll the editor's own
+            // scroller. Direct scrollTop avoids the inconsistent viewport
+            // state we used to see going through EditorView.scrollIntoView.
+            const target = block.top - scroller.clientHeight / 2 + block.height / 2;
+            scroller.scrollTop = Math.max(0, Math.min(scrollMax, target));
+        } else {
+            // Fluid mount (`Fluid="true"`): the editor's scroller is the
+            // same height as its content (overflow: visible), so it
+            // can't scroll. Defer to the nearest scrolling ancestor
+            // (the page's .content column) via the line element.
+            const lineEl = findLineEl();
+            if (lineEl) lineEl.scrollIntoView({ block: "center", behavior: "auto" });
+        }
+    };
+
+    requestAnimationFrame(() => {
+        doScroll();
+        requestAnimationFrame(() => {
+            doScroll();
+            if (!flash) return;
+            requestAnimationFrame(() => {
+                const lineEl = findLineEl();
+                if (!lineEl) return;
+                // Adding a class that's already present doesn't restart its
+                // CSS animation. Remove → force a reflow → re-add so
+                // repeated clicks on the same reference re-flash the line.
+                lineEl.classList.remove("cm-line--flash");
+                // eslint-disable-next-line no-unused-expressions
+                lineEl.offsetWidth;
+                lineEl.classList.add("cm-line--flash");
+                setTimeout(() => lineEl.classList.remove("cm-line--flash"), 1500);
+            });
+        });
+    });
 }
 
 // Builds a CodeMirror extension that wraps each declaration name range
@@ -475,6 +665,34 @@ function buildDeclarationDecorationExtensions(declarations) {
     })];
 }
 
+// Decorates every range the server identified as a "resolvable" reference
+// (object names, procedure call sites, etc.) with `cm-symbol-ref` so users
+// get the same dotted underline they see on declarations. Ranges are
+// pre-sorted server-side; the RangeSetBuilder still requires ascending order.
+function buildResolvableDecorationExtensions(resolvables) {
+    if (!Array.isArray(resolvables) || resolvables.length === 0) return [];
+    // Defensive sort: ranges must be added in order of `from` to the builder,
+    // and pre-sorted input is cheap to re-verify here.
+    const sorted = resolvables
+        .filter(r => Number.isInteger(r.line) && r.line >= 1)
+        .slice()
+        .sort((a, b) => (a.line - b.line) || ((a.columnStart ?? 1) - (b.columnStart ?? 1)));
+    return [EditorView.decorations.of((view) => {
+        const builder = new RangeSetBuilder();
+        const docLines = view.state.doc.lines;
+        for (const ref of sorted) {
+            if (ref.line > docLines) continue;
+            const line = view.state.doc.line(ref.line);
+            const from = line.from + Math.max(0, (ref.columnStart ?? 1) - 1);
+            const toCol = ref.columnEnd ?? (ref.columnStart ?? 1);
+            const to = Math.min(line.to, line.from + Math.max(from - line.from, toCol - 1));
+            if (to <= from) continue;
+            builder.add(from, to, Decoration.mark({ class: "cm-symbol-ref" }));
+        }
+        return builder.finish();
+    })];
+}
+
 // Renders a small floating context menu at (x, y). Each item is
 // `{ label, action }`; `action` returns the promise from a DotNet
 // invokeMethodAsync call. The menu removes itself when an item is
@@ -491,17 +709,22 @@ function renderMenu(x, y, items) {
         btn.type = "button";
         btn.className = "cm-symbol-menu__item";
         btn.textContent = item.label;
-        btn.addEventListener("click", () => {
-            menu.remove();
-            try {
-                const result = item.action();
-                if (result && typeof result.catch === "function") {
-                    result.catch(err => console.warn(`${item.label} failed:`, err));
+        if (item.disabled) {
+            btn.disabled = true;
+            btn.classList.add("cm-symbol-menu__item--disabled");
+        } else {
+            btn.addEventListener("click", () => {
+                menu.remove();
+                try {
+                    const result = item.action();
+                    if (result && typeof result.catch === "function") {
+                        result.catch(err => console.warn(`${item.label} failed:`, err));
+                    }
+                } catch (err) {
+                    console.warn(`${item.label} threw:`, err);
                 }
-            } catch (err) {
-                console.warn(`${item.label} threw:`, err);
-            }
-        });
+            });
+        }
         menu.appendChild(btn);
     }
 

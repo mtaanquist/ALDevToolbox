@@ -19,12 +19,18 @@ namespace ALDevToolbox.Services.Al;
 /// </summary>
 public static class AlGoToDefinitionLocator
 {
+    // Keep this in sync with AlResolvableTokenScanner.ObjectKeywords — both
+    // lists drive "this token is an object reference" detection from the
+    // same left-context check.
     private static readonly HashSet<string> ObjectKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
         "codeunit", "table", "page", "report", "query", "xmlport", "controladdin",
-        "enum", "interface", "permissionset", "profile",
+        "enum", "interface", "permissionset", "profile", "record",
+        "requestpage", "testpage", "testpart", "testrequestpage",
         "pageextension", "tableextension", "reportextension", "enumextension",
         "permissionsetextension",
+        "extends",
+        "tabledata",
     };
 
     /// <summary>
@@ -70,15 +76,100 @@ public static class AlGoToDefinitionLocator
     {
         if (string.IsNullOrEmpty(fileContent) || string.IsNullOrEmpty(variableName)) return null;
         // Match `VarName: Codeunit "Some Name"` or `VarName: Codeunit Identifier`.
-        // The `(?:[^"\r\n;,)]+)` branch catches the unquoted form for
-        // single-word object names; we strip trailing whitespace afterwards.
+        // Record is by far the most common form for field-access targets and
+        // was missing here — `MfgSetup."Dynamic Low-Level Code"` couldn't
+        // resolve because the qualifier walked off `Record "Manufacturing Setup"`.
         var escaped = Regex.Escape(variableName);
-        var pattern = $@"\b{escaped}\s*:\s*(?:Codeunit|Page|Report|Query|XmlPort|Interface|Enum)\s+(""(?<q>[^""]+)""|(?<u>[A-Za-z_][A-Za-z0-9_]*))";
+        var pattern = $@"\b{escaped}\s*:\s*(?:Record|Codeunit|Page|Report|Query|XmlPort|Interface|Enum|RequestPage|TestPage|TestPart|TestRequestPage|ControlAddIn|PermissionSet|Profile)\s+(""(?<q>[^""]+)""|(?<u>[A-Za-z_][A-Za-z0-9_]*))";
         var match = Regex.Match(fileContent, pattern, RegexOptions.IgnoreCase);
         if (!match.Success) return null;
         return match.Groups["q"].Success
             ? match.Groups["q"].Value
             : match.Groups["u"].Value;
+    }
+
+    private static readonly Regex AllRecordVarDeclsRegex = new(
+        @"\b(?<var>[A-Za-z_][A-Za-z0-9_]*)\s*:\s*Record\s+(""(?<q>[^""]+)""|(?<u>[A-Za-z_][A-Za-z0-9_]*))",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <summary>
+    /// Returns every <c>VarName: Record "Table"</c> pair in
+    /// <paramref name="fileContent"/>. Used by the resolvable scanner to
+    /// underline <c>VarName."FieldName"</c> field accesses across the file
+    /// in a single pass, rather than calling
+    /// <see cref="ResolveVariableType"/> per click. Only <c>Record</c>-typed
+    /// vars are returned because that's the only AL type that exposes
+    /// fields by dot-access. Last wins on duplicate variable names — AL
+    /// rarely reuses names across procedures, and even when it does the
+    /// duplicates usually share a type.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> ResolveAllRecordVariableTypes(string fileContent)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(fileContent)) return result;
+
+        foreach (Match m in AllRecordVarDeclsRegex.Matches(fileContent))
+        {
+            var varName = m.Groups["var"].Value;
+            var tableName = m.Groups["q"].Success ? m.Groups["q"].Value : m.Groups["u"].Value;
+            if (string.IsNullOrEmpty(varName) || string.IsNullOrEmpty(tableName)) continue;
+            result[varName] = tableName;
+        }
+        return result;
+    }
+
+    // AL object keywords that can appear before a type name in a var
+    // declaration. Captured so the reference classifier can distinguish a
+    // var of type `Codeunit "HttpClient"` (real object reference) from a
+    // var of type `HttpClient` (runtime / system type sharing the name).
+    private static readonly Regex AllObjectVarDeclsRegex = new(
+        @"\b(?<var>[A-Za-z_][A-Za-z0-9_]*)\s*:\s*" +
+        @"(?:(?<kw>Record|Codeunit|Page|Report|Query|XmlPort|Interface|Enum|RequestPage|TestPage|TestPart|TestRequestPage|ControlAddIn|PermissionSet|Profile)\s+)?" +
+        @"(""(?<q>[^""]+)""|(?<u>[A-Za-z_][A-Za-z0-9_]*))",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <summary>
+    /// Returns every <c>VarName: Type</c> declaration in <paramref name="fileContent"/>,
+    /// for both AL-object-keyword forms (<c>Foo: Codeunit "Sales-Post"</c>,
+    /// <c>Cust: Record Customer</c>) and unkeyworded type identifiers
+    /// (<c>Client: HttpClient</c>, <c>Tok: JsonToken</c>, <c>Err: ErrorInfo</c>).
+    /// The <see cref="ResolvedVariableType.Keyword"/> is <c>null</c> when the
+    /// declaration omits an AL object keyword — that signal lets the
+    /// references classifier drop calls on a system-type-shaped variable that
+    /// happens to share a name with the searched-for codeunit (the common
+    /// <c>HttpClient: HttpClient</c> pattern). Last wins on duplicate variable
+    /// names, matching <see cref="ResolveAllRecordVariableTypes"/>.
+    /// </summary>
+    public static IReadOnlyDictionary<string, ResolvedVariableType> ResolveAllObjectVariableTypes(string fileContent)
+    {
+        var result = new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(fileContent)) return result;
+
+        foreach (Match m in AllObjectVarDeclsRegex.Matches(fileContent))
+        {
+            var varName = m.Groups["var"].Value;
+            var typeName = m.Groups["q"].Success ? m.Groups["q"].Value : m.Groups["u"].Value;
+            if (string.IsNullOrEmpty(varName) || string.IsNullOrEmpty(typeName)) continue;
+            var keyword = m.Groups["kw"].Success ? m.Groups["kw"].Value : null;
+            result[varName] = new ResolvedVariableType(keyword, typeName);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Public entry into the private <see cref="ReadLeftContext"/> tokeniser.
+    /// Lets callers that already have a line and a known token start index
+    /// (e.g. a regex-match column) read the operator and qualifier directly
+    /// without re-running <see cref="Inspect"/>.
+    /// </summary>
+    public static GoToDefinitionLeftContext ReadLeftContextAt(string lineText, int tokenStart)
+    {
+        if (string.IsNullOrEmpty(lineText) || tokenStart <= 0)
+        {
+            return new GoToDefinitionLeftContext(null, null);
+        }
+        var clamped = Math.Min(tokenStart, lineText.Length);
+        return ReadLeftContext(lineText, clamped);
     }
 
     private static string? GetLine(string source, int line)
@@ -241,3 +332,12 @@ public sealed record GoToDefinitionClick(
 /// of the operator (when applicable).
 /// </summary>
 public sealed record GoToDefinitionLeftContext(string? Operator, string? Qualifier);
+
+/// <summary>
+/// Resolved type of a variable declared in an AL file. <see cref="Keyword"/>
+/// is one of the AL object keywords (<c>Codeunit</c>, <c>Record</c>,
+/// <c>Page</c>, …) when the declaration spelled one out, or <c>null</c>
+/// when the type was a bare identifier like <c>HttpClient</c> or
+/// <c>JsonObject</c>. <see cref="TypeName"/> is the type's name itself.
+/// </summary>
+public sealed record ResolvedVariableType(string? Keyword, string TypeName);

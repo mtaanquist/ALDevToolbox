@@ -1,5 +1,7 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
@@ -82,6 +84,12 @@ public class BaseAppImportService
 
         using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, leaveOpen: false);
 
+        // Parse app.json upfront (if present) so every file in this import
+        // can be stamped with the right extension_id. Imports without an
+        // app.json (legacy bundles, hand-zipped folders) keep
+        // extensionInfo null and the files come out unattributed.
+        var extensionInfo = ReadExtensionManifest(archive);
+
         var failedPaths = new List<string>();
         var batch = new List<BaseAppFile>(BatchSize);
         var totalFiles = 0;
@@ -121,6 +129,42 @@ public class BaseAppImportService
                 await _db.SaveChangesAsync(ct);
             }
 
+            // Get-or-create the extension row for this import. Same
+            // (version_id, app_id) → reuse the existing row so a
+            // re-import of an app doesn't duplicate it. Imports without
+            // an app.json get extensionId = null and every file lands
+            // unattributed.
+            long? extensionId = null;
+            if (extensionInfo is not null)
+            {
+                var existing = await _db.BaseAppExtensions
+                    .FirstOrDefaultAsync(
+                        x => x.VersionId == version.Id && x.AppId == extensionInfo.AppId, ct);
+                if (existing is not null)
+                {
+                    existing.Name = extensionInfo.Name;
+                    existing.Publisher = extensionInfo.Publisher;
+                    existing.AppVersion = extensionInfo.Version;
+                    extensionId = existing.Id;
+                }
+                else
+                {
+                    var row = new BaseAppExtension
+                    {
+                        OrganizationId = orgId,
+                        VersionId = version.Id,
+                        AppId = extensionInfo.AppId,
+                        Name = extensionInfo.Name,
+                        Publisher = extensionInfo.Publisher,
+                        AppVersion = extensionInfo.Version,
+                        CreatedAt = DateTime.UtcNow,
+                    };
+                    _db.BaseAppExtensions.Add(row);
+                    await _db.SaveChangesAsync(ct);
+                    extensionId = row.Id;
+                }
+            }
+
             _db.ChangeTracker.AutoDetectChangesEnabled = false;
 
             foreach (var entry in archive.Entries)
@@ -150,6 +194,7 @@ public class BaseAppImportService
                 {
                     OrganizationId = orgId,
                     VersionId = version.Id,
+                    ExtensionId = extensionId,
                     Path = entry.FullName,
                     FileName = entry.Name,
                     Module = ExtractTopFolder(entry.FullName),
@@ -158,6 +203,7 @@ public class BaseAppImportService
                     ObjectName = declaration.Name,
                     Namespace = declaration.Namespace,
                     Content = content,
+                    ContentHash = ComputeContentHash(content),
                     LineCount = CountLines(content),
                 };
 
@@ -174,6 +220,7 @@ public class BaseAppImportService
                         Kind = symbol.Kind,
                         Name = symbol.Name,
                         Signature = symbol.Signature,
+                        FieldId = symbol.FieldId,
                         LineNumber = symbol.LineNumber,
                         ColumnStart = symbol.ColumnStart,
                         ColumnEnd = symbol.ColumnEnd,
@@ -404,6 +451,84 @@ public class BaseAppImportService
         }
         return count;
     }
+
+    /// <summary>
+    /// SHA-256 of <paramref name="content"/> as a lower-case hex string —
+    /// stable across machines and round-trips cleanly through Postgres
+    /// text. Used by the version-compare service to spot changed files
+    /// without a full body compare. Empty content hashes to the SHA-256
+    /// of empty, which is fine.
+    /// </summary>
+    public static string ComputeContentHash(string content)
+    {
+        var bytes = Encoding.UTF8.GetBytes(content ?? string.Empty);
+        var hash = SHA256.HashData(bytes);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Reads <c>app.json</c> from the import archive. BC packages it at
+    /// the ZIP root, but tolerate it sitting one folder deep too
+    /// (occasionally a re-zip will nest the whole package). Returns
+    /// <c>null</c> when there is no <c>app.json</c>, when it isn't
+    /// parseable, or when the required <c>id</c> / <c>name</c> /
+    /// <c>publisher</c> / <c>version</c> fields are missing — in any of
+    /// those cases the import still proceeds, just without an
+    /// extension attribution on its files.
+    /// </summary>
+    internal static ExtensionManifest? ReadExtensionManifest(ZipArchive archive)
+    {
+        ZipArchiveEntry? manifestEntry = null;
+        foreach (var entry in archive.Entries)
+        {
+            if (!entry.Name.Equals("app.json", StringComparison.OrdinalIgnoreCase)) continue;
+            // Prefer the root-level entry when both are present.
+            var depth = entry.FullName.Count(c => c == '/');
+            if (manifestEntry is null || depth < manifestEntry.FullName.Count(c => c == '/'))
+            {
+                manifestEntry = entry;
+                if (depth == 0) break;
+            }
+        }
+        if (manifestEntry is null) return null;
+
+        try
+        {
+            using var stream = manifestEntry.Open();
+            using var doc = JsonDocument.Parse(stream);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return null;
+
+            if (!root.TryGetProperty("id", out var idEl)
+                || idEl.ValueKind != JsonValueKind.String
+                || !Guid.TryParse(idEl.GetString(), out var appId))
+            {
+                return null;
+            }
+            var name = root.TryGetProperty("name", out var nameEl) && nameEl.ValueKind == JsonValueKind.String
+                ? nameEl.GetString() ?? string.Empty
+                : string.Empty;
+            var publisher = root.TryGetProperty("publisher", out var pubEl) && pubEl.ValueKind == JsonValueKind.String
+                ? pubEl.GetString() ?? string.Empty
+                : string.Empty;
+            var version = root.TryGetProperty("version", out var verEl) && verEl.ValueKind == JsonValueKind.String
+                ? verEl.GetString() ?? string.Empty
+                : string.Empty;
+            if (string.IsNullOrWhiteSpace(name)
+                || string.IsNullOrWhiteSpace(publisher)
+                || string.IsNullOrWhiteSpace(version))
+            {
+                return null;
+            }
+            return new ExtensionManifest(appId, name.Trim(), publisher.Trim(), version.Trim());
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    internal sealed record ExtensionManifest(Guid AppId, string Name, string Publisher, string Version);
 }
 
 /// <summary>

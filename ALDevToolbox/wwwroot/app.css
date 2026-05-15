@@ -2578,6 +2578,25 @@ ul.form-field-error {
     margin: 16px 0;
 }
 
+/* With the scope selector added, the Objects-mode row needs five
+   columns (scope + search + three filters); procedures / content modes
+   need just the two leading columns. `--with-scope` puts the narrow
+   scope select first, hands the rest of the width to the search box,
+   and lets the three filter columns (when present) sit at their
+   natural fraction. */
+.object-explorer__filters--with-scope {
+    grid-template-columns: minmax(160px, 0.8fr) minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+/* Wrap onto a second row on narrower viewports so the Extension column
+   doesn't squeeze the search input down to nothing. The grid stays
+   filter-shaped; one row gives way to two. */
+@media (max-width: 1400px) {
+    .object-explorer__filters--with-scope {
+        grid-template-columns: minmax(160px, 0.8fr) minmax(0, 2fr) repeat(2, minmax(0, 1fr));
+    }
+}
+
 /* Sortable column headers in the version browser. Keeps the <th>'s
    default look but turns the inner button into a hover-able click target
    with a small arrow on the active sort. */
@@ -2628,7 +2647,33 @@ ul.form-field-error {
     letter-spacing: 0.03em;
 }
 
+/* Visual styling for the Object Explorer's select boxes — the filter
+   row on the version browser and the "Compare with" picker on the file
+   header both fall outside the .form-section / .admin-form scopes that
+   own the global input styling, so without this they render with
+   browser defaults (white background, system font) and clash with the
+   dark UI. The .admin-search-input on the filter row already brings
+   its own block. */
 .object-explorer__filters .field__input,
+.object-explorer__compare .field__input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    font-family: inherit;
+    font-size: 13.5px;
+    background: var(--color-surface);
+    color: var(--color-text);
+}
+
+.object-explorer__filters .field__input:focus,
+.object-explorer__compare .field__input:focus {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -1px;
+    border-color: var(--color-accent);
+}
+
 .object-explorer__filters .admin-search-input {
     width: 100%;
     box-sizing: border-box;
@@ -2636,6 +2681,59 @@ ul.form-field-error {
 
 .object-explorer__row {
     cursor: pointer;
+}
+
+/* Version-compare page sections — each kind of change gets its own
+   block under a small heading. Spaced apart so the eye doesn't bleed
+   between added / removed / changed rows. */
+/* Header trailing block on the version browser — pulls the
+   "Compare with" picker and the "All versions" link together so they
+   sit on the right side of the page header without fighting the title
+   block on narrow widths. */
+.object-explorer__header-actions {
+    display: flex;
+    align-items: end;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.version-compare__section {
+    margin: 18px 0;
+}
+.version-compare__section h2 {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-2, #b0b0c2);
+    margin: 0 0 8px;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+/* Status pill on the right end of each compare row. Colours intentionally
+   muted — these aren't action buttons, they're metadata. */
+.version-compare__badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11.5px;
+    font-weight: 600;
+    text-transform: lowercase;
+    letter-spacing: 0.02em;
+}
+.version-compare__badge--added {
+    background: color-mix(in srgb, #2ea043 22%, transparent);
+    color: #4cd067;
+}
+.version-compare__badge--removed {
+    background: color-mix(in srgb, #f85149 22%, transparent);
+    color: #ff8a82;
+}
+.version-compare__badge--changed {
+    background: color-mix(in srgb, #d29922 22%, transparent);
+    color: #ecbe4b;
 }
 
 .object-explorer__row:hover {
@@ -2698,6 +2796,36 @@ ul.form-field-error {
     flex-wrap: wrap;
 }
 
+/* When the row-actions live in their own <td>, keep the cell tight so
+   the column doesn't claim a third of the table width. width: 1%
+   collapses the cell to its content; nowrap keeps the buttons on one
+   line even when there's room. */
+.object-explorer__row-actions--cell {
+    width: 1%;
+    white-space: nowrap;
+}
+
+/* Suffix shown after the symbol name on the procedure-search rows —
+   reads as a muted "(signature)" hint that doesn't compete with the
+   name. Truncated by the parent <td>'s overflow on narrow viewports. */
+.object-explorer__row-sig {
+    margin-left: 6px;
+    font-family: var(--mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+}
+
+/* Snippet column on the content-search results table. Trimmed to a
+   single line + ellipsis so a 200-char line doesn't blow up the row
+   height; the row click + the link both navigate to the matching
+   line in the file viewer, so seeing the start is enough. */
+.object-explorer__row-snippet {
+    display: block;
+    max-width: 70ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12.5px;
+}
+
 /* Upload form: native file inputs are ugly and inconsistent across browsers.
    Hide the input visually and let the <label for=...> button stand in.
    `.file-picker__status` gets the filename(s) written by the page script. */
@@ -2748,7 +2876,11 @@ ul.form-field-error {
     gap: 16px;
 }
 
-.upload-progress {
+/* The default `display: none` on `[hidden]` would normally hide this
+   panel, but specifying `display: flex` unconditionally would beat
+   that. Scope the flex layout to the visible state instead so the
+   `hidden` attribute keeps working as a plain on/off toggle. */
+.upload-progress:not([hidden]) {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -2777,6 +2909,29 @@ ul.form-field-error {
     to { transform: rotate(360deg); }
 }
 
+/* When the upload is in flight: visually lock down the form so the user
+   knows input is captured and that re-clicking is a no-op. Pointer
+   events are blocked on the inputs section (everything inside
+   .form-section), while the progress panel and its parent form-actions
+   stay interactive enough to read but not re-submit. The submit
+   button itself carries .btn--loading + the disabled attribute. */
+.object-explorer-upload.is-uploading .form-section {
+    opacity: 0.55;
+    pointer-events: none;
+    user-select: none;
+}
+
+/* Disabled buttons get a visual cue too — the .btn class doesn't have a
+   :disabled rule anywhere else and the browser default barely dims it,
+   so the user thinks the click didn't take. Applies globally; nothing
+   else relies on disabled buttons looking active. */
+.btn:disabled,
+.btn[disabled],
+.btn[aria-disabled="true"] {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
 /* Diff line decorations applied by CodeMirror's Decoration.line(). Selectors
    live in the global stylesheet (not the scoped CodeDiffViewer.razor.css)
    because CodeMirror renders .cm-line outside the Blazor component's scope-id
@@ -2785,16 +2940,31 @@ ul.form-field-error {
 .cm-line--diff-removed { background: rgba(248, 81, 73, 0.18); }
 .cm-line--diff-modified { background: rgba(210, 153, 34, 0.18); }
 
-/* Click affordance on procedure/trigger/event declarations in the Object
-   Explorer file viewer. Hover gives a faint underline so users see what's
-   right-clickable; the menu lives in .cm-symbol-menu below. */
-.cm-symbol-decl {
-    cursor: context-menu;
-    text-decoration: underline dotted transparent;
+/* Click affordances on Object Explorer tokens.
+   - cm-symbol-decl (procedure / field / object-header *declarations*):
+     solid underline at half opacity. The name is "the source" — hover
+     keeps the same line but brightens for an explicit "yes, this is
+     clickable" signal.
+   - cm-symbol-ref (call / field-access *reference sites*): dotted
+     underline. Reads as a hyperlink — the user expects to follow it
+     somewhere. Hover brightens to mirror the link affordance.
+   Both get cursor: pointer so the hand confirms interactivity before
+   the user even needs the underline to read. */
+.cm-symbol-decl,
+.cm-symbol-ref {
+    cursor: pointer;
+    text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
     text-underline-offset: 3px;
     transition: text-decoration-color 80ms ease-out;
 }
-.cm-symbol-decl:hover {
+.cm-symbol-decl {
+    text-decoration: underline solid currentColor;
+}
+.cm-symbol-ref {
+    text-decoration: underline dotted currentColor;
+}
+.cm-symbol-decl:hover,
+.cm-symbol-ref:hover {
     text-decoration-color: currentColor;
 }
 
@@ -2813,7 +2983,8 @@ ul.form-field-error {
 .cm-modifier-down .tok-propertyName,
 .cm-modifier-down .tok-className,
 .cm-modifier-down .tok-keyword,
-.cm-modifier-down .cm-symbol-decl {
+.cm-modifier-down .cm-symbol-decl,
+.cm-modifier-down .cm-symbol-ref {
     text-decoration: underline;
     text-decoration-style: solid;
     text-decoration-color: currentColor;
@@ -2845,8 +3016,13 @@ ul.form-field-error {
     font: inherit;
 }
 
-.cm-symbol-menu__item:hover {
+.cm-symbol-menu__item:hover:not(.cm-symbol-menu__item--disabled) {
     background: var(--surface-hover, rgba(124, 124, 144, 0.16));
+}
+
+.cm-symbol-menu__item--disabled {
+    color: var(--text-muted, rgba(216, 216, 224, 0.45));
+    cursor: not-allowed;
 }
 
 /* Brief flash on the line the user navigated to via a #L<n> deep link. */
@@ -2856,6 +3032,336 @@ ul.form-field-error {
 @keyframes cm-line-flash {
     0%   { background: rgba(254, 215, 102, 0.55); }
     100% { background: transparent; }
+}
+
+/* File viewer layout: code editor + right-rail inspector panel. The
+   editor fills the remaining width and grows to its content height —
+   long files extend the page rather than scrolling internally. The
+   panel stays in view via `position: sticky` so the outline / refs
+   are always one glance away. Stacks vertically on narrow viewports. */
+.object-explorer__file-layout {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+}
+
+.object-explorer__file-layout > .code-viewer-host {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+@media (max-width: 1100px) {
+    .object-explorer__file-layout {
+        flex-direction: column;
+    }
+}
+
+.inspector-panel {
+    /* Scale with viewport — narrow browser still gets the minimum, wide
+       monitors get more room for reference snippets. */
+    flex: 0 0 clamp(280px, 28vw, 520px);
+    display: flex;
+    flex-direction: column;
+    /* Sticky-follow on scroll. The nearest scrolling ancestor is
+       .content (`overflow-y: auto`), so the panel pins to the top of
+       the work column once it would otherwise scroll out of view.
+       max-height caps it to the viewport so long outlines get their
+       own internal scrollbar instead of overflowing the screen. */
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - var(--top-bar-height) - 32px);
+    border: 1px solid var(--border, #2a2a35);
+    border-radius: 6px;
+    background: var(--surface-1, #1a1c22);
+    overflow: hidden;
+    font-size: 13px;
+}
+
+@media (max-width: 1100px) {
+    /* In the stacked layout sticky would pin the panel to the top of
+       the column, hiding the editor as the user scrolls — unhelpful.
+       Drop back to its natural flow position. */
+    .inspector-panel {
+        position: static;
+        max-height: 60vh;
+    }
+}
+
+.inspector-panel__crumbs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border, #2a2a35);
+    background: var(--surface-2, rgba(124, 124, 144, 0.08));
+    font-size: 12.5px;
+}
+
+.inspector-panel__crumb {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: inherit;
+    font: inherit;
+    cursor: default;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.inspector-panel__crumb--link {
+    color: var(--text-2, #b0b0c2);
+    cursor: pointer;
+}
+
+.inspector-panel__crumb--link:hover {
+    background: var(--surface-hover, rgba(124, 124, 144, 0.16));
+    color: var(--text-1, #d8d8e0);
+}
+
+.inspector-panel__crumb--current {
+    color: var(--text-1, #d8d8e0);
+    font-weight: 600;
+}
+
+.inspector-panel__crumb-sep {
+    color: var(--text-3, #6b6b80);
+}
+
+.inspector-panel__body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 8px 10px 12px;
+}
+
+.inspector-panel__empty {
+    margin: 12px 4px;
+}
+
+.inspector-panel__filter {
+    margin-bottom: 8px;
+}
+
+.inspector-panel__filter-input {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--border, #2a2a35);
+    border-radius: 4px;
+    background: var(--surface-2, rgba(124, 124, 144, 0.08));
+    color: var(--text-1, #d8d8e0);
+    font: inherit;
+    font-size: 12.5px;
+}
+
+.inspector-panel__filter-input::placeholder {
+    color: var(--text-3, #6b6b80);
+}
+
+.inspector-panel__sections,
+.inspector-panel__items,
+.inspector-panel__refs-files,
+.inspector-panel__refs-hits {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.inspector-panel__section + .inspector-panel__section {
+    margin-top: 12px;
+}
+
+.inspector-panel__section-title {
+    margin: 0 0 4px 0;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-2, #b0b0c2);
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+}
+
+/* Collapsible section header — same typography as the static title, plus
+   a leading chevron and a button cursor so it's discoverable. The chevron
+   itself is a vendored Lucide icon, so no rotation animation; we swap
+   chevron-right / chevron-down between collapsed and expanded states. */
+.inspector-panel__section-toggle {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    padding: 4px 0;
+    margin: 0 0 4px 0;
+    width: 100%;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-2, #b0b0c2);
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    cursor: pointer;
+    text-align: left;
+}
+.inspector-panel__section-toggle:hover {
+    color: var(--text-1, #d8d8e0);
+}
+.inspector-panel__section-title-text {
+    flex: 0 0 auto;
+}
+
+/* Full-viewport invisible backdrop used to dismiss the outline row's
+   right-click menu on outside-click. Sits below the menu (z-index 999
+   vs the menu's 1000). Pointer-events: auto so the click is caught. */
+.cm-symbol-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    background: transparent;
+}
+
+.inspector-panel__item {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    border-radius: 4px;
+}
+
+.inspector-panel__item:hover {
+    background: var(--surface-hover, rgba(124, 124, 144, 0.10));
+}
+
+.inspector-panel__item-link {
+    flex: 1 1 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 6px;
+    color: inherit;
+    text-decoration: none;
+    font-family: var(--mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+    font-size: 12.5px;
+    min-width: 0;
+}
+
+/* Override the global `a:hover { text-decoration: underline }` — the row
+   already changes background on hover, the redundant underline reads as
+   noise. */
+.inspector-panel__item-link:hover {
+    text-decoration: none;
+}
+
+.inspector-panel__item-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+/* Field type / procedure signature, rendered between the name and the
+   line-number badge. Truncated with ellipsis so a 200-character method
+   signature doesn't push the line off-row; full text is on the title
+   attribute so hovering reveals it. */
+.inspector-panel__item-sig {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: var(--mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+}
+
+.inspector-panel__item-line {
+    flex-shrink: 0;
+}
+
+.inspector-panel__item-action {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    padding: 4px 6px;
+    border-radius: 4px;
+    color: var(--text-3, #6b6b80);
+    cursor: pointer;
+    /* Only reveal the find-references button while the row is hovered or
+       the button itself is focused — keeps the row visually quiet at rest. */
+    opacity: 0;
+    transition: opacity 80ms ease-out;
+}
+
+.inspector-panel__item:hover .inspector-panel__item-action,
+.inspector-panel__item-action:focus {
+    opacity: 1;
+}
+
+.inspector-panel__item-action:hover {
+    background: var(--surface-hover, rgba(124, 124, 144, 0.16));
+    color: var(--text-1, #d8d8e0);
+}
+
+.inspector-panel__refs-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    margin: 4px 0 12px 0;
+}
+
+.inspector-panel__refs-section + .inspector-panel__refs-section {
+    margin-top: 14px;
+}
+
+.inspector-panel__refs-file {
+    border: 1px solid var(--border, #2a2a35);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.inspector-panel__refs-file-header {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 4px 8px;
+    background: var(--surface-2, rgba(124, 124, 144, 0.08));
+    font-size: 12px;
+}
+
+.inspector-panel__refs-hit {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 8px;
+    padding: 4px 8px;
+    border-top: 1px solid var(--border, #2a2a35);
+    text-decoration: none;
+    color: inherit;
+    font-family: var(--mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+    font-size: 12px;
+}
+
+.inspector-panel__refs-hit:hover {
+    background: var(--surface-hover, rgba(124, 124, 144, 0.10));
+    /* Suppress the global `a:hover` underline — background change is enough. */
+    text-decoration: none;
+}
+
+.inspector-panel__refs-hit-line {
+    color: var(--text-3, #6b6b80);
+    text-align: right;
+}
+
+.inspector-panel__refs-hit-snippet {
+    color: var(--text-1, #d8d8e0);
+    white-space: pre;
+    overflow-x: auto;
 }
 
 /* References page layout */

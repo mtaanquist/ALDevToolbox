@@ -1,0 +1,215 @@
+@page "/object-explorer/{VersionId:int}/compare/{OtherVersionId:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject BaseAppService BaseApp
+@inject NavigationManager Nav
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Services
+
+@*
+    Version-to-version object diff: shows which files were added,
+    removed, or changed between two imported versions. Compares by
+    (ObjectType, ObjectId) primarily, falling back to (Type, Name) for
+    id-less objects. Backed by BaseAppService.CompareVersionsAsync.
+
+    Each Added/Removed row deep-links to the file viewer for the
+    side that has it. Each Changed row links to the existing
+    side-by-side FileDiff for the matched pair.
+*@
+
+<PageTitle>@PageTitleText · AL Dev Toolbox</PageTitle>
+
+<div class="object-explorer__browser">
+    <header class="admin-page__header">
+        <div>
+            <h1>@PageTitleText</h1>
+            <p class="muted">
+                @if (_diff is null)
+                {
+                    <span>Comparing…</span>
+                }
+                else
+                {
+                    <span>
+                        <strong>@_diff.Added.Count</strong> added,
+                        <strong>@_diff.Removed.Count</strong> removed,
+                        <strong>@_diff.Changed.Count</strong> changed.
+                    </span>
+                }
+            </p>
+        </div>
+        <div class="object-explorer__compare">
+            <a class="btn" href="@($"/object-explorer/{VersionId}")">
+                <Icon Name="arrow-left" Width="16" Height="16" />
+                <span>Back to @LeftLabel</span>
+            </a>
+        </div>
+    </header>
+
+    @if (_diff is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_diff.TotalCount == 0)
+    {
+        <p class="muted">
+            No object-level differences between @LeftLabel and @RightLabel.
+            (Files with the same <code>(type, id)</code> pair and matching
+            content hash are treated as unchanged.)
+        </p>
+    }
+    else
+    {
+        @if (_diff.Changed.Count > 0)
+        {
+            <section class="version-compare__section">
+                <h2>Changed <span class="muted small">(@_diff.Changed.Count)</span></h2>
+                <table class="data-table object-explorer__objects">
+                    <thead>
+                        <tr>
+                            <th scope="col">Type</th>
+                            <th scope="col" class="num">ID</th>
+                            <th scope="col">Name</th>
+                            <th scope="col" aria-label="Actions"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var pair in _diff.Changed)
+                        {
+                            var diffHref = $"/object-explorer/{VersionId}/files/{pair.Left.Id}/diff/{OtherVersionId}";
+                            <tr class="object-explorer__row"
+                                @onclick="() => Nav.NavigateTo(diffHref)">
+                                <td><span class="object-explorer__type">@pair.Right.ObjectType</span></td>
+                                <td class="num">@(pair.Right.ObjectId?.ToString() ?? "")</td>
+                                <td>
+                                    <a href="@diffHref" @onclick:stopPropagation="true">@pair.Right.ObjectName</a>
+                                </td>
+                                <td class="muted small">
+                                    <span class="version-compare__badge version-compare__badge--changed">changed</span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        }
+
+        @if (_diff.Added.Count > 0)
+        {
+            <section class="version-compare__section">
+                <h2>Added in @RightLabel <span class="muted small">(@_diff.Added.Count)</span></h2>
+                <table class="data-table object-explorer__objects">
+                    <thead>
+                        <tr>
+                            <th scope="col">Type</th>
+                            <th scope="col" class="num">ID</th>
+                            <th scope="col">Name</th>
+                            <th scope="col" aria-label="Actions"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _diff.Added)
+                        {
+                            var openHref = $"/object-explorer/{OtherVersionId}/files/{row.Id}";
+                            <tr class="object-explorer__row"
+                                @onclick="() => Nav.NavigateTo(openHref)">
+                                <td><span class="object-explorer__type">@row.ObjectType</span></td>
+                                <td class="num">@(row.ObjectId?.ToString() ?? "")</td>
+                                <td>
+                                    <a href="@openHref" @onclick:stopPropagation="true">@row.ObjectName</a>
+                                </td>
+                                <td class="muted small">
+                                    <span class="version-compare__badge version-compare__badge--added">added</span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        }
+
+        @if (_diff.Removed.Count > 0)
+        {
+            <section class="version-compare__section">
+                <h2>Removed since @LeftLabel <span class="muted small">(@_diff.Removed.Count)</span></h2>
+                <table class="data-table object-explorer__objects">
+                    <thead>
+                        <tr>
+                            <th scope="col">Type</th>
+                            <th scope="col" class="num">ID</th>
+                            <th scope="col">Name</th>
+                            <th scope="col" aria-label="Actions"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _diff.Removed)
+                        {
+                            var openHref = $"/object-explorer/{VersionId}/files/{row.Id}";
+                            <tr class="object-explorer__row"
+                                @onclick="() => Nav.NavigateTo(openHref)">
+                                <td><span class="object-explorer__type">@row.ObjectType</span></td>
+                                <td class="num">@(row.ObjectId?.ToString() ?? "")</td>
+                                <td>
+                                    <a href="@openHref" @onclick:stopPropagation="true">@row.ObjectName</a>
+                                </td>
+                                <td class="muted small">
+                                    <span class="version-compare__badge version-compare__badge--removed">removed</span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public int VersionId { get; set; }
+    [Parameter] public int OtherVersionId { get; set; }
+
+    private BaseAppVersion? _left;
+    private BaseAppVersion? _right;
+    private BaseAppVersionDiffResult? _diff;
+
+    private string LeftLabel => _left is null
+        ? $"version {VersionId}"
+        : $"BC {_left.Major}.{_left.CumulativeUpdate}";
+    private string RightLabel => _right is null
+        ? $"version {OtherVersionId}"
+        : $"BC {_right.Major}.{_right.CumulativeUpdate}";
+    private string PageTitleText => _left is null || _right is null
+        ? "Compare versions"
+        : $"Compare {LeftLabel} → {RightLabel}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (VersionId == OtherVersionId)
+        {
+            // Self-compare is meaningless; bounce back to the browser.
+            Nav.NavigateTo($"/object-explorer/{VersionId}");
+            return;
+        }
+        await LoadAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_left is not null && (_left.Id != VersionId || _right?.Id != OtherVersionId))
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _left = await BaseApp.GetVersionAsync(VersionId);
+        _right = await BaseApp.GetVersionAsync(OtherVersionId);
+        if (_left is null || _right is null)
+        {
+            Nav.NavigateTo("/object-explorer");
+            return;
+        }
+        _diff = await BaseApp.CompareVersionsAsync(VersionId, OtherVersionId);
+    }
+}

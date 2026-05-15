@@ -13,7 +13,7 @@
     navigation via NavigationManager (no SymbolReferences URL leakage into JS).
 *@
 
-<div class="code-viewer-host" @ref="_container"></div>
+<div class="code-viewer-host @(Fluid ? "code-viewer-host--fluid" : null)" @ref="_container"></div>
 
 @code {
     /// <summary>The source text to render. Re-passing this prop after mount calls <c>setValue</c>.</summary>
@@ -32,6 +32,13 @@
     /// </summary>
     [Parameter] public IReadOnlyList<CodeViewerDeclaration>? Declarations { get; set; }
 
+    /// <summary>
+    /// Optional resolvable-token ranges. Cosmetic-only ranges that get a faint
+    /// underline so users see which call sites have a jump target; the actual
+    /// resolution still happens server-side on Cmd/Ctrl-click.
+    /// </summary>
+    [Parameter] public IReadOnlyList<CodeViewerResolvable>? Resolvables { get; set; }
+
     /// <summary>Invoked from the right-click menu when the user picks "Find references".</summary>
     [Parameter] public EventCallback<long> OnFindReferences { get; set; }
 
@@ -43,15 +50,41 @@
     [Parameter] public EventCallback<CodeViewerClick> OnGoToDefinition { get; set; }
 
     /// <summary>
+    /// Invoked when the user picks "Find in this file" from the right-click
+    /// menu. The callback receives the click position; the page extracts the
+    /// word and runs the in-file occurrence search.
+    /// </summary>
+    [Parameter] public EventCallback<CodeViewerClick> OnFindInFile { get; set; }
+
+    /// <summary>
     /// Optional 1-based line number to scroll to (and flash) after mount.
     /// FileViewer reads this from the URL's <c>#L&lt;n&gt;</c> fragment.
     /// </summary>
     [Parameter] public int? ScrollToLine { get; set; }
 
+    /// <summary>
+    /// Monotonic token that the parent bumps each time it wants the viewer to
+    /// re-scroll to <see cref="ScrollToLine"/>. Without it, clicking the same
+    /// reference twice (or clicking the line you're already on) is a no-op
+    /// — the line value didn't change so the viewer thought there was
+    /// nothing to do.
+    /// </summary>
+    [Parameter] public int ScrollSequence { get; set; }
+
+    /// <summary>
+    /// When true, the editor grows to fit its content height instead of
+    /// scrolling internally — the page scrolls instead. Used by the
+    /// single-file viewer so long files extend the page and the
+    /// inspector panel can sticky-follow. The side-by-side diff leaves
+    /// it false so both panes share an aligned, bounded scroll context.
+    /// </summary>
+    [Parameter] public bool Fluid { get; set; }
+
     private ElementReference _container;
     private IJSObjectReference? _module;
     private int _editorId;
     private string? _mountedContent;
+    private int _mountedScrollSequence = -1;
     private DotNetObjectReference<CodeViewerCallbacks>? _callbacks;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -75,6 +108,12 @@
                     kind = d.Kind,
                     name = d.Name,
                 }).ToArray(),
+                resolvables = Resolvables?.Select(r => new
+                {
+                    line = r.Line,
+                    columnStart = r.ColumnStart,
+                    columnEnd = r.ColumnEnd,
+                }).ToArray(),
                 // Pass the .NET reference when either gesture is wired up.
                 // Right-click only fires when declarations exist, but
                 // Cmd/Ctrl-click is meaningful even without a symbol index.
@@ -86,13 +125,25 @@
             _editorId = await _module.InvokeAsync<int>(
                 "mountReadOnly", _container, Content ?? string.Empty, Language, options);
             _mountedContent = Content;
+            _mountedScrollSequence = ScrollSequence;
             return;
         }
 
-        if (_module is not null && _editorId != 0 && !string.Equals(_mountedContent, Content, StringComparison.Ordinal))
+        if (_module is null || _editorId == 0) return;
+
+        if (!string.Equals(_mountedContent, Content, StringComparison.Ordinal))
         {
             await _module.InvokeVoidAsync("setValue", _editorId, Content ?? string.Empty);
             _mountedContent = Content;
+        }
+
+        // Re-scroll whenever the parent bumps the sequence — covers both
+        // "go to definition lands inside the current file" and "user clicks
+        // the same outline / reference link again after scrolling away".
+        if (ScrollToLine is { } line && line >= 1 && _mountedScrollSequence != ScrollSequence)
+        {
+            await _module.InvokeVoidAsync("scrollToLine", _editorId, line, true);
+            _mountedScrollSequence = ScrollSequence;
         }
     }
 
@@ -109,6 +160,14 @@
         if (OnGoToDefinition.HasDelegate)
         {
             await OnGoToDefinition.InvokeAsync(new CodeViewerClick(line, column));
+        }
+    }
+
+    internal async Task TriggerFindInFileAsync(int line, int column)
+    {
+        if (OnFindInFile.HasDelegate)
+        {
+            await OnFindInFile.InvokeAsync(new CodeViewerClick(line, column));
         }
     }
 

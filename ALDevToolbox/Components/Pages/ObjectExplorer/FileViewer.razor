@@ -7,6 +7,14 @@
 @implements IDisposable
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Services.Al
+
+@*
+    The body splits into the code viewer on the left and the inspector panel
+    on the right. The inspector hosts a stack of views — Outline by default,
+    with Find references pushed on top as the user explores — and we keep the
+    stack here so it survives FileId-stable re-renders.
+*@
 
 <PageTitle>@(_file?.ObjectName ?? "Object") · AL Dev Toolbox</PageTitle>
 
@@ -45,7 +53,8 @@
                     }
                     <span>
                         · <strong>Cmd/Ctrl-click</strong> any name to go to its definition
-                        · <strong>Right-click</strong> for a context menu (Go to definition + Find references on procedure declarations).
+                        · <strong>Right-click</strong> for Go to definition, Find references, Find in file
+                        · <strong>Right rail</strong> for outline + results
                     </span>
                 </p>
             </div>
@@ -74,12 +83,27 @@
             </p>
         }
 
-        <CodeViewer Content="@_file.Content"
-                    Language="al"
-                    Declarations="_declarations"
-                    OnFindReferences="OnFindReferences"
-                    OnGoToDefinition="OnGoToDefinition"
-                    ScrollToLine="_initialScrollLine" />
+        <div class="object-explorer__file-layout">
+            <CodeViewer Content="@_file.Content"
+                        Language="al"
+                        Declarations="_declarations"
+                        Resolvables="_resolvables"
+                        OnFindReferences="OnFindReferences"
+                        OnGoToDefinition="OnGoToDefinition"
+                        OnFindInFile="OnFindInFile"
+                        ScrollToLine="_initialScrollLine"
+                        ScrollSequence="_scrollSequence"
+                        Fluid="true" />
+
+            <InspectorPanel Stack="_panelHistory.Stack"
+                            Cursor="_panelHistory.Cursor"
+                            Symbols="_symbols"
+                            VersionId="VersionId"
+                            FileId="FileId"
+                            OnPopTo="PopPanelTo"
+                            OnPushReferences="PushReferencesView"
+                            OnScrollTo="OnPanelScrollTo" />
+        </div>
     }
 </div>
 
@@ -87,19 +111,46 @@
     [Parameter] public int VersionId { get; set; }
     [Parameter] public long FileId { get; set; }
 
+    /// <summary>
+    /// Query param that auto-opens a references panel on file load.
+    /// Today's only supported value is <c>object</c> — used by the
+    /// version browser's row action to deep-link "find references to
+    /// this table/codeunit/page" without making the user open the file
+    /// and right-click on line 1. Wired through <c>SupplyParameterFromQuery</c>
+    /// so back-button navigation drops the param naturally.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "refs")]
+    public string? RefsParam { get; set; }
+
     private BaseAppFile? _file;
     private BaseAppVersion? _version;
     private List<BaseAppVersion>? _otherVersions;
     private string _compareTarget = string.Empty;
     private IReadOnlyList<CodeViewerDeclaration> _declarations = Array.Empty<CodeViewerDeclaration>();
+    private IReadOnlyList<CodeViewerResolvable> _resolvables = Array.Empty<CodeViewerResolvable>();
+    private IReadOnlyList<BaseAppSymbol> _symbols = Array.Empty<BaseAppSymbol>();
     private int? _initialScrollLine;
+    // Monotonic counter passed through to CodeViewer so identical
+    // scroll-to-line requests still trigger the flash + re-center. Bumped
+    // every time we update _initialScrollLine.
+    private int _scrollSequence;
     private string? _lastDefinitionMissed;
     private IDisposable? _locationChangedSubscription;
+
+    // Inspector panel navigation stack. Resets to a fresh Outline view on
+    // every file load — references state is per-file and doesn't survive
+    // cross-file navigation (see the design discussion in the PR thread).
+    private readonly InspectorPanelHistory _panelHistory = new();
 
     protected override async Task OnInitializedAsync()
     {
         await LoadAsync();
         _locationChangedSubscription = Nav.RegisterLocationChangingHandler(OnLocationChanging);
+        // LocationChanged is the post-navigation event. It fires reliably for
+        // fragment-only changes, where LocationChangingHandler doesn't always
+        // — this is the path that catches an outline-link click or a Go to
+        // definition that lands inside the currently mounted file.
+        Nav.LocationChanged += OnLocationChanged;
     }
 
     protected override async Task OnParametersSetAsync()
@@ -124,13 +175,50 @@
         var all = await BaseApp.ListVersionsAsync();
         _otherVersions = all.Where(v => v.Id != VersionId).ToList();
 
-        var symbols = await BaseApp.ListSymbolsInFileAsync(FileId);
-        _declarations = symbols
+        _symbols = await BaseApp.ListSymbolsInFileAsync(FileId);
+        _declarations = _symbols
+            // Triggers are always local — there's nowhere to navigate to and
+            // no "find references" worth running, so skip the underline /
+            // right-click menu entirely.
+            .Where(s => !string.Equals(s.Kind, "trigger", StringComparison.Ordinal))
             .Select(s => new CodeViewerDeclaration(
                 s.Id, s.LineNumber, s.ColumnStart, s.ColumnEnd, s.Kind, s.Name))
             .ToList();
 
-        _initialScrollLine = ExtractLineAnchor(Nav.Uri);
+        var resolvables = await BaseApp.ListResolvableTokensInFileAsync(FileId);
+        _resolvables = resolvables
+            .Select(r => new CodeViewerResolvable(r.Line, r.ColumnStart, r.ColumnEnd))
+            .ToList();
+
+        SetScrollTarget(ExtractLineAnchor(Nav.Uri));
+
+        // Fresh file, fresh stack — references state from the previous file
+        // wouldn't make sense here.
+        _panelHistory.Reset();
+
+        // Deep link from the version browser's row action — push the
+        // object-header references view straight onto the stack so the
+        // user lands on "refs to this table" instead of the default
+        // outline. `refs=object` is the only supported value today.
+        if (string.Equals(RefsParam, "object", StringComparison.OrdinalIgnoreCase))
+        {
+            var objectDecl = _symbols.FirstOrDefault(s => s.Kind == "object_declaration");
+            if (objectDecl is not null)
+            {
+                _panelHistory.Push(new ReferencesPanelView(
+                    objectDecl.Id, objectDecl.Name, objectDecl.Kind));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Updates the scroll target and bumps the sequence so CodeViewer flashes
+    /// even if the line value is the same as the previous request.
+    /// </summary>
+    private void SetScrollTarget(int? line)
+    {
+        _initialScrollLine = line;
+        _scrollSequence++;
     }
 
     /// <summary>
@@ -156,7 +244,30 @@
 
     private void OnFindReferences(long symbolId)
     {
-        Nav.NavigateTo($"/object-explorer/{VersionId}/symbols/{symbolId}/references");
+        // Right-click "Find references" inside the editor — push a panel view
+        // rather than navigating away. The standalone /symbols/{id}/references
+        // route still exists for deep-linking but isn't the primary surface.
+        var symbol = _symbols.FirstOrDefault(s => s.Id == symbolId);
+        if (symbol is null) return;
+        _panelHistory.Push(new ReferencesPanelView(symbol.Id, symbol.Name, symbol.Kind));
+    }
+
+    private void PushReferencesView(BaseAppSymbol symbol)
+    {
+        _panelHistory.Push(new ReferencesPanelView(symbol.Id, symbol.Name, symbol.Kind));
+    }
+
+    private void PopPanelTo(int index) => _panelHistory.PopTo(index);
+
+    private void OnFindInFile(CodeViewerClick click)
+    {
+        // Extract the token at the click position so the panel has the actual
+        // word to search for — the JS side only sees line/column. The locator
+        // already handles quoted identifiers (Sales-Post) and bare ones.
+        if (_file is null) return;
+        var inspected = AlGoToDefinitionLocator.Inspect(_file.Content, click.Line, click.Column);
+        if (inspected is null || string.IsNullOrWhiteSpace(inspected.Word)) return;
+        _panelHistory.Push(new FileSearchPanelView(inspected.Word));
     }
 
     private async Task OnGoToDefinition(CodeViewerClick click)
@@ -174,24 +285,90 @@
             return;
         }
 
-        var url = $"/object-explorer/{VersionId}/files/{target.FileId}#L{target.LineNumber}";
-        Nav.NavigateTo(url);
+        JumpToTarget(target.FileId, target.LineNumber);
     }
 
     private ValueTask OnLocationChanging(LocationChangingContext context)
     {
         // Same page, different fragment: re-pull the line anchor so the
-        // viewer scrolls again. (CodeMirror keeps its content; we just want
-        // the scroll-to-line side effect.)
+        // viewer scrolls again. Skip if the line is already the current
+        // target — our own @onclick handler usually beat us to it, and
+        // re-bumping the sequence would queue a redundant scroll dispatch.
         if (context.TargetLocation.StartsWith($"/object-explorer/{VersionId}/files/{FileId}", StringComparison.Ordinal))
         {
-            _initialScrollLine = ExtractLineAnchor(context.TargetLocation);
+            var newScroll = ExtractLineAnchor(context.TargetLocation);
+            if (newScroll != _initialScrollLine)
+            {
+                SetScrollTarget(newScroll);
+                StateHasChanged();
+            }
         }
         return ValueTask.CompletedTask;
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        // Post-navigation safety net for URL changes we didn't initiate
+        // ourselves — direct URL-bar edits, browser back/forward, etc. For
+        // clicks routed through OnPanelScrollTo / OnGoToDefinition, the
+        // scroll target has already been set; bumping the sequence again
+        // here would dispatch a second scrollToLine and is what was
+        // causing CodeMirror to thrash on far-down navigations.
+        if (_file is null) return;
+        var path = $"/object-explorer/{VersionId}/files/{FileId}";
+        if (!e.Location.Contains(path, StringComparison.Ordinal)) return;
+        var newScroll = ExtractLineAnchor(e.Location);
+        if (newScroll is null || newScroll == _initialScrollLine) return;
+        SetScrollTarget(newScroll);
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Click from an inspector-panel anchor. Same-file hits scroll without
+    /// a full navigation (browser nav for a same-URL anchor is a no-op, which
+    /// would leave the editor stuck — this path always bumps the sequence so
+    /// the viewer re-flashes). Cross-file hits fall through to Nav.NavigateTo
+    /// so OnParametersSet reloads the page.
+    /// </summary>
+    private void OnPanelScrollTo((long FileId, int LineNumber) hit) =>
+        JumpToTarget(hit.FileId, hit.LineNumber);
+
+    /// <summary>
+    /// Centralised "scroll to a target line, possibly in a different file"
+    /// routine.
+    ///
+    /// Same-file jumps deliberately don't update the URL. We tried
+    /// <c>history.replaceState</c> to keep the address bar in sync, but
+    /// Blazor's enhanced navigation in .NET 8+ intercepts both anchor
+    /// clicks <em>and</em> programmatic <c>history.replaceState</c> calls
+    /// and runs its document-diff pipeline on them — which strips
+    /// CodeMirror's runtime-injected <c>&lt;style&gt;</c> tags from
+    /// <c>&lt;head&gt;</c>, leaving the editor unstyled. Browser
+    /// back/forward through accumulated entries amplifies the damage.
+    ///
+    /// The simplest fix is to side-step Blazor's nav machinery entirely
+    /// for in-file scrolls: just update internal state and re-render.
+    /// Trade-off: refresh restores the deep-link line (from the URL
+    /// fragment present on initial load), not the last in-file scroll
+    /// position. Acceptable.
+    ///
+    /// Cross-file jumps still go through <see cref="NavigationManager.NavigateTo(string, bool, bool)"/>
+    /// because we actually want <c>OnParametersSet</c> to fire and reload.
+    /// </summary>
+    private void JumpToTarget(long targetFileId, int targetLine)
+    {
+        if (targetFileId == FileId)
+        {
+            SetScrollTarget(targetLine);
+            StateHasChanged();
+            return;
+        }
+        Nav.NavigateTo($"/object-explorer/{VersionId}/files/{targetFileId}#L{targetLine}");
     }
 
     public void Dispose()
     {
         _locationChangedSubscription?.Dispose();
+        Nav.LocationChanged -= OnLocationChanged;
     }
 }
