@@ -157,12 +157,15 @@ public sealed class ObjectExplorerSchemaSmokeTests : IDisposable
         delCtx.OeReleases.Remove(parentToDelete!);
 
         var act = async () => await delCtx.SaveChangesAsync();
-        // PostgreSQL refuses the DELETE with sqlstate 23503 (foreign_key_violation);
-        // EF Core wraps it in DbUpdateException with a PostgresException inner.
+        // PostgreSQL emits sqlstate 23001 (restrict_violation) for ON DELETE RESTRICT,
+        // distinct from 23503 (foreign_key_violation) which is what deferrable NO ACTION
+        // would raise. Asserting on 23001 specifically pins the migration to RESTRICT —
+        // if someone changes ReferentialAction.Restrict to NoAction this test fails so
+        // we'd catch the regression.
         (await act.Should().ThrowAsync<DbUpdateException>(
                 because: "ON DELETE RESTRICT refuses parent removal while child still references it"))
             .WithInnerException<Npgsql.PostgresException>()
-            .Which.SqlState.Should().Be("23503");
+            .Which.SqlState.Should().Be("23001");
     }
 
     [Fact]
