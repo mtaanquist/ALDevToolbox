@@ -13,6 +13,7 @@ Living specification for the AL Dev Toolbox. The code in `ALDevToolbox/` is the 
 | `auth-and-audit.md` | Email/password accounts, organisations, signup approval, audit interceptor. |
 | `ui-design.md` | Page layout, copy, components in `Components/Shared/`. |
 | `deployment.md` | Docker, env vars, health checks, backups. |
+| `object-explorer.md` | `.app` symbol-package ingest, Release/Module model, cross-module reference resolution. |
 | `milestones.md` | Build sequence — current and Phase 4 candidates. |
 | `completed-milestones.md` | What each shipped milestone added. |
 | `migration-history.md` | One-line summary per EF migration. |
