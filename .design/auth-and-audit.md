@@ -70,7 +70,52 @@ Email send failures log a warning but do not roll back the underlying action. A 
 
 - **Change password** — requires the current password.
 - **Change display name** — 2–80 chars.
-- **Delete account** — removes the user row. If the user is the last *active* admin, the confirmation modal asks them to either promote another user first or accept that the organisation will be marked for deletion (which cascades to its content via FK).
+- **Two-factor authentication** — TOTP (authenticator app) is the primary factor; email codes are an optional fallback. Both can be enrolled at once.
+- **Passkeys** — WebAuthn credentials registered via `navigator.credentials.create`. A successful passkey assertion at login is full authentication; it replaces both the password and the 2FA challenge.
+- **Delete account** — removes the user row. Refined guard: if the user is the last active admin **and** there are other members in the org, the form refuses outright and tells them to promote someone first. If they are the only member, the confirmation accepts cascade-the-org. See `AccountService.DeleteAccountAsync`.
+
+Email change for a user is performed by another admin (not by the user themselves in this milestone). See "Admin user management" below.
+
+## Two-factor authentication
+
+### TOTP
+- 20-byte secret, Base32-encoded, encrypted via `IDataProtector` (purpose `ALDevToolbox.UserTotpSecret`) before persistence. Decryption only happens inside `TotpService.VerifyAsync` to compute the rolling code.
+- Stored in `user_totp_secrets` (one row per user). A row with `confirmed_at = null` is a pending enrollment that hasn't yet been validated by submitting a current code — repeating enrollment overwrites it.
+- Confirmation flips `users.totp_enabled = true` and issues 10 recovery codes.
+- The Data Protection key ring lives on the `app-keys` volume; losing it makes TOTP secrets unrecoverable (same blast radius as the SMTP password). Recovery: email-MFA fallback, recovery codes, or `UserAdministrationService.ResetMfaAsync` (the SiteAdmin break-glass path).
+
+### Email codes
+- 6-digit numeric, single-use, 10-minute lifetime. Stored hash is `SHA-256(code + ":" + user_id)`; the user-id binding stops the short numeric space being a global rainbow-table target.
+- Reuses the `password_reset_tokens` table with `purpose = EmailMfaChallenge`. Per-user rate limit: 3 issues per 10 minutes, counted from that same table — survives process restart with no extra state.
+- Always sent to `users.email`, never `pending_email`, so a still-unconfirmed email change can't redirect MFA codes to the new address.
+
+### Recovery codes
+- 10 codes per user, two five-char groups (`7HK3M-2QPRA`), drawn from an unambiguous alphabet. BCrypt-hashed (work factor 10).
+- Shown once, immediately after TOTP enrollment or after regenerate. Regenerating wipes all prior codes.
+
+### Login orchestration
+- `AuthService.TryLoginAsync` returns `LoginOutcome.MfaRequired` once the password verifies and the user has any 2FA enrolled. `LastLoginAt` and the login-success row in `login_attempts` are deferred to `AuthService.CompleteMfaAsync`, called by the challenge endpoint after the second factor verifies.
+- The intermediate "password OK, 2FA pending" state lives in a short-lived signed cookie (`alwb_mfa`, 10 min, `IDataProtector` purpose `ALDevToolbox.MfaPending`). No server-side session table.
+- Magic-link login deliberately bypasses 2FA — the mailbox itself is treated as a second factor.
+
+## Passkeys (WebAuthn)
+
+- Backed by `Fido2.AspNet`. Configuration: `Auth:WebAuthn:RpId` (registrable suffix of the deployed hostname) and `Auth:WebAuthn:Origins` (allow-listed full origins). When `RpId` is empty the passkey UI hides and the service refuses to start ceremonies — set both before exposing passkeys publicly.
+- `user_passkeys` holds the credential id (globally unique), CBOR-encoded public key, sign counter, AAGUID, nickname, and transport hints. One user can register many.
+- Registration / assertion challenges round-trip via short-lived (5 min) `IDataProtector`-protected cookies; no extra state table.
+- A non-monotonic sign counter (signal of a cloned authenticator) refuses the sign-in.
+
+## Admin user management
+
+`/admin/users` (Admin-only):
+
+- **Create a user** — generates an invite without requiring SMTP; the magic link is shown inline once with a copy-to-clipboard button (via a 60s `IDataProtector`-protected cookie). If SMTP is configured and the admin ticked "Send email", the invite is also emailed.
+- **Invite by email** — existing flow, kept for backwards compat.
+- **Approve / reject pending signups** — unchanged.
+- **Disable / re-enable / change role** — unchanged; last-admin guards on demote/disable.
+- **Change a user's email** — stamps `users.pending_email` + `pending_email_at`, issues a 24-hour `EmailChangeConfirm` token via `TokenIssuer.Issue`, and sends the confirmation link to the **new** address. If SMTP isn't reachable the link is also shown inline. The swap happens when the new mailbox clicks the link (`/auth/account/email-change/confirm`), at which point the user is signed out so they re-login from the new address. An admin cannot change their own email via this path.
+
+`/site-admin/users/{id}/reset-mfa` is the break-glass path for users locked out of every factor: clears the TOTP secret, every recovery code, every passkey, and flips both MFA flags off. Audited.
 
 ## Audit log
 

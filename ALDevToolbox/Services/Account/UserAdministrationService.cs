@@ -1,6 +1,7 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services.Account;
@@ -20,6 +21,8 @@ namespace ALDevToolbox.Services.Account;
 /// </remarks>
 public sealed class UserAdministrationService
 {
+    public static readonly TimeSpan EmailChangeTokenLifetime = TimeSpan.FromHours(24);
+
     private readonly AppDbContext _db;
     private readonly TimeProvider _clock;
 
@@ -199,5 +202,143 @@ public sealed class UserAdministrationService
             throw new PlanValidationException(new Dictionary<string, string> { ["RequestId"] = "Request not found in this organisation." });
         }
         return req;
+    }
+
+    /// <summary>
+    /// Stamps a pending email change on the user row and issues a confirmation
+    /// token (purpose <see cref="TokenPurpose.EmailChangeConfirm"/>, 24-hour
+    /// lifetime). Returns the plaintext token — the endpoint emails it to the
+    /// <em>new</em> address. The actual swap happens in
+    /// <see cref="ConfirmEmailChangeAsync"/> once that mailbox responds.
+    /// </summary>
+    public async Task<string> RequestEmailChangeAsync(int targetUserId, string newEmail, int actingOrgId, int actingUserId, CancellationToken ct = default)
+    {
+        var errors = new Dictionary<string, string>();
+        var normalised = (newEmail ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(normalised) || !normalised.Contains('@') || normalised.Length > 254)
+        {
+            errors["NewEmail"] = "Enter a valid email address.";
+        }
+        if (errors.Count > 0) throw new PlanValidationException(errors);
+
+        var user = await LoadUserAsync(targetUserId, actingOrgId, ct);
+        if (user.Id == actingUserId)
+        {
+            // Admins changing their own email via the admin route is too
+            // accident-prone (they'd be racing themselves on the confirmation).
+            // Self-service email change is out of scope this milestone — once
+            // shipped, this user would use /account.
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["NewEmail"] = "You can't change your own email from the admin page. Ask another admin or a SiteAdmin."
+            });
+        }
+        if (string.Equals(user.Email, normalised, StringComparison.Ordinal))
+        {
+            throw new PlanValidationException(new Dictionary<string, string> { ["NewEmail"] = "That's already this user's email." });
+        }
+        var taken = await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == normalised && u.Id != user.Id, ct);
+        if (taken)
+        {
+            throw new PlanValidationException(new Dictionary<string, string> { ["NewEmail"] = "Another account already uses that email." });
+        }
+
+        var (raw, hash) = TokenIssuer.Issue();
+        var now = _clock.GetUtcNow().UtcDateTime;
+        // Burn any still-valid prior change tokens for this user. Without this,
+        // a previous recipient's link would still validate against the newly-
+        // stored pending_email and silently confirm an address they never had
+        // access to.
+        var stale = await _db.PasswordResetTokens.IgnoreQueryFilters()
+            .Where(t => t.UserId == user.Id
+                        && t.Purpose == TokenPurpose.EmailChangeConfirm
+                        && t.ConsumedAt == null
+                        && t.ExpiresAt > now)
+            .ToListAsync(ct);
+        foreach (var s in stale) s.ConsumedAt = now;
+
+        user.PendingEmail = normalised;
+        user.PendingEmailAt = now;
+        _db.PasswordResetTokens.Add(new PasswordResetToken
+        {
+            UserId = user.Id,
+            TokenHash = hash,
+            Purpose = TokenPurpose.EmailChangeConfirm,
+            CreatedAt = now,
+            ExpiresAt = now + EmailChangeTokenLifetime,
+        });
+        await _db.SaveChangesAsync(ct);
+        return raw;
+    }
+
+    /// <summary>
+    /// Consumes an <see cref="TokenPurpose.EmailChangeConfirm"/> token: swaps
+    /// <see cref="User.Email"/> for <see cref="User.PendingEmail"/>, clears the
+    /// pending fields, and returns the user. Returns <c>null</c> for an
+    /// invalid / expired / consumed token without revealing which.
+    /// </summary>
+    public async Task<User?> ConfirmEmailChangeAsync(string rawToken, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(rawToken)) return null;
+        var hash = TokenIssuer.Sha256Hex(rawToken);
+        var now = _clock.GetUtcNow().UtcDateTime;
+        var row = await _db.PasswordResetTokens.IgnoreQueryFilters()
+            .Include(t => t.User)
+            .FirstOrDefaultAsync(t => t.TokenHash == hash && t.Purpose == TokenPurpose.EmailChangeConfirm, ct);
+        if (row is null || row.ConsumedAt is not null || row.ExpiresAt <= now || row.User is null)
+        {
+            return null;
+        }
+        var user = row.User;
+        if (string.IsNullOrEmpty(user.PendingEmail))
+        {
+            // Pending email was cleared (admin reverted, account modified):
+            // burn the token but don't change anything.
+            row.ConsumedAt = now;
+            await _db.SaveChangesAsync(ct);
+            return null;
+        }
+        // Race: another account may have grabbed the address since the token
+        // was issued.
+        var stolen = await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == user.PendingEmail && u.Id != user.Id, ct);
+        if (stolen)
+        {
+            user.PendingEmail = null;
+            user.PendingEmailAt = null;
+            row.ConsumedAt = now;
+            await _db.SaveChangesAsync(ct);
+            return null;
+        }
+        user.Email = user.PendingEmail;
+        user.PendingEmail = null;
+        user.PendingEmailAt = null;
+        row.ConsumedAt = now;
+        await _db.SaveChangesAsync(ct);
+        return user;
+    }
+
+    /// <summary>
+    /// SiteAdmin-only break-glass: clears every 2FA factor for the target
+    /// user (TOTP secret + recovery codes + every passkey) and flips both
+    /// MFA flags off. The user can re-enroll after their next sign-in.
+    /// </summary>
+    public async Task ResetMfaAsync(int targetUserId, CancellationToken ct = default)
+    {
+        var user = await _db.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == targetUserId, ct)
+            ?? throw new PlanValidationException(new Dictionary<string, string> { ["UserId"] = "User not found." });
+
+        var totp = await _db.UserTotpSecrets.IgnoreQueryFilters()
+            .Where(s => s.UserId == targetUserId).ToListAsync(ct);
+        _db.UserTotpSecrets.RemoveRange(totp);
+        var codes = await _db.UserRecoveryCodes.IgnoreQueryFilters()
+            .Where(c => c.UserId == targetUserId).ToListAsync(ct);
+        _db.UserRecoveryCodes.RemoveRange(codes);
+        var passkeys = await _db.UserPasskeys.IgnoreQueryFilters()
+            .Where(p => p.UserId == targetUserId).ToListAsync(ct);
+        _db.UserPasskeys.RemoveRange(passkeys);
+        user.TotpEnabled = false;
+        user.EmailMfaEnabled = false;
+        await _db.SaveChangesAsync(ct);
     }
 }

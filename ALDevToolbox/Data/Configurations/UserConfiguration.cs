@@ -20,6 +20,10 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         entity.Property(e => e.IsSiteAdmin).HasColumnName("is_site_admin").IsRequired();
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         entity.Property(e => e.LastLoginAt).HasColumnName("last_login_at");
+        entity.Property(e => e.TotpEnabled).HasColumnName("totp_enabled").IsRequired().HasDefaultValue(false);
+        entity.Property(e => e.EmailMfaEnabled).HasColumnName("email_mfa_enabled").IsRequired().HasDefaultValue(false);
+        entity.Property(e => e.PendingEmail).HasColumnName("pending_email");
+        entity.Property(e => e.PendingEmailAt).HasColumnName("pending_email_at");
         entity.HasIndex(e => new { e.OrganizationId, e.Email }).IsUnique();
         entity.HasIndex(e => e.Email);
         entity.HasOne(e => e.Organization)

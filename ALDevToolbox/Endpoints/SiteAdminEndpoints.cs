@@ -2,6 +2,7 @@ using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
+using ALDevToolbox.Services.Account;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.EntityFrameworkCore;
 using static ALDevToolbox.Endpoints.EndpointHelpers;
@@ -198,6 +199,28 @@ internal static class SiteAdminEndpoints
             {
                 logger.LogError(ex, "Restore failed for backup {Id}.", id);
                 ctx.Response.Redirect($"{RouteConstants.SiteAdminBackups}?{RouteConstants.MsgQuery}=" + Uri.EscapeDataString("Restore failed: " + ex.Message));
+            }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        // SiteAdmin break-glass: wipe a user's 2FA when they've lost access
+        // to every factor (no recovery code, no TOTP device, no passkey, SMTP
+        // down). Logs at info; the audit interceptor captures the row changes
+        // for the audit log.
+        app.MapPost("/site-admin/users/{id:int}/reset-mfa", async (
+            int id, HttpContext ctx, UserAdministrationService userAdmin,
+            IAntiforgery antiforgery, ILoggerFactory loggerFactory, CancellationToken ct) =>
+        {
+            var logger = loggerFactory.CreateLogger("SiteAdminMfaReset");
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            try
+            {
+                await userAdmin.ResetMfaAsync(id, ct);
+                logger.LogInformation("SiteAdmin reset MFA for user {UserId}.", id);
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminUsers}?{RouteConstants.OkQuery}=mfa-reset");
+            }
+            catch (PlanValidationException ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminUsers}?{RouteConstants.MsgQuery}=" + Uri.EscapeDataString(ex.Errors.First().Value));
             }
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 

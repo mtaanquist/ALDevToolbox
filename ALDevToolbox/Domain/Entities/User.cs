@@ -51,4 +51,19 @@ public class User
 
     public DateTime CreatedAt { get; set; }
     public DateTime? LastLoginAt { get; set; }
+
+    /// <summary>True once a confirmed TOTP authenticator has been enrolled. Short-circuits the login challenge check without a join.</summary>
+    public bool TotpEnabled { get; set; }
+
+    /// <summary>True once the user has confirmed they can read codes sent to <see cref="Email"/>.</summary>
+    public bool EmailMfaEnabled { get; set; }
+
+    /// <summary>
+    /// New email address waiting on confirmation from the new mailbox (admin-
+    /// initiated, see <c>UserAdministrationService.RequestEmailChangeAsync</c>).
+    /// Cleared back to <c>null</c> once the confirmation token is consumed.
+    /// </summary>
+    public string? PendingEmail { get; set; }
+
+    public DateTime? PendingEmailAt { get; set; }
 }

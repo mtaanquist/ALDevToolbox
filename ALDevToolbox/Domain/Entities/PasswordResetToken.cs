@@ -10,6 +10,18 @@ public enum TokenPurpose
 {
     PasswordReset,
     MagicLogin,
+    /// <summary>
+    /// One-time 6-digit code emailed during the login MFA challenge. Stored
+    /// hash is <c>SHA-256(code + ":" + user_id)</c>; the user-id binding stops
+    /// the short numeric space being a global rainbow-table target.
+    /// </summary>
+    EmailMfaChallenge,
+    /// <summary>
+    /// Admin-initiated email change. The new address sits on
+    /// <see cref="User.PendingEmail"/>; the token confirms ownership of that
+    /// mailbox before the swap takes effect. 24-hour lifetime.
+    /// </summary>
+    EmailChangeConfirm,
 }
 
 /// <summary>

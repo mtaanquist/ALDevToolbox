@@ -108,6 +108,24 @@ builder.Services.AddScoped<OrganizationConfigService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.AuthService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.UserAdministrationService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.PasswordResetService>();
+builder.Services.AddScoped<ALDevToolbox.Services.Account.RecoveryCodeService>();
+builder.Services.AddScoped<ALDevToolbox.Services.Account.TotpService>();
+builder.Services.AddScoped<ALDevToolbox.Services.Account.EmailMfaService>();
+builder.Services.AddScoped<ALDevToolbox.Services.Account.PasskeyService>();
+// WebAuthn (passkeys). RP id / origins live in configuration; if RpId isn't
+// set the passkey routes refuse with a clear error and the /account UI hides
+// the section. See .design/auth-and-audit.md for the deployment requirement.
+var webAuthnConfig = ALDevToolbox.Services.Account.WebAuthnConfig.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(webAuthnConfig);
+builder.Services.AddFido2(options =>
+{
+    options.ServerDomain = string.IsNullOrEmpty(webAuthnConfig.RpId) ? "localhost" : webAuthnConfig.RpId;
+    options.ServerName = webAuthnConfig.RpName;
+    options.Origins = webAuthnConfig.Origins.Count > 0
+        ? new HashSet<string>(webAuthnConfig.Origins)
+        : new HashSet<string> { "https://localhost" };
+    options.TimestampDriftTolerance = 300_000;
+});
 builder.Services.AddScoped<AccountService>();
 builder.Services.AddScoped<InviteService>();
 builder.Services.AddScoped<SystemSettingsService>();

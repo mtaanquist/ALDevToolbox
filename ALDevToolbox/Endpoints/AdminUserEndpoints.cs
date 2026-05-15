@@ -4,6 +4,7 @@ using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.Account;
 using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using static ALDevToolbox.Endpoints.EndpointHelpers;
 
@@ -164,6 +165,111 @@ internal static class AdminUserEndpoints
                 return;
             }
             ctx.Response.Redirect($"{RouteConstants.AdminUsers}?{RouteConstants.OkQuery}=invite-revoked");
+        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+        // Admin-initiated user creation without requiring email. Issues an
+        // invite the same way /admin/users/invite does, but surfaces the
+        // accept URL in the admin UI (one-shot 60s protected cookie) instead
+        // of relying on SMTP. If SMTP is configured AND the admin ticked
+        // "SendEmail", also fires the existing invite email template.
+        app.MapPost("/admin/users/create", async (
+            HttpContext ctx,
+            InviteService invites,
+            AppDbContext db,
+            IEmailService email,
+            IOrganizationContext orgCtx,
+            IDataProtectionProvider protection,
+            IAntiforgery antiforgery,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            var logger = loggerFactory.CreateLogger("AdminCreateUser");
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var emailAddr = form["Email"].ToString();
+            var role = form["Role"].ToString() == "Admin" ? UserRole.Admin : UserRole.User;
+            var message = form["WelcomeMessage"].ToString();
+            var sendEmail = form["SendEmail"] == "true" || form["SendEmail"] == "on";
+            try
+            {
+                var (token, inviteId) = await invites.CreateAsync(emailAddr, role, message, ct);
+                var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/accept-invite?token={Uri.EscapeDataString(token)}";
+                if (sendEmail && await email.IsConfiguredAsync(ct))
+                {
+                    try
+                    {
+                        var inviter = await db.Users.IgnoreQueryFilters().AsNoTracking()
+                            .Include(u => u.Organization)
+                            .FirstAsync(u => u.Id == orgCtx.CurrentUserId!.Value, ct);
+                        var orgName = inviter.Organization?.Name ?? "your organisation";
+                        var roleLabel = role == UserRole.Admin ? "Administrator" : "User";
+                        var (subject, body) = EmailTemplates.Invite(inviter.DisplayName, orgName, roleLabel, message, url);
+                        await email.SendAsync(emailAddr.Trim(), subject, body, ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Invite email failed for invite {InviteId}; the link is still surfaced inline.", inviteId);
+                    }
+                }
+                SetOneShotInviteCookie(ctx, protection, url);
+                ctx.Response.Redirect($"{RouteConstants.AdminUsers}?{RouteConstants.OkQuery}=created&inviteId={inviteId}");
+            }
+            catch (PlanValidationException ex)
+            {
+                var first = ex.Errors.First();
+                ctx.Response.Redirect($"{RouteConstants.AdminUsers}?{RouteConstants.ErrQuery}={Uri.EscapeDataString(first.Value)}");
+            }
+        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+        // Admin-initiated email change. Stamps users.pending_email, issues a
+        // 24h EmailChangeConfirm token, sends a link to the NEW address (or
+        // surfaces it inline via the one-shot cookie when SMTP is off).
+        app.MapPost("/admin/users/{id:int}/email", async (
+            int id, HttpContext ctx,
+            UserAdministrationService userAdmin,
+            AppDbContext db,
+            IEmailService email,
+            IOrganizationContext orgCtx,
+            IDataProtectionProvider protection,
+            IAntiforgery antiforgery,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            var logger = loggerFactory.CreateLogger("AdminEmailChange");
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var newEmail = form["NewEmail"].ToString();
+            try
+            {
+                var token = await userAdmin.RequestEmailChangeAsync(id, newEmail,
+                    orgCtx.CurrentOrganizationId!.Value, orgCtx.CurrentUserId!.Value, ct);
+                var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/auth/account/email-change/confirm?token={Uri.EscapeDataString(token)}";
+                if (await email.IsConfiguredAsync(ct))
+                {
+                    try
+                    {
+                        var user = await db.Users.IgnoreQueryFilters().AsNoTracking()
+                            .FirstAsync(u => u.Id == id, ct);
+                        var (subject, body) = EmailTemplates.EmailChangeConfirm(user.DisplayName, url);
+                        await email.SendAsync(newEmail.Trim().ToLowerInvariant(), subject, body, ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Email-change confirmation email failed for user {Id}; link surfaced inline.", id);
+                        SetOneShotInviteCookie(ctx, protection, url);
+                    }
+                }
+                else
+                {
+                    SetOneShotInviteCookie(ctx, protection, url);
+                }
+                ctx.Response.Redirect($"{RouteConstants.AdminUsers}?{RouteConstants.OkQuery}=email-pending&userId={id}");
+            }
+            catch (PlanValidationException ex)
+            {
+                var first = ex.Errors.First();
+                ctx.Response.Redirect($"{RouteConstants.AdminUsers}?{RouteConstants.ErrQuery}={Uri.EscapeDataString(first.Value)}");
+            }
         }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
         return app;

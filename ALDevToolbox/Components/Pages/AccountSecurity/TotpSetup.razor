@@ -1,0 +1,84 @@
+@page "/account/2fa/totp/setup"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@using ALDevToolbox.Services
+@using ALDevToolbox.Services.Account
+@inject IOrganizationContext Org
+@inject TotpService Totp
+@inject NavigationManager Nav
+
+<PageTitle>Set up authenticator · AL Dev Toolbox</PageTitle>
+
+<div class="account-page">
+    <header class="page-header">
+        <h1>Set up authenticator app</h1>
+        <p class="muted">Scan the QR code with an authenticator app (1Password, Authy, Google Authenticator), then enter the current 6-digit code to confirm.</p>
+    </header>
+
+    @if (!string.IsNullOrEmpty(Error) && !string.IsNullOrEmpty(Message))
+    {
+        <p class="form-error" role="alert"><strong>@Error:</strong> @Message</p>
+    }
+
+    @if (_enrollment is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        <section class="account-section">
+            <ol class="setup-steps">
+                <li>
+                    <h3>Scan the QR code</h3>
+                    <img class="qr" src="data:image/png;base64,@Convert.ToBase64String(_enrollment.QrPng)" alt="TOTP QR code" />
+                </li>
+                <li>
+                    <h3>Or paste the secret</h3>
+                    <code class="secret">@_enrollment.SecretBase32</code>
+                </li>
+                <li>
+                    <h3>Enter the current 6-digit code</h3>
+                    <form method="post" action="/auth/account/2fa/totp/confirm" class="form-grid form-grid--narrow">
+                        <AntiforgeryToken />
+                        <section class="form-section">
+                            <input type="text" name="Code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+                                   required autocomplete="one-time-code" placeholder="123456" />
+                        </section>
+                        <button type="submit" class="btn btn--primary">
+                            <Icon Name="shield" Width="16" Height="16" />
+                            <span>Confirm and enable</span>
+                        </button>
+                    </form>
+                </li>
+            </ol>
+        </section>
+    }
+</div>
+
+<style>
+    .setup-steps { padding-left: 24px; }
+    .setup-steps li { margin-bottom: 24px; }
+    .setup-steps h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+    .qr { width: 220px; height: 220px; image-rendering: pixelated; background: #fff; padding: 8px; border: 1px solid var(--color-border); }
+    .secret { display: inline-block; padding: 8px 12px; background: var(--color-bg); border: 1px solid var(--color-border); font-family: var(--font-mono); letter-spacing: 0.08em; }
+</style>
+
+@code {
+    [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }
+    [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
+
+    private TotpEnrollment? _enrollment;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Org.CurrentUserId is null) { Nav.NavigateTo("/account"); return; }
+        try
+        {
+            _enrollment = await Totp.BeginEnrollmentAsync(Org.CurrentUserId.Value);
+        }
+        catch (Exception)
+        {
+            Nav.NavigateTo($"/account?err=Totp&msg={Uri.EscapeDataString("TOTP is already enabled. Disable it before re-enrolling.")}");
+        }
+    }
+}

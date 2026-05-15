@@ -1,8 +1,10 @@
 using System.Security.Claims;
+using System.Text.Json;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace ALDevToolbox.Endpoints;
 
@@ -91,5 +93,109 @@ internal static class EndpointHelpers
             Path = "/",
             MaxAge = TimeSpan.FromSeconds(30),
         });
+    }
+
+    public const string MfaPendingCookieName = "alwb_mfa";
+    public const string MfaProtectionPurpose = "ALDevToolbox.MfaPending";
+    public const string OneShotInviteCookieName = "alwb_invite_link";
+    public const string OneShotInviteProtectionPurpose = "ALDevToolbox.OneShotInviteUrl";
+    public const string OneShotRecoveryCodesCookieName = "alwb_recovery_codes";
+    public const string OneShotRecoveryCodesProtectionPurpose = "ALDevToolbox.OneShotRecoveryCodes";
+    public static readonly TimeSpan MfaCookieLifetime = TimeSpan.FromMinutes(10);
+    public static readonly TimeSpan OneShotCookieLifetime = TimeSpan.FromSeconds(60);
+
+    public sealed record MfaPending(int UserId, bool TotpEnabled, bool EmailMfaEnabled, DateTime IssuedAt, string ReturnUrl);
+
+    public static void SetMfaPendingCookie(HttpContext ctx, IDataProtectionProvider protection, MfaPending state)
+    {
+        var protector = protection.CreateProtector(MfaProtectionPurpose);
+        var payload = protector.Protect(JsonSerializer.Serialize(state));
+        ctx.Response.Cookies.Append(MfaPendingCookieName, payload, new CookieOptions
+        {
+            HttpOnly = true,
+            SameSite = SameSiteMode.Lax,
+            Secure = ctx.Request.IsHttps,
+            Path = "/",
+            MaxAge = MfaCookieLifetime,
+        });
+    }
+
+    public static MfaPending? ReadMfaPendingCookie(HttpContext ctx, IDataProtectionProvider protection, TimeProvider clock)
+    {
+        if (!ctx.Request.Cookies.TryGetValue(MfaPendingCookieName, out var raw) || string.IsNullOrEmpty(raw)) return null;
+        try
+        {
+            var protector = protection.CreateProtector(MfaProtectionPurpose);
+            var json = protector.Unprotect(raw);
+            var state = JsonSerializer.Deserialize<MfaPending>(json);
+            if (state is null) return null;
+            if (clock.GetUtcNow().UtcDateTime - state.IssuedAt > MfaCookieLifetime) return null;
+            return state;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static void ClearMfaPendingCookie(HttpContext ctx) =>
+        ctx.Response.Cookies.Delete(MfaPendingCookieName);
+
+    public static void SetOneShotInviteCookie(HttpContext ctx, IDataProtectionProvider protection, string url)
+    {
+        var protector = protection.CreateProtector(OneShotInviteProtectionPurpose);
+        var payload = protector.Protect(url);
+        ctx.Response.Cookies.Append(OneShotInviteCookieName, payload, new CookieOptions
+        {
+            HttpOnly = true,
+            SameSite = SameSiteMode.Lax,
+            Secure = ctx.Request.IsHttps,
+            Path = "/",
+            MaxAge = OneShotCookieLifetime,
+        });
+    }
+
+    public static string? ReadAndClearOneShotInviteCookie(HttpContext ctx, IDataProtectionProvider protection)
+    {
+        if (!ctx.Request.Cookies.TryGetValue(OneShotInviteCookieName, out var raw) || string.IsNullOrEmpty(raw)) return null;
+        ctx.Response.Cookies.Delete(OneShotInviteCookieName);
+        try
+        {
+            var protector = protection.CreateProtector(OneShotInviteProtectionPurpose);
+            return protector.Unprotect(raw);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static void SetOneShotRecoveryCodesCookie(HttpContext ctx, IDataProtectionProvider protection, IEnumerable<string> codes)
+    {
+        var protector = protection.CreateProtector(OneShotRecoveryCodesProtectionPurpose);
+        var payload = protector.Protect(string.Join('\n', codes));
+        ctx.Response.Cookies.Append(OneShotRecoveryCodesCookieName, payload, new CookieOptions
+        {
+            HttpOnly = true,
+            SameSite = SameSiteMode.Lax,
+            Secure = ctx.Request.IsHttps,
+            Path = "/",
+            MaxAge = OneShotCookieLifetime,
+        });
+    }
+
+    public static string[]? ReadAndClearOneShotRecoveryCodesCookie(HttpContext ctx, IDataProtectionProvider protection)
+    {
+        if (!ctx.Request.Cookies.TryGetValue(OneShotRecoveryCodesCookieName, out var raw) || string.IsNullOrEmpty(raw)) return null;
+        ctx.Response.Cookies.Delete(OneShotRecoveryCodesCookieName);
+        try
+        {
+            var protector = protection.CreateProtector(OneShotRecoveryCodesProtectionPurpose);
+            return protector.Unprotect(raw).Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

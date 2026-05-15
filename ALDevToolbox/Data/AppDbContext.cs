@@ -113,6 +113,9 @@ public class AppDbContext : DbContext
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<LoginAttempt> LoginAttempts => Set<LoginAttempt>();
     public DbSet<Invite> Invites => Set<Invite>();
+    public DbSet<UserTotpSecret> UserTotpSecrets => Set<UserTotpSecret>();
+    public DbSet<UserRecoveryCode> UserRecoveryCodes => Set<UserRecoveryCode>();
+    public DbSet<UserPasskey> UserPasskeys => Set<UserPasskey>();
 
     public DbSet<RuntimeTemplate> RuntimeTemplates => Set<RuntimeTemplate>();
     public DbSet<WorkspaceExtension> WorkspaceExtensions => Set<WorkspaceExtension>();
@@ -185,6 +188,17 @@ public class AppDbContext : DbContext
         // PasswordResetToken scopes via its required User principal: tokens
         // don't carry organization_id themselves, so the filter walks the nav.
         modelBuilder.Entity<PasswordResetToken>()
+            .HasQueryFilter(t => t.User!.OrganizationId == _orgContext.OrganizationIdForFilter);
+
+        // MFA / passkey tables follow the PasswordResetToken pattern: scope via
+        // the User principal. Login flows that run before the auth cookie is
+        // set (TOTP / email-MFA / passkey verification) call
+        // <c>IgnoreQueryFilters()</c> explicitly.
+        modelBuilder.Entity<UserTotpSecret>()
+            .HasQueryFilter(t => t.User!.OrganizationId == _orgContext.OrganizationIdForFilter);
+        modelBuilder.Entity<UserRecoveryCode>()
+            .HasQueryFilter(t => t.User!.OrganizationId == _orgContext.OrganizationIdForFilter);
+        modelBuilder.Entity<UserPasskey>()
             .HasQueryFilter(t => t.User!.OrganizationId == _orgContext.OrganizationIdForFilter);
     }
 

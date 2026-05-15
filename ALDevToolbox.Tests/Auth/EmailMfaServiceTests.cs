@@ -1,0 +1,86 @@
+using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Services.Account;
+using ALDevToolbox.Tests.Infrastructure;
+using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+
+namespace ALDevToolbox.Tests.Auth;
+
+public sealed class EmailMfaServiceTests : IDisposable
+{
+    private readonly TestDb _db = new();
+    private readonly FakeTimeProvider _clock = new(new DateTimeOffset(2026, 5, 15, 12, 0, 0, TimeSpan.Zero));
+
+    public void Dispose() => _db.Dispose();
+
+    private async Task<int> SeedUserAsync(int id = 9100)
+    {
+        await using var ctx = _db.NewContext();
+        ctx.Users.Add(new User
+        {
+            Id = id,
+            OrganizationId = TestDb.DefaultOrgId,
+            Email = $"e{id}@example.com",
+            PasswordHash = "x",
+            DisplayName = "Mfa",
+            Role = UserRole.User,
+            Status = UserStatus.Active,
+            CreatedAt = _clock.GetUtcNow().UtcDateTime,
+        });
+        await ctx.SaveChangesAsync();
+        return id;
+    }
+
+    [Fact]
+    public async Task Code_is_six_digits()
+    {
+        var userId = await SeedUserAsync();
+        await using var ctx = _db.NewContext();
+        var code = await new EmailMfaService(ctx, _clock).IssueChallengeAsync(userId);
+        code.Should().NotBeNull();
+        code!.Length.Should().Be(6);
+        code.Should().MatchRegex("^[0-9]{6}$");
+    }
+
+    [Fact]
+    public async Task Verify_succeeds_then_refuses_replay()
+    {
+        var userId = await SeedUserAsync(9101);
+        string? code;
+        await using (var ctx = _db.NewContext())
+        {
+            code = await new EmailMfaService(ctx, _clock).IssueChallengeAsync(userId);
+        }
+        await using var ctx2 = _db.NewContext();
+        var svc = new EmailMfaService(ctx2, _clock);
+        (await svc.VerifyAsync(userId, code!)).Should().BeTrue();
+        (await svc.VerifyAsync(userId, code!)).Should().BeFalse("single-use");
+    }
+
+    [Fact]
+    public async Task Verify_rejects_code_issued_for_different_user()
+    {
+        var userIdA = await SeedUserAsync(9110);
+        var userIdB = await SeedUserAsync(9111);
+        string? code;
+        await using (var ctx = _db.NewContext())
+        {
+            code = await new EmailMfaService(ctx, _clock).IssueChallengeAsync(userIdA);
+        }
+        await using var ctx2 = _db.NewContext();
+        (await new EmailMfaService(ctx2, _clock).VerifyAsync(userIdB, code!))
+            .Should().BeFalse("hash is salted with user id");
+    }
+
+    [Fact]
+    public async Task Issue_returns_null_when_rate_limit_exceeded()
+    {
+        var userId = await SeedUserAsync(9120);
+        await using var ctx = _db.NewContext();
+        var svc = new EmailMfaService(ctx, _clock);
+        (await svc.IssueChallengeAsync(userId)).Should().NotBeNull();
+        (await svc.IssueChallengeAsync(userId)).Should().NotBeNull();
+        (await svc.IssueChallengeAsync(userId)).Should().NotBeNull();
+        (await svc.IssueChallengeAsync(userId)).Should().BeNull("three per ten minutes is the limit");
+    }
+}
