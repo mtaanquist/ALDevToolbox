@@ -518,6 +518,132 @@ public class ObjectExplorerService
             .Select(m => new ReleaseModuleSummary(m.Id, m.Name, m.Publisher))
             .ToListAsync(ct);
 
+    // ── Source-viewer navigation ──────────────────────────────────────
+
+    /// <summary>
+    /// Returns decoration ranges the source viewer can stamp onto each
+    /// object-header token so it hovers, underlines, and surfaces the
+    /// "Find references" right-click menu. The <c>SymbolId</c> on each row
+    /// is the <c>oe_module_objects.id</c> — the page maps it back into a
+    /// navigation to the object detail's Find-references panel.
+    /// </summary>
+    public async Task<List<ALDevToolbox.Components.Shared.CodeViewerDeclaration>> ListDeclarationsInFileAsync(
+        long fileId, CancellationToken ct = default)
+    {
+        var content = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == fileId)
+            .Select(f => f.Content)
+            .SingleOrDefaultAsync(ct);
+        if (string.IsNullOrEmpty(content)) return new();
+
+        var objects = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.SourceFileId == fileId)
+            .Select(o => new { o.Id, o.Kind, o.Name, o.LineNumber })
+            .ToListAsync(ct);
+
+        var lines = content.Replace("\r\n", "\n").Split('\n');
+        var result = new List<ALDevToolbox.Components.Shared.CodeViewerDeclaration>(objects.Count);
+        foreach (var obj in objects)
+        {
+            if (obj.LineNumber < 1 || obj.LineNumber > lines.Length) continue;
+            var lineText = lines[obj.LineNumber - 1];
+
+            // BC declarations typically quote the name —
+            // `codeunit 80 "Sales-Post"`. Bare-identifier names (test code,
+            // some old code) are matched as a fallback.
+            int colStart, colEnd;
+            var quoted = "\"" + obj.Name + "\"";
+            var idx = lineText.IndexOf(quoted, StringComparison.Ordinal);
+            if (idx >= 0)
+            {
+                colStart = idx + 1;
+                colEnd = idx + 1 + quoted.Length;
+            }
+            else
+            {
+                idx = lineText.IndexOf(obj.Name, StringComparison.Ordinal);
+                if (idx < 0) continue;
+                colStart = idx + 1;
+                colEnd = idx + 1 + obj.Name.Length;
+            }
+
+            result.Add(new ALDevToolbox.Components.Shared.CodeViewerDeclaration(
+                SymbolId: obj.Id,
+                Line: obj.LineNumber,
+                ColumnStart: colStart,
+                ColumnEnd: colEnd,
+                Kind: obj.Kind,
+                Name: obj.Name));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Resolves a Cmd/Ctrl-click in the source viewer to a navigation
+    /// target. Uses <see cref="ALDevToolbox.Services.Al.AlGoToDefinitionLocator"/>
+    /// to pull the clicked word + its surrounding context, then looks up a
+    /// matching object in the same Release. Returns null when no resolvable
+    /// target exists — the page no-ops in that case.
+    /// </summary>
+    public async Task<GoToDefinitionTarget?> GoToDefinitionAsync(
+        long fileId, int line, int column, CancellationToken ct = default)
+    {
+        var meta = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == fileId)
+            .Select(f => new { f.Content, ReleaseId = f.Module!.ReleaseId })
+            .SingleOrDefaultAsync(ct);
+        if (meta is null) return null;
+
+        var click = Services.Al.AlGoToDefinitionLocator.Inspect(meta.Content, line, column);
+        if (click is null || string.IsNullOrEmpty(click.Word)) return null;
+
+        // Same-Release lookup by object name. Chain-walk semantics (for
+        // customer Releases sitting on top of BC) are a follow-up — the
+        // dominant case is Microsoft-DVD-ingest where everything lives in
+        // a single Release.
+        var word = click.Word;
+        var target = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == meta.ReleaseId)
+            .Where(o => o.SourceFileId != null)
+            .Where(o => o.Name == word)
+            .OrderBy(o => o.Kind)
+            .Select(o => new { o.SourceFileId, o.LineNumber })
+            .FirstOrDefaultAsync(ct);
+        if (target?.SourceFileId is null) return null;
+        return new GoToDefinitionTarget(target.SourceFileId.Value, target.LineNumber);
+    }
+
+    /// <summary>
+    /// "Find in this file" — extracts the word at the supplied click position
+    /// and returns every line of the same file that contains it.
+    /// </summary>
+    public async Task<FileWordSearch?> FindInFileAsync(
+        long fileId, int line, int column, CancellationToken ct = default)
+    {
+        var content = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == fileId)
+            .Select(f => f.Content)
+            .SingleOrDefaultAsync(ct);
+        if (string.IsNullOrEmpty(content)) return null;
+
+        var click = Services.Al.AlGoToDefinitionLocator.Inspect(content, line, column);
+        if (click is null || string.IsNullOrEmpty(click.Word)) return null;
+
+        var word = click.Word;
+        var occurrences = new List<FileWordOccurrence>();
+        var lines = content.Replace("\r\n", "\n").Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (lines[i].Contains(word, StringComparison.Ordinal))
+            {
+                var trimmed = lines[i].TrimEnd();
+                if (trimmed.Length > 200) trimmed = trimmed[..200] + "…";
+                occurrences.Add(new FileWordOccurrence(i + 1, trimmed));
+            }
+        }
+        return new FileWordSearch(word, occurrences);
+    }
+
     // ── Find references ────────────────────────────────────────────────
 
     /// <summary>

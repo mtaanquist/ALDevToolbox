@@ -3,18 +3,21 @@
 @rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @inject IHttpContextAccessor Http
+@inject NavigationManager Nav
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Components.Shared
 
 @*
-    Source-file viewer with syntax highlighting via the CodeMirror-backed
-    CodeViewer component and an outline panel on the right. The right rail
-    lists every object + symbol declared in the file with click-through.
+    Source-file viewer with AL syntax highlighting via the CodeMirror-backed
+    CodeViewer, an outline panel, and the in-source navigation gestures the
+    legacy file viewer had: Cmd/Ctrl-click a token to go to its definition,
+    right-click an object header for Find references, right-click any token
+    for Find in this file.
 
-    Token right-click navigation (Cmd/Ctrl-click for go-to-definition,
-    right-click for Find references / Find in file) is the next PR — needs
-    server-side wiring for ListResolvableTokensInFile / GoToDefinition /
-    LookupSymbolAt, plus the Declarations / Resolvables props on CodeViewer.
+    Right-click "Find references" routes to the object detail's existing
+    Find-references panel — keeping the heavy chain-walk query on the page
+    that already implements it. Right-click "Find in this file" pops a panel
+    below the outline so the source stays open while navigating occurrences.
 *@
 
 <PageTitle>@(_header?.Path ?? "Source") · AL Dev Toolbox</PageTitle>
@@ -35,6 +38,8 @@
                 <h1>@_header.Path</h1>
                 <p class="muted">
                     @_header.ModuleName · @_header.LineCount.ToString("N0") line(s)
+                    <span> · <strong>Cmd/Ctrl-click</strong> a name to go to its definition</span>
+                    <span> · <strong>Right-click</strong> for Find references / Find in file</span>
                 </p>
             </div>
         </header>
@@ -45,7 +50,11 @@
                             Language="al"
                             Fluid="true"
                             ScrollToLine="@_highlightLine"
-                            ScrollSequence="@_scrollSequence" />
+                            ScrollSequence="@_scrollSequence"
+                            Declarations="@_declarations"
+                            OnFindReferences="HandleFindReferences"
+                            OnGoToDefinition="HandleGoToDefinition"
+                            OnFindInFile="HandleFindInFile" />
             </div>
 
             <aside class="source-viewer__outline">
@@ -72,6 +81,36 @@
                         }
                     </ul>
                 }
+
+                @if (_findInFile is not null)
+                {
+                    <h2 class="source-viewer__outline-find-heading">Find "@_findInFile.Word"</h2>
+                    @if (_findInFile.Occurrences.Count == 0)
+                    {
+                        <p class="muted">No occurrences in this file.</p>
+                    }
+                    else
+                    {
+                        <p class="muted">@_findInFile.Occurrences.Count.ToString("N0") occurrence(s)</p>
+                        <ul class="source-viewer__find-list">
+                            @foreach (var occ in _findInFile.Occurrences)
+                            {
+                                <li>
+                                    <a href="@($"/object-explorer/file/{FileId}?line={occ.Line}")">
+                                        <span class="source-viewer__outline-kind">L@(occ.Line)</span>
+                                        <code class="source-viewer__find-snippet">@occ.LineText.Trim()</code>
+                                    </a>
+                                </li>
+                            }
+                        </ul>
+                        <button class="btn btn--sm" @onclick="ClearFindInFile">Clear</button>
+                    }
+                }
+
+                @if (_lastNavigationNotice is not null)
+                {
+                    <p class="muted source-viewer__notice" role="status">@_lastNavigationNotice</p>
+                }
             </aside>
         </div>
     }
@@ -83,8 +122,11 @@
     private SourceFileHeader? _header;
     private SourceFileDetail? _file;
     private List<SourceFileOutlineItem>? _outline;
+    private IReadOnlyList<CodeViewerDeclaration>? _declarations;
     private int? _highlightLine;
     private int _scrollSequence;
+    private FileWordSearch? _findInFile;
+    private string? _lastNavigationNotice;
 
     protected override async Task OnInitializedAsync()
     {
@@ -92,6 +134,7 @@
         if (_header is null) return;
         _file = await ObjectExplorer.GetFileAsync(FileId);
         _outline = await ObjectExplorer.GetFileOutlineAsync(FileId);
+        _declarations = await ObjectExplorer.ListDeclarationsInFileAsync(FileId);
 
         var ctx = Http.HttpContext;
         if (ctx is not null && int.TryParse(ctx.Request.Query["line"], out var line) && line > 0)
@@ -99,6 +142,38 @@
             _highlightLine = line;
             _scrollSequence = 1;
         }
+    }
+
+    // ── In-source gestures ─────────────────────────────────────────────
+
+    private void HandleFindReferences(long symbolId)
+    {
+        // SymbolId is the oe_module_objects.id — navigate to the object
+        // detail page where Find references already lives.
+        Nav.NavigateTo($"/object-explorer/object/{symbolId}#find-references");
+    }
+
+    private async Task HandleGoToDefinition(CodeViewerClick click)
+    {
+        var target = await ObjectExplorer.GoToDefinitionAsync(FileId, click.Line, click.Column);
+        if (target is null)
+        {
+            _lastNavigationNotice = "No definition found for that token.";
+            return;
+        }
+        _lastNavigationNotice = null;
+        Nav.NavigateTo($"/object-explorer/file/{target.FileId}?line={target.LineNumber}");
+    }
+
+    private async Task HandleFindInFile(CodeViewerClick click)
+    {
+        _findInFile = await ObjectExplorer.FindInFileAsync(FileId, click.Line, click.Column);
+        _lastNavigationNotice = null;
+    }
+
+    private void ClearFindInFile()
+    {
+        _findInFile = null;
     }
 
     private string OutlineHref(SourceFileOutlineItem item)
