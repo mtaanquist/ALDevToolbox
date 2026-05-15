@@ -21,6 +21,7 @@ internal sealed class BaseAppFileConfiguration : IEntityTypeConfiguration<BaseAp
         entity.Property(e => e.ObjectName).HasColumnName("object_name").IsRequired();
         entity.Property(e => e.Namespace).HasColumnName("namespace");
         entity.Property(e => e.Content).HasColumnName("content").IsRequired();
+        entity.Property(e => e.ContentHash).HasColumnName("content_hash");
         entity.Property(e => e.LineCount).HasColumnName("line_count").IsRequired();
         entity.Property(e => e.ExtensionId).HasColumnName("extension_id");
 

@@ -348,6 +348,139 @@ public class BaseAppService
     }
 
     /// <summary>
+    /// Compares two imported versions and returns the object-level diff
+    /// — files present in one side only (Added / Removed), plus files
+    /// present in both whose <see cref="BaseAppFile.ContentHash"/>
+    /// differs (Changed). Pairs match by <c>(ObjectType, ObjectId)</c>
+    /// when both have an id, falling back to <c>(ObjectType, ObjectName)</c>
+    /// for id-less objects (interfaces, some extensions).
+    ///
+    /// Falls back to a content compare when either side has no hash
+    /// stamped — legacy imports predate the column. We pull
+    /// <c>Content</c> only for those pairs to keep the payload bounded.
+    /// </summary>
+    public async Task<BaseAppVersionDiffResult> CompareVersionsAsync(
+        int versionAId, int versionBId, CancellationToken ct = default)
+    {
+        if (versionAId == versionBId)
+        {
+            return BaseAppVersionDiffResult.Empty;
+        }
+
+        // Pull lightweight rows from both sides — Content stays in the DB
+        // until we need it for a hash-missing fallback pair below.
+        var rowsA = await ListFilesForCompareAsync(versionAId, ct);
+        var rowsB = await ListFilesForCompareAsync(versionBId, ct);
+
+        // Match key: (ObjectType, ObjectId) when id present, else
+        // (ObjectType, ObjectName, "")
+        var byKeyA = rowsA.ToDictionary(MatchKey, r => r, StringComparer.OrdinalIgnoreCase);
+        var byKeyB = rowsB.ToDictionary(MatchKey, r => r, StringComparer.OrdinalIgnoreCase);
+
+        var added = new List<BaseAppFileListRow>();
+        var removed = new List<BaseAppFileListRow>();
+        var changed = new List<BaseAppVersionDiffPair>();
+        var fallbackPairs = new List<(BaseAppFileListRow Left, BaseAppFileListRow Right)>();
+
+        foreach (var (key, b) in byKeyB)
+        {
+            if (!byKeyA.TryGetValue(key, out var a))
+            {
+                added.Add(b);
+                continue;
+            }
+            // Both sides have hashes — cheap compare.
+            if (a.ContentHash is { } ha && b.ContentHash is { } hb)
+            {
+                if (!string.Equals(ha, hb, StringComparison.OrdinalIgnoreCase))
+                {
+                    changed.Add(new BaseAppVersionDiffPair(a, b));
+                }
+                continue;
+            }
+            // Either side missing a hash — fall back to a content
+            // compare below. Defer the per-pair Content fetch so we
+            // only pay for the pairs that need it.
+            fallbackPairs.Add((a, b));
+        }
+
+        foreach (var (key, a) in byKeyA)
+        {
+            if (!byKeyB.ContainsKey(key))
+            {
+                removed.Add(a);
+            }
+        }
+
+        if (fallbackPairs.Count > 0)
+        {
+            var fileIds = fallbackPairs
+                .SelectMany(p => new[] { p.Left.Id, p.Right.Id })
+                .Distinct()
+                .ToList();
+            var contents = await _db.BaseAppFiles
+                .AsNoTracking()
+                .Where(f => fileIds.Contains(f.Id))
+                .Select(f => new { f.Id, f.Content })
+                .ToDictionaryAsync(x => x.Id, x => x.Content, ct);
+            foreach (var (a, b) in fallbackPairs)
+            {
+                var ca = contents.GetValueOrDefault(a.Id, string.Empty);
+                var cb = contents.GetValueOrDefault(b.Id, string.Empty);
+                if (!string.Equals(ca, cb, StringComparison.Ordinal))
+                {
+                    changed.Add(new BaseAppVersionDiffPair(a, b));
+                }
+            }
+        }
+
+        added = added.OrderBy(r => r.ObjectType).ThenBy(r => r.ObjectName).ToList();
+        removed = removed.OrderBy(r => r.ObjectType).ThenBy(r => r.ObjectName).ToList();
+        changed = changed.OrderBy(p => p.Right.ObjectType).ThenBy(p => p.Right.ObjectName).ToList();
+
+        return new BaseAppVersionDiffResult(added, removed, changed);
+    }
+
+    private async Task<List<BaseAppFileListRow>> ListFilesForCompareAsync(
+        int versionId, CancellationToken ct)
+    {
+        // Projection mirrors BaseAppFileListRow but adds ContentHash so
+        // CompareVersionsAsync can drive the diff off the column. Kept
+        // private — callers that don't need the hash go through
+        // ListFilesAsync which projects the public DTO instead.
+        return await _db.BaseAppFiles
+            .AsNoTracking()
+            .Where(f => f.VersionId == versionId)
+            .Select(f => new BaseAppFileListRow(
+                f.Id,
+                f.VersionId,
+                f.Path,
+                f.FileName,
+                f.Module,
+                f.ObjectType,
+                f.ObjectId,
+                f.ObjectName,
+                f.Namespace,
+                f.LineCount,
+                f.ExtensionId,
+                f.Extension == null ? null : f.Extension.Name,
+                f.Extension == null ? null : f.Extension.Publisher)
+            {
+                ContentHash = f.ContentHash,
+            })
+            .ToListAsync(ct);
+    }
+
+    private static string MatchKey(BaseAppFileListRow row)
+    {
+        // Prefer (Type, Id) — stable across renames. Falls back to
+        // (Type, Name) for id-less objects.
+        return row.ObjectId is { } id
+            ? $"{row.ObjectType}|#{id}"
+            : $"{row.ObjectType}|@{row.ObjectName}";
+    }
+
+    /// <summary>
     /// Distinct object types found in a version. Backs the type filter
     /// dropdown so the UI only shows types that actually exist in the data.
     /// </summary>
@@ -1112,6 +1245,36 @@ public enum BaseAppFileSort
 public sealed record BaseAppFilePage(IReadOnlyList<BaseAppFileListRow> Rows, int TotalCount);
 
 /// <summary>
+/// Object-level diff between two imported versions. Rows in
+/// <see cref="Added"/> exist in version B only; rows in
+/// <see cref="Removed"/> exist in version A only. Pairs in
+/// <see cref="Changed"/> exist in both and have differing content
+/// hashes (or differing content when either hash is missing).
+/// </summary>
+public sealed record BaseAppVersionDiffResult(
+    IReadOnlyList<BaseAppFileListRow> Added,
+    IReadOnlyList<BaseAppFileListRow> Removed,
+    IReadOnlyList<BaseAppVersionDiffPair> Changed)
+{
+    public static BaseAppVersionDiffResult Empty { get; } = new(
+        Array.Empty<BaseAppFileListRow>(),
+        Array.Empty<BaseAppFileListRow>(),
+        Array.Empty<BaseAppVersionDiffPair>());
+
+    public int TotalCount => Added.Count + Removed.Count + Changed.Count;
+}
+
+/// <summary>
+/// Matched pair for a Changed row in <see cref="BaseAppVersionDiffResult"/>.
+/// <see cref="Left"/> is the file in version A; <see cref="Right"/> is
+/// its counterpart in version B. The side-by-side file diff page is
+/// the natural destination when the user picks a row.
+/// </summary>
+public sealed record BaseAppVersionDiffPair(
+    BaseAppFileListRow Left,
+    BaseAppFileListRow Right);
+
+/// <summary>
 /// Lightweight projection of <c>base_app_extensions</c> for the filter
 /// dropdown — no <c>Files</c> nav, no version FK, just what the UI
 /// renders. <see cref="AppId"/> is included so admin tooling can
@@ -1184,6 +1347,8 @@ public sealed record BaseAppContentHit(
 /// <summary>
 /// Lightweight projection used for the file list — omits the heavyweight
 /// <c>Content</c> column so a 10K-row page doesn't ship megabytes over the wire.
+/// <see cref="ContentHash"/> is optional — present on rows used for
+/// version comparison, absent on the default list projection.
 /// </summary>
 public sealed record BaseAppFileListRow(
     long Id,
@@ -1198,7 +1363,10 @@ public sealed record BaseAppFileListRow(
     int LineCount,
     long? ExtensionId,
     string? ExtensionName,
-    string? ExtensionPublisher);
+    string? ExtensionPublisher)
+{
+    public string? ContentHash { get; init; }
+}
 
 /// <summary>
 /// Per-line diff result returned to the side-by-side viewer. <c>Number</c> is

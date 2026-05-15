@@ -20,10 +20,28 @@
                 }
             </p>
         </div>
-        <a class="btn" href="/object-explorer">
-            <Icon Name="arrow-left" Width="16" Height="16" />
-            <span>All versions</span>
-        </a>
+        <div class="object-explorer__header-actions">
+            @if (_otherVersions is { Count: > 0 })
+            {
+                <label class="field object-explorer__compare">
+                    <span class="field__label">Compare with</span>
+                    <select class="field__input"
+                            @bind="_compareTarget"
+                            @bind:after="OpenCompareAsync"
+                            aria-label="Compare this version with another">
+                        <option value="">Pick a version…</option>
+                        @foreach (var v in _otherVersions)
+                        {
+                            <option value="@v.Id">BC @v.Major.@v.CumulativeUpdate</option>
+                        }
+                    </select>
+                </label>
+            }
+            <a class="btn" href="/object-explorer">
+                <Icon Name="arrow-left" Width="16" Height="16" />
+                <span>All versions</span>
+            </a>
+        </div>
     </header>
 
     <div class="object-explorer__filters object-explorer__filters--with-scope">
@@ -93,16 +111,28 @@
 
             <label class="field">
                 <span class="field__label">Namespace</span>
-                <select class="field__input" @bind="_namespace" @bind:after="ReloadAsync">
-                    <option value="">All</option>
-                    @if (_namespaces is not null)
-                    {
+                @* Typeahead via native <datalist>: lets the user filter a
+                   long namespace list by typing while still showing the
+                   full set when the input is focused empty. Match
+                   semantics stay exact (the input value flows through
+                   _namespace into the existing filter); the list is
+                   just a discovery aid. *@
+                <input type="search"
+                       class="field__input"
+                       list="@($"namespace-list-{VersionId}")"
+                       placeholder="All"
+                       value="@_namespace"
+                       @oninput="OnNamespaceChanged"
+                       aria-label="Filter by namespace" />
+                @if (_namespaces is not null)
+                {
+                    <datalist id="@($"namespace-list-{VersionId}")">
                         @foreach (var n in _namespaces)
                         {
-                            <option value="@n">@n</option>
+                            <option value="@n"></option>
                         }
-                    }
-                </select>
+                    </datalist>
+                }
             </label>
         }
     </div>
@@ -125,6 +155,8 @@
     [Parameter] public int VersionId { get; set; }
 
     private BaseAppVersion? _version;
+    private List<BaseAppVersion>? _otherVersions;
+    private string _compareTarget = string.Empty;
     private List<string>? _objectTypes;
     private List<string>? _modules;
     private List<string>? _namespaces;
@@ -171,12 +203,31 @@
         _modules = await BaseApp.ListModulesAsync(VersionId);
         _namespaces = await BaseApp.ListNamespacesAsync(VersionId);
         _extensions = await BaseApp.ListExtensionsAsync(VersionId);
+        var all = await BaseApp.ListVersionsAsync();
+        _otherVersions = all.Where(v => v.Id != VersionId).ToList();
         await ReloadAsync();
+    }
+
+    private void OpenCompareAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_compareTarget)) return;
+        if (!int.TryParse(_compareTarget, out var otherId)) return;
+        Nav.NavigateTo($"/object-explorer/{VersionId}/compare/{otherId}");
     }
 
     private void OnSearchChanged(ChangeEventArgs e)
     {
         _search = e.Value?.ToString() ?? string.Empty;
+        DebouncedReload();
+    }
+
+    private void OnNamespaceChanged(ChangeEventArgs e)
+    {
+        // Typeahead via <datalist>: every keystroke fires oninput;
+        // debouncing avoids a query per character. Picking a value
+        // from the suggestion list also fires oninput, so the same
+        // path handles both the "user typed" and "user selected" cases.
+        _namespace = e.Value?.ToString() ?? string.Empty;
         DebouncedReload();
     }
 

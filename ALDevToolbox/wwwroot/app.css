@@ -2683,6 +2683,59 @@ ul.form-field-error {
     cursor: pointer;
 }
 
+/* Version-compare page sections — each kind of change gets its own
+   block under a small heading. Spaced apart so the eye doesn't bleed
+   between added / removed / changed rows. */
+/* Header trailing block on the version browser — pulls the
+   "Compare with" picker and the "All versions" link together so they
+   sit on the right side of the page header without fighting the title
+   block on narrow widths. */
+.object-explorer__header-actions {
+    display: flex;
+    align-items: end;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.version-compare__section {
+    margin: 18px 0;
+}
+.version-compare__section h2 {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-2, #b0b0c2);
+    margin: 0 0 8px;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+/* Status pill on the right end of each compare row. Colours intentionally
+   muted — these aren't action buttons, they're metadata. */
+.version-compare__badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11.5px;
+    font-weight: 600;
+    text-transform: lowercase;
+    letter-spacing: 0.02em;
+}
+.version-compare__badge--added {
+    background: color-mix(in srgb, #2ea043 22%, transparent);
+    color: #4cd067;
+}
+.version-compare__badge--removed {
+    background: color-mix(in srgb, #f85149 22%, transparent);
+    color: #ff8a82;
+}
+.version-compare__badge--changed {
+    background: color-mix(in srgb, #d29922 22%, transparent);
+    color: #ecbe4b;
+}
+
 .object-explorer__row:hover {
     background: var(--surface-hover, rgba(124, 124, 144, 0.08));
 }
