@@ -359,6 +359,126 @@ public sealed class BaseAppServiceTests : IDisposable
         ranges.Where(r => r.Line >= 9).Should().HaveCount(2);
     }
 
+    [Fact]
+    public async Task SearchProcedures_returns_matches_excluding_fields_object_decls_and_triggers()
+    {
+        var versionId = await SeedVersionAsync(28, new Dictionary<string, string>
+        {
+            ["Sales/SalesPost.Codeunit.al"] = """
+                codeunit 80 "Sales-Post"
+                {
+                    procedure PostDocument()
+                    begin
+                    end;
+
+                    local procedure PostInternal()
+                    begin
+                    end;
+
+                    trigger OnRun()
+                    begin
+                    end;
+                }
+                """,
+            ["Sales/SalesHeader.Table.al"] = """
+                table 36 "Sales Header"
+                {
+                    fields
+                    {
+                        field(1; "Post Code"; Code[20]) { }
+                    }
+                }
+                """,
+        });
+
+        var svc = NewService();
+        var result = await svc.SearchProceduresAsync(versionId, "Post", skip: 0, take: 50);
+
+        // The two procedures match; the `field "Post Code"`, the
+        // `object_declaration` rows, and the trigger all stay out of
+        // results.
+        result.Rows.Select(r => r.SymbolName).Should().BeEquivalentTo(new[]
+        {
+            "PostDocument", "PostInternal",
+        });
+        result.TotalCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task SearchProcedures_returns_empty_for_blank_term()
+    {
+        var versionId = await SeedVersionAsync(28, new Dictionary<string, string>
+        {
+            ["a/Foo.Codeunit.al"] = "codeunit 80 \"Foo\"\n{\n    procedure DoIt() begin end;\n}\n",
+        });
+        var svc = NewService();
+
+        var result = await svc.SearchProceduresAsync(versionId, "   ", 0, 50);
+
+        result.Rows.Should().BeEmpty();
+        result.TotalCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SearchContent_finds_files_by_substring_with_first_match_line()
+    {
+        var versionId = await SeedVersionAsync(28, new Dictionary<string, string>
+        {
+            ["Sales/SalesPost.Codeunit.al"] = """
+                codeunit 80 "Sales-Post"
+                {
+                    procedure DoTheNeedful()
+                    begin
+                        Message('the needful is done');
+                    end;
+                }
+                """,
+            ["Other/Unrelated.Codeunit.al"] = """
+                codeunit 81 "Unrelated"
+                {
+                    procedure DoOther()
+                    begin
+                    end;
+                }
+                """,
+        });
+
+        var svc = NewService();
+        var result = await svc.SearchContentAsync(versionId, "needful", 0, 50);
+
+        result.Rows.Should().ContainSingle()
+            .Which.ObjectName.Should().Be("Sales-Post");
+        result.Rows[0].LineNumber.Should().BeGreaterThan(1);
+        // Snippet is the *first* matching line — could be the procedure
+        // name (Needful) or the message body (needful). Either is right;
+        // we just want a `needful` substring (case-insensitive).
+        result.Rows[0].Snippet.Should().ContainEquivalentOf("needful");
+    }
+
+    [Fact]
+    public async Task GetObjectDeclarationSymbol_returns_the_files_header_row()
+    {
+        var versionId = await SeedVersionAsync(28, new Dictionary<string, string>
+        {
+            ["Sales/SalesHeader.Table.al"] = """
+                table 36 "Sales Header"
+                {
+                    fields { field(1; "No."; Code[20]) { } }
+                }
+                """,
+        });
+
+        var svc = NewService();
+        var allFiles = await svc.ListFilesAsync(versionId, BaseAppFileFilter.Empty, 0, 50);
+        var fileId = allFiles.Rows.Single().Id;
+
+        var sym = await svc.GetObjectDeclarationSymbolAsync(fileId);
+
+        sym.Should().NotBeNull();
+        sym!.Kind.Should().Be("object_declaration");
+        sym.Name.Should().Be("Sales Header");
+    }
+
     private BaseAppService NewService()
     {
         var ctx = _db.NewContext();

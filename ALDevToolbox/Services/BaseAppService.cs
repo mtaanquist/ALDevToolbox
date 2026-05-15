@@ -145,6 +145,171 @@ public class BaseAppService
         return new BaseAppFilePage(rows, total);
     }
 
+    /// <summary>
+    /// Substring-search procedure / event symbols in a version by name.
+    /// Powers the "Procedures" mode of the version-browser search box.
+    /// Uses the <c>ix_base_app_symbols_version_name_lower</c> functional
+    /// index for the case-insensitive prefix, then ranks by name for
+    /// stable pagination. Field rows and object-header rows are
+    /// excluded — they have their own browse path (objects mode) and
+    /// would clutter the results. Triggers are excluded for the same
+    /// reason <see cref="FindReferencesAsync"/> excludes them: nothing
+    /// calls them by name.
+    /// </summary>
+    public async Task<BaseAppProcedureSearchPage> SearchProceduresAsync(
+        int versionId, string term, int skip, int take, CancellationToken ct = default)
+    {
+        take = Math.Clamp(take, 1, MaxSearchResults);
+        skip = Math.Max(0, skip);
+        var trimmed = (term ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+        {
+            return new BaseAppProcedureSearchPage(Array.Empty<BaseAppProcedureHit>(), 0);
+        }
+        if (trimmed.Length > MaxSearchQueryLength)
+        {
+            trimmed = trimmed.Substring(0, MaxSearchQueryLength);
+        }
+        var pattern = "%" + trimmed + "%";
+
+        var query = _db.BaseAppSymbols
+            .AsNoTracking()
+            .Where(s => s.VersionId == versionId
+                && s.Kind != "field"
+                && s.Kind != "object_declaration"
+                && s.Kind != "trigger"
+                && EF.Functions.ILike(s.Name, pattern));
+
+        var total = await query.CountAsync(ct);
+
+        var rows = await query
+            .OrderBy(s => s.Name).ThenBy(s => s.Id)
+            .Skip(skip)
+            .Take(take)
+            .Select(s => new BaseAppProcedureHit(
+                s.Id,
+                s.FileId,
+                s.VersionId,
+                s.File!.ObjectType,
+                s.File.ObjectId,
+                s.File.ObjectName,
+                s.Kind,
+                s.Name,
+                s.LineNumber,
+                s.Signature))
+            .ToListAsync(ct);
+
+        return new BaseAppProcedureSearchPage(rows, total);
+    }
+
+    /// <summary>
+    /// Substring-search file content in a version. Powers the "Content"
+    /// mode of the version-browser search box. Returns one hit per file
+    /// (the first line that matches) plus a trimmed snippet so the page
+    /// can show "X files, click for first match." Backed by the
+    /// trigram GIN on <c>lower(content)</c>, so ILIKE %term% is fast
+    /// even on a 60k-file BaseApp.
+    /// </summary>
+    public async Task<BaseAppContentSearchPage> SearchContentAsync(
+        int versionId, string term, int skip, int take, CancellationToken ct = default)
+    {
+        take = Math.Clamp(take, 1, MaxSearchResults);
+        skip = Math.Max(0, skip);
+        var trimmed = (term ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+        {
+            return new BaseAppContentSearchPage(Array.Empty<BaseAppContentHit>(), 0);
+        }
+        if (trimmed.Length > MaxSearchQueryLength)
+        {
+            trimmed = trimmed.Substring(0, MaxSearchQueryLength);
+        }
+        var pattern = "%" + trimmed + "%";
+
+        var query = _db.BaseAppFiles
+            .AsNoTracking()
+            .Where(f => f.VersionId == versionId
+                && EF.Functions.ILike(f.Content, pattern));
+
+        var total = await query.CountAsync(ct);
+
+        // Pull the file rows; resolve first-match line + snippet in C#
+        // because PG doesn't have a cheap "give me the first line that
+        // matches" expression that's index-friendly. The trigram pass
+        // already narrowed the set, so the per-file scan is bounded.
+        var pageRows = await query
+            .OrderBy(f => f.ObjectType).ThenBy(f => f.ObjectName).ThenBy(f => f.Id)
+            .Skip(skip)
+            .Take(take)
+            .Select(f => new
+            {
+                f.Id,
+                f.ObjectType,
+                f.ObjectId,
+                f.ObjectName,
+                f.Path,
+                f.Content,
+            })
+            .ToListAsync(ct);
+
+        var hits = new List<BaseAppContentHit>(pageRows.Count);
+        foreach (var f in pageRows)
+        {
+            var (lineNo, colStart, snippet) = FindFirstContentMatch(f.Content, trimmed);
+            hits.Add(new BaseAppContentHit(
+                FileId: f.Id,
+                ObjectType: f.ObjectType,
+                ObjectId: f.ObjectId,
+                ObjectName: f.ObjectName,
+                Path: f.Path,
+                LineNumber: lineNo,
+                ColumnStart: colStart,
+                Snippet: snippet));
+        }
+        return new BaseAppContentSearchPage(hits, total);
+    }
+
+    /// <summary>
+    /// Linear scan of <paramref name="content"/> for the first
+    /// (case-insensitive) occurrence of <paramref name="term"/>. Returns
+    /// the 1-based line / column of the match and a trimmed snippet of
+    /// the surrounding line. Falls back to line 1 / column 1 with the
+    /// content's first line if the term isn't found (shouldn't happen
+    /// because ILIKE already pre-filtered, but it keeps the call safe).
+    /// </summary>
+    private static (int Line, int ColumnStart, string Snippet) FindFirstContentMatch(
+        string content, string term)
+    {
+        if (string.IsNullOrEmpty(content)) return (1, 1, string.Empty);
+        var lines = content.Replace("\r\n", "\n").Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var idx = lines[i].IndexOf(term, StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0)
+            {
+                return (i + 1, idx + 1, TrimSnippet(lines[i]));
+            }
+        }
+        return (1, 1, TrimSnippet(lines.Length > 0 ? lines[0] : string.Empty));
+    }
+
+    /// <summary>
+    /// Returns the object-header symbol for a file (the one
+    /// <c>AlSymbolExtractor</c> emits as <c>object_declaration</c>) so the
+    /// version-browser row action can route to <see cref="FindReferencesAsync"/>
+    /// without scrolling the user into the file first.
+    /// </summary>
+    public Task<BaseAppSymbol?> GetObjectDeclarationSymbolAsync(
+        long fileId, CancellationToken ct = default)
+    {
+        return _db.BaseAppSymbols
+            .AsNoTracking()
+            .Include(s => s.File)
+            .Include(s => s.Version)
+            .Where(s => s.FileId == fileId && s.Kind == "object_declaration")
+            .FirstOrDefaultAsync(ct);
+    }
+
     /// <summary>Distinct namespaces in a version, sorted alphabetically.</summary>
     public Task<List<string>> ListNamespacesAsync(int versionId, CancellationToken ct = default)
     {
@@ -919,6 +1084,62 @@ public enum BaseAppFileSort
 
 /// <summary>One page of file rows plus the unfiltered total count.</summary>
 public sealed record BaseAppFilePage(IReadOnlyList<BaseAppFileListRow> Rows, int TotalCount);
+
+/// <summary>
+/// Search modes for the version-browser search box. The page picks one
+/// at a time — never an omnisearch — so each result table has its own
+/// shape and the user always knows what they're looking at.
+/// </summary>
+public enum BaseAppSearchScope
+{
+    /// <summary>Match object name or ID — the default "find an object" path.</summary>
+    Objects,
+    /// <summary>Match procedure / event symbol name across all files in the version.</summary>
+    Procedures,
+    /// <summary>Match a substring inside file content — full-text search.</summary>
+    Content,
+}
+
+/// <summary>One page of procedure-search hits plus the unfiltered total count.</summary>
+public sealed record BaseAppProcedureSearchPage(
+    IReadOnlyList<BaseAppProcedureHit> Rows, int TotalCount);
+
+/// <summary>
+/// A procedure / event match returned by <see cref="BaseAppService.SearchProceduresAsync"/>.
+/// Carries enough about the owning file to render the result row inline
+/// (no second query) and the symbol id so a row action can route through
+/// <see cref="BaseAppService.FindReferencesAsync"/>.
+/// </summary>
+public sealed record BaseAppProcedureHit(
+    long SymbolId,
+    long FileId,
+    int VersionId,
+    string ObjectType,
+    int? ObjectId,
+    string ObjectName,
+    string SymbolKind,
+    string SymbolName,
+    int LineNumber,
+    string? Signature);
+
+/// <summary>One page of content-search hits plus the unfiltered total count.</summary>
+public sealed record BaseAppContentSearchPage(
+    IReadOnlyList<BaseAppContentHit> Rows, int TotalCount);
+
+/// <summary>
+/// A content-substring match returned by <see cref="BaseAppService.SearchContentAsync"/>.
+/// One row per file (the first matching line); clicking deep-links to
+/// the file viewer's <c>#L&lt;n&gt;</c> anchor.
+/// </summary>
+public sealed record BaseAppContentHit(
+    long FileId,
+    string ObjectType,
+    int? ObjectId,
+    string ObjectName,
+    string Path,
+    int LineNumber,
+    int ColumnStart,
+    string Snippet);
 
 /// <summary>
 /// Lightweight projection used for the file list — omits the heavyweight

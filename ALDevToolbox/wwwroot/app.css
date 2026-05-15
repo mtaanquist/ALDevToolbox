@@ -2578,6 +2578,16 @@ ul.form-field-error {
     margin: 16px 0;
 }
 
+/* With the scope selector added, the Objects-mode row needs five
+   columns (scope + search + three filters); procedures / content modes
+   need just the two leading columns. `--with-scope` puts the narrow
+   scope select first, hands the rest of the width to the search box,
+   and lets the three filter columns (when present) sit at their
+   natural fraction. */
+.object-explorer__filters--with-scope {
+    grid-template-columns: minmax(160px, 0.8fr) minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+
 /* Sortable column headers in the version browser. Keeps the <th>'s
    default look but turns the inner button into a hover-able click target
    with a small arrow on the active sort. */
@@ -2722,6 +2732,36 @@ ul.form-field-error {
     gap: 6px;
     align-items: center;
     flex-wrap: wrap;
+}
+
+/* When the row-actions live in their own <td>, keep the cell tight so
+   the column doesn't claim a third of the table width. width: 1%
+   collapses the cell to its content; nowrap keeps the buttons on one
+   line even when there's room. */
+.object-explorer__row-actions--cell {
+    width: 1%;
+    white-space: nowrap;
+}
+
+/* Suffix shown after the symbol name on the procedure-search rows —
+   reads as a muted "(signature)" hint that doesn't compete with the
+   name. Truncated by the parent <td>'s overflow on narrow viewports. */
+.object-explorer__row-sig {
+    margin-left: 6px;
+    font-family: var(--mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+}
+
+/* Snippet column on the content-search results table. Trimmed to a
+   single line + ellipsis so a 200-char line doesn't blow up the row
+   height; the row click + the link both navigate to the matching
+   line in the file viewer, so seeing the start is enough. */
+.object-explorer__row-snippet {
+    display: block;
+    max-width: 70ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12.5px;
 }
 
 /* Upload form: native file inputs are ugly and inconsistent across browsers.
