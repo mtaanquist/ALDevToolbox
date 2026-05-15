@@ -2870,12 +2870,14 @@ ul.form-field-error {
 }
 
 /* File viewer layout: code editor + right-rail inspector panel. The
-   editor fills the remaining width; the panel sits at a fixed width
-   matched to its content. Stack vertically on narrow viewports. */
+   editor fills the remaining width and grows to its content height —
+   long files extend the page rather than scrolling internally. The
+   panel stays in view via `position: sticky` so the outline / refs
+   are always one glance away. Stacks vertically on narrow viewports. */
 .object-explorer__file-layout {
     display: flex;
     gap: 16px;
-    align-items: stretch;
+    align-items: flex-start;
 }
 
 .object-explorer__file-layout > .code-viewer-host {
@@ -2895,12 +2897,29 @@ ul.form-field-error {
     flex: 0 0 clamp(280px, 28vw, 520px);
     display: flex;
     flex-direction: column;
-    height: 75vh;
+    /* Sticky-follow on scroll. The nearest scrolling ancestor is
+       .content (`overflow-y: auto`), so the panel pins to the top of
+       the work column once it would otherwise scroll out of view.
+       max-height caps it to the viewport so long outlines get their
+       own internal scrollbar instead of overflowing the screen. */
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - var(--top-bar-height) - 32px);
     border: 1px solid var(--border, #2a2a35);
     border-radius: 6px;
     background: var(--surface-1, #1a1c22);
     overflow: hidden;
     font-size: 13px;
+}
+
+@media (max-width: 1100px) {
+    /* In the stacked layout sticky would pin the panel to the top of
+       the column, hiding the editor as the user scrolls — unhelpful.
+       Drop back to its natural flow position. */
+    .inspector-panel {
+        position: static;
+        max-height: 60vh;
+    }
 }
 
 .inspector-panel__crumbs {
