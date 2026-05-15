@@ -145,7 +145,9 @@ public sealed record ReferenceMatch(
     string SourceObjectName,
     string ReferenceKind,
     int? LineNumber,
-    long? SourceFileId);
+    long? SourceFileId,
+    string? SourceFilePath = null,
+    string? Snippet = null);
 
 /// <summary>
 /// Read-only projection of an <c>oe_module_files</c> row for the source viewer.

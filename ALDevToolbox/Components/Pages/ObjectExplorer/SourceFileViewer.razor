@@ -3,6 +3,7 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
 @inject ALDevToolbox.Services.ObjectExplorer.ReferenceSessionService ReferenceSessions
+@inject ALDevToolbox.Services.CacheBust Bust
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Components.Shared
@@ -183,20 +184,25 @@
                                             var inSameFile = srcFid == FileId;
                                             <a href="@RefUrl(srcFid, ln)"
                                                data-line="@(inSameFile ? ln.ToString() : null)"
-                                               title="@($"{r.SourceModuleName} · {r.SourceObjectName} ({r.ReferenceKind})")">
-                                                <span class="source-viewer__refs-name">@r.SourceObjectName</span>
-                                                <span class="source-viewer__refs-meta muted">@r.SourceModuleName · L@(ln)</span>
+                                               title="@($"{r.SourceFilePath ?? r.SourceModuleName} · L{ln} ({r.ReferenceKind})")">
+                                                <div class="source-viewer__refs-row-top">
+                                                    <span class="source-viewer__refs-name">@r.SourceObjectName</span>
+                                                    <span class="source-viewer__refs-meta muted">@r.SourceModuleName · L@(ln)</span>
+                                                </div>
+                                                @if (!string.IsNullOrEmpty(r.Snippet))
+                                                {
+                                                    <code class="source-viewer__refs-snippet">@r.Snippet</code>
+                                                }
                                             </a>
                                         }
                                         else
                                         {
-                                            @* No source file imported for this module — link to the
-                                               object detail page so the user can still inspect what
-                                               the row stands for. *@
                                             <a href="@($"/object-explorer/object/{r.SourceObjectId}")"
                                                title="@($"{r.SourceModuleName} · {r.SourceObjectName} (no source)")">
-                                                <span class="source-viewer__refs-name">@r.SourceObjectName</span>
-                                                <span class="source-viewer__refs-meta muted">@r.SourceModuleName · no source</span>
+                                                <div class="source-viewer__refs-row-top">
+                                                    <span class="source-viewer__refs-name">@r.SourceObjectName</span>
+                                                    <span class="source-viewer__refs-meta muted">@r.SourceModuleName · no source</span>
+                                                </div>
                                             </a>
                                         }
                                     </li>
@@ -214,7 +220,7 @@
             </aside>
         </div>
 
-        <script type="module" src="/source-viewer.js"></script>
+        <script type="module" src="/source-viewer.js?v=@Bust.Token"></script>
     }
 </div>
 

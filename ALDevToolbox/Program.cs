@@ -107,6 +107,7 @@ builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseManagemen
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReferenceSessionService>();
 builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks>();
+builder.Services.AddSingleton<ALDevToolbox.Services.CacheBust>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<TemplateImportService>();
 builder.Services.AddScoped<WorkspaceConfigService>();

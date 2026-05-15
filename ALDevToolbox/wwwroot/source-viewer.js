@@ -7,7 +7,11 @@
 // code-editor.js's expected dotNetRef interface so we can reuse
 // mountReadOnly verbatim. See .design/source-viewer-redesign.md.
 
-import { mountReadOnly, scrollToLine, openSearch } from "/code-editor.js";
+// Forward this module's cache-bust query (?v=…) to its imports so
+// /code-editor.js doesn't stay cached after a deploy that bumped both.
+const moduleVersion = new URL(import.meta.url).searchParams.get("v") ?? "";
+const codeEditorUrl = moduleVersion ? `/code-editor.js?v=${moduleVersion}` : "/code-editor.js";
+const { mountReadOnly, scrollToLine, openSearch } = await import(codeEditorUrl);
 
 const FILE_URL_PREFIX = "/object-explorer/file/";
 
@@ -343,42 +347,40 @@ function renderReferencesPanel(root, session, fileId, editorId) {
                         history.replaceState(null, "", a.href);
                     });
                 }
-                a.title = `${r.sourceModuleName} · ${r.sourceObjectName} (${r.referenceKind})`;
-
-                const nameSpan = document.createElement("span");
-                nameSpan.className = "source-viewer__refs-name";
-                nameSpan.textContent = r.sourceObjectName;
-                a.appendChild(nameSpan);
-
-                const meta = document.createElement("span");
-                meta.className = "source-viewer__refs-meta muted";
-                meta.textContent = `${r.sourceModuleName} · L${ln}`;
-                a.appendChild(meta);
-
+                a.title = `${r.sourceFilePath ?? r.sourceModuleName} · L${ln} (${r.referenceKind})`;
+                appendRowTop(a, r.sourceObjectName, `${r.sourceModuleName} · L${ln}`);
+                if (r.snippet) {
+                    const snip = document.createElement("code");
+                    snip.className = "source-viewer__refs-snippet";
+                    snip.textContent = r.snippet;
+                    a.appendChild(snip);
+                }
                 li.appendChild(a);
             } else {
-                // No source file imported for this module — link to the
-                // object detail so the user can still inspect the row.
                 const a = document.createElement("a");
                 a.href = `/object-explorer/object/${r.sourceObjectId}`;
                 a.title = `${r.sourceModuleName} · ${r.sourceObjectName} (no source)`;
-
-                const nameSpan = document.createElement("span");
-                nameSpan.className = "source-viewer__refs-name";
-                nameSpan.textContent = r.sourceObjectName;
-                a.appendChild(nameSpan);
-
-                const meta = document.createElement("span");
-                meta.className = "source-viewer__refs-meta muted";
-                meta.textContent = `${r.sourceModuleName} · no source`;
-                a.appendChild(meta);
-
+                appendRowTop(a, r.sourceObjectName, `${r.sourceModuleName} · no source`);
                 li.appendChild(a);
             }
             list.appendChild(li);
         }
         panel.appendChild(list);
     }
+}
+
+function appendRowTop(anchor, name, meta) {
+    const top = document.createElement("div");
+    top.className = "source-viewer__refs-row-top";
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "source-viewer__refs-name";
+    nameSpan.textContent = name;
+    top.appendChild(nameSpan);
+    const metaSpan = document.createElement("span");
+    metaSpan.className = "source-viewer__refs-meta muted";
+    metaSpan.textContent = meta;
+    top.appendChild(metaSpan);
+    anchor.appendChild(top);
 }
 
 function wireRefsCloseButton(root) {

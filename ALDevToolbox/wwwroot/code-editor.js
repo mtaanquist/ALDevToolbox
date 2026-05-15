@@ -634,32 +634,24 @@ export function scrollToLine(id, lineNumber, flash) {
             scroller.scrollTop = Math.max(0, Math.min(scrollMax, target));
             scroller.scrollLeft = 0;
         } else {
-            // Fluid mount (`Fluid="true"`): the editor's scroller is the
-            // same height as its content (overflow: visible), so it
-            // can't scroll. CodeMirror virtualises lines outside the
-            // initial viewport, so the line element may not exist for
-            // far-away targets like line 500 of 1000. Prefer
-            // EditorView.scrollIntoView — CM materialises the line
-            // before scrolling and routes through the appropriate
-            // outer container. Explicit `x: "start"` keeps the line's
-            // first column visible; the default ("nearest") leaves
-            // any pre-existing horizontal scroll in place, which
-            // looks like the first few characters got cut off after
-            // the jump. Fast-path lineEl.scrollIntoView when the
-            // target is already in the rendered viewport.
+            // Fluid mount (`Fluid="true"`): the editor's scroller is
+            // overflow:visible, so an outer container (.content) scrolls
+            // the page. Use inline:"nearest" so scrollIntoView only
+            // moves vertically — `inline:"start"` aligns the cm-line's
+            // left edge with the scrollport's left edge, but since
+            // cm-line begins AFTER the gutter, that scrolls the page
+            // right by the gutter width and chops off the start of
+            // shorter lines. The follow-up resetAncestorScrollLeft
+            // call then clears any residual horizontal scroll the
+            // previous jump (or a long line elsewhere) left behind.
             const lineEl = findLineEl();
             if (lineEl) {
-                lineEl.scrollIntoView({ block: "center", inline: "start", behavior: "auto" });
+                lineEl.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
             } else {
                 view.dispatch({
-                    effects: EditorView.scrollIntoView(line.from, { y: "center", x: "start" }),
+                    effects: EditorView.scrollIntoView(line.from, { y: "center" }),
                 });
             }
-            // scrollIntoView's `inline: "start"` only acts on the nearest
-            // scroll ancestor — outer scrollable wrappers (e.g. the
-            // outermost .content scroller) keep whatever scrollLeft they
-            // had from a previous jump. Zero every ancestor scroller's
-            // horizontal offset so a short line never appears clipped.
             resetAncestorScrollLeft(scroller);
         }
     };

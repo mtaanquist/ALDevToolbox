@@ -717,10 +717,67 @@ public class ObjectExplorerService
                 query.TargetObjectName)
             .ToListAsync(ct);
 
+        // Enrich each match with the actual code-line snippet and its
+        // file path so the References panel can render VS-Code-style rows
+        // (module · L42 · the code on that line). Source-file content is
+        // shared across many matches in long files, so we load each file
+        // once and reuse it for every same-file row.
+        matches = await EnrichReferencesWithSnippetsAsync(matches, ct);
+
         _logger.LogInformation(
             "FindReferences ReleaseId={ReleaseId} TargetAppId={TargetAppId} Kind={Kind} Id={Id} Name={Name} Matches={Count}",
             releaseId, query.TargetAppId, query.TargetObjectKind, query.TargetObjectId, query.TargetObjectName, matches.Count);
 
         return matches;
     }
+
+    /// <summary>
+    /// Loads source-file content once per distinct file id and stamps each
+    /// <see cref="ReferenceMatch"/> with the matching line's text plus the
+    /// file's path. Rows pointing at modules that ship without source
+    /// (SourceFileId == null) are returned unchanged. The snippet is
+    /// trimmed and capped to keep the response payload bounded.
+    /// </summary>
+    private async Task<List<ReferenceMatch>> EnrichReferencesWithSnippetsAsync(
+        List<ReferenceMatch> matches, CancellationToken ct)
+    {
+        var fileIds = matches
+            .Where(m => m.SourceFileId.HasValue && m.LineNumber.HasValue)
+            .Select(m => m.SourceFileId!.Value)
+            .Distinct()
+            .ToList();
+        if (fileIds.Count == 0) return matches;
+
+        var files = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => fileIds.Contains(f.Id))
+            .Select(f => new { f.Id, f.Path, f.Content })
+            .ToListAsync(ct);
+
+        var lookup = files.ToDictionary(
+            f => f.Id,
+            f => (Path: f.Path, Lines: SplitLines(f.Content)));
+
+        var enriched = new List<ReferenceMatch>(matches.Count);
+        foreach (var m in matches)
+        {
+            if (m.SourceFileId is { } fid && m.LineNumber is { } ln
+                && lookup.TryGetValue(fid, out var data)
+                && ln >= 1 && ln <= data.Lines.Length)
+            {
+                var raw = data.Lines[ln - 1].TrimEnd();
+                if (raw.Length > 200) raw = raw[..200] + "…";
+                enriched.Add(m with { SourceFilePath = data.Path, Snippet = raw });
+            }
+            else
+            {
+                enriched.Add(m);
+            }
+        }
+        return enriched;
+    }
+
+    private static string[] SplitLines(string content) =>
+        string.IsNullOrEmpty(content)
+            ? Array.Empty<string>()
+            : content.Replace("\r\n", "\n").Split('\n');
 }
