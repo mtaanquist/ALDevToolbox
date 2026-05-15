@@ -118,6 +118,60 @@ public static class AlGoToDefinitionLocator
         return result;
     }
 
+    // AL object keywords that can appear before a type name in a var
+    // declaration. Captured so the reference classifier can distinguish a
+    // var of type `Codeunit "HttpClient"` (real object reference) from a
+    // var of type `HttpClient` (runtime / system type sharing the name).
+    private static readonly Regex AllObjectVarDeclsRegex = new(
+        @"\b(?<var>[A-Za-z_][A-Za-z0-9_]*)\s*:\s*" +
+        @"(?:(?<kw>Record|Codeunit|Page|Report|Query|XmlPort|Interface|Enum|RequestPage|TestPage|TestPart|TestRequestPage|ControlAddIn|PermissionSet|Profile)\s+)?" +
+        @"(""(?<q>[^""]+)""|(?<u>[A-Za-z_][A-Za-z0-9_]*))",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <summary>
+    /// Returns every <c>VarName: Type</c> declaration in <paramref name="fileContent"/>,
+    /// for both AL-object-keyword forms (<c>Foo: Codeunit "Sales-Post"</c>,
+    /// <c>Cust: Record Customer</c>) and unkeyworded type identifiers
+    /// (<c>Client: HttpClient</c>, <c>Tok: JsonToken</c>, <c>Err: ErrorInfo</c>).
+    /// The <see cref="ResolvedVariableType.Keyword"/> is <c>null</c> when the
+    /// declaration omits an AL object keyword — that signal lets the
+    /// references classifier drop calls on a system-type-shaped variable that
+    /// happens to share a name with the searched-for codeunit (the common
+    /// <c>HttpClient: HttpClient</c> pattern). Last wins on duplicate variable
+    /// names, matching <see cref="ResolveAllRecordVariableTypes"/>.
+    /// </summary>
+    public static IReadOnlyDictionary<string, ResolvedVariableType> ResolveAllObjectVariableTypes(string fileContent)
+    {
+        var result = new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(fileContent)) return result;
+
+        foreach (Match m in AllObjectVarDeclsRegex.Matches(fileContent))
+        {
+            var varName = m.Groups["var"].Value;
+            var typeName = m.Groups["q"].Success ? m.Groups["q"].Value : m.Groups["u"].Value;
+            if (string.IsNullOrEmpty(varName) || string.IsNullOrEmpty(typeName)) continue;
+            var keyword = m.Groups["kw"].Success ? m.Groups["kw"].Value : null;
+            result[varName] = new ResolvedVariableType(keyword, typeName);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Public entry into the private <see cref="ReadLeftContext"/> tokeniser.
+    /// Lets callers that already have a line and a known token start index
+    /// (e.g. a regex-match column) read the operator and qualifier directly
+    /// without re-running <see cref="Inspect"/>.
+    /// </summary>
+    public static GoToDefinitionLeftContext ReadLeftContextAt(string lineText, int tokenStart)
+    {
+        if (string.IsNullOrEmpty(lineText) || tokenStart <= 0)
+        {
+            return new GoToDefinitionLeftContext(null, null);
+        }
+        var clamped = Math.Min(tokenStart, lineText.Length);
+        return ReadLeftContext(lineText, clamped);
+    }
+
     private static string? GetLine(string source, int line)
     {
         var i = 0;
@@ -278,3 +332,12 @@ public sealed record GoToDefinitionClick(
 /// of the operator (when applicable).
 /// </summary>
 public sealed record GoToDefinitionLeftContext(string? Operator, string? Qualifier);
+
+/// <summary>
+/// Resolved type of a variable declared in an AL file. <see cref="Keyword"/>
+/// is one of the AL object keywords (<c>Codeunit</c>, <c>Record</c>,
+/// <c>Page</c>, …) when the declaration spelled one out, or <c>null</c>
+/// when the type was a bare identifier like <c>HttpClient</c> or
+/// <c>JsonObject</c>. <see cref="TypeName"/> is the type's name itself.
+/// </summary>
+public sealed record ResolvedVariableType(string? Keyword, string TypeName);
