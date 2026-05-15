@@ -255,7 +255,11 @@ public class ReleaseImportService
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
         // Files first so we can resolve ModuleObject.SourceFileId on the way.
-        var filesByName = new Dictionary<string, OeModuleFile>(StringComparer.OrdinalIgnoreCase);
+        // Symbol-package ReferenceSourceFileName is the full relative path
+        // (e.g. "src/Codeunits/DKCoreEventSubscribers.Codeunit.al"), so we
+        // key by full path. The parser already normalised both the embedded
+        // src/ tree (.app) and the paired .Source.zip to the same "src/…" shape.
+        var filesByPath = new Dictionary<string, OeModuleFile>(StringComparer.OrdinalIgnoreCase);
         foreach (var (path, content) in sourceFiles)
         {
             var file = new OeModuleFile
@@ -268,16 +272,14 @@ public class ReleaseImportService
                 LineCount = CountLines(content),
             };
             _db.OeModuleFiles.Add(file);
-            // The symbol package's ReferenceSourceFileName is a bare filename
-            // (no directory). Key by basename for the link-up.
-            filesByName[Path.GetFileName(path)] = file;
+            filesByPath[path] = file;
             totals.SourceFilesImported++;
         }
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
         // Pre-scan each source file once for object declaration line numbers,
         // so we can stamp ModuleObject.LineNumber without re-reading content.
-        var declarationLines = ScanDeclarationLines(filesByName);
+        var declarationLines = ScanDeclarationLines(filesByPath);
 
         foreach (var symObj in pkg.Symbols.Objects)
         {
@@ -286,7 +288,7 @@ public class ReleaseImportService
             OeModuleFile? sourceFile = null;
             int line = 1;
             if (!string.IsNullOrEmpty(symObj.ReferenceSourceFileName)
-                && filesByName.TryGetValue(symObj.ReferenceSourceFileName, out var matchedFile))
+                && filesByPath.TryGetValue(symObj.ReferenceSourceFileName, out var matchedFile))
             {
                 sourceFile = matchedFile;
                 if (declarationLines.TryGetValue((matchedFile.Path, symObj.Kind, symObj.Name), out var found))
@@ -595,10 +597,10 @@ public class ReleaseImportService
     /// symbol-package objects.
     /// </summary>
     private static Dictionary<(string FilePath, string Kind, string Name), int> ScanDeclarationLines(
-        IReadOnlyDictionary<string, OeModuleFile> filesByName)
+        IReadOnlyDictionary<string, OeModuleFile> filesByPath)
     {
         var result = new Dictionary<(string, string, string), int>();
-        foreach (var (_, file) in filesByName)
+        foreach (var (_, file) in filesByPath)
         {
             int line = 0;
             foreach (var rawLine in file.Content.Split('\n'))
