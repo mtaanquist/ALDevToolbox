@@ -238,6 +238,17 @@
     /// </summary>
     private async Task UpdateUrlAsync()
     {
+        // JS interop is forbidden during Blazor's static prerender
+        // phase — the runtime throws InvalidOperationException because
+        // the circuit isn't connected yet. The initial ReloadAsync
+        // call from OnInitializedAsync runs during prerender, so skip
+        // the URL sync there: the URL the user arrived on already
+        // matches the filter state we just hydrated from it, so
+        // there's nothing to sync. Subsequent reloads (search input,
+        // dropdown changes) fire after first render when interop is
+        // safe.
+        if (!_isInteractive) return;
+
         var parts = new List<string>(6);
         if (_scope != SearchScope.Objects) parts.Add("scope=" + Uri.EscapeDataString(_scope.ToString()));
         if (!string.IsNullOrWhiteSpace(_search)) parts.Add("search=" + Uri.EscapeDataString(_search));
@@ -250,6 +261,13 @@
         if (parts.Count > 0) url += "?" + string.Join("&", parts);
 
         await JS.InvokeVoidAsync("history.replaceState", null, string.Empty, url);
+    }
+
+    private bool _isInteractive;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) _isInteractive = true;
     }
 
     private async Task OnScopeChanged()
