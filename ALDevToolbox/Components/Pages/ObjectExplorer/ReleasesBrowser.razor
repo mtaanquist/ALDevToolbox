@@ -15,14 +15,6 @@
                 modules and find references across them.
             </p>
         </div>
-        <AuthorizeView Roles="Admin">
-            <Authorized>
-                <a class="btn" href="/admin/object-explorer/new">
-                    <Icon Name="upload" Width="16" Height="16" />
-                    <span>Import Release</span>
-                </a>
-            </Authorized>
-        </AuthorizeView>
     </header>
 
     @if (_releases is null)
