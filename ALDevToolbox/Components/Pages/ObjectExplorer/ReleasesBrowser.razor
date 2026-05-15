@@ -17,7 +17,7 @@
         </div>
         <AuthorizeView Roles="Admin">
             <Authorized>
-                <a class="btn" href="/admin/releases/import">
+                <a class="btn" href="/admin/releases/new">
                     <Icon Name="upload" Width="16" Height="16" />
                     <span>Import Release</span>
                 </a>
@@ -35,7 +35,7 @@
             No Releases have been imported yet.
             <AuthorizeView Roles="Admin">
                 <Authorized>
-                    <a href="/admin/releases/import">Import one now</a>.
+                    <a href="/admin/releases/new">Import one now</a>.
                 </Authorized>
                 <NotAuthorized>
                     Ask an admin to import one.

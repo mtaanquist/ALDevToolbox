@@ -149,8 +149,10 @@ internal static class ObjectExplorerEndpoints
 
     private static void Redirect(HttpContext ctx, string errKey, string message)
     {
+        // Error redirects go back to the form page (/new); the POST endpoint
+        // (/import) is action-only and has no GET view.
         ctx.Response.Redirect(
-            "/admin/releases/import?err=" + Uri.EscapeDataString(errKey)
+            "/admin/releases/new?err=" + Uri.EscapeDataString(errKey)
             + "&msg=" + Uri.EscapeDataString(message));
     }
 }
