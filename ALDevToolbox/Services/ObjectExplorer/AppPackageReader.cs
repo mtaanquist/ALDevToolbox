@@ -72,6 +72,44 @@ public static class AppPackageReader
         => bytes.Length >= NavxPrefixLength
             && bytes[0] == 'N' && bytes[1] == 'A' && bytes[2] == 'V' && bytes[3] == 'X';
 
+    /// <summary>
+    /// Case-insensitive entry lookup. <see cref="ZipArchive.GetEntry"/> is
+    /// strictly case-sensitive, but the <c>.app</c> archives Microsoft ships
+    /// have drifted casing across BC versions (NavxManifest vs navxmanifest
+    /// vs NAVXMANIFEST seen in the wild). Iterating once is cheap given the
+    /// typical .app has a few hundred entries at most.
+    /// </summary>
+    private static ZipArchiveEntry? FindEntry(ZipArchive archive, string name)
+    {
+        foreach (var e in archive.Entries)
+        {
+            if (string.Equals(e.FullName, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return e;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Builds a diagnostic <see cref="InvalidDataException"/> that includes a
+    /// truncated listing of what's actually inside the archive. Without this,
+    /// "missing X" errors on opaque .apps were untractable — the only way to
+    /// figure out the real entry name was to extract the file by hand.
+    /// </summary>
+    private static InvalidDataException NotFoundInArchive(ZipArchive archive, string expected)
+    {
+        const int sampleSize = 25;
+        var sample = archive.Entries
+            .Take(sampleSize)
+            .Select(e => e.FullName)
+            .ToList();
+        var suffix = archive.Entries.Count > sampleSize ? $" (+{archive.Entries.Count - sampleSize} more)" : string.Empty;
+        var listing = sample.Count == 0 ? "(empty archive)" : string.Join(", ", sample) + suffix;
+        return new InvalidDataException(
+            $".app archive is missing {expected}. Archive entries: [{listing}].");
+    }
+
     private static async Task<byte[]> ReadFullyAsync(Stream s, CancellationToken ct)
     {
         if (s is MemoryStream alreadyMs && alreadyMs.TryGetBuffer(out var seg) && seg.Offset == 0 && seg.Count == alreadyMs.Length)
@@ -89,8 +127,8 @@ public static class AppPackageReader
 
     private static AppManifest ReadManifest(ZipArchive archive)
     {
-        var entry = archive.GetEntry("NavxManifest.xml")
-            ?? throw new InvalidDataException(".app archive is missing NavxManifest.xml.");
+        var entry = FindEntry(archive, "NavxManifest.xml")
+            ?? throw NotFoundInArchive(archive, "NavxManifest.xml");
         using var stream = entry.Open();
         var doc = XDocument.Load(stream);
 
@@ -159,8 +197,17 @@ public static class AppPackageReader
 
     private static SymbolPackage ReadSymbolPackage(ZipArchive archive)
     {
-        var entry = archive.GetEntry("SymbolReference.json")
-            ?? throw new InvalidDataException(".app archive is missing SymbolReference.json.");
+        // The symbol package is *optional*. Translation-only language packs and
+        // a few system .apps ship with just the manifest + payload files and no
+        // SymbolReference.json — there's no code to symbolise. Treat the
+        // missing case as "this .app contributes a Module row but zero objects"
+        // and let the importer continue. The manifest is the only file that
+        // gets the strict-missing treatment.
+        var entry = FindEntry(archive, "SymbolReference.json");
+        if (entry is null)
+        {
+            return new SymbolPackage(RuntimeVersion: null, Objects: Array.Empty<SymbolObject>());
+        }
         using var stream = entry.Open();
         // The file has a UTF-8 BOM; System.Text.Json handles it transparently.
         var raw = JsonSerializer.Deserialize<RawSymbolRoot>(stream, JsonOpts)
