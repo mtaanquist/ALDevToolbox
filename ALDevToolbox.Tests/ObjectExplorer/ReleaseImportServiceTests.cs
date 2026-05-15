@@ -312,6 +312,66 @@ public sealed class ReleaseImportServiceTests : IDisposable
         module.IsLanguagePack.Should().BeTrue();
     }
 
+    // ── Label uniqueness ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task Refuses_a_second_active_release_with_the_same_label()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+
+        await using var s1 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "BC 25.18 DK", Kind: "first_party",
+            ParentReleaseId: null, ApplicationVersionId: null,
+            Uploads: new[] { new AppFileUpload("dk.app", s1, null) }));
+
+        // Same label, different bytes — must surface a clean Label error,
+        // not a raw DbUpdateException from the 23505 partial-unique index.
+        await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
+        var act = async () => await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "BC 25.18 DK", Kind: "first_party",
+            ParentReleaseId: null, ApplicationVersionId: null,
+            Uploads: new[] { new AppFileUpload("oioubl.app", s2, null) }));
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("Label");
+    }
+
+    [Fact]
+    public async Task Allows_reusing_a_label_after_the_previous_release_was_soft_deleted()
+    {
+        int firstId;
+        await using (var ctx = _db.NewContext())
+        {
+            var svc = NewService(ctx);
+            await using var s = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+            var first = await svc.ImportReleaseAsync(new ReleaseImportRequest(
+                Label: "Recycled Label", Kind: "first_party",
+                ParentReleaseId: null, ApplicationVersionId: null,
+                Uploads: new[] { new AppFileUpload("dk.app", s, null) }));
+            firstId = first.ReleaseId;
+        }
+
+        // Soft-delete so the partial unique index no longer blocks reuse.
+        await using (var ctx = _db.NewContext())
+        {
+            var release = await ctx.OeReleases.SingleAsync(r => r.Id == firstId);
+            release.DeletedAt = DateTime.UtcNow;
+            await ctx.SaveChangesAsync();
+        }
+
+        // Same label should now be accepted; the partial index permits
+        // exactly this reuse, and the pre-check has to honour it too.
+        await using var ctx2 = _db.NewContext();
+        var svc2 = NewService(ctx2);
+        await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
+        var second = await svc2.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "Recycled Label", Kind: "first_party",
+            ParentReleaseId: null, ApplicationVersionId: null,
+            Uploads: new[] { new AppFileUpload("oioubl.app", s2, null) }));
+        second.ReleaseId.Should().NotBe(firstId);
+    }
+
     // ── Parent-release linkage ──────────────────────────────────────────
 
     [Fact]

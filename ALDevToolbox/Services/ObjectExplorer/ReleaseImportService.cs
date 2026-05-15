@@ -83,6 +83,7 @@ public class ReleaseImportService
         ArgumentNullException.ThrowIfNull(request);
         var orgId = RequireOrganizationId();
         Validate(request);
+        await EnsureLabelAvailableAsync(orgId, request.Label.Trim(), ct).ConfigureAwait(false);
 
         var release = new OeRelease
         {
@@ -175,6 +176,29 @@ public class ReleaseImportService
             errors["Uploads"] = "At least one .app file is required.";
         }
         if (errors.Count > 0) throw new PlanValidationException(errors);
+    }
+
+    /// <summary>
+    /// Refuses a label that's already in use by another active Release in the
+    /// same org. The DB also enforces this via <c>ix_oe_releases_org_label_active</c>
+    /// (partial unique index on <c>(organization_id, label)</c> filtered by
+    /// <c>deleted_at IS NULL</c>) — the pre-check exists so admins get a clean
+    /// field-keyed error instead of a raw Postgres 23505 surfacing past the
+    /// failed-status update path. Soft-deleted labels remain reusable since
+    /// the partial index excludes them.
+    /// </summary>
+    private async Task EnsureLabelAvailableAsync(int orgId, string label, CancellationToken ct)
+    {
+        var taken = await _db.OeReleases.AsNoTracking()
+            .AnyAsync(r => r.OrganizationId == orgId && r.DeletedAt == null && r.Label == label, ct)
+            .ConfigureAwait(false);
+        if (taken)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Label"] = $"A Release labelled \"{label}\" already exists in this organisation. Soft-delete it from the admin page first, or pick a different label.",
+            });
+        }
     }
 
     // ── Per-app ingest ──────────────────────────────────────────────────
