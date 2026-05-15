@@ -125,7 +125,79 @@ internal static class ObjectExplorerEndpoints
             MultipartHeadersLengthLimit = 32 * 1024,
         });
 
+        app.MapPost("/admin/object-explorer/{id:int}/soft-delete", async (
+            int id,
+            HttpContext ctx,
+            ReleaseManagementService management,
+            IAntiforgery antiforgery,
+            CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+
+            try
+            {
+                await management.SoftDeleteAsync(id, ct);
+                ctx.Response.Redirect("/admin/object-explorer?ok=soft-deleted&id=" + id);
+            }
+            catch (PlanValidationException ex)
+            {
+                var first = ex.Errors.First();
+                RedirectAdmin(ctx, first.Key, first.Value);
+            }
+        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+        app.MapPost("/admin/object-explorer/{id:int}/restore", async (
+            int id,
+            HttpContext ctx,
+            ReleaseManagementService management,
+            IAntiforgery antiforgery,
+            CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+
+            try
+            {
+                await management.RestoreAsync(id, ct);
+                ctx.Response.Redirect("/admin/object-explorer?ok=restored&id=" + id);
+            }
+            catch (PlanValidationException ex)
+            {
+                var first = ex.Errors.First();
+                RedirectAdmin(ctx, first.Key, first.Value);
+            }
+        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+        app.MapPost("/admin/object-explorer/{id:int}/hard-delete", async (
+            int id,
+            HttpContext ctx,
+            ReleaseManagementService management,
+            IAntiforgery antiforgery,
+            CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var confirm = form["ConfirmLabel"].ToString();
+
+            try
+            {
+                await management.HardDeleteAsync(id, confirm, ct);
+                ctx.Response.Redirect("/admin/object-explorer?ok=hard-deleted&id=" + id);
+            }
+            catch (PlanValidationException ex)
+            {
+                var first = ex.Errors.First();
+                RedirectAdmin(ctx, first.Key, first.Value);
+            }
+        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
         return app;
+    }
+
+    private static void RedirectAdmin(HttpContext ctx, string errKey, string message)
+    {
+        ctx.Response.Redirect(
+            "/admin/object-explorer?err=" + Uri.EscapeDataString(errKey)
+            + "&msg=" + Uri.EscapeDataString(message));
     }
 
     // ── Folder-ZIP path ────────────────────────────────────────────────

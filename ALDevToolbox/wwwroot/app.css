@@ -2862,6 +2862,35 @@ ul.form-field-error {
     margin-bottom: 16px;
 }
 
+/* Generic `.field` layout — admin forms that pair a label, an input, and a
+   short caption use this triplet of classes. The Object Explorer filter
+   bars and the legacy upload form each defined their own scoped versions
+   above; this block makes the same layout available to any admin page
+   (specifically the Release import form) without a parent-class
+   gymnastics step. Input styling (border, padding, focus ring) still
+   comes from the `.form-section input[type="…"]` rules earlier in this
+   file, which already match by descendant. */
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 16px;
+    min-width: 0;
+}
+
+.field__label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-2, #b0b0c2);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.field__caption {
+    font-size: 12.5px;
+    line-height: 1.4;
+}
+
 .object-explorer-upload .field__label {
     font-size: 12.5px;
     font-weight: 600;
