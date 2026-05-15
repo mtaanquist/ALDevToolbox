@@ -1,0 +1,200 @@
+@page "/admin/object-explorer"
+@attribute [Authorize(Roles = "Admin")]
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject IHttpContextAccessor Http
+@using ALDevToolbox.Services.ObjectExplorer
+
+@*
+    Admin index for the Object Explorer surface: lists every Release in the
+    organisation (active + soft-deleted) and exposes per-row admin actions.
+    Statically rendered so the action forms post normally; the Object Explorer
+    endpoints (see ObjectExplorerEndpoints.cs) handle the writes.
+
+    The user-facing browser at /object-explorer keeps showing only active
+    Releases without admin affordances — this page is the admin counterpart.
+*@
+
+<PageTitle>Object Explorer · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Object Explorer</h1>
+            <p class="muted">
+                Imported Releases in this organisation. Soft-deleted Releases
+                are hidden from the user-facing browser but stay queryable
+                here until they're permanently removed.
+            </p>
+        </div>
+        <a class="btn" href="/admin/object-explorer/new">
+            <Icon Name="upload" Width="16" Height="16" />
+            <span>Import Release</span>
+        </a>
+    </header>
+
+    @if (Status is { } status)
+    {
+        @if (status.IsError)
+        {
+            <div class="form-error" role="alert"><p>@status.Message</p></div>
+        }
+        else
+        {
+            <p class="form-success" role="status">@status.Message</p>
+        }
+    }
+
+    @if (_releases is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_releases.Count == 0)
+    {
+        <p class="muted">
+            No Releases yet. <a href="/admin/object-explorer/new">Import one now</a>.
+        </p>
+    }
+    else
+    {
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th scope="col">Label</th>
+                    <th scope="col">Kind</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Files</th>
+                    <th scope="col">Size</th>
+                    <th scope="col">Imported</th>
+                    <th scope="col">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _releases)
+                {
+                    <tr>
+                        <td>
+                            <a href="@($"/object-explorer/release/{r.Id}")">
+                                <strong>@r.Label</strong>
+                            </a>
+                            @if (r.DeletedAt is not null)
+                            {
+                                <span class="muted"> · soft-deleted</span>
+                            }
+                        </td>
+                        <td>@FormatKind(r.Kind)</td>
+                        <td>@FormatStatus(r.Status)</td>
+                        <td>@r.SourceFileCount.ToString("N0")</td>
+                        <td>@FormatBytes(r.SourceContentLength)</td>
+                        <td>@r.ImportedAt.ToString("yyyy-MM-dd")</td>
+                        <td class="row-actions">
+                            @if (r.DeletedAt is null)
+                            {
+                                <form method="post"
+                                      action="@($"/admin/object-explorer/{r.Id}/soft-delete")"
+                                      style="display:inline">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="btn btn--sm" title="Soft delete — reversible">
+                                        <Icon Name="archive" Width="14" Height="14" />
+                                        <span>Soft delete</span>
+                                    </button>
+                                </form>
+                            }
+                            else
+                            {
+                                <form method="post"
+                                      action="@($"/admin/object-explorer/{r.Id}/restore")"
+                                      style="display:inline">
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="btn btn--sm" title="Bring back to the regular list">
+                                        <Icon Name="rotate-ccw" Width="14" Height="14" />
+                                        <span>Restore</span>
+                                    </button>
+                                </form>
+
+                                <form method="post"
+                                      action="@($"/admin/object-explorer/{r.Id}/hard-delete")"
+                                      style="display:inline">
+                                    <AntiforgeryToken />
+                                    <input type="text"
+                                           name="ConfirmLabel"
+                                           required
+                                           class="field__input"
+                                           placeholder="Type label to confirm"
+                                           aria-label="Confirm label"
+                                           style="display:inline-block; width: 14rem;" />
+                                    <button type="submit" class="btn btn--sm btn--danger"
+                                            title="Permanently remove this Release and all its data">
+                                        <Icon Name="trash-2" Width="14" Height="14" />
+                                        <span>Permanently delete</span>
+                                    </button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private List<ReleaseListItem>? _releases;
+    private (string Message, bool IsError)? Status { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var ctx = Http.HttpContext;
+        if (ctx is not null)
+        {
+            var err = ctx.Request.Query["err"].ToString();
+            var msg = ctx.Request.Query["msg"].ToString();
+            if (!string.IsNullOrEmpty(err) && !string.IsNullOrEmpty(msg))
+            {
+                Status = ($"{err}: {msg}", true);
+            }
+            else
+            {
+                var ok = ctx.Request.Query["ok"].ToString();
+                if (!string.IsNullOrEmpty(ok))
+                {
+                    Status = (FormatOkMessage(ok, ctx.Request.Query["id"].ToString()), false);
+                }
+            }
+        }
+
+        _releases = await ObjectExplorer.ListReleasesAsync(includeSoftDeleted: true);
+    }
+
+    private static string FormatOkMessage(string ok, string id) => ok switch
+    {
+        "imported"     => $"Release {id} imported.",
+        "soft-deleted" => $"Release {id} soft-deleted. Restore from this page if it was a mistake.",
+        "restored"     => $"Release {id} restored.",
+        "hard-deleted" => $"Release {id} permanently deleted. Run VACUUM oe_module_files to reclaim disk now if you need it.",
+        _              => "Done.",
+    };
+
+    private static string FormatKind(string kind) => kind switch
+    {
+        "first_party" => "First-party",
+        "third_party" => "Third-party",
+        "customer"    => "Customer",
+        _             => kind,
+    };
+
+    private static string FormatStatus(string s) => s switch
+    {
+        "ready"     => "Ready",
+        "ingesting" => "Ingesting…",
+        "failed"    => "Failed",
+        _           => s,
+    };
+
+    private static string FormatBytes(long n)
+    {
+        if (n < 1024) return n + " B";
+        if (n < 1024L * 1024) return (n / 1024d).ToString("0.0") + " KB";
+        if (n < 1024L * 1024 * 1024) return (n / (1024d * 1024)).ToString("0.0") + " MB";
+        return (n / (1024d * 1024 * 1024)).ToString("0.0") + " GB";
+    }
+}

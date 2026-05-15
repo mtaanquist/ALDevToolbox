@@ -57,4 +57,15 @@
     <ProjectReference Include="..\ALDevToolbox\ALDevToolbox.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Object Explorer .app + .Source.zip samples used by AppPackageReader
+         tests and (later) ReleaseImportService tests. Copied verbatim to the
+         test output directory so xUnit tests can open them via relative path
+         without depending on the source-tree layout. -->
+    <None Include="Fixtures\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Fixtures\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </None>
+  </ItemGroup>
+
 </Project>

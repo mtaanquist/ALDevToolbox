@@ -2862,6 +2862,354 @@ ul.form-field-error {
     margin-bottom: 16px;
 }
 
+/* Generic `.field` layout — admin forms that pair a label, an input, and a
+   short caption use this triplet of classes. The Object Explorer filter
+   bars and the legacy upload form each defined their own scoped versions
+   above; this block makes the same layout available to any admin page
+   (specifically the Release import form) without a parent-class
+   gymnastics step. Input styling (border, padding, focus ring) still
+   comes from the `.form-section input[type="…"]` rules earlier in this
+   file, which already match by descendant. */
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 16px;
+    min-width: 0;
+}
+
+.field__label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-2, #b0b0c2);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.field__caption {
+    font-size: 12.5px;
+    line-height: 1.4;
+}
+
+/* Search-mode tabs on the Release detail page. Mirrors the legacy
+   VersionBrowser's segmented control — three options, single-select, the
+   active one carries a brighter background. */
+.oe-search-tabs {
+    display: inline-flex;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+
+.oe-search-tab {
+    background: transparent;
+    border: 0;
+    padding: 6px 14px;
+    color: var(--text-2, #b0b0c2);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    border-right: 1px solid var(--color-border-strong);
+}
+
+.oe-search-tab:last-child {
+    border-right: 0;
+}
+
+.oe-search-tab:hover {
+    background: rgba(124, 124, 144, 0.08);
+}
+
+.oe-search-tab--active {
+    background: var(--color-accent, #ffd54f);
+    color: var(--color-bg, #1a1a26);
+    font-weight: 600;
+}
+
+/* Source-file viewer (SourceFileViewer.razor). Uses CodeViewer for syntax
+   highlighting; the right rail is a thin outline pane with click-through
+   navigation. Token right-click navigation will land in a follow-up PR. */
+.source-viewer__layout {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 12px;
+    align-items: start;
+}
+
+@media (max-width: 1100px) {
+    .source-viewer__layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.source-viewer__code {
+    min-width: 0;
+}
+
+.source-viewer__outline {
+    /* Stick to the viewport so the outline follows the user up and
+       down a long file without scrolling out of reach. align-items:
+       start on the grid parent gives sticky a stable containing
+       block to compute against. */
+    position: sticky;
+    top: 12px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    background: var(--color-surface);
+    max-height: calc(100vh - 24px);
+    /* Both axes scroll inside the panel: y for long outlines (Base App
+       codeunits with 100+ procedures), x for procedure names that
+       overflow the 280px column. */
+    overflow: auto;
+}
+
+.source-viewer__outline h2 {
+    margin: 0 0 8px 0;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-2, #b0b0c2);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.source-viewer__outline-filter {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    margin: 0 0 10px 0;
+    background: var(--color-surface-2, #1c1c28);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-sm, 4px);
+    color: inherit;
+    font-size: 12.5px;
+}
+
+.source-viewer__outline-filter:focus {
+    outline: 1px solid var(--color-accent, #6585ff);
+    outline-offset: 0;
+}
+
+.source-viewer__outline-section + .source-viewer__outline-section {
+    margin-top: 8px;
+}
+
+.source-viewer__outline-section-toggle {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    width: 100%;
+    margin: 0;
+    padding: 4px 0;
+    background: none;
+    border: 0;
+    color: var(--text-2, #b0b0c2);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    text-align: left;
+}
+
+.source-viewer__outline-section-toggle:hover {
+    color: var(--text-1, #e6e6f0);
+}
+
+.source-viewer__outline-section-chevron {
+    display: inline-block;
+    width: 10px;
+    transition: transform 80ms ease-out;
+    transform: rotate(0deg);
+    font-size: 13px;
+    line-height: 1;
+}
+
+.source-viewer__outline-section-chevron.is-open {
+    transform: rotate(90deg);
+}
+
+.source-viewer__outline-section-title {
+    flex: 0 0 auto;
+}
+
+.source-viewer__outline-section-count {
+    color: var(--text-3, #7a7a8a);
+    font-weight: 500;
+}
+
+.source-viewer__outline-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.source-viewer__outline-item {
+    line-height: 1.45;
+    font-size: 12.5px;
+}
+
+.source-viewer__outline-item--child {
+    padding-left: 16px;
+}
+
+.source-viewer__outline-item a,
+.source-viewer__outline-item .source-viewer__outline-link {
+    text-decoration: none;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 1px 0;
+    /* Row widens to fit a fully-visible name; the outline panel's
+       overflow-x: auto then provides a horizontal scrollbar for long
+       names that exceed the column width. min-width: 100% keeps the
+       hover/click target spanning at least the panel width even when
+       the name is short. */
+    width: max-content;
+    min-width: 100%;
+    box-sizing: border-box;
+}
+
+/* Same-file outline rows render as <button> instead of <a> so the
+   click handler can bypass Blazor's enhanced-nav pipeline and
+   update the URL via history.replaceState — Nav.NavigateTo's
+   streaming diff strips CodeMirror's runtime-injected style tags.
+   Strip the default button chrome so the row stays visually
+   identical to the anchor variant used for cross-page object jumps. */
+.source-viewer__outline-link {
+    background: none;
+    border: 0;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+}
+
+.source-viewer__outline-link:hover .source-viewer__outline-name {
+    text-decoration: underline;
+}
+
+.source-viewer__outline-name {
+    /* AL identifiers in monospace — matches the editor's font and keeps
+       parameter signatures visually aligned. Names never truncate so a
+       glance answers "is this the procedure I'm looking for"; long
+       names spill horizontally and the outline panel's overflow-x:
+       auto provides a scrollbar. */
+    flex: 0 0 auto;
+    font-family: var(--font-mono);
+    white-space: nowrap;
+}
+
+.source-viewer__outline-sig {
+    /* The signature is the one column allowed to elide. flex: 1 1 0
+       + min-width: 0 lets it shrink to nothing so the line number
+       and (when needed) the next row's name stay aligned. The full
+       text always sits on the row's title attribute. */
+    flex: 1 1 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    min-width: 0;
+}
+
+.source-viewer__outline-line {
+    flex: 0 0 auto;
+    margin-left: auto;
+    padding-left: 8px;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-3, #7a7a8a);
+}
+
+.source-viewer__outline-find-heading {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-border-strong);
+}
+
+.source-viewer__find-list {
+    list-style: none;
+    margin: 0 0 12px 0;
+    padding: 0;
+}
+
+.source-viewer__find-list li {
+    line-height: 1.4;
+    padding: 2px 0;
+}
+
+.source-viewer__find-list a,
+.source-viewer__find-list .source-viewer__outline-link {
+    text-decoration: none;
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+}
+
+.source-viewer__find-snippet {
+    font-size: 11.5px;
+    color: var(--text-2, #b0b0c2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.source-viewer__notice {
+    margin-top: 12px;
+    padding: 8px 10px;
+    border: 1px dashed var(--color-border-strong);
+    border-radius: var(--radius);
+    font-size: 12.5px;
+}
+.source-viewer__body {
+    padding: 0;
+    margin: 0;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    overflow-x: auto;
+    max-height: calc(100vh - 220px);
+    overflow-y: auto;
+}
+
+.source-viewer__body > code {
+    display: block;
+    font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+    font-size: 12.5px;
+    line-height: 1.5;
+}
+
+.source-viewer__line {
+    display: grid;
+    grid-template-columns: 4rem 1fr;
+    gap: 12px;
+    padding: 0 12px;
+    white-space: pre;
+}
+
+.source-viewer__line:hover {
+    background: rgba(124, 124, 144, 0.08);
+}
+
+.source-viewer__line--hit {
+    background: rgba(255, 213, 79, 0.14);
+    border-left: 3px solid var(--color-accent, #ffd54f);
+    padding-left: 9px;
+}
+
+.source-viewer__lineno {
+    text-align: right;
+    color: var(--text-2, #b0b0c2);
+    user-select: none;
+}
+
+.source-viewer__text {
+    white-space: pre;
+}
+
 .object-explorer-upload .field__label {
     font-size: 12.5px;
     font-weight: 600;

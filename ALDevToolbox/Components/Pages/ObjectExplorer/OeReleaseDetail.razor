@@ -1,0 +1,521 @@
+@page "/object-explorer/release/{ReleaseId:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@using ALDevToolbox.Services.ObjectExplorer
+@using System.Web
+
+@*
+    Search-first Release page modelled on the legacy VersionBrowser. Filter
+    row across the top (Search in / Search / Object type / Extension /
+    Module / Namespace), result table below with Type / Id / Name /
+    Extension / Module / Namespace / Lines columns + a Find-references
+    icon on every row. Every result links straight to the source viewer.
+
+    The "Extension" filter maps to oe_modules (the .app — e.g. "Base
+    Application", "OIOUBL"); "Module" is parsed from the namespace's
+    second segment (the first under "Microsoft." or equivalent), matching
+    the legacy convention.
+*@
+
+<PageTitle>@(_release?.Label ?? "Release") · AL Dev Toolbox</PageTitle>
+
+<div class="object-explorer__browser">
+    @if (_release is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        <header class="admin-page__header">
+            <div>
+                <h1>@_release.Label</h1>
+                <p class="muted">
+                    @_release.ModuleCount module(s)
+                    @if (!string.IsNullOrEmpty(_release.BcVersion))
+                    {
+                        <span> · BC @_release.BcVersion</span>
+                    }
+                    <span> · @FormatStatus(_release.Status)</span>
+                </p>
+            </div>
+            <a class="btn" href="/object-explorer">
+                <Icon Name="arrow-left" Width="16" Height="16" />
+                <span>All Releases</span>
+            </a>
+        </header>
+
+        <div class="object-explorer__filters object-explorer__filters--with-scope">
+            <label class="field">
+                <span class="field__label">Search in</span>
+                <select class="field__input" @bind="_scope" @bind:after="OnScopeChanged"
+                        aria-label="What to search for">
+                    <option value="@SearchScope.Objects">Objects</option>
+                    <option value="@SearchScope.Procedures">Procedures</option>
+                    <option value="@SearchScope.Content">File content</option>
+                </select>
+            </label>
+
+            <label class="field">
+                <span class="field__label">Search</span>
+                <input type="search"
+                       class="admin-search-input"
+                       placeholder="@SearchPlaceholder"
+                       value="@_search"
+                       @oninput="OnSearchChanged"
+                       aria-label="@SearchPlaceholder" />
+            </label>
+
+            @if (_scope == SearchScope.Objects)
+            {
+                <label class="field">
+                    <span class="field__label">Object type</span>
+                    <select class="field__input" @bind="_kind" @bind:after="ReloadAsync">
+                        <option value="">All</option>
+                        @if (_kinds is not null)
+                        {
+                            @foreach (var k in _kinds)
+                            {
+                                <option value="@k">@k</option>
+                            }
+                        }
+                    </select>
+                </label>
+            }
+
+            <label class="field">
+                <span class="field__label">Extension</span>
+                <select class="field__input" @bind="_moduleFilter" @bind:after="ReloadAsync">
+                    <option value="">All</option>
+                    @if (_modules is not null)
+                    {
+                        @foreach (var m in _modules)
+                        {
+                            <option value="@m.Id">@m.Name</option>
+                        }
+                    }
+                </select>
+            </label>
+
+            @if (_scope == SearchScope.Objects)
+            {
+                <label class="field">
+                    <span class="field__label">Module</span>
+                    <select class="field__input" @bind="_moduleSegment" @bind:after="ReloadAsync">
+                        <option value="">All</option>
+                        @if (_moduleSegments is not null)
+                        {
+                            @foreach (var m in _moduleSegments)
+                            {
+                                <option value="@m">@m</option>
+                            }
+                        }
+                    </select>
+                </label>
+
+                <label class="field">
+                    <span class="field__label">Namespace</span>
+                    <input type="search"
+                           class="field__input"
+                           list="@($"namespace-list-{ReleaseId}")"
+                           placeholder="All"
+                           value="@_namespace"
+                           @oninput="OnNamespaceChanged"
+                           aria-label="Filter by namespace" />
+                    @if (_namespaces is not null)
+                    {
+                        <datalist id="@($"namespace-list-{ReleaseId}")">
+                            @foreach (var n in _namespaces)
+                            {
+                                <option value="@n"></option>
+                            }
+                        </datalist>
+                    }
+                </label>
+            }
+        </div>
+
+        @switch (_scope)
+        {
+            case SearchScope.Objects:
+                @RenderObjectsResults()
+                break;
+            case SearchScope.Procedures:
+                @RenderProceduresResults()
+                break;
+            case SearchScope.Content:
+                @RenderContentResults()
+                break;
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public int ReleaseId { get; set; }
+
+    private enum SearchScope { Objects, Procedures, Content }
+
+    private ReleaseDetail? _release;
+    private List<ReleaseModuleSummary>? _modules;
+    private List<string>? _kinds;
+    private List<string>? _moduleSegments;
+    private List<string>? _namespaces;
+
+    private SearchScope _scope = SearchScope.Objects;
+    private string _search = string.Empty;
+    private string _kind = string.Empty;
+    private string _moduleFilter = string.Empty;
+    private string _moduleSegment = string.Empty;
+    private string _namespace = string.Empty;
+
+    private List<ReleaseObjectMatch>? _objectResults;
+    private List<ReleaseProcedureMatch>? _procedureResults;
+    private List<ReleaseContentMatch>? _contentResults;
+
+    private string SearchPlaceholder => _scope switch
+    {
+        SearchScope.Procedures => "Procedure name",
+        SearchScope.Content    => "Text to grep across source",
+        _                      => "Object name or ID",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _release = await ObjectExplorer.GetReleaseAsync(ReleaseId);
+        if (_release is null) return;
+
+        _modules = await ObjectExplorer.ListModuleSummariesAsync(ReleaseId);
+        _kinds = await ObjectExplorer.ListObjectKindsInReleaseAsync(ReleaseId);
+        _namespaces = await ObjectExplorer.ListNamespacesInReleaseAsync(ReleaseId);
+        // Module = second namespace segment (e.g. Microsoft.Warehouse.ADCS →
+        // "Warehouse"). Derive client-side from the namespace list so a single
+        // query feeds both filters.
+        _moduleSegments = _namespaces
+            .Select(SecondNamespaceSegment)
+            .Where(s => !string.IsNullOrEmpty(s))
+            .Distinct()
+            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+            .ToList()!;
+
+        // Seed filter state from the URL query string so back-navigation
+        // from a result detail page restores what the user was searching.
+        HydrateFiltersFromUrl();
+
+        await ReloadAsync();
+    }
+
+    /// <summary>
+    /// Reads <c>scope</c>, <c>search</c>, <c>kind</c>, <c>module</c>,
+    /// <c>segment</c>, and <c>namespace</c> from <see cref="Nav.Uri"/>
+    /// and hydrates the corresponding filter fields. Unknown or invalid
+    /// values fall back to defaults so a malformed URL just clears the
+    /// filter rather than crashing the page.
+    /// </summary>
+    private void HydrateFiltersFromUrl()
+    {
+        var query = HttpUtility.ParseQueryString(new Uri(Nav.Uri).Query);
+        var scopeRaw = query["scope"];
+        if (!string.IsNullOrEmpty(scopeRaw)
+            && Enum.TryParse<SearchScope>(scopeRaw, ignoreCase: true, out var parsedScope))
+        {
+            _scope = parsedScope;
+        }
+        _search = query["search"] ?? string.Empty;
+        _kind = query["kind"] ?? string.Empty;
+        _moduleFilter = query["module"] ?? string.Empty;
+        _moduleSegment = query["segment"] ?? string.Empty;
+        _namespace = query["namespace"] ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Mirrors the current filter state into the URL bar via
+    /// <c>history.replaceState</c>, so browser back-navigation from a
+    /// result-detail page lands on the same search. Bypasses
+    /// <c>Nav.NavigateTo</c> so the component doesn't re-initialise on
+    /// every keystroke; the URL is the only thing that changes.
+    /// </summary>
+    private async Task UpdateUrlAsync()
+    {
+        // JS interop is forbidden during Blazor's static prerender
+        // phase — the runtime throws InvalidOperationException because
+        // the circuit isn't connected yet. The initial ReloadAsync
+        // call from OnInitializedAsync runs during prerender, so skip
+        // the URL sync there: the URL the user arrived on already
+        // matches the filter state we just hydrated from it, so
+        // there's nothing to sync. Subsequent reloads (search input,
+        // dropdown changes) fire after first render when interop is
+        // safe.
+        if (!_isInteractive) return;
+
+        var parts = new List<string>(6);
+        if (_scope != SearchScope.Objects) parts.Add("scope=" + Uri.EscapeDataString(_scope.ToString()));
+        if (!string.IsNullOrWhiteSpace(_search)) parts.Add("search=" + Uri.EscapeDataString(_search));
+        if (!string.IsNullOrWhiteSpace(_kind)) parts.Add("kind=" + Uri.EscapeDataString(_kind));
+        if (!string.IsNullOrWhiteSpace(_moduleFilter)) parts.Add("module=" + Uri.EscapeDataString(_moduleFilter));
+        if (!string.IsNullOrWhiteSpace(_moduleSegment)) parts.Add("segment=" + Uri.EscapeDataString(_moduleSegment));
+        if (!string.IsNullOrWhiteSpace(_namespace)) parts.Add("namespace=" + Uri.EscapeDataString(_namespace));
+
+        var url = $"/object-explorer/release/{ReleaseId}";
+        if (parts.Count > 0) url += "?" + string.Join("&", parts);
+
+        await JS.InvokeVoidAsync("history.replaceState", null, string.Empty, url);
+    }
+
+    private bool _isInteractive;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) _isInteractive = true;
+    }
+
+    private async Task OnScopeChanged()
+    {
+        // Crossing search-mode boundaries — the kind dropdown's options
+        // differ between Objects and Procedures, and Content has neither.
+        _kind = string.Empty;
+        await ReloadAsync();
+    }
+
+    private async Task OnSearchChanged(ChangeEventArgs args)
+    {
+        _search = args.Value?.ToString() ?? string.Empty;
+        await ReloadAsync();
+    }
+
+    private async Task OnNamespaceChanged(ChangeEventArgs args)
+    {
+        _namespace = args.Value?.ToString() ?? string.Empty;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        // Keep the URL in step with the filter state on every reload —
+        // ensures a result-detail click followed by browser-back lands
+        // back on the same search results without re-typing.
+        await UpdateUrlAsync();
+
+        long? moduleId = long.TryParse(_moduleFilter, out var m) ? m : null;
+        var trimmedSearch = string.IsNullOrWhiteSpace(_search) ? null : _search;
+        // Module segment translates to a namespace-prefix narrow when set;
+        // an explicit namespace input takes precedence.
+        var nsPrefix = !string.IsNullOrWhiteSpace(_namespace)
+            ? _namespace
+            : (string.IsNullOrWhiteSpace(_moduleSegment)
+                ? null
+                : $"Microsoft.{_moduleSegment}");
+
+        switch (_scope)
+        {
+            case SearchScope.Objects:
+                _objectResults = await ObjectExplorer.SearchObjectsInReleaseAsync(
+                    ReleaseId,
+                    new ObjectListFilter(
+                        Kind: string.IsNullOrEmpty(_kind) ? null : _kind,
+                        Search: trimmedSearch),
+                    moduleId: moduleId,
+                    namespacePrefix: nsPrefix,
+                    take: 500);
+                break;
+
+            case SearchScope.Procedures:
+                _procedureResults = await ObjectExplorer.SearchProceduresInReleaseAsync(
+                    ReleaseId, trimmedSearch, moduleId, take: 500);
+                break;
+
+            case SearchScope.Content:
+                _contentResults = string.IsNullOrEmpty(trimmedSearch)
+                    ? new()
+                    : await ObjectExplorer.SearchContentInReleaseAsync(
+                        ReleaseId, trimmedSearch, moduleId, take: 200);
+                break;
+        }
+    }
+
+    private static string? SecondNamespaceSegment(string ns)
+    {
+        // Split on '.' once, return the segment after the first.
+        // "Microsoft.Warehouse.ADCS" → "Warehouse"; "System" alone → null.
+        var dot = ns.IndexOf('.');
+        if (dot < 0 || dot == ns.Length - 1) return null;
+        var rest = ns[(dot + 1)..];
+        var nextDot = rest.IndexOf('.');
+        return nextDot < 0 ? rest : rest[..nextDot];
+    }
+
+    private static string FormatStatus(string s) => s switch
+    {
+        "ready"     => "Ready",
+        "ingesting" => "Ingesting…",
+        "failed"    => "Failed",
+        _           => s,
+    };
+
+    // ── Result renderers ───────────────────────────────────────────────
+
+    private RenderFragment RenderObjectsResults() => __builder =>
+    {
+        var hasFilters = !string.IsNullOrWhiteSpace(_search)
+            || !string.IsNullOrWhiteSpace(_kind)
+            || !string.IsNullOrWhiteSpace(_moduleFilter)
+            || !string.IsNullOrWhiteSpace(_moduleSegment)
+            || !string.IsNullOrWhiteSpace(_namespace);
+
+        if (_objectResults is null)
+        {
+            <p class="muted">Loading objects…</p>
+            return;
+        }
+        if (_objectResults.Count == 0)
+        {
+            <p class="muted">@(hasFilters ? "No objects match the current filter." : "No objects in this release yet.")</p>
+            return;
+        }
+        <p class="muted">Showing @_objectResults.Count.ToString("N0") object(s)@(_objectResults.Count >= 500 ? " (capped — narrow the search to see the rest)" : "").</p>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th scope="col">Type</th>
+                    <th scope="col">ID</th>
+                    <th scope="col">Name</th>
+                    <th scope="col">Extension</th>
+                    <th scope="col">Module</th>
+                    <th scope="col">Namespace</th>
+                    <th scope="col">Lines</th>
+                    <th scope="col"><span class="visually-hidden">Actions</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _objectResults)
+                {
+                    <tr>
+                        <td><span class="badge muted">@r.Kind</span></td>
+                        <td>@(r.ObjectId?.ToString() ?? "—")</td>
+                        <td>
+                            @if (r.SourceFileId is { } fid)
+                            {
+                                <a href="@($"/object-explorer/file/{fid}?line={r.LineNumber}")">@r.Name</a>
+                            }
+                            else
+                            {
+                                <span title="Source not shipped with this module" class="muted">@r.Name</span>
+                            }
+                        </td>
+                        <td>@r.ModuleName</td>
+                        <td>@(SecondNamespaceSegment(r.Namespace ?? string.Empty) ?? "—")</td>
+                        <td class="muted">@(r.Namespace ?? "—")</td>
+                        <td>@(r.SourceFileId is null ? "—" : r.FileLineCount.ToString("N0"))</td>
+                        <td class="row-actions">
+                            <a href="@($"/object-explorer/object/{r.Id}#find-references")"
+                               title="Find references"
+                               aria-label="Find references"
+                               class="btn btn--sm">
+                                <Icon Name="search" Width="14" Height="14" />
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+
+    private RenderFragment RenderProceduresResults() => __builder =>
+    {
+        if (_procedureResults is null)
+        {
+            <p class="muted">Loading procedures…</p>
+            return;
+        }
+        if (_procedureResults.Count == 0)
+        {
+            <p class="muted">No procedures match. Try a different name.</p>
+            return;
+        }
+        <p class="muted">Showing @_procedureResults.Count.ToString("N0") procedure(s).</p>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th scope="col">Module</th>
+                    <th scope="col">Object</th>
+                    <th scope="col">Kind</th>
+                    <th scope="col">Procedure</th>
+                    <th scope="col">Source</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _procedureResults)
+                {
+                    <tr>
+                        <td>@r.ModuleName</td>
+                        <td><a href="@($"/object-explorer/object/{r.ObjectId}")">@r.ObjectKind @r.ObjectName</a></td>
+                        <td>@r.ProcedureKind.Replace("_", " ")</td>
+                        <td>
+                            <strong>@r.Name</strong>
+                            @if (!string.IsNullOrEmpty(r.Signature))
+                            {
+                                <span class="muted">@r.Signature</span>
+                            }
+                            @if (!string.IsNullOrEmpty(r.ReturnType))
+                            {
+                                <span class="muted"> : @r.ReturnType</span>
+                            }
+                        </td>
+                        <td>
+                            @if (r.SourceFileId is { } fid)
+                            {
+                                <a href="@($"/object-explorer/file/{fid}?line={r.ObjectLineNumber}")">View source</a>
+                            }
+                            else
+                            {
+                                <span class="muted">—</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+
+    private RenderFragment RenderContentResults() => __builder =>
+    {
+        if (string.IsNullOrWhiteSpace(_search))
+        {
+            <p class="muted">Type a substring to grep across every <code>.al</code> file in this Release.</p>
+            return;
+        }
+        if (_contentResults is null)
+        {
+            <p class="muted">Searching…</p>
+            return;
+        }
+        if (_contentResults.Count == 0)
+        {
+            <p class="muted">No lines match "@_search". Try a shorter substring.</p>
+            return;
+        }
+        <p class="muted">Showing @_contentResults.Count.ToString("N0") line(s)@(_contentResults.Count >= 200 ? " (capped)" : "").</p>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th scope="col">Module</th>
+                    <th scope="col">File</th>
+                    <th scope="col">Line</th>
+                    <th scope="col">Snippet</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _contentResults)
+                {
+                    <tr>
+                        <td>@r.ModuleName</td>
+                        <td><code>@r.FilePath</code></td>
+                        <td><a href="@($"/object-explorer/file/{r.FileId}?line={r.LineNumber}")">@r.LineNumber</a></td>
+                        <td><code>@r.Snippet</code></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+}

@@ -140,10 +140,14 @@
         // Re-scroll whenever the parent bumps the sequence — covers both
         // "go to definition lands inside the current file" and "user clicks
         // the same outline / reference link again after scrolling away".
+        // Stamp _mountedScrollSequence *before* the await so a follow-up
+        // render (e.g. from the explicit-then-auto StateHasChanged pair
+        // a parent fires for one user click) doesn't queue a second
+        // identical scrollToLine while this one is still in flight.
         if (ScrollToLine is { } line && line >= 1 && _mountedScrollSequence != ScrollSequence)
         {
-            await _module.InvokeVoidAsync("scrollToLine", _editorId, line, true);
             _mountedScrollSequence = ScrollSequence;
+            await _module.InvokeVoidAsync("scrollToLine", _editorId, line, true);
         }
     }
 

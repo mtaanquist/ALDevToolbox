@@ -1,0 +1,180 @@
+@page "/admin/object-explorer/new"
+@attribute [Authorize(Roles = "Admin")]
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject IAntiforgery Antiforgery
+@inject IHttpContextAccessor Http
+@using ALDevToolbox.Services.ObjectExplorer
+@using Microsoft.AspNetCore.Antiforgery
+
+@*
+    Bulk-upload form for a Release of BC application .app files. Posts to
+    /admin/object-explorer/import (see ObjectExplorerEndpoints) so the multipart
+    body streams through Kestrel rather than the Blazor SignalR circuit —
+    a full BC DVD is ~150 MB and would choke as an InputFile.
+
+    Static-rendered: no @rendermode, no interactivity. The parent-Release
+    select is server-rendered from the existing Releases list.
+*@
+
+<PageTitle>Import Release · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Import Release</h1>
+            <p class="muted">
+                One Release is one snapshot of the BC ecosystem — first-party DVD,
+                a partner app stack, or a customer's full set. Pick all the
+                <code>.app</code> files in one upload; if your bundle includes
+                paired <code>.Source.zip</code> files for apps that don't embed
+                source, drop them in the second box and we'll match by name.
+            </p>
+        </div>
+        <a class="btn btn--sm" href="/admin/object-explorer">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to admin</span>
+        </a>
+    </header>
+
+    @if (_errorMessage is not null)
+    {
+        <div class="form-error" role="alert"><p>@_errorMessage</p></div>
+    }
+
+    <form method="post"
+          action="/admin/object-explorer/import"
+          enctype="multipart/form-data"
+          class="form-grid">
+        @if (_antiforgeryToken is not null)
+        {
+            <input type="hidden" name="@_antiforgeryToken.FormFieldName" value="@_antiforgeryToken.RequestToken" />
+        }
+
+        <section class="form-section">
+            <label class="field">
+                <span class="field__label">Label</span>
+                <input type="text" name="Label" required maxlength="120"
+                       placeholder="e.g. BC 25.18 DK or Acme Co on BC 25.18"
+                       class="field__input" />
+                <small class="field__caption muted">
+                    Shown in the version picker. Use something memorable —
+                    "BC 25.18 DK" beats "release_20260601_v3".
+                </small>
+            </label>
+
+            <label class="field">
+                <span class="field__label">Kind</span>
+                <select name="Kind" required class="field__input">
+                    <option value="first_party">First-party DVD (Microsoft)</option>
+                    <option value="third_party">Third-party / partner</option>
+                    <option value="customer">Customer-specific bundle</option>
+                </select>
+                <small class="field__caption muted">
+                    Third-party and customer Releases sit on top of a first-party
+                    parent; pick that parent below so cross-module references resolve.
+                </small>
+            </label>
+
+            <label class="field">
+                <span class="field__label">Parent Release (optional)</span>
+                <select name="ParentReleaseId" class="field__input">
+                    <option value="">— none (first-party, no parent) —</option>
+                    @if (_parentCandidates is not null)
+                    {
+                        @foreach (var r in _parentCandidates)
+                        {
+                            <option value="@r.Id">@r.Label</option>
+                        }
+                    }
+                </select>
+                <small class="field__caption muted">
+                    Required for third-party / customer Releases — the chain walker
+                    follows this pointer to resolve references that target objects
+                    in the parent's modules.
+                </small>
+            </label>
+        </section>
+
+        <section class="form-section">
+            <label class="field">
+                <span class="field__label">Application folder ZIP (recommended)</span>
+                <input type="file" name="FolderZip" accept=".zip" class="field__input" />
+                <small class="field__caption muted">
+                    Drop the DVD's <code>applications/</code> folder as one ZIP.
+                    We walk every <code>.app</code> entry, pair it with its
+                    sibling <code>.Source.zip</code>, and flag test apps
+                    (anything under a <code>Test*</code> folder), internal apps
+                    (Microsoft's <code>_Exclude_</code> marker), and language
+                    packs (translation-only modules) automatically.
+                    Up to 1 GB.
+                </small>
+            </label>
+        </section>
+
+        <section class="form-section">
+            <p class="muted">
+                — or pick individual files (useful for partner extensions you've built locally) —
+            </p>
+
+            <label class="field">
+                <span class="field__label">.app files</span>
+                <input type="file" name="AppFiles" accept=".app" multiple
+                       class="field__input" />
+                <small class="field__caption muted">
+                    Pick every <code>.app</code> for this Release in one go. We
+                    deduplicate by (AppId, Version) and SHA-256 the bytes — re-uploads
+                    of byte-identical .apps are silent no-ops.
+                </small>
+            </label>
+
+            <label class="field">
+                <span class="field__label">.Source.zip files (optional)</span>
+                <input type="file" name="SourceZips" accept=".zip,.Source.zip" multiple
+                       class="field__input" />
+                <small class="field__caption muted">
+                    Only needed when an .app was built without
+                    <code>IncludeSourceInSymbolFile=true</code>. We pair each zip
+                    with its .app by filename stem (case-insensitive).
+                </small>
+            </label>
+        </section>
+
+        <section class="form-section">
+            <button type="submit" class="btn btn--primary">
+                <Icon Name="upload" Width="16" Height="16" />
+                <span>Import Release</span>
+            </button>
+        </section>
+    </form>
+</div>
+
+@code {
+    private AntiforgeryTokenSet? _antiforgeryToken;
+    private List<ReleaseListItem>? _parentCandidates;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var ctx = Http.HttpContext;
+        if (ctx is not null)
+        {
+            _antiforgeryToken = Antiforgery.GetAndStoreTokens(ctx);
+
+            // Read query-string error feedback set by the endpoint's Redirect helper.
+            var err = ctx.Request.Query["err"].ToString();
+            var msg = ctx.Request.Query["msg"].ToString();
+            if (!string.IsNullOrEmpty(err) && !string.IsNullOrEmpty(msg))
+            {
+                _errorMessage = $"{err}: {msg}";
+            }
+        }
+
+        // Only ready first-party Releases are sensible parents — failed /
+        // ingesting ones would resolve references to nothing.
+        var all = await ObjectExplorer.ListReleasesAsync();
+        _parentCandidates = all
+            .Where(r => r.Status == "ready" && r.Kind == "first_party")
+            .OrderBy(r => r.Label)
+            .ToList();
+    }
+}

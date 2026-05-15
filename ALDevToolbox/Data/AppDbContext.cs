@@ -2,6 +2,13 @@ using ALDevToolbox.Data.Configurations;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
+using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
+using OeRelease = ALDevToolbox.Domain.Entities.ObjectExplorer.Release;
+using OeModuleFile = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleFile;
+using OeModuleObject = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject;
+using OeModuleSymbol = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol;
+using OeModuleVariable = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleVariable;
+using OeModuleReference = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleReference;
 
 namespace ALDevToolbox.Data;
 
@@ -134,10 +141,14 @@ public class AppDbContext : DbContext
     public DbSet<OrganizationFile> OrganizationFiles => Set<OrganizationFile>();
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
     public DbSet<Backup> Backups => Set<Backup>();
-    public DbSet<BaseAppVersion> BaseAppVersions => Set<BaseAppVersion>();
-    public DbSet<BaseAppExtension> BaseAppExtensions => Set<BaseAppExtension>();
-    public DbSet<BaseAppFile> BaseAppFiles => Set<BaseAppFile>();
-    public DbSet<BaseAppSymbol> BaseAppSymbols => Set<BaseAppSymbol>();
+    // Object Explorer (.app ingest) — see .design/object-explorer.md.
+    public DbSet<OeRelease> OeReleases => Set<OeRelease>();
+    public DbSet<OeModule> OeModules => Set<OeModule>();
+    public DbSet<OeModuleFile> OeModuleFiles => Set<OeModuleFile>();
+    public DbSet<OeModuleObject> OeModuleObjects => Set<OeModuleObject>();
+    public DbSet<OeModuleSymbol> OeModuleSymbols => Set<OeModuleSymbol>();
+    public DbSet<OeModuleVariable> OeModuleVariables => Set<OeModuleVariable>();
+    public DbSet<OeModuleReference> OeModuleReferences => Set<OeModuleReference>();
     public DbSet<Snippet> Snippets => Set<Snippet>();
     public DbSet<SnippetFile> SnippetFiles => Set<SnippetFile>();
     public DbSet<SnippetSuggestion> SnippetSuggestions => Set<SnippetSuggestion>();
@@ -176,10 +187,13 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OrganizationSettings>(modelBuilder);
         ScopeToOrganization<OrganizationAsset>(modelBuilder);
         ScopeToOrganization<OrganizationFile>(modelBuilder);
-        ScopeToOrganization<BaseAppVersion>(modelBuilder);
-        ScopeToOrganization<BaseAppExtension>(modelBuilder);
-        ScopeToOrganization<BaseAppFile>(modelBuilder);
-        ScopeToOrganization<BaseAppSymbol>(modelBuilder);
+        ScopeToOrganization<OeRelease>(modelBuilder);
+        ScopeToOrganization<OeModule>(modelBuilder);
+        ScopeToOrganization<OeModuleFile>(modelBuilder);
+        ScopeToOrganization<OeModuleObject>(modelBuilder);
+        ScopeToOrganization<OeModuleSymbol>(modelBuilder);
+        ScopeToOrganization<OeModuleVariable>(modelBuilder);
+        ScopeToOrganization<OeModuleReference>(modelBuilder);
         ScopeToOrganization<Snippet>(modelBuilder);
         ScopeToOrganization<SnippetFile>(modelBuilder);
         ScopeToOrganization<SnippetSuggestion>(modelBuilder);
