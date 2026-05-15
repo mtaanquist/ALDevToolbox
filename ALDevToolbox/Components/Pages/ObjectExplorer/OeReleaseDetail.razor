@@ -324,13 +324,13 @@
                             }
                             else
                             {
-                                <span>@r.Name</span>
+                                <span title="Source not shipped with this module" class="muted">@r.Name</span>
                             }
                         </td>
                         <td>@r.ModuleName</td>
                         <td>@(SecondNamespaceSegment(r.Namespace ?? string.Empty) ?? "—")</td>
                         <td class="muted">@(r.Namespace ?? "—")</td>
-                        <td>@r.FileLineCount.ToString("N0")</td>
+                        <td>@(r.SourceFileId is null ? "—" : r.FileLineCount.ToString("N0"))</td>
                         <td class="row-actions">
                             <a href="@($"/object-explorer/object/{r.Id}#find-references")"
                                title="Find references"

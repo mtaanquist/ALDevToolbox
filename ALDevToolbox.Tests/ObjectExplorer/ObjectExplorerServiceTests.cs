@@ -260,6 +260,33 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetFileOutlineAsync_includes_procedures_with_real_line_numbers()
+    {
+        // Regression for the post-PR-130 outline gap: ReleaseImportService
+        // used to write every sub-symbol with LineNumber=0, and the query
+        // filtered those out, so the outline showed only the object header.
+        // The import now runs AlSymbolExtractor over each .al file, so every
+        // procedure (and trigger / event subscriber) lands with a 1-based
+        // line and a non-zero column range the source viewer can scroll to.
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var fileId = read.OeModuleFiles.AsQueryable()
+            .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
+
+        var outline = await NewQuery(read).GetFileOutlineAsync(fileId);
+
+        outline.Should().Contain(i =>
+                i.Kind == "procedure"
+                || i.Kind == "internal_procedure"
+                || i.Kind == "local_procedure"
+                || i.Kind == "event_subscriber",
+            because: "DKCoreEventSubscribers ships procedures the symbol extractor must surface");
+        outline.Where(i => i.ObjectId is null).Should()
+            .OnlyContain(s => s.LineNumber > 0,
+                because: "sub-symbol rows must carry the line they were declared on");
+    }
+
+    [Fact]
     public async Task ListObjectsAsync_paginates_and_filters_by_kind()
     {
         var releaseId = await SeedSingleReleaseAsync();

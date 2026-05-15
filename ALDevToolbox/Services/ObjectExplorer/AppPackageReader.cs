@@ -20,6 +20,15 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 ///   <item><c>src/</c> (optional) — embedded source when <c>IncludeSourceInSymbolFile="true"</c></item>
 ///   <item>translations, layouts, images — ignored at this layer</item>
 /// </list>
+///
+/// Microsoft also ships <em>Ready2Run</em> wrapper <c>.app</c> files (modern
+/// DK / W1 DVDs use this for any module that ships a Ready2Run image — AMC
+/// Banking is the visible example). The wrapper is itself a NAVX-prefixed
+/// ZIP whose root contains <c>readytorunappmanifest.json</c> plus one nested
+/// <c>.app</c> that is the real Navx archive. When we see that shape we
+/// recurse into the nested <c>.app</c> and preserve the outer file's hash so
+/// the importer's idempotency check still keys off what the operator
+/// uploaded.
 /// </summary>
 public static class AppPackageReader
 {
@@ -59,6 +68,16 @@ public static class AppPackageReader
         using var zipStream = new MemoryStream(bytes, NavxPrefixLength, bytes.Length - NavxPrefixLength, writable: false);
         using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
 
+        if (IsReadyToRunWrapper(archive))
+        {
+            var innerBytes = await ExtractReadyToRunInnerAppAsync(archive, ct).ConfigureAwait(false);
+            await using var innerStream = new MemoryStream(innerBytes, writable: false);
+            var inner = await ReadAsync(innerStream, ct).ConfigureAwait(false);
+            // Keep the outer hash: ReleaseImportService.ImportOneAppAsync
+            // dedupes on the bytes the operator uploaded.
+            return inner with { AppFileHash = hash };
+        }
+
         var manifest = ReadManifest(archive);
         var symbols = ReadSymbolPackage(archive);
         var sourceFiles = manifest.IncludeSourceInSymbolFile
@@ -66,6 +85,45 @@ public static class AppPackageReader
             : Array.Empty<AppSourceFile>();
 
         return new AppPackage(manifest, symbols, sourceFiles, hash);
+    }
+
+    // ── Ready2Run wrapper ───────────────────────────────────────────────
+
+    private static bool IsReadyToRunWrapper(ZipArchive archive)
+        => FindEntry(archive, "NavxManifest.xml") is null
+            && FindEntry(archive, "readytorunappmanifest.json") is not null;
+
+    /// <summary>
+    /// Pulls the single root-level nested <c>.app</c> entry out of a
+    /// Ready2Run wrapper into a fresh byte array. The wrapper holds exactly
+    /// one <c>.app</c> at the archive root (any deeper <c>publishedartifacts/...</c>
+    /// entries are build-machine path artefacts, not real apps). Refuses
+    /// ambiguous archives with a diagnostic that lists what was found.
+    /// </summary>
+    private static async Task<byte[]> ExtractReadyToRunInnerAppAsync(ZipArchive archive, CancellationToken ct)
+    {
+        ZipArchiveEntry? inner = null;
+        foreach (var e in archive.Entries)
+        {
+            if (e.FullName.IndexOf('/') >= 0) continue;
+            if (!e.FullName.EndsWith(".app", StringComparison.OrdinalIgnoreCase)) continue;
+            if (inner is not null)
+            {
+                throw NotFoundInArchive(archive,
+                    "a single root-level nested .app (Ready2Run wrapper has multiple candidates)");
+            }
+            inner = e;
+        }
+        if (inner is null)
+        {
+            throw NotFoundInArchive(archive,
+                "a root-level nested .app inside the Ready2Run wrapper");
+        }
+
+        using var innerStream = inner.Open();
+        using var buffer = new MemoryStream();
+        await innerStream.CopyToAsync(buffer, ct).ConfigureAwait(false);
+        return buffer.ToArray();
     }
 
     private static bool IsNavxHeader(byte[] bytes)
