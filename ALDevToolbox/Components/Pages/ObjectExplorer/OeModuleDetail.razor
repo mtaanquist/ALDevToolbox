@@ -1,0 +1,153 @@
+@page "/oe-modules/{ModuleId:long}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Data.AppDbContext Db
+@using ALDevToolbox.Services.ObjectExplorer
+@using Microsoft.EntityFrameworkCore
+
+<PageTitle>@(_moduleName ?? "Module") · AL Dev Toolbox</PageTitle>
+
+<div class="object-explorer">
+    @if (_moduleName is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        <header class="admin-page__header">
+            <div>
+                <p class="muted">
+                    <a href="/releases">Releases</a>
+                    @if (_releaseId is { } rid)
+                    {
+                        <span> / <a href="@($"/releases/{rid}")">@_releaseLabel</a></span>
+                    }
+                </p>
+                <h1>@_moduleName</h1>
+                <p class="muted">@_modulePublisher · @_moduleVersion</p>
+            </div>
+        </header>
+
+        <section class="form-section">
+            <div class="form-row">
+                <label class="field">
+                    <span class="field__label">Kind</span>
+                    <select value="@_kind" @onchange="OnKindChange" class="field__input">
+                        <option value="">All kinds</option>
+                        <option value="codeunit">Codeunit</option>
+                        <option value="table">Table</option>
+                        <option value="page">Page</option>
+                        <option value="report">Report</option>
+                        <option value="xmlport">XmlPort</option>
+                        <option value="query">Query</option>
+                        <option value="interface">Interface</option>
+                        <option value="enum">Enum</option>
+                        <option value="tableextension">Table extension</option>
+                        <option value="pageextension">Page extension</option>
+                        <option value="reportextension">Report extension</option>
+                        <option value="enumextension">Enum extension</option>
+                        <option value="permissionset">Permission set</option>
+                        <option value="controladdin">Control add-in</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span class="field__label">Search</span>
+                    <input type="search"
+                           placeholder="Name or numeric id"
+                           value="@_search"
+                           @oninput="OnSearch"
+                           class="field__input" />
+                </label>
+            </div>
+        </section>
+
+        @if (_objects is null)
+        {
+            <p class="muted">Loading objects…</p>
+        }
+        else if (_objects.Rows.Count == 0)
+        {
+            <p class="muted">No objects match the current filter.</p>
+        }
+        else
+        {
+            <p class="muted">@_objects.TotalCount.ToString("N0") object(s).</p>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Kind</th>
+                        <th scope="col">Id</th>
+                        <th scope="col">Name</th>
+                        <th scope="col">Namespace</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var o in _objects.Rows)
+                    {
+                        <tr>
+                            <td>@o.Kind</td>
+                            <td>@(o.ObjectId?.ToString() ?? "—")</td>
+                            <td><a href="@($"/oe-objects/{o.Id}")">@o.Name</a></td>
+                            <td class="muted">@(o.Namespace ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public long ModuleId { get; set; }
+
+    private string? _moduleName;
+    private string? _modulePublisher;
+    private string? _moduleVersion;
+    private int? _releaseId;
+    private string? _releaseLabel;
+    private ObjectListPage? _objects;
+    private string _kind = string.Empty;
+    private string _search = string.Empty;
+    private const int PageSize = 200;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var header = await Db.OeModules.AsNoTracking()
+            .Where(m => m.Id == ModuleId)
+            .Select(m => new { m.Name, m.Publisher, m.Version, m.ReleaseId, ReleaseLabel = m.Release!.Label })
+            .SingleOrDefaultAsync();
+        if (header is null) return;
+
+        _moduleName = header.Name;
+        _modulePublisher = header.Publisher;
+        _moduleVersion = header.Version;
+        _releaseId = header.ReleaseId;
+        _releaseLabel = header.ReleaseLabel;
+
+        await ReloadAsync();
+    }
+
+    private async Task OnSearch(ChangeEventArgs args)
+    {
+        _search = args.Value?.ToString() ?? string.Empty;
+        await ReloadAsync();
+    }
+
+    private async Task OnKindChange(ChangeEventArgs args)
+    {
+        _kind = args.Value?.ToString() ?? string.Empty;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _objects = await ObjectExplorer.ListObjectsAsync(
+            ModuleId,
+            new ObjectListFilter(
+                Kind: string.IsNullOrEmpty(_kind) ? null : _kind,
+                Search: string.IsNullOrWhiteSpace(_search) ? null : _search),
+            skip: 0,
+            take: PageSize);
+    }
+}

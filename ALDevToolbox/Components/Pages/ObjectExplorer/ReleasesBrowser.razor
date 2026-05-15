@@ -1,0 +1,101 @@
+@page "/releases"
+@attribute [Authorize]
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@using ALDevToolbox.Services.ObjectExplorer
+
+<PageTitle>Releases · AL Dev Toolbox</PageTitle>
+
+<div class="object-explorer">
+    <header class="admin-page__header">
+        <div>
+            <h1>Releases</h1>
+            <p class="muted">
+                Imported snapshots of the Business Central ecosystem. Each Release
+                is a bundle of <code>.app</code> files — pick one to browse its
+                modules and find references across them.
+            </p>
+        </div>
+        <AuthorizeView Roles="Admin">
+            <Authorized>
+                <a class="btn" href="/admin/releases/new">
+                    <Icon Name="upload" Width="16" Height="16" />
+                    <span>Import Release</span>
+                </a>
+            </Authorized>
+        </AuthorizeView>
+    </header>
+
+    @if (_releases is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_releases.Count == 0)
+    {
+        <p class="muted">
+            No Releases have been imported yet.
+            <AuthorizeView Roles="Admin">
+                <Authorized>
+                    <a href="/admin/releases/new">Import one now</a>.
+                </Authorized>
+                <NotAuthorized>
+                    Ask an admin to import one.
+                </NotAuthorized>
+            </AuthorizeView>
+        </p>
+    }
+    else
+    {
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th scope="col">Label</th>
+                    <th scope="col">Kind</th>
+                    <th scope="col">BC version</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Imported</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _releases)
+                {
+                    <tr>
+                        <td>
+                            <a href="@($"/releases/{r.Id}")">
+                                <strong>@r.Label</strong>
+                            </a>
+                        </td>
+                        <td>@FormatKind(r.Kind)</td>
+                        <td>@(r.BcVersion ?? "—")</td>
+                        <td>@FormatStatus(r.Status)</td>
+                        <td>@r.ImportedAt.ToString("yyyy-MM-dd")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private List<ReleaseListItem>? _releases;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _releases = await ObjectExplorer.ListReleasesAsync();
+    }
+
+    private static string FormatKind(string kind) => kind switch
+    {
+        "first_party" => "First-party",
+        "third_party" => "Third-party",
+        "customer"    => "Customer",
+        _             => kind,
+    };
+
+    private static string FormatStatus(string s) => s switch
+    {
+        "ready"     => "Ready",
+        "ingesting" => "Ingesting…",
+        "failed"    => "Failed",
+        _           => s,
+    };
+}

@@ -1,0 +1,217 @@
+@page "/oe-objects/{ObjectId:long}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Data.AppDbContext Db
+@using ALDevToolbox.Services.ObjectExplorer
+@using Microsoft.EntityFrameworkCore
+
+<PageTitle>@(_object?.Name ?? "Object") · AL Dev Toolbox</PageTitle>
+
+<div class="object-explorer">
+    @if (_object is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        <header class="admin-page__header">
+            <div>
+                <p class="muted">
+                    <a href="/releases">Releases</a>
+                    @if (_releaseId is { } rid)
+                    {
+                        <span> / <a href="@($"/releases/{rid}")">@_releaseLabel</a></span>
+                    }
+                    <span> / <a href="@($"/oe-modules/{_object.ModuleId}")">@_object.ModuleName</a></span>
+                </p>
+                <h1>@_object.Name</h1>
+                <p class="muted">
+                    @_object.Kind
+                    @if (_object.ObjectId is { } oid)
+                    {
+                        <span> · id @oid</span>
+                    }
+                    @if (!string.IsNullOrEmpty(_object.Namespace))
+                    {
+                        <span> · @_object.Namespace</span>
+                    }
+                </p>
+            </div>
+        </header>
+
+        <div class="form-grid">
+            <section class="form-section">
+                <h2>Symbols</h2>
+                @if (_object.Symbols.Count == 0)
+                {
+                    <p class="muted">No symbols recorded for this object.</p>
+                }
+                else
+                {
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Kind</th>
+                                <th scope="col">Name</th>
+                                <th scope="col">Signature</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var s in _object.Symbols)
+                            {
+                                <tr>
+                                    <td>@s.Kind</td>
+                                    <td><strong>@s.Name</strong></td>
+                                    <td class="muted">@(s.Signature ?? "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+
+            <section class="form-section">
+                <h2>Variables</h2>
+                @if (_object.Variables.Count == 0)
+                {
+                    <p class="muted">No object-scoped variables.</p>
+                }
+                else
+                {
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Name</th>
+                                <th scope="col">Type</th>
+                                <th scope="col">Target</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var v in _object.Variables)
+                            {
+                                <tr>
+                                    <td><strong>@v.Name</strong></td>
+                                    <td>@v.TypeName</td>
+                                    <td class="muted">
+                                        @if (v.TargetObjectName is not null)
+                                        {
+                                            <span>@v.TargetObjectKind "@v.TargetObjectName"</span>
+                                            @if (v.TargetObjectId is { } tid)
+                                            {
+                                                <span> · id @tid</span>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span>—</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+
+            <section class="form-section">
+                <h2>Find references</h2>
+                <p class="muted">
+                    Every module in this Release's chain whose code mentions this
+                    object. Resolution follows the parent-Release pointer upward
+                    and shadows duplicate AppIds at the closest depth.
+                </p>
+                @if (_referencesLoading)
+                {
+                    <p class="muted">Loading…</p>
+                }
+                else if (_references is null)
+                {
+                    <button class="btn" @onclick="LoadReferences">
+                        <Icon Name="search" Width="14" Height="14" />
+                        <span>Find references</span>
+                    </button>
+                }
+                else if (_references.Count == 0)
+                {
+                    <p class="muted">No references found in this Release's chain.</p>
+                }
+                else
+                {
+                    <p class="muted">@_references.Count.ToString("N0") reference(s) found.</p>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Module</th>
+                                <th scope="col">Object</th>
+                                <th scope="col">Kind</th>
+                                <th scope="col">Reference kind</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in _references)
+                            {
+                                <tr>
+                                    <td>@r.SourceModuleName</td>
+                                    <td>
+                                        <a href="@($"/oe-objects/{r.SourceObjectId}")">@r.SourceObjectName</a>
+                                    </td>
+                                    <td>@r.SourceObjectKind</td>
+                                    <td>@r.ReferenceKind</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public long ObjectId { get; set; }
+
+    private ObjectDetail? _object;
+    private int? _releaseId;
+    private string? _releaseLabel;
+    private Guid? _moduleAppId;
+    private List<ReferenceMatch>? _references;
+    private bool _referencesLoading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _object = await ObjectExplorer.GetObjectAsync(ObjectId);
+        if (_object is null) return;
+
+        var modInfo = await Db.OeModules.AsNoTracking()
+            .Where(m => m.Id == _object.ModuleId)
+            .Select(m => new { m.AppId, m.ReleaseId, ReleaseLabel = m.Release!.Label })
+            .SingleOrDefaultAsync();
+        if (modInfo is not null)
+        {
+            _moduleAppId = modInfo.AppId;
+            _releaseId = modInfo.ReleaseId;
+            _releaseLabel = modInfo.ReleaseLabel;
+        }
+    }
+
+    private async Task LoadReferences()
+    {
+        if (_object is null || _moduleAppId is null || _releaseId is null) return;
+        _referencesLoading = true;
+        try
+        {
+            _references = await ObjectExplorer.FindReferencesAsync(
+                _releaseId.Value,
+                new FindReferencesQuery(
+                    TargetAppId: _moduleAppId.Value,
+                    TargetObjectKind: _object.Kind,
+                    TargetObjectId: _object.ObjectId,
+                    TargetObjectName: _object.Name));
+        }
+        finally
+        {
+            _referencesLoading = false;
+        }
+    }
+}
