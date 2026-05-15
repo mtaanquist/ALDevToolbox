@@ -272,7 +272,7 @@ public class ObjectExplorerService
         }
 
         return await q
-            .OrderBy(o => o.Module!.Name).ThenBy(o => o.Kind).ThenBy(o => o.Name)
+            .OrderBy(o => o.Kind).ThenBy(o => o.ObjectId).ThenBy(o => o.Name)
             .Take(take)
             .Select(o => new ReleaseObjectMatch(
                 o.Id, o.Kind, o.ObjectId, o.Name, o.Namespace,
@@ -331,7 +331,7 @@ public class ObjectExplorerService
         }
 
         return await q
-            .OrderBy(o => o.Module!.Name).ThenBy(o => o.Kind).ThenBy(o => o.Name)
+            .OrderBy(o => o.Kind).ThenBy(o => o.ObjectId).ThenBy(o => o.Name)
             .Take(take)
             .Select(o => new ReleaseObjectMatch(
                 o.Id, o.Kind, o.ObjectId, o.Name, o.Namespace,

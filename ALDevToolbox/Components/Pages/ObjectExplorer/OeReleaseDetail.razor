@@ -2,7 +2,10 @@
 @attribute [Authorize]
 @rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject NavigationManager Nav
+@inject IJSRuntime JS
 @using ALDevToolbox.Services.ObjectExplorer
+@using System.Web
 
 @*
     Search-first Release page modelled on the legacy VersionBrowser. Filter
@@ -196,7 +199,57 @@
             .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
             .ToList()!;
 
+        // Seed filter state from the URL query string so back-navigation
+        // from a result detail page restores what the user was searching.
+        HydrateFiltersFromUrl();
+
         await ReloadAsync();
+    }
+
+    /// <summary>
+    /// Reads <c>scope</c>, <c>search</c>, <c>kind</c>, <c>module</c>,
+    /// <c>segment</c>, and <c>namespace</c> from <see cref="Nav.Uri"/>
+    /// and hydrates the corresponding filter fields. Unknown or invalid
+    /// values fall back to defaults so a malformed URL just clears the
+    /// filter rather than crashing the page.
+    /// </summary>
+    private void HydrateFiltersFromUrl()
+    {
+        var query = HttpUtility.ParseQueryString(new Uri(Nav.Uri).Query);
+        var scopeRaw = query["scope"];
+        if (!string.IsNullOrEmpty(scopeRaw)
+            && Enum.TryParse<SearchScope>(scopeRaw, ignoreCase: true, out var parsedScope))
+        {
+            _scope = parsedScope;
+        }
+        _search = query["search"] ?? string.Empty;
+        _kind = query["kind"] ?? string.Empty;
+        _moduleFilter = query["module"] ?? string.Empty;
+        _moduleSegment = query["segment"] ?? string.Empty;
+        _namespace = query["namespace"] ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Mirrors the current filter state into the URL bar via
+    /// <c>history.replaceState</c>, so browser back-navigation from a
+    /// result-detail page lands on the same search. Bypasses
+    /// <c>Nav.NavigateTo</c> so the component doesn't re-initialise on
+    /// every keystroke; the URL is the only thing that changes.
+    /// </summary>
+    private async Task UpdateUrlAsync()
+    {
+        var parts = new List<string>(6);
+        if (_scope != SearchScope.Objects) parts.Add("scope=" + Uri.EscapeDataString(_scope.ToString()));
+        if (!string.IsNullOrWhiteSpace(_search)) parts.Add("search=" + Uri.EscapeDataString(_search));
+        if (!string.IsNullOrWhiteSpace(_kind)) parts.Add("kind=" + Uri.EscapeDataString(_kind));
+        if (!string.IsNullOrWhiteSpace(_moduleFilter)) parts.Add("module=" + Uri.EscapeDataString(_moduleFilter));
+        if (!string.IsNullOrWhiteSpace(_moduleSegment)) parts.Add("segment=" + Uri.EscapeDataString(_moduleSegment));
+        if (!string.IsNullOrWhiteSpace(_namespace)) parts.Add("namespace=" + Uri.EscapeDataString(_namespace));
+
+        var url = $"/object-explorer/release/{ReleaseId}";
+        if (parts.Count > 0) url += "?" + string.Join("&", parts);
+
+        await JS.InvokeVoidAsync("history.replaceState", null, string.Empty, url);
     }
 
     private async Task OnScopeChanged()
@@ -221,6 +274,11 @@
 
     private async Task ReloadAsync()
     {
+        // Keep the URL in step with the filter state on every reload —
+        // ensures a result-detail click followed by browser-back lands
+        // back on the same search results without re-typing.
+        await UpdateUrlAsync();
+
         long? moduleId = long.TryParse(_moduleFilter, out var m) ? m : null;
         var trimmedSearch = string.IsNullOrWhiteSpace(_search) ? null : _search;
         // Module segment translates to a namespace-prefix narrow when set;
