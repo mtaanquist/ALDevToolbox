@@ -253,6 +253,7 @@ app.MapAdminEndpoints();
 app.MapAccountEndpoints();
 app.MapAdminUserEndpoints();
 app.MapBaseAppEndpoints();
+app.MapObjectExplorerEndpoints();
 app.MapSiteAdminEndpoints();
 
 // Run migrations + bootstrap, then flip /readyz to green.
