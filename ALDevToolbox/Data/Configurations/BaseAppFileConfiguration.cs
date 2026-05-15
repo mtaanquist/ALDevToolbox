@@ -22,17 +22,30 @@ internal sealed class BaseAppFileConfiguration : IEntityTypeConfiguration<BaseAp
         entity.Property(e => e.Namespace).HasColumnName("namespace");
         entity.Property(e => e.Content).HasColumnName("content").IsRequired();
         entity.Property(e => e.LineCount).HasColumnName("line_count").IsRequired();
+        entity.Property(e => e.ExtensionId).HasColumnName("extension_id");
 
         entity.HasOne(e => e.Organization)
             .WithMany()
             .HasForeignKey(e => e.OrganizationId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        // Files keep their row when the extension is deleted (SetNull)
+        // so we don't lose source from the symbol index if the metadata
+        // gets cleaned up. The extension itself is cascade-deleted with
+        // the version, so this only matters in test/admin scenarios.
+        entity.HasOne(e => e.Extension)
+            .WithMany(x => x.Files)
+            .HasForeignKey(e => e.ExtensionId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         // Primary list ordering for the browser table.
         entity.HasIndex(e => new { e.VersionId, e.ObjectType, e.ObjectName });
 
         // Counterpart lookup when diffing across versions.
         entity.HasIndex(e => new { e.VersionId, e.ObjectType, e.ObjectId });
+
+        // Extension filter lookup.
+        entity.HasIndex(e => new { e.VersionId, e.ExtensionId });
 
         // Trigram indexes on lower(content) and lower(object_name) are added
         // via raw SQL in the migration — EF doesn't model GIN/gin_trgm_ops.

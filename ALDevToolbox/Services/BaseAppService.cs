@@ -89,6 +89,11 @@ public class BaseAppService
             query = query.Where(f => f.Namespace == ns);
         }
 
+        if (filter.ExtensionId is { } extId)
+        {
+            query = query.Where(f => f.ExtensionId == extId);
+        }
+
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
             var trimmed = filter.Search.Trim();
@@ -139,7 +144,10 @@ public class BaseAppService
                 f.ObjectId,
                 f.ObjectName,
                 f.Namespace,
-                f.LineCount))
+                f.LineCount,
+                f.ExtensionId,
+                f.Extension == null ? null : f.Extension.Name,
+                f.Extension == null ? null : f.Extension.Publisher))
             .ToListAsync(ct);
 
         return new BaseAppFilePage(rows, total);
@@ -319,6 +327,23 @@ public class BaseAppService
             .Select(f => f.Namespace!)
             .Distinct()
             .OrderBy(n => n)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Extensions imported into a version, ordered by publisher then
+    /// name. Drives the "Extension" filter dropdown on the version
+    /// browser. Returns lightweight rows only (no Files navigation).
+    /// </summary>
+    public Task<List<BaseAppExtensionRow>> ListExtensionsAsync(
+        int versionId, CancellationToken ct = default)
+    {
+        return _db.BaseAppExtensions
+            .AsNoTracking()
+            .Where(x => x.VersionId == versionId)
+            .OrderBy(x => x.Publisher).ThenBy(x => x.Name)
+            .Select(x => new BaseAppExtensionRow(
+                x.Id, x.AppId, x.Name, x.Publisher, x.AppVersion))
             .ToListAsync(ct);
     }
 
@@ -1065,6 +1090,7 @@ public sealed record BaseAppFileFilter(
     string? Module = null,
     string? Search = null,
     string? Namespace = null,
+    long? ExtensionId = null,
     BaseAppFileSort SortBy = BaseAppFileSort.ObjectType,
     bool SortDescending = false)
 {
@@ -1084,6 +1110,20 @@ public enum BaseAppFileSort
 
 /// <summary>One page of file rows plus the unfiltered total count.</summary>
 public sealed record BaseAppFilePage(IReadOnlyList<BaseAppFileListRow> Rows, int TotalCount);
+
+/// <summary>
+/// Lightweight projection of <c>base_app_extensions</c> for the filter
+/// dropdown — no <c>Files</c> nav, no version FK, just what the UI
+/// renders. <see cref="AppId"/> is included so admin tooling can
+/// disambiguate apps with the same display name from different
+/// publishers (rare in BaseApp but allowed by AL).
+/// </summary>
+public sealed record BaseAppExtensionRow(
+    long Id,
+    Guid AppId,
+    string Name,
+    string Publisher,
+    string AppVersion);
 
 /// <summary>
 /// Search modes for the version-browser search box. The page picks one
@@ -1155,7 +1195,10 @@ public sealed record BaseAppFileListRow(
     int? ObjectId,
     string ObjectName,
     string? Namespace,
-    int LineCount);
+    int LineCount,
+    long? ExtensionId,
+    string? ExtensionName,
+    string? ExtensionPublisher);
 
 /// <summary>
 /// Per-line diff result returned to the side-by-side viewer. <c>Number</c> is

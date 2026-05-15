@@ -288,6 +288,116 @@ public sealed class BaseAppImportServiceTests : IDisposable
         soft.DeletedAt.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task Import_with_app_json_creates_extension_and_stamps_files()
+    {
+        var svc = NewService();
+        var zip = BuildZip(new Dictionary<string, string>
+        {
+            ["app.json"] = """
+                {
+                    "id": "63ca2fa4-4f03-4f2b-a480-172fef340d3f",
+                    "name": "Base Application",
+                    "publisher": "Microsoft",
+                    "version": "28.1.123456.789"
+                }
+                """,
+            ["Sales/SalesPost.Codeunit.al"] = "codeunit 80 \"Sales-Post\"\n{ }\n",
+        });
+
+        var summary = await svc.ImportAsync(zip, NewRequest(major: 28));
+
+        using var ctx = _db.NewContext();
+        var ext = await ctx.BaseAppExtensions.SingleAsync(e => e.VersionId == summary.VersionId);
+        ext.Name.Should().Be("Base Application");
+        ext.Publisher.Should().Be("Microsoft");
+        ext.AppVersion.Should().Be("28.1.123456.789");
+        ext.AppId.Should().Be(Guid.Parse("63ca2fa4-4f03-4f2b-a480-172fef340d3f"));
+
+        var file = await ctx.BaseAppFiles.SingleAsync(f => f.VersionId == summary.VersionId);
+        file.ExtensionId.Should().Be(ext.Id);
+    }
+
+    [Fact]
+    public async Task Import_without_app_json_leaves_files_unattributed()
+    {
+        var svc = NewService();
+        var zip = BuildZip(new Dictionary<string, string>
+        {
+            ["Sales/SalesPost.Codeunit.al"] = "codeunit 80 \"Sales-Post\"\n{ }\n",
+        });
+
+        var summary = await svc.ImportAsync(zip, NewRequest(major: 28));
+
+        using var ctx = _db.NewContext();
+        var extCount = await ctx.BaseAppExtensions.CountAsync(e => e.VersionId == summary.VersionId);
+        extCount.Should().Be(0);
+
+        var file = await ctx.BaseAppFiles.SingleAsync(f => f.VersionId == summary.VersionId);
+        file.ExtensionId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Import_with_malformed_app_json_falls_back_to_unattributed()
+    {
+        // Missing required fields — extension creation should be skipped
+        // but the import itself still succeeds.
+        var svc = NewService();
+        var zip = BuildZip(new Dictionary<string, string>
+        {
+            ["app.json"] = "{ \"id\": \"63ca2fa4-4f03-4f2b-a480-172fef340d3f\" }",
+            ["Sales/SalesPost.Codeunit.al"] = "codeunit 80 \"Sales-Post\"\n{ }\n",
+        });
+
+        var summary = await svc.ImportAsync(zip, NewRequest(major: 28));
+
+        using var ctx = _db.NewContext();
+        (await ctx.BaseAppExtensions.AnyAsync(e => e.VersionId == summary.VersionId))
+            .Should().BeFalse();
+        (await ctx.BaseAppFiles.SingleAsync(f => f.VersionId == summary.VersionId))
+            .ExtensionId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Appending_two_apps_into_one_version_creates_two_extension_rows()
+    {
+        var svc = NewService();
+        var first = BuildZip(new Dictionary<string, string>
+        {
+            ["app.json"] = """
+                {"id":"63ca2fa4-4f03-4f2b-a480-172fef340d3f","name":"Base Application","publisher":"Microsoft","version":"28.1.1.1"}
+                """,
+            ["Sales/A.Codeunit.al"] = "codeunit 80 \"A\"\n{ }\n",
+        });
+        var firstSummary = await svc.ImportAsync(first, NewRequest(major: 28));
+
+        var second = NewService(); // Fresh context to avoid tracker bleed.
+        var secondZip = BuildZip(new Dictionary<string, string>
+        {
+            ["app.json"] = """
+                {"id":"11111111-1111-1111-1111-111111111111","name":"System Application","publisher":"Microsoft","version":"28.1.1.1"}
+                """,
+            ["System/B.Codeunit.al"] = "codeunit 90 \"B\"\n{ }\n",
+        });
+        await second.ImportAsync(secondZip, NewRequest(major: 28, mode: BaseAppImportMode.Append));
+
+        using var ctx = _db.NewContext();
+        var exts = await ctx.BaseAppExtensions
+            .Where(e => e.VersionId == firstSummary.VersionId)
+            .OrderBy(e => e.Name)
+            .ToListAsync();
+        exts.Select(e => e.Name).Should().BeEquivalentTo(new[] { "Base Application", "System Application" });
+
+        // Each file links to its own extension.
+        var files = await ctx.BaseAppFiles
+            .Where(f => f.VersionId == firstSummary.VersionId)
+            .Include(f => f.Extension)
+            .ToListAsync();
+        files.Should().HaveCount(2);
+        files.Single(f => f.ObjectName == "A").Extension!.Name.Should().Be("Base Application");
+        files.Single(f => f.ObjectName == "B").Extension!.Name.Should().Be("System Application");
+    }
+
     private BaseAppImportService NewService()
     {
         var ctx = _db.NewContext();

@@ -2585,7 +2585,16 @@ ul.form-field-error {
    and lets the three filter columns (when present) sit at their
    natural fraction. */
 .object-explorer__filters--with-scope {
-    grid-template-columns: minmax(160px, 0.8fr) minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(160px, 0.8fr) minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+/* Wrap onto a second row on narrower viewports so the Extension column
+   doesn't squeeze the search input down to nothing. The grid stays
+   filter-shaped; one row gives way to two. */
+@media (max-width: 1400px) {
+    .object-explorer__filters--with-scope {
+        grid-template-columns: minmax(160px, 0.8fr) minmax(0, 2fr) repeat(2, minmax(0, 1fr));
+    }
 }
 
 /* Sortable column headers in the version browser. Keeps the <th>'s

@@ -132,6 +132,7 @@ public class AppDbContext : DbContext
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
     public DbSet<Backup> Backups => Set<Backup>();
     public DbSet<BaseAppVersion> BaseAppVersions => Set<BaseAppVersion>();
+    public DbSet<BaseAppExtension> BaseAppExtensions => Set<BaseAppExtension>();
     public DbSet<BaseAppFile> BaseAppFiles => Set<BaseAppFile>();
     public DbSet<BaseAppSymbol> BaseAppSymbols => Set<BaseAppSymbol>();
     public DbSet<Snippet> Snippets => Set<Snippet>();
@@ -173,6 +174,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OrganizationAsset>(modelBuilder);
         ScopeToOrganization<OrganizationFile>(modelBuilder);
         ScopeToOrganization<BaseAppVersion>(modelBuilder);
+        ScopeToOrganization<BaseAppExtension>(modelBuilder);
         ScopeToOrganization<BaseAppFile>(modelBuilder);
         ScopeToOrganization<BaseAppSymbol>(modelBuilder);
         ScopeToOrganization<Snippet>(modelBuilder);

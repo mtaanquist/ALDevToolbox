@@ -19,6 +19,16 @@ public class BaseAppFile
     public int VersionId { get; set; }
     public BaseAppVersion? Version { get; set; }
 
+    /// <summary>
+    /// Owning extension — populated from <c>app.json</c> at import time.
+    /// Null on imports that didn't carry an <c>app.json</c> (legacy bundles
+    /// or hand-zipped folders) and on rows that pre-date the extension
+    /// column. A new import won't backfill the extension on existing
+    /// rows; users need to re-import to attribute them.
+    /// </summary>
+    public long? ExtensionId { get; set; }
+    public BaseAppExtension? Extension { get; set; }
+
     /// <summary>Relative path inside the imported ZIP.</summary>
     public string Path { get; set; } = string.Empty;
 
