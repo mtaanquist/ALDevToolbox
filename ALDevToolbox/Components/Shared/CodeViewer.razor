@@ -1,6 +1,5 @@
 @inject IJSRuntime JS
 @inject NavigationManager Nav
-@inject ILogger<CodeViewer> Logger
 @implements IAsyncDisposable
 
 @*
@@ -90,8 +89,6 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        Logger.LogInformation("[CodeViewer] OnAfterRenderAsync firstRender={FirstRender} ScrollToLine={ScrollToLine} ScrollSequence={Seq} mountedSeq={MountedSeq} editorId={EditorId}",
-            firstRender, ScrollToLine, ScrollSequence, _mountedScrollSequence, _editorId);
         if (firstRender)
         {
             _module = await JS.InvokeAsync<IJSObjectReference>("import", "/code-editor.js");
@@ -143,23 +140,14 @@
         // Re-scroll whenever the parent bumps the sequence — covers both
         // "go to definition lands inside the current file" and "user clicks
         // the same outline / reference link again after scrolling away".
+        // Stamp _mountedScrollSequence *before* the await so a follow-up
+        // render (e.g. from the explicit-then-auto StateHasChanged pair
+        // a parent fires for one user click) doesn't queue a second
+        // identical scrollToLine while this one is still in flight.
         if (ScrollToLine is { } line && line >= 1 && _mountedScrollSequence != ScrollSequence)
         {
-            Logger.LogInformation("[CodeViewer] scrollToLine firing: editorId={EditorId} line={Line}", _editorId, line);
-            // console.log lives on window, not on the imported module —
-            // route through IJSRuntime, not _module, or the call fails
-            // with "Could not find 'console.log' ('console' was
-            // undefined)" and takes the real scrollToLine call below
-            // down with it.
-            await JS.InvokeVoidAsync("console.log",
-                $"[CodeViewer] scrollToLine call: editorId={_editorId} line={line}");
-            await _module.InvokeVoidAsync("scrollToLine", _editorId, line, true);
             _mountedScrollSequence = ScrollSequence;
-        }
-        else
-        {
-            Logger.LogInformation("[CodeViewer] scroll condition NOT met: ScrollToLineHasValue={HasValue} mountedSeq={Mounted} ScrollSequence={Seq}",
-                ScrollToLine.HasValue, _mountedScrollSequence, ScrollSequence);
+            await _module.InvokeVoidAsync("scrollToLine", _editorId, line, true);
         }
     }
 

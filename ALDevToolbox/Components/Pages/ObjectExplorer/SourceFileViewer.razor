@@ -5,7 +5,6 @@
 @inject IHttpContextAccessor Http
 @inject NavigationManager Nav
 @inject IJSRuntime JS
-@inject ILogger<SourceFileViewer> Logger
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Components.Shared
 
@@ -245,31 +244,31 @@
     /// </summary>
     private async Task JumpToLineInThisFileAsync(int line)
     {
-        Logger.LogInformation("[SourceFileViewer] JumpToLineInThisFileAsync entered: line={Line} FileId={FileId} priorSeq={Seq}",
-            line, FileId, _scrollSequence);
         _highlightLine = line;
         _scrollSequence++;
-        Logger.LogInformation("[SourceFileViewer] state mutated: _highlightLine={HighlightLine} _scrollSequence={Seq}",
-            _highlightLine, _scrollSequence);
+        // Queue the render *before* the JS interop. Auto-StateHasChanged
+        // at end-of-handler only fires once the awaited Task completes
+        // successfully — a hung or throwing replaceState would
+        // otherwise block the render and the user-visible scroll
+        // wouldn't happen.
         StateHasChanged();
-        Logger.LogInformation("[SourceFileViewer] StateHasChanged called");
 
+        // URL bar update is best-effort: shareable / back-buttonable
+        // link to the line. A failure (mid-nav, half-detached
+        // circuit) shouldn't bork the click.
         try
         {
-            // Best-effort URL update — also logs to browser console so
-            // we can see whether the JS side fires.
-            await JS.InvokeVoidAsync("console.log",
-                $"[SourceFileViewer] history.replaceState about to fire for line={line}");
             await JS.InvokeVoidAsync(
                 "history.replaceState",
                 null,
                 string.Empty,
                 $"/object-explorer/file/{FileId}?line={line}");
-            Logger.LogInformation("[SourceFileViewer] history.replaceState completed");
         }
-        catch (Exception ex)
+        catch (JSException)
         {
-            Logger.LogWarning(ex, "[SourceFileViewer] JS interop in JumpToLineInThisFileAsync failed");
+        }
+        catch (InvalidOperationException)
+        {
         }
     }
 

@@ -583,14 +583,12 @@ export function mountReadOnly(container, value, language, options) {
 // transaction system was leaving the viewport in inconsistent states
 // when triggered from outside a CM-initiated update.
 export function scrollToLine(id, lineNumber, flash) {
-    console.log("[code-editor.js] scrollToLine called", { id, lineNumber, flash, knownEditors: Array.from(editors.keys()) });
     const e = editors.get(id);
-    if (!e) { console.warn("[code-editor.js] scrollToLine: editor not found for id", id); return; }
+    if (!e) return;
     const view = e.view;
-    if (!Number.isInteger(lineNumber) || lineNumber < 1) { console.warn("[code-editor.js] scrollToLine: invalid line", lineNumber); return; }
+    if (!Number.isInteger(lineNumber) || lineNumber < 1) return;
     const totalLines = view.state.doc.lines;
     const safeLine = Math.min(lineNumber, totalLines);
-    console.log("[code-editor.js] scrollToLine: about to scroll to safeLine", safeLine, "totalLines", totalLines);
 
     const findLineEl = () => {
         const line = view.state.doc.line(safeLine);
@@ -607,44 +605,33 @@ export function scrollToLine(id, lineNumber, flash) {
         const block = view.lineBlockAt(line.from);
         const scroller = view.scrollDOM;
         const scrollMax = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-        console.log("[code-editor.js] doScroll", {
-            safeLine,
-            blockTop: block.top,
-            blockHeight: block.height,
-            scrollerScrollHeight: scroller.scrollHeight,
-            scrollerClientHeight: scroller.clientHeight,
-            scrollMax,
-            scrollerScrollTopBefore: scroller.scrollTop,
-            documentScrollY: window.scrollY,
-        });
         if (scrollMax > 0) {
             // Bounded editor (default mount) — scroll the editor's own
             // scroller. Direct scrollTop avoids the inconsistent viewport
             // state we used to see going through EditorView.scrollIntoView.
             const target = block.top - scroller.clientHeight / 2 + block.height / 2;
             scroller.scrollTop = Math.max(0, Math.min(scrollMax, target));
-            console.log("[code-editor.js] doScroll → bounded scroller, target", target, "applied", scroller.scrollTop);
         } else {
             // Fluid mount (`Fluid="true"`): the editor's scroller is the
             // same height as its content (overflow: visible), so it
-            // can't scroll. CodeMirror virtualises lines outside its
+            // can't scroll. CodeMirror virtualises lines outside the
             // initial viewport, so the line element may not exist for
             // far-away targets like line 500 of 1000. Prefer
             // EditorView.scrollIntoView — CM materialises the line
-            // before scrolling and routes the scroll through the
-            // appropriate outer container. Falls back to lineEl-based
-            // scrollIntoView for the in-viewport case (cheaper, and
-            // it's what the flash branch later expects to find).
+            // before scrolling and routes through the appropriate
+            // outer container. Explicit `x: "start"` keeps the line's
+            // first column visible; the default ("nearest") leaves
+            // any pre-existing horizontal scroll in place, which
+            // looks like the first few characters got cut off after
+            // the jump. Fast-path lineEl.scrollIntoView when the
+            // target is already in the rendered viewport.
             const lineEl = findLineEl();
-            console.log("[code-editor.js] doScroll → fluid mount, lineEl found?", !!lineEl);
             if (lineEl) {
-                lineEl.scrollIntoView({ block: "center", behavior: "auto" });
-                console.log("[code-editor.js] doScroll → after lineEl scrollIntoView, window.scrollY", window.scrollY);
+                lineEl.scrollIntoView({ block: "center", inline: "start", behavior: "auto" });
             } else {
                 view.dispatch({
-                    effects: EditorView.scrollIntoView(line.from, { y: "center" }),
+                    effects: EditorView.scrollIntoView(line.from, { y: "center", x: "start" }),
                 });
-                console.log("[code-editor.js] doScroll → dispatched EditorView.scrollIntoView for virtualized line");
             }
         }
     };
