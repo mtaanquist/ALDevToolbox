@@ -2891,9 +2891,109 @@ ul.form-field-error {
     line-height: 1.4;
 }
 
+/* Search-mode tabs on the Release detail page. Mirrors the legacy
+   VersionBrowser's segmented control — three options, single-select, the
+   active one carries a brighter background. */
+.oe-search-tabs {
+    display: inline-flex;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+
+.oe-search-tab {
+    background: transparent;
+    border: 0;
+    padding: 6px 14px;
+    color: var(--text-2, #b0b0c2);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    border-right: 1px solid var(--color-border-strong);
+}
+
+.oe-search-tab:last-child {
+    border-right: 0;
+}
+
+.oe-search-tab:hover {
+    background: rgba(124, 124, 144, 0.08);
+}
+
+.oe-search-tab--active {
+    background: var(--color-accent, #ffd54f);
+    color: var(--color-bg, #1a1a26);
+    font-weight: 600;
+}
+
 /* Source-file viewer (SourceFileViewer.razor). Plain numbered lines —
    syntax highlighting is deliberately out of scope until we revisit the
    CodeMirror integration that PR 6 dropped. */
+.source-viewer__layout {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 12px;
+    align-items: start;
+}
+
+@media (max-width: 1100px) {
+    .source-viewer__layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.source-viewer__outline {
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    background: var(--color-surface);
+    max-height: calc(100vh - 220px);
+    overflow-y: auto;
+}
+
+.source-viewer__outline h2 {
+    margin: 0 0 8px 0;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-2, #b0b0c2);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.source-viewer__outline-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.source-viewer__outline-item {
+    line-height: 1.5;
+}
+
+.source-viewer__outline-item--symbol {
+    padding-left: 16px;
+    font-size: 12.5px;
+}
+
+.source-viewer__outline-item a {
+    text-decoration: none;
+    display: inline-block;
+    padding: 1px 0;
+}
+
+.source-viewer__outline-kind {
+    color: var(--text-2, #b0b0c2);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-right: 6px;
+}
+
+.source-viewer__outline-sig {
+    margin-left: 4px;
+    font-size: 12px;
+}
 .source-viewer__body {
     padding: 0;
     margin: 0;

@@ -187,3 +187,56 @@ public sealed record SourceFileHeader(
     string ReleaseLabel,
     string Path,
     int LineCount);
+
+/// <summary>
+/// One procedure-search hit on the Release search page. Carries the source
+/// file pointer so the row can deep-link straight to the declaration line.
+/// </summary>
+public sealed record ReleaseProcedureMatch(
+    long Id,
+    long ObjectId,
+    string ObjectKind,
+    string ObjectName,
+    string ModuleName,
+    string ProcedureKind,
+    string Name,
+    string? Signature,
+    string? ReturnType,
+    long? SourceFileId,
+    int ObjectLineNumber);
+
+/// <summary>
+/// One content-search hit on the Release search page. The snippet is the
+/// matched line's text trimmed to a reasonable display length; the file
+/// pointer + line number deep-link straight into the source viewer with the
+/// hit row highlighted.
+/// </summary>
+public sealed record ReleaseContentMatch(
+    long FileId,
+    string FilePath,
+    long ModuleId,
+    string ModuleName,
+    int LineNumber,
+    string Snippet);
+
+/// <summary>
+/// One row in the outline pane on the source-file viewer. Objects and their
+/// symbols are flattened so the panel can render them as a single ordered
+/// list keyed by line number — kind tells the renderer which icon to use.
+/// </summary>
+public sealed record SourceFileOutlineItem(
+    string Kind,
+    string Name,
+    string? Signature,
+    int LineNumber,
+    long? ObjectId);
+
+/// <summary>
+/// Minimal Module summary used by the search-filter dropdown. Lighter than
+/// <see cref="ModuleListItem"/> — none of the row counts or test/internal
+/// flags matter for the filter widget.
+/// </summary>
+public sealed record ReleaseModuleSummary(
+    long Id,
+    string Name,
+    string Publisher);

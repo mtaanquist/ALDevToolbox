@@ -5,16 +5,18 @@
 @using ALDevToolbox.Services.ObjectExplorer
 
 @*
-    Source-file viewer for one .al file out of an imported Release. Reads the
-    body once via GetFileAsync, renders as a numbered table so a CSS hover
-    state can light up the line the URL pointed at (?line=N) — the find-
-    references panel and the per-object "View source" link both use that to
-    deep-link straight to the declaration.
+    Source-file viewer with an outline panel. Reads the body once via
+    GetFileAsync, renders as a numbered table; the right-hand outline lists
+    every object + symbol declared in the file with click-through to the
+    line. The find-references panel and the per-object "View source" link
+    both deep-link via ?line=N which lights up the target row in CSS.
 
-    No syntax highlighting yet — the legacy CodeMirror integration was scoped
-    out in PR 6 along with the in-source navigation. Plain <pre>-style lines
-    keep the page renderable without a JS bundle while still giving the
-    "click through to the actual code" payoff the rest of the surface lacks.
+    No syntax highlighting yet — the legacy CodeMirror integration was
+    scoped out in PR 6. Plain <pre>-style lines keep the page renderable
+    without a JS bundle while still giving the "click through to the
+    actual code" payoff. Token right-click navigation (Find references /
+    Go to definition on a clicked identifier) is the next step on top of
+    this surface.
 *@
 
 <PageTitle>@(_header?.Path ?? "Source") · AL Dev Toolbox</PageTitle>
@@ -38,7 +40,35 @@
             </div>
         </header>
 
-        <pre class="source-viewer__body"><code>@RenderNumberedLines(_file.Content, _highlightLine)</code></pre>
+        <div class="source-viewer__layout">
+            <pre class="source-viewer__body"><code>@RenderNumberedLines(_file.Content, _highlightLine)</code></pre>
+
+            <aside class="source-viewer__outline">
+                <h2>Outline</h2>
+                @if (_outline is null || _outline.Count == 0)
+                {
+                    <p class="muted">No outline available.</p>
+                }
+                else
+                {
+                    <ul class="source-viewer__outline-list">
+                        @foreach (var item in _outline)
+                        {
+                            <li class="@OutlineItemClass(item)">
+                                <a href="@OutlineHref(item)">
+                                    <span class="source-viewer__outline-kind">@FormatKind(item.Kind)</span>
+                                    <span class="source-viewer__outline-name">@item.Name</span>
+                                    @if (!string.IsNullOrEmpty(item.Signature))
+                                    {
+                                        <span class="source-viewer__outline-sig muted">@item.Signature</span>
+                                    }
+                                </a>
+                            </li>
+                        }
+                    </ul>
+                }
+            </aside>
+        </div>
     }
 </div>
 
@@ -47,16 +77,15 @@
 
     private SourceFileHeader? _header;
     private SourceFileDetail? _file;
+    private List<SourceFileOutlineItem>? _outline;
     private int? _highlightLine;
 
     protected override async Task OnInitializedAsync()
     {
-        // Two queries: a small header projection for the breadcrumb and a
-        // separate body load. Lets the header render even if the body is
-        // somehow truncated, and keeps the AsNoTracking shapes narrow.
         _header = await ObjectExplorer.GetFileHeaderAsync(FileId);
         if (_header is null) return;
         _file = await ObjectExplorer.GetFileAsync(FileId);
+        _outline = await ObjectExplorer.GetFileOutlineAsync(FileId);
 
         var ctx = Http.HttpContext;
         if (ctx is not null && int.TryParse(ctx.Request.Query["line"], out var line) && line > 0)
@@ -65,18 +94,37 @@
         }
     }
 
-    /// <summary>
-    /// Splits the content into 1-based numbered lines and emits a tiny
-    /// table-shaped markup. The current renderer just stamps a CSS class on
-    /// the highlighted line so styling lives in the stylesheet; we don't try
-    /// to anchor-scroll yet — the deep-linked line is at the top of the
-    /// viewport for now.
-    /// </summary>
+    private string OutlineHref(SourceFileOutlineItem item)
+    {
+        // Objects (the major declarations) deserve a real navigation hop so
+        // the user can find references / jump to symbols on them. Sub-symbol
+        // rows just scroll the source view to their line via the fragment
+        // anchor stamped by RenderNumberedLines.
+        return item.ObjectId is { } oid
+            ? $"/object-explorer/object/{oid}"
+            : $"#L{item.LineNumber}";
+    }
+
+    private string OutlineItemClass(SourceFileOutlineItem item) =>
+        item.ObjectId is null
+            ? "source-viewer__outline-item source-viewer__outline-item--symbol"
+            : "source-viewer__outline-item source-viewer__outline-item--object";
+
+    private static string FormatKind(string kind) => kind switch
+    {
+        "internal_procedure" => "internal proc",
+        "local_procedure"    => "local proc",
+        "procedure"          => "procedure",
+        "event_publisher"    => "event publisher",
+        "event_subscriber"   => "event subscriber",
+        "trigger"            => "trigger",
+        "field"              => "field",
+        _                    => kind,
+    };
+
     private static RenderFragment RenderNumberedLines(string content, int? highlight) => __builder =>
     {
         if (string.IsNullOrEmpty(content)) return;
-
-        // Split keeping the line endings consistent across LF / CRLF.
         var lines = content.Replace("\r\n", "\n").Split('\n');
         for (var i = 0; i < lines.Length; i++)
         {

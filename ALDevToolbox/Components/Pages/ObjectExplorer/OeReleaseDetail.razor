@@ -4,7 +4,16 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @using ALDevToolbox.Services.ObjectExplorer
 
-<PageTitle>@(_release?.Label ?? "Release") · Releases · AL Dev Toolbox</PageTitle>
+@*
+    Search-first Release page. Tabs across Objects / Procedures / Content,
+    plus kind + module filter dropdowns. Modelled on the legacy
+    VersionBrowser — that page was the heart of the Object Explorer and
+    its replacement on this branch had ended up as a plain modules list.
+    Every search-result row links to the file viewer at the matching line
+    so the user can land in source from any hit.
+*@
+
+<PageTitle>@(_release?.Label ?? "Release") · AL Dev Toolbox</PageTitle>
 
 <div class="object-explorer">
     @if (_release is null)
@@ -32,64 +41,84 @@
                     <span> · @FormatStatus(_release.Status)</span>
                 </p>
             </div>
-            <a class="btn" href="@($"/object-explorer/release/{ReleaseId}/search")">
-                <Icon Name="search" Width="16" Height="16" />
-                <span>Search objects</span>
-            </a>
         </header>
 
         <section class="form-section">
-            <label class="field field--inline">
-                <span class="field__label">Search</span>
-                <input type="search"
-                       placeholder="Filter by name or publisher"
-                       value="@_search"
-                       @oninput="OnSearch"
-                       class="field__input" />
-            </label>
+            <div class="oe-search-tabs">
+                <button class="@TabClass(SearchMode.Objects)" @onclick="() => SwitchTab(SearchMode.Objects)">Objects</button>
+                <button class="@TabClass(SearchMode.Procedures)" @onclick="() => SwitchTab(SearchMode.Procedures)">Procedures</button>
+                <button class="@TabClass(SearchMode.Content)" @onclick="() => SwitchTab(SearchMode.Content)">Content</button>
+            </div>
+
+            <div class="form-row">
+                <label class="field">
+                    <span class="field__label">Search</span>
+                    <input type="search"
+                           placeholder="@SearchPlaceholder()"
+                           value="@_search"
+                           @oninput="OnSearchInput"
+                           class="field__input"
+                           autofocus />
+                </label>
+                @if (_mode != SearchMode.Content)
+                {
+                    <label class="field">
+                        <span class="field__label">Kind</span>
+                        <select value="@_kind" @onchange="OnKindChange" class="field__input">
+                            <option value="">All kinds</option>
+                            @if (_mode == SearchMode.Objects)
+                            {
+                                <option value="codeunit">Codeunit</option>
+                                <option value="table">Table</option>
+                                <option value="page">Page</option>
+                                <option value="report">Report</option>
+                                <option value="xmlport">XmlPort</option>
+                                <option value="query">Query</option>
+                                <option value="interface">Interface</option>
+                                <option value="enum">Enum</option>
+                                <option value="tableextension">Table extension</option>
+                                <option value="pageextension">Page extension</option>
+                                <option value="reportextension">Report extension</option>
+                                <option value="enumextension">Enum extension</option>
+                                <option value="permissionset">Permission set</option>
+                                <option value="controladdin">Control add-in</option>
+                            }
+                            else
+                            {
+                                <option value="procedure">Procedure</option>
+                                <option value="internal_procedure">Internal procedure</option>
+                                <option value="trigger">Trigger</option>
+                            }
+                        </select>
+                    </label>
+                }
+                <label class="field">
+                    <span class="field__label">Module</span>
+                    <select value="@_moduleFilter" @onchange="OnModuleChange" class="field__input">
+                        <option value="">All modules</option>
+                        @if (_modules is not null)
+                        {
+                            @foreach (var m in _modules)
+                            {
+                                <option value="@m.Id">@m.Name (@m.Publisher)</option>
+                            }
+                        }
+                    </select>
+                </label>
+            </div>
         </section>
 
-        @if (_modules is null)
+        @if (_mode == SearchMode.Objects)
         {
-            <p class="muted">Loading modules…</p>
+            <ObjectResultsTable Results="_objectResults" />
         }
-        else if (_modules.Count == 0)
+        else if (_mode == SearchMode.Procedures)
         {
-            <p class="muted">No modules match the current filter.</p>
+            <ProcedureResultsTable Results="_procedureResults" />
         }
         else
         {
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th scope="col">Name</th>
-                        <th scope="col">Publisher</th>
-                        <th scope="col">Version</th>
-                        <th scope="col">Objects</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var m in _modules)
-                    {
-                        <tr>
-                            <td>
-                                <a href="@($"/object-explorer/module/{m.Id}")"><strong>@m.Name</strong></a>
-                                @if (m.IsTest)
-                                {
-                                    <span class="badge muted">Test</span>
-                                }
-                                @if (m.IsInternal)
-                                {
-                                    <span class="badge muted">Internal</span>
-                                }
-                            </td>
-                            <td>@m.Publisher</td>
-                            <td>@m.Version</td>
-                            <td>@m.ObjectCount.ToString("N0")</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+            <ContentResultsTable Results="_contentResults" SearchTerm="_search" />
         }
     }
 </div>
@@ -97,25 +126,110 @@
 @code {
     [Parameter] public int ReleaseId { get; set; }
 
+    private enum SearchMode { Objects, Procedures, Content }
+
     private ReleaseDetail? _release;
-    private List<ModuleListItem>? _modules;
+    private List<ReleaseModuleSummary>? _modules;
+    private SearchMode _mode = SearchMode.Objects;
     private string _search = string.Empty;
+    private string _kind = string.Empty;
+    private string _moduleFilter = string.Empty;
+
+    private List<ReleaseObjectMatch>? _objectResults;
+    private List<ReleaseProcedureMatch>? _procedureResults;
+    private List<ReleaseContentMatch>? _contentResults;
 
     protected override async Task OnInitializedAsync()
     {
         _release = await ObjectExplorer.GetReleaseAsync(ReleaseId);
-        if (_release is not null)
+        if (_release is null) return;
+        _modules = await ObjectExplorer.ListModuleSummariesAsync(ReleaseId);
+        await ReloadAsync();
+    }
+
+    private async Task SwitchTab(SearchMode mode)
+    {
+        if (_mode == mode) return;
+        _mode = mode;
+        // Drop the kind filter when crossing search-mode boundaries — the
+        // dropdown's option set differs between Objects and Procedures.
+        _kind = string.Empty;
+        await ReloadAsync();
+    }
+
+    private async Task OnSearchInput(ChangeEventArgs args)
+    {
+        _search = args.Value?.ToString() ?? string.Empty;
+        await ReloadAsync();
+    }
+
+    private async Task OnKindChange(ChangeEventArgs args)
+    {
+        _kind = args.Value?.ToString() ?? string.Empty;
+        await ReloadAsync();
+    }
+
+    private async Task OnModuleChange(ChangeEventArgs args)
+    {
+        _moduleFilter = args.Value?.ToString() ?? string.Empty;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        long? moduleId = long.TryParse(_moduleFilter, out var m) ? m : null;
+        var trimmedSearch = string.IsNullOrWhiteSpace(_search) ? null : _search;
+
+        switch (_mode)
         {
-            _modules = await ObjectExplorer.ListModulesAsync(ReleaseId, new ModuleListFilter());
+            case SearchMode.Objects:
+                _objectResults = await ObjectExplorer.SearchObjectsInReleaseAsync(
+                    ReleaseId,
+                    new ObjectListFilter(Kind: string.IsNullOrEmpty(_kind) ? null : _kind, Search: trimmedSearch),
+                    take: 200);
+                // When a module filter is set, narrow client-side — service
+                // doesn't take moduleId on this path yet; the next iteration
+                // will push the filter down. Result sizes are bounded so the
+                // walk is cheap.
+                if (moduleId is { } id)
+                {
+                    _objectResults = _objectResults.Where(r => r.ModuleId == id).ToList();
+                }
+                break;
+
+            case SearchMode.Procedures:
+                _procedureResults = await ObjectExplorer.SearchProceduresInReleaseAsync(
+                    ReleaseId, trimmedSearch, moduleId, take: 200);
+                if (!string.IsNullOrEmpty(_kind))
+                {
+                    _procedureResults = _procedureResults.Where(p => p.ProcedureKind == _kind).ToList();
+                }
+                break;
+
+            case SearchMode.Content:
+                if (string.IsNullOrEmpty(trimmedSearch))
+                {
+                    _contentResults = new();
+                }
+                else
+                {
+                    _contentResults = await ObjectExplorer.SearchContentInReleaseAsync(
+                        ReleaseId, trimmedSearch, moduleId, take: 100);
+                }
+                break;
         }
     }
 
-    private async Task OnSearch(ChangeEventArgs args)
+    private string TabClass(SearchMode mode) =>
+        mode == _mode ? "oe-search-tab oe-search-tab--active" : "oe-search-tab";
+
+    private string SearchPlaceholder() => _mode switch
     {
-        _search = args.Value?.ToString() ?? string.Empty;
-        _modules = await ObjectExplorer.ListModulesAsync(
-            ReleaseId, new ModuleListFilter(Search: string.IsNullOrWhiteSpace(_search) ? null : _search));
-    }
+        SearchMode.Objects    => "Object name or numeric id",
+        SearchMode.Procedures => "Procedure name",
+        SearchMode.Content    => "Text to grep across source",
+        _                     => "Search",
+    };
 
     private static string FormatKind(string kind) => kind switch
     {
