@@ -2876,7 +2876,11 @@ ul.form-field-error {
     gap: 16px;
 }
 
-.upload-progress {
+/* The default `display: none` on `[hidden]` would normally hide this
+   panel, but specifying `display: flex` unconditionally would beat
+   that. Scope the flex layout to the visible state instead so the
+   `hidden` attribute keeps working as a plain on/off toggle. */
+.upload-progress:not([hidden]) {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -2903,6 +2907,29 @@ ul.form-field-error {
 
 @keyframes upload-spin {
     to { transform: rotate(360deg); }
+}
+
+/* When the upload is in flight: visually lock down the form so the user
+   knows input is captured and that re-clicking is a no-op. Pointer
+   events are blocked on the inputs section (everything inside
+   .form-section), while the progress panel and its parent form-actions
+   stay interactive enough to read but not re-submit. The submit
+   button itself carries .btn--loading + the disabled attribute. */
+.object-explorer-upload.is-uploading .form-section {
+    opacity: 0.55;
+    pointer-events: none;
+    user-select: none;
+}
+
+/* Disabled buttons get a visual cue too — the .btn class doesn't have a
+   :disabled rule anywhere else and the browser default barely dims it,
+   so the user thinks the click didn't take. Applies globally; nothing
+   else relies on disabled buttons looking active. */
+.btn:disabled,
+.btn[disabled],
+.btn[aria-disabled="true"] {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 
 /* Diff line decorations applied by CodeMirror's Decoration.line(). Selectors

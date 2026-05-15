@@ -119,13 +119,15 @@
 
         <div class="form-actions">
             <button type="submit" class="btn btn--primary" data-submit>
+                <span class="btn__spinner" aria-hidden="true"></span>
                 <Icon Name="upload" Width="16" Height="16" />
-                <span data-submit-label>Upload &amp; import</span>
+                <span class="btn__label">Upload &amp; import</span>
+                <span class="btn__label-busy">Uploading…</span>
             </button>
-            <a class="btn btn--outline" href="/admin/object-explorer">Cancel</a>
+            <a class="btn btn--outline" href="/admin/object-explorer" data-cancel>Cancel</a>
         </div>
 
-        <div class="upload-progress" data-upload-progress hidden>
+        <div class="upload-progress" data-upload-progress role="status" aria-live="polite" hidden>
             <div class="upload-progress__spinner" aria-hidden="true"></div>
             <p>
                 <strong>Uploading and parsing…</strong>
@@ -146,8 +148,9 @@
         const fileInput = form.querySelector('[data-files]');
         const fileStatus = form.querySelector('[data-files-status]');
         const submitBtn = form.querySelector('[data-submit]');
-        const submitLabel = form.querySelector('[data-submit-label]');
+        const cancelLink = form.querySelector('[data-cancel]');
         const progress = form.querySelector('[data-upload-progress]');
+        let submitted = false;
 
         // Catalogue-link prefill: Microsoft's `application` field is a
         // four-part version (e.g. "28.5.0.0"); first segment is the major
@@ -177,14 +180,35 @@
             }
         });
 
-        // Submit feedback: disable the button, swap its label, reveal the
-        // overlay so the user knows something is happening during a long
-        // upload. The form keeps submitting; we just don't want a double-post.
-        form.addEventListener('submit', () => {
-            submitBtn.disabled = true;
-            submitLabel.textContent = 'Uploading… please wait';
+        // Submit feedback: dim the form, switch the button into its
+        // busy state, reveal the progress panel. The form still submits
+        // — we don't preventDefault. The submitted-flag intercepts a
+        // double-click; setting disabled directly before the browser
+        // finishes capturing form data can race the upload, so we go
+        // through a click guard instead.
+        form.addEventListener('submit', (e) => {
+            if (submitted) {
+                e.preventDefault();
+                return;
+            }
+            submitted = true;
+            form.classList.add('is-uploading');
+            form.setAttribute('aria-busy', 'true');
+            submitBtn.classList.add('btn--loading');
+            submitBtn.setAttribute('aria-disabled', 'true');
+            cancelLink?.setAttribute('aria-disabled', 'true');
+            cancelLink?.addEventListener('click', stopClickWhileUploading);
             progress?.removeAttribute('hidden');
+            // Schedule the actual disable for the next tick — by then
+            // the browser has already started shipping the request body.
+            setTimeout(() => { submitBtn.disabled = true; }, 0);
         });
+
+        function stopClickWhileUploading(ev) {
+            if (form.classList.contains('is-uploading')) {
+                ev.preventDefault();
+            }
+        }
     })();
 </script>
 
