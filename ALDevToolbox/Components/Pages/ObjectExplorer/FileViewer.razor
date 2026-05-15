@@ -111,6 +111,17 @@
     [Parameter] public int VersionId { get; set; }
     [Parameter] public long FileId { get; set; }
 
+    /// <summary>
+    /// Query param that auto-opens a references panel on file load.
+    /// Today's only supported value is <c>object</c> — used by the
+    /// version browser's row action to deep-link "find references to
+    /// this table/codeunit/page" without making the user open the file
+    /// and right-click on line 1. Wired through <c>SupplyParameterFromQuery</c>
+    /// so back-button navigation drops the param naturally.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "refs")]
+    public string? RefsParam { get; set; }
+
     private BaseAppFile? _file;
     private BaseAppVersion? _version;
     private List<BaseAppVersion>? _otherVersions;
@@ -184,6 +195,20 @@
         // Fresh file, fresh stack — references state from the previous file
         // wouldn't make sense here.
         _panelHistory.Reset();
+
+        // Deep link from the version browser's row action — push the
+        // object-header references view straight onto the stack so the
+        // user lands on "refs to this table" instead of the default
+        // outline. `refs=object` is the only supported value today.
+        if (string.Equals(RefsParam, "object", StringComparison.OrdinalIgnoreCase))
+        {
+            var objectDecl = _symbols.FirstOrDefault(s => s.Kind == "object_declaration");
+            if (objectDecl is not null)
+            {
+                _panelHistory.Push(new ReferencesPanelView(
+                    objectDecl.Id, objectDecl.Name, objectDecl.Kind));
+            }
+        }
     }
 
     /// <summary>

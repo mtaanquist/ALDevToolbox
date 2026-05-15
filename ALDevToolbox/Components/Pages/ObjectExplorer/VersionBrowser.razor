@@ -26,111 +26,84 @@
         </a>
     </header>
 
-    <div class="object-explorer__filters">
+    <div class="object-explorer__filters object-explorer__filters--with-scope">
+        <label class="field">
+            <span class="field__label">Search in</span>
+            <select class="field__input" @bind="_scope" @bind:after="OnScopeChangedAsync"
+                    aria-label="What to search for">
+                <option value="@BaseAppSearchScope.Objects">Objects</option>
+                <option value="@BaseAppSearchScope.Procedures">Procedures</option>
+                <option value="@BaseAppSearchScope.Content">File content</option>
+            </select>
+        </label>
+
         <label class="field">
             <span class="field__label">Search</span>
             <input type="search"
                    class="admin-search-input"
-                   placeholder="Object name or ID"
+                   placeholder="@SearchPlaceholder"
                    value="@_search"
                    @oninput="OnSearchChanged"
-                   aria-label="Search by object name or ID" />
+                   aria-label="@SearchPlaceholder" />
         </label>
 
-        <label class="field">
-            <span class="field__label">Object type</span>
-            <select class="field__input" @bind="_objectType" @bind:after="ReloadAsync">
-                <option value="">All</option>
-                @if (_objectTypes is not null)
-                {
-                    @foreach (var type in _objectTypes)
+        @if (_scope == BaseAppSearchScope.Objects)
+        {
+            <label class="field">
+                <span class="field__label">Object type</span>
+                <select class="field__input" @bind="_objectType" @bind:after="ReloadAsync">
+                    <option value="">All</option>
+                    @if (_objectTypes is not null)
                     {
-                        <option value="@type">@type</option>
+                        @foreach (var type in _objectTypes)
+                        {
+                            <option value="@type">@type</option>
+                        }
                     }
-                }
-            </select>
-        </label>
+                </select>
+            </label>
 
-        <label class="field">
-            <span class="field__label">Module</span>
-            <select class="field__input" @bind="_module" @bind:after="ReloadAsync">
-                <option value="">All</option>
-                @if (_modules is not null)
-                {
-                    @foreach (var m in _modules)
+            <label class="field">
+                <span class="field__label">Module</span>
+                <select class="field__input" @bind="_module" @bind:after="ReloadAsync">
+                    <option value="">All</option>
+                    @if (_modules is not null)
                     {
-                        <option value="@m">@m</option>
+                        @foreach (var m in _modules)
+                        {
+                            <option value="@m">@m</option>
+                        }
                     }
-                }
-            </select>
-        </label>
+                </select>
+            </label>
 
-        <label class="field">
-            <span class="field__label">Namespace</span>
-            <select class="field__input" @bind="_namespace" @bind:after="ReloadAsync">
-                <option value="">All</option>
-                @if (_namespaces is not null)
-                {
-                    @foreach (var n in _namespaces)
+            <label class="field">
+                <span class="field__label">Namespace</span>
+                <select class="field__input" @bind="_namespace" @bind:after="ReloadAsync">
+                    <option value="">All</option>
+                    @if (_namespaces is not null)
                     {
-                        <option value="@n">@n</option>
+                        @foreach (var n in _namespaces)
+                        {
+                            <option value="@n">@n</option>
+                        }
                     }
-                }
-            </select>
-        </label>
+                </select>
+            </label>
+        }
     </div>
 
-    @if (_page is null)
+    @switch (_scope)
     {
-        <p class="muted">Loading…</p>
-    }
-    else if (_page.Rows.Count == 0)
-    {
-        @if (HasFilters)
-        {
-            <p class="muted">No objects match the current filter.</p>
-        }
-        else
-        {
-            <p class="muted">This version is empty.</p>
-        }
-    }
-    else
-    {
-        <p class="muted small">Showing @_page.Rows.Count of @_page.TotalCount object@(_page.TotalCount == 1 ? "" : "s").</p>
-        <table class="data-table object-explorer__objects">
-            <thead>
-                <tr>
-                    @SortableHeader(BaseAppFileSort.ObjectType, "Type")
-                    @SortableHeader(BaseAppFileSort.ObjectId, "ID", numeric: true)
-                    @SortableHeader(BaseAppFileSort.ObjectName, "Name")
-                    @SortableHeader(BaseAppFileSort.Module, "Module")
-                    @SortableHeader(BaseAppFileSort.Namespace, "Namespace")
-                    @SortableHeader(BaseAppFileSort.LineCount, "Lines", numeric: true)
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var row in _page.Rows)
-                {
-                    <tr @onclick="() => OpenFile(row.Id)" class="object-explorer__row">
-                        <td><span class="object-explorer__type">@row.ObjectType</span></td>
-                        <td class="num">@(row.ObjectId?.ToString() ?? "")</td>
-                        @* stopPropagation: the anchor's own navigation is enough.
-                           Without it the row's @onclick also fires and we end up
-                           with two history entries for the same URL, which makes
-                           browser Back go "nowhere" once before returning to the
-                           list. *@
-                        <td>
-                            <a href="@($"/object-explorer/{VersionId}/files/{row.Id}")"
-                               @onclick:stopPropagation="true">@row.ObjectName</a>
-                        </td>
-                        <td class="muted">@(row.Module ?? "")</td>
-                        <td class="muted small">@(row.Namespace ?? "")</td>
-                        <td class="num muted">@row.LineCount</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+        case BaseAppSearchScope.Objects:
+            @RenderObjectsResults();
+            break;
+        case BaseAppSearchScope.Procedures:
+            @RenderProceduresResults();
+            break;
+        case BaseAppSearchScope.Content:
+            @RenderContentResults();
+            break;
     }
 </div>
 
@@ -141,7 +114,10 @@
     private List<string>? _objectTypes;
     private List<string>? _modules;
     private List<string>? _namespaces;
+    private BaseAppSearchScope _scope = BaseAppSearchScope.Objects;
     private BaseAppFilePage? _page;
+    private BaseAppProcedureSearchPage? _procedurePage;
+    private BaseAppContentSearchPage? _contentPage;
     private string _search = string.Empty;
     private string _objectType = string.Empty;
     private string _module = string.Empty;
@@ -158,6 +134,13 @@
         || !string.IsNullOrWhiteSpace(_objectType)
         || !string.IsNullOrWhiteSpace(_module)
         || !string.IsNullOrWhiteSpace(_namespace);
+
+    private string SearchPlaceholder => _scope switch
+    {
+        BaseAppSearchScope.Procedures => "Procedure or event name",
+        BaseAppSearchScope.Content => "Text anywhere in a file",
+        _ => "Object name or ID",
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -177,6 +160,18 @@
     {
         _search = e.Value?.ToString() ?? string.Empty;
         DebouncedReload();
+    }
+
+    private async Task OnScopeChangedAsync()
+    {
+        // Switching modes wipes the other modes' result pages so the UI
+        // doesn't briefly show stale rows while the new search runs.
+        // The user typed term carries over — "I want to look this up
+        // somewhere else now" is the natural expectation.
+        _page = null;
+        _procedurePage = null;
+        _contentPage = null;
+        await ReloadAsync();
     }
 
     private void DebouncedReload()
@@ -199,20 +194,43 @@
 
     private async Task ReloadAsync()
     {
-        var filter = new BaseAppFileFilter(
-            ObjectType: string.IsNullOrWhiteSpace(_objectType) ? null : _objectType,
-            Module: string.IsNullOrWhiteSpace(_module) ? null : _module,
-            Search: string.IsNullOrWhiteSpace(_search) ? null : _search,
-            Namespace: string.IsNullOrWhiteSpace(_namespace) ? null : _namespace,
-            SortBy: _sortBy,
-            SortDescending: _sortDescending);
-        _page = await BaseApp.ListFilesAsync(VersionId, filter, skip: 0, take: 500);
+        switch (_scope)
+        {
+            case BaseAppSearchScope.Objects:
+                var filter = new BaseAppFileFilter(
+                    ObjectType: string.IsNullOrWhiteSpace(_objectType) ? null : _objectType,
+                    Module: string.IsNullOrWhiteSpace(_module) ? null : _module,
+                    Search: string.IsNullOrWhiteSpace(_search) ? null : _search,
+                    Namespace: string.IsNullOrWhiteSpace(_namespace) ? null : _namespace,
+                    SortBy: _sortBy,
+                    SortDescending: _sortDescending);
+                _page = await BaseApp.ListFilesAsync(VersionId, filter, skip: 0, take: 500);
+                break;
+            case BaseAppSearchScope.Procedures:
+                _procedurePage = await BaseApp.SearchProceduresAsync(
+                    VersionId, _search, skip: 0, take: 500);
+                break;
+            case BaseAppSearchScope.Content:
+                _contentPage = await BaseApp.SearchContentAsync(
+                    VersionId, _search, skip: 0, take: 500);
+                break;
+        }
         StateHasChanged();
     }
 
     private void OpenFile(long fileId)
     {
         Nav.NavigateTo($"/object-explorer/{VersionId}/files/{fileId}");
+    }
+
+    /// <summary>
+    /// Row action — navigate to the file with a <c>refs=object</c> query
+    /// param so FileViewer auto-opens the object_declaration's references
+    /// panel. Saves the user the scroll-to-line-1-then-right-click dance.
+    /// </summary>
+    private void OpenObjectReferences(long fileId)
+    {
+        Nav.NavigateTo($"/object-explorer/{VersionId}/files/{fileId}?refs=object");
     }
 
     private async Task ToggleSort(BaseAppFileSort column)
@@ -228,6 +246,181 @@
         }
         await ReloadAsync();
     }
+
+    private static string FormatSymbolKind(string kind) => kind switch
+    {
+        "procedure" => "procedure",
+        "local_procedure" => "local",
+        "internal_procedure" => "internal",
+        "protected_procedure" => "protected",
+        "event_publisher" => "event",
+        "event_subscriber" => "subscriber",
+        _ => kind,
+    };
+
+    private RenderFragment RenderObjectsResults() => __builder =>
+    {
+        if (_page is null)
+        {
+            <p class="muted">Loading…</p>
+            return;
+        }
+        if (_page.Rows.Count == 0)
+        {
+            <p class="muted">@(HasFilters ? "No objects match the current filter." : "This version is empty.")</p>
+            return;
+        }
+
+        <p class="muted small">Showing @_page.Rows.Count of @_page.TotalCount object@(_page.TotalCount == 1 ? "" : "s").</p>
+        <table class="data-table object-explorer__objects">
+            <thead>
+                <tr>
+                    @SortableHeader(BaseAppFileSort.ObjectType, "Type")
+                    @SortableHeader(BaseAppFileSort.ObjectId, "ID", numeric: true)
+                    @SortableHeader(BaseAppFileSort.ObjectName, "Name")
+                    @SortableHeader(BaseAppFileSort.Module, "Module")
+                    @SortableHeader(BaseAppFileSort.Namespace, "Namespace")
+                    @SortableHeader(BaseAppFileSort.LineCount, "Lines", numeric: true)
+                    <th scope="col" aria-label="Actions"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _page.Rows)
+                {
+                    var fileId = row.Id;
+                    <tr @onclick="() => OpenFile(fileId)" class="object-explorer__row">
+                        <td><span class="object-explorer__type">@row.ObjectType</span></td>
+                        <td class="num">@(row.ObjectId?.ToString() ?? "")</td>
+                        @* stopPropagation: the anchor's own navigation is enough.
+                           Without it the row's @onclick also fires and we end up
+                           with two history entries for the same URL, which makes
+                           browser Back go "nowhere" once before returning to the
+                           list. *@
+                        <td>
+                            <a href="@($"/object-explorer/{VersionId}/files/{fileId}")"
+                               @onclick:stopPropagation="true">@row.ObjectName</a>
+                        </td>
+                        <td class="muted">@(row.Module ?? "")</td>
+                        <td class="muted small">@(row.Namespace ?? "")</td>
+                        <td class="num muted">@row.LineCount</td>
+                        <td class="object-explorer__row-actions object-explorer__row-actions--cell" @onclick:stopPropagation="true">
+                            <button type="button"
+                                    class="btn btn--icon btn--sm"
+                                    title="Find references to this object"
+                                    aria-label="Find references to @row.ObjectName"
+                                    @onclick="() => OpenObjectReferences(fileId)">
+                                <Icon Name="search" Width="14" Height="14" />
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+
+    private RenderFragment RenderProceduresResults() => __builder =>
+    {
+        if (string.IsNullOrWhiteSpace(_search))
+        {
+            <p class="muted">Type a procedure or event name above to search across this version.</p>
+            return;
+        }
+        if (_procedurePage is null)
+        {
+            <p class="muted">Loading…</p>
+            return;
+        }
+        if (_procedurePage.Rows.Count == 0)
+        {
+            <p class="muted">No procedures match "<strong>@_search</strong>".</p>
+            return;
+        }
+
+        <p class="muted small">Showing @_procedurePage.Rows.Count of @_procedurePage.TotalCount match@(_procedurePage.TotalCount == 1 ? "" : "es").</p>
+        <table class="data-table object-explorer__objects">
+            <thead>
+                <tr>
+                    <th scope="col">Kind</th>
+                    <th scope="col">Name</th>
+                    <th scope="col">On</th>
+                    <th scope="col" class="num">Line</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var hit in _procedurePage.Rows)
+                {
+                    var anchor = $"/object-explorer/{VersionId}/files/{hit.FileId}#L{hit.LineNumber}";
+                    <tr class="object-explorer__row" @onclick="() => Nav.NavigateTo(anchor)">
+                        <td><span class="object-explorer__type">@FormatSymbolKind(hit.SymbolKind)</span></td>
+                        <td>
+                            <a href="@anchor" @onclick:stopPropagation="true">@hit.SymbolName</a>
+                            @if (!string.IsNullOrWhiteSpace(hit.Signature))
+                            {
+                                <span class="muted small object-explorer__row-sig" title="@hit.Signature">@hit.Signature</span>
+                            }
+                        </td>
+                        <td>
+                            <span class="object-explorer__type">@hit.ObjectType</span>
+                            @if (hit.ObjectId is { } id)
+                            {
+                                <span class="muted small">@id</span>
+                            }
+                            <span>@hit.ObjectName</span>
+                        </td>
+                        <td class="num muted">L@(hit.LineNumber)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+
+    private RenderFragment RenderContentResults() => __builder =>
+    {
+        if (string.IsNullOrWhiteSpace(_search))
+        {
+            <p class="muted">Type some text above to search file content across this version.</p>
+            return;
+        }
+        if (_contentPage is null)
+        {
+            <p class="muted">Loading…</p>
+            return;
+        }
+        if (_contentPage.Rows.Count == 0)
+        {
+            <p class="muted">No file content matches "<strong>@_search</strong>".</p>
+            return;
+        }
+
+        <p class="muted small">Showing @_contentPage.Rows.Count of @_contentPage.TotalCount file@(_contentPage.TotalCount == 1 ? "" : "s").</p>
+        <table class="data-table object-explorer__objects">
+            <thead>
+                <tr>
+                    <th scope="col">Object</th>
+                    <th scope="col">First match</th>
+                    <th scope="col" class="num">Line</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var hit in _contentPage.Rows)
+                {
+                    var anchor = $"/object-explorer/{VersionId}/files/{hit.FileId}#L{hit.LineNumber}";
+                    <tr class="object-explorer__row" @onclick="() => Nav.NavigateTo(anchor)">
+                        <td>
+                            <span class="object-explorer__type">@hit.ObjectType</span>
+                            @if (hit.ObjectId is { } id)
+                            {
+                                <span class="muted small">@id</span>
+                            }
+                            <a href="@anchor" @onclick:stopPropagation="true">@hit.ObjectName</a>
+                        </td>
+                        <td><code class="object-explorer__row-snippet">@hit.Snippet</code></td>
+                        <td class="num muted">L@(hit.LineNumber)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
 
     private RenderFragment SortableHeader(BaseAppFileSort column, string label, bool numeric = false) => builder =>
     {
