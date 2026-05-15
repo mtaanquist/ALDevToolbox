@@ -52,6 +52,8 @@
                     <th scope="col">Kind</th>
                     <th scope="col">BC version</th>
                     <th scope="col">Status</th>
+                    <th scope="col">Files</th>
+                    <th scope="col">Size</th>
                     <th scope="col">Imported</th>
                 </tr>
             </thead>
@@ -67,6 +69,8 @@
                         <td>@FormatKind(r.Kind)</td>
                         <td>@(r.BcVersion ?? "—")</td>
                         <td>@FormatStatus(r.Status)</td>
+                        <td>@r.SourceFileCount.ToString("N0")</td>
+                        <td>@FormatBytes(r.SourceContentLength)</td>
                         <td>@r.ImportedAt.ToString("yyyy-MM-dd")</td>
                     </tr>
                 }
@@ -98,4 +102,17 @@
         "failed"    => "Failed",
         _           => s,
     };
+
+    /// <summary>
+    /// Compact human-readable size — KB / MB / GB with one decimal. The
+    /// underlying number is character count, not byte count; for ASCII AL
+    /// source those align, so we label the unit literally.
+    /// </summary>
+    private static string FormatBytes(long n)
+    {
+        if (n < 1024) return n + " B";
+        if (n < 1024L * 1024) return (n / 1024d).ToString("0.0") + " KB";
+        if (n < 1024L * 1024 * 1024) return (n / (1024d * 1024)).ToString("0.0") + " MB";
+        return (n / (1024d * 1024 * 1024)).ToString("0.0") + " GB";
+    }
 }

@@ -43,7 +43,12 @@ public class ObjectExplorerService
             .Where(r => r.DeletedAt == null)
             .OrderBy(r => r.Label)
             .Select(r => new ReleaseListItem(
-                r.Id, r.Label, r.Kind, r.Status, r.BcVersion, r.ParentReleaseId, r.ImportedAt))
+                r.Id, r.Label, r.Kind, r.Status, r.BcVersion, r.ParentReleaseId, r.ImportedAt,
+                // Both aggregates run as correlated subqueries against
+                // oe_module_files joined through oe_modules. The numbers feed
+                // the per-release Files / Size columns on the browser.
+                SourceFileCount: r.Modules.SelectMany(m => m.Files).Count(),
+                SourceContentLength: r.Modules.SelectMany(m => m.Files).Sum(f => (long)f.Content.Length)))
             .ToListAsync(ct);
 
     /// <summary>

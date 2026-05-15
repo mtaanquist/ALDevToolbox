@@ -224,11 +224,12 @@ public class ReleaseImportService
             }
         }
 
-        await WriteModuleAsync(orgId, release, pkg, sourceFiles, totals, ct).ConfigureAwait(false);
+        await WriteModuleAsync(orgId, release, upload, pkg, sourceFiles, totals, ct).ConfigureAwait(false);
     }
 
     private async Task WriteModuleAsync(
         int orgId, OeRelease release,
+        AppFileUpload upload,
         AppPackage pkg,
         IReadOnlyDictionary<string, string> sourceFiles,
         ImportTotals totals,
@@ -244,9 +245,13 @@ public class ReleaseImportService
             Version = pkg.Manifest.Version,
             Target = pkg.Manifest.Target,
             Runtime = pkg.Manifest.Runtime,
-            IsTest = false,         // determined by upload-folder rules (later PR)
-            IsInternal = false,     // determined by the _Exclude_ filename marker (later PR)
-            IsLanguagePack = false,
+            // Flags come from the upload-layer inference (folder names,
+            // _Exclude_ marker, language-pack name pattern). The per-file
+            // upload path leaves all three at false; the folder-ZIP path
+            // sets them based on the DVD's folder conventions.
+            IsTest = upload.IsTest,
+            IsInternal = upload.IsInternal,
+            IsLanguagePack = upload.IsLanguagePack,
             DependenciesJson = SerializeDeps(pkg.Manifest.Dependencies),
             AppFileHash = pkg.AppFileHash,
             CreatedAt = DateTime.UtcNow,
