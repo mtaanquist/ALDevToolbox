@@ -334,9 +334,19 @@ public class ReleaseImportService
             await _db.SaveChangesAsync(ct).ConfigureAwait(false);
         }
 
-        // Pre-scan each source file once for object declaration line numbers,
-        // so we can stamp ModuleObject.LineNumber without re-reading content.
-        var declarationLines = ScanDeclarationLines(filesByPath);
+        // Build the (Kind, Name) → (File, Line) index used to link
+        // symbol-package objects to their .al file. We deliberately do
+        // *not* use ReferenceSourceFileName: it's path-string-based and
+        // the .Source.zip layouts Microsoft ships are inconsistent
+        // enough within a single release that no canonicaliser can
+        // bridge the gap (System Application Test Library uses
+        // "Password/src/LibraryPassword.Codeunit.al", Business Foundation
+        // Test Libraries uses "NoSeries/src/LibraryNoSeries.Codeunit.al",
+        // first-party Base App uses bare "Codeunits/Foo.Codeunit.al" —
+        // all in BC 28.1 DK). The AL declaration at the top of each .al
+        // file is deterministic; AL enforces one object per file in
+        // practice; matching by that header is the stable contract.
+        var declarations = ScanFileDeclarations(filesByPath);
 
         // Same pass, deeper: run the AL symbol extractor over each file so we
         // can stamp line/column on every sub-symbol (procedure / trigger /
@@ -362,18 +372,19 @@ public class ReleaseImportService
 
             OeModuleFile? sourceFile = null;
             int line = 1;
+            // ReferenceSourceFileName drives the "should this object
+            // have linked?" diagnostic counter only — the actual link
+            // is established by matching the AL header in the .al
+            // file, which is layout-agnostic.
             if (!string.IsNullOrEmpty(symObj.ReferenceSourceFileName))
             {
                 objectsExpectingSource++;
-                if (filesByPath.TryGetValue(symObj.ReferenceSourceFileName, out var matchedFile))
-                {
-                    sourceFile = matchedFile;
-                    objectsLinked++;
-                    if (declarationLines.TryGetValue((matchedFile.Path, symObj.Kind, symObj.Name), out var found))
-                    {
-                        line = found;
-                    }
-                }
+            }
+            if (declarations.TryGetValue((symObj.Kind, symObj.Name), out var hit))
+            {
+                sourceFile = hit.File;
+                line = hit.Line;
+                objectsLinked++;
             }
 
             var obj = new OeModuleObject
@@ -436,21 +447,26 @@ public class ReleaseImportService
 
         totals.ModulesImported++;
 
-        // Surface a warning when source files were loaded but the symbol
-        // package's ReferenceSourceFileName paths didn't match — that's
-        // almost always a layout the canonicaliser hasn't been taught yet
-        // (a new BC version with another Source.zip wrapper shape). Silent
-        // em-dashes in the UI used to be the only signal.
+        // Surface a warning when source files were loaded but no
+        // symbol-package objects matched any .al header — that means
+        // either the .Source.zip doesn't contain the .al files for
+        // those objects, or the file headers don't agree with the
+        // symbol package's (Kind, Name) pairs (a Microsoft-side
+        // packaging change). The example expected object + example
+        // declaration help diagnose which case it is.
         if (filesByPath.Count > 0 && objectsExpectingSource > 0 && objectsLinked == 0)
         {
+            var expectedObj = pkg.Symbols.Objects.FirstOrDefault(o => !string.IsNullOrEmpty(o.ReferenceSourceFileName));
+            var declaredExample = declarations.Keys.FirstOrDefault();
             _logger.LogWarning(
-                "Module {Name} {Version}: {FileCount} source file(s) loaded but 0/{Expected} objects linked. "
-                + "Expected path example: {Expected}. Loaded path example: {Loaded}. "
-                + "The .Source.zip layout may not be recognised by AppPackageReader.CanonicalizeSourcePath.",
+                "Module {Name} {Version}: {FileCount} source file(s) loaded with {DeclCount} header declaration(s); "
+                + "0/{Expected} symbol-package objects matched any .al header. "
+                + "Expected example: {ExpectedKind} \"{ExpectedName}\". Declared example: {DeclaredKind} \"{DeclaredName}\". "
+                + "The .Source.zip may not contain .al files for these objects, or the headers no longer match.",
                 pkg.Manifest.Name, pkg.Manifest.Version,
-                filesByPath.Count, objectsExpectingSource,
-                pkg.Symbols.Objects.FirstOrDefault(o => !string.IsNullOrEmpty(o.ReferenceSourceFileName))?.ReferenceSourceFileName ?? "(none)",
-                filesByPath.Keys.FirstOrDefault() ?? "(none)");
+                filesByPath.Count, declarations.Count, objectsExpectingSource,
+                expectedObj?.Kind ?? "(none)", expectedObj?.Name ?? "(none)",
+                declaredExample.Kind ?? "(none)", declaredExample.Name ?? "(none)");
         }
 
         // Clear the tracker between modules so a release-wide import doesn't
@@ -836,15 +852,45 @@ public class ReleaseImportService
     // ── Source declaration scan ─────────────────────────────────────────
 
     /// <summary>
-    /// Walks every <c>.al</c> file once and records the 1-based line number of
-    /// every <c>(kind, name)</c> object declaration. Cheap (one regex match
-    /// per non-blank line); avoids a per-object file re-read for thousands of
-    /// symbol-package objects.
+    /// One <c>(kind, name)</c> declaration found by scanning a
+    /// <c>.al</c> file's header. The file reference plus the 1-based
+    /// declaration line are both captured so the per-object loop can
+    /// link <c>ModuleObject.SourceFileId</c> and stamp
+    /// <c>ModuleObject.LineNumber</c> in one lookup.
     /// </summary>
-    private static Dictionary<(string FilePath, string Kind, string Name), int> ScanDeclarationLines(
+    private readonly record struct DeclarationHit(OeModuleFile File, int Line);
+
+    private sealed class DeclarationKeyComparer : IEqualityComparer<(string Kind, string Name)>
+    {
+        public static readonly DeclarationKeyComparer Instance = new();
+        public bool Equals((string Kind, string Name) x, (string Kind, string Name) y)
+            => string.Equals(x.Kind, y.Kind, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.Name, y.Name, StringComparison.OrdinalIgnoreCase);
+        public int GetHashCode((string Kind, string Name) obj)
+            => HashCode.Combine(
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Kind),
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Name));
+    }
+
+    /// <summary>
+    /// Walks every <c>.al</c> file once and indexes its top-level
+    /// <c>&lt;kind&gt; [&lt;id&gt;] &lt;name&gt;</c> declaration by
+    /// <c>(Kind, Name)</c>. The map drives the symbol-package
+    /// <c>(Kind, Name) → ModuleFile</c> link, sidestepping the
+    /// fragile <c>ReferenceSourceFileName</c> path-string lookup —
+    /// the symbol package's path strings aren't consistent within a
+    /// single BC release (some modules ship them with a nested
+    /// <c>src/</c>, others with a project-folder prefix, others raw),
+    /// so canonicalising the .Source.zip side alone can't bridge the
+    /// gap. The header declaration is deterministic and AL enforces
+    /// one object per file in practice. Multi-object files lose only
+    /// the second-and-later objects' links (first match wins) —
+    /// rare on first-party modules and acceptable for v1.
+    /// </summary>
+    private static Dictionary<(string Kind, string Name), DeclarationHit> ScanFileDeclarations(
         IReadOnlyDictionary<string, OeModuleFile> filesByPath)
     {
-        var result = new Dictionary<(string, string, string), int>();
+        var result = new Dictionary<(string, string), DeclarationHit>(DeclarationKeyComparer.Instance);
         foreach (var (_, file) in filesByPath)
         {
             int line = 0;
@@ -855,7 +901,7 @@ public class ReleaseImportService
                 if (!m.Success) continue;
                 var kind = m.Groups[1].Value.ToLowerInvariant();
                 var name = m.Groups["quoted"].Success ? m.Groups["quoted"].Value : m.Groups["bare"].Value;
-                result.TryAdd((file.Path, kind, name), line);
+                result.TryAdd((kind, name), new DeclarationHit(file, line));
             }
         }
         return result;
