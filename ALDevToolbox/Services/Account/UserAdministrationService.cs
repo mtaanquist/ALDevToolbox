@@ -245,6 +245,18 @@ public sealed class UserAdministrationService
 
         var (raw, hash) = TokenIssuer.Issue();
         var now = _clock.GetUtcNow().UtcDateTime;
+        // Burn any still-valid prior change tokens for this user. Without this,
+        // a previous recipient's link would still validate against the newly-
+        // stored pending_email and silently confirm an address they never had
+        // access to.
+        var stale = await _db.PasswordResetTokens.IgnoreQueryFilters()
+            .Where(t => t.UserId == user.Id
+                        && t.Purpose == TokenPurpose.EmailChangeConfirm
+                        && t.ConsumedAt == null
+                        && t.ExpiresAt > now)
+            .ToListAsync(ct);
+        foreach (var s in stale) s.ConsumedAt = now;
+
         user.PendingEmail = normalised;
         user.PendingEmailAt = now;
         _db.PasswordResetTokens.Add(new PasswordResetToken

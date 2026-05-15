@@ -62,9 +62,9 @@
     {
         var ctx = Http.HttpContext;
         if (ctx is null) return;
-        var raw = EndpointHelpers.ReadAndClearOneShotInviteCookie(ctx, Protection);
-        if (raw is null || !raw.StartsWith("codes:", StringComparison.Ordinal)) return;
-        _codes = raw[6..].Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var codes = EndpointHelpers.ReadAndClearOneShotRecoveryCodesCookie(ctx, Protection);
+        if (codes is null) return;
+        _codes = codes;
         _codesText = string.Join('\n', _codes);
     }
 

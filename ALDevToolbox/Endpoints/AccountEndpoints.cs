@@ -506,7 +506,7 @@ internal static class AccountEndpoints
                 var codes = await totp.ConfirmEnrollmentAsync(org.CurrentUserId!.Value, form["Code"].ToString(), ct);
                 // Stash the plaintext codes in a 60-second protected cookie so the
                 // recovery-codes page can render them once.
-                SetOneShotInviteCookie(ctx, protection, "codes:" + string.Join('\n', codes));
+                SetOneShotRecoveryCodesCookie(ctx, protection, codes);
                 ctx.Response.Redirect("/account/2fa/recovery-codes?show=1");
             }
             catch (PlanValidationException ex)
@@ -620,7 +620,7 @@ internal static class AccountEndpoints
                 return;
             }
             var codes = await recovery.RegenerateAsync(user.Id, ct);
-            SetOneShotInviteCookie(ctx, protection, "codes:" + string.Join('\n', codes));
+            SetOneShotRecoveryCodesCookie(ctx, protection, codes);
             ctx.Response.Redirect("/account/2fa/recovery-codes?show=1");
         }).RequireAuthorization();
 

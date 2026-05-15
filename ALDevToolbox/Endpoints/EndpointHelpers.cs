@@ -99,6 +99,8 @@ internal static class EndpointHelpers
     public const string MfaProtectionPurpose = "ALDevToolbox.MfaPending";
     public const string OneShotInviteCookieName = "alwb_invite_link";
     public const string OneShotInviteProtectionPurpose = "ALDevToolbox.OneShotInviteUrl";
+    public const string OneShotRecoveryCodesCookieName = "alwb_recovery_codes";
+    public const string OneShotRecoveryCodesProtectionPurpose = "ALDevToolbox.OneShotRecoveryCodes";
     public static readonly TimeSpan MfaCookieLifetime = TimeSpan.FromMinutes(10);
     public static readonly TimeSpan OneShotCookieLifetime = TimeSpan.FromSeconds(60);
 
@@ -161,6 +163,35 @@ internal static class EndpointHelpers
         {
             var protector = protection.CreateProtector(OneShotInviteProtectionPurpose);
             return protector.Unprotect(raw);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static void SetOneShotRecoveryCodesCookie(HttpContext ctx, IDataProtectionProvider protection, IEnumerable<string> codes)
+    {
+        var protector = protection.CreateProtector(OneShotRecoveryCodesProtectionPurpose);
+        var payload = protector.Protect(string.Join('\n', codes));
+        ctx.Response.Cookies.Append(OneShotRecoveryCodesCookieName, payload, new CookieOptions
+        {
+            HttpOnly = true,
+            SameSite = SameSiteMode.Lax,
+            Secure = ctx.Request.IsHttps,
+            Path = "/",
+            MaxAge = OneShotCookieLifetime,
+        });
+    }
+
+    public static string[]? ReadAndClearOneShotRecoveryCodesCookie(HttpContext ctx, IDataProtectionProvider protection)
+    {
+        if (!ctx.Request.Cookies.TryGetValue(OneShotRecoveryCodesCookieName, out var raw) || string.IsNullOrEmpty(raw)) return null;
+        ctx.Response.Cookies.Delete(OneShotRecoveryCodesCookieName);
+        try
+        {
+            var protector = protection.CreateProtector(OneShotRecoveryCodesProtectionPurpose);
+            return protector.Unprotect(raw).Split('\n', StringSplitOptions.RemoveEmptyEntries);
         }
         catch
         {

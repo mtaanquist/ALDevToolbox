@@ -160,6 +160,45 @@ public sealed class AccountSecurityFlowTests : IDisposable
     }
 
     [Fact]
+    public async Task Reissued_email_change_invalidates_prior_token()
+    {
+        var orgId = TestDb.DefaultOrgId;
+        await using (var seed = _db.NewContext())
+        {
+            seed.Users.AddRange(
+                new User { Id = 5450, OrganizationId = orgId, Email = "admin2@example.com", PasswordHash = "x",
+                    DisplayName = "Admin2", Role = UserRole.Admin, Status = UserStatus.Active,
+                    CreatedAt = _clock.GetUtcNow().UtcDateTime },
+                new User { Id = 5451, OrganizationId = orgId, Email = "user@example.com", PasswordHash = "x",
+                    DisplayName = "User", Role = UserRole.User, Status = UserStatus.Active,
+                    CreatedAt = _clock.GetUtcNow().UtcDateTime });
+            await seed.SaveChangesAsync();
+        }
+        string firstToken, secondToken;
+        await using (var ctx = _db.NewContext())
+        {
+            firstToken = await NewUserAdmin(ctx).RequestEmailChangeAsync(5451, "first@example.com", orgId, 5450);
+        }
+        await using (var ctx = _db.NewContext())
+        {
+            secondToken = await NewUserAdmin(ctx).RequestEmailChangeAsync(5451, "second@example.com", orgId, 5450);
+        }
+        await using (var ctx = _db.NewContext())
+        {
+            var result = await NewUserAdmin(ctx).ConfirmEmailChangeAsync(firstToken);
+            result.Should().BeNull("old token must be invalidated when a newer change is requested");
+        }
+        await using var read = _db.NewContext();
+        var user = await read.Users.IgnoreQueryFilters().SingleAsync(u => u.Id == 5451);
+        user.Email.Should().Be("user@example.com", "the old token must not have swapped the email");
+        // Second token still works against the current pending value.
+        await using (var ctx = _db.NewContext())
+        {
+            (await NewUserAdmin(ctx).ConfirmEmailChangeAsync(secondToken)).Should().NotBeNull();
+        }
+    }
+
+    [Fact]
     public async Task Admin_cannot_change_own_email_via_admin_path()
     {
         var orgId = TestDb.DefaultOrgId;
