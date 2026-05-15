@@ -248,6 +248,11 @@
                                            @onclick:preventDefault="true"
                                            @onclick:stopPropagation="true">
                                             <span class="inspector-panel__item-name">@symbol.Name</span>
+                                            @if (!string.IsNullOrWhiteSpace(symbol.Signature))
+                                            {
+                                                <span class="muted small inspector-panel__item-sig"
+                                                      title="@symbol.Signature">@FormatSignature(symbol)</span>
+                                            }
                                             <span class="muted small inspector-panel__item-line">L@(symbol.LineNumber)</span>
                                         </a>
                                         @if (CanFindReferences(symbol.Kind))
@@ -275,6 +280,23 @@
         {
             _collapsedSections.Remove(kind);
         }
+    }
+
+    /// <summary>
+    /// Renders the row's signature/type as a compact muted suffix. For
+    /// fields we show the bare type (<c>Code[20]</c>); for procedures we
+    /// keep the leading <c>(</c> so the arg list reads as a signature.
+    /// CSS handles overflow via ellipsis so the row never wraps.
+    /// </summary>
+    private static string FormatSignature(BaseAppSymbol sym)
+    {
+        var raw = sym.Signature?.Trim();
+        if (string.IsNullOrEmpty(raw)) return string.Empty;
+        return sym.Kind switch
+        {
+            "field" => ": " + raw,
+            _ => raw,
+        };
     }
 
     private void OpenRowMenu(MouseEventArgs e, BaseAppSymbol symbol)

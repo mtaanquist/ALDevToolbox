@@ -2785,18 +2785,28 @@ ul.form-field-error {
 .cm-line--diff-removed { background: rgba(248, 81, 73, 0.18); }
 .cm-line--diff-modified { background: rgba(210, 153, 34, 0.18); }
 
-/* Click affordance on procedure/trigger/event declarations in the Object
-   Explorer file viewer. Hover gives a faint underline so users see what's
-   right-clickable; the menu lives in .cm-symbol-menu below. */
+/* Click affordances on Object Explorer tokens.
+   - cm-symbol-decl (procedure / field / object-header *declarations*):
+     solid underline at half opacity. The name is "the source" — hover
+     keeps the same line but brightens for an explicit "yes, this is
+     clickable" signal.
+   - cm-symbol-ref (call / field-access *reference sites*): dotted
+     underline. Reads as a hyperlink — the user expects to follow it
+     somewhere. Hover brightens to mirror the link affordance.
+   Both get cursor: pointer so the hand confirms interactivity before
+   the user even needs the underline to read. */
 .cm-symbol-decl,
 .cm-symbol-ref {
-    text-decoration: underline dotted currentColor;
+    cursor: pointer;
     text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
     text-underline-offset: 3px;
     transition: text-decoration-color 80ms ease-out;
 }
 .cm-symbol-decl {
-    cursor: context-menu;
+    text-decoration: underline solid currentColor;
+}
+.cm-symbol-ref {
+    text-decoration: underline dotted currentColor;
 }
 .cm-symbol-decl:hover,
 .cm-symbol-ref:hover {
@@ -3097,6 +3107,21 @@ ul.form-field-error {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+/* Field type / procedure signature, rendered between the name and the
+   line-number badge. Truncated with ellipsis so a 200-character method
+   signature doesn't push the line off-row; full text is on the title
+   attribute so hovering reveals it. */
+.inspector-panel__item-sig {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: var(--mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
 }
 
 .inspector-panel__item-line {
