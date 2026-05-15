@@ -168,6 +168,21 @@ public sealed class AppPackageReaderTests
     }
 
     [Fact]
+    public async Task ReadAsync_treats_missing_symbol_package_as_empty()
+    {
+        // Translation-only language packs and a handful of system .apps ship
+        // with the manifest only — no SymbolReference.json because there's no
+        // code to symbolise. The reader must surface those as a Module with
+        // zero objects rather than refusing the whole upload.
+        var bytes = BuildSyntheticAppFile(manifestEntryName: "NavxManifest.xml", includeSymbolReference: false);
+        await using var stream = new MemoryStream(bytes);
+
+        var pkg = await AppPackageReader.ReadAsync(stream);
+        pkg.Manifest.Name.Should().Be("Synthetic");
+        pkg.Symbols.Objects.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task ReadAsync_tolerates_case_drift_on_manifest_filename()
     {
         // Microsoft has shipped .apps with both NavxManifest.xml and the
@@ -204,7 +219,7 @@ public sealed class AppPackageReaderTests
     /// trivial SymbolReference.json. Returns the full byte blob the reader
     /// will see.
     /// </summary>
-    private static byte[] BuildSyntheticAppFile(string? manifestEntryName)
+    private static byte[] BuildSyntheticAppFile(string? manifestEntryName, bool includeSymbolReference = true)
     {
         // Build the ZIP into its own buffer first; ZipArchive in Create mode
         // writes its central directory using offsets relative to the start
@@ -225,9 +240,12 @@ public sealed class AppPackageReaderTests
                         + "<App Id=\"11111111-1111-1111-1111-111111111111\" Name=\"Synthetic\" Publisher=\"Test\" Version=\"1.0.0.0\" />"
                         + "</Package>");
                 }
-                var sym = zip.CreateEntry("SymbolReference.json");
-                using var sw = new StreamWriter(sym.Open());
-                sw.Write("{\"RuntimeVersion\":\"14.0\",\"Namespaces\":[]}");
+                if (includeSymbolReference)
+                {
+                    var sym = zip.CreateEntry("SymbolReference.json");
+                    using var sw = new StreamWriter(sym.Open());
+                    sw.Write("{\"RuntimeVersion\":\"14.0\",\"Namespaces\":[]}");
+                }
             }
             zipBytes = zipMs.ToArray();
         }

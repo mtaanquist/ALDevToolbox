@@ -197,8 +197,17 @@ public static class AppPackageReader
 
     private static SymbolPackage ReadSymbolPackage(ZipArchive archive)
     {
-        var entry = FindEntry(archive, "SymbolReference.json")
-            ?? throw NotFoundInArchive(archive, "SymbolReference.json");
+        // The symbol package is *optional*. Translation-only language packs and
+        // a few system .apps ship with just the manifest + payload files and no
+        // SymbolReference.json — there's no code to symbolise. Treat the
+        // missing case as "this .app contributes a Module row but zero objects"
+        // and let the importer continue. The manifest is the only file that
+        // gets the strict-missing treatment.
+        var entry = FindEntry(archive, "SymbolReference.json");
+        if (entry is null)
+        {
+            return new SymbolPackage(RuntimeVersion: null, Objects: Array.Empty<SymbolObject>());
+        }
         using var stream = entry.Open();
         // The file has a UTF-8 BOM; System.Text.Json handles it transparently.
         var raw = JsonSerializer.Deserialize<RawSymbolRoot>(stream, JsonOpts)
