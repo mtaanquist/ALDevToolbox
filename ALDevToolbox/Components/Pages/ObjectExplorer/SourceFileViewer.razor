@@ -65,21 +65,50 @@
                 }
                 else
                 {
-                    <ul class="source-viewer__outline-list">
-                        @foreach (var item in _outline)
-                        {
-                            <li class="@OutlineItemClass(item)">
-                                <a href="@OutlineHref(item)">
-                                    <span class="source-viewer__outline-kind">@FormatKind(item.Kind)</span>
-                                    <span class="source-viewer__outline-name">@item.Name</span>
-                                    @if (!string.IsNullOrEmpty(item.Signature))
+                    <input type="text"
+                           class="source-viewer__outline-filter"
+                           placeholder="Filter symbols…"
+                           aria-label="Filter symbols"
+                           value="@_filter"
+                           @oninput="HandleFilterInput" />
+
+                    var groups = SourceFileOutlineGrouper.Build(_outline, _filter);
+                    if (groups.Count == 0)
+                    {
+                        <p class="muted">No matches.</p>
+                    }
+                    foreach (var group in groups)
+                    {
+                        var open = !_collapsedSections.Contains(group.Key);
+                        <section class="source-viewer__outline-section">
+                            <button type="button"
+                                    class="source-viewer__outline-section-toggle"
+                                    aria-expanded="@(open ? "true" : "false")"
+                                    @onclick="() => ToggleSection(group.Key)">
+                                <span class="source-viewer__outline-section-chevron @(open ? "is-open" : null)">›</span>
+                                <span class="source-viewer__outline-section-title">@group.Title</span>
+                                <span class="source-viewer__outline-section-count">(@group.Items.Count)</span>
+                            </button>
+                            @if (open)
+                            {
+                                <ul class="source-viewer__outline-list">
+                                    @foreach (var entry in group.Items)
                                     {
-                                        <span class="source-viewer__outline-sig muted">@item.Signature</span>
+                                        <li class="source-viewer__outline-item @(entry.IsChild ? "source-viewer__outline-item--child" : null)">
+                                            <a href="@OutlineEntryHref(entry)" title="@entry.Item.Name">
+                                                <span class="source-viewer__outline-name">@entry.Item.Name</span>
+                                                @if (!string.IsNullOrEmpty(entry.Item.Signature))
+                                                {
+                                                    <span class="source-viewer__outline-sig muted">@FormatSignature(entry.Item.Signature)</span>
+                                                }
+                                                <span class="source-viewer__outline-line muted">L@(entry.Item.LineNumber)</span>
+                                            </a>
+                                        </li>
                                     }
-                                </a>
-                            </li>
-                        }
-                    </ul>
+                                </ul>
+                            }
+                        </section>
+                    }
                 }
 
                 @if (_findInFile is not null)
@@ -127,6 +156,8 @@
     private int _scrollSequence;
     private FileWordSearch? _findInFile;
     private string? _lastNavigationNotice;
+    private string _filter = string.Empty;
+    private readonly HashSet<string> _collapsedSections = new(StringComparer.Ordinal);
 
     protected override async Task OnInitializedAsync()
     {
@@ -176,31 +207,34 @@
         _findInFile = null;
     }
 
-    private string OutlineHref(SourceFileOutlineItem item)
+    private void HandleFilterInput(ChangeEventArgs e)
     {
-        // Objects (the major declarations) deserve a real navigation hop so
-        // the user can find references / jump to symbols on them. Sub-symbol
-        // rows just deep-link back to this same page with a new ?line= for
-        // the CodeMirror viewer to scroll to.
-        return item.ObjectId is { } oid
-            ? $"/object-explorer/object/{oid}"
-            : $"/object-explorer/file/{FileId}?line={item.LineNumber}";
+        _filter = e.Value as string ?? string.Empty;
     }
 
-    private string OutlineItemClass(SourceFileOutlineItem item) =>
-        item.ObjectId is null
-            ? "source-viewer__outline-item source-viewer__outline-item--symbol"
-            : "source-viewer__outline-item source-viewer__outline-item--object";
-
-    private static string FormatKind(string kind) => kind switch
+    private void ToggleSection(string key)
     {
-        "internal_procedure" => "internal proc",
-        "local_procedure"    => "local proc",
-        "procedure"          => "procedure",
-        "event_publisher"    => "event publisher",
-        "event_subscriber"   => "event subscriber",
-        "trigger"            => "trigger",
-        "field"              => "field",
-        _                    => kind,
-    };
+        if (!_collapsedSections.Add(key))
+        {
+            _collapsedSections.Remove(key);
+        }
+    }
+
+    private string OutlineEntryHref(OutlineEntry entry)
+    {
+        // Object header (the major declaration) navigates to the
+        // object detail page so Find references and the detail
+        // surfaces are reachable. Sub-symbols deep-link back to this
+        // same page with ?line= for CodeMirror to scroll to.
+        return entry.Item.ObjectId is { } oid
+            ? $"/object-explorer/object/{oid}"
+            : $"/object-explorer/file/{FileId}?line={entry.Item.LineNumber}";
+    }
+
+    /// <summary>
+    /// Field signatures are already plain types ("Code[20]", "Enum");
+    /// procedure signatures are full parameter lists which CSS
+    /// truncates with ellipsis at render time.
+    /// </summary>
+    private static string FormatSignature(string signature) => signature;
 }
