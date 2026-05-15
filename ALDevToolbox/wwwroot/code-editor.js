@@ -614,10 +614,25 @@ export function scrollToLine(id, lineNumber, flash) {
         } else {
             // Fluid mount (`Fluid="true"`): the editor's scroller is the
             // same height as its content (overflow: visible), so it
-            // can't scroll. Defer to the nearest scrolling ancestor
-            // (the page's .content column) via the line element.
+            // can't scroll. CodeMirror virtualises lines outside the
+            // initial viewport, so the line element may not exist for
+            // far-away targets like line 500 of 1000. Prefer
+            // EditorView.scrollIntoView — CM materialises the line
+            // before scrolling and routes through the appropriate
+            // outer container. Explicit `x: "start"` keeps the line's
+            // first column visible; the default ("nearest") leaves
+            // any pre-existing horizontal scroll in place, which
+            // looks like the first few characters got cut off after
+            // the jump. Fast-path lineEl.scrollIntoView when the
+            // target is already in the rendered viewport.
             const lineEl = findLineEl();
-            if (lineEl) lineEl.scrollIntoView({ block: "center", behavior: "auto" });
+            if (lineEl) {
+                lineEl.scrollIntoView({ block: "center", inline: "start", behavior: "auto" });
+            } else {
+                view.dispatch({
+                    effects: EditorView.scrollIntoView(line.from, { y: "center", x: "start" }),
+                });
+            }
         }
     };
 

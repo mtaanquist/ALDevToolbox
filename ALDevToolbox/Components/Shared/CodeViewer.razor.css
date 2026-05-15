@@ -30,8 +30,16 @@
 }
 
 .code-viewer-host--fluid ::deep .cm-scroller {
-    /* Page scrolls instead of the editor. CodeMirror still virtualizes
-       via the scroller's bounding rect intersected with the visible
-       window, so even long files only render lines near the viewport. */
-    overflow: visible;
+    /* Page scrolls vertically; the scroller itself handles horizontal
+       overflow for files with long lines. Without overflow-x: auto the
+       host's overflow: hidden would clip long lines entirely.
+       Per CSS spec, overflow-y: visible is implicitly auto when
+       overflow-x is set — but since the fluid cm-editor has
+       height: auto, vertical content fits its parent exactly, so no
+       phantom vertical scrollbar appears. CodeMirror still
+       virtualizes via the scroller's bounding rect intersected with
+       the visible window, so long files only render lines near the
+       viewport. */
+    overflow-x: auto;
+    overflow-y: visible;
 }

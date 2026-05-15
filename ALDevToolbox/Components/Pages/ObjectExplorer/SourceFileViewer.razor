@@ -98,7 +98,7 @@
                                         <li class="source-viewer__outline-item @(entry.IsChild ? "source-viewer__outline-item--child" : null)">
                                             @if (entry.Item.ObjectId is { } oid)
                                             {
-                                                <a href="@($"/object-explorer/object/{oid}")" title="@entry.Item.Name">
+                                                <a href="@($"/object-explorer/object/{oid}")" title="@FormatTooltip(entry.Item)">
                                                     <span class="source-viewer__outline-name">@entry.Item.Name</span>
                                                     @if (!string.IsNullOrEmpty(entry.Item.Signature))
                                                     {
@@ -111,7 +111,7 @@
                                             {
                                                 <button type="button"
                                                         class="source-viewer__outline-link"
-                                                        title="@entry.Item.Name"
+                                                        title="@FormatTooltip(entry.Item)"
                                                         @onclick="() => JumpToLineInThisFileAsync(entry.Item.LineNumber)">
                                                     <span class="source-viewer__outline-name">@entry.Item.Name</span>
                                                     @if (!string.IsNullOrEmpty(entry.Item.Signature))
@@ -246,11 +246,30 @@
     {
         _highlightLine = line;
         _scrollSequence++;
-        await JS.InvokeVoidAsync(
-            "history.replaceState",
-            null,
-            string.Empty,
-            $"/object-explorer/file/{FileId}?line={line}");
+        // Queue the render *before* the JS interop. Auto-StateHasChanged
+        // at end-of-handler only fires once the awaited Task completes
+        // successfully — a hung or throwing replaceState would
+        // otherwise block the render and the user-visible scroll
+        // wouldn't happen.
+        StateHasChanged();
+
+        // URL bar update is best-effort: shareable / back-buttonable
+        // link to the line. A failure (mid-nav, half-detached
+        // circuit) shouldn't bork the click.
+        try
+        {
+            await JS.InvokeVoidAsync(
+                "history.replaceState",
+                null,
+                string.Empty,
+                $"/object-explorer/file/{FileId}?line={line}");
+        }
+        catch (JSException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 
     private async Task HandleFindInFile(CodeViewerClick click)
@@ -283,4 +302,19 @@
     /// truncates with ellipsis at render time.
     /// </summary>
     private static string FormatSignature(string signature) => signature;
+
+    /// <summary>
+    /// Builds the hover-tooltip text for an outline row: the full
+    /// declaration the row stands for ("Name" or "Name(sig): Return").
+    /// Used on every row so the truncated signature stays addressable.
+    /// </summary>
+    private static string FormatTooltip(SourceFileOutlineItem item)
+    {
+        var sb = new System.Text.StringBuilder(item.Name);
+        if (!string.IsNullOrEmpty(item.Signature))
+        {
+            sb.Append(item.Signature);
+        }
+        return sb.ToString();
+    }
 }

@@ -2948,12 +2948,21 @@ ul.form-field-error {
 }
 
 .source-viewer__outline {
+    /* Stick to the viewport so the outline follows the user up and
+       down a long file without scrolling out of reach. align-items:
+       start on the grid parent gives sticky a stable containing
+       block to compute against. */
+    position: sticky;
+    top: 12px;
     border: 1px solid var(--color-border-strong);
     border-radius: var(--radius);
     padding: 12px 14px;
     background: var(--color-surface);
-    max-height: calc(100vh - 220px);
-    overflow-y: auto;
+    max-height: calc(100vh - 24px);
+    /* Both axes scroll inside the panel: y for long outlines (Base App
+       codeunits with 100+ procedures), x for procedure names that
+       overflow the 280px column. */
+    overflow: auto;
 }
 
 .source-viewer__outline h2 {
@@ -3052,7 +3061,14 @@ ul.form-field-error {
     align-items: baseline;
     gap: 6px;
     padding: 1px 0;
-    min-width: 0;
+    /* Row widens to fit a fully-visible name; the outline panel's
+       overflow-x: auto then provides a horizontal scrollbar for long
+       names that exceed the column width. min-width: 100% keeps the
+       hover/click target spanning at least the panel width even when
+       the name is short. */
+    width: max-content;
+    min-width: 100%;
+    box-sizing: border-box;
 }
 
 /* Same-file outline rows render as <button> instead of <a> so the
@@ -3068,7 +3084,6 @@ ul.form-field-error {
     color: inherit;
     font: inherit;
     text-align: left;
-    width: 100%;
 }
 
 .source-viewer__outline-link:hover .source-viewer__outline-name {
@@ -3076,18 +3091,26 @@ ul.form-field-error {
 }
 
 .source-viewer__outline-name {
-    flex: 0 1 auto;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    /* AL identifiers in monospace — matches the editor's font and keeps
+       parameter signatures visually aligned. Names never truncate so a
+       glance answers "is this the procedure I'm looking for"; long
+       names spill horizontally and the outline panel's overflow-x:
+       auto provides a scrollbar. */
+    flex: 0 0 auto;
+    font-family: var(--font-mono);
     white-space: nowrap;
-    min-width: 0;
 }
 
 .source-viewer__outline-sig {
-    flex: 1 1 auto;
+    /* The signature is the one column allowed to elide. flex: 1 1 0
+       + min-width: 0 lets it shrink to nothing so the line number
+       and (when needed) the next row's name stay aligned. The full
+       text always sits on the row's title attribute. */
+    flex: 1 1 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-family: var(--font-mono);
     font-size: 12px;
     min-width: 0;
 }
@@ -3095,6 +3118,7 @@ ul.form-field-error {
 .source-viewer__outline-line {
     flex: 0 0 auto;
     margin-left: auto;
+    padding-left: 8px;
     font-size: 11.5px;
     font-variant-numeric: tabular-nums;
     color: var(--text-3, #7a7a8a);
