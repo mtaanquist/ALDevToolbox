@@ -38,18 +38,26 @@ public class ObjectExplorerService
     /// in-progress Releases come along — the picker UI badges them
     /// distinctly but admins still need to see them.
     /// </summary>
-    public Task<List<ReleaseListItem>> ListReleasesAsync(CancellationToken ct = default)
-        => _db.OeReleases.AsNoTracking()
-            .Where(r => r.DeletedAt == null)
-            .OrderBy(r => r.Label)
+    public Task<List<ReleaseListItem>> ListReleasesAsync(
+        bool includeSoftDeleted = false, CancellationToken ct = default)
+    {
+        var q = _db.OeReleases.AsNoTracking().AsQueryable();
+        if (!includeSoftDeleted)
+        {
+            q = q.Where(r => r.DeletedAt == null);
+        }
+        return q.OrderBy(r => r.DeletedAt == null ? 0 : 1)
+            .ThenBy(r => r.Label)
             .Select(r => new ReleaseListItem(
                 r.Id, r.Label, r.Kind, r.Status, r.BcVersion, r.ParentReleaseId, r.ImportedAt,
                 // Both aggregates run as correlated subqueries against
                 // oe_module_files joined through oe_modules. The numbers feed
                 // the per-release Files / Size columns on the browser.
                 SourceFileCount: r.Modules.SelectMany(m => m.Files).Count(),
-                SourceContentLength: r.Modules.SelectMany(m => m.Files).Sum(f => (long)f.Content.Length)))
+                SourceContentLength: r.Modules.SelectMany(m => m.Files).Sum(f => (long)f.Content.Length),
+                DeletedAt: r.DeletedAt))
             .ToListAsync(ct);
+    }
 
     /// <summary>
     /// Returns the Release header plus a denormalised module count for the

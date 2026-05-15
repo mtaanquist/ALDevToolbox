@@ -17,7 +17,8 @@ public sealed record ReleaseListItem(
     int? ParentReleaseId,
     DateTime ImportedAt,
     int SourceFileCount,
-    long SourceContentLength);
+    long SourceContentLength,
+    DateTime? DeletedAt);
 
 /// <summary>
 /// Release detail surface for the header bar — adds module count and the
