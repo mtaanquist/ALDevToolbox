@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ALDevToolbox.Data;
@@ -202,6 +203,7 @@ public class BaseAppImportService
                     ObjectName = declaration.Name,
                     Namespace = declaration.Namespace,
                     Content = content,
+                    ContentHash = ComputeContentHash(content),
                     LineCount = CountLines(content),
                 };
 
@@ -448,6 +450,20 @@ public class BaseAppImportService
             if (content[i] == '\n') count++;
         }
         return count;
+    }
+
+    /// <summary>
+    /// SHA-256 of <paramref name="content"/> as a lower-case hex string —
+    /// stable across machines and round-trips cleanly through Postgres
+    /// text. Used by the version-compare service to spot changed files
+    /// without a full body compare. Empty content hashes to the SHA-256
+    /// of empty, which is fine.
+    /// </summary>
+    public static string ComputeContentHash(string content)
+    {
+        var bytes = Encoding.UTF8.GetBytes(content ?? string.Empty);
+        var hash = SHA256.HashData(bytes);
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     /// <summary>

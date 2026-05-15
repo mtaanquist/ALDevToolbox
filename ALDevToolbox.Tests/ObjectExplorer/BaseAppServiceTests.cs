@@ -479,6 +479,72 @@ public sealed class BaseAppServiceTests : IDisposable
         sym.Name.Should().Be("Sales Header");
     }
 
+    [Fact]
+    public async Task CompareVersions_classifies_added_removed_and_changed_by_hash()
+    {
+        var vA = await SeedVersionAsync(27, new Dictionary<string, string>
+        {
+            ["Sales/SalesPost.Codeunit.al"] = "codeunit 80 \"Sales-Post\"\n{\n    procedure Post(): Boolean begin exit(true); end;\n}\n",
+            ["Sales/SalesHeader.Table.al"] = "table 36 \"Sales Header\" { fields { field(1; \"No.\"; Code[20]) { } } }\n",
+            ["Removed/Old.Codeunit.al"] = "codeunit 99 \"Old\"\n{ }\n",
+        });
+        var vB = await SeedVersionAsync(28, new Dictionary<string, string>
+        {
+            ["Sales/SalesPost.Codeunit.al"] = "codeunit 80 \"Sales-Post\"\n{\n    procedure Post(): Boolean begin exit(false); end;\n}\n",
+            ["Sales/SalesHeader.Table.al"] = "table 36 \"Sales Header\" { fields { field(1; \"No.\"; Code[20]) { } } }\n",
+            ["New/Brand.Codeunit.al"] = "codeunit 100 \"Brand\"\n{ }\n",
+        });
+
+        var svc = NewService();
+        var diff = await svc.CompareVersionsAsync(vA, vB);
+
+        diff.Added.Select(r => r.ObjectName).Should().BeEquivalentTo(new[] { "Brand" });
+        diff.Removed.Select(r => r.ObjectName).Should().BeEquivalentTo(new[] { "Old" });
+        diff.Changed.Should().ContainSingle()
+            .Which.Right.ObjectName.Should().Be("Sales-Post");
+        // SalesHeader has identical content on both sides — should not
+        // appear in any list.
+        diff.TotalCount.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task CompareVersions_matches_by_name_for_id_less_objects()
+    {
+        // Interfaces have no ObjectId — should fall back to (Type, Name).
+        var vA = await SeedVersionAsync(27, new Dictionary<string, string>
+        {
+            ["Iface.Interface.al"] = "interface \"Refresh\" { procedure Run(); }\n",
+        });
+        var vB = await SeedVersionAsync(28, new Dictionary<string, string>
+        {
+            ["Iface.Interface.al"] = "interface \"Refresh\" { procedure Run(); procedure Reset(); }\n",
+        });
+
+        var svc = NewService();
+        var diff = await svc.CompareVersionsAsync(vA, vB);
+
+        diff.Added.Should().BeEmpty();
+        diff.Removed.Should().BeEmpty();
+        diff.Changed.Should().ContainSingle()
+            .Which.Right.ObjectName.Should().Be("Refresh");
+    }
+
+    [Fact]
+    public async Task CompareVersions_self_compare_is_empty()
+    {
+        var vA = await SeedVersionAsync(28, new Dictionary<string, string>
+        {
+            ["a/Foo.Codeunit.al"] = "codeunit 1 \"Foo\" { }\n",
+        });
+        var svc = NewService();
+
+        var diff = await svc.CompareVersionsAsync(vA, vA);
+
+        diff.Added.Should().BeEmpty();
+        diff.Removed.Should().BeEmpty();
+        diff.Changed.Should().BeEmpty();
+    }
+
     private BaseAppService NewService()
     {
         var ctx = _db.NewContext();

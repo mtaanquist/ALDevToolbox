@@ -61,6 +61,17 @@ public class BaseAppFile
     /// <summary>UTF-8 source text. Matches the codebase's text-only persistence stance.</summary>
     public string Content { get; set; } = string.Empty;
 
+    /// <summary>
+    /// SHA-256 of <see cref="Content"/> as hex, stamped at import time.
+    /// Powers the version-compare query: two files match on
+    /// <c>(ObjectType, ObjectId/Name)</c> are "changed" iff their hashes
+    /// differ, which avoids a full content compare per pair. Nullable
+    /// because legacy imports (pre-feature) don't have the hash —
+    /// callers fall back to a direct content compare when either side
+    /// is null.
+    /// </summary>
+    public string? ContentHash { get; set; }
+
     /// <summary>Denormalised line count for display in the browser table.</summary>
     public int LineCount { get; set; }
 
