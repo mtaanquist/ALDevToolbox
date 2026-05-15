@@ -861,9 +861,26 @@ public class BaseAppService
         var likely = new List<BaseAppReferenceHit>();
         var possiblyRelated = new List<BaseAppReferenceHit>();
 
+        // Declaration lines in the declaring file (so we can drop them
+        // without an inner-loop DB round-trip). Same kind + name covers all
+        // overloads on this file.
+        var declarationLines = await _db.BaseAppSymbols
+            .AsNoTracking()
+            .Where(s => s.FileId == symbol.FileId
+                && s.Kind == symbol.Kind
+                && s.Name == symbol.Name)
+            .Select(s => s.LineNumber)
+            .ToListAsync(ct);
+        var declarationLineSet = new HashSet<int>(declarationLines);
+
         foreach (var file in candidateFiles)
         {
             var lines = file.Content.Replace("\r\n", "\n").Split('\n');
+            // Compute the file's var-type map once and reuse for every hit
+            // — receiver-typed classification is what suppresses
+            // `ErrorInfo.Create(...)` etc. when searching for an unrelated
+            // codeunit's `Create` procedure.
+            var objectVarMap = AlGoToDefinitionLocator.ResolveAllObjectVariableTypes(file.Content);
             for (var i = 0; i < lines.Length; i++)
             {
                 var match = lineRegex.Match(lines[i]);
@@ -871,19 +888,15 @@ public class BaseAppService
 
                 // Skip the declaration line itself (file is the declaring
                 // file and the line number matches the overload / field row).
-                if (file.Id == symbol.FileId)
+                if (file.Id == symbol.FileId && declarationLineSet.Contains(i + 1))
                 {
-                    var declHere = await _db.BaseAppSymbols
-                        .AsNoTracking()
-                        .AnyAsync(s => s.FileId == symbol.FileId
-                            && s.Kind == symbol.Kind
-                            && s.Name == symbol.Name
-                            && s.LineNumber == i + 1, ct);
-                    if (declHere) continue;
+                    continue;
                 }
 
                 var confidence = ClassifyHitConfidence(
-                    symbol.Kind, file.ObjectName, declaringObjectName, file.Content);
+                    symbol.Kind, file.ObjectName, declaringObjectName, file.Content,
+                    lines[i], match.Index, objectVarMap);
+                if (confidence is null) continue;
 
                 var hit = new BaseAppReferenceHit(
                     FileId: file.Id,
@@ -894,7 +907,7 @@ public class BaseAppService
                     LineNumber: i + 1,
                     ColumnStart: match.Index + 1,
                     Snippet: TrimSnippet(lines[i]),
-                    Confidence: confidence);
+                    Confidence: confidence.Value);
 
                 if (confidence == BaseAppReferenceConfidence.PossiblyRelated)
                 {
@@ -932,13 +945,22 @@ public class BaseAppService
             PossiblyRelated: possiblyRelated);
     }
 
+    private static readonly System.Text.RegularExpressions.Regex FieldDeclarationLineRegex = new(
+        @"^\s*field\s*\(\s*\d+\s*;\s*""(?<name>[^""]+)""",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase
+        | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static readonly System.Text.RegularExpressions.Regex ProcedureDeclarationLineRegex = new(
+        @"^\s*(?:local\s+|internal\s+|protected\s+|business\s+)?(?:procedure|trigger)\s+""?(?<name>[^""\s\(]+)""?\s*\(",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase
+        | System.Text.RegularExpressions.RegexOptions.Compiled);
+
     /// <summary>
-    /// Decides how confident we are that a textual <c>Name(</c> in
-    /// <paramref name="fileContent"/> is really a call to the declared
-    /// symbol. We look at the whole file rather than just the matched line
-    /// because AL's call-site syntax (<c>varname.Proc(</c>) uses the
-    /// variable name, while the type-qualifier (<c>Codeunit "Sales-Post"</c>)
-    /// usually lives in a <c>var</c> block elsewhere in the file.
+    /// Whole-file fallback confidence used only when the matched call site
+    /// has no usable left-context qualifier (bare <c>Name(</c> with no
+    /// receiver). Looks at the file as a whole because AL's typed-var
+    /// declaration (<c>Codeunit "Sales-Post"</c>) usually lives away from
+    /// the call site.
     /// </summary>
     private static BaseAppReferenceConfidence ClassifyConfidence(
         string callerObjectName, string declaringObjectName, string fileContent)
@@ -948,16 +970,11 @@ public class BaseAppService
             return BaseAppReferenceConfidence.SameObject;
         }
 
-        // Quoted reference anywhere in the file — `Codeunit "Sales-Post"`,
-        // `Codeunit::"Sales-Post"`, or just `"Sales-Post"` itself.
         if (fileContent.Contains('"' + declaringObjectName + '"', StringComparison.Ordinal))
         {
             return BaseAppReferenceConfidence.Qualified;
         }
 
-        // Bare identifier reference for single-word object names (AL allows
-        // hyphens and spaces inside quotes only, so multi-word names won't
-        // appear unquoted). Covers `Codeunit ItemMgt` and similar.
         if (!declaringObjectName.Contains(' ') && !declaringObjectName.Contains('-')
             && fileContent.Contains(declaringObjectName, StringComparison.Ordinal))
         {
@@ -968,39 +985,235 @@ public class BaseAppService
     }
 
     /// <summary>
-    /// Confidence shaping for a single hit. Dispatches by kind: procedure
-    /// calls reuse <see cref="ClassifyConfidence"/>; field hits are
-    /// SameObject when the file declares the field, Qualified when the
-    /// file imports the field's table by name (a <c>Record "Table"</c>
-    /// declaration or a quoted occurrence of the table name), and
-    /// PossiblyRelated otherwise (different table's same-name field);
-    /// object-declaration hits use the existing object-name classifier.
+    /// Decides whether a single regex hit at <paramref name="matchIndex"/>
+    /// on <paramref name="lineText"/> is really a reference to the declared
+    /// symbol, and at what confidence. Returns <c>null</c> to drop the hit
+    /// entirely — used when the call-site qualifier resolves to a different
+    /// object, when the qualifier is a system-type-named variable
+    /// (<c>HttpClient: HttpClient</c>) that shares a name with the declaring
+    /// codeunit, or when the matched line is another object's declaration
+    /// of the same identifier.
+    ///
+    /// Known limitations: method chaining <c>A.B().C()</c> reads as a bare
+    /// call (no left-context operator on <c>C</c>) and falls back to the
+    /// whole-file heuristic. Dynamic dispatch through interface variables
+    /// is dropped unless the interface type name matches the declaring
+    /// codeunit name — without a real type checker we can't follow it.
     /// </summary>
-    private static BaseAppReferenceConfidence ClassifyHitConfidence(
-        string symbolKind, string callerObjectName, string declaringObjectName, string fileContent)
+    private static BaseAppReferenceConfidence? ClassifyHitConfidence(
+        string symbolKind, string callerObjectName, string declaringObjectName,
+        string fileContent, string lineText, int matchIndex,
+        IReadOnlyDictionary<string, ResolvedVariableType> objectVarMap)
     {
-        if (symbolKind != "field")
+        var isSameFile = string.Equals(callerObjectName, declaringObjectName, StringComparison.Ordinal);
+
+        if (symbolKind == "field" || symbolKind == "object_declaration")
         {
-            return ClassifyConfidence(callerObjectName, declaringObjectName, fileContent);
+            return ClassifyFieldOrObjectHit(
+                symbolKind, isSameFile, declaringObjectName, fileContent,
+                lineText, matchIndex, objectVarMap);
         }
 
-        // Field hits: declaringObjectName is the *table* that holds the
-        // field. The field lives on the table file itself (SameObject when
-        // the candidate file *is* that table). Other files are Qualified
-        // when they have an obvious typed-var or namespace reference to
-        // the table, PossiblyRelated otherwise.
-        if (string.Equals(callerObjectName, declaringObjectName, StringComparison.Ordinal))
+        // Procedure / trigger / event kinds.
+        // Drop another object's declaration of a same-named procedure.
+        if (!isSameFile)
+        {
+            var procDecl = ProcedureDeclarationLineRegex.Match(lineText);
+            if (procDecl.Success
+                && string.Equals(procDecl.Groups["name"].Value, ExtractProcedureName(lineText, matchIndex),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+        }
+
+        var leftContext = AlGoToDefinitionLocator.ReadLeftContextAt(lineText, matchIndex);
+
+        if (leftContext.Operator == "::" || leftContext.Operator == "keyword")
+        {
+            // `Codeunit::"Foo"` / `Codeunit Foo` — that's an object reference,
+            // not a call to a procedure named Foo.
+            return null;
+        }
+
+        if (leftContext.Operator == ".")
+        {
+            return ClassifyDotQualifiedProcedureHit(
+                isSameFile, declaringObjectName, leftContext.Qualifier, objectVarMap);
+        }
+
+        // Bare `Name(` with no qualifier — could be a same-object self-call
+        // (SameObject), a `with` block, a parameter, or just a different
+        // procedure that happens to share a name. Fall back to the whole-file
+        // heuristic so we keep current behaviour for the ambiguous case.
+        return ClassifyConfidence(callerObjectName, declaringObjectName, fileContent);
+    }
+
+    private static BaseAppReferenceConfidence? ClassifyDotQualifiedProcedureHit(
+        bool isSameFile, string declaringObjectName, string? qualifier,
+        IReadOnlyDictionary<string, ResolvedVariableType> objectVarMap)
+    {
+        if (string.IsNullOrEmpty(qualifier)) return BaseAppReferenceConfidence.PossiblyRelated;
+
+        // Quoted qualifier `"Sales-Post".Post(...)` — literal object name.
+        // We can match it exactly against the declaring object.
+        if (qualifier.Contains(' ') || qualifier.Contains('-'))
+        {
+            return string.Equals(qualifier, declaringObjectName, StringComparison.Ordinal)
+                ? BaseAppReferenceConfidence.Qualified
+                : null;
+        }
+
+        if (objectVarMap.TryGetValue(qualifier, out var resolved))
+        {
+            // The qualifier IS a declared variable. If it's typed to an AL
+            // object whose name matches the declaring object, we have a
+            // real reference. Anything else is a confirmed different type
+            // — drop it. `var HttpClient: HttpClient` falls into the "no
+            // keyword" branch and is also dropped, even when the type name
+            // happens to match the declaring codeunit (the var is a
+            // runtime/system type, not the codeunit with the same name).
+            if (resolved.Keyword is not null
+                && string.Equals(resolved.TypeName, declaringObjectName, StringComparison.Ordinal))
+            {
+                return isSameFile
+                    ? BaseAppReferenceConfidence.SameObject
+                    : BaseAppReferenceConfidence.Qualified;
+            }
+            return null;
+        }
+
+        // Unresolved bare identifier qualifier. Could be a parameter, a
+        // local var the regex missed, or a static call on a same-named
+        // system type. When it doesn't even share a name with the
+        // declaring object, it's almost certainly unrelated — drop.
+        if (!string.Equals(qualifier, declaringObjectName, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        // Name matches the declaring object but no var declaration backs it
+        // up — possibly a procedure-parameter typed to the codeunit, or a
+        // static call on a system type that shares the name. Keep it
+        // visible but in the lower-confidence bucket.
+        return BaseAppReferenceConfidence.PossiblyRelated;
+    }
+
+    private static BaseAppReferenceConfidence? ClassifyFieldOrObjectHit(
+        string symbolKind, bool isSameFile, string declaringObjectName, string fileContent,
+        string lineText, int matchIndex,
+        IReadOnlyDictionary<string, ResolvedVariableType> objectVarMap)
+    {
+        if (symbolKind == "object_declaration")
+        {
+            // Object-name references are quoted-or-keyword everywhere
+            // (`Codeunit "X"`, `Codeunit::"X"`, `"X".Method(...)`). The
+            // existing whole-file heuristic already handles them well.
+            return isSameFile
+                ? BaseAppReferenceConfidence.SameObject
+                : ClassifyConfidence(declaringObjectName, declaringObjectName, fileContent);
+        }
+
+        // Field hits. Strip out another table's `field(N; "Name"; ...)`
+        // declarations — those are *declarations*, not references.
+        if (!isSameFile)
+        {
+            var fieldDecl = FieldDeclarationLineRegex.Match(lineText);
+            if (fieldDecl.Success
+                && string.Equals(fieldDecl.Groups["name"].Value,
+                    ExtractQuotedFieldName(lineText, matchIndex), StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+        }
+
+        var leftContext = AlGoToDefinitionLocator.ReadLeftContextAt(lineText, matchIndex);
+
+        if (leftContext.Operator == ".")
+        {
+            var qualifier = leftContext.Qualifier;
+            if (string.IsNullOrEmpty(qualifier))
+            {
+                return BaseAppReferenceConfidence.PossiblyRelated;
+            }
+
+            // Quoted qualifier `"Sales Header"."No." := ''`.
+            if (qualifier.Contains(' ') || qualifier.Contains('-'))
+            {
+                return string.Equals(qualifier, declaringObjectName, StringComparison.Ordinal)
+                    ? BaseAppReferenceConfidence.Qualified
+                    : null;
+            }
+
+            if (objectVarMap.TryGetValue(qualifier, out var resolved))
+            {
+                if (string.Equals(resolved.TypeName, declaringObjectName, StringComparison.Ordinal)
+                    && (resolved.Keyword is null
+                        || string.Equals(resolved.Keyword, "Record", StringComparison.OrdinalIgnoreCase)))
+                {
+                    return isSameFile
+                        ? BaseAppReferenceConfidence.SameObject
+                        : BaseAppReferenceConfidence.Qualified;
+                }
+                return null;
+            }
+
+            // Unresolved qualifier. Same logic as procedures: drop unless
+            // the bare name happens to match the declaring table.
+            if (!string.Equals(qualifier, declaringObjectName, StringComparison.Ordinal))
+            {
+                return null;
+            }
+            return BaseAppReferenceConfidence.PossiblyRelated;
+        }
+
+        // No `.` qualifier on this hit: intra-table `key(Key1; "Code")` and
+        // `fieldgroup(Brick; "Code", …)` references, message captions
+        // (`'"Code" is required'`), or report `RequestFilterFields = "Code"`.
+        if (isSameFile)
         {
             return BaseAppReferenceConfidence.SameObject;
         }
 
-        var quotedTable = '"' + declaringObjectName + '"';
-        if (fileContent.Contains(quotedTable, StringComparison.Ordinal))
+        if (fileContent.Contains('"' + declaringObjectName + '"', StringComparison.Ordinal))
         {
             return BaseAppReferenceConfidence.Qualified;
         }
 
         return BaseAppReferenceConfidence.PossiblyRelated;
+    }
+
+    /// <summary>
+    /// Returns the procedure name that the regex matched at
+    /// <paramref name="matchIndex"/> by reading forward from the match
+    /// position until a non-identifier char. Used to verify a procedure
+    /// declaration line on the same line as the regex match isn't being
+    /// mistaken for a call (when both the matcher and the declaration regex
+    /// could match the same line).
+    /// </summary>
+    private static string ExtractProcedureName(string lineText, int matchIndex)
+    {
+        if (matchIndex < 0 || matchIndex >= lineText.Length) return string.Empty;
+        var end = matchIndex;
+        while (end < lineText.Length
+            && (char.IsLetterOrDigit(lineText[end]) || lineText[end] == '_'))
+        {
+            end++;
+        }
+        return lineText.Substring(matchIndex, end - matchIndex);
+    }
+
+    /// <summary>
+    /// Extracts the field name inside the quotes that the regex matched at
+    /// <paramref name="matchIndex"/> (which points at the opening quote).
+    /// </summary>
+    private static string ExtractQuotedFieldName(string lineText, int matchIndex)
+    {
+        if (matchIndex < 0 || matchIndex >= lineText.Length) return string.Empty;
+        if (lineText[matchIndex] != '"') return string.Empty;
+        var close = lineText.IndexOf('"', matchIndex + 1);
+        if (close < 0) return string.Empty;
+        return lineText.Substring(matchIndex + 1, close - matchIndex - 1);
     }
 
     private const int SnippetMaxLength = 240;
