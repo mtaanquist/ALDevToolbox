@@ -64,6 +64,20 @@
             </label>
 
             <label class="field">
+                <span class="field__label">Extension</span>
+                <select class="field__input" @bind="_extensionId" @bind:after="ReloadAsync">
+                    <option value="">All</option>
+                    @if (_extensions is not null)
+                    {
+                        @foreach (var ext in _extensions)
+                        {
+                            <option value="@ext.Id">@ext.Name</option>
+                        }
+                    }
+                </select>
+            </label>
+
+            <label class="field">
                 <span class="field__label">Module</span>
                 <select class="field__input" @bind="_module" @bind:after="ReloadAsync">
                     <option value="">All</option>
@@ -114,6 +128,7 @@
     private List<string>? _objectTypes;
     private List<string>? _modules;
     private List<string>? _namespaces;
+    private List<BaseAppExtensionRow>? _extensions;
     private BaseAppSearchScope _scope = BaseAppSearchScope.Objects;
     private BaseAppFilePage? _page;
     private BaseAppProcedureSearchPage? _procedurePage;
@@ -122,6 +137,7 @@
     private string _objectType = string.Empty;
     private string _module = string.Empty;
     private string _namespace = string.Empty;
+    private string _extensionId = string.Empty;
     private BaseAppFileSort _sortBy = BaseAppFileSort.ObjectType;
     private bool _sortDescending;
     private CancellationTokenSource? _debounce;
@@ -133,7 +149,8 @@
     private bool HasFilters => !string.IsNullOrWhiteSpace(_search)
         || !string.IsNullOrWhiteSpace(_objectType)
         || !string.IsNullOrWhiteSpace(_module)
-        || !string.IsNullOrWhiteSpace(_namespace);
+        || !string.IsNullOrWhiteSpace(_namespace)
+        || !string.IsNullOrWhiteSpace(_extensionId);
 
     private string SearchPlaceholder => _scope switch
     {
@@ -153,6 +170,7 @@
         _objectTypes = await BaseApp.ListObjectTypesAsync(VersionId);
         _modules = await BaseApp.ListModulesAsync(VersionId);
         _namespaces = await BaseApp.ListNamespacesAsync(VersionId);
+        _extensions = await BaseApp.ListExtensionsAsync(VersionId);
         await ReloadAsync();
     }
 
@@ -197,11 +215,13 @@
         switch (_scope)
         {
             case BaseAppSearchScope.Objects:
+                long? extId = long.TryParse(_extensionId, out var parsedExt) ? parsedExt : null;
                 var filter = new BaseAppFileFilter(
                     ObjectType: string.IsNullOrWhiteSpace(_objectType) ? null : _objectType,
                     Module: string.IsNullOrWhiteSpace(_module) ? null : _module,
                     Search: string.IsNullOrWhiteSpace(_search) ? null : _search,
                     Namespace: string.IsNullOrWhiteSpace(_namespace) ? null : _namespace,
+                    ExtensionId: extId,
                     SortBy: _sortBy,
                     SortDescending: _sortDescending);
                 _page = await BaseApp.ListFilesAsync(VersionId, filter, skip: 0, take: 500);
@@ -278,6 +298,7 @@
                     @SortableHeader(BaseAppFileSort.ObjectType, "Type")
                     @SortableHeader(BaseAppFileSort.ObjectId, "ID", numeric: true)
                     @SortableHeader(BaseAppFileSort.ObjectName, "Name")
+                    <th scope="col">Extension</th>
                     @SortableHeader(BaseAppFileSort.Module, "Module")
                     @SortableHeader(BaseAppFileSort.Namespace, "Namespace")
                     @SortableHeader(BaseAppFileSort.LineCount, "Lines", numeric: true)
@@ -300,6 +321,7 @@
                             <a href="@($"/object-explorer/{VersionId}/files/{fileId}")"
                                @onclick:stopPropagation="true">@row.ObjectName</a>
                         </td>
+                        <td class="muted small" title="@(row.ExtensionPublisher is null ? null : row.ExtensionPublisher + " · " + (row.ExtensionName ?? ""))">@(row.ExtensionName ?? "")</td>
                         <td class="muted">@(row.Module ?? "")</td>
                         <td class="muted small">@(row.Namespace ?? "")</td>
                         <td class="num muted">@row.LineCount</td>
