@@ -146,6 +146,40 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchObjectsInReleaseAsync_orders_results_by_kind_then_id()
+    {
+        // The legacy VersionBrowser sorted by (Type, ID) so a release-wide
+        // browse groups objects by AL kind first, then by object number —
+        // the order BC devs read object lists in. Pin that contract:
+        // result list must be strictly non-decreasing on Kind, and within
+        // a kind block strictly non-decreasing on ObjectId.
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+
+        var hits = await NewQuery(read).SearchObjectsInReleaseAsync(
+            releaseId,
+            new ObjectListFilter(),
+            moduleId: null,
+            namespacePrefix: null,
+            take: 500);
+
+        hits.Should().NotBeEmpty();
+        for (var i = 1; i < hits.Count; i++)
+        {
+            var prev = hits[i - 1];
+            var cur = hits[i];
+            var kindCmp = string.CompareOrdinal(prev.Kind, cur.Kind);
+            kindCmp.Should().BeLessThanOrEqualTo(0,
+                "results are ordered by Kind first");
+            if (kindCmp == 0 && prev.ObjectId is { } pid && cur.ObjectId is { } cid)
+            {
+                pid.Should().BeLessThanOrEqualTo(cid,
+                    "within a Kind block, results are ordered by ObjectId");
+            }
+        }
+    }
+
+    [Fact]
     public async Task GetFileHeaderAsync_returns_release_and_module_context_without_loading_content()
     {
         await SeedSingleReleaseAsync();

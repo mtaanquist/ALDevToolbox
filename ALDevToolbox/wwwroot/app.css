@@ -3045,13 +3045,34 @@ ul.form-field-error {
     padding-left: 16px;
 }
 
-.source-viewer__outline-item a {
+.source-viewer__outline-item a,
+.source-viewer__outline-item .source-viewer__outline-link {
     text-decoration: none;
     display: flex;
     align-items: baseline;
     gap: 6px;
     padding: 1px 0;
     min-width: 0;
+}
+
+/* Same-file outline rows render as <button> instead of <a> so the
+   click handler can bypass Blazor's enhanced-nav pipeline and
+   update the URL via history.replaceState — Nav.NavigateTo's
+   streaming diff strips CodeMirror's runtime-injected style tags.
+   Strip the default button chrome so the row stays visually
+   identical to the anchor variant used for cross-page object jumps. */
+.source-viewer__outline-link {
+    background: none;
+    border: 0;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    width: 100%;
+}
+
+.source-viewer__outline-link:hover .source-viewer__outline-name {
+    text-decoration: underline;
 }
 
 .source-viewer__outline-name {
@@ -3096,7 +3117,8 @@ ul.form-field-error {
     padding: 2px 0;
 }
 
-.source-viewer__find-list a {
+.source-viewer__find-list a,
+.source-viewer__find-list .source-viewer__outline-link {
     text-decoration: none;
     display: flex;
     gap: 6px;
