@@ -693,7 +693,9 @@ public class ObjectExplorerService
                 so.name                  AS "SourceObjectName",
                 mr.reference_kind        AS "ReferenceKind",
                 mr.line_number           AS "LineNumber",
-                so.source_file_id        AS "SourceFileId"
+                so.source_file_id        AS "SourceFileId",
+                NULL::text               AS "SourceFilePath",
+                NULL::text               AS "Snippet"
             FROM oe_module_references mr
             JOIN oe_module_objects so ON so.id = mr.source_object_id
             JOIN oe_modules        m  ON m.id  = mr.module_id
