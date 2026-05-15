@@ -41,31 +41,73 @@ import { oneDark }
 
 // Lightweight AL StreamParser. Not a full AL grammar — recognises keywords,
 // strings, double-quoted identifiers (AL allows spaces inside `"..."`), comments
-// (line + block), and numeric literals. Same depth as the Prism `al` grammar;
-// shipped inline so we don't pull a third-party AL grammar package.
+// (line + block), and numeric literals. Categorisation cross-checked against
+// Microsoft's AL TextMate grammar (github.com/microsoft/AL/blob/master/grammar/
+// alsyntax.tmlanguage) so built-in types render distinctly from control
+// keywords, the same way the AL VS Code extension shows them.
 const AL_KEYWORDS = new Set([
+    // Control flow.
     "begin", "end", "if", "then", "else", "do", "while", "repeat", "until",
-    "for", "to", "downto", "foreach", "in", "case", "of", "exit",
+    "for", "to", "downto", "foreach", "in", "case", "of", "exit", "break",
+    // Declaration & scope.
     "procedure", "trigger", "local", "internal", "protected", "var",
     "with", "namespace", "using", "interface", "implements", "extends",
+    "implements", "raises", "obsolete", "subscribers", "subscriber",
+    "temporary", "rec", "xrec", "currfieldno", "currpage", "currreport",
+    // Object-type keywords (typed-reference introducers — also in
+    // AL_OBJECT_KEYWORDS below so the following identifier is coloured).
     "codeunit", "table", "tableextension", "page", "pageextension",
     "pagecustomization", "report", "reportextension", "xmlport", "query",
     "enum", "enumextension", "permissionset", "permissionsetextension",
     "profile", "controladdin", "dotnet",
-    "and", "or", "not", "xor", "div", "mod", "true", "false",
-    "record", "temporary", "label", "text", "integer", "biginteger",
-    "decimal", "boolean", "char", "date", "time", "datetime", "duration",
-    "guid", "code", "blob", "media", "mediaset", "option", "list", "dictionary",
-    "array", "variant", "instream", "outstream",
-    "rec", "xrec", "currfieldno", "currpage", "currreport",
-    "raises", "obsolete", "subscribers", "subscriber",
+    // Operator keywords.
+    "and", "or", "not", "xor", "div", "mod",
+    // Boolean / null literals.
+    "true", "false",
+    // Metadata / property keywords (from the MS grammar). Not exhaustive,
+    // but covers what's surprising-when-uncoloured in real BaseApp code.
+    "where", "ascending", "descending", "filter", "const", "average",
+    "count", "exist", "field", "min", "max", "sum",
+    "add", "addfirst", "addlast", "addbefore", "addafter",
+    "modify", "movebefore", "moveafter", "customizes",
+    "action", "actions", "fields", "keys", "schema", "values",
+    "elements", "textelement", "tableelement", "fieldattribute",
+    "textattribute", "requestpage",
+]);
+
+// Built-in AL types. Distinct from AL_KEYWORDS so they get `typeName`
+// styling — matches the AL VS Code extension's `keyword.other.builtintypes.al`
+// scope. Drawn from the MS grammar and the current AL methods reference.
+const AL_BUILTIN_TYPES = new Set([
+    // Primitives.
+    "boolean", "byte", "char", "code", "date", "dateformula", "datetime",
+    "decimal", "duration", "guid", "integer", "biginteger", "label", "option",
+    "text", "time", "variant",
+    // Streams / files.
+    "instream", "outstream", "file",
+    // Reference types and containers.
+    "array", "list", "dictionary", "blob", "media", "mediaset",
+    "recordid", "recordref", "fieldref", "keyref",
+    // Modern (HTTP / JSON / XML).
+    "httpclient", "httpcontent", "httpheaders", "httprequestmessage",
+    "httpresponsemessage",
+    "jsonarray", "jsonobject", "jsontoken", "jsonvalue",
+    "xmlattribute", "xmlattributecollection", "xmlcdata", "xmlcomment",
+    "xmldeclaration", "xmldocument", "xmldocumenttype", "xmlelement",
+    "xmlnamespacemanager", "xmlnamespacescope", "xmlnametable", "xmlnode",
+    "xmlnodelist", "xmlprocessinginstruction", "xmlreadoptions", "xmltext",
+    "xmlwriteoptions",
+    // UI / runtime.
+    "action", "dialog", "errorinfo", "filterpagebuilder", "notification",
+    "page", "report", "session", "sessionsettings", "textbuilder",
+    "textconst", "textencoding", "verbosity", "version", "testpage",
+    "clienttype", "tableconnectiontype",
 ]);
 
 // Keywords whose following identifier is an *object name* — colour the
 // next bare identifier (after any object-ID number) the same way we colour
 // quoted AL identifiers, so `table 5721 Purchasing` reads the same as
-// `table 36 "Sales Header"`. Kept narrower than AL_KEYWORDS itself; only
-// the keywords that introduce a typed reference.
+// `table 36 "Sales Header"`.
 const AL_OBJECT_KEYWORDS = new Set([
     "codeunit", "table", "tableextension", "page", "pageextension",
     "pagecustomization", "report", "reportextension", "xmlport", "query",
@@ -75,8 +117,21 @@ const AL_OBJECT_KEYWORDS = new Set([
     "extends", "tabledata",
 ]);
 
+// Keywords whose following identifier is the *name of a procedure or
+// trigger being declared* — gives the name a distinct colour (CodeMirror
+// maps `def` to a definition tag, typically bold/coloured).
+const AL_DEFINITION_KEYWORDS = new Set([
+    "procedure", "trigger",
+]);
+
 const alParser = {
-    startState() { return { inBlockComment: false, expectObjectName: false }; },
+    startState() {
+        return {
+            inBlockComment: false,
+            expectObjectName: false,
+            expectDefinitionName: false,
+        };
+    },
     token(stream, state) {
         if (state.inBlockComment) {
             while (!stream.eol()) {
@@ -104,8 +159,13 @@ const alParser = {
                 const ch = stream.next();
                 if (ch === '"') break;
             }
+            // A quoted name in either expected-name slot is still the
+            // declared name — colour as definition if pending, otherwise
+            // a regular AL identifier.
+            const tok = state.expectDefinitionName ? "def" : "variableName";
             state.expectObjectName = false;
-            return "variableName";
+            state.expectDefinitionName = false;
+            return tok;
         }
         // Single-quoted string literal.
         if (stream.peek() === "'") {
@@ -121,6 +181,7 @@ const alParser = {
                 }
             }
             state.expectObjectName = false;
+            state.expectDefinitionName = false;
             return "string";
         }
         if (stream.match(/^\d+(\.\d+)?/)) {
@@ -132,9 +193,26 @@ const alParser = {
         }
         if (stream.match(/^[A-Za-z_][A-Za-z0-9_]*/)) {
             const word = stream.current().toLowerCase();
+            // Built-in types come first so `Integer`, `Text`, `Boolean`,
+            // `HttpClient`, etc. render as types regardless of whether
+            // they appear in a declaration or a type-cast position.
+            if (AL_BUILTIN_TYPES.has(word)) {
+                state.expectObjectName = false;
+                state.expectDefinitionName = false;
+                return "typeName";
+            }
             if (AL_KEYWORDS.has(word)) {
                 state.expectObjectName = AL_OBJECT_KEYWORDS.has(word);
+                state.expectDefinitionName = AL_DEFINITION_KEYWORDS.has(word);
                 return "keyword";
+            }
+            if (state.expectDefinitionName) {
+                // First identifier after `procedure` / `trigger` is the
+                // name being declared. `def` maps to CodeMirror's
+                // definition tag — typically bold or accent-coloured.
+                state.expectDefinitionName = false;
+                state.expectObjectName = false;
+                return "def";
             }
             if (state.expectObjectName) {
                 state.expectObjectName = false;
@@ -146,6 +224,7 @@ const alParser = {
         // object-name expectation. We hit this for `{`, `:`, `=`, etc.,
         // any of which means the declaration has moved past its name.
         state.expectObjectName = false;
+        state.expectDefinitionName = false;
         stream.next();
         return null;
     },
@@ -511,13 +590,35 @@ export function scrollToLine(id, lineNumber, flash) {
     const totalLines = view.state.doc.lines;
     const safeLine = Math.min(lineNumber, totalLines);
 
+    const findLineEl = () => {
+        const line = view.state.doc.line(safeLine);
+        const dom = view.domAtPos(line.from);
+        let lineEl = dom?.node instanceof Element ? dom.node : dom?.node?.parentElement;
+        while (lineEl && !(lineEl.classList && lineEl.classList.contains("cm-line"))) {
+            lineEl = lineEl.parentElement;
+        }
+        return lineEl;
+    };
+
     const doScroll = () => {
         const line = view.state.doc.line(safeLine);
         const block = view.lineBlockAt(line.from);
         const scroller = view.scrollDOM;
         const scrollMax = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-        const target = block.top - scroller.clientHeight / 2 + block.height / 2;
-        scroller.scrollTop = Math.max(0, Math.min(scrollMax, target));
+        if (scrollMax > 0) {
+            // Bounded editor (default mount) — scroll the editor's own
+            // scroller. Direct scrollTop avoids the inconsistent viewport
+            // state we used to see going through EditorView.scrollIntoView.
+            const target = block.top - scroller.clientHeight / 2 + block.height / 2;
+            scroller.scrollTop = Math.max(0, Math.min(scrollMax, target));
+        } else {
+            // Fluid mount (`Fluid="true"`): the editor's scroller is the
+            // same height as its content (overflow: visible), so it
+            // can't scroll. Defer to the nearest scrolling ancestor
+            // (the page's .content column) via the line element.
+            const lineEl = findLineEl();
+            if (lineEl) lineEl.scrollIntoView({ block: "center", behavior: "auto" });
+        }
     };
 
     requestAnimationFrame(() => {
@@ -526,12 +627,7 @@ export function scrollToLine(id, lineNumber, flash) {
             doScroll();
             if (!flash) return;
             requestAnimationFrame(() => {
-                const line = view.state.doc.line(safeLine);
-                const dom = view.domAtPos(line.from);
-                let lineEl = dom?.node instanceof Element ? dom.node : dom?.node?.parentElement;
-                while (lineEl && !(lineEl.classList && lineEl.classList.contains("cm-line"))) {
-                    lineEl = lineEl.parentElement;
-                }
+                const lineEl = findLineEl();
                 if (!lineEl) return;
                 // Adding a class that's already present doesn't restart its
                 // CSS animation. Remove → force a reflow → re-add so

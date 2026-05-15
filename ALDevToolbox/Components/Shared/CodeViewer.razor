@@ -13,7 +13,7 @@
     navigation via NavigationManager (no SymbolReferences URL leakage into JS).
 *@
 
-<div class="code-viewer-host" @ref="_container"></div>
+<div class="code-viewer-host @(Fluid ? "code-viewer-host--fluid" : null)" @ref="_container"></div>
 
 @code {
     /// <summary>The source text to render. Re-passing this prop after mount calls <c>setValue</c>.</summary>
@@ -70,6 +70,15 @@
     /// nothing to do.
     /// </summary>
     [Parameter] public int ScrollSequence { get; set; }
+
+    /// <summary>
+    /// When true, the editor grows to fit its content height instead of
+    /// scrolling internally — the page scrolls instead. Used by the
+    /// single-file viewer so long files extend the page and the
+    /// inspector panel can sticky-follow. The side-by-side diff leaves
+    /// it false so both panes share an aligned, bounded scroll context.
+    /// </summary>
+    [Parameter] public bool Fluid { get; set; }
 
     private ElementReference _container;
     private IJSObjectReference? _module;

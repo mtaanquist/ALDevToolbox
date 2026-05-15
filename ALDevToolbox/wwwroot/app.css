@@ -2628,7 +2628,33 @@ ul.form-field-error {
     letter-spacing: 0.03em;
 }
 
+/* Visual styling for the Object Explorer's select boxes — the filter
+   row on the version browser and the "Compare with" picker on the file
+   header both fall outside the .form-section / .admin-form scopes that
+   own the global input styling, so without this they render with
+   browser defaults (white background, system font) and clash with the
+   dark UI. The .admin-search-input on the filter row already brings
+   its own block. */
 .object-explorer__filters .field__input,
+.object-explorer__compare .field__input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    font-family: inherit;
+    font-size: 13.5px;
+    background: var(--color-surface);
+    color: var(--color-text);
+}
+
+.object-explorer__filters .field__input:focus,
+.object-explorer__compare .field__input:focus {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -1px;
+    border-color: var(--color-accent);
+}
+
 .object-explorer__filters .admin-search-input {
     width: 100%;
     box-sizing: border-box;
@@ -2785,18 +2811,28 @@ ul.form-field-error {
 .cm-line--diff-removed { background: rgba(248, 81, 73, 0.18); }
 .cm-line--diff-modified { background: rgba(210, 153, 34, 0.18); }
 
-/* Click affordance on procedure/trigger/event declarations in the Object
-   Explorer file viewer. Hover gives a faint underline so users see what's
-   right-clickable; the menu lives in .cm-symbol-menu below. */
+/* Click affordances on Object Explorer tokens.
+   - cm-symbol-decl (procedure / field / object-header *declarations*):
+     solid underline at half opacity. The name is "the source" — hover
+     keeps the same line but brightens for an explicit "yes, this is
+     clickable" signal.
+   - cm-symbol-ref (call / field-access *reference sites*): dotted
+     underline. Reads as a hyperlink — the user expects to follow it
+     somewhere. Hover brightens to mirror the link affordance.
+   Both get cursor: pointer so the hand confirms interactivity before
+   the user even needs the underline to read. */
 .cm-symbol-decl,
 .cm-symbol-ref {
-    text-decoration: underline dotted currentColor;
+    cursor: pointer;
     text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
     text-underline-offset: 3px;
     transition: text-decoration-color 80ms ease-out;
 }
 .cm-symbol-decl {
-    cursor: context-menu;
+    text-decoration: underline solid currentColor;
+}
+.cm-symbol-ref {
+    text-decoration: underline dotted currentColor;
 }
 .cm-symbol-decl:hover,
 .cm-symbol-ref:hover {
@@ -2870,12 +2906,14 @@ ul.form-field-error {
 }
 
 /* File viewer layout: code editor + right-rail inspector panel. The
-   editor fills the remaining width; the panel sits at a fixed width
-   matched to its content. Stack vertically on narrow viewports. */
+   editor fills the remaining width and grows to its content height —
+   long files extend the page rather than scrolling internally. The
+   panel stays in view via `position: sticky` so the outline / refs
+   are always one glance away. Stacks vertically on narrow viewports. */
 .object-explorer__file-layout {
     display: flex;
     gap: 16px;
-    align-items: stretch;
+    align-items: flex-start;
 }
 
 .object-explorer__file-layout > .code-viewer-host {
@@ -2895,12 +2933,29 @@ ul.form-field-error {
     flex: 0 0 clamp(280px, 28vw, 520px);
     display: flex;
     flex-direction: column;
-    height: 75vh;
+    /* Sticky-follow on scroll. The nearest scrolling ancestor is
+       .content (`overflow-y: auto`), so the panel pins to the top of
+       the work column once it would otherwise scroll out of view.
+       max-height caps it to the viewport so long outlines get their
+       own internal scrollbar instead of overflowing the screen. */
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - var(--top-bar-height) - 32px);
     border: 1px solid var(--border, #2a2a35);
     border-radius: 6px;
     background: var(--surface-1, #1a1c22);
     overflow: hidden;
     font-size: 13px;
+}
+
+@media (max-width: 1100px) {
+    /* In the stacked layout sticky would pin the panel to the top of
+       the column, hiding the editor as the user scrolls — unhelpful.
+       Drop back to its natural flow position. */
+    .inspector-panel {
+        position: static;
+        max-height: 60vh;
+    }
 }
 
 .inspector-panel__crumbs {
@@ -3078,6 +3133,21 @@ ul.form-field-error {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+/* Field type / procedure signature, rendered between the name and the
+   line-number badge. Truncated with ellipsis so a 200-character method
+   signature doesn't push the line off-row; full text is on the title
+   attribute so hovering reveals it. */
+.inspector-panel__item-sig {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: var(--mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
 }
 
 .inspector-panel__item-line {
