@@ -583,12 +583,14 @@ export function mountReadOnly(container, value, language, options) {
 // transaction system was leaving the viewport in inconsistent states
 // when triggered from outside a CM-initiated update.
 export function scrollToLine(id, lineNumber, flash) {
+    console.log("[code-editor.js] scrollToLine called", { id, lineNumber, flash, knownEditors: Array.from(editors.keys()) });
     const e = editors.get(id);
-    if (!e) return;
+    if (!e) { console.warn("[code-editor.js] scrollToLine: editor not found for id", id); return; }
     const view = e.view;
-    if (!Number.isInteger(lineNumber) || lineNumber < 1) return;
+    if (!Number.isInteger(lineNumber) || lineNumber < 1) { console.warn("[code-editor.js] scrollToLine: invalid line", lineNumber); return; }
     const totalLines = view.state.doc.lines;
     const safeLine = Math.min(lineNumber, totalLines);
+    console.log("[code-editor.js] scrollToLine: about to scroll to safeLine", safeLine, "totalLines", totalLines);
 
     const findLineEl = () => {
         const line = view.state.doc.line(safeLine);

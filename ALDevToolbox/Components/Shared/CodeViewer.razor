@@ -1,5 +1,6 @@
 @inject IJSRuntime JS
 @inject NavigationManager Nav
+@inject ILogger<CodeViewer> Logger
 @implements IAsyncDisposable
 
 @*
@@ -89,6 +90,8 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        Logger.LogInformation("[CodeViewer] OnAfterRenderAsync firstRender={FirstRender} ScrollToLine={ScrollToLine} ScrollSequence={Seq} mountedSeq={MountedSeq} editorId={EditorId}",
+            firstRender, ScrollToLine, ScrollSequence, _mountedScrollSequence, _editorId);
         if (firstRender)
         {
             _module = await JS.InvokeAsync<IJSObjectReference>("import", "/code-editor.js");
@@ -142,8 +145,16 @@
         // the same outline / reference link again after scrolling away".
         if (ScrollToLine is { } line && line >= 1 && _mountedScrollSequence != ScrollSequence)
         {
+            Logger.LogInformation("[CodeViewer] scrollToLine firing: editorId={EditorId} line={Line}", _editorId, line);
+            await _module.InvokeVoidAsync("console.log",
+                $"[CodeViewer] scrollToLine call: editorId={_editorId} line={line}");
             await _module.InvokeVoidAsync("scrollToLine", _editorId, line, true);
             _mountedScrollSequence = ScrollSequence;
+        }
+        else
+        {
+            Logger.LogInformation("[CodeViewer] scroll condition NOT met: ScrollToLineHasValue={HasValue} mountedSeq={Mounted} ScrollSequence={Seq}",
+                ScrollToLine.HasValue, _mountedScrollSequence, ScrollSequence);
         }
     }
 

@@ -5,6 +5,7 @@
 @inject IHttpContextAccessor Http
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject ILogger<SourceFileViewer> Logger
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Components.Shared
 
@@ -244,41 +245,31 @@
     /// </summary>
     private async Task JumpToLineInThisFileAsync(int line)
     {
+        Logger.LogInformation("[SourceFileViewer] JumpToLineInThisFileAsync entered: line={Line} FileId={FileId} priorSeq={Seq}",
+            line, FileId, _scrollSequence);
         _highlightLine = line;
         _scrollSequence++;
-        // Push the state through *before* the JS interop. If we let the
-        // auto-StateHasChanged at end-of-handler do it, a hung or
-        // throwing replaceState call would block the render — and the
-        // user-visible scroll would never happen. Explicit
-        // StateHasChanged queues the render now; CodeViewer's
-        // OnAfterRenderAsync picks up the new ScrollSequence on the
-        // next dispatcher tick (during the await below) and calls
-        // scrollToLine on the editor.
+        Logger.LogInformation("[SourceFileViewer] state mutated: _highlightLine={HighlightLine} _scrollSequence={Seq}",
+            _highlightLine, _scrollSequence);
         StateHasChanged();
+        Logger.LogInformation("[SourceFileViewer] StateHasChanged called");
 
-        // The URL bar update is best-effort: it gives the user a
-        // shareable / back-buttonable link to the line, but it's
-        // cosmetic. Don't let a JS failure (browser navigation
-        // racing, circuit half-detached, etc.) hide the scroll.
         try
         {
+            // Best-effort URL update — also logs to browser console so
+            // we can see whether the JS side fires.
+            await JS.InvokeVoidAsync("console.log",
+                $"[SourceFileViewer] history.replaceState about to fire for line={line}");
             await JS.InvokeVoidAsync(
                 "history.replaceState",
                 null,
                 string.Empty,
                 $"/object-explorer/file/{FileId}?line={line}");
+            Logger.LogInformation("[SourceFileViewer] history.replaceState completed");
         }
-        catch (JSException)
+        catch (Exception ex)
         {
-            // Swallowed by design — the in-editor scroll above is the
-            // primary user feedback. URL sync re-syncs on the next
-            // jump anyway.
-        }
-        catch (InvalidOperationException)
-        {
-            // Same rationale: don't break the click over an interop
-            // edge case (e.g. fired mid-navigation when the circuit
-            // is mid-flight).
+            Logger.LogWarning(ex, "[SourceFileViewer] JS interop in JumpToLineInThisFileAsync failed");
         }
     }
 
