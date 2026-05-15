@@ -128,26 +128,41 @@ public sealed class ObjectExplorerSchemaSmokeTests : IDisposable
     [Fact]
     public async Task Parent_release_deletion_is_restricted_while_child_exists()
     {
-        await using var ctx = _db.NewContext();
-        var now = DateTime.UtcNow;
-
-        var parent = new OeRelease
+        // Seed parent + child via one context, then delete the parent via a
+        // fresh context so EF can't fix up the tracked child's FK before issuing
+        // the DELETE. The point of this test is the database constraint, not
+        // EF's client-side relationship logic.
+        int parentId;
         {
-            OrganizationId = TestDb.DefaultOrgId, Label = "BC 25.18", Kind = "first_party",
-            Status = "ready", ImportedAt = now, CreatedAt = now, UpdatedAt = now,
-        };
-        var child = new OeRelease
-        {
-            OrganizationId = TestDb.DefaultOrgId, Label = "Customer X on BC 25.18", Kind = "customer",
-            ParentRelease = parent, Status = "ready", ImportedAt = now, CreatedAt = now, UpdatedAt = now,
-        };
-        ctx.OeReleases.AddRange(parent, child);
-        await ctx.SaveChangesAsync();
+            await using var setupCtx = _db.NewContext();
+            var now = DateTime.UtcNow;
+            var parent = new OeRelease
+            {
+                OrganizationId = TestDb.DefaultOrgId, Label = "BC 25.18", Kind = "first_party",
+                Status = "ready", ImportedAt = now, CreatedAt = now, UpdatedAt = now,
+            };
+            var child = new OeRelease
+            {
+                OrganizationId = TestDb.DefaultOrgId, Label = "Customer X on BC 25.18", Kind = "customer",
+                ParentRelease = parent, Status = "ready", ImportedAt = now, CreatedAt = now, UpdatedAt = now,
+            };
+            setupCtx.OeReleases.AddRange(parent, child);
+            await setupCtx.SaveChangesAsync();
+            parentId = parent.Id;
+        }
 
-        ctx.OeReleases.Remove(parent);
-        var act = async () => await ctx.SaveChangesAsync();
-        await act.Should().ThrowAsync<Microsoft.EntityFrameworkCore.DbUpdateException>(
-            because: "ON DELETE RESTRICT refuses parent removal while child still references it");
+        await using var delCtx = _db.NewContext();
+        var parentToDelete = await delCtx.OeReleases.FindAsync(parentId);
+        parentToDelete.Should().NotBeNull();
+        delCtx.OeReleases.Remove(parentToDelete!);
+
+        var act = async () => await delCtx.SaveChangesAsync();
+        // PostgreSQL refuses the DELETE with sqlstate 23503 (foreign_key_violation);
+        // EF Core wraps it in DbUpdateException with a PostgresException inner.
+        (await act.Should().ThrowAsync<DbUpdateException>(
+                because: "ON DELETE RESTRICT refuses parent removal while child still references it"))
+            .WithInnerException<Npgsql.PostgresException>()
+            .Which.SqlState.Should().Be("23503");
     }
 
     [Fact]
