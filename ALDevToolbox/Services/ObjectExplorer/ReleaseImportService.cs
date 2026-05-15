@@ -264,7 +264,13 @@ public class ReleaseImportService
         // (e.g. "src/Codeunits/DKCoreEventSubscribers.Codeunit.al"), so we
         // key by full path. The parser already normalised both the embedded
         // src/ tree (.app) and the paired .Source.zip to the same "src/…" shape.
+        //
+        // SaveChanges in chunks of FileChunkSize: Base App can carry several
+        // thousand .al files with multi-KB Content each, and EF's batch
+        // builder allocates the whole batch text + parameter array in
+        // memory. Bounded chunks keep the per-flush memory footprint flat.
         var filesByPath = new Dictionary<string, OeModuleFile>(StringComparer.OrdinalIgnoreCase);
+        int filesPending = 0;
         foreach (var (path, content) in sourceFiles)
         {
             var file = new OeModuleFile
@@ -279,13 +285,28 @@ public class ReleaseImportService
             _db.OeModuleFiles.Add(file);
             filesByPath[path] = file;
             totals.SourceFilesImported++;
+            filesPending++;
+            if (filesPending >= FileChunkSize)
+            {
+                await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+                filesPending = 0;
+            }
         }
-        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        if (filesPending > 0)
+        {
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        }
 
         // Pre-scan each source file once for object declaration line numbers,
         // so we can stamp ModuleObject.LineNumber without re-reading content.
         var declarationLines = ScanDeclarationLines(filesByPath);
 
+        // Each chunk holds the object + every symbol/variable/reference row
+        // that references it via navigation. Saving them together lets EF
+        // resolve the dependent FKs from the principal's freshly-generated
+        // Id; the tracker clear between chunks drops the per-chunk memory
+        // pressure so a 5000-object Base App doesn't grow unbounded.
+        int objectsPending = 0;
         foreach (var symObj in pkg.Symbols.Objects)
         {
             ct.ThrowIfCancellationRequested();
@@ -312,7 +333,12 @@ public class ReleaseImportService
                 Namespace = string.IsNullOrEmpty(symObj.Namespace) ? null : symObj.Namespace,
                 ExtendsAppId = symObj.ExtendsAppId,
                 ExtendsObjectName = symObj.ExtendsObjectName,
-                SourceFile = sourceFile,
+                // Use the FK directly rather than the navigation: after the
+                // file-chunk save loop above, the file entity may have been
+                // detached from the tracker on a previous flush. The Id is
+                // intact on the captured reference; bind by Id to side-step
+                // any tracker-state assumption.
+                SourceFileId = sourceFile?.Id,
                 LineNumber = line,
             };
             _db.OeModuleObjects.Add(obj);
@@ -321,15 +347,33 @@ public class ReleaseImportService
             EmitSymbols(orgId, module, obj, symObj);
             EmitVariables(orgId, module, obj, symObj);
             EmitReferences(orgId, module, obj, symObj, totals);
+
+            objectsPending++;
+            if (objectsPending >= ObjectChunkSize)
+            {
+                await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+                // Drop tracker state once the chunk is committed. The next
+                // iteration's object will only navigate via SourceFileId
+                // (already a primitive FK), so detaching the file entities
+                // here is fine.
+                _db.ChangeTracker.Clear();
+                objectsPending = 0;
+            }
+        }
+        if (objectsPending > 0)
+        {
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
         }
 
-        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
         totals.ModulesImported++;
 
         // Clear the tracker between modules so a release-wide import doesn't
         // turn into an O(n²) walk over an ever-growing change-tracker.
         _db.ChangeTracker.Clear();
     }
+
+    private const int FileChunkSize = 50;
+    private const int ObjectChunkSize = 50;
 
     private void EmitSymbols(int orgId, OeModule module, OeModuleObject obj, SymbolObject symObj)
     {

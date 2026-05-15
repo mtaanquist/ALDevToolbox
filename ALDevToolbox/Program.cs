@@ -84,7 +84,15 @@ builder.Services.AddScoped<AuditInterceptor>();
 // surfaces when the migration itself runs.
 builder.Services.AddDbContext<AppDbContext>((sp, options) =>
     options
-        .UseNpgsql(connectionString, npgsql => npgsql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery))
+        .UseNpgsql(connectionString, npgsql => npgsql
+            .UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)
+            // Object Explorer ingests write tens-of-thousands of rows per
+            // Release; with the default Npgsql batch size (1000) EF builds
+            // multi-megabyte parameter arrays per batch, and Base App's
+            // oe_module_files rows (Content can be 50 KB each) push that
+            // past the StringBuilder limit. Cap batch size so each
+            // SaveChanges round trip stays comfortably bounded.
+            .MaxBatchSize(100))
         .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
         .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
 
