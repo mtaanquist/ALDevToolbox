@@ -108,28 +108,39 @@ Re-upload of a full Release with the same label: same idempotency rule — every
 
 ## Entities
 
-Naming is illustrative; final table names follow `domain-model.md` conventions (snake_case, explicit in `OnModelCreating`).
+The current `base_app_*` tables are dropped. Their replacements drop the "base app" naming entirely because the new tables hold any `.app` content, not just Microsoft's Base Application. SQL table names take an `oe_` prefix to keep them clearly Object-Explorer-owned and to avoid colliding with the unrelated template-catalogue `Module` entity (`Domain/Entities/Module.cs`, used in `unified-extensions.md`). C# entity types live in a new `Domain/Entities/ObjectExplorer/` folder so the type `ALDevToolbox.Domain.Entities.ObjectExplorer.Module` is distinct from the existing `ALDevToolbox.Domain.Entities.Module`.
 
 ```
 Organization ──┐
-               └── has many ──> Release
-                                  ├── (label, bc_version, imported_at, status)
-                                  └── has many ──> Module (one per .app)
-                                                     ├── (app_id, name, publisher, version, target, is_test, is_internal, is_language_pack, dependencies_json)
-                                                     ├── has many ──> ModuleFile (one per .al file kept)
-                                                     ├── has many ──> ModuleObject (codeunit/table/page/…)
-                                                     │                   ├── (kind, object_id, name, source_file_id, line_number)
-                                                     │                   ├── has many ──> ModuleSymbol (procedures, triggers, events, fields)
-                                                     │                   └── has many ──> ModuleVariable (globals only; resolved type)
-                                                     └── has many ──> ModuleReference
-                                                                       ├── (source_object_id, target_module_id, target_object_kind, target_object_id, target_object_name, reference_kind)
-                                                                       └── reference_kind ∈ { variable_type, extends_target, table_no, return_type, parameter_type, event_publisher, ... }
+               └── has many ──> Release  (table: oe_releases)
+                                  ├── (label, bc_version, kind, parent_release_id, imported_at, status)
+                                  └── has many ──> Module  (table: oe_modules, one per .app)
+                                                     ├── (app_id, name, publisher, version, target,
+                                                     │    is_test, is_internal, is_language_pack,
+                                                     │    dependencies_json)
+                                                     ├── has many ──> ModuleFile     (oe_module_files, one per .al kept)
+                                                     ├── has many ──> ModuleObject   (oe_module_objects)
+                                                     │                   ├── (kind, object_id, name,
+                                                     │                   │    source_file_id, line_number)
+                                                     │                   ├── has many ──> ModuleSymbol   (oe_module_symbols — procedures, triggers, events, fields)
+                                                     │                   └── has many ──> ModuleVariable (oe_module_variables — globals only; resolved type)
+                                                     └── has many ──> ModuleReference (oe_module_references)
+                                                                       ├── (source_object_id, target_release_id,
+                                                                       │    target_module_id, target_object_kind,
+                                                                       │    target_object_id, target_object_name,
+                                                                       │    reference_kind)
+                                                                       └── reference_kind ∈ { variable_type, extends_target,
+                                                                                              table_no, return_type, parameter_type,
+                                                                                              event_publisher, ... }
 ```
 
-Two key design points:
+Service rename in step with the schema: `BaseAppService` → `ObjectExplorerService` (or split if it grows past a comfortable size — the find-references query mechanics are now substantial enough that a sibling `ReferenceQueryService` may earn its own file).
 
-- **`Release` replaces `BaseAppVersion`.** The label (`"BC 25.18"`) and BC platform/application versions come from any one of the contained Modules' manifests (Base App is canonical). The unit the user picks in the UI is a Release.
+Three key design points:
+
+- **`Release` replaces `BaseAppVersion`.** The label (`"BC 25.18"`) and BC platform/application versions come from any one of the contained Modules' manifests (Base App is canonical when present). The unit the user picks in the UI is a Release.
 - **`Module.app_id` is the cross-Release identity.** Same AppId across two Releases lets us answer "how did `Codeunit 80 "Sales-Post"` evolve from BC 25.15 to 25.18" (Decision 5) without a separate evolution-tracking table.
+- **`Release.parent_release_id` enables layered third-party uploads.** A first-party DVD has `parent_release_id = NULL` and `kind = 'first_party'`. A third-party Release (a partner app, a customer's customisation set) has `parent_release_id` pointing at the first-party Release it sits on top of, and `kind = 'third_party'` (or `'customer'` — single short enum, exact values can be decided when the third-party UI lands). Reference resolution walks the chain: when a Module in the child Release names an AppId we don't have locally, the resolver looks up the parent Release's Modules; recurses to grandparent if needed. The schema column ships with the first milestone even though the upload UI for third-party Releases probably defers to a later one — adding the column now avoids a future migration and the resolver code is simpler with the parent pointer in place from day one.
 
 A migration drops `base_app_versions` / `base_app_files` / `base_app_symbols` and any rows therein. The current single-version Object Explorer corpus is small and re-importable; the upgrade cost is "re-ingest your DVDs once".
 
@@ -137,7 +148,7 @@ A migration drops `base_app_versions` / `base_app_files` / `base_app_symbols` an
 
 Find references on a `ModuleObject` runs two queries in parallel and merges:
 
-1. **Cross-module exact (SQL).** `SELECT … FROM module_references WHERE target_module_id = @id AND target_object_kind = @kind AND target_object_id = @objectId`. Every row is an authoritative hit; the UI groups by source module and reference kind. No regex, no false positives.
+1. **Cross-module exact (SQL).** `SELECT … FROM oe_module_references WHERE target_module_id = @id AND target_object_kind = @kind AND target_object_id = @objectId AND release_id IN (@release, @descendantReleases)`. The `release_id` filter is the resolution-chain piece: when browsing a first-party Release, we include any child Releases (`parent_release_id = @release`) so that third-party hits into the current Microsoft app surface up. When browsing a third-party Release, we include the parent so references *out* of the partner app into Base App are visible. Every row is an authoritative hit; the UI groups by source module and reference kind. No regex, no false positives.
 2. **Intra-module source scan.** The existing receiver-aware scanner (the band-aid plan) runs against the declaring module's source files. The global variable map is **read from `ModuleVariable`** instead of being regex-extracted — that's the upgrade. Procedure-local vars still come from the source-side regex. Results from this pass are split into the existing `Likely` / `PossiblyRelated` buckets.
 
 The "Possibly related" bucket becomes much smaller because the heuristic only runs against one module's source, where the symbol package's globals already eliminate most receiver ambiguity.
@@ -167,20 +178,23 @@ Find-references results page shows two sections:
 
 The current `base_app_*` tables and the `BaseAppImportService` source-ZIP path are dropped. Specifically:
 
-- `base_app_versions`, `base_app_files`, `base_app_symbols`: dropped in the migration. EF entities removed.
+- `base_app_versions`, `base_app_files`, `base_app_symbols`: dropped in the migration. EF entities removed. The new tables (`oe_releases`, `oe_modules`, `oe_module_files`, `oe_module_objects`, `oe_module_symbols`, `oe_module_variables`, `oe_module_references`) are created in the same migration.
 - `BaseAppImportService`: replaced by a new `ReleaseImportService`. The minimal-API endpoint that fronted the source-ZIP upload is removed; the new endpoint replaces it.
-- `BaseAppService.FindReferencesAsync`: rewritten to query against `ModuleReference` and use the new intra-module scanner. The receiver-aware band-aid plan's classifier (`ClassifyHitConfidence` and friends) stays — it's now reused for the intra-module fallback.
+- `BaseAppService` (the find-references / file-browse / go-to-definition / resolvable-tokens entry point) → `ObjectExplorerService`. `FindReferencesAsync` is rewritten to query against `oe_module_references` and the new intra-module scanner. The receiver-aware band-aid plan's classifier (`ClassifyHitConfidence` and friends) stays — it's now reused for the intra-module fallback.
 - `AlSymbolExtractor`, `AlGoToDefinitionLocator`: keep. The symbol-package path produces the same shape these emit; the source-side extractor is the fallback for everything the symbol package omits (locals, line numbers for the things that do have symbols but lack positions).
 - `SymbolReindexer`, `SymbolReindexQueue`: keep but retarget at `Module` rows instead of `BaseAppFile`. Idempotent reindex is still useful for the source-side pass.
+- Razor pages and URL routes under `Components/Pages/ObjectExplorer/` shift from `{versionId}` to `{releaseId}/{moduleId}` segments. Old links break — there are no production redirects to preserve.
 
 Forward-only migration. No data preservation — re-ingest your DVDs. There's no production traffic on this surface large enough to justify the migration work.
 
 ## Open questions
 
 1. **Dependency graph in the UI.** Each `Module` carries `dependencies_json` from its manifest. Worth surfacing a "what does this module depend on / what depends on this module" view, or defer? Leaning defer until someone asks.
-2. **Partial DVDs and out-of-order ingest.** If a user uploads just OIOUBL without Base App in the same Release, OIOUBL's `ModuleReference` rows point at a Base App ModuleId we don't have. Today's plan: store the rows with null `target_module_id`, render "external" in the UI. Upload Base App later into a *new* Release and OIOUBL's existing rows stay broken — they don't auto-link across Releases. Acceptable if the upload pattern is "one DVD = one Release"; rough if it's "build up a Release over time". Recommend: bake "one upload = one Release" into the model and don't try to support incremental Release composition.
-3. **Storage growth across many Releases.** Two BC versions = two full DVDs of source. Per-Release deletion is supported, but no automatic cleanup. Worth a SiteAdmin pruning UI from day one.
+2. **Out-of-order ingest within a single Release.** A single Release is still atomic — its modules come together in one upload. If a user uploads just OIOUBL alone *as its own first-party Release* (no Base App), OIOUBL's references into Base App resolve to null `target_module_id` rows. That's the same "one upload = one Release" recommendation as before, just now with the parent_release_id escape hatch: the right pattern is to upload Base App as a first-party Release, then OIOUBL as a third-party Release with that Release as its parent. The resolver chases the parent chain and OIOUBL's `Record "General Ledger Setup"` resolves correctly.
+3. **Storage growth across many Releases.** Two BC versions = two full DVDs of source. Per-Release deletion is supported, but no automatic cleanup. Worth a SiteAdmin pruning UI from day one. Deletion of a parent Release should be refused while any child Release still points at it (PostgreSQL FK with `ON DELETE RESTRICT`).
 4. **Symbol package vs source disagreements.** When a `.app`'s embedded source and its `SymbolReference.json` disagree on object IDs or names (e.g. the source was edited after compilation, shouldn't happen for Microsoft-shipped `.app`s but could happen for partner-shipped ones with mismatched artifacts), which wins? Recommend: symbol package wins, log a warning per discrepancy.
+5. **Third-party Release UX (deferred but worth pre-flighting).** The first milestone ships the schema (`parent_release_id`, `kind`) and the resolution-chain query, but probably not the upload UI for third-party Releases. When that UI lands: does the user pick the parent from a dropdown of existing first-party Releases at upload time, or do we infer it from manifest dependencies (Continia's manifest declares `Application = 25.18.0.0` and lists `Base Application` as a dep — we could auto-match)? Inference is nicer when it works but ambiguous when multiple imported Releases satisfy the dependency; an explicit picker with an inferred default is probably the right shape.
+6. **Stacking depth.** Schema allows arbitrary parent chains (third-party → first-party, customer → third-party → first-party, etc.). Resolver code handles any depth. Whether the UI ever surfaces more than two layers (first-party + one overlay) is a product question for whoever picks up the third-party milestone.
 
 ## Verification
 
@@ -191,6 +205,7 @@ The ingest pipeline gets test coverage in `ALDevToolbox.Tests/ObjectExplorer/`:
 - `ReleaseImportServiceTests.SkipsTestAndExcludeFiltersOnly` — synthetic archive with `Foo/Source/Microsoft_Foo.app`, `Foo/Test/Microsoft_Foo Tests.app`, `Foo/Source/Microsoft__Exclude_Internal.app`. Assert: Foo is ingested, Foo Tests is skipped, `_Exclude_Internal` is ingested with `IsInternal = true`.
 - `ReleaseImportServiceTests.IgnoresDuplicateAppIdVersion` — same `.app` twice in two folders. Assert: one Module row, second occurrence silently skipped.
 - `ReleaseImportServiceTests.HandlesPartnerAppWithSeparateSourceZip` — synthetic `.app` with `IncludeSourceInSymbolFile="false"`; assert source comes from the paired `.Source.zip`.
-- `BaseAppServiceTests.FindReferences_returns_cross_module_exact_hits` — two-module fixture (a "consumer" module that declares `var X: Codeunit "Foo"; X.Bar()` plus a "library" module that declares `Codeunit "Foo" with procedure Bar`). Assert: the consumer's variable shows up as a cross-module reference with `reference_kind = variable_type`.
+- `ObjectExplorerServiceTests.FindReferences_returns_cross_module_exact_hits` — two-module single-Release fixture (a "consumer" module that declares `var X: Codeunit "Foo"; X.Bar()` plus a "library" module that declares `Codeunit "Foo" with procedure Bar`). Assert: the consumer's variable shows up as a cross-module reference with `reference_kind = variable_type`.
+- `ObjectExplorerServiceTests.FindReferences_resolves_across_parent_release` — two-Release fixture: parent first-party Release holds the library module declaring `Codeunit "Foo"`; child third-party Release holds the consumer module. Browsing the consumer's `Bar` procedure, assert the parent module shows up; browsing the library's `Bar` from the parent Release with the child attached, assert the child's call site shows up. Then assert that browsing the parent Release **without** the child attached doesn't surface the child's hits (releases are isolated unless linked by parent).
 
 End-to-end smoke (manual, after CI green): import a real BC 25.18 DVD, open `Codeunit "Sales-Post"`, click Find references. Confirm hits from every Microsoft first-party extension that uses Sales-Post (Excel Reports, OIOUBL where applicable, EDocument connectors, etc.) appear in the cross-module section, with no false positives. Compare against the band-aid-only output of the current source-only Base App import to quantify precision lift.
