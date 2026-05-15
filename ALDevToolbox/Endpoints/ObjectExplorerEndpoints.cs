@@ -125,6 +125,34 @@ internal static class ObjectExplorerEndpoints
             MultipartHeadersLengthLimit = 32 * 1024,
         });
 
+        // ── JSON read-side endpoints for the static-SSR source viewer ──
+        // Replace the Blazor-callback path used by the legacy interactive
+        // viewer. The static page's source-viewer.js hits these on Cmd/Ctrl
+        // click and right-click "Find in this file" so no SignalR circuit
+        // is required for in-document navigation. See
+        // .design/source-viewer-redesign.md.
+        app.MapGet("/api/object-explorer/files/{fileId:long}/goto", async (
+            long fileId,
+            int line,
+            int column,
+            ObjectExplorerService oe,
+            CancellationToken ct) =>
+        {
+            var target = await oe.GoToDefinitionAsync(fileId, line, column, ct);
+            return target is null ? Results.NoContent() : Results.Ok(target);
+        }).RequireAuthorization();
+
+        app.MapGet("/api/object-explorer/files/{fileId:long}/find-in-file", async (
+            long fileId,
+            int line,
+            int column,
+            ObjectExplorerService oe,
+            CancellationToken ct) =>
+        {
+            var result = await oe.FindInFileAsync(fileId, line, column, ct);
+            return result is null ? Results.NoContent() : Results.Ok(result);
+        }).RequireAuthorization();
+
         app.MapPost("/admin/object-explorer/{id:int}/soft-delete", async (
             int id,
             HttpContext ctx,

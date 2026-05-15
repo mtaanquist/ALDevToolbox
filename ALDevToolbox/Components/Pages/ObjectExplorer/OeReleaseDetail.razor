@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @using ALDevToolbox.Services.ObjectExplorer
@@ -396,7 +397,7 @@
                         <td>
                             @if (r.SourceFileId is { } fid)
                             {
-                                <a href="@($"/object-explorer/file/{fid}?line={r.LineNumber}")">@r.Name</a>
+                                <a href="@Links.SourceFile(fid, r.LineNumber)">@r.Name</a>
                             }
                             else
                             {
@@ -465,7 +466,7 @@
                         <td>
                             @if (r.SourceFileId is { } fid)
                             {
-                                <a href="@($"/object-explorer/file/{fid}?line={r.ObjectLineNumber}")">View source</a>
+                                <a href="@Links.SourceFile(fid, r.ObjectLineNumber)">View source</a>
                             }
                             else
                             {
@@ -511,7 +512,7 @@
                     <tr>
                         <td>@r.ModuleName</td>
                         <td><code>@r.FilePath</code></td>
-                        <td><a href="@($"/object-explorer/file/{r.FileId}?line={r.LineNumber}")">@r.LineNumber</a></td>
+                        <td><a href="@Links.SourceFile(r.FileId, r.LineNumber)">@r.LineNumber</a></td>
                         <td><code>@r.Snippet</code></td>
                     </tr>
                 }
