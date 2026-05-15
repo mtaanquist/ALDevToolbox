@@ -2932,9 +2932,13 @@ ul.form-field-error {
    navigation. Token right-click navigation will land in a follow-up PR. */
 .source-viewer__layout {
     display: grid;
-    grid-template-columns: 1fr 280px;
+    /* Outline column is user-resizable (drag the outline's left edge via
+       resize:horizontal). The 1fr code column flexes; outline starts at
+       340px and the user can grow it to the column they prefer. */
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 12px;
-    align-items: start;
+    /* No align-items so cells stretch to the row height — gives the
+       sticky outline a tall containing block to slide within. */
 }
 
 @media (max-width: 1100px) {
@@ -2948,21 +2952,87 @@ ul.form-field-error {
 }
 
 .source-viewer__outline {
-    /* Stick to the viewport so the outline follows the user up and
-       down a long file without scrolling out of reach. align-items:
-       start on the grid parent gives sticky a stable containing
-       block to compute against. */
+    /* Sticky pins the outline to the top of the .content scroll
+       container so it stays visible while the user reads down a long
+       file. align-self: start keeps the outline at its natural height
+       inside the (stretched) grid cell — the cell itself is the row
+       height, giving sticky a tall containing block. */
     position: sticky;
     top: 12px;
+    align-self: start;
     border: 1px solid var(--color-border-strong);
     border-radius: var(--radius);
     padding: 12px 14px;
     background: var(--color-surface);
-    max-height: calc(100vh - 24px);
+    max-height: calc(100vh - var(--top-bar-height, 48px) - 24px);
+    /* Drag the outline panel wider/narrower via the browser's native
+       resize affordance (handle at the bottom-right corner). */
+    width: 340px;
+    min-width: 280px;
+    max-width: 720px;
+    resize: horizontal;
     /* Both axes scroll inside the panel: y for long outlines (Base App
        codeunits with 100+ procedures), x for procedure names that
-       overflow the 280px column. */
+       overflow the column. */
     overflow: auto;
+}
+
+/* ── Tab strip ───────────────────────────────────────────────── */
+
+.source-viewer__tabs {
+    display: flex;
+    gap: 4px;
+    margin: 0 0 12px 0;
+    padding: 0 0 4px 0;
+    border-bottom: 1px solid var(--color-border-strong);
+}
+
+.source-viewer__tab {
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--color-text-muted);
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.source-viewer__tab:hover {
+    color: var(--color-text);
+}
+
+.source-viewer__tab.is-active {
+    color: var(--color-text);
+    border-bottom-color: var(--color-accent);
+}
+
+.source-viewer__tab[hidden] {
+    display: none;
+}
+
+.source-viewer__tab-count {
+    display: inline-block;
+    min-width: 18px;
+    padding: 0 5px;
+    background: var(--color-surface-2, #1c1c28);
+    border-radius: 999px;
+    font-size: 10.5px;
+    text-align: center;
+    color: var(--color-text-muted);
+}
+
+.source-viewer__panel {
+    display: none;
+}
+
+.source-viewer__panel.is-active {
+    display: block;
 }
 
 .source-viewer__outline h2 {
@@ -3165,21 +3235,20 @@ ul.form-field-error {
     font-size: 12.5px;
 }
 
-.source-viewer__refs {
-    margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--color-border-strong);
-}
-
 .source-viewer__refs-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+    margin-bottom: 8px;
 }
 
-.source-viewer__refs-header h2 {
+.source-viewer__refs-target {
     margin: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .source-viewer__refs-close {

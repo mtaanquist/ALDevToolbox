@@ -3,13 +3,11 @@
 // The page is server-rendered HTML (no Blazor circuit). This module mounts
 // the CodeMirror viewer against the rendered DOM and wires every
 // in-document interaction directly to JS handlers, with a JSON-endpoint
-// roundtrip for the two gestures that need server data (Go to definition,
-// Find in this file). The shape mirrors code-editor.js's expected
-// dotNetRef interface so we can reuse mountReadOnly verbatim.
-//
-// See .design/source-viewer-redesign.md for the motivation.
+// roundtrip for the gestures that need server data. The shape mirrors
+// code-editor.js's expected dotNetRef interface so we can reuse
+// mountReadOnly verbatim. See .design/source-viewer-redesign.md.
 
-import { mountReadOnly, scrollToLine } from "/code-editor.js";
+import { mountReadOnly, scrollToLine, openSearch } from "/code-editor.js";
 
 const FILE_URL_PREFIX = "/object-explorer/file/";
 
@@ -20,36 +18,30 @@ function init() {
     const codeHost = root.querySelector(".source-viewer__code");
     if (!codeHost) return;
 
-    // Guard against double-mount when the page is reached via Blazor's
-    // enhanced navigation (the module URL is cached, but DOMContentLoaded
-    // also re-fires on the first visit). Once mounted, the CodeMirror
-    // DOM has rendered into codeHost and `.cm-editor` lives inside.
+    // Guard against double-mount via Blazor enhanced navigation.
     if (codeHost.querySelector(".cm-editor")) return;
 
     const fileId = Number(root.dataset.fileId);
     if (!Number.isFinite(fileId)) return;
 
     const initialLineAttr = root.dataset.initialLine;
-    const initialLine = initialLineAttr ? Number(initialLineAttr) : Number(new URLSearchParams(location.search).get("line"));
+    const initialLine = initialLineAttr
+        ? Number(initialLineAttr)
+        : Number(new URLSearchParams(location.search).get("line"));
 
     const declarations = parseJsonAttr(codeHost.dataset.declarations) ?? [];
     const resolvables = parseJsonAttr(codeHost.dataset.resolvables) ?? [];
     const content = codeHost.dataset.content ?? "";
     const language = codeHost.dataset.language ?? "al";
 
-    // Clear the data-content payload from the DOM as soon as we've captured
-    // it. Otherwise the (potentially multi-MB) text stays attached to the
-    // div, doubling the page's memory footprint.
+    // Clear the data-content payload from the DOM — the editor owns it now.
     codeHost.removeAttribute("data-content");
     codeHost.removeAttribute("data-declarations");
     codeHost.removeAttribute("data-resolvables");
 
     const notice = root.querySelector(".source-viewer__notice");
-    const findHost = root.querySelector(".source-viewer__find-host");
+    const tabs = new TabController(root);
 
-    // Duck-type the Blazor DotNetObjectReference the read-only mount
-    // expects. code-editor.js calls dotNetRef.invokeMethodAsync(name, args)
-    // for the three context-menu items; we route each to a JS handler.
     const jsBridge = {
         invokeMethodAsync(method, ...args) {
             switch (method) {
@@ -74,15 +66,14 @@ function init() {
     });
 
     if (Number.isFinite(initialLine) && initialLine >= 1) {
-        // mountReadOnly does its own deferred scroll only when passed
-        // scrollToLine in options; we want the same behaviour but with
-        // an explicit call so the same path is used for in-page jumps.
         requestAnimationFrame(() => scrollToLine(editorId, initialLine, true));
     }
 
     wireOutlineFilter(root);
     wireSectionToggles(root);
     wireSameFileLinks(root, editorId, fileId);
+    wireRefsCloseButton(root);
+    wireSearchShortcut(root, editorId);
 
     async function onFindReferencesAt(line, column) {
         clearNotice();
@@ -99,15 +90,7 @@ function init() {
                 return;
             }
             const session = await res.json();
-            if (!session.results || session.results.length === 0) {
-                showNotice("No references found for that token.");
-                return;
-            }
-            const first = session.results[0];
-            const targetFile = first.sourceFileId;
-            const targetLine = first.lineNumber ?? 1;
-            location.assign(
-                `${FILE_URL_PREFIX}${targetFile}?line=${targetLine}&refSet=${encodeURIComponent(session.token)}`);
+            applyReferenceSession(session);
         } catch (err) {
             console.warn("Find references at position failed:", err);
             showNotice("Couldn't reach the server.");
@@ -121,28 +104,29 @@ function init() {
                 `/api/object-explorer/references/sessions/from-symbol/${symbolId}`,
                 { credentials: "same-origin" });
             if (!res.ok) {
-                // Fall back to the object detail page so the user still
-                // gets a useful destination when the cache mint fails.
                 location.assign(`/object-explorer/object/${symbolId}#find-references`);
                 return;
             }
             const session = await res.json();
-            // Empty result set — go to the object page to show the
-            // "no references found" message rather than landing on the
-            // current file with an empty panel.
-            if (!session.results || session.results.length === 0) {
-                location.assign(`/object-explorer/object/${symbolId}#find-references`);
-                return;
-            }
-            const first = session.results[0];
-            const targetFile = first.sourceFileId;
-            const targetLine = first.lineNumber ?? 1;
-            location.assign(
-                `${FILE_URL_PREFIX}${targetFile}?line=${targetLine}&refSet=${encodeURIComponent(session.token)}`);
+            applyReferenceSession(session);
         } catch (err) {
             console.warn("Find references failed:", err);
             location.assign(`/object-explorer/object/${symbolId}#find-references`);
         }
+    }
+
+    /// Render the References panel client-side and stash the token in the
+    /// URL via replaceState so a refresh keeps the panel visible. Doesn't
+    /// navigate — the user stays on their current file and clicks results
+    /// to jump.
+    function applyReferenceSession(session) {
+        if (!session) return;
+        renderReferencesPanel(root, session, fileId, editorId);
+        tabs.show("references");
+        tabs.activate("references");
+        const url = new URL(location.href);
+        url.searchParams.set("refSet", session.token);
+        history.replaceState(null, "", url.pathname + url.search);
     }
 
     async function onGoToDefinition(line, column) {
@@ -195,10 +179,11 @@ function init() {
     }
 
     function renderFindResults(data) {
+        const findHost = root.querySelector(".source-viewer__find-host");
         if (!findHost) return;
         findHost.innerHTML = "";
         if (!data) {
-            findHost.hidden = true;
+            tabs.show("find", false);
             return;
         }
         const heading = document.createElement("h2");
@@ -242,14 +227,8 @@ function init() {
             findHost.appendChild(list);
         }
 
-        const clear = document.createElement("button");
-        clear.className = "btn btn--sm";
-        clear.type = "button";
-        clear.textContent = "Clear";
-        clear.addEventListener("click", () => renderFindResults(null));
-        findHost.appendChild(clear);
-
-        findHost.hidden = false;
+        tabs.show("find", true);
+        tabs.activate("find");
     }
 
     function jumpToLineInThisFile(line) {
@@ -268,6 +247,177 @@ function init() {
         notice.hidden = true;
     }
 }
+
+// ── Tab controller ───────────────────────────────────────────────
+
+class TabController {
+    constructor(root) {
+        this.root = root;
+        this.tabs = Array.from(root.querySelectorAll(".source-viewer__tab"));
+        this.panels = Array.from(root.querySelectorAll(".source-viewer__panel"));
+        this.tabs.forEach(t => t.addEventListener("click", () => this.activate(t.dataset.tab)));
+    }
+
+    activate(name) {
+        for (const tab of this.tabs) {
+            const match = tab.dataset.tab === name;
+            tab.classList.toggle("is-active", match);
+            tab.setAttribute("aria-selected", match ? "true" : "false");
+        }
+        for (const panel of this.panels) {
+            panel.classList.toggle("is-active", panel.dataset.panel === name);
+        }
+    }
+
+    /// Make a tab visible (or hide it). The corresponding panel's data-panel
+    /// attribute and the tab's data-tab attribute must match.
+    show(name, visible = true) {
+        const tab = this.tabs.find(t => t.dataset.tab === name);
+        if (tab) tab.hidden = !visible;
+        const panel = this.panels.find(p => p.dataset.panel === name);
+        if (panel) panel.hidden = !visible;
+    }
+}
+
+// ── References panel renderer ────────────────────────────────────
+
+function renderReferencesPanel(root, session, fileId, editorId) {
+    const panel = root.querySelector('[data-panel="references"]');
+    if (!panel) return;
+    panel.innerHTML = "";
+    panel.hidden = false;
+
+    const header = document.createElement("div");
+    header.className = "source-viewer__refs-header";
+    const label = document.createElement("p");
+    label.className = "muted source-viewer__refs-target";
+    label.textContent = session.targetLabel ?? "References";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "btn btn--sm source-viewer__refs-close";
+    close.dataset.action = "close-refs";
+    close.textContent = "Close";
+    close.title = "Close reference set";
+    header.appendChild(label);
+    header.appendChild(close);
+    panel.appendChild(header);
+
+    const tabCountEl = root.querySelector('.source-viewer__tab[data-tab="references"] .source-viewer__tab-count');
+    const tabBtn = root.querySelector('.source-viewer__tab[data-tab="references"]');
+    if (tabBtn) tabBtn.hidden = false;
+
+    const count = session.results?.length ?? 0;
+    if (tabCountEl) {
+        tabCountEl.textContent = count.toLocaleString();
+    } else if (tabBtn) {
+        const c = document.createElement("span");
+        c.className = "source-viewer__tab-count";
+        c.textContent = count.toLocaleString();
+        tabBtn.appendChild(c);
+    }
+
+    if (count === 0) {
+        const p = document.createElement("p");
+        p.className = "muted";
+        p.textContent = "No references in this Release's chain.";
+        panel.appendChild(p);
+    } else {
+        const list = document.createElement("ul");
+        list.className = "source-viewer__refs-list";
+        for (const r of session.results) {
+            const li = document.createElement("li");
+            li.className = "source-viewer__refs-item";
+
+            const srcFid = r.sourceFileId;
+            const ln = r.lineNumber;
+            if (srcFid != null && ln != null) {
+                const inSameFile = srcFid === fileId;
+                const a = document.createElement("a");
+                a.href = `${FILE_URL_PREFIX}${srcFid}?line=${ln}&refSet=${encodeURIComponent(session.token)}`;
+                if (inSameFile) {
+                    a.dataset.line = String(ln);
+                    a.addEventListener("click", e => {
+                        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                        e.preventDefault();
+                        scrollToLine(editorId, ln, true);
+                        history.replaceState(null, "", a.href);
+                    });
+                }
+                a.title = `${r.sourceModuleName} · ${r.sourceObjectName} (${r.referenceKind})`;
+
+                const nameSpan = document.createElement("span");
+                nameSpan.className = "source-viewer__refs-name";
+                nameSpan.textContent = r.sourceObjectName;
+                a.appendChild(nameSpan);
+
+                const meta = document.createElement("span");
+                meta.className = "source-viewer__refs-meta muted";
+                meta.textContent = `${r.sourceModuleName} · L${ln}`;
+                a.appendChild(meta);
+
+                li.appendChild(a);
+            } else {
+                // No source file imported for this module — link to the
+                // object detail so the user can still inspect the row.
+                const a = document.createElement("a");
+                a.href = `/object-explorer/object/${r.sourceObjectId}`;
+                a.title = `${r.sourceModuleName} · ${r.sourceObjectName} (no source)`;
+
+                const nameSpan = document.createElement("span");
+                nameSpan.className = "source-viewer__refs-name";
+                nameSpan.textContent = r.sourceObjectName;
+                a.appendChild(nameSpan);
+
+                const meta = document.createElement("span");
+                meta.className = "source-viewer__refs-meta muted";
+                meta.textContent = `${r.sourceModuleName} · no source`;
+                a.appendChild(meta);
+
+                li.appendChild(a);
+            }
+            list.appendChild(li);
+        }
+        panel.appendChild(list);
+    }
+}
+
+function wireRefsCloseButton(root) {
+    root.addEventListener("click", e => {
+        const target = e.target instanceof Element ? e.target.closest('[data-action="close-refs"]') : null;
+        if (!target) return;
+        e.preventDefault();
+        const panel = root.querySelector('[data-panel="references"]');
+        if (panel) panel.hidden = true;
+        const tab = root.querySelector('.source-viewer__tab[data-tab="references"]');
+        if (tab) tab.hidden = true;
+        const url = new URL(location.href);
+        url.searchParams.delete("refSet");
+        history.replaceState(null, "", url.pathname + url.search);
+        // Activate Outline so the panel area isn't blank.
+        const outlineTab = root.querySelector('.source-viewer__tab[data-tab="outline"]');
+        if (outlineTab) outlineTab.click();
+    });
+}
+
+// ── Ctrl/Cmd-F intercept ─────────────────────────────────────────
+//
+// CodeMirror's searchKeymap only fires when the editor has DOM focus.
+// Browsers grab Ctrl/Cmd-F otherwise. Bind a window-level keydown that
+// claims the shortcut for the editor whenever the source viewer is on
+// screen.
+function wireSearchShortcut(root, editorId) {
+    window.addEventListener("keydown", e => {
+        const isFind = e.key === "f" || e.key === "F";
+        if (!isFind) return;
+        if (!(e.ctrlKey || e.metaKey)) return;
+        if (e.shiftKey || e.altKey) return;
+        if (!document.contains(root)) return;
+        e.preventDefault();
+        openSearch(editorId);
+    });
+}
+
+// ── Outline pieces (unchanged from prior version) ────────────────
 
 function wireOutlineFilter(root) {
     const filter = root.querySelector(".source-viewer__outline-filter");
@@ -314,7 +464,6 @@ function wireSameFileLinks(root, editorId, fileId) {
     const links = root.querySelectorAll("a[data-line]");
     links.forEach(a => {
         a.addEventListener("click", e => {
-            // Let modifier-click / middle-click open in a new tab.
             if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
             const line = Number(a.dataset.line);
             if (!Number.isFinite(line) || line < 1) return;
@@ -325,9 +474,6 @@ function wireSameFileLinks(root, editorId, fileId) {
     });
 }
 
-// Preserves any non-`line` query parameters on URL replacement — keeps
-// future refSet tokens (Find-references session) intact across in-page
-// jumps. Returns either "" or "&key=val[&…]".
 function preservedQueryTail() {
     const current = new URLSearchParams(location.search);
     current.delete("line");
@@ -351,11 +497,6 @@ if (document.readyState === "loading") {
     init();
 }
 
-// When the user arrives via Blazor's enhanced navigation from another
-// page (any InteractiveServer page in the app), the module URL is
-// cached and the <script> tag re-executes against the new DOM. The
-// init() guard above prevents double-mounting; this listener catches
-// any case where the script is parsed before the new DOM is in place.
 if (typeof globalThis.Blazor !== "undefined" && globalThis.Blazor.addEventListener) {
     globalThis.Blazor.addEventListener("enhancedload", init);
 }

@@ -60,23 +60,119 @@
                  data-resolvables="[]"></div>
 
             <aside class="source-viewer__outline">
-                @if (_session is not null)
-                {
-                    <section class="source-viewer__refs" data-ref-set="@_session.Token">
+                @{
+                    var defaultTab = _session is not null ? "references" : "outline";
+                }
+                <nav class="source-viewer__tabs" role="tablist">
+                    <button type="button"
+                            class="source-viewer__tab @(defaultTab == "outline" ? "is-active" : null)"
+                            role="tab"
+                            data-tab="outline"
+                            aria-selected="@(defaultTab == "outline" ? "true" : "false")">Outline</button>
+                    <button type="button"
+                            class="source-viewer__tab @(defaultTab == "references" ? "is-active" : null)"
+                            role="tab"
+                            data-tab="references"
+                            aria-selected="@(defaultTab == "references" ? "true" : "false")"
+                            hidden="@(_session is null)">
+                        References
+                        @if (_session is not null)
+                        {
+                            <span class="source-viewer__tab-count">@_session.Results.Count.ToString("N0")</span>
+                        }
+                    </button>
+                    <button type="button"
+                            class="source-viewer__tab"
+                            role="tab"
+                            data-tab="find"
+                            aria-selected="false"
+                            hidden>Find</button>
+                </nav>
+
+                <div class="source-viewer__panel @(defaultTab == "outline" ? "is-active" : null)"
+                     data-panel="outline"
+                     role="tabpanel">
+                    @if (_outline is null || _outline.Count == 0)
+                    {
+                        <p class="muted">No outline available.</p>
+                    }
+                    else
+                    {
+                        <input type="text"
+                               class="source-viewer__outline-filter"
+                               placeholder="Filter symbols…"
+                               aria-label="Filter symbols" />
+
+                        var groups = SourceFileOutlineGrouper.Build(_outline, filter: null);
+                        <p class="muted source-viewer__outline-empty" hidden>No matches.</p>
+                        @foreach (var group in groups)
+                        {
+                            <section class="source-viewer__outline-section is-open"
+                                     data-section-key="@group.Key">
+                                <button type="button"
+                                        class="source-viewer__outline-section-toggle"
+                                        aria-expanded="true">
+                                    <span class="source-viewer__outline-section-chevron is-open">›</span>
+                                    <span class="source-viewer__outline-section-title">@group.Title</span>
+                                    <span class="source-viewer__outline-section-count">(@group.Items.Count)</span>
+                                </button>
+                                <ul class="source-viewer__outline-list">
+                                    @foreach (var entry in group.Items)
+                                    {
+                                        <li class="source-viewer__outline-item @(entry.IsChild ? "source-viewer__outline-item--child" : null)"
+                                            data-row-name="@entry.Item.Name">
+                                            @if (entry.Item.ObjectId is { } oid)
+                                            {
+                                                <a href="@($"/object-explorer/object/{oid}")" title="@FormatTooltip(entry.Item)">
+                                                    <span class="source-viewer__outline-name">@entry.Item.Name</span>
+                                                    @if (!string.IsNullOrEmpty(entry.Item.Signature))
+                                                    {
+                                                        <span class="source-viewer__outline-sig muted">@FormatSignature(entry.Item.Signature)</span>
+                                                    }
+                                                    <span class="source-viewer__outline-line muted">L@(entry.Item.LineNumber)</span>
+                                                </a>
+                                            }
+                                            else
+                                            {
+                                                <a href="@($"/object-explorer/file/{FileId}?line={entry.Item.LineNumber}")"
+                                                   class="source-viewer__outline-link"
+                                                   data-line="@entry.Item.LineNumber"
+                                                   title="@FormatTooltip(entry.Item)">
+                                                    <span class="source-viewer__outline-name">@entry.Item.Name</span>
+                                                    @if (!string.IsNullOrEmpty(entry.Item.Signature))
+                                                    {
+                                                        <span class="source-viewer__outline-sig muted">@FormatSignature(entry.Item.Signature)</span>
+                                                    }
+                                                    <span class="source-viewer__outline-line muted">L@(entry.Item.LineNumber)</span>
+                                                </a>
+                                            }
+                                        </li>
+                                    }
+                                </ul>
+                            </section>
+                        }
+                    }
+                </div>
+
+                <div class="source-viewer__panel @(defaultTab == "references" ? "is-active" : null)"
+                     data-panel="references"
+                     role="tabpanel"
+                     hidden="@(_session is null)">
+                    @if (_session is not null)
+                    {
                         <div class="source-viewer__refs-header">
-                            <h2>References</h2>
-                            <a class="btn btn--sm source-viewer__refs-close"
-                               href="@Links.SourceFile(FileId, _highlightLine ?? 1)"
-                               title="Close reference set">Close</a>
+                            <p class="muted source-viewer__refs-target">@_session.TargetLabel</p>
+                            <button type="button"
+                                    class="btn btn--sm source-viewer__refs-close"
+                                    data-action="close-refs"
+                                    title="Close reference set">Close</button>
                         </div>
-                        <p class="muted">@_session.TargetLabel</p>
                         @if (_session.Results.Count == 0)
                         {
                             <p class="muted">No references in this Release's chain.</p>
                         }
                         else
                         {
-                            <p class="muted">@_session.Results.Count.ToString("N0") result(s)</p>
                             <ul class="source-viewer__refs-list">
                                 @foreach (var r in _session.Results)
                                 {
@@ -94,82 +190,26 @@
                                         }
                                         else
                                         {
-                                            <span class="muted">@r.SourceObjectName <span class="source-viewer__refs-meta">(no source)</span></span>
+                                            @* No source file imported for this module — link to the
+                                               object detail page so the user can still inspect what
+                                               the row stands for. *@
+                                            <a href="@($"/object-explorer/object/{r.SourceObjectId}")"
+                                               title="@($"{r.SourceModuleName} · {r.SourceObjectName} (no source)")">
+                                                <span class="source-viewer__refs-name">@r.SourceObjectName</span>
+                                                <span class="source-viewer__refs-meta muted">@r.SourceModuleName · no source</span>
+                                            </a>
                                         }
                                     </li>
                                 }
                             </ul>
                         }
-                    </section>
-                }
-                <h2>Outline</h2>
-                @if (_outline is null || _outline.Count == 0)
-                {
-                    <p class="muted">No outline available.</p>
-                }
-                else
-                {
-                    <input type="text"
-                           class="source-viewer__outline-filter"
-                           placeholder="Filter symbols…"
-                           aria-label="Filter symbols" />
-
-                    @* The grouper runs once on the server; the JS filter
-                       toggles row visibility client-side without rerunning
-                       any grouping. Empty-state messaging for filters
-                       is rendered by source-viewer.js into the
-                       data-empty slot below. *@
-                    var groups = SourceFileOutlineGrouper.Build(_outline, filter: null);
-                    <p class="muted source-viewer__outline-empty" hidden>No matches.</p>
-                    @foreach (var group in groups)
-                    {
-                        <section class="source-viewer__outline-section is-open"
-                                 data-section-key="@group.Key">
-                            <button type="button"
-                                    class="source-viewer__outline-section-toggle"
-                                    aria-expanded="true">
-                                <span class="source-viewer__outline-section-chevron is-open">›</span>
-                                <span class="source-viewer__outline-section-title">@group.Title</span>
-                                <span class="source-viewer__outline-section-count">(@group.Items.Count)</span>
-                            </button>
-                            <ul class="source-viewer__outline-list">
-                                @foreach (var entry in group.Items)
-                                {
-                                    <li class="source-viewer__outline-item @(entry.IsChild ? "source-viewer__outline-item--child" : null)"
-                                        data-row-name="@entry.Item.Name">
-                                        @if (entry.Item.ObjectId is { } oid)
-                                        {
-                                            <a href="@($"/object-explorer/object/{oid}")" title="@FormatTooltip(entry.Item)">
-                                                <span class="source-viewer__outline-name">@entry.Item.Name</span>
-                                                @if (!string.IsNullOrEmpty(entry.Item.Signature))
-                                                {
-                                                    <span class="source-viewer__outline-sig muted">@FormatSignature(entry.Item.Signature)</span>
-                                                }
-                                                <span class="source-viewer__outline-line muted">L@(entry.Item.LineNumber)</span>
-                                            </a>
-                                        }
-                                        else
-                                        {
-                                            <a href="@($"/object-explorer/file/{FileId}?line={entry.Item.LineNumber}")"
-                                               class="source-viewer__outline-link"
-                                               data-line="@entry.Item.LineNumber"
-                                               title="@FormatTooltip(entry.Item)">
-                                                <span class="source-viewer__outline-name">@entry.Item.Name</span>
-                                                @if (!string.IsNullOrEmpty(entry.Item.Signature))
-                                                {
-                                                    <span class="source-viewer__outline-sig muted">@FormatSignature(entry.Item.Signature)</span>
-                                                }
-                                                <span class="source-viewer__outline-line muted">L@(entry.Item.LineNumber)</span>
-                                            </a>
-                                        }
-                                    </li>
-                                }
-                            </ul>
-                        </section>
                     }
-                }
+                </div>
 
-                <div class="source-viewer__find-host" hidden></div>
+                <div class="source-viewer__panel" data-panel="find" role="tabpanel" hidden>
+                    <div class="source-viewer__find-host"></div>
+                </div>
+
                 <p class="muted source-viewer__notice" role="status" hidden></p>
             </aside>
         </div>

@@ -26,7 +26,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab }
 import { syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatching,
     foldGutter, foldKeymap, StreamLanguage }
     from "https://esm.sh/@codemirror/language@6.10.6?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
-import { search, searchKeymap, highlightSelectionMatches }
+import { search, searchKeymap, highlightSelectionMatches, openSearchPanel }
     from "https://esm.sh/@codemirror/search@6.5.7?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap }
     from "https://esm.sh/@codemirror/autocomplete@6.18.3?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6";
@@ -594,6 +594,15 @@ export function mountReadOnly(container, value, language, options) {
 // dispatching EditorView.scrollIntoView — the effect path through CM's
 // transaction system was leaving the viewport in inconsistent states
 // when triggered from outside a CM-initiated update.
+function resetAncestorScrollLeft(start) {
+    let node = start;
+    while (node && node !== document.scrollingElement) {
+        if (node.scrollLeft) node.scrollLeft = 0;
+        node = node.parentElement;
+    }
+    if (document.scrollingElement) document.scrollingElement.scrollLeft = 0;
+}
+
 export function scrollToLine(id, lineNumber, flash) {
     const e = editors.get(id);
     if (!e) return;
@@ -623,6 +632,7 @@ export function scrollToLine(id, lineNumber, flash) {
             // state we used to see going through EditorView.scrollIntoView.
             const target = block.top - scroller.clientHeight / 2 + block.height / 2;
             scroller.scrollTop = Math.max(0, Math.min(scrollMax, target));
+            scroller.scrollLeft = 0;
         } else {
             // Fluid mount (`Fluid="true"`): the editor's scroller is the
             // same height as its content (overflow: visible), so it
@@ -645,6 +655,12 @@ export function scrollToLine(id, lineNumber, flash) {
                     effects: EditorView.scrollIntoView(line.from, { y: "center", x: "start" }),
                 });
             }
+            // scrollIntoView's `inline: "start"` only acts on the nearest
+            // scroll ancestor — outer scrollable wrappers (e.g. the
+            // outermost .content scroller) keep whatever scrollLeft they
+            // had from a previous jump. Zero every ancestor scroller's
+            // horizontal offset so a short line never appears clipped.
+            resetAncestorScrollLeft(scroller);
         }
     };
 
@@ -794,6 +810,16 @@ export function markPristine(id) {
 
 export function getValue(id) {
     return editors.get(id)?.view.state.doc.toString() ?? "";
+}
+
+/// Opens CodeMirror's built-in search panel from outside the editor.
+/// The default Ctrl/Cmd-F binding fires only when the editor has DOM
+/// focus; this helper lets the page-level shortcut bypass that.
+export function openSearch(id) {
+    const e = editors.get(id);
+    if (!e) return;
+    e.view.focus();
+    openSearchPanel(e.view);
 }
 
 export function setValue(id, value) {
