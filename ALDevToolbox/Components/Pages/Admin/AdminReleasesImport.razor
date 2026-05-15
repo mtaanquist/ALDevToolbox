@@ -1,4 +1,3 @@
-@page "/admin/object-explorer"
 @page "/admin/object-explorer/new"
 @attribute [Authorize(Roles = "Admin")]
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
@@ -31,9 +30,9 @@
                 source, drop them in the second box and we'll match by name.
             </p>
         </div>
-        <a class="btn btn--sm" href="/object-explorer">
+        <a class="btn btn--sm" href="/admin/object-explorer">
             <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to Releases</span>
+            <span>Back to admin</span>
         </a>
     </header>
 
