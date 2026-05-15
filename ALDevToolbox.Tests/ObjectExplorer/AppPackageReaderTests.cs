@@ -355,6 +355,26 @@ public sealed class AppPackageReaderTests
         return result;
     }
 
+    [Theory]
+    [InlineData("src/Codeunits/Foo.al",                     "src/Codeunits/Foo.al")]
+    [InlineData("src/src/Codeunits/Foo.al",                 "src/Codeunits/Foo.al")]
+    [InlineData("Codeunits/Foo.al",                         "src/Codeunits/Foo.al")]
+    [InlineData("Base Application/src/Codeunits/Foo.al",    "src/Codeunits/Foo.al")]
+    [InlineData("Microsoft_Base Application/src/Foo.al",    "src/Foo.al")]
+    [InlineData("src\\Codeunits\\Foo.al",                  "src/Codeunits/Foo.al")]
+    public void CanonicalizeSourcePath_flattens_every_known_layout(string input, string expected)
+    {
+        // Pins the four-plus shapes BC has shipped in the wild:
+        //   - "src/..." (BC 25.x Source.zip + symbol package ReferenceSourceFileName)
+        //   - "src/src/..." (BC 25.x .app embedded source, double-nested)
+        //   - "Codeunits/Foo.al" (partner Source.zip without src/)
+        //   - "<Project>/src/..." (BC 28.x first-party Source.zip wrapper)
+        //   - back-slashed paths from Windows-zipped uploads
+        // All flatten to the canonical "src/..." key so the importer's
+        // ReferenceSourceFileName lookup is shape-agnostic.
+        AppPackageReader.CanonicalizeSourcePath(input).Should().Be(expected);
+    }
+
     [Fact]
     public async Task ReadAsync_produces_identical_hash_on_replay()
     {

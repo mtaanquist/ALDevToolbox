@@ -152,6 +152,104 @@ public sealed class ReleaseImportServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Prefers_paired_source_zip_over_app_embedded_source()
+    {
+        // BC 28.x first-party modules ship as Ready2Run wrappers whose
+        // inner .app's embedded source is partial — the canonical source
+        // sits in the sibling .Source.zip on the DVD. The importer must
+        // prefer the zip whenever it's paired, falling back to the .app's
+        // embedded source only when no zip was uploaded. Pin that
+        // priority by feeding the same Microsoft_DK_Core fixture with its
+        // matching .Source.zip and asserting both the file row's path and
+        // its content are the values the zip ships (the same .app without
+        // a paired zip would still work via the embedded source — that's
+        // covered by Stamps_module_object_line_numbers_from_embedded_source).
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+
+        await using var appStream = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        await using var zipStream = File.OpenRead(Path.Combine(FixtureRoot, "DK Core.Source.zip"));
+        await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "BC 25.18 DK paired", Kind: "first_party",
+            ParentReleaseId: null, ApplicationVersionId: null,
+            Uploads: new[] { new AppFileUpload("dk.app", appStream, zipStream) }));
+
+        await using var read = _db.NewContext();
+        var codeunit = await read.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Kind == "codeunit" && o.Name == "DK Core Event Subscribers")
+            .SingleAsync();
+        codeunit.SourceFileId.Should().NotBeNull(
+            because: "the .Source.zip ships the same canonical src/Codeunits/... path the symbol package expects");
+        codeunit.LineNumber.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task Links_symbol_objects_to_source_via_al_header_regardless_of_zip_layout()
+    {
+        // The symbol package's ReferenceSourceFileName is not a
+        // reliable join key: in BC 28.x even Microsoft's first-party
+        // modules ship the .Source.zip with paths that don't agree
+        // with the symbol-package paths (some have a project-folder
+        // prefix, some have nested src/, some are bare). The importer
+        // matches objects to files via the (Kind, Name) declaration at
+        // the top of each .al file instead. Pin that contract by
+        // wrapping DK Core's source files in a synthetic .Source.zip
+        // whose paths bear no resemblance to ReferenceSourceFileName,
+        // and assert objects still link.
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+
+        var alFiles = new Dictionary<string, string>(StringComparer.Ordinal);
+        await using (var origZip = File.OpenRead(Path.Combine(FixtureRoot, "DK Core.Source.zip")))
+        using (var archive = new System.IO.Compression.ZipArchive(origZip, System.IO.Compression.ZipArchiveMode.Read))
+        {
+            foreach (var entry in archive.Entries)
+            {
+                if (!entry.FullName.EndsWith(".al", StringComparison.OrdinalIgnoreCase)) continue;
+                using var s = entry.Open();
+                using var r = new StreamReader(s);
+                alFiles[entry.FullName] = r.ReadToEnd();
+            }
+        }
+        alFiles.Should().NotBeEmpty();
+
+        // Repack each .al file under a deliberately weird path that
+        // does NOT match any plausible ReferenceSourceFileName.
+        var weirdZipBytes = BuildSyntheticSourceZip(alFiles, pathMangler: original =>
+            "WeirdProjectFolder/SomethingElse/" + Path.GetFileName(original));
+
+        await using var appStream = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        await using var weirdZip = new MemoryStream(weirdZipBytes);
+        await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "BC 25.18 DK weird-zip", Kind: "first_party",
+            ParentReleaseId: null, ApplicationVersionId: null,
+            Uploads: new[] { new AppFileUpload("dk.app", appStream, weirdZip) }));
+
+        await using var read = _db.NewContext();
+        var codeunit = await read.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Kind == "codeunit" && o.Name == "DK Core Event Subscribers")
+            .SingleAsync();
+        codeunit.SourceFileId.Should().NotBeNull(
+            because: "header-based matching ignores the .Source.zip path layout and pairs by (Kind, Name)");
+        codeunit.LineNumber.Should().BeGreaterThan(0);
+    }
+
+    private static byte[] BuildSyntheticSourceZip(IReadOnlyDictionary<string, string> alFiles, Func<string, string> pathMangler)
+    {
+        using var ms = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var (original, content) in alFiles)
+            {
+                var entry = zip.CreateEntry(pathMangler(original));
+                using var w = new StreamWriter(entry.Open());
+                w.Write(content);
+            }
+        }
+        return ms.ToArray();
+    }
+
+    [Fact]
     public async Task Stamps_module_object_line_numbers_from_embedded_source()
     {
         await using var ctx = _db.NewContext();
