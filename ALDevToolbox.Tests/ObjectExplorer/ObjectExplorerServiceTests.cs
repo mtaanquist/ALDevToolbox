@@ -193,6 +193,60 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ListDeclarationsInFileAsync_returns_object_headers_with_column_positions()
+    {
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var fileId = read.OeModuleFiles.AsQueryable()
+            .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
+
+        var decls = await NewQuery(read).ListDeclarationsInFileAsync(fileId);
+        decls.Should().NotBeEmpty();
+        // The codeunit name lives on its declaration line; the helper must
+        // surface columns matching the quoted-or-bare token.
+        decls.Should().Contain(d =>
+            d.Name == "DK Core Event Subscribers"
+            && d.ColumnStart >= 1
+            && d.ColumnEnd > d.ColumnStart);
+    }
+
+    [Fact]
+    public async Task GoToDefinitionAsync_resolves_a_click_on_an_object_name_to_its_file()
+    {
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var query = NewQuery(read);
+
+        // Find the declarations on DK Core's event-subscribers file, then
+        // simulate a click on the codeunit's name token there. The resolver
+        // should land us back on the same file + the declaration line.
+        var fileId = read.OeModuleFiles.AsQueryable()
+            .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
+        var decl = (await query.ListDeclarationsInFileAsync(fileId)).First();
+
+        var target = await query.GoToDefinitionAsync(fileId, decl.Line, decl.ColumnStart);
+        target.Should().NotBeNull();
+        target!.FileId.Should().Be(fileId);
+        target.LineNumber.Should().Be(decl.Line);
+    }
+
+    [Fact]
+    public async Task FindInFileAsync_returns_every_line_containing_the_clicked_word()
+    {
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var query = NewQuery(read);
+        var fileId = read.OeModuleFiles.AsQueryable()
+            .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
+        var decl = (await query.ListDeclarationsInFileAsync(fileId)).First();
+
+        var hit = await query.FindInFileAsync(fileId, decl.Line, decl.ColumnStart);
+        hit.Should().NotBeNull();
+        hit!.Occurrences.Should().NotBeEmpty();
+        hit.Occurrences.Should().OnlyContain(o => o.LineText.Contains(hit.Word, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task GetFileOutlineAsync_returns_objects_and_symbols_ordered_by_line()
     {
         await SeedSingleReleaseAsync();

@@ -1,22 +1,23 @@
 @page "/object-explorer/file/{FileId:long}"
 @attribute [Authorize]
+@rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @inject IHttpContextAccessor Http
+@inject NavigationManager Nav
 @using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Components.Shared
 
 @*
-    Source-file viewer with an outline panel. Reads the body once via
-    GetFileAsync, renders as a numbered table; the right-hand outline lists
-    every object + symbol declared in the file with click-through to the
-    line. The find-references panel and the per-object "View source" link
-    both deep-link via ?line=N which lights up the target row in CSS.
+    Source-file viewer with AL syntax highlighting via the CodeMirror-backed
+    CodeViewer, an outline panel, and the in-source navigation gestures the
+    legacy file viewer had: Cmd/Ctrl-click a token to go to its definition,
+    right-click an object header for Find references, right-click any token
+    for Find in this file.
 
-    No syntax highlighting yet — the legacy CodeMirror integration was
-    scoped out in PR 6. Plain <pre>-style lines keep the page renderable
-    without a JS bundle while still giving the "click through to the
-    actual code" payoff. Token right-click navigation (Find references /
-    Go to definition on a clicked identifier) is the next step on top of
-    this surface.
+    Right-click "Find references" routes to the object detail's existing
+    Find-references panel — keeping the heavy chain-walk query on the page
+    that already implements it. Right-click "Find in this file" pops a panel
+    below the outline so the source stays open while navigating occurrences.
 *@
 
 <PageTitle>@(_header?.Path ?? "Source") · AL Dev Toolbox</PageTitle>
@@ -31,17 +32,30 @@
         <header class="admin-page__header">
             <div>
                 <p class="muted">
-                    <a href="/object-explorer">Releases</a>
-                    <span> / <a href="@($"/object-explorer/release/{_header.ReleaseId}")">@_header.ReleaseLabel</a></span>
-                    <span> / <a href="@($"/object-explorer/module/{_header.ModuleId}")">@_header.ModuleName</a></span>
+                    <a href="/object-explorer">Object Explorer</a>
+                    <span> › <a href="@($"/object-explorer/release/{_header.ReleaseId}")">@_header.ReleaseLabel</a></span>
                 </p>
                 <h1>@_header.Path</h1>
-                <p class="muted">@_header.LineCount.ToString("N0") line(s)</p>
+                <p class="muted">
+                    @_header.ModuleName · @_header.LineCount.ToString("N0") line(s)
+                    <span> · <strong>Cmd/Ctrl-click</strong> a name to go to its definition</span>
+                    <span> · <strong>Right-click</strong> for Find references / Find in file</span>
+                </p>
             </div>
         </header>
 
         <div class="source-viewer__layout">
-            <pre class="source-viewer__body"><code>@RenderNumberedLines(_file.Content, _highlightLine)</code></pre>
+            <div class="source-viewer__code">
+                <CodeViewer Content="@_file.Content"
+                            Language="al"
+                            Fluid="true"
+                            ScrollToLine="@_highlightLine"
+                            ScrollSequence="@_scrollSequence"
+                            Declarations="@_declarations"
+                            OnFindReferences="HandleFindReferences"
+                            OnGoToDefinition="HandleGoToDefinition"
+                            OnFindInFile="HandleFindInFile" />
+            </div>
 
             <aside class="source-viewer__outline">
                 <h2>Outline</h2>
@@ -67,6 +81,36 @@
                         }
                     </ul>
                 }
+
+                @if (_findInFile is not null)
+                {
+                    <h2 class="source-viewer__outline-find-heading">Find "@_findInFile.Word"</h2>
+                    @if (_findInFile.Occurrences.Count == 0)
+                    {
+                        <p class="muted">No occurrences in this file.</p>
+                    }
+                    else
+                    {
+                        <p class="muted">@_findInFile.Occurrences.Count.ToString("N0") occurrence(s)</p>
+                        <ul class="source-viewer__find-list">
+                            @foreach (var occ in _findInFile.Occurrences)
+                            {
+                                <li>
+                                    <a href="@($"/object-explorer/file/{FileId}?line={occ.Line}")">
+                                        <span class="source-viewer__outline-kind">L@(occ.Line)</span>
+                                        <code class="source-viewer__find-snippet">@occ.LineText.Trim()</code>
+                                    </a>
+                                </li>
+                            }
+                        </ul>
+                        <button class="btn btn--sm" @onclick="ClearFindInFile">Clear</button>
+                    }
+                }
+
+                @if (_lastNavigationNotice is not null)
+                {
+                    <p class="muted source-viewer__notice" role="status">@_lastNavigationNotice</p>
+                }
             </aside>
         </div>
     }
@@ -78,7 +122,11 @@
     private SourceFileHeader? _header;
     private SourceFileDetail? _file;
     private List<SourceFileOutlineItem>? _outline;
+    private IReadOnlyList<CodeViewerDeclaration>? _declarations;
     private int? _highlightLine;
+    private int _scrollSequence;
+    private FileWordSearch? _findInFile;
+    private string? _lastNavigationNotice;
 
     protected override async Task OnInitializedAsync()
     {
@@ -86,23 +134,57 @@
         if (_header is null) return;
         _file = await ObjectExplorer.GetFileAsync(FileId);
         _outline = await ObjectExplorer.GetFileOutlineAsync(FileId);
+        _declarations = await ObjectExplorer.ListDeclarationsInFileAsync(FileId);
 
         var ctx = Http.HttpContext;
         if (ctx is not null && int.TryParse(ctx.Request.Query["line"], out var line) && line > 0)
         {
             _highlightLine = line;
+            _scrollSequence = 1;
         }
+    }
+
+    // ── In-source gestures ─────────────────────────────────────────────
+
+    private void HandleFindReferences(long symbolId)
+    {
+        // SymbolId is the oe_module_objects.id — navigate to the object
+        // detail page where Find references already lives.
+        Nav.NavigateTo($"/object-explorer/object/{symbolId}#find-references");
+    }
+
+    private async Task HandleGoToDefinition(CodeViewerClick click)
+    {
+        var target = await ObjectExplorer.GoToDefinitionAsync(FileId, click.Line, click.Column);
+        if (target is null)
+        {
+            _lastNavigationNotice = "No definition found for that token.";
+            return;
+        }
+        _lastNavigationNotice = null;
+        Nav.NavigateTo($"/object-explorer/file/{target.FileId}?line={target.LineNumber}");
+    }
+
+    private async Task HandleFindInFile(CodeViewerClick click)
+    {
+        _findInFile = await ObjectExplorer.FindInFileAsync(FileId, click.Line, click.Column);
+        _lastNavigationNotice = null;
+    }
+
+    private void ClearFindInFile()
+    {
+        _findInFile = null;
     }
 
     private string OutlineHref(SourceFileOutlineItem item)
     {
         // Objects (the major declarations) deserve a real navigation hop so
         // the user can find references / jump to symbols on them. Sub-symbol
-        // rows just scroll the source view to their line via the fragment
-        // anchor stamped by RenderNumberedLines.
+        // rows just deep-link back to this same page with a new ?line= for
+        // the CodeMirror viewer to scroll to.
         return item.ObjectId is { } oid
             ? $"/object-explorer/object/{oid}"
-            : $"#L{item.LineNumber}";
+            : $"/object-explorer/file/{FileId}?line={item.LineNumber}";
     }
 
     private string OutlineItemClass(SourceFileOutlineItem item) =>
@@ -120,22 +202,5 @@
         "trigger"            => "trigger",
         "field"              => "field",
         _                    => kind,
-    };
-
-    private static RenderFragment RenderNumberedLines(string content, int? highlight) => __builder =>
-    {
-        if (string.IsNullOrEmpty(content)) return;
-        var lines = content.Replace("\r\n", "\n").Split('\n');
-        for (var i = 0; i < lines.Length; i++)
-        {
-            var lineNo = i + 1;
-            var cssClass = highlight == lineNo
-                ? "source-viewer__line source-viewer__line--hit"
-                : "source-viewer__line";
-            <div class="@cssClass" id="@($"L{lineNo}")">
-                <span class="source-viewer__lineno">@lineNo</span>
-                <span class="source-viewer__text">@lines[i]</span>
-            </div>
-        }
     };
 }

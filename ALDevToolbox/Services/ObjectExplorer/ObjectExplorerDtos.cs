@@ -173,7 +173,8 @@ public sealed record ReleaseObjectMatch(
     long ModuleId,
     string ModuleName,
     long? SourceFileId,
-    int LineNumber);
+    int LineNumber,
+    int FileLineCount);
 
 /// <summary>
 /// Header info for the source-file viewer's breadcrumb — module + release
@@ -240,3 +241,24 @@ public sealed record ReleaseModuleSummary(
     long Id,
     string Name,
     string Publisher);
+
+/// <summary>
+/// Resolved go-to-definition target — file + 1-based line. The source
+/// viewer navigates there with <c>?line=N</c> so the CodeMirror scroll
+/// lands on the declaration row.
+/// </summary>
+public sealed record GoToDefinitionTarget(long FileId, int LineNumber);
+
+/// <summary>
+/// One occurrence of a word inside a single file — returned by
+/// <c>FindInFileAsync</c> so the page can show a navigable list of every
+/// line that matches the clicked identifier.
+/// </summary>
+public sealed record FileWordOccurrence(int Line, string LineText);
+
+/// <summary>
+/// Result envelope for the "Find in this file" gesture. <see cref="Word"/>
+/// is what was extracted from the click position; <see cref="Occurrences"/>
+/// is every line in the same file that contains it.
+/// </summary>
+public sealed record FileWordSearch(string Word, IReadOnlyList<FileWordOccurrence> Occurrences);
