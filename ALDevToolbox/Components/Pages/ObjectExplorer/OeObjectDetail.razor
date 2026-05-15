@@ -1,4 +1,4 @@
-@page "/oe-objects/{ObjectId:long}"
+@page "/object-explorer/object/{ObjectId:long}"
 @attribute [Authorize]
 @rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
@@ -18,12 +18,12 @@
         <header class="admin-page__header">
             <div>
                 <p class="muted">
-                    <a href="/releases">Releases</a>
+                    <a href="/object-explorer">Releases</a>
                     @if (_releaseId is { } rid)
                     {
-                        <span> / <a href="@($"/releases/{rid}")">@_releaseLabel</a></span>
+                        <span> / <a href="@($"/object-explorer/release/{rid}")">@_releaseLabel</a></span>
                     }
-                    <span> / <a href="@($"/oe-modules/{_object.ModuleId}")">@_object.ModuleName</a></span>
+                    <span> / <a href="@($"/object-explorer/module/{_object.ModuleId}")">@_object.ModuleName</a></span>
                 </p>
                 <h1>@_object.Name</h1>
                 <p class="muted">
@@ -154,7 +154,7 @@
                                 <tr>
                                     <td>@r.SourceModuleName</td>
                                     <td>
-                                        <a href="@($"/oe-objects/{r.SourceObjectId}")">@r.SourceObjectName</a>
+                                        <a href="@($"/object-explorer/object/{r.SourceObjectId}")">@r.SourceObjectName</a>
                                     </td>
                                     <td>@r.SourceObjectKind</td>
                                     <td>@r.ReferenceKind</td>

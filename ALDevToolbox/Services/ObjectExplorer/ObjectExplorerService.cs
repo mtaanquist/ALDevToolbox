@@ -5,7 +5,7 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 
 /// <summary>
 /// Read-only query API over the <c>oe_*</c> schema. Backs the Object Explorer
-/// UI (PR 5) and replaces the legacy <c>BaseAppService</c> reference paths.
+/// UI and powers find-references across the imported Release chain.
 ///
 /// The headline query — <see cref="FindReferencesAsync"/> — uses a recursive
 /// CTE over <c>oe_releases.parent_release_id</c> to compute the visible
@@ -125,7 +125,8 @@ public class ObjectExplorerService
             var s = filter.Search.Trim();
             var lower = s.ToLower();
             // Numeric search matches the object id; substring otherwise. The
-            // search box accepts either, mirroring the legacy BaseAppService UX.
+            // search box accepts either, mirroring the convention from the
+            // earlier base-app browser the new schema replaces.
             if (int.TryParse(s, out var asInt))
             {
                 q = q.Where(o => o.ObjectId == asInt || o.Name.ToLower().Contains(lower));

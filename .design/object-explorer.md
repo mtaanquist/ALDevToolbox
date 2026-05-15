@@ -98,7 +98,7 @@ A new endpoint, e.g. `POST /admin/object-explorer/releases`, accepts a multipart
    4. Idempotency check: if a `Module` with `(AppId, Version)` already exists in the target Release, **skip silently** (Decision 3).
    5. Parse `SymbolReference.json` into the typed structures. Walk the namespace tree depth-first, emitting one `ModuleObject` per codeunit / table / page / report / xmlport / query / controladdin / enum / interface / permissionset / pageextension / tableextension / reportextension / enumextension / permissionsetextension. Each object's `ReferenceSourceFileName` records the source path.
    6. Extract source: prefer `src/` inside the `.app` (when `IncludeSourceInSymbolFile="true"`); otherwise look for a paired `.Source.zip` in the same archive folder and use its `src/` tree. Store every `.al` text file in `ModuleFile`. Discard everything else.
-   7. Emit `ModuleSymbol` rows (procedures, triggers, event publishers, event subscribers) by combining the symbol package's `Methods` array (public/internal — line numbers absent) with a source-side line-number lookup using the existing `AlSymbolExtractor`. Locals not in the symbol package are picked up by the same source extractor.
+   7. Emit `ModuleSymbol` rows (procedures, triggers, event publishers, event subscribers) from the symbol package's `Methods` array. The shipped implementation leaves `ModuleSymbol.LineNumber` / `ColumnStart` / `ColumnEnd` at 0 — symbol-package coordinates are not stored statically; consumers that need them re-derive against the file content. `ModuleObject.LineNumber` is stamped during ingest via a single regex pass over each `.al` file. Locals not in the symbol package are out of scope for the current implementation; a future intra-procedure scanner can fill them in incrementally.
    8. Emit `ModuleVariable` rows for every object-scoped variable (globals only — procedure-locals are not in the symbol package and stay in the source-driven heuristic path).
    9. Emit `ModuleReference` rows for every fully-qualified type reference: variable subtypes, extension `TargetObject`, codeunit `TableNo` properties, report data items, event subscriber bindings (publisher event reference). Same-module refs whose Subtype omits `ModuleId` get stamped with the importing module's AppId. Reference rows store the `target_app_id` triplet from the symbol package; they do **not** carry a resolved `target_module_id` — that's computed at query time via the parent-chain join above.
 3. **Mark the Release ready.** Once every `.app` in the archive has been processed, flip the Release row's `status` from `'ingesting'` to `'ready'`. Until then, the Release is hidden from the picker. Failure mid-ingest leaves a tombstone row (`status = 'failed'`, with an error message) that a SiteAdmin can clear.
@@ -133,7 +133,7 @@ Organization ──┐
                                                                                               event_publisher, ... }
 ```
 
-Service rename in step with the schema: `BaseAppService` → `ObjectExplorerService` (or split if it grows past a comfortable size — the find-references query mechanics are now substantial enough that a sibling `ReferenceQueryService` may earn its own file).
+Service rename landed in step with the schema: `BaseAppService` → `ObjectExplorerService`. The find-references query mechanics live in the same class; a sibling `ReferenceQueryService` may earn its own file when the implementation grows another set of resolution kinds.
 
 Four key design points:
 
@@ -240,12 +240,12 @@ Two design notes on retargeting:
 
 The current `base_app_*` tables and the `BaseAppImportService` source-ZIP path are dropped. Specifically:
 
-- `base_app_versions`, `base_app_files`, `base_app_symbols`: dropped in the migration. EF entities removed. The new tables (`oe_releases`, `oe_modules`, `oe_module_files`, `oe_module_objects`, `oe_module_symbols`, `oe_module_variables`, `oe_module_references`) are created in the same migration.
-- `BaseAppImportService`: replaced by a new `ReleaseImportService`. The minimal-API endpoint that fronted the source-ZIP upload is removed; the new endpoint replaces it.
-- `BaseAppService` (the find-references / file-browse / go-to-definition / resolvable-tokens entry point) → `ObjectExplorerService`. `FindReferencesAsync` is rewritten to query against `oe_module_references` and the new intra-module scanner. The receiver-aware band-aid plan's classifier (`ClassifyHitConfidence` and friends) stays — it's now reused for the intra-module fallback.
-- `AlSymbolExtractor`, `AlGoToDefinitionLocator`: keep. The symbol-package path produces the same shape these emit; the source-side extractor is the fallback for everything the symbol package omits (locals, line numbers for the things that do have symbols but lack positions).
-- `SymbolReindexer`, `SymbolReindexQueue`: keep but retarget at `Module` rows instead of `BaseAppFile`. Idempotent reindex is still useful for the source-side pass.
-- Razor pages and URL routes under `Components/Pages/ObjectExplorer/` shift from `{versionId}` to `{releaseId}/{moduleId}` segments. Old links break — there are no production redirects to preserve.
+- `base_app_versions`, `base_app_extensions`, `base_app_files`, `base_app_symbols`: dropped in `20260602000000_DropBaseAppTables`. EF entities removed in the same PR. The new tables (`oe_releases`, `oe_modules`, `oe_module_files`, `oe_module_objects`, `oe_module_symbols`, `oe_module_variables`, `oe_module_references`) were created earlier in `20260601000000_AddObjectExplorerTables`.
+- `BaseAppImportService` is replaced by `ReleaseImportService`. The minimal-API endpoint that fronted the source-ZIP upload is removed; the new `POST /admin/object-explorer/import` replaces it.
+- `BaseAppService` is replaced by `ObjectExplorerService`. `FindReferencesAsync` runs against `oe_module_references` joined through a recursive-CTE chain walk; cross-module references are resolved by stored `target_app_id` triplets at write time rather than re-resolved at query time. The receiver-aware band-aid classifier (`ClassifyHitConfidence` and friends) is retired entirely — variable subtypes are exact in the symbol package, so the heuristics it papered over no longer have anything to disambiguate.
+- `AlSymbolExtractor`, `AlGoToDefinitionLocator`, `AlDeclarationParser`, `AlResolvableTokenScanner`: removed along with the legacy file viewer / inspector / go-to-definition surface. The shipped Object Explorer relies on the symbol package's own coordinates plus a single regex pass at ingest time for object-header line numbers; intra-procedure navigation is not (yet) re-implemented for the new surface.
+- `SymbolReindexer`, `SymbolReindexQueue`: removed. Re-ingest happens by re-uploading the DVD; idempotency on `(release_id, app_id, version, file_hash)` makes that cheap.
+- Razor pages and URL routes under `Components/Pages/ObjectExplorer/` shift from `{versionId}` to `{releaseId}` / `{moduleId}` / `{objectId}` segments. Old links break — there are no production redirects to preserve.
 
 Forward-only migration. No data preservation — re-ingest your DVDs. There's no production traffic on this surface large enough to justify the migration work.
 

@@ -7,20 +7,19 @@ using static ALDevToolbox.Endpoints.EndpointHelpers;
 namespace ALDevToolbox.Endpoints;
 
 /// <summary>
-/// HTTP endpoints for the new Object Explorer surface (Releases / Modules /
-/// Find references). The bulk-upload endpoint lives here for the same
-/// reason <c>BaseAppEndpoints</c> hosts its sibling — a 100-app DVD body
-/// would buffer through the SignalR circuit if we tried to receive it via a
-/// Blazor InteractiveServer page.
+/// HTTP endpoints for the Object Explorer surface (Releases / Modules /
+/// Find references). The bulk-upload endpoint lives here rather than on a
+/// Blazor InteractiveServer page so a 100-app DVD body can stream through
+/// Kestrel instead of buffering through the SignalR circuit.
 /// </summary>
 internal static class ObjectExplorerEndpoints
 {
-    /// <summary>500 MB cap on the multipart upload — same as the legacy path.</summary>
+    /// <summary>500 MB cap on the multipart upload — generous for a full BC DVD.</summary>
     public const long MaxUploadBytes = 500L * 1024 * 1024;
 
     public static IEndpointRouteBuilder MapObjectExplorerEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/admin/releases/import", async (
+        app.MapPost("/admin/object-explorer/import", async (
             HttpContext ctx,
             ReleaseImportService importer,
             IAntiforgery antiforgery,
@@ -98,7 +97,7 @@ internal static class ObjectExplorerEndpoints
                     return;
                 }
 
-                var query = $"/releases/{summary.ReleaseId}"
+                var query = $"/object-explorer/release/{summary.ReleaseId}"
                     + $"?ok=imported"
                     + $"&modules={summary.ModulesImported}"
                     + $"&skipped={summary.ModulesSkipped}"
@@ -152,7 +151,7 @@ internal static class ObjectExplorerEndpoints
         // Error redirects go back to the form page (/new); the POST endpoint
         // (/import) is action-only and has no GET view.
         ctx.Response.Redirect(
-            "/admin/releases/new?err=" + Uri.EscapeDataString(errKey)
+            "/admin/object-explorer/new?err=" + Uri.EscapeDataString(errKey)
             + "&msg=" + Uri.EscapeDataString(message));
     }
 }
