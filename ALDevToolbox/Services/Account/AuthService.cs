@@ -101,11 +101,39 @@ public sealed class AuthService
             return (LoginOutcome.Disabled, null);
         }
 
+        // Password is right and the account is in good standing. If the user
+        // has 2FA enrolled, stop here: the caller redirects to /login/challenge
+        // with a short-lived signed cookie carrying the user id. LastLoginAt
+        // and the login_attempts success row are stamped by CompleteMfaAsync
+        // once the second factor verifies.
+        if (user.TotpEnabled || user.EmailMfaEnabled)
+        {
+            return (LoginOutcome.MfaRequired, user);
+        }
+
         user.LastLoginAt = now;
         await _db.SaveChangesAsync(ct);
         await RecordAttemptAsync(normalised, ip, succeeded: true, now, ct);
 
         return (LoginOutcome.Success, user);
+    }
+
+    /// <summary>
+    /// Finalises a multi-factor login after the second factor (TOTP / email
+    /// code / recovery code) has been verified. Stamps <c>LastLoginAt</c> and
+    /// records the success in <c>login_attempts</c>. The caller sets the auth
+    /// cookie.
+    /// </summary>
+    public async Task<User> CompleteMfaAsync(int userId, string ip, CancellationToken ct = default)
+    {
+        var now = _clock.GetUtcNow().UtcDateTime;
+        var user = await _db.Users.IgnoreQueryFilters()
+            .Include(u => u.Organization)
+            .FirstAsync(u => u.Id == userId, ct);
+        user.LastLoginAt = now;
+        await _db.SaveChangesAsync(ct);
+        await RecordAttemptAsync(user.Email, ip, succeeded: true, now, ct);
+        return user;
     }
 
     public string HashPassword(string password) => BCrypt.Net.BCrypt.HashPassword(password, BcryptWorkFactor);

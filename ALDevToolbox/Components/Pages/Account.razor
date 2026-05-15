@@ -4,6 +4,7 @@
 @using ALDevToolbox.Data
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Services
+@using ALDevToolbox.Services.Account
 @using ALDevToolbox.Components.Shared
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.EntityFrameworkCore
@@ -11,89 +12,252 @@
 @inject IOrganizationContext Org
 @inject AuthenticationStateProvider AuthState
 @inject IJSRuntime JS
+@inject RecoveryCodeService RecoveryCodes
+@inject PasskeyService Passkeys
+@inject IEmailService Email
 
 <PageTitle>Your account · AL Dev Toolbox</PageTitle>
 
-<h1>Your account</h1>
+<div class="account-page">
+    <header class="page-header">
+        <h1>Your account</h1>
+        <p class="muted">Identity, password, two-factor authentication and passkeys.</p>
+    </header>
 
-@if (_user is null)
-{
-    <p class="muted">Loading…</p>
-}
-else
-{
-    @if (Error is not null && Message is not null)
+    @if (_user is null)
     {
-        <p class="form-error" role="alert"><strong>@Error:</strong> @Message</p>
+        <p class="muted">Loading…</p>
     }
-    @if (Ok == "password")
+    else
     {
-        <p class="form-success" role="status">Password updated.</p>
-    }
-    else if (Ok == "display-name")
-    {
-        <p class="form-success" role="status">Display name updated.</p>
-    }
-
-    <section class="account-section">
-        <h2>Identity</h2>
-        <p class="muted">Signed in as <strong>@_user.DisplayName</strong> (@_user.Email) — @_user.Role in <strong>@_organization?.Name</strong>.</p>
-
-        <form method="post" action="/auth/account/display-name" class="form-grid">
-            <AntiforgeryToken />
-            <section class="form-section">
-                <label class="section-label" for="ac-display">Display name</label>
-                <input id="ac-display" type="text" name="DisplayName" value="@_user.DisplayName" required minlength="2" maxlength="80" />
-            </section>
-            <button type="submit" class="btn">Update display name</button>
-        </form>
-    </section>
-
-    <section class="account-section">
-        <h2>Change password</h2>
-        <form method="post" action="/auth/account/password" class="form-grid">
-            <AntiforgeryToken />
-            <section class="form-section">
-                <label class="section-label" for="ac-current">Current password</label>
-                <input id="ac-current" type="password" name="CurrentPassword" required autocomplete="current-password" />
-            </section>
-            <section class="form-section">
-                <label class="section-label" for="ac-new">New password</label>
-                <input id="ac-new" type="password" name="NewPassword" required minlength="12" autocomplete="new-password" />
-                <small class="muted">At least 12 characters.</small>
-            </section>
-            <button type="submit" class="btn">Change password</button>
-        </form>
-    </section>
-
-    <section class="account-section danger">
-        <h2>Delete account</h2>
-        @if (_isLastActiveAdmin)
+        @if (!string.IsNullOrEmpty(Error) && !string.IsNullOrEmpty(Message))
         {
-            <p class="muted">
-                You're the last active admin in <strong>@_organization?.Name</strong>. Deleting
-                your account will <strong>delete the organisation and all of its content</strong>
-                (templates, modules, catalogue, audit log). Promote another user to admin
-                first if you'd rather keep the organisation alive.
+            <p class="form-error" role="alert"><strong>@Error:</strong> @Message</p>
+        }
+        @if (Ok is not null)
+        {
+            <p class="form-success" role="status">@FlashFor(Ok)</p>
+        }
+
+        @if (!string.IsNullOrEmpty(_user.PendingEmail))
+        {
+            <p class="form-error" role="alert">
+                Pending email change to <strong>@_user.PendingEmail</strong> (requested @_user.PendingEmailAt?.ToString("yyyy-MM-dd HH:mm 'UTC'")).
+                The new address still needs to click the confirmation link.
             </p>
         }
-        else
+
+        <section class="account-section">
+            <h2>Identity</h2>
+            <p class="muted">
+                Signed in as <strong>@_user.DisplayName</strong> (@_user.Email) — @_user.Role in <strong>@_organization?.Name</strong>.
+                To change your email, ask another admin to do it via the admin users page.
+            </p>
+
+            <form method="post" action="/auth/account/display-name" class="form-grid form-grid--narrow">
+                <AntiforgeryToken />
+                <section class="form-section">
+                    <label class="section-label" for="ac-display">Display name</label>
+                    <input id="ac-display" type="text" name="DisplayName" value="@_user.DisplayName" required minlength="2" maxlength="80" />
+                </section>
+                <button type="submit" class="btn">Update display name</button>
+            </form>
+        </section>
+
+        <section class="account-section">
+            <h2>Password</h2>
+            <form method="post" action="/auth/account/password" class="form-grid form-grid--narrow">
+                <AntiforgeryToken />
+                <section class="form-section">
+                    <label class="section-label" for="ac-current">Current password</label>
+                    <input id="ac-current" type="password" name="CurrentPassword" required autocomplete="current-password" />
+                </section>
+                <section class="form-section">
+                    <label class="section-label" for="ac-new">New password</label>
+                    <input id="ac-new" type="password" name="NewPassword" required minlength="12" autocomplete="new-password" />
+                    <small class="muted">At least 12 characters.</small>
+                </section>
+                <button type="submit" class="btn">Change password</button>
+            </form>
+        </section>
+
+        <section class="account-section">
+            <h2>Two-factor authentication</h2>
+            <p class="muted">
+                Add a second factor for sign-in. We recommend an authenticator app (TOTP);
+                email codes are a fallback when you don't have your authenticator nearby.
+            </p>
+
+            <div class="account-subsection">
+                <div class="account-subsection__header">
+                    <h3>Authenticator app (TOTP)</h3>
+                    @if (_user.TotpEnabled)
+                    {
+                        <span class="status-pill">Enabled</span>
+                    }
+                    else
+                    {
+                        <span class="status-pill status-pill--muted">Off</span>
+                    }
+                </div>
+                @if (_user.TotpEnabled)
+                {
+                    <p class="muted">@_recoveryRemaining of 10 recovery codes remaining.</p>
+                    <div class="account-actions">
+                        <form method="post" action="/auth/account/2fa/recovery/regenerate" class="inline-form">
+                            <AntiforgeryToken />
+                            <input type="password" name="Password" placeholder="Current password" required autocomplete="current-password" />
+                            <button type="submit" class="btn btn--sm">Regenerate recovery codes</button>
+                        </form>
+                        <form method="post" action="/auth/account/2fa/totp/disable" class="inline-form">
+                            <AntiforgeryToken />
+                            <input type="password" name="Password" placeholder="Current password" required autocomplete="current-password" />
+                            <button type="submit" class="btn btn--sm btn--danger">Disable TOTP</button>
+                        </form>
+                    </div>
+                }
+                else
+                {
+                    <a href="/account/2fa/totp/setup" class="btn btn--primary">
+                        <Icon Name="shield" Width="16" Height="16" />
+                        <span>Set up authenticator app</span>
+                    </a>
+                }
+            </div>
+
+            <div class="account-subsection">
+                <div class="account-subsection__header">
+                    <h3>Email codes</h3>
+                    @if (_user.EmailMfaEnabled)
+                    {
+                        <span class="status-pill">Enabled</span>
+                    }
+                    else
+                    {
+                        <span class="status-pill status-pill--muted">Off</span>
+                    }
+                </div>
+                <p class="muted">Sent to <strong>@_user.Email</strong>. Requires SMTP to be configured.</p>
+                @if (!_smtpConfigured)
+                {
+                    <p class="muted"><em>SMTP is not configured on this deployment, so email codes can't be used.</em></p>
+                }
+                @if (_user.EmailMfaEnabled)
+                {
+                    <form method="post" action="/auth/account/2fa/email/disable" class="inline-form">
+                        <AntiforgeryToken />
+                        <input type="password" name="Password" placeholder="Current password" required autocomplete="current-password" />
+                        <button type="submit" class="btn btn--sm btn--danger">Disable email codes</button>
+                    </form>
+                }
+                else if (_smtpConfigured && !_pendingEmailMfa)
+                {
+                    <form method="post" action="/auth/account/2fa/email/begin">
+                        <AntiforgeryToken />
+                        <button type="submit" class="btn btn--sm">
+                            <Icon Name="mail" Width="14" Height="14" />
+                            <span>Send a verification code</span>
+                        </button>
+                    </form>
+                }
+                @if (_pendingEmailMfa)
+                {
+                    <form method="post" action="/auth/account/2fa/email/confirm" class="inline-form">
+                        <AntiforgeryToken />
+                        <input type="text" name="Code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required placeholder="6-digit code" />
+                        <button type="submit" class="btn btn--sm btn--primary">Confirm</button>
+                    </form>
+                }
+            </div>
+        </section>
+
+        @if (Passkeys.IsConfigured)
         {
-            <p class="muted">Removes your user row. The organisation keeps running.</p>
+            <section class="account-section">
+                <h2>Passkeys</h2>
+                <p class="muted">
+                    Sign in with a passkey (Touch ID, Windows Hello, a security key). One successful passkey
+                    sign-in replaces both your password and your second factor.
+                </p>
+
+                @if (_passkeys.Count == 0)
+                {
+                    <p class="muted">No passkeys registered yet.</p>
+                }
+                else
+                {
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Name</th><th>Added</th><th>Last used</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var p in _passkeys)
+                        {
+                            <tr>
+                                <td>@p.Nickname</td>
+                                <td class="muted">@p.CreatedAt.ToString("yyyy-MM-dd")</td>
+                                <td class="muted">@(p.LastUsedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
+                                <td class="row-actions">
+                                    <form method="post" action="/auth/account/passkeys/@p.Id/delete" style="display:inline">
+                                        <AntiforgeryToken />
+                                        <button type="submit" class="btn btn--sm">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                }
+
+                <div class="account-actions">
+                    <button type="button" class="btn btn--primary" @onclick="RegisterPasskeyAsync" disabled="@_busy">
+                        <Icon Name="key-round" Width="16" Height="16" />
+                        <span>Add a passkey</span>
+                    </button>
+                </div>
+                @if (!string.IsNullOrEmpty(_passkeyError))
+                {
+                    <p class="form-error" role="alert">@_passkeyError</p>
+                }
+            </section>
         }
-        <form method="post" action="/auth/account/delete" class="form-grid" id="delete-account-form">
-            <AntiforgeryToken />
-            @if (_isLastActiveAdmin)
+
+        <section class="account-section danger">
+            <h2>Danger zone</h2>
+            @if (_isLastActiveAdmin && _otherMembersExist)
             {
-                <label>
-                    <input type="checkbox" name="AcceptOrgDeletion" value="true" />
-                    I understand the organisation will be deleted.
-                </label>
+                <p class="muted">
+                    You're the last active admin in <strong>@_organization?.Name</strong>, and the organisation
+                    has other members. Promote another user to admin before deleting your account.
+                </p>
             }
-            <button type="button" class="btn btn--danger" @onclick="ConfirmDeleteAsync">Delete my account</button>
-        </form>
-    </section>
-}
+            else if (_isLastActiveAdmin)
+            {
+                <p class="muted">
+                    You're the only member of <strong>@_organization?.Name</strong>. Deleting your account will
+                    <strong>also delete the organisation</strong> and all of its content. There is no undo.
+                </p>
+            }
+            else
+            {
+                <p class="muted">Removes your user row. The organisation keeps running.</p>
+            }
+            <form method="post" action="/auth/account/delete" class="form-grid form-grid--narrow" id="delete-account-form">
+                <AntiforgeryToken />
+                @if (_isLastActiveAdmin && !_otherMembersExist)
+                {
+                    <label>
+                        <input type="checkbox" name="AcceptOrgDeletion" value="true" />
+                        I understand the organisation will be deleted.
+                    </label>
+                }
+                <button type="button" class="btn btn--danger"
+                        disabled="@(_isLastActiveAdmin && _otherMembersExist)"
+                        @onclick="ConfirmDeleteAsync">Delete my account</button>
+            </form>
+        </section>
+    }
+</div>
 
 <ConfirmDialog @ref="_confirmDelete" />
 
@@ -105,23 +269,65 @@ else
     private User? _user;
     private Organization? _organization;
     private bool _isLastActiveAdmin;
+    private bool _otherMembersExist;
+    private bool _smtpConfigured;
+    private bool _pendingEmailMfa;
+    private int _recoveryRemaining;
+    private bool _busy;
+    private string? _passkeyError;
+    private IReadOnlyList<UserPasskey> _passkeys = Array.Empty<UserPasskey>();
     private ConfirmDialog? _confirmDelete;
+
+    private static string FlashFor(string ok) => ok switch
+    {
+        "password" => "Password updated.",
+        "display-name" => "Display name updated.",
+        "totp-disabled" => "Authenticator app disabled.",
+        "email-mfa-sent" => "We sent you a verification code. Enter it below to enable email codes.",
+        "email-mfa-enabled" => "Email codes enabled.",
+        "email-mfa-disabled" => "Email codes disabled.",
+        "passkey-deleted" => "Passkey removed.",
+        "passkey-renamed" => "Passkey renamed.",
+        _ => "Saved.",
+    };
 
     private async Task ConfirmDeleteAsync()
     {
         if (_confirmDelete is null) return;
-        var message = _isLastActiveAdmin
-            ? $"This will delete the {_organization?.Name} organisation and every template, module and audit row in it. There is no undo."
-            : "Your user row will be removed. The organisation keeps running.";
+        string message;
+        if (_isLastActiveAdmin && !_otherMembersExist)
+        {
+            message = $"This will delete the {_organization?.Name} organisation and every template, module and audit row in it. There is no undo.";
+        }
+        else
+        {
+            message = "Your user row will be removed. The organisation keeps running.";
+        }
         var confirmed = await _confirmDelete.OpenAsync(
             title: "Delete your account?",
             message: message,
             confirmLabel: "Delete account",
             confirmButtonClass: "btn--danger");
         if (!confirmed) return;
-        // Submit the underlying form natively so the existing antiforgery +
-        // sign-out flow at /auth/account/delete runs unchanged.
         await JS.InvokeVoidAsync("document.getElementById('delete-account-form').submit");
+    }
+
+    private async Task RegisterPasskeyAsync()
+    {
+        _busy = true;
+        _passkeyError = null;
+        try
+        {
+            await JS.InvokeVoidAsync("aldtPasskey.register");
+        }
+        catch (Exception ex)
+        {
+            _passkeyError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
     }
 
     protected override async Task OnInitializedAsync()
@@ -136,5 +342,14 @@ else
                              && u.Role == UserRole.Admin
                              && u.Status == UserStatus.Active);
         _isLastActiveAdmin = _user.Role == UserRole.Admin && _user.Status == UserStatus.Active && activeAdmins <= 1;
+        _otherMembersExist = await Db.Users.IgnoreQueryFilters()
+            .AnyAsync(u => u.OrganizationId == _user.OrganizationId && u.Id != _user.Id);
+        _smtpConfigured = await Email.IsConfiguredAsync();
+        _pendingEmailMfa = Ok == "email-mfa-sent";
+        _recoveryRemaining = await RecoveryCodes.RemainingAsync(_user.Id);
+        if (Passkeys.IsConfigured)
+        {
+            _passkeys = await Passkeys.ListForUserAsync(_user.Id);
+        }
     }
 }

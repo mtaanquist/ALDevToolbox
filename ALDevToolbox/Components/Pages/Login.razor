@@ -1,4 +1,8 @@
 @page "/login"
+@rendermode InteractiveServer
+@using ALDevToolbox.Services.Account
+@inject PasskeyService Passkeys
+@inject IJSRuntime JS
 
 <PageTitle>Sign in · AL Dev Toolbox</PageTitle>
 
@@ -65,6 +69,21 @@
             </button>
         </div>
     </form>
+
+    @if (Passkeys.IsConfigured)
+    {
+        <div class="login-passkey">
+            <p class="muted">or</p>
+            <button type="button" class="btn" @onclick="SignInWithPasskeyAsync">
+                <Icon Name="key-round" Width="16" Height="16" />
+                <span>Sign in with a passkey</span>
+            </button>
+            @if (!string.IsNullOrEmpty(_passkeyError))
+            {
+                <p class="form-error" role="alert">@_passkeyError</p>
+            }
+        </div>
+    }
 </div>
 
 @code {
@@ -76,4 +95,19 @@
 
     [SupplyParameterFromQuery(Name = "return")]
     public string? ReturnUrl { get; set; }
+
+    private string? _passkeyError;
+
+    private async Task SignInWithPasskeyAsync()
+    {
+        _passkeyError = null;
+        try
+        {
+            await JS.InvokeVoidAsync("aldtPasskey.login", null);
+        }
+        catch (Exception ex)
+        {
+            _passkeyError = ex.Message;
+        }
+    }
 }

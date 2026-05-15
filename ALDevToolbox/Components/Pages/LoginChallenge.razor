@@ -1,0 +1,117 @@
+@page "/login/challenge"
+@using ALDevToolbox.Endpoints
+@using Microsoft.AspNetCore.DataProtection
+@inject IHttpContextAccessor Http
+@inject IDataProtectionProvider Protection
+@inject TimeProvider Clock
+@inject NavigationManager Nav
+
+<PageTitle>Verify it's you · AL Dev Toolbox</PageTitle>
+
+<div class="login-page">
+    <header class="page-header">
+        <h1>Verify it's you</h1>
+        <p class="muted">Enter your second factor to finish signing in.</p>
+    </header>
+
+    @if (_state is null)
+    {
+        <p class="form-error" role="alert">
+            That challenge expired. <a href="/login">Sign in again</a>.
+        </p>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(Error))
+        {
+            <p class="form-error" role="alert">@ErrorText(Error)</p>
+        }
+        @if (Ok == "sent")
+        {
+            <p class="form-success" role="status">Check your inbox for the 6-digit code.</p>
+        }
+
+        <div class="challenge-tabs">
+            @if (_state.TotpEnabled)
+            {
+                <details open="@(Method != "email" && Method != "recovery")" class="challenge-tab">
+                    <summary>Authenticator app</summary>
+                    <form method="post" action="/auth/login/challenge/totp" class="form-grid form-grid--narrow">
+                        <AntiforgeryToken />
+                        <section class="form-section">
+                            <label class="section-label" for="totp">6-digit code</label>
+                            <input id="totp" type="text" name="Code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code" />
+                        </section>
+                        <button type="submit" class="btn btn--primary">Verify</button>
+                    </form>
+                </details>
+            }
+            @if (_state.EmailMfaEnabled)
+            {
+                <details open="@(Method == "email")" class="challenge-tab">
+                    <summary>Email code</summary>
+                    <form method="post" action="/auth/login/challenge/email/issue">
+                        <AntiforgeryToken />
+                        <button type="submit" class="btn btn--sm">Send me a code</button>
+                    </form>
+                    <form method="post" action="/auth/login/challenge/email/verify" class="form-grid form-grid--narrow" style="margin-top: 12px;">
+                        <AntiforgeryToken />
+                        <section class="form-section">
+                            <label class="section-label" for="email-code">6-digit code</label>
+                            <input id="email-code" type="text" name="Code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code" />
+                        </section>
+                        <button type="submit" class="btn btn--primary">Verify</button>
+                    </form>
+                </details>
+            }
+            @if (_state.TotpEnabled)
+            {
+                <details open="@(Method == "recovery")" class="challenge-tab">
+                    <summary>Recovery code</summary>
+                    <form method="post" action="/auth/login/challenge/recovery" class="form-grid form-grid--narrow">
+                        <AntiforgeryToken />
+                        <section class="form-section">
+                            <label class="section-label" for="rec">Recovery code</label>
+                            <input id="rec" type="text" name="Code" required placeholder="XXXXX-XXXXX" maxlength="11" autocomplete="off" />
+                        </section>
+                        <button type="submit" class="btn">Verify</button>
+                    </form>
+                </details>
+            }
+        </div>
+
+        <p class="muted" style="margin-top: 24px;">
+            <a href="/login">Cancel and sign in again</a>
+        </p>
+    }
+</div>
+
+<style>
+    .login-page { max-width: 480px; margin-inline: auto; padding-top: 32px; }
+    .challenge-tab { border: 1px solid var(--color-border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; }
+    .challenge-tab > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+    .challenge-tab[open] > summary { margin-bottom: 12px; }
+</style>
+
+@code {
+    [SupplyParameterFromQuery(Name = "method")] public string? Method { get; set; }
+    [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+
+    private EndpointHelpers.MfaPending? _state;
+
+    protected override void OnInitialized()
+    {
+        var ctx = Http.HttpContext;
+        if (ctx is null) return;
+        _state = EndpointHelpers.ReadMfaPendingCookie(ctx, Protection, Clock);
+    }
+
+    private static string ErrorText(string err) => err switch
+    {
+        "invalid" => "That code wasn't valid. Try again.",
+        "rate-limited" => "Too many codes requested. Wait a few minutes before requesting another.",
+        "not-configured" => "Email codes aren't available — SMTP isn't configured on this deployment.",
+        _ => "Something went wrong. Try again.",
+    };
+}

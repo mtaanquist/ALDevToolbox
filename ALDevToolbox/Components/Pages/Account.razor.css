@@ -1,0 +1,70 @@
+.account-page {
+    max-width: 760px;
+    margin-inline: auto;
+}
+
+.account-section {
+    margin-top: 32px;
+    padding-top: 20px;
+    border-top: 1px solid var(--color-border);
+}
+
+.account-section:first-of-type {
+    margin-top: 16px;
+}
+
+.account-section > h2 {
+    margin: 0 0 6px;
+    font-size: 17px;
+}
+
+.account-section > p {
+    margin: 0 0 16px;
+}
+
+.account-section.danger > h2 {
+    color: var(--color-danger);
+}
+
+.account-subsection {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-top: 12px;
+}
+
+.account-subsection__header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.account-subsection__header h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.account-subsection p {
+    margin: 4px 0 12px;
+}
+
+.account-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.inline-form {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 8px 8px 0;
+}
+
+.inline-form input {
+    width: auto;
+    min-width: 160px;
+}

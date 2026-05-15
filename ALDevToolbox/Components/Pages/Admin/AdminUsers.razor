@@ -4,12 +4,18 @@
 @using ALDevToolbox.Data
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Endpoints
 @using ALDevToolbox.Services
+@using Microsoft.AspNetCore.DataProtection
 @using Microsoft.EntityFrameworkCore
 @using static ALDevToolbox.Components.Shared.AdminPageHelpers
 @inject AppDbContext Db
 @inject IOrganizationContext Org
 @inject ALDevToolbox.Services.Account.UserAdministrationService Accounts
+@inject IDataProtectionProvider Protection
+@inject IHttpContextAccessor Http
+@inject IEmailService EmailSvc
+@inject IJSRuntime JS
 @inject ILogger<AdminUsers> Log
 
 <PageTitle>Users · AL Dev Toolbox</PageTitle>
@@ -41,6 +47,36 @@ else if (Ok == "invite-revoked")
 {
     <p class="form-success" role="status">Invite revoked.</p>
 }
+else if (Ok == "created" && !string.IsNullOrEmpty(_oneShotLink))
+{
+    <div class="form-success" role="status">
+        <p><strong>User created.</strong> Share this single-use link (valid 7 days):</p>
+        <div class="invite-link-box">
+            <code>@_oneShotLink</code>
+            <button type="button" class="btn btn--sm" @onclick="CopyLinkAsync">
+                <Icon Name="copy" Width="14" Height="14" />
+                <span>Copy</span>
+            </button>
+        </div>
+    </div>
+}
+else if (Ok == "email-pending")
+{
+    <p class="form-success" role="status">
+        Email change requested. We sent a confirmation link to the new address; it expires in 24 hours.
+        @if (!string.IsNullOrEmpty(_oneShotLink))
+        {
+            <span>If your SMTP isn't reachable, share this link with the user instead:</span>
+            <div class="invite-link-box">
+                <code>@_oneShotLink</code>
+                <button type="button" class="btn btn--sm" @onclick="CopyLinkAsync">
+                    <Icon Name="copy" Width="14" Height="14" />
+                    <span>Copy</span>
+                </button>
+            </div>
+        }
+    </p>
+}
 
 @if (_pending is null || _active is null || _invites is null)
 {
@@ -49,7 +85,41 @@ else if (Ok == "invite-revoked")
 else
 {
     <section class="admin-section">
-        <h2>Invite a user</h2>
+        <h2>Create a user</h2>
+        <p class="muted">
+            Generates a single-use invite link without requiring email. Share it with the user out-of-band;
+            they click it and choose their own password. If SMTP is configured, you can also email it.
+        </p>
+        <form method="post" action="/admin/users/create" class="form-grid">
+            <AntiforgeryToken />
+            <section class="form-section">
+                <label class="section-label" for="cu-email">Email</label>
+                <input id="cu-email" type="email" name="Email" required maxlength="254" placeholder="e.g. alice@example.com" />
+            </section>
+            <section class="form-section">
+                <label class="section-label" for="cu-role">Role</label>
+                <select id="cu-role" name="Role">
+                    <option value="User" selected>User</option>
+                    <option value="Admin">Administrator</option>
+                </select>
+            </section>
+            <section class="form-section">
+                <label class="section-label" for="cu-message">Welcome message (optional)</label>
+                <textarea id="cu-message" name="WelcomeMessage" rows="2" maxlength="2000" placeholder="A short note for the invite email if you send it."></textarea>
+            </section>
+            <label class="inline-checkbox">
+                <input type="checkbox" name="SendEmail" value="true" @bind="_sendEmail" disabled="@(!_smtpConfigured)" />
+                Also send the invite by email @(_smtpConfigured ? "" : "(SMTP not configured)")
+            </label>
+            <button type="submit" class="btn btn--primary">
+                <Icon Name="user-plus" Width="16" Height="16" />
+                <span>Create user</span>
+            </button>
+        </form>
+    </section>
+
+    <section class="admin-section">
+        <h2>Invite a user (email)</h2>
         <p class="muted">Send a single-use invite link by email. The invitee picks a display name and password — no further approval required.</p>
         <form method="post" action="/admin/users/invite" class="form-grid">
             <AntiforgeryToken />
@@ -251,8 +321,31 @@ else
                                 <button type="submit" class="btn btn--sm">Re-enable</button>
                             </form>
                         }
+                        <button type="button" class="btn btn--sm" @onclick="() => ToggleEmailRow(u.Id)">
+                            <Icon Name="mail" Width="14" Height="14" />
+                            <span>Change email</span>
+                        </button>
                     </td>
                 </tr>
+                @if (_emailRowOpen == u.Id)
+                {
+                    <tr class="email-change-row">
+                        <td colspan="7">
+                            @if (!string.IsNullOrEmpty(u.PendingEmail))
+                            {
+                                <p class="muted">
+                                    Pending change to <strong>@u.PendingEmail</strong> (requested @u.PendingEmailAt?.ToString("yyyy-MM-dd HH:mm 'UTC'")).
+                                </p>
+                            }
+                            <form method="post" action="/admin/users/@u.Id/email" class="inline-form">
+                                <AntiforgeryToken />
+                                <input type="email" name="NewEmail" required maxlength="254" placeholder="new@example.com" />
+                                <button type="submit" class="btn btn--sm btn--primary">Send confirmation</button>
+                                <button type="button" class="btn btn--sm" @onclick="() => ToggleEmailRow(0)">Cancel</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
             }
             </tbody>
         </table>
@@ -276,13 +369,39 @@ else
     private string? _lastSuccess;
     private IReadOnlyList<BulkActionFailure> _lastFailures = Array.Empty<BulkActionFailure>();
     private ConfirmDialog? _confirm;
+    private int _emailRowOpen;
+    private string? _oneShotLink;
+    private bool _sendEmail = true;
+    private bool _smtpConfigured;
+
+    private void ToggleEmailRow(int id) => _emailRowOpen = _emailRowOpen == id ? 0 : id;
+
+    private async Task CopyLinkAsync()
+    {
+        if (_oneShotLink is null) return;
+        try { await JS.InvokeVoidAsync("aldtCopy", _oneShotLink); }
+        catch { /* clipboard API blocked — user can copy manually */ }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        var ctx = Http.HttpContext;
+        if (ctx is null) return;
+        _oneShotLink = EndpointHelpers.ReadAndClearOneShotInviteCookie(ctx, Protection);
+        if (_oneShotLink is not null) StateHasChanged();
+    }
 
     private enum BulkAction { Disable, Enable, PromoteAdmin, DemoteUser }
 
     private bool AllVisibleSelected =>
         _active is { Count: > 0 } && _active.All(u => _selected.Contains(u.Id));
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        _smtpConfigured = await EmailSvc.IsConfiguredAsync();
+        await LoadAsync();
+    }
 
     private async Task LoadAsync()
     {

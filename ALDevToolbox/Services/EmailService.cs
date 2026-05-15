@@ -141,6 +141,20 @@ public static class EmailTemplates
             + $"<p><a href=\"{Html(magicUrl)}\">{Html(magicUrl)}</a></p>"
             + "<p>If you didn't request this link, you can ignore this email.</p>");
 
+    public static (string Subject, string HtmlBody) MfaEmailCode(string displayName, string code)
+        => ("Your AL Dev Toolbox sign-in code",
+            $"<p>Hi {Html(displayName)},</p>"
+            + $"<p>Your verification code is <strong style=\"font-size: 1.5em; letter-spacing: 0.15em;\">{Html(code)}</strong></p>"
+            + "<p>It expires in 10 minutes. If you didn't request it, ignore this email and change your password.</p>");
+
+    public static (string Subject, string HtmlBody) EmailChangeConfirm(string displayName, string confirmUrl)
+        => ("Confirm your new AL Dev Toolbox email",
+            $"<p>Hi {Html(displayName)},</p>"
+            + "<p>An administrator changed the email address on your AL Dev Toolbox account to this one. "
+            + "Click below within 24 hours to confirm. Until then, sign-in still uses your old address.</p>"
+            + $"<p><a href=\"{Html(confirmUrl)}\">{Html(confirmUrl)}</a></p>"
+            + "<p>If you weren't expecting this, ignore the message — the change won't take effect.</p>");
+
     public static (string Subject, string HtmlBody) SiteAdminTest(string displayName)
         => ("AL Dev Toolbox SMTP test",
             $"<p>Hi {Html(displayName)},</p>"

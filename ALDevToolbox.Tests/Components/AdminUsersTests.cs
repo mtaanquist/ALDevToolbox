@@ -40,6 +40,16 @@ public sealed class AdminUsersTests : IDisposable
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),
             typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
+        _ctx.Services.AddSingleton<IEmailService, StubEmailService>();
+        _ctx.Services.AddSingleton(_db.DataProtectionProvider);
+        _ctx.Services.AddSingleton<Microsoft.AspNetCore.Http.IHttpContextAccessor>(new Microsoft.AspNetCore.Http.HttpContextAccessor());
+    }
+
+    /// <summary>SMTP-not-configured stub; the admin page renders the "create a user" form regardless.</summary>
+    private sealed class StubEmailService : IEmailService
+    {
+        public Task<bool> IsConfiguredAsync(CancellationToken ct = default) => Task.FromResult(false);
+        public Task SendAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     public void Dispose()

@@ -1,0 +1,76 @@
+@page "/account/2fa/recovery-codes"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@using ALDevToolbox.Endpoints
+@using Microsoft.AspNetCore.DataProtection
+@inject IHttpContextAccessor Http
+@inject IDataProtectionProvider Protection
+@inject NavigationManager Nav
+
+<PageTitle>Recovery codes · AL Dev Toolbox</PageTitle>
+
+<div class="account-page">
+    <header class="page-header">
+        <h1>Save your recovery codes</h1>
+        <p class="muted">
+            Store these somewhere safe — a password manager, an encrypted note, or paper. Each code works
+            <strong>once</strong>. Use them to sign in when your authenticator isn't available.
+        </p>
+    </header>
+
+    @if (_codes.Length == 0)
+    {
+        <p class="form-error" role="alert">
+            Recovery codes can only be shown immediately after generation. <a href="/account">Go back</a>
+            and re-generate from the security section if you missed them.
+        </p>
+    }
+    else
+    {
+        <section class="account-section">
+            <pre class="recovery-codes">@_codesText</pre>
+            <div class="account-actions">
+                <button type="button" class="btn" @onclick="DownloadAsync">
+                    <Icon Name="download" Width="14" Height="14" />
+                    <span>Download as .txt</span>
+                </button>
+                <a class="btn btn--primary" href="/account">I've saved them</a>
+            </div>
+        </section>
+    }
+</div>
+
+<style>
+    .recovery-codes {
+        background: var(--color-bg);
+        border: 1px solid var(--color-border);
+        padding: 16px;
+        font-family: var(--font-mono);
+        font-size: 14px;
+        letter-spacing: 0.08em;
+        line-height: 1.6;
+    }
+</style>
+
+@code {
+    [Inject] IJSRuntime JS { get; set; } = default!;
+
+    private string[] _codes = Array.Empty<string>();
+    private string _codesText = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        var ctx = Http.HttpContext;
+        if (ctx is null) return;
+        var raw = EndpointHelpers.ReadAndClearOneShotInviteCookie(ctx, Protection);
+        if (raw is null || !raw.StartsWith("codes:", StringComparison.Ordinal)) return;
+        _codes = raw[6..].Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        _codesText = string.Join('\n', _codes);
+    }
+
+    private async Task DownloadAsync()
+    {
+        var name = $"aldt-recovery-codes-{DateTime.UtcNow:yyyyMMdd}.txt";
+        await JS.InvokeVoidAsync("aldtDownload.text", name, _codesText);
+    }
+}

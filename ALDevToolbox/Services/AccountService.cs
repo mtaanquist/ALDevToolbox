@@ -19,6 +19,13 @@ public enum LoginOutcome
     Disabled,
     LockedOut,
     RateLimited,
+    /// <summary>
+    /// Password verified but the user has 2FA enrolled — caller must redirect
+    /// to <c>/login/challenge</c>. <c>LastLoginAt</c> is <em>not</em> stamped
+    /// at this stage; <c>AuthService.CompleteMfaAsync</c> finalises the login
+    /// once the second factor checks out.
+    /// </summary>
+    MfaRequired,
 }
 
 /// <summary>
@@ -205,13 +212,27 @@ public sealed class AccountService
             && user.Status == UserStatus.Active
             && await CountActiveAdminsAsync(user.OrganizationId, ct) <= 1;
 
+        // Refined guard: if the user is the last active admin AND there are
+        // other members in the org, refuse outright — they have to promote
+        // somebody first. The "only member in the org" case still cascades
+        // the org (handled in the branch below) because there's nothing left
+        // to keep alive.
         if (isLastActiveAdmin)
         {
+            var otherMembersExist = await _db.Users.IgnoreQueryFilters()
+                .AnyAsync(u => u.OrganizationId == user.OrganizationId && u.Id != user.Id, ct);
+            if (otherMembersExist)
+            {
+                throw new PlanValidationException(new Dictionary<string, string>
+                {
+                    ["LastAdmin"] = "You're the last active admin. Promote another user to admin before deleting your account."
+                });
+            }
             if (!acceptOrgDeletion)
             {
                 throw new PlanValidationException(new Dictionary<string, string>
                 {
-                    ["LastAdmin"] = "You're the last active admin. Promote another user first or accept that the organisation will be deleted."
+                    ["LastAdmin"] = "You're the last user in this organisation. Deleting your account also deletes the organisation."
                 });
             }
             var org = await _db.Organizations.IgnoreQueryFilters().FirstAsync(o => o.Id == user.OrganizationId, ct);
