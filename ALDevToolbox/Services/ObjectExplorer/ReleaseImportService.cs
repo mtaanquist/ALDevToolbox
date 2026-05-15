@@ -238,15 +238,27 @@ public class ReleaseImportService
             });
         }
 
-        // Merge in source from the paired .Source.zip when the .app didn't
-        // embed source. Either way, sourceFiles ends up keyed by relative path.
-        var sourceFiles = pkg.SourceFiles.ToDictionary(f => f.Path, f => f.Content, StringComparer.OrdinalIgnoreCase);
-        if (upload.SourceZipStream is not null && pkg.SourceFiles.Count == 0)
+        // Source priority: a paired .Source.zip wins over the .app's
+        // embedded source whenever one was uploaded alongside the .app.
+        // Microsoft's BC 28+ first-party modules ship as Ready2Run wrappers
+        // whose inner .app's embedded source is partial — the canonical
+        // full source tree sits in the sibling <Name>.Source.zip on the
+        // DVD. Falling back to pkg.SourceFiles only when no .Source.zip
+        // was provided keeps single-file partner uploads (which never pair
+        // a zip) working as before.
+        IReadOnlyDictionary<string, string> sourceFiles;
+        if (upload.SourceZipStream is not null)
         {
+            var fromZip = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var (path, content) in ReadSourceZip(upload.SourceZipStream))
             {
-                sourceFiles[path] = content;
+                fromZip[path] = content;
             }
+            sourceFiles = fromZip;
+        }
+        else
+        {
+            sourceFiles = pkg.SourceFiles.ToDictionary(f => f.Path, f => f.Content, StringComparer.OrdinalIgnoreCase);
         }
 
         await WriteModuleAsync(orgId, release, upload, pkg, sourceFiles, totals, ct).ConfigureAwait(false);
@@ -342,19 +354,25 @@ public class ReleaseImportService
         // Id; the tracker clear between chunks drops the per-chunk memory
         // pressure so a 5000-object Base App doesn't grow unbounded.
         int objectsPending = 0;
+        int objectsExpectingSource = 0;
+        int objectsLinked = 0;
         foreach (var symObj in pkg.Symbols.Objects)
         {
             ct.ThrowIfCancellationRequested();
 
             OeModuleFile? sourceFile = null;
             int line = 1;
-            if (!string.IsNullOrEmpty(symObj.ReferenceSourceFileName)
-                && filesByPath.TryGetValue(symObj.ReferenceSourceFileName, out var matchedFile))
+            if (!string.IsNullOrEmpty(symObj.ReferenceSourceFileName))
             {
-                sourceFile = matchedFile;
-                if (declarationLines.TryGetValue((matchedFile.Path, symObj.Kind, symObj.Name), out var found))
+                objectsExpectingSource++;
+                if (filesByPath.TryGetValue(symObj.ReferenceSourceFileName, out var matchedFile))
                 {
-                    line = found;
+                    sourceFile = matchedFile;
+                    objectsLinked++;
+                    if (declarationLines.TryGetValue((matchedFile.Path, symObj.Kind, symObj.Name), out var found))
+                    {
+                        line = found;
+                    }
                 }
             }
 
@@ -417,6 +435,23 @@ public class ReleaseImportService
         }
 
         totals.ModulesImported++;
+
+        // Surface a warning when source files were loaded but the symbol
+        // package's ReferenceSourceFileName paths didn't match — that's
+        // almost always a layout the canonicaliser hasn't been taught yet
+        // (a new BC version with another Source.zip wrapper shape). Silent
+        // em-dashes in the UI used to be the only signal.
+        if (filesByPath.Count > 0 && objectsExpectingSource > 0 && objectsLinked == 0)
+        {
+            _logger.LogWarning(
+                "Module {Name} {Version}: {FileCount} source file(s) loaded but 0/{Expected} objects linked. "
+                + "Expected path example: {Expected}. Loaded path example: {Loaded}. "
+                + "The .Source.zip layout may not be recognised by AppPackageReader.CanonicalizeSourcePath.",
+                pkg.Manifest.Name, pkg.Manifest.Version,
+                filesByPath.Count, objectsExpectingSource,
+                pkg.Symbols.Objects.FirstOrDefault(o => !string.IsNullOrEmpty(o.ReferenceSourceFileName))?.ReferenceSourceFileName ?? "(none)",
+                filesByPath.Keys.FirstOrDefault() ?? "(none)");
+        }
 
         // Clear the tracker between modules so a release-wide import doesn't
         // turn into an O(n²) walk over an ever-growing change-tracker.
@@ -786,9 +821,11 @@ public class ReleaseImportService
             if (string.IsNullOrEmpty(entry.Name)) continue;
             if (!entry.FullName.EndsWith(".al", StringComparison.OrdinalIgnoreCase)) continue;
 
-            var path = entry.FullName.StartsWith("src/", StringComparison.OrdinalIgnoreCase)
-                ? entry.FullName
-                : "src/" + entry.FullName;
+            // Funnel every layout through the shared canonicaliser so the
+            // BC 28.x "<App Name>/src/..." wrapper and the BC 25.x
+            // "src/..." form land on the same key as the symbol package's
+            // ReferenceSourceFileName.
+            var path = AppPackageReader.CanonicalizeSourcePath(entry.FullName);
 
             using var s = entry.Open();
             using var reader = new StreamReader(s);

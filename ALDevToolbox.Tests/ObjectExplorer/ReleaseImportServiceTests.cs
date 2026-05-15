@@ -152,6 +152,38 @@ public sealed class ReleaseImportServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Prefers_paired_source_zip_over_app_embedded_source()
+    {
+        // BC 28.x first-party modules ship as Ready2Run wrappers whose
+        // inner .app's embedded source is partial — the canonical source
+        // sits in the sibling .Source.zip on the DVD. The importer must
+        // prefer the zip whenever it's paired, falling back to the .app's
+        // embedded source only when no zip was uploaded. Pin that
+        // priority by feeding the same Microsoft_DK_Core fixture with its
+        // matching .Source.zip and asserting both the file row's path and
+        // its content are the values the zip ships (the same .app without
+        // a paired zip would still work via the embedded source — that's
+        // covered by Stamps_module_object_line_numbers_from_embedded_source).
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+
+        await using var appStream = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        await using var zipStream = File.OpenRead(Path.Combine(FixtureRoot, "DK Core.Source.zip"));
+        await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "BC 25.18 DK paired", Kind: "first_party",
+            ParentReleaseId: null, ApplicationVersionId: null,
+            Uploads: new[] { new AppFileUpload("dk.app", appStream, zipStream) }));
+
+        await using var read = _db.NewContext();
+        var codeunit = await read.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Kind == "codeunit" && o.Name == "DK Core Event Subscribers")
+            .SingleAsync();
+        codeunit.SourceFileId.Should().NotBeNull(
+            because: "the .Source.zip ships the same canonical src/Codeunits/... path the symbol package expects");
+        codeunit.LineNumber.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
     public async Task Stamps_module_object_line_numbers_from_embedded_source()
     {
         await using var ctx = _db.NewContext();

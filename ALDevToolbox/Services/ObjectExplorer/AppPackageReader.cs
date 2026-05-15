@@ -461,14 +461,43 @@ public static class AppPackageReader
         return files;
     }
 
-    private static string NormalizeSourcePath(string fullName)
+    private static string NormalizeSourcePath(string fullName) => CanonicalizeSourcePath(fullName);
+
+    /// <summary>
+    /// Coerces a raw archive entry path into the canonical
+    /// <c>src/&lt;relative&gt;</c> shape the importer keys ModuleFile rows
+    /// by. Microsoft has shipped at least four layouts in the wild:
+    /// <list type="bullet">
+    ///   <item><c>src/Codeunits/Foo.al</c> — first-party Source.zip in BC 25.x</item>
+    ///   <item><c>src/src/Codeunits/Foo.al</c> — double-nested inside the <c>.app</c></item>
+    ///   <item><c>Base Application/src/Codeunits/Foo.al</c> — project-folder
+    ///         wrapper used by BC 28.x first-party Source.zips</item>
+    ///   <item><c>Codeunits/Foo.al</c> — partner shape without any <c>src/</c></item>
+    /// </list>
+    /// All four flatten to <c>src/Codeunits/Foo.al</c> so symbol-package
+    /// <c>ReferenceSourceFileName</c> lookups land on the same key
+    /// regardless of where the file originally came from.
+    /// </summary>
+    public static string CanonicalizeSourcePath(string fullName)
     {
-        // Strip a leading "src/" once.
-        if (fullName.StartsWith("src/", StringComparison.OrdinalIgnoreCase))
+        // Normalise backslashes; some zipping tools emit them on Windows.
+        fullName = fullName.Replace('\\', '/');
+
+        // If a "/src/" segment sits anywhere in the path, take the suffix
+        // starting at that segment — drops any project-folder or
+        // publisher-prefix wrapper Microsoft adds in BC 28.x Source.zips.
+        var slashSrc = fullName.IndexOf("/src/", StringComparison.OrdinalIgnoreCase);
+        if (slashSrc >= 0)
+        {
+            fullName = fullName.Substring(slashSrc + 1);
+        }
+
+        // Collapse any leading "src/" repetitions to a single layer.
+        while (fullName.StartsWith("src/", StringComparison.OrdinalIgnoreCase))
+        {
             fullName = fullName.Substring(4);
-        // …and again if the .app double-nested.
-        if (fullName.StartsWith("src/", StringComparison.OrdinalIgnoreCase))
-            fullName = fullName.Substring(4);
+        }
+
         return "src/" + fullName;
     }
 
