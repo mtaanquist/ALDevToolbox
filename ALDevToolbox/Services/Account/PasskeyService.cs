@@ -24,9 +24,23 @@ public sealed record WebAuthnConfig(string RpId, IReadOnlyList<string> Origins, 
         var section = configuration.GetSection("Auth:WebAuthn");
         var rpId = section["RpId"];
         var rpName = section["RpName"] ?? "AL Dev Toolbox";
-        var origins = section.GetSection("Origins").Get<string[]>()
-            ?? (rpId is not null ? new[] { $"https://{rpId}" } : Array.Empty<string>());
-        return new WebAuthnConfig(rpId ?? string.Empty, origins, rpName);
+        // Accept either the .NET-native indexed array form (Origins__0,
+        // Origins__1, …) or a single comma-separated `OriginsCsv` value —
+        // the latter is friendlier in a flat docker-compose .env file.
+        var origins = section.GetSection("Origins").Get<string[]>();
+        if (origins is null || origins.Length == 0)
+        {
+            var csv = section["OriginsCsv"];
+            if (!string.IsNullOrWhiteSpace(csv))
+            {
+                origins = csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            }
+        }
+        if ((origins is null || origins.Length == 0) && !string.IsNullOrEmpty(rpId))
+        {
+            origins = new[] { $"https://{rpId}" };
+        }
+        return new WebAuthnConfig(rpId ?? string.Empty, origins ?? Array.Empty<string>(), rpName);
     }
 }
 

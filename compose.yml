@@ -60,6 +60,14 @@ services:
       # if your volume layout differs; the app-backups named volume is the
       # only place backups live in the supported deployment shape.
       BACKUPS_DIR: /var/lib/aldevtoolbox/backups
+      # WebAuthn / passkeys. RpId must be a registrable suffix of the
+      # hostname the browser sees (e.g. `aldevtoolbox.example.com`); leave
+      # blank to disable the passkey UI. OriginsCsv is a comma-separated
+      # list of full `https://…` origins the app will accept assertions
+      # from — pass at least the public hostname; add more if you have
+      # multiple entry points (admin subdomain, staging, etc).
+      Auth__WebAuthn__RpId: ${AUTH_WEBAUTHN_RP_ID:-}
+      Auth__WebAuthn__OriginsCsv: ${AUTH_WEBAUTHN_ORIGINS:-}
     volumes:
       - app-keys:/var/lib/aldevtoolbox/dp-keys
       - app-backups:/var/lib/aldevtoolbox/backups
