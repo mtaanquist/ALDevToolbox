@@ -146,7 +146,12 @@
         if (ScrollToLine is { } line && line >= 1 && _mountedScrollSequence != ScrollSequence)
         {
             Logger.LogInformation("[CodeViewer] scrollToLine firing: editorId={EditorId} line={Line}", _editorId, line);
-            await _module.InvokeVoidAsync("console.log",
+            // console.log lives on window, not on the imported module —
+            // route through IJSRuntime, not _module, or the call fails
+            // with "Could not find 'console.log' ('console' was
+            // undefined)" and takes the real scrollToLine call below
+            // down with it.
+            await JS.InvokeVoidAsync("console.log",
                 $"[CodeViewer] scrollToLine call: editorId={_editorId} line={line}");
             await _module.InvokeVoidAsync("scrollToLine", _editorId, line, true);
             _mountedScrollSequence = ScrollSequence;
