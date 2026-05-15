@@ -277,9 +277,92 @@ public class ObjectExplorerService
             .Select(o => new ReleaseObjectMatch(
                 o.Id, o.Kind, o.ObjectId, o.Name, o.Namespace,
                 o.ModuleId, o.Module!.Name,
-                o.SourceFileId, o.LineNumber))
+                o.SourceFileId, o.LineNumber,
+                o.SourceFile != null ? o.SourceFile.LineCount : 0))
             .ToListAsync(ct);
     }
+
+    /// <summary>
+    /// Same as <see cref="SearchObjectsInReleaseAsync"/> but with the
+    /// extension (= owning module) + namespace filters the legacy
+    /// VersionBrowser exposed. <paramref name="moduleId"/> narrows to one
+    /// module; <paramref name="namespacePrefix"/> requires
+    /// <c>oe_module_objects.namespace</c> to start with the supplied prefix
+    /// (no trailing dot — "Microsoft.Warehouse" matches both
+    /// "Microsoft.Warehouse" and "Microsoft.Warehouse.ADCS").
+    /// </summary>
+    public async Task<List<ReleaseObjectMatch>> SearchObjectsInReleaseAsync(
+        int releaseId,
+        ObjectListFilter filter,
+        long? moduleId,
+        string? namespacePrefix,
+        int take = 500,
+        CancellationToken ct = default)
+    {
+        var q = _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId);
+
+        if (!string.IsNullOrWhiteSpace(filter.Kind))
+        {
+            var k = filter.Kind.Trim().ToLowerInvariant();
+            q = q.Where(o => o.Kind == k);
+        }
+        if (moduleId is { } mid)
+        {
+            q = q.Where(o => o.ModuleId == mid);
+        }
+        if (!string.IsNullOrWhiteSpace(namespacePrefix))
+        {
+            var ns = namespacePrefix.Trim();
+            q = q.Where(o => o.Namespace != null && o.Namespace.StartsWith(ns));
+        }
+        if (!string.IsNullOrWhiteSpace(filter.Search))
+        {
+            var s = filter.Search.Trim();
+            var lower = s.ToLower();
+            if (int.TryParse(s, out var asInt))
+            {
+                q = q.Where(o => o.ObjectId == asInt || o.Name.ToLower().Contains(lower));
+            }
+            else
+            {
+                q = q.Where(o => o.Name.ToLower().Contains(lower));
+            }
+        }
+
+        return await q
+            .OrderBy(o => o.Module!.Name).ThenBy(o => o.Kind).ThenBy(o => o.Name)
+            .Take(take)
+            .Select(o => new ReleaseObjectMatch(
+                o.Id, o.Kind, o.ObjectId, o.Name, o.Namespace,
+                o.ModuleId, o.Module!.Name,
+                o.SourceFileId, o.LineNumber,
+                o.SourceFile != null ? o.SourceFile.LineCount : 0))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>Distinct object kinds in a Release — feeds the "Object type" dropdown.</summary>
+    public Task<List<string>> ListObjectKindsInReleaseAsync(int releaseId, CancellationToken ct = default)
+        => _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId)
+            .Select(o => o.Kind)
+            .Distinct()
+            .OrderBy(k => k)
+            .ToListAsync(ct);
+
+    /// <summary>
+    /// Distinct namespace prefixes in a Release for the "Namespace" filter.
+    /// Returns each unique value of <c>oe_module_objects.namespace</c>,
+    /// nulls dropped. The dropdown uses a typeahead so a long list (Base App
+    /// has 100+ namespaces) is still navigable.
+    /// </summary>
+    public Task<List<string>> ListNamespacesInReleaseAsync(int releaseId, CancellationToken ct = default)
+        => _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId && o.Namespace != null)
+            .Select(o => o.Namespace!)
+            .Distinct()
+            .OrderBy(n => n)
+            .ToListAsync(ct);
 
     /// <summary>
     /// Procedure-name search across every module in the Release. Matches the

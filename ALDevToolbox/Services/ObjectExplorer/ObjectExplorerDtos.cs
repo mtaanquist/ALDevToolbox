@@ -173,7 +173,8 @@ public sealed record ReleaseObjectMatch(
     long ModuleId,
     string ModuleName,
     long? SourceFileId,
-    int LineNumber);
+    int LineNumber,
+    int FileLineCount);
 
 /// <summary>
 /// Header info for the source-file viewer's breadcrumb — module + release

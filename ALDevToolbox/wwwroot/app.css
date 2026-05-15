@@ -2927,9 +2927,9 @@ ul.form-field-error {
     font-weight: 600;
 }
 
-/* Source-file viewer (SourceFileViewer.razor). Plain numbered lines —
-   syntax highlighting is deliberately out of scope until we revisit the
-   CodeMirror integration that PR 6 dropped. */
+/* Source-file viewer (SourceFileViewer.razor). Uses CodeViewer for syntax
+   highlighting; the right rail is a thin outline pane with click-through
+   navigation. Token right-click navigation will land in a follow-up PR. */
 .source-viewer__layout {
     display: grid;
     grid-template-columns: 1fr 280px;
@@ -2941,6 +2941,10 @@ ul.form-field-error {
     .source-viewer__layout {
         grid-template-columns: 1fr;
     }
+}
+
+.source-viewer__code {
+    min-width: 0;
 }
 
 .source-viewer__outline {

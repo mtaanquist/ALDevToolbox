@@ -1,22 +1,20 @@
 @page "/object-explorer/file/{FileId:long}"
 @attribute [Authorize]
+@rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Components.Shared
 
 @*
-    Source-file viewer with an outline panel. Reads the body once via
-    GetFileAsync, renders as a numbered table; the right-hand outline lists
-    every object + symbol declared in the file with click-through to the
-    line. The find-references panel and the per-object "View source" link
-    both deep-link via ?line=N which lights up the target row in CSS.
+    Source-file viewer with syntax highlighting via the CodeMirror-backed
+    CodeViewer component and an outline panel on the right. The right rail
+    lists every object + symbol declared in the file with click-through.
 
-    No syntax highlighting yet — the legacy CodeMirror integration was
-    scoped out in PR 6. Plain <pre>-style lines keep the page renderable
-    without a JS bundle while still giving the "click through to the
-    actual code" payoff. Token right-click navigation (Find references /
-    Go to definition on a clicked identifier) is the next step on top of
-    this surface.
+    Token right-click navigation (Cmd/Ctrl-click for go-to-definition,
+    right-click for Find references / Find in file) is the next PR — needs
+    server-side wiring for ListResolvableTokensInFile / GoToDefinition /
+    LookupSymbolAt, plus the Declarations / Resolvables props on CodeViewer.
 *@
 
 <PageTitle>@(_header?.Path ?? "Source") · AL Dev Toolbox</PageTitle>
@@ -31,17 +29,24 @@
         <header class="admin-page__header">
             <div>
                 <p class="muted">
-                    <a href="/object-explorer">Releases</a>
-                    <span> / <a href="@($"/object-explorer/release/{_header.ReleaseId}")">@_header.ReleaseLabel</a></span>
-                    <span> / <a href="@($"/object-explorer/module/{_header.ModuleId}")">@_header.ModuleName</a></span>
+                    <a href="/object-explorer">Object Explorer</a>
+                    <span> › <a href="@($"/object-explorer/release/{_header.ReleaseId}")">@_header.ReleaseLabel</a></span>
                 </p>
                 <h1>@_header.Path</h1>
-                <p class="muted">@_header.LineCount.ToString("N0") line(s)</p>
+                <p class="muted">
+                    @_header.ModuleName · @_header.LineCount.ToString("N0") line(s)
+                </p>
             </div>
         </header>
 
         <div class="source-viewer__layout">
-            <pre class="source-viewer__body"><code>@RenderNumberedLines(_file.Content, _highlightLine)</code></pre>
+            <div class="source-viewer__code">
+                <CodeViewer Content="@_file.Content"
+                            Language="al"
+                            Fluid="true"
+                            ScrollToLine="@_highlightLine"
+                            ScrollSequence="@_scrollSequence" />
+            </div>
 
             <aside class="source-viewer__outline">
                 <h2>Outline</h2>
@@ -79,6 +84,7 @@
     private SourceFileDetail? _file;
     private List<SourceFileOutlineItem>? _outline;
     private int? _highlightLine;
+    private int _scrollSequence;
 
     protected override async Task OnInitializedAsync()
     {
@@ -91,6 +97,7 @@
         if (ctx is not null && int.TryParse(ctx.Request.Query["line"], out var line) && line > 0)
         {
             _highlightLine = line;
+            _scrollSequence = 1;
         }
     }
 
@@ -98,11 +105,11 @@
     {
         // Objects (the major declarations) deserve a real navigation hop so
         // the user can find references / jump to symbols on them. Sub-symbol
-        // rows just scroll the source view to their line via the fragment
-        // anchor stamped by RenderNumberedLines.
+        // rows just deep-link back to this same page with a new ?line= for
+        // the CodeMirror viewer to scroll to.
         return item.ObjectId is { } oid
             ? $"/object-explorer/object/{oid}"
-            : $"#L{item.LineNumber}";
+            : $"/object-explorer/file/{FileId}?line={item.LineNumber}";
     }
 
     private string OutlineItemClass(SourceFileOutlineItem item) =>
@@ -120,22 +127,5 @@
         "trigger"            => "trigger",
         "field"              => "field",
         _                    => kind,
-    };
-
-    private static RenderFragment RenderNumberedLines(string content, int? highlight) => __builder =>
-    {
-        if (string.IsNullOrEmpty(content)) return;
-        var lines = content.Replace("\r\n", "\n").Split('\n');
-        for (var i = 0; i < lines.Length; i++)
-        {
-            var lineNo = i + 1;
-            var cssClass = highlight == lineNo
-                ? "source-viewer__line source-viewer__line--hit"
-                : "source-viewer__line";
-            <div class="@cssClass" id="@($"L{lineNo}")">
-                <span class="source-viewer__lineno">@lineNo</span>
-                <span class="source-viewer__text">@lines[i]</span>
-            </div>
-        }
     };
 }
