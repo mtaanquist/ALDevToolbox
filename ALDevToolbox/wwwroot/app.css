@@ -3164,6 +3164,68 @@ ul.form-field-error {
     border-radius: var(--radius);
     font-size: 12.5px;
 }
+
+.source-viewer__refs {
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--color-border-strong);
+}
+
+.source-viewer__refs-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.source-viewer__refs-header h2 {
+    margin: 0;
+}
+
+.source-viewer__refs-close {
+    flex: 0 0 auto;
+}
+
+.source-viewer__refs-list {
+    list-style: none;
+    margin: 8px 0 0 0;
+    padding: 0;
+}
+
+.source-viewer__refs-item {
+    padding: 2px 0;
+    line-height: 1.4;
+}
+
+.source-viewer__refs-item a {
+    text-decoration: none;
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    padding: 2px 4px;
+    border-radius: var(--radius);
+}
+
+.source-viewer__refs-item a:hover {
+    background: var(--color-surface-strong, rgba(255, 255, 255, 0.06));
+}
+
+.source-viewer__refs-item.is-current a {
+    background: var(--color-accent-soft, rgba(99, 102, 241, 0.15));
+    font-weight: 500;
+}
+
+.source-viewer__refs-name {
+    font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+    font-size: 12.5px;
+}
+
+.source-viewer__refs-meta {
+    font-size: 11.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 .source-viewer__body {
     padding: 0;
     margin: 0;

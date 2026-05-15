@@ -58,6 +58,21 @@ internal static class EndpointHelpers
     public static string ResolveIp(HttpContext ctx) =>
         ctx.Connection.RemoteIpAddress?.ToString() ?? string.Empty;
 
+    /// <summary>
+    /// Per-user cache key for endpoint-scoped in-memory state (e.g. the
+    /// References-session cache). Falls back to the auth name when the
+    /// NameIdentifier claim is absent; returns null for anonymous calls so
+    /// callers can short-circuit with 401.
+    /// </summary>
+    public static string? OwnerKey(HttpContext ctx)
+    {
+        var user = ctx.User;
+        if (user?.Identity?.IsAuthenticated != true) return null;
+        return user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? user.Identity.Name
+            ?? null;
+    }
+
     public static void WriteAttachmentHeaders(HttpContext ctx, string fileName)
     {
         ctx.Response.ContentType = "application/zip";

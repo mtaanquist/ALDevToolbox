@@ -692,7 +692,8 @@ public class ObjectExplorerService
                 so.kind                  AS "SourceObjectKind",
                 so.name                  AS "SourceObjectName",
                 mr.reference_kind        AS "ReferenceKind",
-                mr.line_number           AS "LineNumber"
+                mr.line_number           AS "LineNumber",
+                so.source_file_id        AS "SourceFileId"
             FROM oe_module_references mr
             JOIN oe_module_objects so ON so.id = mr.source_object_id
             JOIN oe_modules        m  ON m.id  = mr.module_id

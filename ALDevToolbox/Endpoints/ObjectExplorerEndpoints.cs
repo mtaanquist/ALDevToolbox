@@ -153,6 +153,55 @@ internal static class ObjectExplorerEndpoints
             return result is null ? Results.NoContent() : Results.Ok(result);
         }).RequireAuthorization();
 
+        // ── References-session endpoints ──────────────────────────────
+        // Persist a Find-references search across file navigations.
+        // The token returned here travels in the URL as ?refSet=…, and
+        // the source viewer page reads it server-side to render the
+        // persistent References panel. See ReferenceSessionService.
+        // GET (rather than POST) because the action is idempotent for a
+        // given symbol id + user: the cache key is per-user, and re-minting
+        // returns a fresh token without altering DB state. No antiforgery
+        // headache for a fetch() call from source-viewer.js.
+        app.MapGet("/api/object-explorer/references/sessions/from-symbol/{symbolId:long}", async (
+            long symbolId,
+            HttpContext ctx,
+            ReferenceSessionService sessions,
+            CancellationToken ct) =>
+        {
+            var owner = OwnerKey(ctx);
+            if (owner is null) return Results.Unauthorized();
+            var session = await sessions.CreateFromSymbolAsync(symbolId, owner, ct);
+            return session is null ? Results.NotFound() : Results.Ok(session);
+        }).RequireAuthorization();
+
+        app.MapGet("/api/object-explorer/references/sessions/{token}", (
+            string token,
+            HttpContext ctx,
+            ReferenceSessionService sessions) =>
+        {
+            var owner = OwnerKey(ctx);
+            if (owner is null) return Results.Unauthorized();
+            var session = sessions.Get(token, owner);
+            return session is null ? Results.NotFound() : Results.Ok(session);
+        }).RequireAuthorization();
+
+        // Right-click "Find references" on a non-declaration token: the
+        // server inspects the word at (line, column) and resolves it to a
+        // same-Release object before minting the session.
+        app.MapGet("/api/object-explorer/references/sessions/at-position", async (
+            long fileId,
+            int line,
+            int column,
+            HttpContext ctx,
+            ReferenceSessionService sessions,
+            CancellationToken ct) =>
+        {
+            var owner = OwnerKey(ctx);
+            if (owner is null) return Results.Unauthorized();
+            var session = await sessions.CreateAtPositionAsync(fileId, line, column, owner, ct);
+            return session is null ? Results.NoContent() : Results.Ok(session);
+        }).RequireAuthorization();
+
         app.MapPost("/admin/object-explorer/{id:int}/soft-delete", async (
             int id,
             HttpContext ctx,

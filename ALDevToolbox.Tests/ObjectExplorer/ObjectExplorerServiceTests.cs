@@ -384,6 +384,11 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         matches.Should().Contain(m =>
             m.ReferenceKind == "variable_type"
             && m.SourceObjectName == "CopyDepreciationBookExt");
+        // SourceFileId is needed for the file-viewer links in
+        // OeObjectDetail.razor's references table; every row pointing at an
+        // object whose source we have should expose it.
+        matches.Should().Contain(m => m.SourceFileId.HasValue,
+            because: "DK Core's referencing objects ship with source");
     }
 
     [Fact]

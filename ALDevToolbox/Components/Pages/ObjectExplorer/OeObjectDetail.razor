@@ -3,7 +3,9 @@
 @rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
+@inject ALDevToolbox.Services.ObjectExplorer.ReferenceSessionService ReferenceSessions
 @inject ALDevToolbox.Data.AppDbContext Db
+@inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthState
 @using ALDevToolbox.Services.ObjectExplorer
 @using Microsoft.EntityFrameworkCore
 
@@ -154,6 +156,7 @@
                                 <th scope="col">Object</th>
                                 <th scope="col">Kind</th>
                                 <th scope="col">Reference kind</th>
+                                <th scope="col">Source</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -166,6 +169,16 @@
                                     </td>
                                     <td>@r.SourceObjectKind</td>
                                     <td>@r.ReferenceKind</td>
+                                    <td>
+                                        @if (r.SourceFileId is { } srcFid && r.LineNumber is { } ln)
+                                        {
+                                            <a href="@FileLinkForRef(srcFid, ln)">L@(ln)</a>
+                                        }
+                                        else
+                                        {
+                                            <span class="muted">—</span>
+                                        }
+                                    </td>
                                 </tr>
                             }
                         </tbody>
@@ -184,6 +197,7 @@
     private string? _releaseLabel;
     private Guid? _moduleAppId;
     private List<ReferenceMatch>? _references;
+    private string? _refSetToken;
     private bool _referencesLoading;
 
     protected override async Task OnInitializedAsync()
@@ -203,23 +217,49 @@
         }
     }
 
+    /// <summary>
+    /// Runs FindReferences and mints a ReferenceSession token in the
+    /// shared cache. The token rides along on the file-viewer links so the
+    /// References panel stays visible across navigations.
+    /// </summary>
     private async Task LoadReferences()
     {
-        if (_object is null || _moduleAppId is null || _releaseId is null) return;
+        if (_object is null) return;
         _referencesLoading = true;
         try
         {
-            _references = await ObjectExplorer.FindReferencesAsync(
-                _releaseId.Value,
-                new FindReferencesQuery(
-                    TargetAppId: _moduleAppId.Value,
-                    TargetObjectKind: _object.Kind,
-                    TargetObjectId: _object.ObjectId,
-                    TargetObjectName: _object.Name));
+            var owner = await OwnerKeyAsync();
+            ReferenceSession? session = owner is null
+                ? null
+                : await ReferenceSessions.CreateFromSymbolAsync(ObjectId, owner);
+            _references = session?.Results.ToList() ?? new List<ReferenceMatch>();
+            _refSetToken = session?.Token;
         }
         finally
         {
             _referencesLoading = false;
         }
+    }
+
+    private string FileLinkForRef(long fileId, int line)
+    {
+        var url = Links.SourceFile(fileId, line);
+        if (!string.IsNullOrEmpty(_refSetToken))
+        {
+            url += "&refSet=" + Uri.EscapeDataString(_refSetToken);
+        }
+        return url;
+    }
+
+    private async Task<string?> OwnerKeyAsync()
+    {
+        // AuthenticationStateProvider works in both prerender and interactive
+        // contexts, unlike IHttpContextAccessor (which returns null after
+        // the SignalR circuit takes over).
+        var state = await AuthState.GetAuthenticationStateAsync();
+        var user = state.User;
+        if (user?.Identity?.IsAuthenticated != true) return null;
+        return user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? user.Identity.Name;
     }
 }

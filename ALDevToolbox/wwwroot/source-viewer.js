@@ -55,6 +55,8 @@ function init() {
             switch (method) {
                 case "OnFindReferences":
                     return onFindReferences(args[0]);
+                case "OnFindReferencesAt":
+                    return onFindReferencesAt(args[0], args[1]);
                 case "OnGoToDefinition":
                     return onGoToDefinition(args[0], args[1]);
                 case "OnFindInFile":
@@ -82,9 +84,65 @@ function init() {
     wireSectionToggles(root);
     wireSameFileLinks(root, editorId, fileId);
 
-    function onFindReferences(symbolId) {
-        location.assign(`/object-explorer/object/${symbolId}#find-references`);
-        return Promise.resolve();
+    async function onFindReferencesAt(line, column) {
+        clearNotice();
+        try {
+            const res = await fetch(
+                `/api/object-explorer/references/sessions/at-position?fileId=${fileId}&line=${line}&column=${column}`,
+                { credentials: "same-origin" });
+            if (res.status === 204 || res.status === 404) {
+                showNotice("No references found for that token.");
+                return;
+            }
+            if (!res.ok) {
+                showNotice("Couldn't search references (server error).");
+                return;
+            }
+            const session = await res.json();
+            if (!session.results || session.results.length === 0) {
+                showNotice("No references found for that token.");
+                return;
+            }
+            const first = session.results[0];
+            const targetFile = first.sourceFileId;
+            const targetLine = first.lineNumber ?? 1;
+            location.assign(
+                `${FILE_URL_PREFIX}${targetFile}?line=${targetLine}&refSet=${encodeURIComponent(session.token)}`);
+        } catch (err) {
+            console.warn("Find references at position failed:", err);
+            showNotice("Couldn't reach the server.");
+        }
+    }
+
+    async function onFindReferences(symbolId) {
+        clearNotice();
+        try {
+            const res = await fetch(
+                `/api/object-explorer/references/sessions/from-symbol/${symbolId}`,
+                { credentials: "same-origin" });
+            if (!res.ok) {
+                // Fall back to the object detail page so the user still
+                // gets a useful destination when the cache mint fails.
+                location.assign(`/object-explorer/object/${symbolId}#find-references`);
+                return;
+            }
+            const session = await res.json();
+            // Empty result set — go to the object page to show the
+            // "no references found" message rather than landing on the
+            // current file with an empty panel.
+            if (!session.results || session.results.length === 0) {
+                location.assign(`/object-explorer/object/${symbolId}#find-references`);
+                return;
+            }
+            const first = session.results[0];
+            const targetFile = first.sourceFileId;
+            const targetLine = first.lineNumber ?? 1;
+            location.assign(
+                `${FILE_URL_PREFIX}${targetFile}?line=${targetLine}&refSet=${encodeURIComponent(session.token)}`);
+        } catch (err) {
+            console.warn("Find references failed:", err);
+            location.assign(`/object-explorer/object/${symbolId}#find-references`);
+        }
     }
 
     async function onGoToDefinition(line, column) {

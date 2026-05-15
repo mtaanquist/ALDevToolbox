@@ -468,10 +468,22 @@ export function mountReadOnly(container, value, language, options) {
 
         const items = [];
         if (onDeclaration) {
+            // Click landed on a declaration name range — we already know the
+            // symbol id, so the existing single-arg callback is fine.
             items.push({
                 label: "Find references",
                 action: () => opts.dotNetRef.invokeMethodAsync(
                     "OnFindReferences", onDeclaration.symbolId),
+            });
+        } else {
+            // Off-declaration click: the host decides whether the word
+            // under the cursor resolves to a symbol. The two-arg variant
+            // lets the host run a positional lookup server-side and fall
+            // back to "no references" UI if nothing matches.
+            items.push({
+                label: "Find references",
+                action: () => opts.dotNetRef.invokeMethodAsync(
+                    "OnFindReferencesAt", line.number, colInLine),
             });
         }
         // Disable "Go to definition" when the click lands on the declaration
