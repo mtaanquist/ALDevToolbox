@@ -1,0 +1,67 @@
+@using ALDevToolbox.Services.ObjectExplorer
+
+@if (Results is null)
+{
+    <p class="muted">Loading procedures…</p>
+}
+else if (Results.Count == 0)
+{
+    <p class="muted">No procedures match. Try a different name or remove the kind filter.</p>
+}
+else
+{
+    @if (Results.Count >= 200)
+    {
+        <p class="form-error" role="status">Showing the first 200 matches — narrow the search to see the rest.</p>
+    }
+    else
+    {
+        <p class="muted">@Results.Count.ToString("N0") procedure(s).</p>
+    }
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th scope="col">Module</th>
+                <th scope="col">Object</th>
+                <th scope="col">Kind</th>
+                <th scope="col">Procedure</th>
+                <th scope="col">Source</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in Results)
+            {
+                <tr>
+                    <td>@r.ModuleName</td>
+                    <td><a href="@($"/object-explorer/object/{r.ObjectId}")">@r.ObjectKind @r.ObjectName</a></td>
+                    <td>@r.ProcedureKind.Replace("_", " ")</td>
+                    <td>
+                        <strong>@r.Name</strong>
+                        @if (!string.IsNullOrEmpty(r.Signature))
+                        {
+                            <span class="muted">@r.Signature</span>
+                        }
+                        @if (!string.IsNullOrEmpty(r.ReturnType))
+                        {
+                            <span class="muted"> : @r.ReturnType</span>
+                        }
+                    </td>
+                    <td>
+                        @if (r.SourceFileId is { } fid)
+                        {
+                            <a href="@($"/object-explorer/file/{fid}?line={r.ObjectLineNumber}")">View source</a>
+                        }
+                        else
+                        {
+                            <span class="muted">—</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [Parameter] public List<ReleaseProcedureMatch>? Results { get; set; }
+}

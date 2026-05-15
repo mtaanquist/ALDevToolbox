@@ -157,3 +157,86 @@ public sealed record SourceFileDetail(
     string Path,
     string Content,
     int LineCount);
+
+/// <summary>
+/// One hit from a Release-wide object search. Carries the owning module so
+/// the result table can render "Module / Object" without a follow-up query,
+/// plus the source-file pointer + line number so the row can deep-link
+/// straight into the source viewer at the right line.
+/// </summary>
+public sealed record ReleaseObjectMatch(
+    long Id,
+    string Kind,
+    int? ObjectId,
+    string Name,
+    string? Namespace,
+    long ModuleId,
+    string ModuleName,
+    long? SourceFileId,
+    int LineNumber);
+
+/// <summary>
+/// Header info for the source-file viewer's breadcrumb — module + release
+/// names so the page renders the full path without two extra round trips.
+/// </summary>
+public sealed record SourceFileHeader(
+    long Id,
+    long ModuleId,
+    string ModuleName,
+    int ReleaseId,
+    string ReleaseLabel,
+    string Path,
+    int LineCount);
+
+/// <summary>
+/// One procedure-search hit on the Release search page. Carries the source
+/// file pointer so the row can deep-link straight to the declaration line.
+/// </summary>
+public sealed record ReleaseProcedureMatch(
+    long Id,
+    long ObjectId,
+    string ObjectKind,
+    string ObjectName,
+    string ModuleName,
+    string ProcedureKind,
+    string Name,
+    string? Signature,
+    string? ReturnType,
+    long? SourceFileId,
+    int ObjectLineNumber);
+
+/// <summary>
+/// One content-search hit on the Release search page. The snippet is the
+/// matched line's text trimmed to a reasonable display length; the file
+/// pointer + line number deep-link straight into the source viewer with the
+/// hit row highlighted.
+/// </summary>
+public sealed record ReleaseContentMatch(
+    long FileId,
+    string FilePath,
+    long ModuleId,
+    string ModuleName,
+    int LineNumber,
+    string Snippet);
+
+/// <summary>
+/// One row in the outline pane on the source-file viewer. Objects and their
+/// symbols are flattened so the panel can render them as a single ordered
+/// list keyed by line number — kind tells the renderer which icon to use.
+/// </summary>
+public sealed record SourceFileOutlineItem(
+    string Kind,
+    string Name,
+    string? Signature,
+    int LineNumber,
+    long? ObjectId);
+
+/// <summary>
+/// Minimal Module summary used by the search-filter dropdown. Lighter than
+/// <see cref="ModuleListItem"/> — none of the row counts or test/internal
+/// flags matter for the filter widget.
+/// </summary>
+public sealed record ReleaseModuleSummary(
+    long Id,
+    string Name,
+    string Publisher);

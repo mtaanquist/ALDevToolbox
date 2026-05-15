@@ -1,0 +1,53 @@
+@using ALDevToolbox.Services.ObjectExplorer
+
+@if (string.IsNullOrWhiteSpace(SearchTerm))
+{
+    <p class="muted">Type a substring to grep across every <code>.al</code> file in this Release.</p>
+}
+else if (Results is null)
+{
+    <p class="muted">Searching…</p>
+}
+else if (Results.Count == 0)
+{
+    <p class="muted">No lines match "@SearchTerm". Try a shorter substring.</p>
+}
+else
+{
+    @if (Results.Count >= 100)
+    {
+        <p class="form-error" role="status">Showing the first 100 hits — narrow the search to see the rest.</p>
+    }
+    else
+    {
+        <p class="muted">@Results.Count.ToString("N0") line(s).</p>
+    }
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th scope="col">Module</th>
+                <th scope="col">File</th>
+                <th scope="col">Line</th>
+                <th scope="col">Snippet</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in Results)
+            {
+                <tr>
+                    <td>@r.ModuleName</td>
+                    <td><code>@r.FilePath</code></td>
+                    <td>
+                        <a href="@($"/object-explorer/file/{r.FileId}?line={r.LineNumber}")">@r.LineNumber</a>
+                    </td>
+                    <td><code>@r.Snippet</code></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [Parameter] public List<ReleaseContentMatch>? Results { get; set; }
+    [Parameter] public string SearchTerm { get; set; } = string.Empty;
+}

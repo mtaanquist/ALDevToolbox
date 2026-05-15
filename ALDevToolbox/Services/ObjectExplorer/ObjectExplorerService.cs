@@ -223,6 +223,218 @@ public class ObjectExplorerService
             .Select(f => new SourceFileDetail(f.Id, f.ModuleId, f.Path, f.Content, f.LineCount))
             .SingleOrDefaultAsync(ct)!;
 
+    /// <summary>
+    /// Header projection for the source-file viewer's breadcrumb. Separate
+    /// from <see cref="GetFileAsync"/> so the breadcrumb call doesn't have
+    /// to drag the full Content blob through.
+    /// </summary>
+    public Task<SourceFileHeader?> GetFileHeaderAsync(long fileId, CancellationToken ct = default)
+        => _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == fileId)
+            .Select(f => new SourceFileHeader(
+                f.Id, f.ModuleId, f.Module!.Name,
+                f.Module.ReleaseId, f.Module.Release!.Label,
+                f.Path, f.LineCount))
+            .SingleOrDefaultAsync(ct)!;
+
+    // ── Cross-module search ────────────────────────────────────────────
+
+    /// <summary>
+    /// Searches every Module in a Release for objects matching the supplied
+    /// kind + name/id filter, ordered by module then kind then name. Bounded
+    /// by <paramref name="take"/> so a wide-open search ("just kind=table") on
+    /// a 100-app DVD doesn't dump 5000 rows into the browser at once. The UI
+    /// nudges the user to narrow the query when the cap is hit.
+    /// </summary>
+    public async Task<List<ReleaseObjectMatch>> SearchObjectsInReleaseAsync(
+        int releaseId, ObjectListFilter filter, int take = 200, CancellationToken ct = default)
+    {
+        var q = _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId);
+
+        if (!string.IsNullOrWhiteSpace(filter.Kind))
+        {
+            var k = filter.Kind.Trim().ToLowerInvariant();
+            q = q.Where(o => o.Kind == k);
+        }
+        if (!string.IsNullOrWhiteSpace(filter.Search))
+        {
+            var s = filter.Search.Trim();
+            var lower = s.ToLower();
+            if (int.TryParse(s, out var asInt))
+            {
+                q = q.Where(o => o.ObjectId == asInt || o.Name.ToLower().Contains(lower));
+            }
+            else
+            {
+                q = q.Where(o => o.Name.ToLower().Contains(lower));
+            }
+        }
+
+        return await q
+            .OrderBy(o => o.Module!.Name).ThenBy(o => o.Kind).ThenBy(o => o.Name)
+            .Take(take)
+            .Select(o => new ReleaseObjectMatch(
+                o.Id, o.Kind, o.ObjectId, o.Name, o.Namespace,
+                o.ModuleId, o.Module!.Name,
+                o.SourceFileId, o.LineNumber))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Procedure-name search across every module in the Release. Matches the
+    /// supplied substring (case-insensitive) against <c>oe_module_symbols</c>
+    /// where the symbol is a procedure / internal procedure / trigger; the
+    /// owning object + module names join inline so the row can render
+    /// "Module / Object / Procedure" in one query. Capped at <paramref name="take"/>.
+    /// </summary>
+    public async Task<List<ReleaseProcedureMatch>> SearchProceduresInReleaseAsync(
+        int releaseId, string? search, long? moduleId, int take = 200, CancellationToken ct = default)
+    {
+        var q = _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Module!.ReleaseId == releaseId)
+            .Where(s => s.Kind == "procedure" || s.Kind == "internal_procedure" || s.Kind == "trigger");
+
+        if (moduleId is { } mid)
+        {
+            q = q.Where(s => s.ModuleId == mid);
+        }
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var lower = search.Trim().ToLower();
+            q = q.Where(s => s.Name.ToLower().Contains(lower));
+        }
+
+        return await q.OrderBy(s => s.Module!.Name)
+            .ThenBy(s => s.Object!.Name).ThenBy(s => s.Name)
+            .Take(take)
+            .Select(s => new ReleaseProcedureMatch(
+                s.Id,
+                s.ObjectId,
+                s.Object!.Kind,
+                s.Object.Name,
+                s.Module!.Name,
+                s.Kind,
+                s.Name,
+                s.Signature,
+                s.ReturnType,
+                s.Object.SourceFileId,
+                s.Object.LineNumber))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Content (text) search across every <c>oe_module_files.content</c> row
+    /// in the Release. Server-side substring match (<c>LIKE '%…%'</c> on
+    /// lower-cased content) — fine for small/medium releases; a follow-up
+    /// can swap in a Postgres GIN trigram index when the wait gets painful.
+    ///
+    /// For each matching file we materialise the line containing the first
+    /// hit (or the first <paramref name="maxLinesPerFile"/> hits) so the
+    /// result table can show a one-line preview with the right line number
+    /// to deep-link to. Capped at <paramref name="take"/> file hits.
+    /// </summary>
+    public async Task<List<ReleaseContentMatch>> SearchContentInReleaseAsync(
+        int releaseId, string search, long? moduleId, int take = 100, int maxLinesPerFile = 3, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(search);
+        var needle = search.Trim();
+        var lower = needle.ToLower();
+
+        var q = _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Module!.ReleaseId == releaseId)
+            .Where(f => f.Content.ToLower().Contains(lower));
+
+        if (moduleId is { } mid)
+        {
+            q = q.Where(f => f.ModuleId == mid);
+        }
+
+        // Pull (Id, Path, ModuleId, ModuleName, Content) for the candidate
+        // files, then walk each line client-side to pluck the matching line
+        // numbers + snippets. Bounded by `take` * `maxLinesPerFile`, which
+        // keeps the worst-case payload modest even on a Base App search.
+        var candidates = await q
+            .OrderBy(f => f.Module!.Name).ThenBy(f => f.Path)
+            .Take(take)
+            .Select(f => new
+            {
+                f.Id,
+                f.Path,
+                f.ModuleId,
+                ModuleName = f.Module!.Name,
+                f.Content,
+            })
+            .ToListAsync(ct);
+
+        var results = new List<ReleaseContentMatch>(candidates.Count);
+        foreach (var c in candidates)
+        {
+            var added = 0;
+            var lines = c.Content.Replace("\r\n", "\n").Split('\n');
+            for (int i = 0; i < lines.Length && added < maxLinesPerFile; i++)
+            {
+                if (lines[i].Contains(needle, StringComparison.OrdinalIgnoreCase))
+                {
+                    var snippet = lines[i].Trim();
+                    if (snippet.Length > 200) snippet = snippet[..200] + "…";
+                    results.Add(new ReleaseContentMatch(
+                        FileId: c.Id,
+                        FilePath: c.Path,
+                        ModuleId: c.ModuleId,
+                        ModuleName: c.ModuleName,
+                        LineNumber: i + 1,
+                        Snippet: snippet));
+                    added++;
+                }
+            }
+        }
+        return results;
+    }
+
+    /// <summary>
+    /// Flattens objects + their symbols inside a single source file into one
+    /// outline list ordered by line. Feeds the right-hand "outline" panel on
+    /// the source viewer.
+    /// </summary>
+    public async Task<List<SourceFileOutlineItem>> GetFileOutlineAsync(long fileId, CancellationToken ct = default)
+    {
+        var objects = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.SourceFileId == fileId)
+            .Select(o => new { o.Id, o.Kind, o.Name, o.LineNumber })
+            .ToListAsync(ct);
+
+        var symbols = await _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Object!.SourceFileId == fileId)
+            .Where(s => s.LineNumber > 0)
+            .Select(s => new { s.ObjectId, s.Kind, s.Name, s.Signature, s.LineNumber })
+            .ToListAsync(ct);
+
+        var items = new List<SourceFileOutlineItem>(objects.Count + symbols.Count);
+        foreach (var o in objects)
+        {
+            items.Add(new SourceFileOutlineItem(o.Kind, o.Name, null, o.LineNumber, o.Id));
+        }
+        foreach (var s in symbols)
+        {
+            items.Add(new SourceFileOutlineItem(s.Kind, s.Name, s.Signature, s.LineNumber, null));
+        }
+        return items.OrderBy(i => i.LineNumber).ToList();
+    }
+
+    /// <summary>
+    /// Lightweight module list used by the search-filter dropdown on the
+    /// Release search page. Test / internal / language-pack flags don't
+    /// matter for the filter widget so they're omitted; ordering matches
+    /// the main module list page so the dropdown feels familiar.
+    /// </summary>
+    public Task<List<ReleaseModuleSummary>> ListModuleSummariesAsync(int releaseId, CancellationToken ct = default)
+        => _db.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == releaseId)
+            .OrderBy(m => m.Publisher).ThenBy(m => m.Name)
+            .Select(m => new ReleaseModuleSummary(m.Id, m.Name, m.Publisher))
+            .ToListAsync(ct);
+
     // ── Find references ────────────────────────────────────────────────
 
     /// <summary>

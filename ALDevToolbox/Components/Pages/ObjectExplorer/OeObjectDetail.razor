@@ -38,6 +38,13 @@
                     }
                 </p>
             </div>
+            @if (_object.SourceFileId is { } fid)
+            {
+                <a class="btn" href="@($"/object-explorer/file/{fid}?line={_object.LineNumber}")">
+                    <Icon Name="file-code" Width="16" Height="16" />
+                    <span>View source</span>
+                </a>
+            }
         </header>
 
         <div class="form-grid">
