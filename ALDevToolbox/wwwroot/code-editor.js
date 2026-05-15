@@ -627,13 +627,24 @@ export function scrollToLine(id, lineNumber, flash) {
         } else {
             // Fluid mount (`Fluid="true"`): the editor's scroller is the
             // same height as its content (overflow: visible), so it
-            // can't scroll. Defer to the nearest scrolling ancestor
-            // (the page's .content column) via the line element.
+            // can't scroll. CodeMirror virtualises lines outside its
+            // initial viewport, so the line element may not exist for
+            // far-away targets like line 500 of 1000. Prefer
+            // EditorView.scrollIntoView — CM materialises the line
+            // before scrolling and routes the scroll through the
+            // appropriate outer container. Falls back to lineEl-based
+            // scrollIntoView for the in-viewport case (cheaper, and
+            // it's what the flash branch later expects to find).
             const lineEl = findLineEl();
-            console.log("[code-editor.js] doScroll → fluid mount, lineEl found?", !!lineEl, lineEl);
+            console.log("[code-editor.js] doScroll → fluid mount, lineEl found?", !!lineEl);
             if (lineEl) {
                 lineEl.scrollIntoView({ block: "center", behavior: "auto" });
-                console.log("[code-editor.js] doScroll → after scrollIntoView, window.scrollY", window.scrollY);
+                console.log("[code-editor.js] doScroll → after lineEl scrollIntoView, window.scrollY", window.scrollY);
+            } else {
+                view.dispatch({
+                    effects: EditorView.scrollIntoView(line.from, { y: "center" }),
+                });
+                console.log("[code-editor.js] doScroll → dispatched EditorView.scrollIntoView for virtualized line");
             }
         }
     };
