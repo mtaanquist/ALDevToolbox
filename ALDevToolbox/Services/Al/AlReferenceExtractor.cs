@@ -295,33 +295,30 @@ public static class AlReferenceExtractor
             {
                 frame.Vars[name] = type;
             }
-            // Tables, pages, table extensions and page extensions expose
-            // implicit Rec / xRec self-references. The receiver type
-            // differs by owner kind:
+            // Rec / xRec — implicit receivers for record-bearing owners.
+            // The exact binding depends on the owner kind:
             //   - table → Rec is the table itself.
             //   - tableextension → Rec is the BASE TABLE (the extension
             //     is conceptually merged into it at runtime). The
-            //     importer passes the base table's name through as
-            //     OwnerSourceTableName for the tableextension case.
+            //     importer threads ExtendsObjectName through as
+            //     OwnerSourceTableName for tableextensions.
             //   - page / pageextension → Rec is the page's SourceTable
-            //     (extensions inherit it from their base page; the
-            //     importer propagates).
-            //   - report / reportextension / xmlport / query / requestpage
-            //     also expose Rec/xRec, but the source-table binding is
-            //     more varied (per-dataitem); v1 keeps the owner-itself
-            //     fallback there.
-            if (OwnerSupportsRecXRec())
+            //     (extensions inherit it from their base page).
+            //   - codeunit with TableNo → Rec is the table named by
+            //     TableNo. `codeunit "Gen. Jnl.-Post"` with
+            //     `TableNo = "Gen. Journal Line"` runs against a
+            //     journal-line record, with Rec bound to that table.
+            //     Without TableNo, a codeunit has no implicit Rec.
+            //   - report / reportextension / xmlport / query / requestpage —
+            //     Rec is the owner itself for now; per-dataitem binding
+            //     is a follow-up.
+            // The importer denormalises SourceTable / TableNo /
+            // ExtendsObjectName-of-tableextension onto
+            // oe_module_objects.source_table_name; this method reads it
+            // back through OwnerSourceTableName.
+            var selfType = DetermineRecBinding();
+            if (selfType is not null)
             {
-                ResolvedVariableType selfType;
-                if (HasRecordBoundOwner(_ctx.OwnerKind)
-                    && !string.IsNullOrEmpty(_ctx.OwnerSourceTableName))
-                {
-                    selfType = new ResolvedVariableType("Record", _ctx.OwnerSourceTableName);
-                }
-                else
-                {
-                    selfType = new ResolvedVariableType(_ctx.OwnerKind, _ctx.OwnerName);
-                }
                 frame.Vars["rec"] = selfType;
                 frame.Vars["xrec"] = selfType;
                 // CurrFieldRef in field validate triggers, etc., is a
@@ -330,29 +327,43 @@ public static class AlReferenceExtractor
             return frame;
         }
 
-        /// <summary>
-        /// Owner kinds whose Rec is wired to a table (their own, or the
-        /// one they extend), so the resolver should bind Rec to the
-        /// referenced table rather than to the owner itself. For
-        /// tableextensions, this is what makes <c>Rec.AssistEdit()</c>
-        /// inside the extension find the base table's AssistEdit
-        /// procedure — without it, ResolveMember would look in the
-        /// extension's own members only.
-        /// </summary>
-        private static bool HasRecordBoundOwner(string? ownerKind)
-        {
-            var k = ownerKind?.ToLowerInvariant();
-            return k == "page" || k == "pageextension" || k == "tableextension";
-        }
-
-        private bool OwnerSupportsRecXRec()
+        private ResolvedVariableType? DetermineRecBinding()
         {
             var k = _ctx.OwnerKind?.ToLowerInvariant();
-            return k == "table" || k == "tableextension"
-                || k == "page" || k == "pageextension"
+
+            // Codeunit: Rec only exists when TableNo binds it. Without
+            // the binding, a codeunit has no Rec — most non-trigger
+            // codeunits fall here, so returning null is correct.
+            if (k == "codeunit")
+            {
+                if (string.IsNullOrEmpty(_ctx.OwnerSourceTableName)) return null;
+                return new ResolvedVariableType("Record", _ctx.OwnerSourceTableName);
+            }
+
+            // Pages and tableextensions: Rec is the SourceTable / base.
+            // Tableextension's SourceTable is set from ExtendsObjectName
+            // at import time so the extension's Rec.<X> resolves through
+            // the base table's catalog + extensions.
+            if (k == "page" || k == "pageextension" || k == "tableextension")
+            {
+                if (string.IsNullOrEmpty(_ctx.OwnerSourceTableName)) return null;
+                return new ResolvedVariableType("Record", _ctx.OwnerSourceTableName);
+            }
+
+            // Other record-bearing kinds: Rec is the owner itself
+            // (tables, reports use dataitems per-trigger, but the
+            // type-resolver lookup falls back to the owner name when
+            // the catalog has no specific entry — same behaviour as
+            // before this refactor).
+            if (k == "table"
                 || k == "report" || k == "reportextension"
                 || k == "xmlport" || k == "query"
-                || k == "requestpage";
+                || k == "requestpage")
+            {
+                return new ResolvedVariableType(_ctx.OwnerKind!, _ctx.OwnerName);
+            }
+
+            return null;
         }
 
         private static bool IsScopeOpener(AlToken tok)
