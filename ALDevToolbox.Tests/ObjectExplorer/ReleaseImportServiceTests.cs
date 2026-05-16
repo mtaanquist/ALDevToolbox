@@ -498,6 +498,51 @@ public sealed class ReleaseImportServiceTests : IDisposable
     // ── Phase-2 call-site references ────────────────────────────────────
 
     [Fact]
+    public async Task Pages_source_table_name_resolves_from_numeric_id_to_table_name()
+    {
+        // Modern BC (28.x+) emits a page's SourceTable property as a
+        // bare numeric object id (e.g. "36" for Sales Header). The
+        // import path stores the raw value and a second-pass resolver
+        // swaps the numeric id for the table's name so the reference
+        // extractor's Rec → SourceTable binding (BuildGlobalScope) can
+        // ResolveTypeByName on it. Without the resolution, Rec.X chains
+        // on the page drop because "36" doesn't match any catalog entry.
+        //
+        // Asserts the post-import state: no page in the imported release
+        // has a digit-only source_table_name. (Pages without SourceTable
+        // legitimately stay NULL; pages with a recognisable hash-ref or
+        // bare name pass through untouched. The only invariant being
+        // checked is "if it's set, it's a name and not just an id".)
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        await using var s1 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
+        var summary = await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "SourceTable resolution",
+            Kind: "first_party",
+            ParentReleaseId: null,
+            ApplicationVersionId: null,
+            Uploads: new[]
+            {
+                new AppFileUpload("Microsoft_DK_Core.app", s1, null),
+                new AppFileUpload("Microsoft_OIOUBL.app", s2, null),
+            }));
+
+        await using var read = _db.NewContext();
+        var pages = await read.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == summary.ReleaseId
+                && (o.Kind == "page" || o.Kind == "pageextension"))
+            .Select(o => new { o.Name, o.Kind, o.SourceTableName })
+            .ToListAsync();
+
+        pages.Where(p => p.SourceTableName != null
+                && System.Text.RegularExpressions.Regex.IsMatch(p.SourceTableName, "^[0-9]+$"))
+            .Should().BeEmpty(
+                because: "modern BC packages emit SourceTable as a numeric id; the importer resolves "
+                       + "those to the table's name so the reference extractor can bind Rec to it");
+    }
+
+    [Fact]
     public async Task Import_emits_method_call_or_field_access_references_for_DK_Core()
     {
         // DK Core ships actual .al source (it's a small extension wrapper
