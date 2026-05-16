@@ -218,6 +218,17 @@ public static class AlBuiltinMethods
         "RoundDateTime", "Time2Variant", "Variant2Time",
         // File / stream system functions occasionally surfaced as bare.
         "DownloadFromStream", "UploadIntoStream",
+        // Compiler attributes that lex as `[Identifier(...)]` and
+        // surface as bare-call shapes inside square brackets. Treat
+        // as no-op bare callables so they don't pollute the diagnostic.
+        // EventSubscriber is intentionally NOT here — it has dedicated
+        // extraction (TryConsumeEventSubscriber) that emits publisher
+        // bindings.
+        "Scope", "NonDebuggable", "Obsolete", "InherentEntitlements",
+        "InherentPermissions", "IntegrationEvent", "BusinessEvent",
+        "InternalEvent", "TryFunction", "ExternalBusinessEvent",
+        "HandlerFunctions", "TransactionModel", "TestPermissions",
+        "Test",
     };
 
     /// <summary>
@@ -303,6 +314,16 @@ public static class AlBuiltinMethods
         // expression — handled separately — but `DATABASE.X(...)` would
         // surface here if it appears).
         "DATABASE",
+        // XML / JSON / encoding primitives also exposed as static
+        // factory receivers. `XmlDocument.ReadFrom(...)` /
+        // `XmlDocument.Create()` / `XmlElement.Create(...)` create
+        // instances; the type name itself is the receiver.
+        "XmlDocument", "XmlDeclaration", "XmlElement", "XmlNode",
+        "XmlAttribute", "XmlComment", "XmlText", "XmlCData",
+        "XmlProcessingInstruction", "XmlNamespaceManager",
+        "JsonObject", "JsonArray", "JsonValue", "JsonToken",
+        // Cryptography / encoding helpers.
+        "Base64Convert", "CryptographyManagement",
     };
 
     /// <summary>

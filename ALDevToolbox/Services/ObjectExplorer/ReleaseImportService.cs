@@ -1132,6 +1132,30 @@ public class ReleaseImportService
               );
             """;
         await _db.Database.ExecuteSqlRawAsync(sql, new object[] { releaseId }, ct).ConfigureAwait(false);
+
+        // Second pass: numeric SourceTable values that fall in the BC
+        // platform-table id range (2000000001 – 2000000999) don't match
+        // any real table in oe_module_objects (the platform tables live
+        // in the AL runtime, not in any module's symbol package). Walk
+        // the PlatformVirtualTables map and rewrite the source_table_name
+        // for any matching numeric value. Without this, every page with
+        // `SourceTable = 2000000200` (NAV App Installed App) leaves
+        // source_table_name as the numeric string, Rec binding becomes
+        // `Record 2000000200`, and the chain-walker logs head-var-type-
+        // unresolved on every Rec.X access.
+        const string platformSql = """
+            UPDATE oe_module_objects
+            SET source_table_name = {0}
+            WHERE source_table_name = {1}
+              AND module_id IN (SELECT id FROM oe_modules WHERE release_id = {2});
+            """;
+        foreach (var vt in PlatformVirtualTables)
+        {
+            await _db.Database.ExecuteSqlRawAsync(
+                platformSql,
+                new object[] { vt.Name, vt.Id.ToString(), releaseId },
+                ct).ConfigureAwait(false);
+        }
     }
 
     // ── Mutable tally ───────────────────────────────────────────────────

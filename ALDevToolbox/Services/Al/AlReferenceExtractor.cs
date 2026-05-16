@@ -710,13 +710,14 @@ public static class AlReferenceExtractor
             if (receiverType is null)
             {
                 // Variable's declared type is a known AL runtime / system
-                // type (Dialog, RecordRef, XmlDocument, ModuleInfo, …).
-                // These never resolve through the catalog by design;
-                // silence the diagnostic so it doesn't crowd out real
-                // unresolveds.
+                // type (Dialog, RecordRef, XmlDocument, ModuleInfo, …) —
+                // or it's declared with the `DotNet` keyword which never
+                // resolves through the AL catalog by design. Silence the
+                // diagnostic so it doesn't crowd out real unresolveds.
                 if (declaredAsVar is not null
-                    && !string.IsNullOrEmpty(declaredAsVar.TypeName)
-                    && AlBuiltinMethods.IsKnownSystemType(declaredAsVar.TypeName))
+                    && (string.Equals(declaredAsVar.Keyword, "DotNet", StringComparison.OrdinalIgnoreCase)
+                        || (!string.IsNullOrEmpty(declaredAsVar.TypeName)
+                            && AlBuiltinMethods.IsKnownSystemType(declaredAsVar.TypeName))))
                 {
                     AdvancePastChain();
                     return;
@@ -921,6 +922,20 @@ public static class AlReferenceExtractor
                 // through the main loop so the inner expressions (a
                 // page-field's `Rec."Y"` reference, for example)
                 // continue to emit.
+                return false;
+            }
+
+            // Implicit-Rec method call. On a page / pageextension /
+            // tableextension / codeunit-with-TableNo body, a bare
+            // `Insert();` is shorthand for `Rec.Insert();` and
+            // `SetCurrentKey(X);` is `Rec.SetCurrentKey(X);`. The
+            // RecordMethods list is the authoritative set of Record
+            // built-ins, so the check is just "owner has Rec AND name
+            // is a RecordMethod" → silent skip. Without this, every
+            // implicit-Rec call in BC pages surfaces as a bare-call
+            // unresolved.
+            if (RecType() is not null && AlBuiltinMethods.RecordMethods.Contains(name))
+            {
                 return false;
             }
 
