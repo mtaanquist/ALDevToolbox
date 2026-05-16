@@ -508,11 +508,15 @@ public sealed class ReleaseImportServiceTests : IDisposable
         // ResolveTypeByName on it. Without the resolution, Rec.X chains
         // on the page drop because "36" doesn't match any catalog entry.
         //
-        // Asserts the post-import state: no page in the imported release
-        // has a digit-only source_table_name. (Pages without SourceTable
-        // legitimately stay NULL; pages with a recognisable hash-ref or
-        // bare name pass through untouched. The only invariant being
-        // checked is "if it's set, it's a name and not just an id".)
+        // Invariant under test: every page whose numeric SourceTable id
+        // points to a table imported in this release has had the id
+        // swapped for the table's name. Pages whose SourceTable points
+        // to a table outside this release (cross-release shadowing —
+        // gap #3 in al-reference-extractor-gaps.md) can legitimately
+        // keep a numeric value; those aren't this fix's job. The test
+        // also asserts that the resolver fires at all on the fixtures
+        // — at least one page must have started as numeric and been
+        // resolved, otherwise the test has no signal.
         await using var ctx = _db.NewContext();
         var svc = NewService(ctx);
         await using var s1 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
@@ -535,11 +539,38 @@ public sealed class ReleaseImportServiceTests : IDisposable
             .Select(o => new { o.Name, o.Kind, o.SourceTableName })
             .ToListAsync();
 
-        pages.Where(p => p.SourceTableName != null
+        var inReleaseTableIds = await read.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == summary.ReleaseId
+                && o.Kind == "table"
+                && o.ObjectId != null)
+            .Select(o => o.ObjectId!.Value)
+            .ToListAsync();
+        var inReleaseTableIdSet = new HashSet<int>(inReleaseTableIds);
+
+        // Any page whose SourceTable points to a table in this release
+        // must have its source_table_name resolved to that table's name
+        // (i.e. no longer digit-only).
+        var unresolved = pages
+            .Where(p => p.SourceTableName != null
                 && System.Text.RegularExpressions.Regex.IsMatch(p.SourceTableName, "^[0-9]+$"))
-            .Should().BeEmpty(
-                because: "modern BC packages emit SourceTable as a numeric id; the importer resolves "
-                       + "those to the table's name so the reference extractor can bind Rec to it");
+            .Where(p => int.TryParse(p.SourceTableName, out var id) && inReleaseTableIdSet.Contains(id))
+            .ToList();
+        unresolved.Should().BeEmpty(
+            because: "for every page whose numeric SourceTable id matches a table imported in this "
+                   + "release, the resolver should have swapped the id for the table's name");
+
+        // Smoke check that the resolver actually ran on at least one
+        // page in the fixture — guards against the test silently
+        // becoming a no-op if a future fixture switch eliminates the
+        // numeric form. Resolved pages have a non-numeric, non-empty
+        // source_table_name; pre-fix they'd have been numeric.
+        pages.Should().Contain(p =>
+            p.SourceTableName != null
+            && p.SourceTableName.Length > 0
+            && !System.Text.RegularExpressions.Regex.IsMatch(p.SourceTableName, "^[0-9]+$"),
+            because: "at least one page in DK Core / OIOUBL fixtures should have its SourceTable "
+                   + "resolved to a table name — either via the legacy hash-ref path or the "
+                   + "numeric resolver added by this change");
     }
 
     [Fact]
