@@ -473,13 +473,34 @@ function renderReferencesPanel(root, session, fileId, editorId) {
         const groups = groupByCategory(session.results);
         for (const [category, rows] of groups) {
             const section = document.createElement("section");
-            section.className = "source-viewer__refs-group";
+            // Re-use the outline section vocabulary so the chevron / toggle
+            // affordance reads the same in both panels. Sections open by
+            // default; the click handler on the toggle flips data state +
+            // chevron + list hidden.
+            section.className = "source-viewer__refs-group source-viewer__outline-section is-open";
             section.dataset.category = category;
 
-            const heading = document.createElement("h3");
-            heading.className = "source-viewer__refs-group-heading";
-            heading.textContent = `${categoryLabel(category)} · ${rows.length.toLocaleString()}`;
-            section.appendChild(heading);
+            const toggle = document.createElement("button");
+            toggle.type = "button";
+            toggle.className = "source-viewer__outline-section-toggle";
+            toggle.setAttribute("aria-expanded", "true");
+
+            const chevron = document.createElement("span");
+            chevron.className = "source-viewer__outline-section-chevron is-open";
+            chevron.textContent = "›";
+            toggle.appendChild(chevron);
+
+            const title = document.createElement("span");
+            title.className = "source-viewer__outline-section-title";
+            title.textContent = categoryLabel(category);
+            toggle.appendChild(title);
+
+            const countSpan = document.createElement("span");
+            countSpan.className = "source-viewer__outline-section-count";
+            countSpan.textContent = `(${rows.length.toLocaleString()})`;
+            toggle.appendChild(countSpan);
+
+            section.appendChild(toggle);
 
             const list = document.createElement("ul");
             list.className = "source-viewer__refs-list";
@@ -487,6 +508,14 @@ function renderReferencesPanel(root, session, fileId, editorId) {
                 list.appendChild(buildRefsRow(r, session, fileId, editorId));
             }
             section.appendChild(list);
+
+            toggle.addEventListener("click", () => {
+                const open = section.classList.toggle("is-open");
+                toggle.setAttribute("aria-expanded", open ? "true" : "false");
+                chevron.classList.toggle("is-open", open);
+                list.hidden = !open;
+            });
+
             panel.appendChild(section);
         }
     }
@@ -538,11 +567,7 @@ function buildRefsRow(r, session, fileId, editorId) {
                 }
             });
         }
-        const sub = r.memberName
-            ? `${r.memberName}${r.memberSignature ?? ""}`
-            : r.referenceKind;
-        a.title = `${r.sourceFilePath ?? r.sourceModuleName} · L${ln} (${sub})`;
-        appendRowTop(a, objectKind, r.sourceObjectName, `${r.sourceModuleName} · L${ln}`);
+        appendRowTop(a, objectKind, r.sourceObjectName);
         if (r.memberName) {
             appendMemberRow(a, r.memberKind, r.memberName, r.memberSignature);
         }
@@ -552,18 +577,19 @@ function buildRefsRow(r, session, fileId, editorId) {
             snip.textContent = r.snippet;
             a.appendChild(snip);
         }
+        attachRefsTooltip(a, r);
         li.appendChild(a);
     } else {
         const a = document.createElement("a");
         a.href = `/object-explorer/object/${r.sourceObjectId}`;
-        a.title = `${r.sourceModuleName} · ${r.sourceObjectName} (no source)`;
-        appendRowTop(a, objectKind, r.sourceObjectName, `${r.sourceModuleName} · no source`);
+        appendRowTop(a, objectKind, r.sourceObjectName);
+        attachRefsTooltip(a, r);
         li.appendChild(a);
     }
     return li;
 }
 
-function appendRowTop(anchor, kind, name, meta) {
+function appendRowTop(anchor, kind, name) {
     const top = document.createElement("div");
     top.className = "source-viewer__refs-row-top";
     if (kind) {
@@ -573,10 +599,6 @@ function appendRowTop(anchor, kind, name, meta) {
     nameSpan.className = "source-viewer__refs-name";
     nameSpan.textContent = name;
     top.appendChild(nameSpan);
-    const metaSpan = document.createElement("span");
-    metaSpan.className = "source-viewer__refs-meta muted";
-    metaSpan.textContent = meta;
-    top.appendChild(metaSpan);
     anchor.appendChild(top);
 }
 
@@ -591,6 +613,143 @@ function appendMemberRow(anchor, kind, name, signature) {
     nameSpan.textContent = `${name}${signature ?? ""}`;
     row.appendChild(nameSpan);
     anchor.appendChild(row);
+}
+
+// ── Refs-row hover tooltip ───────────────────────────────────────
+//
+// One reusable popover element rendered against the page so the
+// rows can stay visually clean. Hovering a refs row shows the
+// extension (module name), source file path, line number, and the
+// full reference kind / category. Positioned to the left of the
+// row so it never collides with the row contents; flips above the
+// row when it would otherwise spill off the bottom of the panel.
+
+let refsTooltipEl = null;
+let refsTooltipHideTimer = 0;
+
+function ensureRefsTooltip() {
+    if (refsTooltipEl) return refsTooltipEl;
+    const el = document.createElement("div");
+    el.className = "source-viewer__refs-tooltip";
+    el.setAttribute("role", "tooltip");
+    el.hidden = true;
+    document.body.appendChild(el);
+    refsTooltipEl = el;
+    return el;
+}
+
+function attachRefsTooltip(anchor, r) {
+    anchor.addEventListener("mouseenter", () => showRefsTooltip(anchor, r));
+    anchor.addEventListener("mouseleave", hideRefsTooltip);
+    anchor.addEventListener("focusin", () => showRefsTooltip(anchor, r));
+    anchor.addEventListener("focusout", hideRefsTooltip);
+}
+
+function showRefsTooltip(anchor, r) {
+    clearTimeout(refsTooltipHideTimer);
+    const el = ensureRefsTooltip();
+    el.innerHTML = "";
+
+    // Module · Object — the "where" line.
+    const where = document.createElement("div");
+    where.className = "source-viewer__refs-tooltip-where";
+    where.textContent = `${r.sourceModuleName} › ${r.sourceObjectName}`;
+    el.appendChild(where);
+
+    // File path · line — the "what file" line, or "no source" when the
+    // module didn't ship sources we could ingest.
+    const loc = document.createElement("div");
+    loc.className = "source-viewer__refs-tooltip-loc";
+    if (r.sourceFileId != null && r.lineNumber != null) {
+        const path = r.sourceFilePath ?? "(source file)";
+        loc.textContent = `${path} · L${r.lineNumber}`;
+    } else {
+        loc.textContent = "no source available";
+    }
+    el.appendChild(loc);
+
+    // Member kind+name when present (the reference is to a specific
+    // procedure / field, not just the owner object).
+    if (r.memberName) {
+        const member = document.createElement("div");
+        member.className = "source-viewer__refs-tooltip-member";
+        const memberKind = expandKindLabel(r.memberKind);
+        const memberSig = r.memberSignature ?? "";
+        member.textContent = memberKind
+            ? `${memberKind} ${r.memberName}${memberSig}`
+            : `${r.memberName}${memberSig}`;
+        el.appendChild(member);
+    }
+
+    // Reference kind chip + category description.
+    const kindRow = document.createElement("div");
+    kindRow.className = "source-viewer__refs-tooltip-kind muted";
+    kindRow.textContent = describeReferenceCategory(r.category, r.referenceKind);
+    el.appendChild(kindRow);
+
+    positionRefsTooltip(el, anchor);
+    el.hidden = false;
+}
+
+function hideRefsTooltip() {
+    // Tiny delay lets the cursor cross the small gap between the row and
+    // a neighbouring row without the tooltip flickering off.
+    clearTimeout(refsTooltipHideTimer);
+    refsTooltipHideTimer = setTimeout(() => {
+        if (refsTooltipEl) refsTooltipEl.hidden = true;
+    }, 60);
+}
+
+function positionRefsTooltip(el, anchor) {
+    el.style.left = "0";
+    el.style.top = "0";
+    el.style.maxWidth = "420px";
+    // Width must be measured pre-position so the flip math works.
+    el.hidden = false;
+    const rowRect = anchor.getBoundingClientRect();
+    const tipRect = el.getBoundingClientRect();
+    const margin = 8;
+    // Preferred: place to the LEFT of the row, vertically centred. The
+    // refs panel lives on the right edge of the screen, so this keeps
+    // the tooltip inside the viewport on the common layout.
+    let x = rowRect.left - tipRect.width - margin;
+    let y = rowRect.top + (rowRect.height - tipRect.height) / 2;
+    // Off-screen left → flip to the right of the row instead.
+    if (x < margin) {
+        x = rowRect.right + margin;
+    }
+    // Clamp vertical so the tooltip stays inside the viewport.
+    const maxY = window.innerHeight - tipRect.height - margin;
+    if (y < margin) y = margin;
+    if (y > maxY) y = maxY;
+    el.style.left = `${Math.round(x + window.scrollX)}px`;
+    el.style.top  = `${Math.round(y + window.scrollY)}px`;
+}
+
+function expandKindLabel(kind) {
+    switch ((kind ?? "").toLowerCase()) {
+        case "procedure":              return "procedure";
+        case "internal_procedure":     return "internal procedure";
+        case "protected_procedure":    return "protected procedure";
+        case "local_procedure":        return "local procedure";
+        case "event_publisher":        return "event publisher";
+        case "event_subscriber":       return "event subscriber";
+        case "field":                  return "field";
+        case "trigger":                return "trigger";
+        default:                       return kind ?? "";
+    }
+}
+
+function describeReferenceCategory(category, referenceKind) {
+    const cat = category ?? "object";
+    const kind = referenceKind ?? "";
+    switch (cat) {
+        case "declaration": return "Declaration of the same symbol elsewhere";
+        case "call":        return kind ? `Call site (${kind})` : "Call site";
+        case "owner_type":  return "Indirect — referenced via the owning type";
+        case "object":      return kind ? `Reference (${kind})` : "Reference";
+        default:            return kind || cat;
+    }
 }
 
 /// Renders a kind badge that matches the outline pane's pill-style chips.
@@ -608,6 +767,7 @@ function buildKindBadge(kind) {
 function kindBadgeLabel(kind) {
     switch ((kind ?? "").toLowerCase()) {
         case "field":                  return "field";
+        case "action":                 return "action";
         case "trigger":                return "trigger";
         case "procedure":              return "proc";
         case "internal_procedure":     return "internal";
@@ -638,6 +798,7 @@ function kindBadgeLabel(kind) {
 function kindBadgeClass(kind) {
     switch ((kind ?? "").toLowerCase()) {
         case "field":                return "source-viewer__outline-badge--field";
+        case "action":               return "source-viewer__outline-badge--action";
         case "trigger":              return "source-viewer__outline-badge--trigger";
         case "event_publisher":
         case "event_subscriber":     return "source-viewer__outline-badge--event";

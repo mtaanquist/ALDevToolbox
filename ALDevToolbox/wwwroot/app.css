@@ -3,6 +3,14 @@
 :root {
     --color-bg: #fafafa;
     --color-surface: #ffffff;
+    /* Second surface tier — used by panels-within-panels: code snippet
+       boxes, kind badges, the search input, status bar chips. Light enough
+       above the page bg to read as a distinct surface, not so dark it
+       fights the body text. */
+    --color-surface-2: #f4f5f7;
+    /* Hover background for clickable rows. Subtle in light mode, the dark
+       block below uses a translucent white. */
+    --color-surface-strong: rgba(0, 0, 0, 0.04);
     --color-border: #e6e6e8;
     --color-border-strong: #d2d3d8;
     --color-text: #1f2024;
@@ -33,6 +41,8 @@
     :root:not([data-theme="light"]) {
         --color-bg: #16181c;
         --color-surface: #1d2024;
+        --color-surface-2: #262a30;
+        --color-surface-strong: rgba(255, 255, 255, 0.06);
         --color-border: #2c2f36;
         --color-border-strong: #3a3e47;
         --color-text: #e6e7ea;
@@ -52,6 +62,8 @@
 :root[data-theme="dark"] {
     --color-bg: #16181c;
     --color-surface: #1d2024;
+    --color-surface-2: #262a30;
+    --color-surface-strong: rgba(255, 255, 255, 0.06);
     --color-border: #2c2f36;
     --color-border-strong: #3a3e47;
     --color-text: #e6e7ea;
@@ -3157,7 +3169,7 @@ ul.form-field-error {
     display: inline-block;
     min-width: 18px;
     padding: 0 5px;
-    background: var(--color-surface-2, #1c1c28);
+    background: var(--color-surface-2);
     border-radius: 999px;
     font-size: 10.5px;
     text-align: center;
@@ -3372,6 +3384,12 @@ ul.form-field-error {
     color: #6ba3ff;
 }
 
+.source-viewer__outline-badge--action {
+    background: rgba(255, 184, 64, 0.16);
+    border-color: rgba(255, 184, 64, 0.4);
+    color: #f0b85a;
+}
+
 .source-viewer__outline-badge--trigger {
     background: rgba(76, 201, 114, 0.14);
     border-color: rgba(76, 201, 114, 0.35);
@@ -3482,26 +3500,22 @@ ul.form-field-error {
 }
 
 .source-viewer__refs-item a:hover {
-    background: var(--color-surface-strong, rgba(255, 255, 255, 0.06));
+    background: var(--color-surface-strong);
 }
 
 .source-viewer__refs-item a:hover .source-viewer__refs-name {
     text-decoration: underline;
 }
 
+/* Refs groups borrow the outline-section chevron + heading styles for
+   collapsibility. The vertical rhythm between groups matches the
+   outline panel so the two read as a paired pattern. */
 .source-viewer__refs-group + .source-viewer__refs-group {
-    margin-top: 12px;
-    padding-top: 8px;
-    border-top: 1px solid var(--color-border-strong);
+    margin-top: 8px;
 }
 
-.source-viewer__refs-group-heading {
-    margin: 0 0 4px 0;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--color-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+.source-viewer__refs-group:not(.is-open) .source-viewer__refs-list {
+    display: none;
 }
 
 /* Member sub-row: indented under the object-row so the visual hierarchy
@@ -3574,7 +3588,7 @@ ul.form-field-error {
     font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
     font-size: 12px;
     color: var(--color-text-muted);
-    background: var(--color-surface-2, #1c1c28);
+    background: var(--color-surface-2);
     padding: 3px 8px;
     border-left: 2px solid var(--color-border-strong);
     border-radius: 0 3px 3px 0;
@@ -3599,13 +3613,49 @@ ul.form-field-error {
     flex: 1 1 auto;
 }
 
-.source-viewer__refs-meta {
+/* Hover-only tooltip for a refs row. Stays out of the document flow —
+   appended to <body> by source-viewer.js so the row can stay visually
+   tight while the extension / file path / kind details surface on
+   demand. */
+.source-viewer__refs-tooltip {
+    position: absolute;
+    z-index: 200;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    box-shadow: 0 6px 18px var(--color-shadow);
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--color-text);
+    pointer-events: none;
+}
+
+.source-viewer__refs-tooltip[hidden] {
+    display: none;
+}
+
+.source-viewer__refs-tooltip-where {
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+
+.source-viewer__refs-tooltip-loc {
+    font-family: var(--font-mono);
     font-size: 11.5px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 0 0 auto;
-    margin-left: auto;
+    color: var(--color-text-muted);
+    word-break: break-all;
+}
+
+.source-viewer__refs-tooltip-member {
+    margin-top: 6px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+}
+
+.source-viewer__refs-tooltip-kind {
+    margin-top: 6px;
+    font-size: 11px;
 }
 .source-viewer__body {
     padding: 0;
@@ -3923,14 +3973,11 @@ ul.form-field-error {
     color: var(--color-text);
 }
 
-/* Brief flash on the line the user navigated to via a #L<n> deep link. */
-.cm-line--flash {
-    animation: cm-line-flash 1.4s ease-out 1;
-}
-@keyframes cm-line-flash {
-    0%   { background: rgba(254, 215, 102, 0.55); }
-    100% { background: transparent; }
-}
+/* Sticky highlight on the line the user navigated to via a deep link
+   or a References-panel click. Backing colour comes from
+   --color-accent-soft so it tracks the active theme. The actual
+   line.background rule lives in CM6's baseTheme (currentLineTheme in
+   code-editor.js) so it survives CodeMirror's row virtualisation. */
 
 /* File viewer layout: code editor + right-rail inspector panel. The
    editor fills the remaining width and grows to its content height —

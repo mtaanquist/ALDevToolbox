@@ -112,6 +112,57 @@ public sealed class SourceFileOutlineGrouperTests
     }
 
     [Fact]
+    public void Action_bound_triggers_nest_under_the_preceding_action()
+    {
+        // OnAction following an action declaration is action-bound — the
+        // entry lands in the ACTIONS section with IsChild=true so the
+        // panel renders it indented under its parent.
+        var input = new[]
+        {
+            Item("page", "Customer List", 1, objectId: 22),
+            Item("action", "Post", 50),
+            Item("trigger", "OnAction", 52),
+            Item("action", "Release", 60),
+            Item("trigger", "OnAction", 62),
+        };
+
+        var actions = SourceFileOutlineGrouper.Build(input, filter: null)
+            .Single(g => g.Key == "actions").Items;
+
+        actions.Select(e => (e.Item.Name, e.IsChild)).Should().Equal(
+            ("Post", false),
+            ("OnAction", true),
+            ("Release", false),
+            ("OnAction", true));
+    }
+
+    [Fact]
+    public void Page_field_then_action_binds_triggers_to_their_immediate_parent()
+    {
+        // Real pageextension layout: fields up top, actions below. A
+        // trigger that follows an action belongs to the action, not to
+        // whichever field came earlier in the document.
+        var input = new[]
+        {
+            Item("pageextension", "Sales Header Ext", 1, objectId: 50100),
+            Item("field", "Sell-to Customer No.", 50),
+            Item("trigger", "OnValidate", 52),
+            Item("action", "Post", 100),
+            Item("trigger", "OnAction", 102),
+        };
+
+        var groups = SourceFileOutlineGrouper.Build(input, filter: null);
+
+        groups.Single(g => g.Key == "fields").Items
+            .Select(e => (e.Item.Name, e.IsChild))
+            .Should().Equal(("Sell-to Customer No.", false), ("OnValidate", true));
+
+        groups.Single(g => g.Key == "actions").Items
+            .Select(e => (e.Item.Name, e.IsChild))
+            .Should().Equal(("Post", false), ("OnAction", true));
+    }
+
+    [Fact]
     public void Empty_sections_are_omitted()
     {
         var input = new[]
