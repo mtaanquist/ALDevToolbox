@@ -625,6 +625,189 @@ public sealed class AlReferenceExtractorTests
         result.References.Should().BeEmpty();
     }
 
+    // ── More object-scope properties ───────────────────────────────
+
+    [Fact]
+    public void Run_object_property_emits_target_reference()
+    {
+        // Pages declare RunObject = Page "X" / Codeunit "Y" / Report "Z"
+        // on action blocks. Same shape as SourceTable but with a kind
+        // keyword in front of the name. The kind keyword is consumed
+        // and the catalog resolves the name to the canonical kind.
+        var resolver = MakeResolver();
+        resolver.AddType("Customer Card", new AlTypeRef(BaseAppId, "page", 21, "Customer Card"));
+
+        const string src = """
+            page 22 "Customer List"
+            {
+                actions
+                {
+                    action("Card")
+                    {
+                        RunObject = Page "Customer Card";
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(resolver, "Customer List", null));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Customer Card"
+            && r.TargetObjectKind == "page"
+            && r.ReferenceKind == "property_object");
+    }
+
+    [Fact]
+    public void Table_relation_emits_target_table()
+    {
+        // Simple form: `TableRelation = Customer;` → property_object on
+        // the Customer table. The user's primary use case is "click
+        // through into the related table when investigating a record".
+        const string src = """
+            table 36 "Sales Header"
+            {
+                fields
+                {
+                    field(2; "Sell-to Customer No."; Code[20])
+                    {
+                        TableRelation = Customer;
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(MakeResolver(), "Sales Header"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Customer"
+            && r.TargetObjectKind == "table"
+            && r.ReferenceKind == "property_object");
+    }
+
+    [Fact]
+    public void Table_relation_with_filter_still_emits_the_base_table()
+    {
+        // `TableRelation = Customer where(…)` — the with-filter form
+        // is common. v1 emits the table reference; field references
+        // inside the filter expression stay deferred. The user can
+        // still click through to the Customer table.
+        const string src = """
+            table 36 "Sales Header"
+            {
+                fields
+                {
+                    field(2; "Sell-to Customer No."; Code[20])
+                    {
+                        TableRelation = Customer where("Customer Posting Group" = const('DOMESTIC'));
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(MakeResolver(), "Sales Header"));
+
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "Customer"
+            && r.ReferenceKind == "property_object");
+    }
+
+    [Fact]
+    public void Table_relation_conditional_emits_a_row_per_branch_table()
+    {
+        // `TableRelation = if (X) A."Y" else B."Z"` — emit both A and B
+        // so the user can shortcut into either branch's table.
+        var resolver = MakeResolver();
+        resolver.AddType("Item", new AlTypeRef(BaseAppId, "table", 27, "Item"));
+        resolver.AddType("Resource", new AlTypeRef(BaseAppId, "table", 156, "Resource"));
+
+        const string src = """
+            table 37 "Sales Line"
+            {
+                fields
+                {
+                    field(6; "No."; Code[20])
+                    {
+                        TableRelation = if (Type = const(Item)) Item."No." else Resource."No.";
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(resolver, "Sales Line"));
+
+        result.References.Where(r => r.ReferenceKind == "property_object")
+            .Select(r => r.TargetObjectName)
+            .Should().Contain(new[] { "Item", "Resource" });
+    }
+
+    [Fact]
+    public void Permissions_emits_one_reference_per_tabledata_target()
+    {
+        // `Permissions = tabledata "Customer" = rm, tabledata "Sales Header" = m;`
+        // — the rights spec is irrelevant to references; we just want
+        // the click-through into each listed table.
+        const string src = """
+            codeunit 80 "Sales-Post"
+            {
+                Permissions = tabledata "Customer" = rm, tabledata "Sales Header" = m;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        var perms = result.References.Where(r => r.ReferenceKind == "property_object").ToList();
+        perms.Should().HaveCount(2);
+        perms.Select(r => r.TargetObjectName)
+            .Should().BeEquivalentTo(new[] { "Customer", "Sales Header" });
+        perms.Should().AllSatisfy(r => r.TargetObjectKind.Should().Be("table"));
+    }
+
+    [Fact]
+    public void Field_declaration_with_enum_type_emits_enum_reference()
+    {
+        // `field(1; "Document Type"; Enum "Sales Document Type")` — the
+        // third arg is an AL object reference (the enum). Click-through
+        // from the field declaration into the enum.
+        var resolver = MakeResolver();
+        resolver.AddType("Sales Document Type", new AlTypeRef(BaseAppId, "enum", 39, "Sales Document Type"));
+
+        const string src = """
+            table 36 "Sales Header"
+            {
+                fields
+                {
+                    field(1; "Document Type"; Enum "Sales Document Type") { }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(resolver, "Sales Header"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Sales Document Type"
+            && r.TargetObjectKind == "enum"
+            && r.ReferenceKind == "property_object");
+    }
+
+    [Fact]
+    public void Field_declaration_with_scalar_type_emits_no_reference()
+    {
+        // `field(2; "Sell-to Customer No."; Code[20])` — `Code` isn't an
+        // AL object keyword (it's a primitive scalar). Must not try
+        // to resolve it as an object.
+        const string src = """
+            table 36 "Sales Header"
+            {
+                fields
+                {
+                    field(2; "Sell-to Customer No."; Code[20]) { }
+                    field(3; "Amount"; Decimal) { }
+                    field(4; "Posted"; Boolean) { }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(MakeResolver(), "Sales Header"));
+
+        result.References.Where(r => r.ReferenceKind == "property_object")
+            .Should().BeEmpty(
+                because: "scalar primitive types (Code, Decimal, Boolean) aren't AL objects");
+    }
+
     // ── EventSubscriber attribute bindings ─────────────────────────
 
     [Fact]

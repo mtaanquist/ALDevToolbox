@@ -209,6 +209,25 @@ public static class AlReferenceExtractor
                     {
                         if (TryConsumeObjectScopeProperty()) continue;
                     }
+
+                    // Field declaration with a typed third arg —
+                    // `field(N; "Name"; Enum "Sales Document Type")`.
+                    // The table-side three-arg form ships the field's
+                    // type as an AL object reference; extracting it
+                    // lets the source viewer underline the enum / record
+                    // name. Page-side `field("Name"; Rec."Field")` lacks
+                    // a type and is handled separately by the chain
+                    // walker (Rec.Field resolves through implicit-Rec).
+                    if (_scopeStack.Count == 1
+                        && tok.Kind == AlTokenKind.Identifier
+                        && string.Equals(tok.Value, "field", StringComparison.OrdinalIgnoreCase)
+                        && _pos + 1 < _tokens.Count
+                        && _tokens[_pos + 1].Kind == AlTokenKind.Punct
+                        && _tokens[_pos + 1].Value == "(")
+                    {
+                        TryConsumeFieldDeclaration();
+                        continue;
+                    }
                 }
 
                 // EventSubscriber attribute detection: `[ EventSubscriber ( … )`
@@ -787,12 +806,26 @@ public static class AlReferenceExtractor
         /// not a known property — could be a custom user property the
         /// extractor doesn't model, or any other object-scope token).
         ///
-        /// Coverage in v1 (matches the user-facing screenshot list):
-        /// SourceTable, LookupPageID, CardPageID, DrillDownPageID,
-        /// DataCaptionFields. Deferred (need field-context tracking or
-        /// complex value-shape parsing): TableRelation, CalcFormula,
-        /// Permissions, SourceTableView, RunObject, enum-typed field
-        /// declarations.
+        /// Coverage:
+        /// <list type="bullet">
+        ///   <item>Single-object: SourceTable, LookupPageID, CardPageID,
+        ///         DrillDownPageID, RunObject. Value is a name (quoted or
+        ///         bare) optionally preceded by a kind keyword.</item>
+        ///   <item>Field list: DataCaptionFields. Comma-separated field
+        ///         names on the owner's table.</item>
+        ///   <item>TableRelation: scan-and-emit every type-resolving
+        ///         identifier in the value. Catches the simple form
+        ///         (<c>TableRelation = Customer;</c>), the with-filter
+        ///         form (<c>… where(…)</c>), and the conditional form
+        ///         (<c>if (…) X else Y</c>) — for the conditional shape
+        ///         every branch's table gets a row, which is what a
+        ///         developer wants from "shortcut into the table".</item>
+        ///   <item>Permissions: <c>tabledata "X" = rm, tabledata "Y" = m;</c>
+        ///         emits one property_object per tabledata target.</item>
+        /// </list>
+        /// Deferred (need richer value parsing): CalcFormula's nested
+        /// table.field + filter expressions, SourceTableView's filter
+        /// expressions, where()-bound field refs in TableRelation.
         /// </summary>
         private bool TryConsumeObjectScopeProperty()
         {
@@ -802,13 +835,22 @@ public static class AlReferenceExtractor
             if (string.Equals(name, "SourceTable", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "LookupPageID", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "CardPageID", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(name, "DrillDownPageID", StringComparison.OrdinalIgnoreCase))
+                || string.Equals(name, "DrillDownPageID", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "RunObject", StringComparison.OrdinalIgnoreCase))
             {
                 return TryConsumeObjectReferenceProperty(name);
             }
             if (string.Equals(name, "DataCaptionFields", StringComparison.OrdinalIgnoreCase))
             {
                 return TryConsumeDataCaptionFields();
+            }
+            if (string.Equals(name, "TableRelation", StringComparison.OrdinalIgnoreCase))
+            {
+                return TryConsumeTableRelation();
+            }
+            if (string.Equals(name, "Permissions", StringComparison.OrdinalIgnoreCase))
+            {
+                return TryConsumePermissions();
             }
             return false;
         }
@@ -922,6 +964,233 @@ public static class AlReferenceExtractor
             }
             if (At(";")) _pos++;
             return true;
+        }
+
+        /// <summary>
+        /// Greedy scan of a <c>TableRelation = …;</c> value: walks every
+        /// token between <c>=</c> and <c>;</c>, emitting one
+        /// <c>property_object</c> per identifier that resolves to a
+        /// table in the catalog. Catches:
+        ///   - bare: <c>TableRelation = Customer;</c>
+        ///   - quoted: <c>TableRelation = "G/L Account";</c>
+        ///   - dotted: <c>TableRelation = "G/L Account"."No.";</c> (only
+        ///     the table portion emits — field portion is field-context
+        ///     work for a follow-up)
+        ///   - with filter: <c>TableRelation = Customer where(…);</c> →
+        ///     emits Customer; the filter's <c>field(X)</c> references
+        ///     stay deferred.
+        ///   - conditional: <c>if (Type = const(Item)) Item."No." else
+        ///     Resource."No.";</c> → emits Item and Resource (every
+        ///     branch's table). const(…) values like <c>Item</c> the
+        ///     enum value won't resolve as an object — they're skipped
+        ///     silently.
+        ///
+        /// De-duplicates within one value so a repeated reference doesn't
+        /// produce a stack of identical underlines.
+        /// </summary>
+        private bool TryConsumeTableRelation()
+        {
+            _pos++; // property name
+            if (!At("=")) { SkipToSemicolon(); return true; }
+            _pos++; // =
+
+            var seen = new HashSet<long>();
+            while (_pos < _tokens.Count && !At(";"))
+            {
+                var tok = _tokens[_pos];
+                if (tok.Kind == AlTokenKind.Identifier || tok.Kind == AlTokenKind.QuotedIdentifier)
+                {
+                    var target = _ctx.Resolver.ResolveTypeByName(tok.Value);
+                    if (target is not null
+                        && string.Equals(target.Kind, "table", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // De-dupe by (line, column) so the same identifier
+                        // spelled twice at different positions still emits
+                        // twice, but the same token doesn't get re-emitted
+                        // on iteration glitches.
+                        var key = ((long)tok.Line << 20) | (uint)tok.Column;
+                        if (seen.Add(key))
+                        {
+                            _refs.Add(new ExtractedReference(
+                                Line: tok.Line,
+                                Column: tok.Column,
+                                TargetAppId: target.AppId,
+                                TargetObjectKind: target.Kind,
+                                TargetObjectId: target.ObjectId,
+                                TargetObjectName: target.Name,
+                                TargetMemberName: null,
+                                TargetMemberKind: null,
+                                ReferenceKind: "property_object"));
+                            _resolved++;
+                        }
+                    }
+                }
+                _pos++;
+            }
+            if (At(";")) _pos++;
+            return true;
+        }
+
+        /// <summary>
+        /// Handles <c>Permissions = tabledata "Customer" = rm,
+        /// tabledata "Sales Header" = X;</c>. The list is comma-separated;
+        /// each entry begins with <c>tabledata</c> (or, rarely,
+        /// <c>tabledata id</c> via numeric id, which we skip for the
+        /// same reason as numeric typed-literal targets) followed by a
+        /// table name and the <c>= &lt;rights&gt;</c> rights spec we
+        /// don't care about. Emits one <c>property_object</c> row per
+        /// tabledata target so each underlines and Go-to-definition
+        /// jumps to the table declaration.
+        /// </summary>
+        private bool TryConsumePermissions()
+        {
+            _pos++; // property name
+            if (!At("=")) { SkipToSemicolon(); return true; }
+            _pos++; // =
+
+            while (_pos < _tokens.Count && !At(";"))
+            {
+                var tok = _tokens[_pos];
+                // Watch for `tabledata <Name>` pairs. Other entry types
+                // (e.g. <c>tabledata 27 = rm</c> with a numeric id) miss
+                // the catalog lookup and fall through silently.
+                if (tok.Kind == AlTokenKind.Identifier
+                    && string.Equals(tok.Value, "tabledata", StringComparison.OrdinalIgnoreCase))
+                {
+                    _pos++;
+                    if (_pos >= _tokens.Count) break;
+                    var nameTok = _tokens[_pos];
+                    if (nameTok.Kind == AlTokenKind.Identifier
+                        || nameTok.Kind == AlTokenKind.QuotedIdentifier)
+                    {
+                        var target = _ctx.Resolver.ResolveTypeByName(nameTok.Value);
+                        if (target is not null
+                            && string.Equals(target.Kind, "table", StringComparison.OrdinalIgnoreCase))
+                        {
+                            _refs.Add(new ExtractedReference(
+                                Line: nameTok.Line,
+                                Column: nameTok.Column,
+                                TargetAppId: target.AppId,
+                                TargetObjectKind: target.Kind,
+                                TargetObjectId: target.ObjectId,
+                                TargetObjectName: target.Name,
+                                TargetMemberName: null,
+                                TargetMemberKind: null,
+                                ReferenceKind: "property_object"));
+                            _resolved++;
+                        }
+                        _pos++;
+                    }
+                    continue;
+                }
+                _pos++;
+            }
+            if (At(";")) _pos++;
+            return true;
+        }
+
+        /// <summary>
+        /// Recognises <c>field(N; "Name"; Type)</c> declarations at
+        /// object scope and emits a reference for the type when it's an
+        /// AL object (typically <c>Enum "Sales Document Type"</c>).
+        /// Page-side <c>field("Name"; Rec."Field")</c> declarations bind
+        /// to a Rec field instead of an object type — those are caught
+        /// by the implicit-Rec field-access handler when the walker
+        /// reaches the <c>Rec.</c> part, so this method doesn't need
+        /// to handle them.
+        ///
+        /// Other type shapes — <c>Code[20]</c>, <c>Integer</c>,
+        /// <c>Decimal</c>, <c>Boolean</c>, <c>DateTime</c> — aren't AL
+        /// objects in the catalog, so they fall through silently.
+        /// </summary>
+        private void TryConsumeFieldDeclaration()
+        {
+            _pos++; // field
+            if (!At("(")) return;
+            _pos++; // (
+
+            // Three semicolon-separated args at depth 0: id; name; type.
+            // We only care about arg[2] — the type. Walk forward,
+            // tracking paren depth, counting semicolons.
+            int depth = 0;
+            int semicolonsSeen = 0;
+            var typeTokens = new List<AlToken>();
+            while (_pos < _tokens.Count)
+            {
+                var tok = _tokens[_pos];
+                if (tok.Kind == AlTokenKind.Punct)
+                {
+                    if (tok.Value == "(") { depth++; _pos++; continue; }
+                    if (tok.Value == ")")
+                    {
+                        if (depth == 0) { _pos++; break; }
+                        depth--;
+                        _pos++;
+                        continue;
+                    }
+                    if (tok.Value == ";" && depth == 0)
+                    {
+                        semicolonsSeen++;
+                        _pos++;
+                        continue;
+                    }
+                }
+                if (semicolonsSeen == 2)
+                {
+                    typeTokens.Add(tok);
+                }
+                _pos++;
+            }
+
+            EmitTypedReference(typeTokens);
+
+            // The declaration's trailing `{ … }` block contains its
+            // own properties (Caption, TableRelation, ToolTip, …) — the
+            // main loop walks them in their own right.
+        }
+
+        /// <summary>
+        /// Emits a reference for an AL-object-typed value: when the token
+        /// stream looks like <c>&lt;kind&gt; Name</c> (e.g.
+        /// <c>Enum "Sales Document Type"</c>, <c>Record Customer</c>),
+        /// resolves Name in the catalog and emits a
+        /// <c>property_object</c> row. The kind keyword is required so
+        /// scalar types like <c>Code[20]</c> don't try to resolve
+        /// <c>Code</c> as an object.
+        /// </summary>
+        private void EmitTypedReference(List<AlToken> tokens)
+        {
+            if (tokens.Count < 2) return;
+
+            // Find the kind keyword + immediate name pair. Walk forward
+            // so `Enum "X"` inside parentheses-stripped tokens still
+            // resolves correctly when there's leading / trailing noise.
+            for (int i = 0; i < tokens.Count - 1; i++)
+            {
+                var kw = tokens[i];
+                if (kw.Kind != AlTokenKind.Identifier) continue;
+                if (!IsAlObjectKeyword(kw.Value)) continue;
+                var nameTok = tokens[i + 1];
+                if (nameTok.Kind != AlTokenKind.Identifier
+                    && nameTok.Kind != AlTokenKind.QuotedIdentifier)
+                {
+                    continue;
+                }
+                var target = _ctx.Resolver.ResolveTypeByName(nameTok.Value);
+                if (target is null) return;
+                _refs.Add(new ExtractedReference(
+                    Line: nameTok.Line,
+                    Column: nameTok.Column,
+                    TargetAppId: target.AppId,
+                    TargetObjectKind: target.Kind,
+                    TargetObjectId: target.ObjectId,
+                    TargetObjectName: target.Name,
+                    TargetMemberName: null,
+                    TargetMemberKind: null,
+                    ReferenceKind: "property_object"));
+                _resolved++;
+                return;
+            }
         }
 
         private void SkipToSemicolon()
