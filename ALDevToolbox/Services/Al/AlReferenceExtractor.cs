@@ -211,6 +211,20 @@ public static class AlReferenceExtractor
                     }
                 }
 
+                // EventSubscriber attribute detection: `[ EventSubscriber ( … )`
+                // at object scope. Bindings tell the catalog "this procedure
+                // subscribes to that publisher's event", which is what
+                // makes Find references on a publisher list its subscribers.
+                if (_scopeStack.Count == 1
+                    && tok.Kind == AlTokenKind.Punct && tok.Value == "["
+                    && _pos + 1 < _tokens.Count
+                    && _tokens[_pos + 1].Kind == AlTokenKind.Identifier
+                    && string.Equals(_tokens[_pos + 1].Value, "EventSubscriber", StringComparison.OrdinalIgnoreCase))
+                {
+                    TryConsumeEventSubscriberAttribute();
+                    continue;
+                }
+
                 _pos++;
             }
 
@@ -914,6 +928,229 @@ public static class AlReferenceExtractor
         {
             while (_pos < _tokens.Count && !At(";")) _pos++;
             if (At(";")) _pos++;
+        }
+
+        // ── EventSubscriber attribute extraction ──────────────────────
+
+        /// <summary>
+        /// Handles <c>[EventSubscriber(ObjectType::Codeunit, Codeunit::"Sales-Post",
+        /// 'OnAfterPostSalesDoc', '', false, false)]</c>. Emits one
+        /// <c>event_publisher</c>-kind reference row pointing from the
+        /// containing subscriber to the publisher's
+        /// <c>(object, event_name)</c>. The reference is what makes
+        /// Find references on the publisher list its subscribers — the
+        /// existing member-scoped query joins on
+        /// <c>(TargetObjectName, TargetMemberName, TargetMemberKind)</c>
+        /// so no query changes are needed downstream.
+        ///
+        /// AL accepts the event name (3rd arg) and the element name
+        /// (4th arg) as either single-quoted strings (legacy) or bare
+        /// identifiers (newer BC). The lexer normalises both — strings
+        /// lose their quotes, identifiers come through as-is — so the
+        /// parser doesn't have to distinguish.
+        ///
+        /// Numeric target id (<c>Codeunit::80</c>) isn't supported in
+        /// v1: BC has used the named form (<c>Codeunit::"Sales-Post"</c>)
+        /// for the last ~decade. If a real import surfaces the numeric
+        /// shape we'd extend <see cref="IAlTypeResolver"/> with an
+        /// id-based lookup.
+        /// </summary>
+        private void TryConsumeEventSubscriberAttribute()
+        {
+            var attrLine = _tokens[_pos].Line;
+            var attrCol = _tokens[_pos].Column;
+            _pos++; // [
+            _pos++; // EventSubscriber
+
+            if (!At("("))
+            {
+                SkipPastAttributeClose();
+                return;
+            }
+
+            var args = ReadParenArgs();
+            if (args.Count < 3) { SkipPastAttributeClose(); return; }
+
+            // arg[1]: typed-literal `Kind::Name` for the target object.
+            // The catalog lookup keys on the name; the kind is implicit
+            // from the catalog row.
+            var targetName = ExtractTypedLiteralName(args[1]);
+            if (string.IsNullOrEmpty(targetName))
+            {
+                SkipPastAttributeClose();
+                return;
+            }
+
+            // arg[2]: event name. String (legacy) or Identifier (newer).
+            var eventName = ExtractStringOrIdentifier(args[2]);
+            if (string.IsNullOrEmpty(eventName))
+            {
+                SkipPastAttributeClose();
+                return;
+            }
+
+            var target = _ctx.Resolver.ResolveTypeByName(targetName);
+            if (target is null)
+            {
+                // Cross-release / unknown / numeric id. Silent drop —
+                // matches the broader policy for unresolved property
+                // references; subscriber attributes against unknown
+                // targets aren't a developer error worth reporting.
+                SkipPastAttributeClose();
+                return;
+            }
+
+            _refs.Add(new ExtractedReference(
+                Line: attrLine,
+                Column: attrCol,
+                TargetAppId: target.AppId,
+                TargetObjectKind: target.Kind,
+                TargetObjectId: target.ObjectId,
+                TargetObjectName: target.Name,
+                TargetMemberName: eventName,
+                TargetMemberKind: "event_publisher",
+                ReferenceKind: "event_publisher"));
+            _resolved++;
+
+            SkipPastAttributeClose();
+        }
+
+        /// <summary>
+        /// Reads a parenthesised comma-separated argument list. Assumes
+        /// <see cref="_pos"/> is at the opening <c>(</c>. Returns one
+        /// token list per arg; leaves <see cref="_pos"/> at the token
+        /// immediately after the matching <c>)</c>. Respects nested
+        /// parens so embedded expressions don't truncate the split.
+        /// </summary>
+        private List<List<AlToken>> ReadParenArgs()
+        {
+            var args = new List<List<AlToken>>();
+            if (!At("(")) return args;
+            _pos++;
+            var current = new List<AlToken>();
+            int depth = 0;
+            while (_pos < _tokens.Count)
+            {
+                if (At("("))
+                {
+                    depth++;
+                    current.Add(_tokens[_pos]);
+                    _pos++;
+                    continue;
+                }
+                if (At(")"))
+                {
+                    if (depth == 0)
+                    {
+                        args.Add(current);
+                        _pos++;
+                        return args;
+                    }
+                    depth--;
+                    current.Add(_tokens[_pos]);
+                    _pos++;
+                    continue;
+                }
+                if (At(",") && depth == 0)
+                {
+                    args.Add(current);
+                    current = new List<AlToken>();
+                    _pos++;
+                    continue;
+                }
+                current.Add(_tokens[_pos]);
+                _pos++;
+            }
+            // Reached EOF mid-attribute; salvage what we have.
+            args.Add(current);
+            return args;
+        }
+
+        /// <summary>
+        /// Extracts the name from a <c>Kind::Name</c> typed-literal
+        /// argument. Returns null when the shape doesn't match (e.g.
+        /// numeric id, malformed). The kind itself isn't returned —
+        /// the catalog row that the name resolves to carries the
+        /// canonical kind.
+        /// </summary>
+        private static string? ExtractTypedLiteralName(List<AlToken> arg)
+        {
+            // Find the `::` token; the right-hand side is the name.
+            for (int i = 0; i < arg.Count - 1; i++)
+            {
+                if (arg[i].Kind != AlTokenKind.DoubleColon) continue;
+                var name = arg[i + 1];
+                if (name.Kind == AlTokenKind.Identifier || name.Kind == AlTokenKind.QuotedIdentifier)
+                {
+                    return name.Value;
+                }
+                // Number form (Codeunit::80) — v1 doesn't resolve.
+                return null;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Extracts the value from a single-token argument that's either a
+        /// String literal (single-quoted in source — the lexer keeps the
+        /// surrounding quotes in the token value, so we strip them here)
+        /// or a bare Identifier. AL accepts both shapes for the
+        /// event-name / element-name parameters since the move to "newer
+        /// BC" syntax — same value on the wire either way.
+        /// </summary>
+        private static string? ExtractStringOrIdentifier(List<AlToken> arg)
+        {
+            foreach (var tok in arg)
+            {
+                if (tok.Kind == AlTokenKind.String)
+                {
+                    return UnquoteString(tok.Value);
+                }
+                if (tok.Kind == AlTokenKind.Identifier
+                    || tok.Kind == AlTokenKind.QuotedIdentifier)
+                {
+                    return tok.Value;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Strips the surrounding single quotes the lexer keeps on String
+        /// tokens. <c>'foo'</c> in source → <c>"'foo'"</c> from the lexer
+        /// → <c>"foo"</c> here. Also un-escapes the doubled-quote
+        /// convention (<c>'it''s'</c> → <c>it's</c>) so the value matches
+        /// what's stored in <c>oe_module_symbols.Name</c> for the
+        /// publisher procedure.
+        /// </summary>
+        private static string UnquoteString(string raw)
+        {
+            if (raw.Length >= 2 && raw[0] == '\'' && raw[^1] == '\'')
+            {
+                return raw.Substring(1, raw.Length - 2).Replace("''", "'");
+            }
+            return raw;
+        }
+
+        /// <summary>
+        /// Advances <see cref="_pos"/> past the matching <c>]</c> of an
+        /// attribute we couldn't fully parse. Tracks bracket depth so
+        /// nested expressions don't terminate early. Used as the bailout
+        /// path when an attribute's args don't match the expected shape.
+        /// </summary>
+        private void SkipPastAttributeClose()
+        {
+            int depth = 0;
+            while (_pos < _tokens.Count)
+            {
+                if (At("[")) depth++;
+                else if (At("]"))
+                {
+                    if (depth == 0) { _pos++; return; }
+                    depth--;
+                }
+                _pos++;
+            }
         }
 
         private AlTypeRef? _recTypeCache;

@@ -657,7 +657,9 @@ public class ObjectExplorerService
         //    TargetSymbolId — those have a direct file + line via the symbol's
         //    owner object.
         var memberHit = await _db.OeModuleReferences.AsNoTracking()
-            .Where(r => (r.ReferenceKind == "method_call" || r.ReferenceKind == "field_access")
+            .Where(r => (r.ReferenceKind == "method_call"
+                    || r.ReferenceKind == "field_access"
+                    || r.ReferenceKind == "event_publisher")
                 && r.SourceObject!.SourceFileId == fileId
                 && r.LineNumber == line
                 && r.TargetMemberName != null

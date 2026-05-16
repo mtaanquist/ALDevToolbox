@@ -625,6 +625,153 @@ public sealed class AlReferenceExtractorTests
         result.References.Should().BeEmpty();
     }
 
+    // ── EventSubscriber attribute bindings ─────────────────────────
+
+    [Fact]
+    public void Event_subscriber_attribute_with_legacy_quoted_event_name_emits_publisher_binding()
+    {
+        // Classic Microsoft-style EventSubscriber:
+        //   [EventSubscriber(ObjectType::Codeunit, Codeunit::"Sales-Post",
+        //                    'OnAfterPostSalesDoc', '', false, false)]
+        // The subscriber row's TargetMemberName carries the event name and
+        // TargetMemberKind = "event_publisher" so Find references on the
+        // publisher procedure surfaces this binding via the existing
+        // member-scoped query.
+        const string src = """
+            codeunit 50100 "Sales Post Subscribers"
+            {
+                [EventSubscriber(ObjectType::Codeunit, Codeunit::"Sales-Post", 'OnAfterPostSalesDoc', '', false, false)]
+                local procedure HandleAfterPost(var SalesHeader: Record "Sales Header"; CommitIsSuppressed: Boolean)
+                begin
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "event_publisher"
+            && r.TargetObjectName == "Sales-Post"
+            && r.TargetObjectKind == "codeunit"
+            && r.TargetMemberName == "OnAfterPostSalesDoc"
+            && r.TargetMemberKind == "event_publisher");
+    }
+
+    [Fact]
+    public void Event_subscriber_attribute_with_bare_identifier_event_name_also_emits_binding()
+    {
+        // Newer BC dropped the apostrophes around the event name (and
+        // element name) — bare identifiers now lex as Identifier tokens
+        // instead of String tokens. Both shapes must produce the same
+        // binding so subscribers in modern code aren't missed.
+        const string src = """
+            codeunit 50101 "Sales Post Subscribers"
+            {
+                [EventSubscriber(ObjectType::Codeunit, Codeunit::"Sales-Post", OnAfterPostSalesDoc, '', false, false)]
+                local procedure HandleAfterPost()
+                begin
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "event_publisher"
+            && r.TargetObjectName == "Sales-Post"
+            && r.TargetMemberName == "OnAfterPostSalesDoc");
+    }
+
+    [Fact]
+    public void Event_subscriber_attribute_on_a_table_publisher_resolves()
+    {
+        // EventSubscriber against a Table publisher rather than a Codeunit
+        // — the typed-literal in arg[1] is `Table::"Customer"` instead of
+        // `Codeunit::"…"`. Catalog lookup uses the name; the kind comes
+        // from whatever object the name resolves to.
+        const string src = """
+            codeunit 50102 "Cust Subscribers"
+            {
+                [EventSubscriber(ObjectType::Table, Database::Customer, 'OnAfterInsertEvent', '', false, false)]
+                local procedure HandleAfterInsert()
+                begin
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "event_publisher"
+            && r.TargetObjectName == "Customer"
+            && r.TargetObjectKind == "table"
+            && r.TargetMemberName == "OnAfterInsertEvent");
+    }
+
+    [Fact]
+    public void Multiple_event_subscribers_in_one_file_each_emit_a_binding()
+    {
+        // A subscribers codeunit often contains many subscribers. Each
+        // attribute must mint its own binding row — the walker must
+        // continue past the first matched attribute without losing track.
+        const string src = """
+            codeunit 50103 "Multi"
+            {
+                [EventSubscriber(ObjectType::Codeunit, Codeunit::"Sales-Post", 'OnAfterPostSalesDoc', '', false, false)]
+                local procedure A() begin end;
+
+                [EventSubscriber(ObjectType::Table, Database::Customer, 'OnAfterInsertEvent', '', false, false)]
+                local procedure B() begin end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Where(r => r.ReferenceKind == "event_publisher")
+            .Should().HaveCount(2);
+        result.References.Where(r => r.ReferenceKind == "event_publisher")
+            .Select(r => r.TargetMemberName)
+            .Should().BeEquivalentTo(new[] { "OnAfterPostSalesDoc", "OnAfterInsertEvent" });
+    }
+
+    [Fact]
+    public void Event_subscriber_attribute_with_unknown_target_drops_silently()
+    {
+        // Target codeunit isn't in the catalog (cross-release, customer
+        // extension not imported, typo). Don't crash, don't bump the
+        // unresolved counter — the same policy property-object refs
+        // use for unknown targets.
+        const string src = """
+            codeunit 50104 "Unknown"
+            {
+                [EventSubscriber(ObjectType::Codeunit, Codeunit::"Nonexistent Cu", 'OnSomething', '', false, false)]
+                local procedure A() begin end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Where(r => r.ReferenceKind == "event_publisher")
+            .Should().BeEmpty();
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Other_attributes_alongside_event_subscriber_do_not_emit_bindings()
+    {
+        // [Test] / [HandlerFunctions(...)] / [Scope('OnPrem')] etc. must
+        // not produce event_publisher rows — only [EventSubscriber] does.
+        // The narrow `[ EventSubscriber (` detector ensures attributes
+        // with other names skip the binding path.
+        const string src = """
+            codeunit 50105 "Test Cu"
+            {
+                [Test]
+                [HandlerFunctions('SomeHandler')]
+                procedure TestSomething() begin end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Where(r => r.ReferenceKind == "event_publisher")
+            .Should().BeEmpty();
+    }
+
     // ── Object-scope property extraction ───────────────────────────
 
     [Fact]
