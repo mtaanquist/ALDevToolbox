@@ -114,6 +114,14 @@ public class ReleaseImportService
                 await ImportOneAppAsync(orgId, release, upload, totals, ct).ConfigureAwait(false);
             }
 
+            // Phase 2 call-site extraction. Runs once per release, AFTER
+            // every module's symbols + variables are in the DB so the
+            // resolver can see types declared anywhere in this release.
+            // Cross-release receivers (DK Core file references Customer
+            // from a parent Base App release) currently drop — phase 2.1
+            // can add the chain walk when needed.
+            await EmitCallSiteReferencesAsync(orgId, release.Id, totals, ct).ConfigureAwait(false);
+
             // Pin the platform/application version from the canonical Base App
             // module when one came in this Release. Continue to leave null if
             // the upload was third-party-only. Re-find via the cleared tracker
@@ -954,5 +962,277 @@ public class ReleaseImportService
         public int ObjectsImported;
         public int ReferencesImported;
         public int SourceFilesImported;
+    }
+
+    // ── Phase-2 call-site extraction ───────────────────────────────────
+
+    /// <summary>
+    /// Runs <see cref="ALDevToolbox.Services.Al.AlReferenceExtractor"/>
+    /// over every source file in the freshly-imported release and emits
+    /// one <c>method_call</c> or <c>field_access</c> reference per
+    /// resolved member access. Single-pass over the release's files; the
+    /// type + member catalogs are built once up-front from data the
+    /// per-module loop already wrote.
+    ///
+    /// Cross-release shadowing isn't handled here — a DK Core file
+    /// calling <c>Customer.Insert()</c> against a Customer table that
+    /// lives in a parent Base App release would drop the reference.
+    /// In practice users tend to import every module they care about
+    /// into one release (the BC DVD convention); cross-release call
+    /// sites can be added later by reusing the recursive-CTE chain walk.
+    /// </summary>
+    private async Task EmitCallSiteReferencesAsync(
+        int orgId, int releaseId, ImportTotals totals, CancellationToken ct)
+    {
+        _db.ChangeTracker.Clear();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        // (1) Build the type catalog: every object in this release keyed
+        // by name (case-insensitive). Multiple objects can share a name
+        // across object kinds (rare but legal — a Table and a Codeunit
+        // both named "X"). Picking the first by Kind keeps it stable.
+        var typeRows = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId)
+            .Select(o => new
+            {
+                o.Id,
+                o.Kind,
+                o.ObjectId,
+                o.Name,
+                AppId = o.Module!.AppId,
+            })
+            .ToListAsync(ct);
+        var typesByName = new Dictionary<string, ALDevToolbox.Services.Al.AlTypeRef>(StringComparer.OrdinalIgnoreCase);
+        var objectIdByName = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var t in typeRows)
+        {
+            if (!typesByName.ContainsKey(t.Name))
+            {
+                typesByName[t.Name] = new ALDevToolbox.Services.Al.AlTypeRef(t.AppId, t.Kind, t.ObjectId, t.Name);
+                objectIdByName[t.Name] = t.Id;
+            }
+        }
+
+        // (2) Member catalog: for each owner Id, list its symbols.
+        // Keyed by Id because owner names aren't unique across kinds.
+        var memberRows = await _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Object!.Module!.ReleaseId == releaseId)
+            .Select(s => new
+            {
+                OwnerId = s.Object!.Id,
+                SymbolId = s.Id,
+                s.Name,
+                s.Kind,
+                s.ReturnType,
+            })
+            .ToListAsync(ct);
+        var membersByOwner = new Dictionary<long, List<MemberEntry>>();
+        foreach (var m in memberRows)
+        {
+            if (!membersByOwner.TryGetValue(m.OwnerId, out var list))
+            {
+                list = new List<MemberEntry>();
+                membersByOwner[m.OwnerId] = list;
+            }
+            // ReturnType is the raw "Record Customer" / "Code[20]" string
+            // from the symbol package. Pull the AL type name out of it
+            // so chained access can resolve through return types.
+            var (retKw, retName) = ParseReturnType(m.ReturnType);
+            list.Add(new MemberEntry(m.SymbolId, m.Name, m.Kind, retKw, retName));
+        }
+
+        // (3) Per-object globals from oe_module_variables. Keyed by
+        // (objectId, lowered name). Built once; the per-file loop
+        // grabs its file's owner-object id and filters.
+        var varRows = await _db.OeModuleVariables.AsNoTracking()
+            .Where(v => v.Object!.Module!.ReleaseId == releaseId)
+            .Select(v => new
+            {
+                OwnerId = v.Object!.Id,
+                v.Name,
+                v.TypeKeyword,
+                v.TypeName,
+            })
+            .ToListAsync(ct);
+        var globalsByOwner = new Dictionary<long, Dictionary<string, ALDevToolbox.Services.Al.ResolvedVariableType>>();
+        foreach (var v in varRows)
+        {
+            if (string.IsNullOrEmpty(v.TypeName)) continue;
+            if (!globalsByOwner.TryGetValue(v.OwnerId, out var dict))
+            {
+                dict = new Dictionary<string, ALDevToolbox.Services.Al.ResolvedVariableType>(StringComparer.OrdinalIgnoreCase);
+                globalsByOwner[v.OwnerId] = dict;
+            }
+            dict[v.Name] = new ALDevToolbox.Services.Al.ResolvedVariableType(v.TypeKeyword, v.TypeName);
+        }
+
+        // (4) Resolver: closes over the in-memory catalogs.
+        var resolver = new CatalogResolver(typesByName, objectIdByName, membersByOwner);
+
+        // (5) Walk every source file. For each, find its owner object
+        // (the row in oe_module_objects whose source_file_id matches),
+        // build the extract context, run the extractor, and emit
+        // ModuleReference rows. Saved in chunks to keep tracker
+        // pressure bounded.
+        var files = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Module!.ReleaseId == releaseId)
+            .Select(f => new
+            {
+                f.Id,
+                f.Content,
+                ModuleId = f.ModuleId,
+                Owner = _db.OeModuleObjects
+                    .Where(o => o.SourceFileId == f.Id)
+                    .OrderBy(o => o.Id)
+                    .Select(o => new { o.Id, o.Kind, o.Name, o.ObjectId, AppId = o.Module!.AppId })
+                    .FirstOrDefault(),
+            })
+            .ToListAsync(ct);
+
+        int totalEmitted = 0;
+        int totalUnresolved = 0;
+        int pending = 0;
+        foreach (var file in files)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (file.Owner is null || string.IsNullOrEmpty(file.Content)) continue;
+
+            globalsByOwner.TryGetValue(file.Owner.Id, out var globals);
+            var ctx = new ALDevToolbox.Services.Al.AlExtractContext(
+                OwnerKind: file.Owner.Kind,
+                OwnerName: file.Owner.Name,
+                OwnerObjectId: file.Owner.ObjectId,
+                OwnerAppId: file.Owner.AppId,
+                GlobalVars: globals ?? new Dictionary<string, ALDevToolbox.Services.Al.ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+                Resolver: resolver);
+
+            var result = ALDevToolbox.Services.Al.AlReferenceExtractor.Extract(file.Content, ctx);
+            totalUnresolved += result.Stats.UnresolvedReceivers;
+
+            foreach (var r in result.References)
+            {
+                long? targetSymbolId = null;
+                if (objectIdByName.TryGetValue(r.TargetObjectName, out var ownerId)
+                    && membersByOwner.TryGetValue(ownerId, out var memberList))
+                {
+                    targetSymbolId = memberList.FirstOrDefault(m =>
+                        string.Equals(m.Name, r.TargetMemberName, StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(m.Kind, r.TargetMemberKind, StringComparison.OrdinalIgnoreCase))?.SymbolId;
+                }
+
+                _db.OeModuleReferences.Add(new OeModuleReference
+                {
+                    OrganizationId = orgId,
+                    ModuleId = file.ModuleId,
+                    SourceObjectId = file.Owner.Id,
+                    TargetAppId = r.TargetAppId,
+                    TargetObjectKind = r.TargetObjectKind,
+                    TargetObjectId = r.TargetObjectId,
+                    TargetObjectName = r.TargetObjectName,
+                    ReferenceKind = r.ReferenceKind,
+                    LineNumber = r.Line,
+                    TargetMemberName = r.TargetMemberName,
+                    TargetMemberKind = r.TargetMemberKind,
+                    TargetSymbolId = targetSymbolId,
+                });
+                totalEmitted++;
+                pending++;
+            }
+
+            if (pending >= 500)
+            {
+                await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+                _db.ChangeTracker.Clear();
+                pending = 0;
+            }
+        }
+        if (pending > 0)
+        {
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            _db.ChangeTracker.Clear();
+        }
+
+        totals.ReferencesImported += totalEmitted;
+        _logger.LogInformation(
+            "Phase-2 call-site references: ReleaseId={ReleaseId} Files={Files} Emitted={Emitted} Unresolved={Unresolved} Elapsed={Elapsed}ms",
+            releaseId, files.Count, totalEmitted, totalUnresolved, sw.ElapsedMilliseconds);
+    }
+
+    /// <summary>
+    /// Pulls the AL type out of a symbol-package return-type string
+    /// like <c>"Record Customer"</c>, <c>"Code[20]"</c>,
+    /// <c>"Codeunit \"Sales-Post\""</c>. Returns (null, null) for scalar
+    /// types so the extractor's chained-access loop terminates on the
+    /// next step.
+    /// </summary>
+    private static (string? Keyword, string? TypeName) ParseReturnType(string? returnType)
+    {
+        if (string.IsNullOrEmpty(returnType)) return (null, null);
+        var trimmed = returnType.Trim();
+        foreach (var kw in ReturnTypeKeywords)
+        {
+            if (trimmed.StartsWith(kw, StringComparison.OrdinalIgnoreCase)
+                && trimmed.Length > kw.Length
+                && char.IsWhiteSpace(trimmed[kw.Length]))
+            {
+                var rest = trimmed.Substring(kw.Length).TrimStart();
+                if (rest.StartsWith('"') && rest.EndsWith('"') && rest.Length >= 2)
+                {
+                    return (kw, rest.Substring(1, rest.Length - 2));
+                }
+                return (kw, rest);
+            }
+        }
+        return (null, null);
+    }
+
+    private static readonly string[] ReturnTypeKeywords = new[]
+    {
+        "Record", "Codeunit", "Page", "Report", "Query", "XmlPort",
+        "Interface", "Enum", "RequestPage", "TestPage", "TestPart",
+        "ControlAddIn", "PermissionSet", "Profile",
+    };
+
+    private sealed record MemberEntry(
+        long SymbolId, string Name, string Kind, string? ReturnTypeKeyword, string? ReturnTypeName);
+
+    /// <summary>
+    /// IAlTypeResolver implementation backed by the in-memory catalogs
+    /// built once per release. Translates the extractor's
+    /// (typeName, ownerRef, memberName) lookups into dictionary hits.
+    /// </summary>
+    private sealed class CatalogResolver : ALDevToolbox.Services.Al.IAlTypeResolver
+    {
+        private readonly Dictionary<string, ALDevToolbox.Services.Al.AlTypeRef> _types;
+        private readonly Dictionary<string, long> _objectIdByName;
+        private readonly Dictionary<long, List<MemberEntry>> _members;
+
+        public CatalogResolver(
+            Dictionary<string, ALDevToolbox.Services.Al.AlTypeRef> types,
+            Dictionary<string, long> objectIdByName,
+            Dictionary<long, List<MemberEntry>> members)
+        {
+            _types = types;
+            _objectIdByName = objectIdByName;
+            _members = members;
+        }
+
+        public ALDevToolbox.Services.Al.AlTypeRef? ResolveTypeByName(string typeName)
+            => _types.TryGetValue(typeName, out var t) ? t : null;
+
+        public ALDevToolbox.Services.Al.AlMember? ResolveMember(
+            ALDevToolbox.Services.Al.AlTypeRef owner, string memberName)
+        {
+            if (!_objectIdByName.TryGetValue(owner.Name, out var ownerId)) return null;
+            if (!_members.TryGetValue(ownerId, out var list)) return null;
+            var match = list.FirstOrDefault(m =>
+                string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
+            if (match is null) return null;
+            return new ALDevToolbox.Services.Al.AlMember(
+                Name: match.Name,
+                Kind: match.Kind,
+                ReturnTypeKeyword: match.ReturnTypeKeyword,
+                ReturnTypeName: match.ReturnTypeName);
+        }
     }
 }
