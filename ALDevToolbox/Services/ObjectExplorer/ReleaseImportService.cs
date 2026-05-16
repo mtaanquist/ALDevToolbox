@@ -1328,7 +1328,9 @@ public class ReleaseImportService
             {
                 f.Id,
                 f.Content,
+                f.Path,
                 ModuleId = f.ModuleId,
+                ModuleName = f.Module!.Name,
                 Owner = _db.OeModuleObjects
                     .Where(o => o.SourceFileId == f.Id)
                     .OrderBy(o => o.Id)
@@ -1349,6 +1351,13 @@ public class ReleaseImportService
         int totalEmitted = 0;
         int totalUnresolved = 0;
         int pending = 0;
+        // Diagnostic bucket: first N unresolved references seen across all
+        // files in this phase. Capped low so a pathological release doesn't
+        // bloat the log; the per-file extractor also caps internally so
+        // late files still get a chance to contribute samples even when
+        // earlier files were noisy.
+        const int unresolvedLogCap = 50;
+        var unresolvedSamples = new List<(string Module, string Path, string Owner, ALDevToolbox.Services.Al.UnresolvedSample Sample)>(unresolvedLogCap);
         foreach (var file in files)
         {
             ct.ThrowIfCancellationRequested();
@@ -1379,6 +1388,24 @@ public class ReleaseImportService
 
             var result = ALDevToolbox.Services.Al.AlReferenceExtractor.Extract(file.Content, ctx);
             totalUnresolved += result.Stats.UnresolvedReceivers;
+
+            // Diagnostic sampling: capture the first N unresolved
+            // tokens across the whole phase so operators can spot
+            // systematic gaps (a common token shape, an uningested
+            // dependency, …) without re-running with verbose logging.
+            if (unresolvedSamples.Count < unresolvedLogCap
+                && result.Stats.UnresolvedSamples.Count > 0)
+            {
+                foreach (var s in result.Stats.UnresolvedSamples)
+                {
+                    if (unresolvedSamples.Count >= unresolvedLogCap) break;
+                    unresolvedSamples.Add((
+                        file.ModuleName ?? string.Empty,
+                        file.Path ?? string.Empty,
+                        file.Owner.Kind + ":" + file.Owner.Name,
+                        s));
+                }
+            }
 
             foreach (var r in result.References)
             {
@@ -1434,6 +1461,30 @@ public class ReleaseImportService
         _logger.LogInformation(
             "Phase-2 call-site references: ReleaseId={ReleaseId} Files={Files} Emitted={Emitted} Unresolved={Unresolved} Elapsed={Elapsed}ms",
             releaseId, files.Count, totalEmitted, totalUnresolved, sw.ElapsedMilliseconds);
+
+        if (unresolvedSamples.Count > 0)
+        {
+            // One log line per sample so existing grep/structured-log
+            // tooling can slice by Reason without parsing a multi-line
+            // entry. Includes the file's module+path+owner so the dev
+            // can open the source viewer to inspect the token in
+            // context. Capped at unresolvedLogCap (see above).
+            foreach (var (module, path, owner, sample) in unresolvedSamples)
+            {
+                _logger.LogInformation(
+                    "Phase-2 unresolved sample: ReleaseId={ReleaseId} Reason={Reason} Token='{Token}' Line={Line} Col={Col} Owner={Owner} ReceiverKind={ReceiverKind} ReceiverName='{ReceiverName}' Module={Module} Path={Path}",
+                    releaseId,
+                    sample.Reason,
+                    sample.Token,
+                    sample.Line,
+                    sample.Column,
+                    owner,
+                    sample.ReceiverKind ?? "(n/a)",
+                    sample.ReceiverName ?? string.Empty,
+                    module,
+                    path);
+            }
+        }
     }
 
     /// <summary>

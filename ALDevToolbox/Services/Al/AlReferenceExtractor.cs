@@ -70,7 +70,9 @@ public static class AlReferenceExtractor
     {
         if (string.IsNullOrEmpty(source))
         {
-            return new AlExtractionResult(Array.Empty<ExtractedReference>(), new ExtractionStats(0, 0));
+            return new AlExtractionResult(
+                Array.Empty<ExtractedReference>(),
+                new ExtractionStats(0, 0, Array.Empty<UnresolvedSample>()));
         }
 
         var tokens = AlLexer.Tokenize(source);
@@ -84,9 +86,16 @@ public static class AlReferenceExtractor
         private readonly AlExtractContext _ctx;
         private readonly Stack<ScopeFrame> _scopeStack = new();
         private readonly List<ExtractedReference> _refs = new();
+        private readonly List<UnresolvedSample> _unresolvedSamples = new();
         private int _unresolved;
         private int _resolved;
         private int _pos;
+
+        // Cap per-file samples so a pathological file (machine-generated,
+        // dependency-on-an-uningested-app) doesn't balloon memory. The
+        // import pipeline reservoir-merges a smaller global cap on top
+        // of these.
+        private const int UnresolvedSampleCap = 20;
 
         public Walker(List<AlToken> tokens, AlExtractContext ctx)
         {
@@ -106,7 +115,9 @@ public static class AlReferenceExtractor
                 ProcessOneToken();
             }
 
-            return new AlExtractionResult(_refs, new ExtractionStats(_resolved, _unresolved));
+            return new AlExtractionResult(
+                _refs,
+                new ExtractionStats(_resolved, _unresolved, _unresolvedSamples));
         }
 
         /// <summary>
@@ -660,6 +671,7 @@ public static class AlReferenceExtractor
             if (receiverType is null)
             {
                 _unresolved++;
+                CaptureUnresolved("head-not-in-scope", head, null);
                 AdvancePastChain();
                 return;
             }
@@ -691,6 +703,7 @@ public static class AlReferenceExtractor
             if (receiverType is null)
             {
                 _unresolved++;
+                CaptureUnresolved("typed-literal-name", nameTok, null, kindTok.Value);
                 AdvancePastChain();
                 return;
             }
@@ -750,6 +763,7 @@ public static class AlReferenceExtractor
                         return;
                     }
                     _unresolved++;
+                    CaptureUnresolved("chain-step", memberTok, receiverType);
                     AdvancePastRemainingChain();
                     return;
                 }
@@ -854,6 +868,7 @@ public static class AlReferenceExtractor
                 // list yet, or a same-named procedure on a related extension
                 // we don't track from this angle. Counted but not emitted.
                 _unresolved++;
+                CaptureUnresolved("bare-call", head, ownerType);
                 return false;
             }
 
@@ -2109,6 +2124,30 @@ public static class AlReferenceExtractor
             } while (_pos < _tokens.Count && depth > 0);
         }
 
+        // ── Diagnostics ───────────────────────────────────────────────
+
+        /// <summary>
+        /// Captures an unresolved reference up to <see cref="UnresolvedSampleCap"/>
+        /// per file. The receiver type (when known) is recorded as a
+        /// <c>kind:name</c> pair so the import-side aggregator can show
+        /// "all chain-steps on table:Customer that failed" without re-running.
+        /// Pass a <paramref name="receiverNameOverride"/> when the receiver
+        /// isn't a resolved AlTypeRef (e.g. a typed-literal whose name didn't
+        /// resolve — the caller has only the unresolved name to record).
+        /// </summary>
+        private void CaptureUnresolved(
+            string reason, AlToken tok, AlTypeRef? receiver, string? receiverNameOverride = null)
+        {
+            if (_unresolvedSamples.Count >= UnresolvedSampleCap) return;
+            _unresolvedSamples.Add(new UnresolvedSample(
+                Reason: reason,
+                Token: tok.Value,
+                Line: tok.Line,
+                Column: tok.Column,
+                ReceiverKind: receiver?.Kind,
+                ReceiverName: receiver?.Name ?? receiverNameOverride));
+        }
+
         // ── Token utilities ───────────────────────────────────────────
 
         private bool At(string punct) =>
@@ -2258,7 +2297,44 @@ public sealed record ExtractedReference(
     string ReferenceKind);
 
 /// <summary>Per-file extraction statistics — used for diagnostic logging.</summary>
-public sealed record ExtractionStats(int ResolvedReferences, int UnresolvedReceivers);
+public sealed record ExtractionStats(
+    int ResolvedReferences,
+    int UnresolvedReceivers,
+    IReadOnlyList<UnresolvedSample> UnresolvedSamples);
+
+/// <summary>
+/// A single unresolved reference captured for diagnostic logging. The
+/// extractor caps these per-file so a pathological file doesn't blow
+/// out memory; the import pipeline aggregates a small bucket across
+/// files and logs the first N at end-of-phase so operators can spot
+/// patterns (e.g. systematic gaps for a specific token shape, a
+/// particular catalog name missing, …).
+///
+/// <para><b>Reasons:</b></para>
+/// <list type="bullet">
+///   <item><c>head-not-in-scope</c> — the chain's head identifier wasn't
+///     a known variable, parameter, scope-frame entry, or catalog type.
+///     Common cases: aliases, with-do shadowing, types from packages we
+///     haven't ingested yet.</item>
+///   <item><c>typed-literal-name</c> — <c>Kind::"Name"</c> where Name
+///     didn't resolve as Kind. Usually a cross-release reference we
+///     don't see in this release's catalog.</item>
+///   <item><c>chain-step</c> — a <c>.member</c> didn't resolve on the
+///     known receiver. Most often a tableextension/pageextension we
+///     don't model, or an event-published procedure we haven't linked.</item>
+///   <item><c>bare-call</c> — an unqualified identifier followed by
+///     <c>(</c> that wasn't a system function, in-scope variable, or
+///     own-member. Often a procedure on a dependency object we don't
+///     surface from this owner's scope.</item>
+/// </list>
+/// </summary>
+public sealed record UnresolvedSample(
+    string Reason,
+    string Token,
+    int Line,
+    int Column,
+    string? ReceiverKind = null,
+    string? ReceiverName = null);
 
 /// <summary>Result envelope: extracted rows plus the run's stats.</summary>
 public sealed record AlExtractionResult(
