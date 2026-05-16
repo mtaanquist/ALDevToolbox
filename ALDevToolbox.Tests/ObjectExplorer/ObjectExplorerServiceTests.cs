@@ -1,6 +1,7 @@
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
@@ -534,5 +535,88 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         matches.Should().NotBeEmpty();
         matches.Should().OnlyContain(m => childModuleIds.Contains(m.SourceModuleId),
             because: "the child's same-AppId module shadows the parent's");
+    }
+
+    // ── Find references — member-scoped ────────────────────────────────
+
+    [Fact]
+    public async Task FindReferencesForSymbolAsync_returns_sibling_declarations_in_the_chain()
+    {
+        // DK Core's "CopyDepreciationBookExt" declares procedures of its own;
+        // the codeunit has multiple symbol rows. A member-scoped find against
+        // one of those names should at minimum return the symbol's own
+        // declaration row tagged Category=declaration.
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+
+        var copyExt = await read.OeModuleObjects
+            .Where(o => o.Name == "CopyDepreciationBookExt")
+            .Select(o => new { o.Id, ModuleAppId = o.Module!.AppId, o.Kind, o.Name, o.ObjectId })
+            .SingleAsync();
+        var procName = await read.OeModuleSymbols
+            .Where(s => s.ObjectId == copyExt.Id && s.Kind == "procedure")
+            .Select(s => s.Name)
+            .FirstAsync();
+
+        var matches = await NewQuery(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
+            TargetAppId: copyExt.ModuleAppId,
+            TargetObjectKind: copyExt.Kind,
+            TargetObjectId: copyExt.ObjectId,
+            TargetObjectName: copyExt.Name,
+            TargetMemberName: procName,
+            TargetMemberKind: "procedure"));
+
+        matches.Should().Contain(m => m.Category == "declaration"
+            && m.SourceObjectName == "CopyDepreciationBookExt"
+            && m.MemberName == procName);
+    }
+
+    [Fact]
+    public async Task FindReferencesForSymbolAsync_surfaces_owner_type_indirect_refs()
+    {
+        // FindReferencesForSymbolAsync's third bucket is owner-type rows —
+        // the object-level references already in the DB (variable_type,
+        // parameter_type, …) for the owner of the member we're searching.
+        // Even though no method-call rows are populated in phase 1, the
+        // user should see "indirect references via type" answers.
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+
+        var matches = await NewQuery(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
+            TargetAppId: BaseAppId,
+            TargetObjectKind: "codeunit",
+            TargetObjectId: 5624,
+            TargetObjectName: "Cancel FA Ledger Entries",
+            TargetMemberName: "AnyProcedureName",
+            TargetMemberKind: "procedure"));
+
+        // The owner Codeunit 5624 is referenced as a variable_type from
+        // DK Core's CopyDepreciationBookExt — those indirect-via-type rows
+        // belong in the owner_type bucket so the UI groups them under
+        // "Indirect references".
+        matches.Should().Contain(m => m.Category == "owner_type"
+            && m.ReferenceKind == "variable_type"
+            && m.SourceObjectName == "CopyDepreciationBookExt");
+    }
+
+    [Fact]
+    public async Task FindReferencesForSymbolAsync_call_bucket_is_empty_in_phase_one()
+    {
+        // Phase 1 leaves target_member_name NULL on every imported row;
+        // the call bucket is wired up but should return zero results
+        // until the importer starts populating member-scoped references.
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+
+        var matches = await NewQuery(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
+            TargetAppId: BaseAppId,
+            TargetObjectKind: "codeunit",
+            TargetObjectId: 5624,
+            TargetObjectName: "Cancel FA Ledger Entries",
+            TargetMemberName: "AnyProcedureName",
+            TargetMemberKind: "procedure"));
+
+        matches.Should().NotContain(m => m.Category == "call",
+            because: "the importer doesn't populate target_member_name yet");
     }
 }
