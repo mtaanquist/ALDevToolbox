@@ -2961,7 +2961,39 @@ ul.form-field-error {
     align-items: stretch;
     flex: 1 1 0;
     min-height: 0;
-    gap: 12px;
+    gap: 0;
+}
+
+/* Drag handle between the editor column and the outline. Stretches the
+   full height of the layout; the JS handler updates a CSS custom
+   property (`--source-viewer-outline-width`) on the layout root, which
+   the outline reads from `.source-viewer__outline-inner` so the resize
+   stays cheap (no React-style relayout, just the two columns flexing).
+   The hover hairline matches the toolbar accent colour so the handle
+   feels discoverable without dominating the layout. */
+.source-viewer__resizer {
+    flex: 0 0 12px;
+    cursor: col-resize;
+    position: relative;
+    user-select: none;
+    /* Layout breathing room — visually equivalent to the previous gap
+       of 12px so existing screenshots still line up. */
+    margin: 0 4px;
+}
+
+.source-viewer__resizer::before {
+    content: "";
+    position: absolute;
+    inset: 0 5px;
+    border-radius: 2px;
+    background: transparent;
+    transition: background 80ms ease-out;
+}
+
+.source-viewer__resizer:hover::before,
+.source-viewer__resizer.is-dragging::before {
+    background: var(--color-accent);
+    opacity: 0.55;
 }
 
 @media (max-width: 1100px) {
@@ -2979,6 +3011,10 @@ ul.form-field-error {
     .source-viewer__outline-inner {
         height: auto;
         max-height: calc(100vh - var(--top-bar-height, 52px) - 36px);
+    }
+    /* The drag handle only makes sense in the side-by-side layout. */
+    .source-viewer__resizer {
+        display: none;
     }
 }
 
@@ -2999,23 +3035,28 @@ ul.form-field-error {
 }
 
 .source-viewer__outline {
+    /* Width is driven by --source-viewer-outline-width on the layout
+       root; the drag handler updates that and the column flexes here.
+       The clamp matches what the JS handler enforces, duplicated here
+       so a stale localStorage value still renders a usable column. */
     flex: 0 0 auto;
     align-self: stretch;
     margin-right: 16px;
     display: flex;
     flex-direction: column;
+    width: clamp(220px,
+                 var(--source-viewer-outline-width, 340px),
+                 720px);
 }
 
 .source-viewer__outline-inner {
-    width: 340px;
-    min-width: 280px;
-    max-width: 720px;
-    resize: horizontal;
-    /* Fill the outline column's height in wide mode. overflow-x:
-       hidden suppresses the horizontal scrollbar; long names truncate
-       with ellipsis on .source-viewer__outline-name. The user widens
-       the panel via the bottom-right resize handle when they need
-       more room. */
+    /* Width is driven by the layout's --source-viewer-outline-width
+       custom property, set by the drag-handle JS handler. The fallback
+       (340px) matches the previous default when JS hasn't loaded or
+       the user hasn't dragged yet. The two boundaries keep the column
+       readable while still letting the editor have space; the drag
+       handler clamps to the same range. */
+    width: 100%;
     height: 100%;
     overflow-y: auto;
     overflow-x: hidden;
@@ -3024,6 +3065,7 @@ ul.form-field-error {
     padding: 12px 14px;
     background: var(--color-surface);
 }
+
 
 /* ── Tab strip ───────────────────────────────────────────────── */
 
@@ -3064,6 +3106,43 @@ ul.form-field-error {
     display: none;
 }
 
+/* Right-anchor the Help tab so it sits opposite the navigational tabs. */
+.source-viewer__tab--end {
+    margin-left: auto;
+}
+
+.source-viewer__help {
+    margin: 4px 0 0 0;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.source-viewer__help dt {
+    margin-top: 10px;
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.source-viewer__help dt:first-of-type {
+    margin-top: 0;
+}
+
+.source-viewer__help dd {
+    margin: 2px 0 0 0;
+    color: var(--color-text-secondary);
+}
+
+.source-viewer__help kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface-2, rgba(124, 124, 144, 0.12));
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.4;
+}
+
 .source-viewer__tab-count {
     display: inline-block;
     min-width: 18px;
@@ -3092,21 +3171,31 @@ ul.form-field-error {
     letter-spacing: 0.03em;
 }
 
+/* Matches the global form-input styling so the filter doesn't feel
+   foreign next to the rest of the app's text inputs. Same padding,
+   border, radius and background as <c>.admin-form input[type="text"]</c>;
+   only the bottom margin is panel-specific. */
 .source-viewer__outline-filter {
     width: 100%;
     box-sizing: border-box;
-    padding: 6px 8px;
+    padding: 8px 10px;
     margin: 0 0 10px 0;
-    background: var(--color-surface-2, #1c1c28);
+    background: var(--color-surface);
     border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius-sm, 4px);
-    color: inherit;
-    font-size: 12.5px;
+    border-radius: var(--radius);
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: 13.5px;
+}
+
+.source-viewer__outline-filter::placeholder {
+    color: var(--color-text-secondary);
 }
 
 .source-viewer__outline-filter:focus {
-    outline: 1px solid var(--color-accent, #6585ff);
-    outline-offset: 0;
+    outline: 2px solid var(--color-accent);
+    outline-offset: -1px;
+    border-color: var(--color-accent);
 }
 
 .source-viewer__outline-section + .source-viewer__outline-section {
@@ -3164,8 +3253,8 @@ ul.form-field-error {
 }
 
 .source-viewer__outline-item {
-    line-height: 1.45;
-    font-size: 12.5px;
+    line-height: 1.5;
+    font-size: 14px;
 }
 
 .source-viewer__outline-item--child {
@@ -3232,7 +3321,7 @@ ul.form-field-error {
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: 14px;
     min-width: 0;
 }
 
@@ -3240,7 +3329,7 @@ ul.form-field-error {
     flex: 0 0 auto;
     margin-left: auto;
     padding-left: 8px;
-    font-size: 12px;
+    font-size: 13px;
     font-variant-numeric: tabular-nums;
     color: var(--text-3, #7a7a8a);
 }

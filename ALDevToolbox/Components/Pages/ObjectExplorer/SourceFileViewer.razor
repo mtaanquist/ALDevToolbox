@@ -42,12 +42,9 @@
                     <a href="/object-explorer">Object Explorer</a>
                     <span> › <a href="@($"/object-explorer/release/{_header.ReleaseId}")">@_header.ReleaseLabel</a></span>
                 </p>
-                <h1>@_header.Path</h1>
+                <h1>@BuildBreadcrumb(_header)</h1>
                 <p class="muted">
-                    @_header.ModuleName · @_header.LineCount.ToString("N0") line(s)
-                    <span> · <strong>Cmd/Ctrl-click</strong> a name to go to its definition</span>
-                    <span> · <strong>Right-click</strong> for Find references / Find in file</span>
-                    <span> · <strong>Cmd/Ctrl-F</strong> to search inside this file</span>
+                    @_header.LineCount.ToString("N0") line(s)
                 </p>
             </div>
         </header>
@@ -58,6 +55,15 @@
                  data-content="@_file.Content"
                  data-declarations="@SerializeDeclarations(_declarations)"
                  data-resolvables="@SerializeResolvables(_resolvables)"></div>
+
+            @* Drag handle between the editor and the outline. source-viewer.js
+               wires the pointer events and persists the chosen width in
+               localStorage so subsequent loads inherit the user's choice. *@
+            <div class="source-viewer__resizer"
+                 role="separator"
+                 aria-orientation="vertical"
+                 aria-label="Resize outline panel"
+                 tabindex="0"></div>
 
             @*
                 The sticky positioning lives on the outer .source-viewer__outline
@@ -95,6 +101,12 @@
                             data-tab="find"
                             aria-selected="false"
                             hidden>Find</button>
+                    <button type="button"
+                            class="source-viewer__tab source-viewer__tab--end"
+                            role="tab"
+                            data-tab="help"
+                            aria-selected="false"
+                            title="Keyboard and mouse shortcuts">Help</button>
                 </nav>
 
                 <div class="source-viewer__panel @(defaultTab == "outline" ? "is-active" : null)"
@@ -184,6 +196,19 @@
                     <div class="source-viewer__find-host"></div>
                 </div>
 
+                <div class="source-viewer__panel" data-panel="help" role="tabpanel" hidden>
+                    <dl class="source-viewer__help">
+                        <dt><kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + click</dt>
+                        <dd>Jump to the definition of the clicked name.</dd>
+                        <dt>Right-click</dt>
+                        <dd>Find references to the clicked symbol, or find every occurrence of it inside this file.</dd>
+                        <dt><kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>F</kbd></dt>
+                        <dd>Open the editor's search panel to filter lines inside this file.</dd>
+                        <dt>Right-click in Outline</dt>
+                        <dd>Find references for a procedure, field or object without first navigating to it.</dd>
+                    </dl>
+                </div>
+
                 <p class="muted source-viewer__notice" role="status" hidden></p>
                 </div>
             </aside>
@@ -252,6 +277,36 @@
     }
 
     private static string FormatSignature(string signature) => signature;
+
+    /// <summary>
+    /// Renders the page heading as <c>{Module} · {Namespace} · {File}</c> when
+    /// the file has an AL namespace, otherwise <c>{Module} · {File}</c>. AL
+    /// namespaces are the canonical "where does this live" identifier — the
+    /// physical folder layout differs across vendors and BC versions, so the
+    /// breadcrumb prefers the declared namespace over the raw <c>src/…</c>
+    /// path. The full path is still available on the <c>title</c> of the
+    /// heading for the rare cases when the folder layout matters.
+    /// </summary>
+    private static string BuildBreadcrumb(SourceFileHeader header)
+    {
+        var fileName = ExtractFileName(header.Path);
+        if (!string.IsNullOrWhiteSpace(header.ObjectNamespace))
+        {
+            return $"{header.ModuleName} · {header.ObjectNamespace} · {fileName}";
+        }
+        return $"{header.ModuleName} · {fileName}";
+    }
+
+    private static string ExtractFileName(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return path;
+        // Module file paths are stored with forward slashes (the import
+        // pipeline normalises both src/ and .Source.zip layouts to the same
+        // shape). Stick to '/' rather than Path.GetFileName so the rendering
+        // stays platform-independent in tests.
+        var slash = path.LastIndexOf('/');
+        return slash < 0 ? path : path[(slash + 1)..];
+    }
 
     /// <summary>
     /// Serialises a reference session into the JSON shape source-viewer.js

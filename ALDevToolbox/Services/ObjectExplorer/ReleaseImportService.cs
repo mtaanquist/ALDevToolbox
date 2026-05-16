@@ -132,6 +132,19 @@ public class ReleaseImportService
             ready.BcVersion = InferBcVersion(release.Id);
             ready.Status = "ready";
             ready.UpdatedAt = DateTime.UtcNow;
+
+            // Stamp the denormalised file count + content-size totals so the
+            // Releases picker doesn't recompute them via correlated subqueries
+            // on every page load. The file set is immutable after a Release
+            // goes ready, so a single snapshot here is enough.
+            var totalsRow = await _db.OeModuleFiles.AsNoTracking()
+                .Where(f => f.Module!.ReleaseId == release.Id)
+                .GroupBy(_ => 1)
+                .Select(g => new { Count = g.Count(), Length = g.Sum(f => (long)f.Content.Length) })
+                .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+            ready.SourceFileCount = totalsRow?.Count ?? 0;
+            ready.SourceContentLength = totalsRow?.Length ?? 0;
+
             await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
             _logger.LogInformation(

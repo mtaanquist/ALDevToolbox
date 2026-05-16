@@ -200,6 +200,12 @@ public sealed record ReleaseObjectMatch(
 /// <summary>
 /// Header info for the source-file viewer's breadcrumb — module + release
 /// names so the page renders the full path without two extra round trips.
+/// <see cref="ObjectNamespace"/> is the AL namespace declared by the
+/// primary object in the file (e.g. <c>Microsoft.Foundation.Reporting</c>);
+/// null when the file isn't backing a single object or no namespace is
+/// declared. The breadcrumb prefers it over the raw <see cref="Path"/>
+/// because AL namespaces are the canonical "where does this live"
+/// identity (folder layouts vary across vendors and BC versions).
 /// </summary>
 public sealed record SourceFileHeader(
     long Id,
@@ -208,7 +214,8 @@ public sealed record SourceFileHeader(
     int ReleaseId,
     string ReleaseLabel,
     string Path,
-    int LineCount);
+    int LineCount,
+    string? ObjectNamespace);
 
 /// <summary>
 /// One procedure-search hit on the Release search page. Carries the source
