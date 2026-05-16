@@ -586,7 +586,14 @@ public static class AlReferenceExtractor
             || string.Equals(s, "TestRequestPage", StringComparison.OrdinalIgnoreCase)
             || string.Equals(s, "ControlAddIn", StringComparison.OrdinalIgnoreCase)
             || string.Equals(s, "PermissionSet", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(s, "Profile", StringComparison.OrdinalIgnoreCase);
+            || string.Equals(s, "Profile", StringComparison.OrdinalIgnoreCase)
+            // Confirmed against Microsoft's AL TextMate grammar
+            // (microsoft/AL grammar/alsyntax.tmlanguage). DotNet types
+            // are declared `var X: DotNet "System.Some.Type";` —
+            // they won't resolve to AL objects in the catalog, but
+            // we still need to recognise the keyword so the type
+            // identifier that follows isn't picked up as the var name.
+            || string.Equals(s, "DotNet", StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class ScopeFrame

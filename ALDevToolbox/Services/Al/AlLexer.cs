@@ -296,6 +296,16 @@ public static class AlLexer
             }
 
             // Multi-char punctuation. Order matters: longer first.
+            //
+            // Confirmed against Microsoft's AL TextMate grammar
+            // (microsoft/AL grammar/alsyntax.tmlanguage): the set
+            // here covers every multi-char operator AL has —
+            // `::` `:=` `..` `<=` `>=` `<>`. Compound assignments
+            // (`+=` `-=` `*=` `/=`) exist in AL but split here into
+            // two single-Punct tokens; that's fine for the reference
+            // extractor's purposes (we never inspect assignment
+            // operators), and downstream callers that DO care can
+            // peek the next token.
             if (c == ':' && i + 1 < n && source[i + 1] == ':')
             {
                 tokens.Add(new AlToken(AlTokenKind.DoubleColon, "::", line, col));
