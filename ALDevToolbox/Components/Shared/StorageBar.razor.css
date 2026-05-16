@@ -1,0 +1,43 @@
+.storage-bar {
+    margin-top: auto;
+    padding: 0.6rem 0.8rem 0.8rem;
+    border-top: 1px solid var(--border-muted, rgba(0, 0, 0, 0.08));
+    font-size: 0.78rem;
+}
+
+.storage-bar__label {
+    display: flex;
+    justify-content: space-between;
+    color: var(--text-muted, #6b7280);
+    margin-bottom: 0.3rem;
+}
+
+.storage-bar__value {
+    font-variant-numeric: tabular-nums;
+}
+
+.storage-bar__track {
+    height: 4px;
+    background: var(--border-muted, rgba(0, 0, 0, 0.1));
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.storage-bar__fill {
+    height: 100%;
+    background: var(--accent, #0ea5e9);
+    transition: width 0.2s ease;
+}
+
+.storage-bar--warn .storage-bar__fill {
+    background: #f59e0b;
+}
+
+.storage-bar--over .storage-bar__fill {
+    background: #ef4444;
+}
+
+.storage-bar--over .storage-bar__value {
+    color: #ef4444;
+    font-weight: 600;
+}

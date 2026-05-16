@@ -30,6 +30,7 @@ public class ReleaseImportService
 {
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
+    private readonly StorageQuotaGuard _quotaGuard;
     private readonly ILogger<ReleaseImportService> _logger;
 
     private static readonly HashSet<string> AllowedKinds = new(StringComparer.Ordinal)
@@ -62,10 +63,12 @@ public class ReleaseImportService
     public ReleaseImportService(
         AppDbContext db,
         IOrganizationContext orgContext,
+        StorageQuotaGuard quotaGuard,
         ILogger<ReleaseImportService> logger)
     {
         _db = db;
         _orgContext = orgContext;
+        _quotaGuard = quotaGuard;
         _logger = logger;
     }
 
@@ -84,6 +87,7 @@ public class ReleaseImportService
         ArgumentNullException.ThrowIfNull(request);
         var orgId = RequireOrganizationId();
         Validate(request);
+        await _quotaGuard.EnsureCanWriteAsync(ct).ConfigureAwait(false);
         await EnsureLabelAvailableAsync(orgId, request.Label.Trim(), ct).ConfigureAwait(false);
 
         var release = new OeRelease

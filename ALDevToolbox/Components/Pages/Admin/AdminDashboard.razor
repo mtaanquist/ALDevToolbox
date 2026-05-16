@@ -119,13 +119,20 @@
 
                 @if (!isSystemOrg)
                 {
-                    <a class="admin-tile admin-tile--link" href="/admin/backup">
+                    <a class="admin-tile admin-tile--link" href="/admin/export">
                         <Icon Name="archive" Width="20" Height="20" Css="admin-tile__icon" />
                         <div class="admin-tile__body">
-                            <div class="admin-tile__title">Backup &amp; restore</div>
-                            <div class="admin-tile__caption">Export this organisation's templates, modules and catalogue, or restore configuration from a TOML snapshot.</div>
+                            <div class="admin-tile__title">Export</div>
+                            <div class="admin-tile__caption">Export this organisation's templates, modules and catalogue as a TOML snapshot, or replay a configuration import.</div>
                         </div>
                     </a>
+                    <div class="admin-tile admin-tile--storage">
+                        <Icon Name="hard-drive" Width="20" Height="20" Css="admin-tile__icon" />
+                        <div class="admin-tile__body">
+                            <div class="admin-tile__title">Storage</div>
+                            <StorageBar />
+                        </div>
+                    </div>
                 }
 
                 @if (isSiteAdmin)
@@ -135,6 +142,13 @@
                         <div class="admin-tile__body">
                             <div class="admin-tile__title">@(isSystemOrg ? "Backups" : "Database backups")</div>
                             <div class="admin-tile__caption">Browse, pin, restore, and trigger ad-hoc <code>pg_dump</code> backups.</div>
+                        </div>
+                    </a>
+                    <a class="admin-tile admin-tile--link" href="/site-admin/storage">
+                        <Icon Name="hard-drive" Width="20" Height="20" Css="admin-tile__icon" />
+                        <div class="admin-tile__body">
+                            <div class="admin-tile__title">Storage</div>
+                            <div class="admin-tile__caption">Per-organisation database usage, billable size, and storage quotas.</div>
                         </div>
                     </a>
                     <a class="admin-tile admin-tile--link" href="/site-admin/settings">

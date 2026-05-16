@@ -141,6 +141,7 @@ public class AppDbContext : DbContext
     public DbSet<OrganizationFile> OrganizationFiles => Set<OrganizationFile>();
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
     public DbSet<Backup> Backups => Set<Backup>();
+    public DbSet<PerTenantBackup> PerTenantBackups => Set<PerTenantBackup>();
     // Object Explorer (.app ingest) — see .design/object-explorer.md.
     public DbSet<OeRelease> OeReleases => Set<OeRelease>();
     public DbSet<OeModule> OeModules => Set<OeModule>();

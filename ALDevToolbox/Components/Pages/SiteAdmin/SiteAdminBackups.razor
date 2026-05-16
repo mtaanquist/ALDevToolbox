@@ -104,11 +104,28 @@
                         <td>@row.Kind</td>
                         <td>@FormatSize(row.FileSizeBytes)</td>
                         <td>@(row.CreatedByEmail ?? "scheduler")</td>
-                        <td>@(row.IsPinned ? "Pinned" : "")</td>
+                        <td>
+                            @if (row.IsPinned)
+                            {
+                                <span class="badge">Pinned</span>
+                            }
+                            @if (row.OffsiteUploadedAt is not null)
+                            {
+                                <span class="badge" title="@row.OffsiteObjectKey">Off-site</span>
+                            }
+                        </td>
                         <td class="row-actions">
                             <a class="btn btn--sm btn--icon" title="Download" aria-label="Download" href="@($"/site-admin/backups/{row.Id}/download")">
                                 <Icon Name="download" Width="14" Height="14" />
                             </a>
+                            <form method="post" action="@($"/site-admin/backups/{row.Id}/upload")" style="display:inline">
+                                <AntiforgeryToken />
+                                <button type="submit" class="btn btn--sm btn--icon"
+                                        title="@(row.OffsiteUploadedAt is null ? "Upload to off-site" : "Re-upload to off-site")"
+                                        aria-label="Upload to off-site">
+                                    <Icon Name="upload" Width="14" Height="14" />
+                                </button>
+                            </form>
                             @if (row.IsPinned)
                             {
                                 <form method="post" action="@($"/site-admin/backups/{row.Id}/unpin")" style="display:inline">

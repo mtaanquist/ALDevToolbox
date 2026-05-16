@@ -1,24 +1,24 @@
-@page "/admin/backup"
+@page "/admin/export"
 @attribute [Authorize(Roles = "Admin")]
 
 @*
-    Per-organisation backup & restore surface. The dashboard's "Export all to
-    TOML" download moved here alongside the configuration import that used to
-    live on /admin/configuration — both are destructive or large operations
-    that benefit from their own page instead of cluttering day-to-day editing.
+    Per-organisation TOML export and configuration import. Database backups
+    live on /site-admin/backups and are SiteAdmin-only; tenants only ever
+    see this page and its TOML snapshot workflow.
 *@
 
-<PageTitle>Backup &amp; restore · Admin · AL Dev Toolbox</PageTitle>
+<PageTitle>Configuration export &amp; import · Admin · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page">
     <header class="admin-page__header">
         <div>
-            <h1>Backup &amp; restore</h1>
+            <h1>Configuration export &amp; import</h1>
             <p class="muted">
                 Export this organisation's templates, modules, catalogue and
                 configuration as a TOML snapshot, or replay a previously
                 exported <code>organization-config.toml</code> to overwrite the
-                current configuration block.
+                current configuration block. Database backups are managed by
+                your SiteAdmin.
             </p>
         </div>
         <a class="btn btn--sm" href="/admin">
@@ -43,7 +43,7 @@
             TOML ZIP. Use it as a point-in-time snapshot or to grep the live
             state outside the app.
         </p>
-        <form method="post" action="/admin/export">
+        <form method="post" action="/admin/export/download">
             <AntiforgeryToken />
             <button type="submit" class="btn">
                 <Icon Name="download" Width="16" Height="16" />
@@ -59,7 +59,7 @@
             replace this organisation's defaults, logo and file list. Existing
             values are wiped — confirm before submitting.
         </p>
-        <form method="post" action="/admin/backup/import" class="form-grid">
+        <form method="post" action="/admin/export/import" class="form-grid">
             <AntiforgeryToken />
             <section class="form-section">
                 <label class="section-label" for="cfg-import-toml">TOML</label>

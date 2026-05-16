@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -127,7 +128,43 @@ public sealed class TestDb : IDisposable
     /// for the failure mode this isolation prevents.
     /// </summary>
     public OrganizationConfigService NewOrganizationConfigService(AppDbContext ctx) =>
-        new(ctx, OrgContext, NullLogger<OrganizationConfigService>.Instance, _memoryCache);
+        new(ctx, OrgContext, NewQuotaGuard(ctx), NullLogger<OrganizationConfigService>.Instance, _memoryCache);
+
+    /// <summary>
+    /// Registers the storage-quota service chain on the supplied collection
+    /// for bUnit component tests that exercise services depending on
+    /// <see cref="StorageQuotaGuard"/> (any service that mutates tenanted
+    /// state). Idempotent: adds TimeProvider, IDataProtectionProvider,
+    /// IMemoryCache, SystemSettingsService, DatabaseUsageService, and
+    /// StorageQuotaGuard. With no system_settings row and no per-org
+    /// override the guard treats every operation as unlimited.
+    /// </summary>
+    public void AddStorageServices(IServiceCollection services)
+    {
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+        services.TryAddSingleton(DataProtectionProvider);
+        services.TryAddSingleton<IMemoryCache>(_memoryCache);
+        services.AddScoped<SystemSettingsService>();
+        services.AddScoped<DatabaseUsageService>();
+        services.AddScoped<StorageQuotaGuard>();
+    }
+
+    /// <summary>
+    /// Returns a <see cref="StorageQuotaGuard"/> wired to the per-fixture
+    /// context. With no system-settings row and no per-org quota override
+    /// the guard treats every operation as unlimited, so tests that don't
+    /// care about quotas pass through. Tests that DO care should set the
+    /// system_settings row or the organisation override before exercising
+    /// the guarded path.
+    /// </summary>
+    public StorageQuotaGuard NewQuotaGuard(AppDbContext ctx)
+    {
+        var systemSettings = new SystemSettingsService(
+            ctx, DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
+        var usage = new DatabaseUsageService(
+            ctx, systemSettings, OrgContext, NullLogger<DatabaseUsageService>.Instance);
+        return new StorageQuotaGuard(usage, OrgContext, _memoryCache, NullLogger<StorageQuotaGuard>.Instance);
+    }
 
     /// <summary>
     /// Returns an <see cref="AuditInterceptor"/> wired to an empty

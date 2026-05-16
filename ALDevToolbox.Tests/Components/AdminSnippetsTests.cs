@@ -30,6 +30,7 @@ public sealed class AdminSnippetsTests : IDisposable
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString));
+        _db.AddStorageServices(_ctx.Services);
         _ctx.Services.AddScoped<SnippetService>();
         _ctx.Services.AddScoped<SnippetSuggestionService>();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));

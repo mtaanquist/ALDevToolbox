@@ -24,6 +24,19 @@ internal sealed class SystemSettingsConfiguration : IEntityTypeConfiguration<Sys
         entity.Property(e => e.BackupScheduleTimeUtc).HasColumnName("backup_schedule_time_utc")
             .HasColumnType("time without time zone").IsRequired();
         entity.Property(e => e.BackupRetentionCount).HasColumnName("backup_retention_count").IsRequired();
+        entity.Property(e => e.PerTenantBackupRetentionCount).HasColumnName("per_tenant_backup_retention_count").IsRequired();
+        entity.Property(e => e.DefaultStorageQuotaMb).HasColumnName("default_storage_quota_mb");
+        entity.Property(e => e.IndexSizeMultiplier).HasColumnName("index_size_multiplier")
+            .HasColumnType("numeric(6,3)").IsRequired();
+        entity.Property(e => e.OffsiteBackupEnabled).HasColumnName("offsite_backup_enabled").IsRequired();
+        entity.Property(e => e.OffsiteEndpoint).HasColumnName("offsite_endpoint");
+        entity.Property(e => e.OffsiteRegion).HasColumnName("offsite_region");
+        entity.Property(e => e.OffsiteBucket).HasColumnName("offsite_bucket");
+        entity.Property(e => e.OffsitePrefix).HasColumnName("offsite_prefix");
+        entity.Property(e => e.OffsiteAccessKeyEncrypted).HasColumnName("offsite_access_key_encrypted");
+        entity.Property(e => e.OffsiteSecretKeyEncrypted).HasColumnName("offsite_secret_key_encrypted");
+        entity.Property(e => e.OffsiteForcePathStyle).HasColumnName("offsite_force_path_style").IsRequired();
+        entity.Property(e => e.OffsiteRetentionDays).HasColumnName("offsite_retention_days").IsRequired();
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         // Cross-org table: no organization_id and no scoping query filter;
         // SiteAdminService gates mutations.

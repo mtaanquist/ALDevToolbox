@@ -16,6 +16,7 @@ internal sealed class OrganizationConfiguration : IEntityTypeConfiguration<Organ
         entity.HasIndex(e => e.Slug).IsUnique();
         entity.Property(e => e.IsPending).HasColumnName("is_pending").IsRequired();
         entity.Property(e => e.IsSystem).HasColumnName("is_system").IsRequired();
+        entity.Property(e => e.StorageQuotaMb).HasColumnName("storage_quota_mb");
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         // Partial unique index on is_system=true: at most one system org per
         // deployment. Regular orgs aren't subject to the constraint because

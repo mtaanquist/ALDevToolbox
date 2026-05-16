@@ -69,7 +69,14 @@ internal static class SiteAdminEndpoints
                 DefaultSignupAutoApprove: form["DefaultSignupAutoApprove"] == "true" || form["DefaultSignupAutoApprove"] == "on",
                 BackupScheduleEnabled: form["BackupScheduleEnabled"] == "true" || form["BackupScheduleEnabled"] == "on",
                 BackupScheduleTimeUtc: TimeOnly.TryParse(form["BackupScheduleTimeUtc"], out var bst) ? bst : new TimeOnly(2, 0),
-                BackupRetentionCount: int.TryParse(form["BackupRetentionCount"], out var brc) ? brc : 14);
+                BackupRetentionCount: int.TryParse(form["BackupRetentionCount"], out var brc) ? brc : 14,
+                PerTenantBackupRetentionCount: int.TryParse(form["PerTenantBackupRetentionCount"], out var ptrc) ? ptrc : 30,
+                DefaultStorageQuotaMb: string.IsNullOrWhiteSpace(form["DefaultStorageQuotaMb"])
+                    ? null
+                    : int.TryParse(form["DefaultStorageQuotaMb"], out var dsq) ? dsq : null,
+                IndexSizeMultiplier: decimal.TryParse(form["IndexSizeMultiplier"], System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var ism)
+                    ? ism
+                    : 0.5m);
 
             try
             {
@@ -80,6 +87,67 @@ internal static class SiteAdminEndpoints
             {
                 var first = ex.Errors.First();
                 ctx.Response.Redirect($"{RouteConstants.SiteAdminSettings}?{RouteConstants.MsgQuery}=" + Uri.EscapeDataString(first.Value));
+            }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/settings/offsite/save", async (
+            HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var input = new OffsiteSettingsInput(
+                Enabled: form["Enabled"] == "true" || form["Enabled"] == "on",
+                Endpoint: form["Endpoint"].ToString(),
+                Region: form["Region"].ToString(),
+                Bucket: form["Bucket"].ToString(),
+                Prefix: form["Prefix"].ToString(),
+                AccessKey: form["AccessKey"].ToString(),
+                ClearAccessKey: form["ClearAccessKey"] == "true" || form["ClearAccessKey"] == "on",
+                SecretKey: form["SecretKey"].ToString(),
+                ClearSecretKey: form["ClearSecretKey"] == "true" || form["ClearSecretKey"] == "on",
+                ForcePathStyle: form["ForcePathStyle"] == "true" || form["ForcePathStyle"] == "on",
+                RetentionDays: int.TryParse(form["RetentionDays"], out var rd) ? rd : 90);
+            try
+            {
+                await settings.SaveOffsiteAsync(input, ct);
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminSettings}?{RouteConstants.OkQuery}=offsite-saved");
+            }
+            catch (PlanValidationException ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminSettings}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString(ex.Errors.First().Value));
+            }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/settings/offsite/test", async (
+            HttpContext ctx, OffsiteBackupService offsite, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var result = await offsite.TestConnectionAsync(ct);
+            var prefix = result.Success ? "OK: " : "FAIL: ";
+            ctx.Response.Redirect($"{RouteConstants.SiteAdminSettings}?test="
+                + Uri.EscapeDataString(prefix + result.Message));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/backups/{id:int}/upload", async (
+            int id, HttpContext ctx, OffsiteBackupService offsite, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            try
+            {
+                var key = await offsite.UploadAsync(id, ct);
+                if (key is null)
+                {
+                    ctx.Response.Redirect($"{RouteConstants.SiteAdminBackups}?{RouteConstants.MsgQuery}="
+                        + Uri.EscapeDataString("Off-site backup not configured, or the local file is missing."));
+                    return;
+                }
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminBackups}?{RouteConstants.OkQuery}=uploaded");
+            }
+            catch (Exception ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString("Upload failed: " + ex.Message));
             }
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
@@ -246,6 +314,141 @@ internal static class SiteAdminEndpoints
             finally
             {
                 await stream.DisposeAsync();
+            }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/storage/{orgId:int}/backup", async (
+            int orgId, HttpContext ctx, PerTenantBackupService backups,
+            IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            try
+            {
+                await backups.CreateAsync(orgId, BackupKind.AdHoc, ct);
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.OkQuery}=created");
+            }
+            catch (PlanValidationException ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString(ex.Errors.First().Value));
+            }
+            catch (Exception ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString("Snapshot failed: " + ex.Message));
+            }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapGet("/site-admin/tenant-backups/{id:int}/download", async (
+            int id, HttpContext ctx, PerTenantBackupService backups, CancellationToken ct) =>
+        {
+            var opened = await backups.OpenForDownloadAsync(id, ct);
+            if (opened is null) { ctx.Response.StatusCode = StatusCodes.Status404NotFound; return; }
+            var (row, stream) = opened.Value;
+            try
+            {
+                ctx.Response.ContentType = "application/zip";
+                var cd = new Microsoft.Net.Http.Headers.ContentDispositionHeaderValue("attachment");
+                cd.SetHttpFileName(row.FileName);
+                ctx.Response.Headers.ContentDisposition = cd.ToString();
+                ctx.Response.ContentLength = row.FileSizeBytes;
+                await stream.CopyToAsync(ctx.Response.Body, ct);
+            }
+            finally { await stream.DisposeAsync(); }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/tenant-backups/{id:int}/pin", async (
+            int id, HttpContext ctx, PerTenantBackupService backups, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            try { await backups.SetPinnedAsync(id, true, ct); }
+            catch (PlanValidationException ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString(ex.Errors.First().Value));
+                return;
+            }
+            ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.OkQuery}=pinned");
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/tenant-backups/{id:int}/unpin", async (
+            int id, HttpContext ctx, PerTenantBackupService backups, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            try { await backups.SetPinnedAsync(id, false, ct); }
+            catch (PlanValidationException ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString(ex.Errors.First().Value));
+                return;
+            }
+            ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.OkQuery}=unpinned");
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/tenant-backups/{id:int}/delete", async (
+            int id, HttpContext ctx, PerTenantBackupService backups, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            try { await backups.DeleteAsync(id, ct); }
+            catch (PlanValidationException ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString(ex.Errors.First().Value));
+                return;
+            }
+            ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.OkQuery}=deleted");
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/tenant-backups/{id:int}/restore", async (
+            int id, HttpContext ctx, PerTenantBackupService backups, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            try
+            {
+                await backups.RestoreAsync(id, ct);
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.OkQuery}=restored");
+            }
+            catch (PlanValidationException ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString(ex.Errors.First().Value));
+            }
+            catch (Exception ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString("Restore failed: " + ex.Message));
+            }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/storage/{orgId:int}/quota", async (
+            int orgId, HttpContext ctx, DatabaseUsageService usage, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var raw = form["QuotaMb"].ToString();
+            int? quota = string.IsNullOrWhiteSpace(raw)
+                ? null
+                : int.TryParse(raw, out var parsed) ? parsed : -1;
+            if (quota == -1)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminStorage}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString("Quota must be a non-negative whole number, or blank for the system default."));
+                return;
+            }
+            try
+            {
+                await usage.SetOrgQuotaAsync(orgId, quota, ct);
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminStorage}?{RouteConstants.OkQuery}=quota-saved");
+            }
+            catch (ArgumentOutOfRangeException ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminStorage}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminStorage}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString(ex.Message));
             }
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 

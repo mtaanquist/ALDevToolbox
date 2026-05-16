@@ -2,6 +2,7 @@
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
 @using ALDevToolbox.Services
 @inject SystemSettingsService Settings
+@inject OffsiteBackupService Offsite
 
 <PageTitle>Site Admin · Settings · AL Dev Toolbox</PageTitle>
 
@@ -40,6 +41,14 @@
     else if (Ok == "test-sent")
     {
         <p class="form-info" role="status">Test email sent — check your inbox.</p>
+    }
+    else if (Ok == "offsite-saved")
+    {
+        <p class="form-info" role="status">Off-site backup settings saved.</p>
+    }
+    @if (TestResult is not null)
+    {
+        <p class="@(TestResult.StartsWith("OK") ? "form-info" : "form-error")" role="status">@TestResult</p>
     }
 
     @if (_view is null)
@@ -100,15 +109,44 @@
                            value="@_view.BackupScheduleTimeUtc.ToString("HH:mm")" />
                 </label>
                 <label>
-                    Retention (unpinned)
+                    Retention (full backups, unpinned)
                     <input type="number" name="BackupRetentionCount"
                            value="@_view.BackupRetentionCount" min="1" max="365" />
+                </label>
+                <label>
+                    Retention (per-tenant snapshots)
+                    <input type="number" name="PerTenantBackupRetentionCount"
+                           value="@_view.PerTenantBackupRetentionCount" min="1" max="365" />
                 </label>
             </div>
             <p class="muted">
                 Pinned backups are exempt from retention pruning. Manage individual
                 backups on the <a href="/site-admin/backups">Backups</a> page.
+                Per-tenant snapshots live under each org's backup folder and
+                drive the "restore to yesterday" SiteAdmin tool.
             </p>
+
+            <h2>Storage quotas</h2>
+            <p class="muted">
+                Default applied to every organisation that doesn't have its own
+                quota set on the <a href="/site-admin/storage">Storage</a> page.
+                Leave blank for unlimited. Billable size is
+                <code>logical + multiplier × index/metadata</code> — set the
+                multiplier to 0 to charge purely for logical bytes.
+            </p>
+            <div class="form-row">
+                <label>
+                    Default quota (MB)
+                    <input type="number" name="DefaultStorageQuotaMb" min="0" step="1"
+                           value="@(_view.DefaultStorageQuotaMb?.ToString() ?? string.Empty)"
+                           placeholder="unlimited" />
+                </label>
+                <label>
+                    Index/metadata multiplier
+                    <input type="number" name="IndexSizeMultiplier" min="0" max="10" step="0.1"
+                           value="@_view.IndexSizeMultiplier.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" />
+                </label>
+            </div>
 
             <h2>Banner &amp; signup</h2>
             <label>
@@ -123,6 +161,95 @@
             </label>
 
         </form>
+
+        @if (_offsite is not null)
+        {
+            <form method="post" action="/site-admin/settings/offsite/save" class="admin-form" id="offsite-form">
+                <AntiforgeryToken />
+                <h2>Off-site backups (S3-compatible)</h2>
+                <p class="muted">
+                    When enabled, every successful scheduled full backup is
+                    uploaded to the configured bucket and objects older than
+                    the retention window are pruned. Access and secret keys
+                    are encrypted with the Data Protection key ring; leave
+                    blank to keep the stored value, tick the clear box to
+                    wipe it.
+                </p>
+                <label class="checkbox-label">
+                    <input type="checkbox" name="Enabled" value="true" checked="@_offsite.Enabled" />
+                    Upload scheduled backups to the off-site bucket
+                </label>
+                <div class="form-row">
+                    <label>
+                        Endpoint
+                        <input type="text" name="Endpoint" value="@_offsite.Endpoint"
+                               placeholder="https://s3.example.com (blank = AWS default)" />
+                    </label>
+                    <label>
+                        Region
+                        <input type="text" name="Region" value="@_offsite.Region"
+                               placeholder="eu-west-1" />
+                    </label>
+                </div>
+                <div class="form-row">
+                    <label>
+                        Bucket
+                        <input type="text" name="Bucket" value="@_offsite.Bucket" />
+                    </label>
+                    <label>
+                        Prefix
+                        <input type="text" name="Prefix" value="@_offsite.Prefix" placeholder="aldevtoolbox/" />
+                    </label>
+                </div>
+                <div class="form-row">
+                    <label>
+                        Access key id
+                        <input type="text" name="AccessKey" autocomplete="off"
+                               placeholder="@(_offsite.HasAccessKey ? "(stored — leave blank to keep)" : "")" />
+                    </label>
+                    <label>
+                        Secret access key
+                        <input type="password" name="SecretKey" autocomplete="new-password"
+                               placeholder="@(_offsite.HasSecretKey ? "(stored — leave blank to keep)" : "")" />
+                    </label>
+                </div>
+                <div class="form-row">
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="ClearAccessKey" value="true" />
+                        Clear stored access key
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="ClearSecretKey" value="true" />
+                        Clear stored secret key
+                    </label>
+                </div>
+                <div class="form-row">
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="ForcePathStyle" value="true" checked="@_offsite.ForcePathStyle" />
+                        Force path-style addressing (MinIO and most S3-compatible servers)
+                    </label>
+                    <label>
+                        Retention (days)
+                        <input type="number" name="RetentionDays" value="@_offsite.RetentionDays" min="1" max="3650" />
+                    </label>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn--sm btn--primary">
+                        <Icon Name="save" Width="14" Height="14" />
+                        <span>Save off-site settings</span>
+                    </button>
+                </div>
+            </form>
+
+            <form method="post" action="/site-admin/settings/offsite/test" class="admin-form admin-form--inline">
+                <AntiforgeryToken />
+                <button type="submit" class="btn btn--sm">
+                    <Icon Name="refresh-cw" Width="14" Height="14" />
+                    <span>Test off-site connection</span>
+                </button>
+                <span class="muted">HEADs the configured bucket using the stored credentials.</span>
+            </form>
+        }
 
         <form method="post" action="/site-admin/settings/test-email" class="admin-form admin-form--inline">
             <AntiforgeryToken />
@@ -140,11 +267,14 @@
 @code {
     [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+    [SupplyParameterFromQuery(Name = "test")] public string? TestResult { get; set; }
 
     private SystemSettingsView? _view;
+    private OffsiteSettingsView? _offsite;
 
     protected override async Task OnInitializedAsync()
     {
         _view = await Settings.GetViewAsync();
+        _offsite = await Settings.GetOffsiteViewAsync();
     }
 }

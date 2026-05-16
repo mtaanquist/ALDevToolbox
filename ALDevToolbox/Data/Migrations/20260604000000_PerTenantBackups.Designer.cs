@@ -3,6 +3,7 @@ using System;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260604000000_PerTenantBackups")]
+    partial class PerTenantBackups
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -177,14 +180,6 @@ namespace ALDevToolbox.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("kind");
-
-                    b.Property<string>("OffsiteObjectKey")
-                        .HasColumnType("text")
-                        .HasColumnName("offsite_object_key");
-
-                    b.Property<DateTime?>("OffsiteUploadedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("offsite_uploaded_at");
 
                     b.HasKey("Id");
 
@@ -1676,42 +1671,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<decimal>("IndexSizeMultiplier")
                         .HasColumnType("numeric(6,3)")
                         .HasColumnName("index_size_multiplier");
-
-                    b.Property<string>("OffsiteAccessKeyEncrypted")
-                        .HasColumnType("text")
-                        .HasColumnName("offsite_access_key_encrypted");
-
-                    b.Property<bool>("OffsiteBackupEnabled")
-                        .HasColumnType("boolean")
-                        .HasColumnName("offsite_backup_enabled");
-
-                    b.Property<string>("OffsiteBucket")
-                        .HasColumnType("text")
-                        .HasColumnName("offsite_bucket");
-
-                    b.Property<string>("OffsiteEndpoint")
-                        .HasColumnType("text")
-                        .HasColumnName("offsite_endpoint");
-
-                    b.Property<bool>("OffsiteForcePathStyle")
-                        .HasColumnType("boolean")
-                        .HasColumnName("offsite_force_path_style");
-
-                    b.Property<string>("OffsitePrefix")
-                        .HasColumnType("text")
-                        .HasColumnName("offsite_prefix");
-
-                    b.Property<string>("OffsiteRegion")
-                        .HasColumnType("text")
-                        .HasColumnName("offsite_region");
-
-                    b.Property<int>("OffsiteRetentionDays")
-                        .HasColumnType("integer")
-                        .HasColumnName("offsite_retention_days");
-
-                    b.Property<string>("OffsiteSecretKeyEncrypted")
-                        .HasColumnType("text")
-                        .HasColumnName("offsite_secret_key_encrypted");
 
                     b.Property<int>("PerTenantBackupRetentionCount")
                         .HasColumnType("integer")

@@ -6,8 +6,10 @@ using Bunit;
 using Bunit.TestDoubles;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace ALDevToolbox.Tests.Components;
 
@@ -38,6 +40,7 @@ public sealed class AdminTemplateListTests : IDisposable
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString));
+        _db.AddStorageServices(_ctx.Services);
         _ctx.Services.AddScoped<TemplateService>();
         _ctx.Services.AddScoped<TemplateImportService>();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));

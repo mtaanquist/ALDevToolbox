@@ -23,17 +23,20 @@ public sealed class TemplateImportService
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
     private readonly TemplateService _templates;
+    private readonly StorageQuotaGuard _quotaGuard;
     private readonly ILogger<TemplateImportService> _logger;
 
     public TemplateImportService(
         AppDbContext db,
         IOrganizationContext orgContext,
         TemplateService templates,
+        StorageQuotaGuard quotaGuard,
         ILogger<TemplateImportService> logger)
     {
         _db = db;
         _orgContext = orgContext;
         _templates = templates;
+        _quotaGuard = quotaGuard;
         _logger = logger;
     }
 
@@ -116,6 +119,8 @@ public sealed class TemplateImportService
                 ["Import"] = "The system organisation can't import from itself.",
             });
         }
+
+        await _quotaGuard.EnsureCanWriteAsync(ct);
 
         var systemOrgId = await _db.Organizations
             .IgnoreQueryFilters()

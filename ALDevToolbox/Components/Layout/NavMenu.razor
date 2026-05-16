@@ -60,6 +60,15 @@
         </ul>
     </div>
 
+    <AuthorizeView>
+        <Authorized Context="signedIn">
+            @if (!OrgContext.IsSystemOrganization && OrgContext.CurrentOrganizationId is not null)
+            {
+                <StorageBar />
+            }
+        </Authorized>
+    </AuthorizeView>
+
     <AuthorizeView Roles="Admin">
         <Authorized Context="adminCtx">
             @{
@@ -186,9 +195,9 @@
                     @if (!isSystemOrg)
                     {
                         <li>
-                            <NavLink class="nav-link" href="/admin/backup" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <NavLink class="nav-link" href="/admin/export" Match="NavLinkMatch.Prefix" ActiveClass="active">
                                 <Icon Name="archive" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>Backup &amp; restore</span>
+                                <span>Export</span>
                             </NavLink>
                         </li>
                     }
@@ -198,6 +207,18 @@
                             <NavLink class="nav-link" href="/site-admin/backups" Match="NavLinkMatch.Prefix" ActiveClass="active">
                                 <Icon Name="database-backup" Width="18" Height="18" Css="nav-link__icon" />
                                 <span>@(isSystemOrg ? "Backups" : "Database backups")</span>
+                            </NavLink>
+                        </li>
+                        <li>
+                            <NavLink class="nav-link" href="/site-admin/storage" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                <Icon Name="hard-drive" Width="18" Height="18" Css="nav-link__icon" />
+                                <span>Storage</span>
+                            </NavLink>
+                        </li>
+                        <li>
+                            <NavLink class="nav-link" href="/site-admin/tenant-backups" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                <Icon Name="archive-restore" Width="18" Height="18" Css="nav-link__icon" />
+                                <span>Tenant snapshots</span>
                             </NavLink>
                         </li>
                         <li>

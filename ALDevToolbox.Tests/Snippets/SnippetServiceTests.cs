@@ -299,5 +299,5 @@ public sealed class SnippetServiceTests : IDisposable
     }
 
     private SnippetService NewService(ALDevToolbox.Data.AppDbContext ctx) =>
-        new(ctx, NullLogger<SnippetService>.Instance, _db.OrgContext);
+        new(ctx, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx));
 }

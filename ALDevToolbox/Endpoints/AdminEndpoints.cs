@@ -26,10 +26,12 @@ internal static class AdminEndpoints
             await ctx.Response.Body.WriteAsync(snapshot.Logo.Content, ct);
         }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
-        // /admin/backup/import — destructive restore from a TOML snapshot.
-        // Lives on the Backup & Restore page, kept as a server POST so the
-        // (large) TOML body is parsed outside the interactive Blazor circuit.
-        app.MapPost("/admin/backup/import", async (
+        // /admin/export/import — destructive restore from a TOML snapshot.
+        // Lives on the Export page, kept as a server POST so the (large)
+        // TOML body is parsed outside the interactive Blazor circuit.
+        // Note: tenants never see database backup/restore; this endpoint only
+        // replays the per-org configuration TOML.
+        app.MapPost("/admin/export/import", async (
             HttpContext ctx, OrganizationConfigService config, IAntiforgery antiforgery, CancellationToken ct) =>
         {
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
@@ -39,24 +41,24 @@ internal static class AdminEndpoints
             if (!confirmed)
             {
                 ctx.Response.Redirect(
-                    $"{RouteConstants.AdminBackup}?{RouteConstants.ErrQuery}=Confirm&{RouteConstants.MsgQuery}="
+                    $"{RouteConstants.AdminExport}?{RouteConstants.ErrQuery}=Confirm&{RouteConstants.MsgQuery}="
                     + Uri.EscapeDataString("Tick the confirmation box before importing."));
                 return;
             }
             try
             {
                 await config.ImportFromTomlAsync(toml, ct);
-                ctx.Response.Redirect($"{RouteConstants.AdminBackup}?{RouteConstants.OkQuery}=imported");
+                ctx.Response.Redirect($"{RouteConstants.AdminExport}?{RouteConstants.OkQuery}=imported");
             }
             catch (PlanValidationException ex)
             {
                 var first = ex.Errors.First();
                 ctx.Response.Redirect(
-                    $"{RouteConstants.AdminBackup}?{RouteConstants.ErrQuery}={Uri.EscapeDataString(first.Key)}&{RouteConstants.MsgQuery}={Uri.EscapeDataString(first.Value)}");
+                    $"{RouteConstants.AdminExport}?{RouteConstants.ErrQuery}={Uri.EscapeDataString(first.Key)}&{RouteConstants.MsgQuery}={Uri.EscapeDataString(first.Value)}");
             }
         }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
-        app.MapPost("/admin/export", async (HttpContext ctx, ExportService export, IAntiforgery antiforgery, CancellationToken ct) =>
+        app.MapPost("/admin/export/download", async (HttpContext ctx, ExportService export, IAntiforgery antiforgery, CancellationToken ct) =>
         {
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
 

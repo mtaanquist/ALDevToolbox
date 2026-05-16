@@ -41,17 +41,20 @@ public class OrganizationConfigService
 
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
+    private readonly StorageQuotaGuard _quotaGuard;
     private readonly ILogger<OrganizationConfigService> _logger;
     private readonly IMemoryCache _cache;
 
     public OrganizationConfigService(
         AppDbContext db,
         IOrganizationContext orgContext,
+        StorageQuotaGuard quotaGuard,
         ILogger<OrganizationConfigService> logger,
         IMemoryCache cache)
     {
         _db = db;
         _orgContext = orgContext;
+        _quotaGuard = quotaGuard;
         _logger = logger;
         _cache = cache;
     }
@@ -202,6 +205,8 @@ public class OrganizationConfigService
         }
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
+        await _quotaGuard.EnsureCanWriteAsync(ct);
+
         var bytes = SanitiseLogo(contentType!, content!);
         var orgId = RequireOrganizationId();
         var now = DateTime.UtcNow;
@@ -254,6 +259,7 @@ public class OrganizationConfigService
     public async Task SaveFilesAsync(IReadOnlyList<OrganizationFileInput> inputs, CancellationToken ct = default)
     {
         ValidateFiles(inputs);
+        await _quotaGuard.EnsureCanWriteAsync(ct);
         var orgId = RequireOrganizationId();
 
         var existing = await _db.OrganizationFiles
@@ -318,6 +324,8 @@ public class OrganizationConfigService
                 ["Toml"] = "Paste the contents of organization-config.toml.",
             });
         }
+
+        await _quotaGuard.EnsureCanWriteAsync(ct);
 
         OrganizationConfigSeedFile seed;
         try

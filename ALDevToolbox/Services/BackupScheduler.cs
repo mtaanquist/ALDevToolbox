@@ -66,7 +66,9 @@ public sealed class BackupScheduler : BackgroundService
         await using var scope = _services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var backups = scope.ServiceProvider.GetRequiredService<BackupService>();
-        await TickOnceAsync(db, backups, ct);
+        var perTenant = scope.ServiceProvider.GetRequiredService<PerTenantBackupService>();
+        var offsite = scope.ServiceProvider.GetRequiredService<OffsiteBackupService>();
+        await TickOnceAsync(db, backups, perTenant, offsite, ct);
     }
 
     /// <summary>
@@ -75,7 +77,7 @@ public sealed class BackupScheduler : BackgroundService
     /// <see cref="TimeProvider"/> they control, bypassing the
     /// <c>Task.Delay</c> loop in <see cref="ExecuteAsync"/>.
     /// </summary>
-    internal async Task TickOnceAsync(AppDbContext db, BackupService backups, CancellationToken ct)
+    internal async Task TickOnceAsync(AppDbContext db, BackupService backups, PerTenantBackupService perTenant, OffsiteBackupService offsite, CancellationToken ct)
     {
         var settings = await db.SystemSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == 1, ct);
@@ -104,13 +106,63 @@ public sealed class BackupScheduler : BackgroundService
         _logger.LogInformation(
             "BackupScheduler triggering scheduled backup (scheduled-for={Scheduled:o}, now={Now:o}).",
             todayWindow, nowUtc);
+        Backup? created = null;
         try
         {
-            await backups.CreateAsync(BackupKind.Scheduled, ct);
+            created = await backups.CreateAsync(BackupKind.Scheduled, ct);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Scheduled backup failed.");
+        }
+
+        if (created is not null)
+        {
+            try
+            {
+                await offsite.UploadAsync(created.Id, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Off-site upload failed for backup {FileName}.", created.FileName);
+            }
+            try
+            {
+                await offsite.PruneAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Off-site prune failed.");
+            }
+        }
+
+        // Per-tenant snapshots run after the full backup so the full pg_dump
+        // still exists if a per-tenant write fails midway. Each org is
+        // independent — a failure on one org logs and continues.
+        var orgs = await db.Organizations
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(o => !o.IsSystem && !o.IsPending)
+            .Select(o => o.Id)
+            .ToListAsync(ct);
+        foreach (var orgId in orgs)
+        {
+            try
+            {
+                var lastPerTenant = await db.PerTenantBackups
+                    .IgnoreQueryFilters()
+                    .AsNoTracking()
+                    .Where(b => b.OrganizationId == orgId && b.Kind == BackupKind.Scheduled)
+                    .OrderByDescending(b => b.CreatedAt)
+                    .Select(b => (DateTime?)b.CreatedAt)
+                    .FirstOrDefaultAsync(ct);
+                if (lastPerTenant is not null && lastPerTenant >= todayWindow) continue;
+                await perTenant.CreateAsync(orgId, BackupKind.Scheduled, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Scheduled per-tenant snapshot failed for org {OrgId}.", orgId);
+            }
         }
     }
 }
