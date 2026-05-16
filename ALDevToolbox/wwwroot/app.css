@@ -3380,6 +3380,59 @@ ul.form-field-error {
     background: var(--color-surface-strong, rgba(255, 255, 255, 0.06));
 }
 
+.source-viewer__refs-group + .source-viewer__refs-group {
+    margin-top: 12px;
+    padding-top: 8px;
+    border-top: 1px solid var(--color-border-strong);
+}
+
+.source-viewer__refs-group-heading {
+    margin: 0 0 4px 0;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.source-viewer__refs-member {
+    display: block;
+    margin-top: 1px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+}
+
+/* Outline right-click menu — one-item popover for Find references on a
+   procedure / field / trigger / object row. Positioned by JS at the
+   click point. */
+.source-viewer__outline-menu {
+    position: fixed;
+    z-index: 100;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 12px var(--color-shadow, rgba(0, 0, 0, 0.4));
+    padding: 4px 0;
+    min-width: 180px;
+}
+
+.source-viewer__outline-menu-item {
+    display: block;
+    width: 100%;
+    padding: 6px 12px;
+    background: transparent;
+    border: 0;
+    color: var(--color-text);
+    font: inherit;
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.source-viewer__outline-menu-item:hover {
+    background: var(--color-surface-2, rgba(124, 124, 144, 0.12));
+}
+
 .source-viewer__refs-row-top {
     display: flex;
     gap: 8px;

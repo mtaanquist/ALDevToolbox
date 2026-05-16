@@ -129,7 +129,9 @@
                                     @foreach (var entry in group.Items)
                                     {
                                         <li class="source-viewer__outline-item @(entry.IsChild ? "source-viewer__outline-item--child" : null)"
-                                            data-row-name="@entry.Item.Name">
+                                            data-row-name="@entry.Item.Name"
+                                            data-symbol-id="@(entry.Item.SymbolId?.ToString() ?? "")"
+                                            data-object-id="@(entry.Item.ObjectId?.ToString() ?? "")">
                                             @if (entry.Item.ObjectId is { } oid)
                                             {
                                                 <a href="@($"/object-explorer/object/{oid}")" title="@FormatTooltip(entry.Item)">
@@ -165,62 +167,19 @@
                     }
                 </div>
 
+                @*
+                    References panel: when a refSet token is present on the
+                    URL, ship the session payload as a data-* attribute and
+                    let source-viewer.js render the panel client-side. This
+                    keeps the grouping / row rendering logic in one place
+                    (renderReferencesPanel) — the server is the cache for
+                    the result list, the client is the single renderer.
+                *@
                 <div class="source-viewer__panel @(defaultTab == "references" ? "is-active" : null)"
                      data-panel="references"
                      role="tabpanel"
-                     hidden="@(_session is null)">
-                    @if (_session is not null)
-                    {
-                        <div class="source-viewer__refs-header">
-                            <p class="muted source-viewer__refs-target">@_session.TargetLabel</p>
-                            <button type="button"
-                                    class="btn btn--sm source-viewer__refs-close"
-                                    data-action="close-refs"
-                                    title="Close reference set">Close</button>
-                        </div>
-                        @if (_session.Results.Count == 0)
-                        {
-                            <p class="muted">No references in this Release's chain.</p>
-                        }
-                        else
-                        {
-                            <ul class="source-viewer__refs-list">
-                                @foreach (var r in _session.Results)
-                                {
-                                    var current = r.SourceFileId == FileId && r.LineNumber == _highlightLine;
-                                    <li class="source-viewer__refs-item @(current ? "is-current" : null)">
-                                        @if (r.SourceFileId is { } srcFid && r.LineNumber is { } ln)
-                                        {
-                                            var inSameFile = srcFid == FileId;
-                                            <a href="@RefUrl(srcFid, ln)"
-                                               data-line="@(inSameFile ? ln.ToString() : null)"
-                                               title="@($"{r.SourceFilePath ?? r.SourceModuleName} · L{ln} ({r.ReferenceKind})")">
-                                                <div class="source-viewer__refs-row-top">
-                                                    <span class="source-viewer__refs-name">@r.SourceObjectName</span>
-                                                    <span class="source-viewer__refs-meta muted">@r.SourceModuleName · L@(ln)</span>
-                                                </div>
-                                                @if (!string.IsNullOrEmpty(r.Snippet))
-                                                {
-                                                    <code class="source-viewer__refs-snippet">@r.Snippet</code>
-                                                }
-                                            </a>
-                                        }
-                                        else
-                                        {
-                                            <a href="@($"/object-explorer/object/{r.SourceObjectId}")"
-                                               title="@($"{r.SourceModuleName} · {r.SourceObjectName} (no source)")">
-                                                <div class="source-viewer__refs-row-top">
-                                                    <span class="source-viewer__refs-name">@r.SourceObjectName</span>
-                                                    <span class="source-viewer__refs-meta muted">@r.SourceModuleName · no source</span>
-                                                </div>
-                                            </a>
-                                        }
-                                    </li>
-                                }
-                            </ul>
-                        }
-                    }
-                </div>
+                     data-session="@SerializeSession(_session)"
+                     hidden="@(_session is null)"></div>
 
                 <div class="source-viewer__panel" data-panel="find" role="tabpanel" hidden>
                     <div class="source-viewer__find-host"></div>
@@ -289,6 +248,22 @@
     }
 
     private static string FormatSignature(string signature) => signature;
+
+    /// <summary>
+    /// Serialises a reference session into the JSON shape source-viewer.js
+    /// expects on the panel's data-session attribute. Empty string when
+    /// there's no session — the JS reader treats that as "no panel".
+    /// </summary>
+    private static string SerializeSession(ReferenceSession? session)
+    {
+        if (session is null) return string.Empty;
+        return JsonSerializer.Serialize(session, SessionJsonOptions);
+    }
+
+    private static readonly JsonSerializerOptions SessionJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
 
     /// <summary>
     /// Short label shown in the kind badge next to each outline row.

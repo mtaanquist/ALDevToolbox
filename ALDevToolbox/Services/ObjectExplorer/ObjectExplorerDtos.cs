@@ -245,13 +245,21 @@ public sealed record ReleaseContentMatch(
 /// One row in the outline pane on the source-file viewer. Objects and their
 /// symbols are flattened so the panel can render them as a single ordered
 /// list keyed by line number — kind tells the renderer which icon to use.
+///
+/// <see cref="ObjectId"/> is set for object header rows (codeunit, table,
+/// page, …) and drives the cross-page anchor.
+/// <see cref="SymbolId"/> is set for procedure / field / trigger / event
+/// symbol rows and drives the outline's right-click "Find references"
+/// menu — clicking a procedure row mints a member-scoped session
+/// without having to first click the declaration in the editor.
 /// </summary>
 public sealed record SourceFileOutlineItem(
     string Kind,
     string Name,
     string? Signature,
     int LineNumber,
-    long? ObjectId);
+    long? ObjectId,
+    long? SymbolId = null);
 
 /// <summary>
 /// Minimal Module summary used by the search-filter dropdown. Lighter than

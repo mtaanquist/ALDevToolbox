@@ -76,9 +76,109 @@ function init() {
     wireOutlineFilter(root);
     wireSectionToggles(root);
     wireSameFileLinks(root, editorId, fileId);
+    wireOutlineFindReferences(root);
     wireRefsCloseButton(root);
     wireSearchShortcut(root, editorId);
     wirePopstate(root, editorId);
+
+    // If the server already rendered a session into the references panel's
+    // data-session attribute (page loaded with ?refSet=token), parse it
+    // and render the panel client-side so all rendering paths funnel
+    // through renderReferencesPanel.
+    const refsPanel = root.querySelector('[data-panel="references"]');
+    if (refsPanel) {
+        const inlineSession = parseJsonAttr(refsPanel.dataset.session);
+        refsPanel.removeAttribute("data-session");
+        if (inlineSession) {
+            renderReferencesPanel(root, inlineSession, fileId, editorId);
+        }
+    }
+
+    /// Right-click anywhere on an outline row to "Find references" for
+    /// the symbol it represents. Procedure / field / trigger rows mint
+    /// a member-scoped session (server side composes declarations +
+    /// owner-type refs + call-site refs once those land). Object rows
+    /// mint the existing object-scoped session.
+    function wireOutlineFindReferences(panelRoot) {
+        const outlinePanel = panelRoot.querySelector('[data-panel="outline"]');
+        if (!outlinePanel) return;
+        outlinePanel.addEventListener("contextmenu", e => {
+            const row = e.target instanceof Element
+                ? e.target.closest(".source-viewer__outline-item")
+                : null;
+            if (!row) return;
+            const symbolId = row.dataset.symbolId;
+            const objectId = row.dataset.objectId;
+            if (!symbolId && !objectId) return;
+            e.preventDefault();
+            openOutlineRefsMenu(e.clientX, e.clientY, row, symbolId, objectId);
+        });
+    }
+
+    function openOutlineRefsMenu(x, y, row, symbolId, objectId) {
+        // One-item menu for now: "Find references". A second item ("Go to
+        // definition") would be redundant — the outline row IS the
+        // declaration; left-click jumps to it.
+        const menu = document.createElement("div");
+        menu.className = "source-viewer__outline-menu";
+        menu.style.left = x + "px";
+        menu.style.top = y + "px";
+
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "source-viewer__outline-menu-item";
+        item.textContent = "Find references";
+        item.addEventListener("click", async () => {
+            menu.remove();
+            if (symbolId) {
+                await mintMemberSession(symbolId);
+            } else if (objectId) {
+                await mintObjectSession(objectId);
+            }
+        });
+        menu.appendChild(item);
+
+        document.body.appendChild(menu);
+        const close = () => menu.remove();
+        document.addEventListener("click", close, { once: true });
+        document.addEventListener("scroll", close, { once: true, capture: true });
+    }
+
+    async function mintMemberSession(symbolId) {
+        clearNotice();
+        try {
+            const res = await fetch(
+                `/api/object-explorer/references/sessions/from-member-symbol/${symbolId}`,
+                { credentials: "same-origin" });
+            if (!res.ok) {
+                showNotice("Couldn't mint references for that symbol.");
+                return;
+            }
+            const session = await res.json();
+            applyReferenceSession(session);
+        } catch (err) {
+            console.warn("from-member-symbol failed:", err);
+            showNotice("Couldn't reach the server.");
+        }
+    }
+
+    async function mintObjectSession(objectId) {
+        clearNotice();
+        try {
+            const res = await fetch(
+                `/api/object-explorer/references/sessions/from-symbol/${objectId}`,
+                { credentials: "same-origin" });
+            if (!res.ok) {
+                showNotice("Couldn't mint references for that object.");
+                return;
+            }
+            const session = await res.json();
+            applyReferenceSession(session);
+        } catch (err) {
+            console.warn("from-symbol failed:", err);
+            showNotice("Couldn't reach the server.");
+        }
+    }
 
     async function onFindReferencesAt(line, column) {
         clearNotice();
@@ -358,49 +458,105 @@ function renderReferencesPanel(root, session, fileId, editorId) {
         p.textContent = "No references in this Release's chain.";
         panel.appendChild(p);
     } else {
-        const list = document.createElement("ul");
-        list.className = "source-viewer__refs-list";
-        for (const r of session.results) {
-            const li = document.createElement("li");
-            li.className = "source-viewer__refs-item";
+        // Group by category so declarations / calls / indirect refs render
+        // under their own headings. Order matters: declarations are the
+        // most direct match, calls the actual usages (phase 2), owner_type
+        // the indirect-via-type bucket, and any unknown category falls in
+        // last. Within a group, server-side ordering (module, object,
+        // line) is preserved.
+        const groups = groupByCategory(session.results);
+        for (const [category, rows] of groups) {
+            const section = document.createElement("section");
+            section.className = "source-viewer__refs-group";
+            section.dataset.category = category;
 
-            const srcFid = r.sourceFileId;
-            const ln = r.lineNumber;
-            if (srcFid != null && ln != null) {
-                const inSameFile = srcFid === fileId;
-                const a = document.createElement("a");
-                a.href = `${FILE_URL_PREFIX}${srcFid}?line=${ln}&refSet=${encodeURIComponent(session.token)}`;
-                if (inSameFile) {
-                    a.dataset.line = String(ln);
-                    a.addEventListener("click", e => {
-                        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-                        e.preventDefault();
-                        scrollToLine(editorId, ln, true);
-                        if (location.pathname + location.search !== a.href.replace(location.origin, "")) {
-                            history.pushState(null, "", a.href);
-                        }
-                    });
-                }
-                a.title = `${r.sourceFilePath ?? r.sourceModuleName} · L${ln} (${r.referenceKind})`;
-                appendRowTop(a, r.sourceObjectName, `${r.sourceModuleName} · L${ln}`);
-                if (r.snippet) {
-                    const snip = document.createElement("code");
-                    snip.className = "source-viewer__refs-snippet";
-                    snip.textContent = r.snippet;
-                    a.appendChild(snip);
-                }
-                li.appendChild(a);
-            } else {
-                const a = document.createElement("a");
-                a.href = `/object-explorer/object/${r.sourceObjectId}`;
-                a.title = `${r.sourceModuleName} · ${r.sourceObjectName} (no source)`;
-                appendRowTop(a, r.sourceObjectName, `${r.sourceModuleName} · no source`);
-                li.appendChild(a);
+            const heading = document.createElement("h3");
+            heading.className = "source-viewer__refs-group-heading";
+            heading.textContent = `${categoryLabel(category)} · ${rows.length.toLocaleString()}`;
+            section.appendChild(heading);
+
+            const list = document.createElement("ul");
+            list.className = "source-viewer__refs-list";
+            for (const r of rows) {
+                list.appendChild(buildRefsRow(r, session, fileId, editorId));
             }
-            list.appendChild(li);
+            section.appendChild(list);
+            panel.appendChild(section);
         }
-        panel.appendChild(list);
     }
+}
+
+function groupByCategory(rows) {
+    const order = ["declaration", "call", "owner_type", "object"];
+    const buckets = new Map();
+    for (const c of order) buckets.set(c, []);
+    for (const r of rows ?? []) {
+        const c = r.category ?? "object";
+        if (!buckets.has(c)) buckets.set(c, []);
+        buckets.get(c).push(r);
+    }
+    // Drop empty buckets in their declared order; preserve insertion order
+    // for any unknown categories that slipped through.
+    return Array.from(buckets.entries()).filter(([, v]) => v.length > 0);
+}
+
+function categoryLabel(category) {
+    switch (category) {
+        case "declaration": return "Declarations";
+        case "call":        return "Calls";
+        case "owner_type":  return "Indirect references (via type)";
+        case "object":      return "References";
+        default:            return category;
+    }
+}
+
+function buildRefsRow(r, session, fileId, editorId) {
+    const li = document.createElement("li");
+    li.className = "source-viewer__refs-item";
+
+    const srcFid = r.sourceFileId;
+    const ln = r.lineNumber;
+    if (srcFid != null && ln != null) {
+        const inSameFile = srcFid === fileId;
+        const a = document.createElement("a");
+        a.href = `${FILE_URL_PREFIX}${srcFid}?line=${ln}&refSet=${encodeURIComponent(session.token)}`;
+        if (inSameFile) {
+            a.dataset.line = String(ln);
+            a.addEventListener("click", e => {
+                if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                e.preventDefault();
+                scrollToLine(editorId, ln, true);
+                if (location.pathname + location.search !== a.href.replace(location.origin, "")) {
+                    history.pushState(null, "", a.href);
+                }
+            });
+        }
+        const sub = r.memberName
+            ? `${r.memberName}${r.memberSignature ?? ""}`
+            : r.referenceKind;
+        a.title = `${r.sourceFilePath ?? r.sourceModuleName} · L${ln} (${sub})`;
+        appendRowTop(a, r.sourceObjectName, `${r.sourceModuleName} · L${ln}`);
+        if (r.memberName) {
+            const memberLine = document.createElement("span");
+            memberLine.className = "source-viewer__refs-member muted";
+            memberLine.textContent = `${r.memberKind ?? ""} ${r.memberName}${r.memberSignature ?? ""}`.trim();
+            a.appendChild(memberLine);
+        }
+        if (r.snippet) {
+            const snip = document.createElement("code");
+            snip.className = "source-viewer__refs-snippet";
+            snip.textContent = r.snippet;
+            a.appendChild(snip);
+        }
+        li.appendChild(a);
+    } else {
+        const a = document.createElement("a");
+        a.href = `/object-explorer/object/${r.sourceObjectId}`;
+        a.title = `${r.sourceModuleName} · ${r.sourceObjectName} (no source)`;
+        appendRowTop(a, r.sourceObjectName, `${r.sourceModuleName} · no source`);
+        li.appendChild(a);
+    }
+    return li;
 }
 
 function appendRowTop(anchor, name, meta) {
