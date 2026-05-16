@@ -31,6 +31,24 @@ public static class AlSymbolExtractor
         @"^\s*field\s*\(\s*(?<id>\d+)\s*;\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*;\s*(?<type>[^)]+?)\s*\)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // Page-side field declaration: `field("Sell-to Customer No."; Rec."Sell-to Customer No.")`
+    // No numeric id, expression after the semicolon. Captured so a page /
+    // pageextension's outline carries the field rows and the
+    // SourceFileOutlineGrouper can nest field-bound triggers
+    // (OnValidate / OnLookup / OnAssistEdit / …) underneath them — the
+    // ID-and-type table form misses the page case entirely.
+    private static readonly Regex PageFieldDeclarationRegex = new(
+        @"^\s*field\s*\(\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*;\s*(?<expr>[^)]+?)\s*\)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // Action declaration inside a page actions block: `action("Post")` or
+    // `action(Post)`. Same treatment as page fields — actions own
+    // OnAction triggers (and a handful of lifecycle triggers in newer AL),
+    // so they need an outline anchor for nesting.
+    private static readonly Regex ActionDeclarationRegex = new(
+        @"^\s*action\s*\(\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*\)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     // The object-header declaration line: `table 36 "Sales Header"`,
     // `codeunit 80 "Sales-Post"`, `tableextension 7300 "ItemExt" extends "Item"`
     // etc. We only care about the *primary* object name (not the `extends`
@@ -130,7 +148,10 @@ public static class AlSymbolExtractor
             // Field declarations. Independent of the procedure regex — they
             // only appear inside a `fields { ... }` block in practice, and
             // any false match outside that block (vanishingly rare) is still
-            // a harmless symbol row.
+            // a harmless symbol row. Two shapes — table-side with id+type,
+            // page-side with just name+expression — handled in priority
+            // order so the more specific table form wins when both could
+            // technically match.
             var fieldMatch = FieldDeclarationRegex.Match(stripped);
             if (fieldMatch.Success)
             {
@@ -151,6 +172,51 @@ public static class AlSymbolExtractor
                     LineNumber: i + 1,
                     ColumnStart: fColStart,
                     ColumnEnd: fColEnd));
+                pendingEventKind = null;
+                continue;
+            }
+
+            var pageFieldMatch = PageFieldDeclarationRegex.Match(stripped);
+            if (pageFieldMatch.Success)
+            {
+                var fieldRawName = pageFieldMatch.Groups["name"].Value;
+                var fieldName = Unquote(fieldRawName);
+                var expr = pageFieldMatch.Groups["expr"].Value.Trim();
+                var (fColStart, fColEnd) = FindNameColumns(rawLine, fieldRawName);
+                results.Add(new AlSymbol(
+                    Kind: "field",
+                    Name: fieldName,
+                    // Stash the source expression in Signature so the
+                    // outline tooltip can show what the page field is
+                    // bound to. Table-side fields use Signature for the
+                    // AL type — same column, semantically parallel ("what
+                    // does this field hold?").
+                    Signature: string.IsNullOrEmpty(expr) ? null : expr,
+                    FieldId: null,
+                    LineNumber: i + 1,
+                    ColumnStart: fColStart,
+                    ColumnEnd: fColEnd));
+                pendingEventKind = null;
+                continue;
+            }
+
+            // Page action declaration. Gives field-style triggers
+            // (OnAction in particular) an outline anchor to nest under,
+            // mirroring how field-bound triggers nest under their field.
+            var actionMatch = ActionDeclarationRegex.Match(stripped);
+            if (actionMatch.Success)
+            {
+                var actionRawName = actionMatch.Groups["name"].Value;
+                var actionName = Unquote(actionRawName);
+                var (aColStart, aColEnd) = FindNameColumns(rawLine, actionRawName);
+                results.Add(new AlSymbol(
+                    Kind: "action",
+                    Name: actionName,
+                    Signature: null,
+                    FieldId: null,
+                    LineNumber: i + 1,
+                    ColumnStart: aColStart,
+                    ColumnEnd: aColEnd));
                 pendingEventKind = null;
                 continue;
             }

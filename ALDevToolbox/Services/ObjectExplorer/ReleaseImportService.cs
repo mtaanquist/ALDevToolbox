@@ -589,6 +589,11 @@ public class ReleaseImportService
                 line = extracted.LineNumber;
                 colStart = extracted.ColumnStart;
                 colEnd = extracted.ColumnEnd;
+                // Mark the extracted field row consumed so the
+                // page-field pass below doesn't re-emit it. Table-side
+                // fields ship in symObj.Fields; page-side ones don't, so
+                // we only need the dedup on table flows.
+                consumedExtracted.Add(extracted);
             }
             _db.OeModuleSymbols.Add(new OeModuleSymbol
             {
@@ -605,12 +610,15 @@ public class ReleaseImportService
             });
         }
 
-        // Locals / triggers / event subscribers / event publishers that the
-        // compiler stripped from the symbol package — pick them up from
-        // source so the outline shows them. consumedExtracted holds every
-        // AlSymbol already mapped into a symbol-package row above, which
-        // also correctly handles overloads (the queue dequeue gave each
-        // package method a distinct extractor row).
+        // Locals / triggers / event subscribers / event publishers / page
+        // fields / actions that the symbol package omits — pick them up
+        // from the source extractor so the outline shows them.
+        // consumedExtracted holds every AlSymbol already mapped into a
+        // symbol-package row above, which also correctly handles
+        // overloads (the queue dequeue gave each package method a distinct
+        // extractor row) and table-field/page-field disambiguation
+        // (table fields enter symObj.Fields and consume their matching
+        // extractor row; page fields don't, so they fall through here).
         foreach (var sym in extractedSymbols)
         {
             switch (sym.Kind)
@@ -622,6 +630,8 @@ public class ReleaseImportService
                 case "trigger":
                 case "event_publisher":
                 case "event_subscriber":
+                case "field":
+                case "action":
                     break;
                 default:
                     continue;
@@ -635,6 +645,7 @@ public class ReleaseImportService
                 Kind = sym.Kind,
                 Name = sym.Name,
                 Signature = sym.Signature,
+                FieldId = sym.FieldId,
                 LineNumber = sym.LineNumber,
                 ColumnStart = sym.ColumnStart,
                 ColumnEnd = sym.ColumnEnd,

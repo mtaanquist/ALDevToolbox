@@ -767,6 +767,7 @@ function buildKindBadge(kind) {
 function kindBadgeLabel(kind) {
     switch ((kind ?? "").toLowerCase()) {
         case "field":                  return "field";
+        case "action":                 return "action";
         case "trigger":                return "trigger";
         case "procedure":              return "proc";
         case "internal_procedure":     return "internal";
@@ -797,6 +798,7 @@ function kindBadgeLabel(kind) {
 function kindBadgeClass(kind) {
     switch ((kind ?? "").toLowerCase()) {
         case "field":                return "source-viewer__outline-badge--field";
+        case "action":               return "source-viewer__outline-badge--action";
         case "trigger":              return "source-viewer__outline-badge--trigger";
         case "event_publisher":
         case "event_subscriber":     return "source-viewer__outline-badge--event";

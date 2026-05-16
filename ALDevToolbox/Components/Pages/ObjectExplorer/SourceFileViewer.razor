@@ -333,6 +333,7 @@
     private static string KindBadgeLabel(string kind) => kind.ToLowerInvariant() switch
     {
         "field" => "field",
+        "action" => "action",
         "trigger" => "trigger",
         "procedure" => "proc",
         "internal_procedure" => "internal",
@@ -367,6 +368,7 @@
     private static string KindBadgeClass(string kind) => kind.ToLowerInvariant() switch
     {
         "field" => "source-viewer__outline-badge--field",
+        "action" => "source-viewer__outline-badge--action",
         "trigger" => "source-viewer__outline-badge--trigger",
         "event_publisher" or "event_subscriber" => "source-viewer__outline-badge--event",
         "procedure" or "internal_procedure" or "protected_procedure" or "local_procedure"

@@ -3384,6 +3384,12 @@ ul.form-field-error {
     color: #6ba3ff;
 }
 
+.source-viewer__outline-badge--action {
+    background: rgba(255, 184, 64, 0.16);
+    border-color: rgba(255, 184, 64, 0.4);
+    color: #f0b85a;
+}
+
 .source-viewer__outline-badge--trigger {
     background: rgba(76, 201, 114, 0.14);
     border-color: rgba(76, 201, 114, 0.35);
