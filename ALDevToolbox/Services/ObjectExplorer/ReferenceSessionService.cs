@@ -81,6 +81,11 @@ public sealed class ReferenceSessionService
     public async Task<ReferenceSession?> CreateFromMemberSymbolAsync(
         long symbolId, string ownerKey, CancellationToken ct = default)
     {
+        // Flat projection so we don't depend on a child navigation that
+        // wasn't included. Projecting `Owner = s.Object!` materialised
+        // just the object row; reading head.Owner.Module then threw an
+        // NRE because EF never loaded the Module navigation property.
+        // Pulling every column scalar dodges the navigation entirely.
         var head = await _db.OeModuleSymbols.AsNoTracking()
             .Where(s => s.Id == symbolId)
             .Select(s => new
@@ -88,17 +93,20 @@ public sealed class ReferenceSessionService
                 s.Kind,
                 s.Name,
                 s.Signature,
-                Owner = s.Object!,
+                OwnerKind = s.Object!.Kind,
+                OwnerObjectId = s.Object!.ObjectId,
+                OwnerName = s.Object!.Name,
+                OwnerAppId = s.Object!.Module!.AppId,
                 ReleaseId = s.Object!.Module!.ReleaseId,
             })
             .SingleOrDefaultAsync(ct);
         if (head is null) return null;
 
         var query = new FindReferencesQuery(
-            TargetAppId: head.Owner.Module!.AppId,
-            TargetObjectKind: head.Owner.Kind,
-            TargetObjectId: head.Owner.ObjectId,
-            TargetObjectName: head.Owner.Name,
+            TargetAppId: head.OwnerAppId,
+            TargetObjectKind: head.OwnerKind,
+            TargetObjectId: head.OwnerObjectId,
+            TargetObjectName: head.OwnerName,
             TargetMemberName: head.Name,
             TargetMemberKind: head.Kind);
 
@@ -106,9 +114,9 @@ public sealed class ReferenceSessionService
             head.ReleaseId, query, ct);
 
         var sigPart = string.IsNullOrEmpty(head.Signature) ? "" : head.Signature;
-        var label = head.Owner.ObjectId is { } oid
-            ? $"references to {head.Kind} {head.Owner.Kind} {oid} {head.Owner.Name}.{head.Name}{sigPart}"
-            : $"references to {head.Kind} {head.Owner.Kind} {head.Owner.Name}.{head.Name}{sigPart}";
+        var label = head.OwnerObjectId is { } oid
+            ? $"references to {head.Kind} {head.OwnerKind} {oid} {head.OwnerName}.{head.Name}{sigPart}"
+            : $"references to {head.Kind} {head.OwnerKind} {head.OwnerName}.{head.Name}{sigPart}";
 
         return Store(label, head.ReleaseId, results, ownerKey);
     }
