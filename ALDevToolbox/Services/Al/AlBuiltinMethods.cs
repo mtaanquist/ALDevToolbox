@@ -62,6 +62,8 @@ public static class AlBuiltinMethods
         "Number", "RecordLevelLocking",
         "RecordId", "GetView", "SetView",
         "Caption", "CaptionClass",
+        // BC 18+ — partial-record loading.
+        "SetLoadFields", "LoadFields",
         // Note: AssistEdit / Lookup / Drilldown are intentionally NOT
         // listed here. Microsoft's Base App declares user procedures
         // with those names (e.g. Sales Header.AssistEdit is a real
@@ -109,6 +111,9 @@ public static class AlBuiltinMethods
         "SetTableView", "GetTableView", "SetSelectionFilter",
         "Editable", "Update", "Close", "SaveRecord",
         "Caption",
+        // Lookup-mode dispatch (set by callers before invoking RunModal
+        // to make the page act as a lookup picker).
+        "LookupMode", "SetLookupMode", "GetLookupMode",
     };
 
     /// <summary>
@@ -214,6 +219,16 @@ public static class AlBuiltinMethods
         // JsonArray, etc.
         "Length",
         "Count",
+        // Type-conversion methods on Option / Enum / Variant fields.
+        // The chain walker doesn't track field types through to enums,
+        // so receiver-typed dispatch can't see these; treating them as
+        // common-builtin silences `.AsInteger()` on any record-bound
+        // field that happens to be an Option/Enum.
+        "AsInteger", "AsBoolean", "AsText", "AsCode", "AsDecimal",
+        "AsDateTime", "AsDate", "AsTime", "AsDuration", "AsGuid",
+        "AsBigInteger",
+        // Variant / InStream introspection.
+        "HasValue", "IsValue", "IsArray", "IsObject", "IsNull",
     };
 
     /// <summary>
@@ -270,6 +285,11 @@ public static class AlBuiltinMethods
         "DownloadFromStream", "UploadIntoStream",
         // Background session control.
         "StartSession", "StopSession",
+        // AL property-value constructors. Appear inside property values
+        // like `TableRelation = Customer."No." where(Blocked = const(false))`
+        // or `SubPageLink = "No." = field("No.")`. They look like calls
+        // but introduce filter / constant / field-binding expressions.
+        "const", "filter", "where", "upperlimit",
         // Compiler attributes that lex as `[Identifier(...)]` and
         // surface as bare-call shapes inside square brackets. Treat
         // as no-op bare callables so they don't pollute the diagnostic.

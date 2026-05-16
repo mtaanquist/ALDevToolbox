@@ -1700,7 +1700,7 @@ public class ReleaseImportService
         (2000000042, "Key"),
         (2000000043, "License Permission"),
         (2000000044, "Permission Range"),
-        (2000000045, "Windows Login"),
+        (2000000045, "Windows Language"),
         (2000000048, "Database Locks"),
         (2000000049, "Session Setting"),
         (2000000053, "Permission"),
