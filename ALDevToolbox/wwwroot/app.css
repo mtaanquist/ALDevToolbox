@@ -3458,15 +3458,25 @@ ul.form-field-error {
     line-height: 1.4;
 }
 
+/* Whole row is wrapped in <a> for keyboard / middle-click navigation.
+   Kill the default accent colour on the link itself — the kind badge
+   carries the "what is this" signal now, and the row's text should sit
+   as body copy, not as a wall of blue. The hover background keeps the
+   row feeling clickable. */
 .source-viewer__refs-item a {
     text-decoration: none;
     display: block;
-    padding: 4px 6px;
+    padding: 6px 8px;
     border-radius: var(--radius);
+    color: var(--color-text);
 }
 
 .source-viewer__refs-item a:hover {
     background: var(--color-surface-strong, rgba(255, 255, 255, 0.06));
+}
+
+.source-viewer__refs-item a:hover .source-viewer__refs-name {
+    text-decoration: underline;
 }
 
 .source-viewer__refs-group + .source-viewer__refs-group {
@@ -3484,11 +3494,27 @@ ul.form-field-error {
     letter-spacing: 0.04em;
 }
 
-.source-viewer__refs-member {
-    display: block;
-    margin-top: 1px;
+/* Member sub-row: indented under the object-row so the visual hierarchy
+   reads object → member → call-site snippet. Badge keeps the row in sync
+   with the outline pane's chip vocabulary (proc / local / trigger / …). */
+.source-viewer__refs-member-row {
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+    margin-top: 3px;
+    margin-left: 4px;
+    min-width: 0;
+}
+
+.source-viewer__refs-member-name {
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: 12.5px;
+    color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1 1 auto;
 }
 
 /* Outline right-click menu — one-item popover for Find references on a
@@ -3522,22 +3548,26 @@ ul.form-field-error {
     background: var(--color-surface-2, rgba(124, 124, 144, 0.12));
 }
 
+/* Object-row: badge + name on the left, module/line meta pinned right.
+   Tabular row layout means the eye scans the badge column first, then the
+   name, then drifts right for the location — same rhythm as the outline. */
 .source-viewer__refs-row-top {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     align-items: baseline;
-    justify-content: space-between;
 }
 
 .source-viewer__refs-snippet {
     display: block;
-    margin-top: 2px;
+    margin-top: 4px;
+    margin-left: 4px;
     font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
-    font-size: 11.5px;
+    font-size: 12px;
     color: var(--color-text-muted);
     background: var(--color-surface-2, #1c1c28);
-    padding: 2px 6px;
-    border-radius: 3px;
+    padding: 3px 8px;
+    border-left: 2px solid var(--color-border-strong);
+    border-radius: 0 3px 3px 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -3550,7 +3580,13 @@ ul.form-field-error {
 
 .source-viewer__refs-name {
     font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
-    font-size: 12.5px;
+    font-size: 13px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1 1 auto;
 }
 
 .source-viewer__refs-meta {
@@ -3558,6 +3594,8 @@ ul.form-field-error {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    flex: 0 0 auto;
+    margin-left: auto;
 }
 .source-viewer__body {
     padding: 0;

@@ -517,6 +517,7 @@ function buildRefsRow(r, session, fileId, editorId) {
 
     const srcFid = r.sourceFileId;
     const ln = r.lineNumber;
+    const objectKind = r.sourceObjectKind ?? "";
     if (srcFid != null && ln != null) {
         const inSameFile = srcFid === fileId;
         const a = document.createElement("a");
@@ -536,12 +537,9 @@ function buildRefsRow(r, session, fileId, editorId) {
             ? `${r.memberName}${r.memberSignature ?? ""}`
             : r.referenceKind;
         a.title = `${r.sourceFilePath ?? r.sourceModuleName} · L${ln} (${sub})`;
-        appendRowTop(a, r.sourceObjectName, `${r.sourceModuleName} · L${ln}`);
+        appendRowTop(a, objectKind, r.sourceObjectName, `${r.sourceModuleName} · L${ln}`);
         if (r.memberName) {
-            const memberLine = document.createElement("span");
-            memberLine.className = "source-viewer__refs-member muted";
-            memberLine.textContent = `${r.memberKind ?? ""} ${r.memberName}${r.memberSignature ?? ""}`.trim();
-            a.appendChild(memberLine);
+            appendMemberRow(a, r.memberKind, r.memberName, r.memberSignature);
         }
         if (r.snippet) {
             const snip = document.createElement("code");
@@ -554,15 +552,18 @@ function buildRefsRow(r, session, fileId, editorId) {
         const a = document.createElement("a");
         a.href = `/object-explorer/object/${r.sourceObjectId}`;
         a.title = `${r.sourceModuleName} · ${r.sourceObjectName} (no source)`;
-        appendRowTop(a, r.sourceObjectName, `${r.sourceModuleName} · no source`);
+        appendRowTop(a, objectKind, r.sourceObjectName, `${r.sourceModuleName} · no source`);
         li.appendChild(a);
     }
     return li;
 }
 
-function appendRowTop(anchor, name, meta) {
+function appendRowTop(anchor, kind, name, meta) {
     const top = document.createElement("div");
     top.className = "source-viewer__refs-row-top";
+    if (kind) {
+        top.appendChild(buildKindBadge(kind));
+    }
     const nameSpan = document.createElement("span");
     nameSpan.className = "source-viewer__refs-name";
     nameSpan.textContent = name;
@@ -572,6 +573,75 @@ function appendRowTop(anchor, name, meta) {
     metaSpan.textContent = meta;
     top.appendChild(metaSpan);
     anchor.appendChild(top);
+}
+
+function appendMemberRow(anchor, kind, name, signature) {
+    const row = document.createElement("div");
+    row.className = "source-viewer__refs-member-row";
+    if (kind) {
+        row.appendChild(buildKindBadge(kind));
+    }
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "source-viewer__refs-member-name";
+    nameSpan.textContent = `${name}${signature ?? ""}`;
+    row.appendChild(nameSpan);
+    anchor.appendChild(row);
+}
+
+/// Renders a kind badge that matches the outline pane's pill-style chips.
+/// Label text + colour family are derived from the raw kind string the
+/// server hands us (procedure / table / event_publisher / …). Mirrors the
+/// C# helpers (KindBadgeLabel / KindBadgeClass) in SourceFileViewer.razor —
+/// keep the two in sync when a new symbol kind lands.
+function buildKindBadge(kind) {
+    const span = document.createElement("span");
+    span.className = `source-viewer__outline-badge ${kindBadgeClass(kind)}`;
+    span.textContent = kindBadgeLabel(kind);
+    return span;
+}
+
+function kindBadgeLabel(kind) {
+    switch ((kind ?? "").toLowerCase()) {
+        case "field":                  return "field";
+        case "trigger":                return "trigger";
+        case "procedure":              return "proc";
+        case "internal_procedure":     return "internal";
+        case "protected_procedure":    return "protected";
+        case "local_procedure":        return "local";
+        case "event_publisher":        return "event pub";
+        case "event_subscriber":       return "event sub";
+        case "codeunit":               return "codeunit";
+        case "table":                  return "table";
+        case "tableextension":         return "table ext";
+        case "page":                   return "page";
+        case "pageextension":          return "page ext";
+        case "report":                 return "report";
+        case "reportextension":        return "report ext";
+        case "xmlport":                return "xmlport";
+        case "query":                  return "query";
+        case "controladdin":           return "controladd";
+        case "enum":                   return "enum";
+        case "enumextension":          return "enum ext";
+        case "interface":              return "interface";
+        case "permissionset":          return "permset";
+        case "permissionsetextension": return "permset ext";
+        case "profile":                return "profile";
+        default:                       return kind ?? "";
+    }
+}
+
+function kindBadgeClass(kind) {
+    switch ((kind ?? "").toLowerCase()) {
+        case "field":                return "source-viewer__outline-badge--field";
+        case "trigger":              return "source-viewer__outline-badge--trigger";
+        case "event_publisher":
+        case "event_subscriber":     return "source-viewer__outline-badge--event";
+        case "procedure":
+        case "internal_procedure":
+        case "protected_procedure":
+        case "local_procedure":      return "source-viewer__outline-badge--proc";
+        default:                     return "source-viewer__outline-badge--object";
+    }
 }
 
 function wireRefsCloseButton(root) {
