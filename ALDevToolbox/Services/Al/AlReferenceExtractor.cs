@@ -112,6 +112,22 @@ public static class AlReferenceExtractor
                     continue;
                 }
 
+                // Object-scope `var` keyword: scan label declarations
+                // (`Name: Label '…';`) into the bottom frame so bare uses
+                // of label vars in procedure bodies resolve through the
+                // same scope-walking path field accesses do. Object-scope
+                // non-label vars come in via _ctx.GlobalVars from the
+                // symbol package — we only need to fill the label gap
+                // because labels aren't AL object types and get skipped
+                // by the symbol-package variable importer.
+                if (_scopeStack.Count == 1
+                    && tok.Kind == AlTokenKind.Identifier
+                    && string.Equals(tok.Value, "var", StringComparison.OrdinalIgnoreCase))
+                {
+                    ScanObjectScopeLabels();
+                    continue;
+                }
+
                 // Inside a procedure / trigger body, track nested block
                 // depth. `begin` and `case` open blocks closed by `end`;
                 // we maintain the depth so the procedure's own `end;`
@@ -180,6 +196,18 @@ public static class AlReferenceExtractor
                         if (TryConsumeBareSelfCall()) continue;
                     }
 
+                    // Bare use of an in-scope Label-typed variable —
+                    // `Error(UnsupportedTypeErr)` style. Emits a
+                    // label_use reference so Find references on the
+                    // label declaration surfaces all callers. Fires
+                    // BEFORE implicit-Rec field access because that
+                    // handler treats in-scope names as "skip".
+                    if (_scopeStack.Count > 1
+                        && (tok.Kind == AlTokenKind.QuotedIdentifier || tok.Kind == AlTokenKind.Identifier))
+                    {
+                        if (TryConsumeLabelUse()) continue;
+                    }
+
                     // Implicit-Rec field access: bare quoted or unquoted
                     // identifier with no qualifier, no `(`, no `::`, no
                     // `.`. Inside a table / page / etc. body, AL lets you
@@ -208,6 +236,25 @@ public static class AlReferenceExtractor
                         && _tokens[_pos + 1].Value == "=")
                     {
                         if (TryConsumeObjectScopeProperty()) continue;
+                    }
+
+                    // Field declaration with a typed third arg —
+                    // `field(N; "Name"; Enum "Sales Document Type")`.
+                    // The table-side three-arg form ships the field's
+                    // type as an AL object reference; extracting it
+                    // lets the source viewer underline the enum / record
+                    // name. Page-side `field("Name"; Rec."Field")` lacks
+                    // a type and is handled separately by the chain
+                    // walker (Rec.Field resolves through implicit-Rec).
+                    if (_scopeStack.Count == 1
+                        && tok.Kind == AlTokenKind.Identifier
+                        && string.Equals(tok.Value, "field", StringComparison.OrdinalIgnoreCase)
+                        && _pos + 1 < _tokens.Count
+                        && _tokens[_pos + 1].Kind == AlTokenKind.Punct
+                        && _tokens[_pos + 1].Value == "(")
+                    {
+                        TryConsumeFieldDeclaration();
+                        continue;
                     }
                 }
 
@@ -787,12 +834,26 @@ public static class AlReferenceExtractor
         /// not a known property — could be a custom user property the
         /// extractor doesn't model, or any other object-scope token).
         ///
-        /// Coverage in v1 (matches the user-facing screenshot list):
-        /// SourceTable, LookupPageID, CardPageID, DrillDownPageID,
-        /// DataCaptionFields. Deferred (need field-context tracking or
-        /// complex value-shape parsing): TableRelation, CalcFormula,
-        /// Permissions, SourceTableView, RunObject, enum-typed field
-        /// declarations.
+        /// Coverage:
+        /// <list type="bullet">
+        ///   <item>Single-object: SourceTable, LookupPageID, CardPageID,
+        ///         DrillDownPageID, RunObject. Value is a name (quoted or
+        ///         bare) optionally preceded by a kind keyword.</item>
+        ///   <item>Field list: DataCaptionFields. Comma-separated field
+        ///         names on the owner's table.</item>
+        ///   <item>TableRelation: scan-and-emit every type-resolving
+        ///         identifier in the value. Catches the simple form
+        ///         (<c>TableRelation = Customer;</c>), the with-filter
+        ///         form (<c>… where(…)</c>), and the conditional form
+        ///         (<c>if (…) X else Y</c>) — for the conditional shape
+        ///         every branch's table gets a row, which is what a
+        ///         developer wants from "shortcut into the table".</item>
+        ///   <item>Permissions: <c>tabledata "X" = rm, tabledata "Y" = m;</c>
+        ///         emits one property_object per tabledata target.</item>
+        /// </list>
+        /// Deferred (need richer value parsing): CalcFormula's nested
+        /// table.field + filter expressions, SourceTableView's filter
+        /// expressions, where()-bound field refs in TableRelation.
         /// </summary>
         private bool TryConsumeObjectScopeProperty()
         {
@@ -802,13 +863,30 @@ public static class AlReferenceExtractor
             if (string.Equals(name, "SourceTable", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "LookupPageID", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "CardPageID", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(name, "DrillDownPageID", StringComparison.OrdinalIgnoreCase))
+                || string.Equals(name, "DrillDownPageID", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "RunObject", StringComparison.OrdinalIgnoreCase))
             {
                 return TryConsumeObjectReferenceProperty(name);
             }
             if (string.Equals(name, "DataCaptionFields", StringComparison.OrdinalIgnoreCase))
             {
                 return TryConsumeDataCaptionFields();
+            }
+            if (string.Equals(name, "TableRelation", StringComparison.OrdinalIgnoreCase))
+            {
+                return TryConsumeTableRelation();
+            }
+            if (string.Equals(name, "Permissions", StringComparison.OrdinalIgnoreCase))
+            {
+                return TryConsumePermissions();
+            }
+            if (string.Equals(name, "CalcFormula", StringComparison.OrdinalIgnoreCase))
+            {
+                return TryConsumeCalcFormula();
+            }
+            if (string.Equals(name, "SourceTableView", StringComparison.OrdinalIgnoreCase))
+            {
+                return TryConsumeSourceTableView();
             }
             return false;
         }
@@ -922,6 +1000,587 @@ public static class AlReferenceExtractor
             }
             if (At(";")) _pos++;
             return true;
+        }
+
+        /// <summary>
+        /// Greedy scan of a <c>TableRelation = …;</c> value: walks every
+        /// token between <c>=</c> and <c>;</c>, emitting one
+        /// <c>property_object</c> per identifier that resolves to a
+        /// table in the catalog. Catches:
+        ///   - bare: <c>TableRelation = Customer;</c>
+        ///   - quoted: <c>TableRelation = "G/L Account";</c>
+        ///   - dotted: <c>TableRelation = "G/L Account"."No.";</c> (only
+        ///     the table portion emits — field portion is field-context
+        ///     work for a follow-up)
+        ///   - with filter: <c>TableRelation = Customer where(…);</c> →
+        ///     emits Customer; the filter's <c>field(X)</c> references
+        ///     stay deferred.
+        ///   - conditional: <c>if (Type = const(Item)) Item."No." else
+        ///     Resource."No.";</c> → emits Item and Resource (every
+        ///     branch's table). const(…) values like <c>Item</c> the
+        ///     enum value won't resolve as an object — they're skipped
+        ///     silently.
+        ///
+        /// De-duplicates within one value so a repeated reference doesn't
+        /// produce a stack of identical underlines.
+        /// </summary>
+        private bool TryConsumeTableRelation()
+        {
+            _pos++; // property name
+            if (!At("=")) { SkipToSemicolon(); return true; }
+            _pos++; // =
+
+            var seen = new HashSet<long>();
+            while (_pos < _tokens.Count && !At(";"))
+            {
+                var tok = _tokens[_pos];
+                if (tok.Kind == AlTokenKind.Identifier || tok.Kind == AlTokenKind.QuotedIdentifier)
+                {
+                    var target = _ctx.Resolver.ResolveTypeByName(tok.Value);
+                    if (target is not null
+                        && string.Equals(target.Kind, "table", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // De-dupe by (line, column) so the same identifier
+                        // spelled twice at different positions still emits
+                        // twice, but the same token doesn't get re-emitted
+                        // on iteration glitches.
+                        var key = ((long)tok.Line << 20) | (uint)tok.Column;
+                        if (seen.Add(key))
+                        {
+                            _refs.Add(new ExtractedReference(
+                                Line: tok.Line,
+                                Column: tok.Column,
+                                TargetAppId: target.AppId,
+                                TargetObjectKind: target.Kind,
+                                TargetObjectId: target.ObjectId,
+                                TargetObjectName: target.Name,
+                                TargetMemberName: null,
+                                TargetMemberKind: null,
+                                ReferenceKind: "property_object"));
+                            _resolved++;
+                        }
+                    }
+                }
+                _pos++;
+            }
+            if (At(";")) _pos++;
+            return true;
+        }
+
+        /// <summary>
+        /// Handles <c>Permissions = tabledata "Customer" = rm,
+        /// tabledata "Sales Header" = X;</c>. The list is comma-separated;
+        /// each entry begins with <c>tabledata</c> (or, rarely,
+        /// <c>tabledata id</c> via numeric id, which we skip for the
+        /// same reason as numeric typed-literal targets) followed by a
+        /// table name and the <c>= &lt;rights&gt;</c> rights spec we
+        /// don't care about. Emits one <c>property_object</c> row per
+        /// tabledata target so each underlines and Go-to-definition
+        /// jumps to the table declaration.
+        /// </summary>
+        private bool TryConsumePermissions()
+        {
+            _pos++; // property name
+            if (!At("=")) { SkipToSemicolon(); return true; }
+            _pos++; // =
+
+            while (_pos < _tokens.Count && !At(";"))
+            {
+                var tok = _tokens[_pos];
+                // Watch for `tabledata <Name>` pairs. Other entry types
+                // (e.g. <c>tabledata 27 = rm</c> with a numeric id) miss
+                // the catalog lookup and fall through silently.
+                if (tok.Kind == AlTokenKind.Identifier
+                    && string.Equals(tok.Value, "tabledata", StringComparison.OrdinalIgnoreCase))
+                {
+                    _pos++;
+                    if (_pos >= _tokens.Count) break;
+                    var nameTok = _tokens[_pos];
+                    if (nameTok.Kind == AlTokenKind.Identifier
+                        || nameTok.Kind == AlTokenKind.QuotedIdentifier)
+                    {
+                        var target = _ctx.Resolver.ResolveTypeByName(nameTok.Value);
+                        if (target is not null
+                            && string.Equals(target.Kind, "table", StringComparison.OrdinalIgnoreCase))
+                        {
+                            _refs.Add(new ExtractedReference(
+                                Line: nameTok.Line,
+                                Column: nameTok.Column,
+                                TargetAppId: target.AppId,
+                                TargetObjectKind: target.Kind,
+                                TargetObjectId: target.ObjectId,
+                                TargetObjectName: target.Name,
+                                TargetMemberName: null,
+                                TargetMemberKind: null,
+                                ReferenceKind: "property_object"));
+                            _resolved++;
+                        }
+                        _pos++;
+                    }
+                    continue;
+                }
+                _pos++;
+            }
+            if (At(";")) _pos++;
+            return true;
+        }
+
+        /// <summary>
+        /// Recognises <c>field(N; "Name"; Type)</c> declarations at
+        /// object scope and emits a reference for the type when it's an
+        /// AL object (typically <c>Enum "Sales Document Type"</c>).
+        /// Page-side <c>field("Name"; Rec."Field")</c> declarations bind
+        /// to a Rec field instead of an object type — those are caught
+        /// by the implicit-Rec field-access handler when the walker
+        /// reaches the <c>Rec.</c> part, so this method doesn't need
+        /// to handle them.
+        ///
+        /// Other type shapes — <c>Code[20]</c>, <c>Integer</c>,
+        /// <c>Decimal</c>, <c>Boolean</c>, <c>DateTime</c> — aren't AL
+        /// objects in the catalog, so they fall through silently.
+        /// </summary>
+        private void TryConsumeFieldDeclaration()
+        {
+            _pos++; // field
+            if (!At("(")) return;
+            _pos++; // (
+
+            // Three semicolon-separated args at depth 0: id; name; type.
+            // We only care about arg[2] — the type. Walk forward,
+            // tracking paren depth, counting semicolons.
+            int depth = 0;
+            int semicolonsSeen = 0;
+            var typeTokens = new List<AlToken>();
+            while (_pos < _tokens.Count)
+            {
+                var tok = _tokens[_pos];
+                if (tok.Kind == AlTokenKind.Punct)
+                {
+                    if (tok.Value == "(") { depth++; _pos++; continue; }
+                    if (tok.Value == ")")
+                    {
+                        if (depth == 0) { _pos++; break; }
+                        depth--;
+                        _pos++;
+                        continue;
+                    }
+                    if (tok.Value == ";" && depth == 0)
+                    {
+                        semicolonsSeen++;
+                        _pos++;
+                        continue;
+                    }
+                }
+                if (semicolonsSeen == 2)
+                {
+                    typeTokens.Add(tok);
+                }
+                _pos++;
+            }
+
+            EmitTypedReference(typeTokens);
+
+            // The declaration's trailing `{ … }` block contains its
+            // own properties (Caption, TableRelation, ToolTip, …) — the
+            // main loop walks them in their own right.
+        }
+
+        /// <summary>
+        /// Emits a reference for an AL-object-typed value: when the token
+        /// stream looks like <c>&lt;kind&gt; Name</c> (e.g.
+        /// <c>Enum "Sales Document Type"</c>, <c>Record Customer</c>),
+        /// resolves Name in the catalog and emits a
+        /// <c>property_object</c> row. The kind keyword is required so
+        /// scalar types like <c>Code[20]</c> don't try to resolve
+        /// <c>Code</c> as an object.
+        /// </summary>
+        private void EmitTypedReference(List<AlToken> tokens)
+        {
+            if (tokens.Count < 2) return;
+
+            // Find the kind keyword + immediate name pair. Walk forward
+            // so `Enum "X"` inside parentheses-stripped tokens still
+            // resolves correctly when there's leading / trailing noise.
+            for (int i = 0; i < tokens.Count - 1; i++)
+            {
+                var kw = tokens[i];
+                if (kw.Kind != AlTokenKind.Identifier) continue;
+                if (!IsAlObjectKeyword(kw.Value)) continue;
+                var nameTok = tokens[i + 1];
+                if (nameTok.Kind != AlTokenKind.Identifier
+                    && nameTok.Kind != AlTokenKind.QuotedIdentifier)
+                {
+                    continue;
+                }
+                var target = _ctx.Resolver.ResolveTypeByName(nameTok.Value);
+                if (target is null) return;
+                _refs.Add(new ExtractedReference(
+                    Line: nameTok.Line,
+                    Column: nameTok.Column,
+                    TargetAppId: target.AppId,
+                    TargetObjectKind: target.Kind,
+                    TargetObjectId: target.ObjectId,
+                    TargetObjectName: target.Name,
+                    TargetMemberName: null,
+                    TargetMemberKind: null,
+                    ReferenceKind: "property_object"));
+                _resolved++;
+                return;
+            }
+        }
+
+        /// <summary>
+        /// Handles a flowfield's <c>CalcFormula = sum("G/L Entry".Amount
+        /// where("G/L Account No." = field("No.")));</c>. Emits up to
+        /// three reference shapes:
+        /// <list type="bullet">
+        ///   <item>The aggregator's queried table → <c>property_object</c>
+        ///         on the table.</item>
+        ///   <item>The optional <c>.&lt;field&gt;</c> following the
+        ///         table → <c>field_access</c> on that table. Only used
+        ///         by sum / min / max / average / lookup; count and
+        ///         exist don't have a target field.</item>
+        ///   <item>Each <c>&lt;field&gt; =</c> LHS inside <c>where(…)</c>
+        ///         → <c>field_access</c> on the queried table.</item>
+        /// </list>
+        /// The user's primary motivation: clicking into the table being
+        /// aggregated when investigating where a flowfield's value comes
+        /// from. v1 leaves the RHS of where pairs alone — <c>field("X")</c>
+        /// refers to a field on the owner (this) table and would require
+        /// field-context tracking we don't yet have.
+        /// </summary>
+        private bool TryConsumeCalcFormula()
+        {
+            _pos++; // property name
+            if (!At("=")) { SkipToSemicolon(); return true; }
+            _pos++; // =
+
+            // Aggregator function name (sum / count / exist / lookup / …).
+            // We don't validate which one — any Identifier followed by
+            // `(` is acceptable; the structure inside is what we read.
+            if (_pos < _tokens.Count && _tokens[_pos].Kind == AlTokenKind.Identifier)
+            {
+                _pos++;
+            }
+            if (!At("(")) { SkipToSemicolon(); return true; }
+            _pos++; // (
+
+            // Queried table: bare or quoted identifier as the first token
+            // inside the aggregator's parens.
+            AlTypeRef? queriedTable = null;
+            if (_pos < _tokens.Count
+                && (_tokens[_pos].Kind == AlTokenKind.Identifier
+                    || _tokens[_pos].Kind == AlTokenKind.QuotedIdentifier))
+            {
+                var tableTok = _tokens[_pos];
+                var resolved = _ctx.Resolver.ResolveTypeByName(tableTok.Value);
+                if (resolved is not null
+                    && string.Equals(resolved.Kind, "table", StringComparison.OrdinalIgnoreCase))
+                {
+                    queriedTable = resolved;
+                    _refs.Add(new ExtractedReference(
+                        Line: tableTok.Line,
+                        Column: tableTok.Column,
+                        TargetAppId: resolved.AppId,
+                        TargetObjectKind: resolved.Kind,
+                        TargetObjectId: resolved.ObjectId,
+                        TargetObjectName: resolved.Name,
+                        TargetMemberName: null,
+                        TargetMemberKind: null,
+                        ReferenceKind: "property_object"));
+                    _resolved++;
+                }
+                _pos++;
+            }
+
+            // Optional `.<field>` immediately after the table name —
+            // sum / min / max / average / lookup target a specific field.
+            if (queriedTable is not null && At("."))
+            {
+                _pos++;
+                if (_pos < _tokens.Count
+                    && (_tokens[_pos].Kind == AlTokenKind.Identifier
+                        || _tokens[_pos].Kind == AlTokenKind.QuotedIdentifier))
+                {
+                    EmitFieldAccessIfResolves(_tokens[_pos], queriedTable);
+                    _pos++;
+                }
+            }
+
+            // Walk the rest of the value (up to the matching `)` of
+            // the aggregator) extracting where()/sorting() field refs
+            // on the queried table.
+            if (queriedTable is not null)
+            {
+                EmitWhereSortingFieldRefs(queriedTable, stopAt: ";");
+            }
+
+            SkipToSemicolon();
+            return true;
+        }
+
+        /// <summary>
+        /// Handles a page's <c>SourceTableView = sorting("No."),
+        /// where("Document Type" = filter(Order));</c>. Field references
+        /// inside the <c>sorting(…)</c> and <c>where(…)</c> clauses are
+        /// on the page's SourceTable — same Rec binding the
+        /// implicit-field-access handler uses.
+        /// </summary>
+        private bool TryConsumeSourceTableView()
+        {
+            _pos++; // property name
+            if (!At("=")) { SkipToSemicolon(); return true; }
+            _pos++; // =
+
+            var receiver = RecType();
+            if (receiver is not null)
+            {
+                EmitWhereSortingFieldRefs(receiver, stopAt: ";");
+            }
+            SkipToSemicolon();
+            return true;
+        }
+
+        /// <summary>
+        /// Walks forward from the current position to a delimiter
+        /// (<paramref name="stopAt"/>) emitting <c>field_access</c>
+        /// references on <paramref name="receiver"/> for fields named
+        /// inside <c>where(…)</c> and <c>sorting(…)</c> clauses. The
+        /// rule: every identifier on the LHS of <c>=</c> inside a
+        /// <c>where(…)</c> is a field; every comma-separated identifier
+        /// inside <c>sorting(…)</c> is a field.
+        ///
+        /// Doesn't advance past <paramref name="stopAt"/> — callers
+        /// terminate the value via their own SkipToSemicolon.
+        /// </summary>
+        private void EmitWhereSortingFieldRefs(AlTypeRef receiver, string stopAt)
+        {
+            while (_pos < _tokens.Count && !At(stopAt))
+            {
+                var tok = _tokens[_pos];
+                if (tok.Kind == AlTokenKind.Identifier
+                    && (string.Equals(tok.Value, "where", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(tok.Value, "sorting", StringComparison.OrdinalIgnoreCase))
+                    && _pos + 1 < _tokens.Count
+                    && _tokens[_pos + 1].Kind == AlTokenKind.Punct
+                    && _tokens[_pos + 1].Value == "(")
+                {
+                    var clauseKind = tok.Value;
+                    _pos += 2; // identifier + (
+                    EmitFieldsInsideClause(receiver, clauseKind);
+                    continue;
+                }
+                _pos++;
+            }
+        }
+
+        /// <summary>
+        /// Reads tokens inside a <c>where(…)</c> or <c>sorting(…)</c>
+        /// clause starting just after the opening <c>(</c>. Tracks
+        /// paren depth so nested calls like <c>field("X")</c> or
+        /// <c>filter('A'|'B')</c> on the RHS don't bleed into the
+        /// next iteration. Stops at the matching closing <c>)</c>.
+        /// </summary>
+        private void EmitFieldsInsideClause(AlTypeRef receiver, string clauseKind)
+        {
+            bool whereClause = string.Equals(clauseKind, "where", StringComparison.OrdinalIgnoreCase);
+            int depth = 0;
+            // Track which side of `=` we're on inside a where pair:
+            // expect-LHS at the start of each segment, flip to expect-
+            // RHS after `=`, flip back at `,` (next pair).
+            bool expectLhs = true;
+            while (_pos < _tokens.Count)
+            {
+                var tok = _tokens[_pos];
+
+                if (tok.Kind == AlTokenKind.Punct)
+                {
+                    if (tok.Value == "(")
+                    {
+                        depth++;
+                        _pos++;
+                        continue;
+                    }
+                    if (tok.Value == ")")
+                    {
+                        if (depth == 0)
+                        {
+                            _pos++;
+                            return;
+                        }
+                        depth--;
+                        _pos++;
+                        continue;
+                    }
+                    if (depth == 0)
+                    {
+                        if (tok.Value == "=")
+                        {
+                            expectLhs = false;
+                            _pos++;
+                            continue;
+                        }
+                        if (tok.Value == ",")
+                        {
+                            expectLhs = true;
+                            _pos++;
+                            continue;
+                        }
+                    }
+                    _pos++;
+                    continue;
+                }
+
+                if (depth == 0
+                    && (tok.Kind == AlTokenKind.Identifier || tok.Kind == AlTokenKind.QuotedIdentifier))
+                {
+                    // sorting(…) — every comma-separated identifier is a field.
+                    // where(…) — only the LHS of each `=` pair.
+                    bool emitField = whereClause ? expectLhs : true;
+                    if (emitField)
+                    {
+                        EmitFieldAccessIfResolves(tok, receiver);
+                    }
+                    _pos++;
+                    continue;
+                }
+
+                _pos++;
+            }
+        }
+
+        /// <summary>
+        /// Emits a <c>field_access</c> reference at <paramref name="tok"/>
+        /// when its value resolves to a field on <paramref name="receiver"/>.
+        /// Silent no-op otherwise so callers can scan permissively.
+        /// </summary>
+        private void EmitFieldAccessIfResolves(AlToken tok, AlTypeRef receiver)
+        {
+            var member = _ctx.Resolver.ResolveMember(receiver, tok.Value);
+            if (member is null) return;
+            if (!string.Equals(member.Kind, "field", StringComparison.OrdinalIgnoreCase)) return;
+            var targetOwner = member.DeclaringType ?? receiver;
+            _refs.Add(new ExtractedReference(
+                Line: tok.Line,
+                Column: tok.Column,
+                TargetAppId: targetOwner.AppId,
+                TargetObjectKind: targetOwner.Kind,
+                TargetObjectId: targetOwner.ObjectId,
+                TargetObjectName: targetOwner.Name,
+                TargetMemberName: member.Name,
+                TargetMemberKind: member.Kind,
+                ReferenceKind: "field_access"));
+            _resolved++;
+        }
+
+        // ── Label declarations + uses (tranche 3) ─────────────────────
+
+        private static readonly HashSet<string> ObjectSectionKeywords = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "procedure", "trigger", "fields", "actions", "keys",
+            "layout", "dataset", "schema", "elements", "controls",
+            "requestpage", "labels",
+        };
+
+        /// <summary>
+        /// Object-scope <c>var</c> block: scans <c>Name: Label '…';</c>
+        /// declarations and adds them to the bottom (object-scope) frame
+        /// so bare uses inside any procedure / trigger body in the file
+        /// resolve through the same scope-walk that fields and other
+        /// vars use. Non-label declarations are skipped — those come in
+        /// via the symbol-package globals already. Terminates at the
+        /// closing <c>}</c> of the object or the next section keyword
+        /// (<c>procedure</c>, <c>trigger</c>, <c>fields</c>, …).
+        /// </summary>
+        private void ScanObjectScopeLabels()
+        {
+            _pos++; // var keyword
+
+            // Find the bottom (object-scope) frame to mutate.
+            ScopeFrame? bottom = null;
+            foreach (var f in _scopeStack) bottom = f;
+            if (bottom is null) return;
+
+            int braceDepth = 0;
+            while (_pos < _tokens.Count)
+            {
+                var tok = _tokens[_pos];
+
+                if (tok.Kind == AlTokenKind.Punct)
+                {
+                    if (tok.Value == "{") { braceDepth++; _pos++; continue; }
+                    if (tok.Value == "}")
+                    {
+                        if (braceDepth == 0) return;
+                        braceDepth--;
+                        _pos++;
+                        continue;
+                    }
+                }
+                if (braceDepth == 0
+                    && tok.Kind == AlTokenKind.Identifier
+                    && ObjectSectionKeywords.Contains(tok.Value))
+                {
+                    return;
+                }
+
+                // Detect `Name : Label`. The lexer drops whitespace, so
+                // the three tokens are adjacent in the stream.
+                if ((tok.Kind == AlTokenKind.Identifier || tok.Kind == AlTokenKind.QuotedIdentifier)
+                    && _pos + 2 < _tokens.Count
+                    && _tokens[_pos + 1].Kind == AlTokenKind.Punct
+                    && _tokens[_pos + 1].Value == ":"
+                    && _tokens[_pos + 2].Kind == AlTokenKind.Identifier
+                    && string.Equals(_tokens[_pos + 2].Value, "Label", StringComparison.OrdinalIgnoreCase))
+                {
+                    var nameLower = tok.Value.ToLowerInvariant();
+                    if (!bottom.Vars.ContainsKey(nameLower))
+                    {
+                        bottom.Vars[nameLower] = new ResolvedVariableType(null, "Label");
+                    }
+                    _pos += 3;
+                    continue;
+                }
+                _pos++;
+            }
+        }
+
+        /// <summary>
+        /// Emits a <c>label_use</c> reference when the bare identifier
+        /// resolves to an in-scope variable typed <c>Label</c>. Target
+        /// is the file's owner object + the label's name + kind
+        /// <c>"label"</c>, so the existing member-scoped query (and
+        /// import-time symbol-id stamping) lights up the Find references
+        /// path identical to a procedure call.
+        /// </summary>
+        private bool TryConsumeLabelUse()
+        {
+            var tok = _tokens[_pos];
+            var key = tok.Value.ToLowerInvariant();
+            foreach (var frame in _scopeStack)
+            {
+                if (!frame.Vars.TryGetValue(key, out var declared)) continue;
+                if (!string.Equals(declared.TypeName, "Label", StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+                var owner = OwnerType();
+                if (owner is null) return false;
+                _refs.Add(new ExtractedReference(
+                    Line: tok.Line,
+                    Column: tok.Column,
+                    TargetAppId: owner.AppId,
+                    TargetObjectKind: owner.Kind,
+                    TargetObjectId: owner.ObjectId,
+                    TargetObjectName: owner.Name,
+                    TargetMemberName: tok.Value,
+                    TargetMemberKind: "label",
+                    ReferenceKind: "label_use"));
+                _resolved++;
+                _pos++;
+                return true;
+            }
+            return false;
         }
 
         private void SkipToSemicolon()

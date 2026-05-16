@@ -472,4 +472,100 @@ public sealed class AlSymbolExtractorTests
         fields.Should().ContainSingle();
         fields[0].Name.Should().Be("Real");
     }
+
+    // ── Label declarations ─────────────────────────────────────────
+
+    [Fact]
+    public void Extracts_object_scope_label_declaration_with_content()
+    {
+        // The label content stashed in Signature is what makes the
+        // customer-error-message search-and-navigate use case work —
+        // the developer pastes the error text into search, lands here.
+        var source = """
+            codeunit 50100 "Foo"
+            {
+                var
+                    UnsupportedTypeErr: Label 'Unsupported type %1.', Comment = '%1 is the type name';
+            }
+            """;
+
+        var labels = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "label")
+            .ToList();
+
+        labels.Should().ContainSingle();
+        labels[0].Name.Should().Be("UnsupportedTypeErr");
+        labels[0].Signature.Should().Be("Unsupported type %1.");
+    }
+
+    [Fact]
+    public void Extracts_procedure_local_label_declaration()
+    {
+        // Procedure-local labels are common when an error message is
+        // only used in one procedure. AlSymbolExtractor is line-based
+        // so it picks them up the same way as object-scope labels.
+        var source = """
+            codeunit 50100 "Foo"
+            {
+                procedure DoStuff()
+                var
+                    LocalErr: Label 'Local error %1.';
+                begin
+                end;
+            }
+            """;
+
+        var labels = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "label")
+            .ToList();
+
+        labels.Should().ContainSingle();
+        labels[0].Name.Should().Be("LocalErr");
+        labels[0].Signature.Should().Be("Local error %1.");
+    }
+
+    [Fact]
+    public void Label_with_doubled_apostrophe_unescapes_correctly()
+    {
+        // AL escapes single quotes as `''`. The content extractor must
+        // un-double them so the stored signature matches what the user
+        // would search for ("won't" not "won''t").
+        var source = """
+            codeunit 50100 "Foo"
+            {
+                var
+                    Err: Label 'It''s broken.';
+            }
+            """;
+
+        var labels = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "label")
+            .ToList();
+
+        labels.Should().ContainSingle();
+        labels[0].Signature.Should().Be("It's broken.");
+    }
+
+    [Fact]
+    public void Non_label_var_declarations_are_not_emitted_as_labels()
+    {
+        // Variables typed as anything other than Label must not get
+        // label rows. The regex specifically requires `Label` after the
+        // colon, so a Record / Integer / Code variable shouldn't match.
+        var source = """
+            codeunit 50100 "Foo"
+            {
+                var
+                    Cust: Record Customer;
+                    Counter: Integer;
+                    Code: Code[20];
+            }
+            """;
+
+        var labels = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "label")
+            .ToList();
+
+        labels.Should().BeEmpty();
+    }
 }

@@ -3402,6 +3402,17 @@ ul.form-field-error {
     color: #f0a85a;
 }
 
+.source-viewer__outline-badge--label {
+    /* Cyan family — distinct from fields (blue), procedures (purple),
+       and triggers/events (green/orange). Labels show up frequently in
+       large codeunits and benefit from being visually separable so a
+       developer triangulating a customer-reported error string can
+       spot them at a glance. */
+    background: rgba(80, 190, 200, 0.16);
+    border-color: rgba(80, 190, 200, 0.4);
+    color: #6ec9d2;
+}
+
 .source-viewer__outline-badge--proc {
     background: rgba(186, 134, 255, 0.16);
     border-color: rgba(186, 134, 255, 0.4);

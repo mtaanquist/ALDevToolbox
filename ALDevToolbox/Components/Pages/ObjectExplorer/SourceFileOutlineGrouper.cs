@@ -51,6 +51,7 @@ public static class SourceFileOutlineGrouper
         var eventPublishers = new List<OutlineEntry>();
         var eventSubscribers = new List<OutlineEntry>();
         var objectTriggers = new List<OutlineEntry>();
+        var labels = new List<OutlineEntry>();
 
         // Track which field / action is "active" so a field-bound or
         // action-bound trigger nests under it. When the parent is filtered
@@ -171,10 +172,20 @@ public static class SourceFileOutlineGrouper
                     currentActionVisible = false;
                     activeParent = "none";
                     break;
+
+                case "label":
+                    // Labels live in var blocks at object or procedure
+                    // scope. They don't reset field / action context the
+                    // way procedures do — a label sandwiched between
+                    // fields stays under the fields section visually,
+                    // but the outline pane groups it under LABELS for
+                    // discoverability.
+                    if (Matches(item)) labels.Add(new OutlineEntry(item, IsChild: false));
+                    break;
             }
         }
 
-        var groups = new List<OutlineGroup>(8);
+        var groups = new List<OutlineGroup>(9);
         AddIfAny(groups, "object", "OBJECT", objectItems);
         AddIfAny(groups, "fields", "FIELDS", fieldItems);
         AddIfAny(groups, "actions", "ACTIONS", actionItems);
@@ -183,6 +194,7 @@ public static class SourceFileOutlineGrouper
         AddIfAny(groups, "event-publishers", "EVENT PUBLISHERS", eventPublishers);
         AddIfAny(groups, "event-subscribers", "EVENT SUBSCRIBERS", eventSubscribers);
         AddIfAny(groups, "triggers", "TRIGGERS", objectTriggers);
+        AddIfAny(groups, "labels", "LABELS", labels);
         return groups;
     }
 

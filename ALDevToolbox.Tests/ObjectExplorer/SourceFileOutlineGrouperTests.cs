@@ -243,4 +243,27 @@ public sealed class SourceFileOutlineGrouperTests
         var groups = SourceFileOutlineGrouper.Build(Array.Empty<SourceFileOutlineItem>(), filter: null);
         groups.Should().BeEmpty();
     }
+
+    [Fact]
+    public void Labels_have_their_own_section()
+    {
+        // Labels surface as their own outline section so the user can
+        // see all error-message vars at a glance and click straight to
+        // the declaration line.
+        var input = new[]
+        {
+            Item("codeunit", "Foo", 1, objectId: 50100),
+            Item("label", "UnsupportedTypeErr", 5, signature: "Unsupported type %1."),
+            Item("label", "MissingValueErr", 6, signature: "Missing value."),
+            Item("procedure", "DoStuff", 10),
+        };
+
+        var groups = SourceFileOutlineGrouper.Build(input, filter: null);
+
+        groups.Select(g => g.Title).Should().Contain("LABELS");
+        var labelGroup = groups.Single(g => g.Key == "labels");
+        labelGroup.Items.Should().HaveCount(2);
+        labelGroup.Items.Select(e => e.Item.Name)
+            .Should().BeEquivalentTo(new[] { "UnsupportedTypeErr", "MissingValueErr" });
+    }
 }

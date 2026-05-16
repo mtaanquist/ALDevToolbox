@@ -625,6 +625,465 @@ public sealed class AlReferenceExtractorTests
         result.References.Should().BeEmpty();
     }
 
+    // ── More object-scope properties ───────────────────────────────
+
+    [Fact]
+    public void Run_object_property_emits_target_reference()
+    {
+        // Pages declare RunObject = Page "X" / Codeunit "Y" / Report "Z"
+        // on action blocks. Same shape as SourceTable but with a kind
+        // keyword in front of the name. The kind keyword is consumed
+        // and the catalog resolves the name to the canonical kind.
+        var resolver = MakeResolver();
+        resolver.AddType("Customer Card", new AlTypeRef(BaseAppId, "page", 21, "Customer Card"));
+
+        const string src = """
+            page 22 "Customer List"
+            {
+                actions
+                {
+                    action("Card")
+                    {
+                        RunObject = Page "Customer Card";
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(resolver, "Customer List", null));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Customer Card"
+            && r.TargetObjectKind == "page"
+            && r.ReferenceKind == "property_object");
+    }
+
+    [Fact]
+    public void Table_relation_emits_target_table()
+    {
+        // Simple form: `TableRelation = Customer;` → property_object on
+        // the Customer table. The user's primary use case is "click
+        // through into the related table when investigating a record".
+        const string src = """
+            table 36 "Sales Header"
+            {
+                fields
+                {
+                    field(2; "Sell-to Customer No."; Code[20])
+                    {
+                        TableRelation = Customer;
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(MakeResolver(), "Sales Header"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Customer"
+            && r.TargetObjectKind == "table"
+            && r.ReferenceKind == "property_object");
+    }
+
+    [Fact]
+    public void Table_relation_with_filter_still_emits_the_base_table()
+    {
+        // `TableRelation = Customer where(…)` — the with-filter form
+        // is common. v1 emits the table reference; field references
+        // inside the filter expression stay deferred. The user can
+        // still click through to the Customer table.
+        const string src = """
+            table 36 "Sales Header"
+            {
+                fields
+                {
+                    field(2; "Sell-to Customer No."; Code[20])
+                    {
+                        TableRelation = Customer where("Customer Posting Group" = const('DOMESTIC'));
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(MakeResolver(), "Sales Header"));
+
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "Customer"
+            && r.ReferenceKind == "property_object");
+    }
+
+    [Fact]
+    public void Table_relation_conditional_emits_a_row_per_branch_table()
+    {
+        // `TableRelation = if (X) A."Y" else B."Z"` — emit both A and B
+        // so the user can shortcut into either branch's table.
+        var resolver = MakeResolver();
+        resolver.AddType("Item", new AlTypeRef(BaseAppId, "table", 27, "Item"));
+        resolver.AddType("Resource", new AlTypeRef(BaseAppId, "table", 156, "Resource"));
+
+        const string src = """
+            table 37 "Sales Line"
+            {
+                fields
+                {
+                    field(6; "No."; Code[20])
+                    {
+                        TableRelation = if (Type = const(Item)) Item."No." else Resource."No.";
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(resolver, "Sales Line"));
+
+        result.References.Where(r => r.ReferenceKind == "property_object")
+            .Select(r => r.TargetObjectName)
+            .Should().Contain(new[] { "Item", "Resource" });
+    }
+
+    [Fact]
+    public void Permissions_emits_one_reference_per_tabledata_target()
+    {
+        // `Permissions = tabledata "Customer" = rm, tabledata "Sales Header" = m;`
+        // — the rights spec is irrelevant to references; we just want
+        // the click-through into each listed table.
+        const string src = """
+            codeunit 80 "Sales-Post"
+            {
+                Permissions = tabledata "Customer" = rm, tabledata "Sales Header" = m;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        var perms = result.References.Where(r => r.ReferenceKind == "property_object").ToList();
+        perms.Should().HaveCount(2);
+        perms.Select(r => r.TargetObjectName)
+            .Should().BeEquivalentTo(new[] { "Customer", "Sales Header" });
+        perms.Should().AllSatisfy(r => r.TargetObjectKind.Should().Be("table"));
+    }
+
+    [Fact]
+    public void Field_declaration_with_enum_type_emits_enum_reference()
+    {
+        // `field(1; "Document Type"; Enum "Sales Document Type")` — the
+        // third arg is an AL object reference (the enum). Click-through
+        // from the field declaration into the enum.
+        var resolver = MakeResolver();
+        resolver.AddType("Sales Document Type", new AlTypeRef(BaseAppId, "enum", 39, "Sales Document Type"));
+
+        const string src = """
+            table 36 "Sales Header"
+            {
+                fields
+                {
+                    field(1; "Document Type"; Enum "Sales Document Type") { }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(resolver, "Sales Header"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Sales Document Type"
+            && r.TargetObjectKind == "enum"
+            && r.ReferenceKind == "property_object");
+    }
+
+    [Fact]
+    public void Field_declaration_with_scalar_type_emits_no_reference()
+    {
+        // `field(2; "Sell-to Customer No."; Code[20])` — `Code` isn't an
+        // AL object keyword (it's a primitive scalar). Must not try
+        // to resolve it as an object.
+        const string src = """
+            table 36 "Sales Header"
+            {
+                fields
+                {
+                    field(2; "Sell-to Customer No."; Code[20]) { }
+                    field(3; "Amount"; Decimal) { }
+                    field(4; "Posted"; Boolean) { }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(MakeResolver(), "Sales Header"));
+
+        result.References.Where(r => r.ReferenceKind == "property_object")
+            .Should().BeEmpty(
+                because: "scalar primitive types (Code, Decimal, Boolean) aren't AL objects");
+    }
+
+    // ── Labels (tranche 3) ─────────────────────────────────────────
+
+    [Fact]
+    public void Bare_use_of_object_scope_label_emits_label_use()
+    {
+        // `Error(UnsupportedTypeErr)` — UnsupportedTypeErr is declared
+        // in the codeunit's object-scope var block as a Label. The bare
+        // identifier in the procedure body must resolve as a label_use
+        // reference targeting the codeunit + label name + "label" kind.
+        const string src = """
+            codeunit 50100 "Foo"
+            {
+                var
+                    UnsupportedTypeErr: Label 'Unsupported type %1.';
+
+                procedure DoStuff()
+                begin
+                    Error(UnsupportedTypeErr);
+                end;
+            }
+            """;
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper", new AlTypeRef(BaseAppId, "codeunit", 50100, "MyHelper"));
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "label_use"
+            && r.TargetMemberName == "UnsupportedTypeErr"
+            && r.TargetMemberKind == "label");
+    }
+
+    [Fact]
+    public void Procedure_local_label_use_does_not_emit_object_scope_ref()
+    {
+        // A label declared inside a procedure's var block is local to
+        // that procedure. The walker's existing ParseVarBlock adds it
+        // to the procedure frame; the implicit-Rec / label_use handlers
+        // see it as in-scope. Should still emit label_use targeting the
+        // file owner (oe_module_symbols stores procedure-locals against
+        // the owner object too).
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper", new AlTypeRef(BaseAppId, "codeunit", 50100, "MyHelper"));
+
+        const string src = """
+            codeunit 50100 "Foo"
+            {
+                procedure DoStuff()
+                var
+                    LocalErr: Label 'Local error';
+                begin
+                    Error(LocalErr);
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "label_use"
+            && r.TargetMemberName == "LocalErr");
+    }
+
+    [Fact]
+    public void Non_label_in_scope_variable_does_not_emit_label_use()
+    {
+        // A regular Record variable in scope should NOT emit label_use
+        // on its bare uses. The handler must check the type keyword
+        // matches "Label" before emitting.
+        const string src = """
+            codeunit 50100 "Foo"
+            {
+                procedure DoStuff()
+                var
+                    Cust: Record Customer;
+                begin
+                    if Cust.IsEmpty() then exit;
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Where(r => r.ReferenceKind == "label_use")
+            .Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Multiple_label_uses_in_same_procedure_emit_one_row_each()
+    {
+        // Real BC code uses Error / Message / Confirm with different
+        // label vars on different lines. Each call site should produce
+        // its own label_use row so Find references shows them all.
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper", new AlTypeRef(BaseAppId, "codeunit", 50100, "MyHelper"));
+
+        const string src = """
+            codeunit 50100 "Foo"
+            {
+                var
+                    ErrA: Label 'Err A';
+                    ErrB: Label 'Err B';
+
+                procedure DoStuff()
+                begin
+                    if true then
+                        Error(ErrA);
+                    if true then
+                        Error(ErrB);
+                    Message(ErrA);
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        var labelUses = result.References.Where(r => r.ReferenceKind == "label_use").ToList();
+        labelUses.Should().HaveCount(3);
+        labelUses.Count(r => r.TargetMemberName == "ErrA").Should().Be(2);
+        labelUses.Count(r => r.TargetMemberName == "ErrB").Should().Be(1);
+    }
+
+    // ── CalcFormula + SourceTableView (tranche 2) ──────────────────
+
+    [Fact]
+    public void Calc_formula_emits_queried_table_and_target_field()
+    {
+        // sum("G/L Entry".Amount where(…)) — the queried table goes
+        // out as a property_object, and the .Amount field after the
+        // table name goes out as a field_access on that table.
+        var resolver = MakeResolver();
+        resolver.AddType("G/L Entry", new AlTypeRef(BaseAppId, "table", 17, "G/L Entry"));
+        resolver.AddMember("G/L Entry", new AlMember("Amount", "field", null, null));
+        resolver.AddMember("G/L Entry", new AlMember("G/L Account No.", "field", null, null));
+
+        const string src = """
+            table 15 "G/L Account"
+            {
+                fields
+                {
+                    field(50; "Balance"; Decimal)
+                    {
+                        FieldClass = FlowField;
+                        CalcFormula = sum("G/L Entry".Amount where("G/L Account No." = field("No.")));
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(resolver, "G/L Account"));
+
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "G/L Entry"
+            && r.ReferenceKind == "property_object");
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "G/L Entry"
+            && r.TargetMemberName == "Amount"
+            && r.ReferenceKind == "field_access");
+        // LHS of the where pair is a field on the queried table.
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "G/L Entry"
+            && r.TargetMemberName == "G/L Account No."
+            && r.ReferenceKind == "field_access");
+    }
+
+    [Fact]
+    public void Calc_formula_count_emits_only_the_queried_table_and_where_fields()
+    {
+        // count(…) and exist(…) don't have a target field after the
+        // table name. The handler must still emit the table and the
+        // where-clause field refs.
+        var resolver = MakeResolver();
+        resolver.AddType("Cust. Ledger Entry", new AlTypeRef(BaseAppId, "table", 21, "Cust. Ledger Entry"));
+        resolver.AddMember("Cust. Ledger Entry", new AlMember("Customer No.", "field", null, null));
+
+        const string src = """
+            table 18 Customer
+            {
+                fields
+                {
+                    field(60; "Entry Count"; Integer)
+                    {
+                        FieldClass = FlowField;
+                        CalcFormula = count("Cust. Ledger Entry" where("Customer No." = field("No.")));
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(resolver, "Customer"));
+
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "Cust. Ledger Entry"
+            && r.ReferenceKind == "property_object");
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "Cust. Ledger Entry"
+            && r.TargetMemberName == "Customer No."
+            && r.ReferenceKind == "field_access");
+        // No target field after the table → no Amount-style ref.
+        result.References.Where(r =>
+            r.TargetObjectName == "Cust. Ledger Entry"
+            && r.ReferenceKind == "field_access"
+            && r.TargetMemberName != "Customer No.").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Source_table_view_emits_field_refs_on_pages_source_table()
+    {
+        // Page's SourceTableView's where() and sorting() clauses both
+        // reference fields on the SourceTable (Rec). Both LHS-of-where
+        // and sorting list entries get field_access rows.
+        var resolver = MakeResolver();
+        resolver.AddMember("Sales Header", new AlMember("No.", "field", null, null));
+        resolver.AddMember("Sales Header", new AlMember("Document Type", "field", null, null));
+
+        const string src = """
+            page 42 "Sales Order"
+            {
+                SourceTableView = sorting("No."), where("Document Type" = filter(Order));
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(resolver, "Sales Order", "Sales Header"));
+
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "Document Type"
+            && r.ReferenceKind == "field_access");
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "No."
+            && r.ReferenceKind == "field_access");
+    }
+
+    [Fact]
+    public void Source_table_view_filter_value_does_not_leak_into_field_refs()
+    {
+        // `filter(Order)` on the RHS of the where pair shouldn't be
+        // mistaken for a field — its argument is an enum value, not
+        // a field name. The handler must only emit on the LHS of `=`.
+        var resolver = MakeResolver();
+        resolver.AddMember("Sales Header", new AlMember("Document Type", "field", null, null));
+
+        const string src = """
+            page 42 "Sales Order"
+            {
+                SourceTableView = where("Document Type" = filter(Order));
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(resolver, "Sales Order", "Sales Header"));
+
+        var fieldRefs = result.References.Where(r =>
+            r.ReferenceKind == "field_access"
+            && r.TargetObjectName == "Sales Header").ToList();
+        fieldRefs.Should().ContainSingle();
+        fieldRefs[0].TargetMemberName.Should().Be("Document Type");
+    }
+
+    [Fact]
+    public void Calc_formula_with_unknown_queried_table_drops_silently()
+    {
+        // Cross-release / typo / customer-only table not in the catalog.
+        // Don't crash, don't bump unresolved, don't emit garbage refs.
+        const string src = """
+            table 50000 "Custom"
+            {
+                fields
+                {
+                    field(10; "Total"; Decimal)
+                    {
+                        FieldClass = FlowField;
+                        CalcFormula = sum("Nonexistent Table".Amount where("X" = field("Y")));
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(MakeResolver(), "Custom"));
+
+        result.References.Where(r =>
+            r.ReferenceKind == "property_object" || r.ReferenceKind == "field_access")
+            .Should().BeEmpty();
+    }
+
     // ── EventSubscriber attribute bindings ─────────────────────────
 
     [Fact]
