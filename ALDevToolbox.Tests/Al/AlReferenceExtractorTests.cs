@@ -248,6 +248,74 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Record_builtin_method_is_skipped_silently_not_counted_as_unresolved()
+    {
+        // SetRange / FindFirst / IsEmpty are AL runtime built-ins, not
+        // user-declared procedures. The receiver resolves to Customer
+        // but the member lookup misses (built-ins aren't in the
+        // catalog). AlBuiltinMethods.IsBuiltin recognises them and
+        // filters them out so the unresolved counter stays clean.
+        const string src = """
+            procedure Foo()
+            var
+                Cust: Record Customer;
+            begin
+                Cust.SetRange("No.", 'C001');
+                Cust.FindFirst();
+                if Cust.IsEmpty() then exit;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Where(r => r.TargetMemberName is "SetRange" or "FindFirst" or "IsEmpty")
+            .Should().BeEmpty(
+                because: "SetRange/FindFirst/IsEmpty are runtime built-ins, not user-declared catalog members");
+        result.Stats.UnresolvedReceivers.Should().Be(0,
+            because: "built-ins are filtered explicitly so they don't muddy the diagnostic counter");
+    }
+
+    [Fact]
+    public void User_declared_method_with_same_name_as_builtin_still_emits_reference()
+    {
+        // Customer.Validate IS in the resolver (added by MakeResolver).
+        // The lookup succeeds before the built-in filter would run, so
+        // the user-declared Validate procedure wins — the reference
+        // gets emitted normally.
+        const string src = """
+            procedure Foo()
+            var
+                Cust: Record Customer;
+            begin
+                Cust.Validate();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Customer" && r.TargetMemberName == "Validate");
+    }
+
+    [Fact]
+    public void System_field_on_record_is_treated_as_builtin()
+    {
+        // SystemId, SystemCreatedAt etc. are added to every table by
+        // the AL runtime — not declared in source. Don't emit a
+        // reference and don't count as unresolved.
+        const string src = """
+            procedure Foo()
+            var
+                Cust: Record Customer;
+            begin
+                if Cust."SystemId" <> NullGuid then exit;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().BeEmpty();
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
     public void Method_call_emits_method_call_kind_field_access_emits_field_access_kind()
     {
         // The reference_kind comes from syntactic context: followed by

@@ -449,10 +449,17 @@ public static class AlReferenceExtractor
                 var member = _ctx.Resolver.ResolveMember(receiverType, memberTok.Value);
                 if (member is null)
                 {
-                    // Either the receiver isn't a tracked type (a system
-                    // type masquerading as a record — Customer.HttpClient
-                    // pattern) or the member name doesn't exist. Drop
-                    // the rest of the chain and count as unresolved.
+                    // Differentiate "real unresolved" from "AL runtime
+                    // built-in that was never going to be in the
+                    // catalog" (Insert / Get / Find / SetRange etc.).
+                    // Built-ins skip silently and terminate the chain;
+                    // genuine unresolved targets bump the diagnostic
+                    // counter so operators can size the residual gap.
+                    if (AlBuiltinMethods.IsBuiltin(receiverType.Kind, memberTok.Value))
+                    {
+                        if (followedByParen) SkipBalancedParens();
+                        return;
+                    }
                     _unresolved++;
                     AdvancePastRemainingChain();
                     return;
