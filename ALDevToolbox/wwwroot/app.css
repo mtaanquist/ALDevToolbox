@@ -2938,61 +2938,85 @@ ul.form-field-error {
     font-weight: 600;
 }
 
-/* Source-file viewer (SourceFileViewer.razor). Uses CodeViewer for syntax
-   highlighting; the right rail is a thin outline pane with click-through
-   navigation. Token right-click navigation will land in a follow-up PR. */
-.source-viewer__layout {
-    /* Flex (not grid) keeps the outline's sticky positioning reliable —
-       grid items have intermittent sticky-vs-resize quirks across
-       browsers, while flex behaves predictably with the same scrolling
-       ancestor (.content has overflow-y: auto). */
+/* Source-file viewer (SourceFileViewer.razor) — IDE-style layout: page
+   header pinned at top, code area scrolls inside the cm-editor, the
+   outline is always next to it. The page itself doesn't scroll
+   (height: 100% inside .content's bounded scrollport) — that's the
+   pattern users expect from a code viewer. Narrow viewports drop
+   back to the page-scroll behaviour because internal scrolling
+   feels cramped on small screens. */
+.source-viewer {
     display: flex;
-    align-items: flex-start;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.source-viewer > .admin-page__header {
+    flex: 0 0 auto;
+}
+
+.source-viewer__layout {
+    display: flex;
+    align-items: stretch;
+    flex: 1 1 0;
+    min-height: 0;
     gap: 12px;
 }
 
 @media (max-width: 1100px) {
+    .source-viewer {
+        height: auto;
+        min-height: 100%;
+    }
     .source-viewer__layout {
+        flex: 0 0 auto;
         flex-direction: column;
+    }
+    .source-viewer__code .cm-editor {
+        height: auto;
+    }
+    .source-viewer__outline-inner {
+        height: auto;
+        max-height: calc(100vh - var(--top-bar-height, 52px) - 36px);
     }
 }
 
 .source-viewer__code {
     flex: 1 1 0;
     min-width: 0;
-    /* Clip cm-editor overflow so a long line doesn't paint into the
-       sticky outline column. CodeMirror's own cm-scroller handles
-       horizontal scrolling for over-wide lines. */
+    min-height: 0;
+    /* Clip cm-editor's horizontal overflow so a long line doesn't
+       paint into the outline column. CodeMirror's own cm-scroller
+       handles horizontal scrolling inside the editor. */
     overflow: hidden;
 }
 
+/* Bound cm-editor to the code column's height so cm-scroller actually
+   scrolls instead of letting the file extend off the page. */
+.source-viewer__code .cm-editor {
+    height: 100%;
+}
+
 .source-viewer__outline {
-    /* Sticky positioning element (no scroll, no resize). Splitting the
-       sticky outer from the overflow:auto inner sidesteps the Chromium
-       sticky-on-overflow fragility and lets z-index lift the column
-       above any cm-editor content that paints out of the code column.
-       margin-right gives a visible gap between the panel and the
-       .content scrollbar / viewport edge. */
     flex: 0 0 auto;
-    align-self: flex-start;
-    position: sticky;
-    top: 12px;
+    align-self: stretch;
     margin-right: 16px;
-    z-index: 2;
+    display: flex;
+    flex-direction: column;
 }
 
 .source-viewer__outline-inner {
-    /* The visible card: width + scroll + resize live here. resize
-       requires overflow!=visible, satisfied by overflow-y: auto.
-       overflow-x: hidden suppresses the horizontal scrollbar — long
-       names truncate with ellipsis at the row level instead, and the
-       user widens the panel via the resize handle when they need more
-       room. max-height leaves a 24px gap below the panel when sticky. */
     width: 340px;
     min-width: 280px;
     max-width: 720px;
     resize: horizontal;
-    max-height: calc(100vh - var(--top-bar-height, 52px) - 36px);
+    /* Fill the outline column's height in wide mode. overflow-x:
+       hidden suppresses the horizontal scrollbar; long names truncate
+       with ellipsis on .source-viewer__outline-name. The user widens
+       the panel via the bottom-right resize handle when they need
+       more room. */
+    height: 100%;
     overflow-y: auto;
     overflow-x: hidden;
     border: 1px solid var(--color-border-strong);
