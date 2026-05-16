@@ -677,6 +677,30 @@ public static class AlReferenceExtractor
             var head = _tokens[_pos];
             _pos++;
 
+            // AL built-in static APIs like `CODEUNIT.Run(...)`,
+            // `PAGE.RunModal(...)`, `NavApp.GetCurrentModuleInfo(...)`.
+            // These are runtime dispatchers, not user variables or
+            // catalog types — silently skip the chain (no reference
+            // to emit, no diagnostic bump) but walk inside the args
+            // via the main dispatch path so typed-literals like
+            // `Codeunit::"Foo"` inside `CODEUNIT.Run(Codeunit::"Foo")`
+            // still surface as references.
+            if (AlBuiltinMethods.IsBuiltinStaticReceiver(head.Value))
+            {
+                while (_pos < _tokens.Count && At("."))
+                {
+                    _pos++; // .
+                    if (_pos < _tokens.Count
+                        && (_tokens[_pos].Kind == AlTokenKind.Identifier
+                            || _tokens[_pos].Kind == AlTokenKind.QuotedIdentifier))
+                    {
+                        _pos++; // member
+                    }
+                    if (_pos < _tokens.Count && At("(")) WalkBalancedParens();
+                }
+                return;
+            }
+
             // Resolve the head to a type (a starting receiver). Two shapes:
             //   1. head matches a variable in any enclosing scope frame.
             //   2. head matches an object name in the type catalog (the
@@ -685,6 +709,19 @@ public static class AlReferenceExtractor
             var receiverType = ResolveHeadType(head, out var declaredAsVar);
             if (receiverType is null)
             {
+                // Variable's declared type is a known AL runtime / system
+                // type (Dialog, RecordRef, XmlDocument, ModuleInfo, …).
+                // These never resolve through the catalog by design;
+                // silence the diagnostic so it doesn't crowd out real
+                // unresolveds.
+                if (declaredAsVar is not null
+                    && !string.IsNullOrEmpty(declaredAsVar.TypeName)
+                    && AlBuiltinMethods.IsKnownSystemType(declaredAsVar.TypeName))
+                {
+                    AdvancePastChain();
+                    return;
+                }
+
                 _unresolved++;
                 // Two sub-cases for the diagnostic samples: did the var
                 // lookup miss entirely, or did it find a var whose
@@ -871,6 +908,19 @@ public static class AlReferenceExtractor
                 // argument list: things like `Message(SalesHeader."No.")`
                 // have real references inside the parens the main loop
                 // still needs to walk.
+                return false;
+            }
+            if (AlBuiltinMethods.IsObjectDslKeyword(name))
+            {
+                // Page / pageextension / tableextension / report /
+                // xmlport / enum / permissionset declarative keyword —
+                // `area(content)`, `field("X"; Rec."Y")`, `value(N; "Z")`,
+                // `modify(SomeField) { … }`. These look identical to
+                // procedure calls to the lexer but introduce nested
+                // declarative structure; the arg list still walks
+                // through the main loop so the inner expressions (a
+                // page-field's `Rec."Y"` reference, for example)
+                // continue to emit.
                 return false;
             }
 

@@ -205,8 +205,11 @@ public sealed class AlReferenceExtractorTests
     public void System_typed_variable_yields_no_reference()
     {
         // `Client: HttpClient` is a runtime type, not an AL object.
-        // Its members aren't in the type catalog, so the receiver
-        // resolution returns null and the reference is dropped.
+        // HttpClient lives in `AlBuiltinMethods.KnownSystemTypes`, so
+        // the chain through it is silently skipped — no reference
+        // emitted AND no unresolved-counter bump. Without the system-
+        // type filter every HttpClient.Get call in BC's REST stack
+        // would inflate the diagnostic.
         const string src = """
             procedure Foo()
             var
@@ -218,7 +221,7 @@ public sealed class AlReferenceExtractorTests
         var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
 
         result.References.Should().BeEmpty();
-        result.Stats.UnresolvedReceivers.Should().Be(1);
+        result.Stats.UnresolvedReceivers.Should().Be(0);
     }
 
     [Fact]
@@ -2057,11 +2060,174 @@ public sealed class AlReferenceExtractorTests
             begin
                 Clear(i);
                 ClearAll();
+                Commit();
             end;
             """;
         var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
 
         result.References.Should().BeEmpty();
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Page_declarative_DSL_keywords_do_not_count_as_bare_calls()
+    {
+        // `area(content) { group(General) { field("X"; Rec."Y") {} } }` —
+        // the layout / actions / field block inside a page is
+        // declarative, not procedural. Without explicit handling each
+        // keyword surfaces as a bare-call unresolved.
+        const string src = """
+            page 50000 "Sales Order"
+            {
+                SourceTable = "Sales Header";
+                layout
+                {
+                    area(content)
+                    {
+                        group(General)
+                        {
+                            field("No."; Rec."No.")
+                            {
+                                ApplicationArea = All;
+                            }
+                            field("Sell-to Customer No."; Rec."Sell-to Customer No.")
+                            {
+                                ApplicationArea = All;
+                            }
+                        }
+                    }
+                }
+                actions
+                {
+                    area(processing)
+                    {
+                        action(Post)
+                        {
+                            ApplicationArea = All;
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(MakeResolver(), "Sales Order", "Sales Header"));
+
+        // No DSL keyword should land in the unresolved samples.
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            new[] { "area", "group", "field", "action" }.Contains(s.Token));
+    }
+
+    [Fact]
+    public void Pageextension_change_keywords_do_not_count_as_bare_calls()
+    {
+        // `addAfter`, `addBefore`, `addLast`, `modify` are pageextension
+        // layout / action manipulators. Same skip rule as page DSL keywords.
+        const string src = """
+            pageextension 50000 "Customer Card Ext" extends "Customer Card"
+            {
+                layout
+                {
+                    addAfter("Name")
+                    {
+                        field(MyField; Rec.MyField) { }
+                    }
+                    modify("Name")
+                    {
+                        Caption = 'Customer';
+                    }
+                }
+            }
+            """;
+        var resolver = MakeResolver();
+        resolver.AddType("Customer Card", new AlTypeRef(BaseAppId, "page", 21, "Customer Card"));
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            new[] { "addAfter", "modify", "field" }.Contains(s.Token));
+    }
+
+    [Fact]
+    public void Enum_value_keyword_does_not_count_as_a_bare_call()
+    {
+        // `value(N; "Label") { Caption = '…'; }` is enum value declaration.
+        const string src = """
+            enum 50000 "AMC Bank Status"
+            {
+                value(0; "Pending") { Caption = 'Pending'; }
+                value(1; "Done") { Caption = 'Done'; }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "value");
+    }
+
+    [Fact]
+    public void Variable_typed_as_a_known_system_type_does_not_bump_unresolved()
+    {
+        // `var X: Dialog; X.Open(...)` — Dialog isn't in the AL catalog,
+        // it's a runtime primitive. The chain head IS in scope (the var
+        // is declared) but the type doesn't resolve and never will.
+        // Skip silently so the diagnostic isn't crowded with these.
+        const string src = """
+            procedure Foo()
+            var
+                Window: Dialog;
+                RecRef: RecordRef;
+                XmlDoc: XmlDocument;
+            begin
+                Window.Open('Loading...');
+                RecRef.Open('Customer');
+                XmlDoc.ReadFrom('<root />');
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0,
+            because: "Dialog / RecordRef / XmlDocument are known system types");
+    }
+
+    [Fact]
+    public void Codeunit_run_as_a_builtin_static_receiver_is_skipped()
+    {
+        // `CODEUNIT.Run(Codeunit::"Sales-Post")` — CODEUNIT here is
+        // the AL runtime dispatcher, not a user variable. Same for
+        // PAGE.RunModal, REPORT.RunModal, NavApp.GetCurrentModuleInfo.
+        // The static-receiver branch walks the arg list through the
+        // main dispatch so inner typed-literals like `CODEUNIT::"X"`
+        // and inner identifiers (passed-by-reference vars) continue
+        // to walk normally.
+        const string src = """
+            procedure Foo()
+            var
+                AppInfo: ModuleInfo;
+            begin
+                CODEUNIT.Run(CODEUNIT::"Sales-Post");
+                NavApp.GetCurrentModuleInfo(AppInfo);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0,
+            because: "CODEUNIT/NavApp are built-in static receivers; AppInfo's ModuleInfo type is a known system type");
+    }
+
+    [Fact]
+    public void Record_DeleteAll_is_a_builtin_not_unresolved()
+    {
+        // `Customer.DeleteAll();` — DeleteAll is a Record built-in.
+        const string src = """
+            procedure Foo()
+            var
+                Cust: Record Customer;
+            begin
+                Cust.DeleteAll();
+                Cust.ModifyAll("Name", 'X');
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Where(r => r.ReferenceKind != "property_object")
+            .Should().BeEmpty(because: "DeleteAll and ModifyAll are Record built-ins");
         result.Stats.UnresolvedReceivers.Should().Be(0);
     }
 

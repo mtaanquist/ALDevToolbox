@@ -34,7 +34,7 @@ public static class AlBuiltinMethods
     public static readonly HashSet<string> RecordMethods = new(StringComparer.OrdinalIgnoreCase)
     {
         // CRUD + cursor.
-        "Insert", "Modify", "Delete", "Rename", "Reset",
+        "Insert", "Modify", "Delete", "DeleteAll", "ModifyAll", "Rename", "Reset",
         "Get", "GetBySystemId", "Find", "FindFirst", "FindLast", "FindSet", "Next",
         // Filtering / sorting.
         "SetRange", "SetFilter", "GetFilter", "GetFilters", "ClearMarks",
@@ -208,7 +208,149 @@ public static class AlBuiltinMethods
         "IsNull", "IsNullGuid",
         // Cast / format helpers.
         "Increment", "Decrement",
+        // Transaction control — top-level system function.
+        "Commit",
     };
+
+    /// <summary>
+    /// AL <b>declarative-DSL</b> keywords that introduce nested
+    /// structure inside an object body but are NOT procedure calls.
+    /// Pages, pageextensions, tableextensions, reports, xmlports,
+    /// enums and permissionsets all use this `keyword(args) { ... }`
+    /// syntax for their layout / fields / actions / values.
+    ///
+    /// Without explicit handling these surface as <c>bare-call</c>
+    /// unresolveds — `area(content)` inside a page body looks
+    /// identical to a procedure invocation to the lexer. The
+    /// extractor skips them silently (no reference emitted, no
+    /// counter bump) so the diagnostic samples can focus on real
+    /// gaps.
+    ///
+    /// Coverage note: <c>field</c>, <c>trigger</c>, <c>group</c>,
+    /// <c>value</c> overlap with names that legitimately exist as
+    /// AL identifiers in other contexts (a procedure named <c>group</c>
+    /// is rare but legal). The skip is unconditional here because
+    /// the matching call sites are always in declarative position;
+    /// false positives would need a procedure named after a DSL
+    /// keyword AND invoked from a place the bare-call resolver runs
+    /// — vanishingly rare in practice.
+    /// </summary>
+    public static readonly HashSet<string> ObjectDslKeywords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Pages / pageextensions: layout containers and content.
+        "area", "group", "field", "repeater", "cuegroup", "part",
+        "systempart", "usercontrol", "fixed", "grid", "label",
+        "separator", "filter",
+        // Pages / pageextensions: actions.
+        "action", "actionref", "customaction", "actiongroup",
+        // Pageextensions: layout / action manipulators.
+        "modify", "addafter", "addbefore", "addlast", "addfirst",
+        "movefirst", "movebefore", "moveafter", "movelast",
+        "addchange",
+        // Tables / tableextensions: structure.
+        "key", "fieldgroup",
+        // Reports: structure.
+        "dataitem", "column", "requestpage", "dataset", "rendering",
+        "layout",
+        // XMLports: schema.
+        "textelement", "tableelement", "fieldelement", "fieldattribute",
+        "textattribute",
+        // Enums.
+        "value",
+        // PermissionSets.
+        "permissions", "tabledata", "includedpermissionsets",
+        // Controladd-ins, queries, profiles — declarative children.
+        "controladdin", "querytype", "elements", "filters", "orderby",
+        "dataitemlink", "column",
+    };
+
+    /// <summary>
+    /// True for an AL declarative-DSL keyword that opens a nested
+    /// block inside an object body. See <see cref="ObjectDslKeywords"/>
+    /// for the rationale.
+    /// </summary>
+    public static bool IsObjectDslKeyword(string name) =>
+        !string.IsNullOrEmpty(name) && ObjectDslKeywords.Contains(name);
+
+    /// <summary>
+    /// AL built-in static APIs callable with no instance — typically
+    /// invoked as <c>Kind.Method(...)</c> from anywhere in code.
+    /// <c>CODEUNIT.Run(Codeunit::"Foo")</c> and <c>PAGE.RunModal(...)</c>
+    /// are the canonical examples; <c>NavApp.GetCurrentModuleInfo(...)</c>
+    /// is the equivalent for app metadata. The extractor doesn't model
+    /// the methods on these static APIs (no symbol-package entries
+    /// for them), so chains through them resolve nothing — but they
+    /// shouldn't pollute the diagnostic either.
+    /// </summary>
+    public static readonly HashSet<string> BuiltinStaticReceivers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Static kind dispatchers. `CODEUNIT.Run(...)`, `PAGE.RunModal(...)`,
+        // `REPORT.RunModal(...)`, `XMLPORT.Import(...)`, `QUERY.Open(...)`.
+        "CODEUNIT", "PAGE", "REPORT", "XMLPORT", "QUERY", "ENUM",
+        // App metadata / lifecycle.
+        "NavApp",
+    };
+
+    /// <summary>
+    /// True when <paramref name="name"/> is an AL built-in static API
+    /// head — chains rooted here are AL-runtime, not user code, and
+    /// shouldn't be diagnosed as unresolved variables.
+    /// </summary>
+    public static bool IsBuiltinStaticReceiver(string name) =>
+        !string.IsNullOrEmpty(name) && BuiltinStaticReceivers.Contains(name);
+
+    /// <summary>
+    /// AL built-in / system types that won't ever resolve through
+    /// the catalog — they're either runtime primitives
+    /// (<c>Dialog</c>, <c>RecordRef</c>, <c>RecordId</c>,
+    /// <c>FieldRef</c>, <c>Variant</c>), XML / JSON primitives
+    /// (<c>XmlDocument</c>, <c>XmlElement</c>, <c>JsonObject</c>),
+    /// I/O primitives (<c>InStream</c>, <c>OutStream</c>, <c>File</c>),
+    /// HTTP (<c>HttpClient</c>, <c>HttpRequestMessage</c>), or app
+    /// metadata (<c>ModuleInfo</c>). A variable typed as one of these
+    /// is legitimate but its chain steps (e.g. <c>Dialog.Open(...)</c>)
+    /// can't be resolved through our catalog, so silence the
+    /// diagnostic.
+    /// </summary>
+    public static readonly HashSet<string> KnownSystemTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Runtime references and variants.
+        "Dialog", "RecordRef", "RecordId", "FieldRef", "KeyRef",
+        "Variant", "Guid", "DateFormula", "BigText",
+        // XML / JSON primitives.
+        "XmlDocument", "XmlElement", "XmlNode", "XmlNodeList",
+        "XmlAttribute", "XmlAttributeCollection", "XmlComment",
+        "XmlText", "XmlCData", "XmlDeclaration", "XmlDocumentType",
+        "XmlNamespaceManager", "XmlReadOptions", "XmlWriteOptions",
+        "XmlProcessingInstruction",
+        "JsonObject", "JsonArray", "JsonValue", "JsonToken",
+        // I/O.
+        "InStream", "OutStream", "File", "TempBlob",
+        // HTTP.
+        "HttpClient", "HttpRequestMessage", "HttpResponseMessage",
+        "HttpHeaders", "HttpContent",
+        // App metadata.
+        "ModuleInfo", "ModuleDependencyInfo",
+        // .NET interop.
+        "DotNet",
+        // Generic collections (built-in generics).
+        "List", "Dictionary",
+        // Encoding / text / cryptography.
+        "TextEncoding", "Encoding", "TextBuilder", "StringBuilder",
+        "Base64Convert", "CryptographyManagement",
+        // Misc primitives.
+        "Version", "Duration",
+        "ErrorInfo", "Notification", "FilterPageBuilder",
+    };
+
+    /// <summary>
+    /// True when the declared type name is one of the AL runtime /
+    /// system types the catalog never tracks — used to silence
+    /// the <c>head-var-type-unresolved</c> diagnostic for variables
+    /// typed against these primitives.
+    /// </summary>
+    public static bool IsKnownSystemType(string typeName) =>
+        !string.IsNullOrEmpty(typeName) && KnownSystemTypes.Contains(typeName);
 
     /// <summary>
     /// AL statement / operator keywords that lex as <see cref="AlTokenKind.Identifier"/>
