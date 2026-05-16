@@ -60,6 +60,15 @@
         </ul>
     </div>
 
+    <AuthorizeView>
+        <Authorized Context="signedIn">
+            @if (!OrgContext.IsSystemOrganization && OrgContext.CurrentOrganizationId is not null)
+            {
+                <StorageBar />
+            }
+        </Authorized>
+    </AuthorizeView>
+
     <AuthorizeView Roles="Admin">
         <Authorized Context="adminCtx">
             @{

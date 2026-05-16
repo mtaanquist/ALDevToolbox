@@ -1,0 +1,67 @@
+@using ALDevToolbox.Services
+@inject DatabaseUsageService Usage
+
+@*
+    Sidebar capacity indicator. Shows the acting organisation's billable
+    storage as "x MB / y MB" or "x MB / ∞" when no quota is set. Hidden
+    in the system org (which is never quota-checked) and pre-login.
+*@
+
+@if (_row is not null)
+{
+    var billableMb = _row.BillableBytes / (1024d * 1024d);
+    var percent = _row.UsedFraction is { } f ? Math.Clamp(f * 100, 0, 100) : 0;
+    var percentStr = percent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+    var over = _row.UsedFraction is > 1;
+    var nearLimit = _row.UsedFraction is > 0.9 and <= 1;
+    <div class="storage-bar @(over ? "storage-bar--over" : nearLimit ? "storage-bar--warn" : null)"
+         title="Logical: @FormatBytes(_row.LogicalBytes); index/metadata: @FormatBytes(_row.IndexBytes); billable: @FormatBytes(_row.BillableBytes)">
+        <div class="storage-bar__label">
+            <span>Storage</span>
+            <span class="storage-bar__value">
+                @FormatMb(billableMb) /
+                @(_row.EffectiveQuotaMb is { } q ? $"{q} MB" : "∞")
+            </span>
+        </div>
+        @if (_row.EffectiveQuotaMb is not null)
+        {
+            <div class="storage-bar__track" aria-hidden="true">
+                <div class="storage-bar__fill" style="@($"width: {percentStr}%")"></div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private DatabaseUsageService.OrgUsageRow? _row;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Failures here should never break the layout — log + render nothing.
+        try
+        {
+            _row = await Usage.GetForCurrentOrgAsync(CancellationToken.None);
+        }
+        catch
+        {
+            _row = null;
+        }
+    }
+
+    private static string FormatMb(double mb) => mb switch
+    {
+        < 1 => $"{mb * 1024:0} KB",
+        < 1024 => $"{mb:0.#} MB",
+        _ => $"{mb / 1024:0.##} GB",
+    };
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        double v = bytes;
+        string[] units = ["KB", "MB", "GB", "TB"];
+        var i = -1;
+        do { v /= 1024; i++; } while (v >= 1024 && i < units.Length - 1);
+        return $"{v:0.#} {units[i]}";
+    }
+}

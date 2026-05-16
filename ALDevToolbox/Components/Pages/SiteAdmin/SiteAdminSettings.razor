@@ -110,6 +110,28 @@
                 backups on the <a href="/site-admin/backups">Backups</a> page.
             </p>
 
+            <h2>Storage quotas</h2>
+            <p class="muted">
+                Default applied to every organisation that doesn't have its own
+                quota set on the <a href="/site-admin/storage">Storage</a> page.
+                Leave blank for unlimited. Billable size is
+                <code>logical + multiplier × index/metadata</code> — set the
+                multiplier to 0 to charge purely for logical bytes.
+            </p>
+            <div class="form-row">
+                <label>
+                    Default quota (MB)
+                    <input type="number" name="DefaultStorageQuotaMb" min="0" step="1"
+                           value="@(_view.DefaultStorageQuotaMb?.ToString() ?? string.Empty)"
+                           placeholder="unlimited" />
+                </label>
+                <label>
+                    Index/metadata multiplier
+                    <input type="number" name="IndexSizeMultiplier" min="0" max="10" step="0.1"
+                           value="@_view.IndexSizeMultiplier.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" />
+                </label>
+            </div>
+
             <h2>Banner &amp; signup</h2>
             <label>
                 System banner
