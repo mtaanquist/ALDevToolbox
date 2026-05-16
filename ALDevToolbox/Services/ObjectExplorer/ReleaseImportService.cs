@@ -1209,6 +1209,32 @@ public class ReleaseImportService
             objectIdByIdentity[(t.AppId, t.Kind, t.Name)] = t.Id;
         }
 
+        // (1b) Synthesise catalog entries for BC platform virtual tables.
+        // These live in the AL runtime (ids 2000000001 – 2000000999 reserved),
+        // not in any module's symbol package, but extensions reference them
+        // freely: `TempFieldSet: Record Field;`, `User.SetRange("User Name", X);`.
+        // Without synthesis the type lookup fails and the chain is logged
+        // as an unresolved variable type — even though the reference is
+        // legitimate runtime API. Stamped with PlatformAppId (Guid.Empty)
+        // so visibility-aware resolvers can recognise them; the resolver
+        // already treats PlatformAppId as visible to everyone via the
+        // FoundationalAppNames-style implicit-visibility rule (see below).
+        foreach (var vt in PlatformVirtualTables)
+        {
+            var typeRef = new ALDevToolbox.Services.Al.AlTypeRef(PlatformAppId, "table", vt.Id, vt.Name);
+            if (!typesByName.TryGetValue(vt.Name, out var list))
+            {
+                list = new List<ALDevToolbox.Services.Al.AlTypeRef>();
+                typesByName[vt.Name] = list;
+            }
+            list.Add(typeRef);
+            // No oe_module_objects.Id for synthetic entries — typesByObjectId
+            // and objectIdByIdentity stay unaugmented (they're keyed off
+            // the DB row id, which doesn't exist here). The chain walker
+            // only needs typesByName + RecordMethods to resolve calls
+            // like `TempFieldSet.GET(...)` against these tables.
+        }
+
         // (2) Member catalog: for each owner Id, list its symbols.
         // Keyed by Id because owner names aren't unique across kinds.
         var memberRows = await _db.OeModuleSymbols.AsNoTracking()
@@ -1582,12 +1608,13 @@ public class ReleaseImportService
                             && FoundationalAppNames.Contains(m.Name))
                 .Select(m => m.AppId));
 
-        // Transitive closure per module, including the module itself
-        // and the implicit foundational AppIds.
+        // Transitive closure per module, including the module itself,
+        // the implicit foundational AppIds, and the PlatformAppId sentinel
+        // for the synthetic virtual-table entries.
         var result = new Dictionary<long, HashSet<Guid>>(modules.Count);
         foreach (var m in modules)
         {
-            var visible = new HashSet<Guid>(implicitFoundational) { m.AppId };
+            var visible = new HashSet<Guid>(implicitFoundational) { m.AppId, PlatformAppId };
             WalkDeps(m.AppId, visible, directDepsByAppId);
             result[m.Id] = visible;
         }
@@ -1606,6 +1633,86 @@ public class ReleaseImportService
         "Base Application",
         "Application",
         "Business Foundation",
+    };
+
+    /// <summary>
+    /// Sentinel AppId for the synthetic platform virtual tables (and
+    /// any other catalog entry that doesn't belong to a specific
+    /// imported module). Every module's visibility set includes this
+    /// AppId so chains through <c>Record Field</c>, <c>Record Company</c>
+    /// etc. resolve cleanly. <see cref="Guid.Empty"/> as a sentinel is
+    /// safe because real BC AppIds are always non-empty GUIDs.
+    /// </summary>
+    private static readonly Guid PlatformAppId = Guid.Empty;
+
+    /// <summary>
+    /// BC platform virtual tables — runtime-provided system tables
+    /// every extension can reference but no module's symbol package
+    /// declares. The id range <c>2000000001 – 2000000999</c> is
+    /// reserved by Microsoft for these; names have been stable across
+    /// BC versions (the compiler emits canonical names like
+    /// <c>"Field"</c> / <c>"Company"</c> / <c>"User"</c> rather than
+    /// the numeric id when these are referenced from AL source).
+    ///
+    /// Synthesised as catalog entries during Phase-2 so type lookups
+    /// on <c>TempFieldSet: Record Field</c> and similar variable
+    /// declarations succeed. Chain steps like <c>TempFieldSet.GET(...)</c>
+    /// then resolve through <see cref="ALDevToolbox.Services.Al.AlBuiltinMethods.RecordMethods"/>;
+    /// field-specific accesses (<c>TempFieldSet.TableNo</c>) still
+    /// drop as <c>chain-step</c> unresolveds because we don't have the
+    /// platform-table schemas — acceptable trade-off given the volume.
+    /// </summary>
+    private static readonly (int Id, string Name)[] PlatformVirtualTables =
+    {
+        (2000000001, "Object"),
+        (2000000006, "Company"),
+        (2000000020, "Drive"),
+        (2000000022, "File"),
+        (2000000026, "Integer"),
+        (2000000038, "AllObj"),
+        (2000000039, "AllObjWithCaption"),
+        (2000000040, "License Information"),
+        (2000000041, "Field"),
+        (2000000042, "Key"),
+        (2000000043, "License Permission"),
+        (2000000044, "Permission Range"),
+        (2000000045, "Windows Login"),
+        (2000000048, "Database Locks"),
+        (2000000049, "Session Setting"),
+        (2000000053, "Permission"),
+        (2000000055, "Database File"),
+        (2000000056, "Code Coverage"),
+        (2000000058, "Tenant Permission"),
+        (2000000063, "Active Session"),
+        (2000000064, "Server Instance"),
+        (2000000071, "Tenant License State"),
+        (2000000072, "User"),
+        (2000000073, "User Personalization"),
+        (2000000074, "Profile"),
+        (2000000075, "User Plan"),
+        (2000000077, "Session Event"),
+        (2000000079, "User Login"),
+        (2000000080, "Field Aggregation"),
+        (2000000110, "Application Object Metadata"),
+        (2000000111, "Application Resource Metadata"),
+        (2000000112, "User Property"),
+        (2000000114, "Page Metadata"),
+        (2000000120, "User"),
+        (2000000121, "Access Control"),
+        (2000000122, "User Property"),
+        (2000000123, "Aggregate Permission Set"),
+        (2000000129, "User Login"),
+        (2000000130, "Permission Set"),
+        (2000000150, "Member Of"),
+        (2000000160, "Webhook Subscription"),
+        (2000000165, "Token Cache"),
+        (2000000175, "Webhook Notification"),
+        (2000000180, "Active Directory"),
+        (2000000183, "Send-To Program"),
+        (2000000196, "Scheduled Task"),
+        (2000000199, "Object Options"),
+        (2000000200, "NAV App Installed App"),
+        (2000000201, "Published Application"),
     };
 
     private static void WalkDeps(

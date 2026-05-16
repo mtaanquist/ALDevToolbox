@@ -210,6 +210,14 @@ public static class AlBuiltinMethods
         "Increment", "Decrement",
         // Transaction control — top-level system function.
         "Commit",
+        // Event subscription binding.
+        "BindSubscription", "UnbindSubscription",
+        // Navigation / UI.
+        "Hyperlink",
+        // Date / time helpers also exposed as bare functions.
+        "RoundDateTime", "Time2Variant", "Variant2Time",
+        // File / stream system functions occasionally surfaced as bare.
+        "DownloadFromStream", "UploadIntoStream",
     };
 
     /// <summary>
@@ -289,6 +297,12 @@ public static class AlBuiltinMethods
         "CODEUNIT", "PAGE", "REPORT", "XMLPORT", "QUERY", "ENUM",
         // App metadata / lifecycle.
         "NavApp",
+        // Session-scoped runtime APIs.
+        "Session", "TaskScheduler", "TestField",
+        // Database identity (`DATABASE::Customer` is a typed-literal
+        // expression — handled separately — but `DATABASE.X(...)` would
+        // surface here if it appears).
+        "DATABASE",
     };
 
     /// <summary>
@@ -317,6 +331,12 @@ public static class AlBuiltinMethods
         // Runtime references and variants.
         "Dialog", "RecordRef", "RecordId", "FieldRef", "KeyRef",
         "Variant", "Guid", "DateFormula", "BigText",
+        // Secret-handling primitives (BC 22+).
+        "SecretText",
+        // Web service action context (passed into API page actions).
+        "WebServiceActionContext", "ActionContext",
+        // Report / page contexts.
+        "ReportAPIType", "ReportFormat",
         // XML / JSON primitives.
         "XmlDocument", "XmlElement", "XmlNode", "XmlNodeList",
         "XmlAttribute", "XmlAttributeCollection", "XmlComment",
