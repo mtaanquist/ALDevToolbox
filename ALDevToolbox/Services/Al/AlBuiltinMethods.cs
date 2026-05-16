@@ -60,6 +60,14 @@ public static class AlBuiltinMethods
         // Misc.
         "AddLoadFields", "AddLink", "GetLink", "RemoveLink",
         "Number", "RecordLevelLocking",
+        // Note: AssistEdit / Lookup / Drilldown are intentionally NOT
+        // listed here. Microsoft's Base App declares user procedures
+        // with those names (e.g. Sales Header.AssistEdit is a real
+        // public procedure that opens a number-series picker, not the
+        // field-level built-in). Adding them as built-ins would silently
+        // mask resolver misses instead of bumping the unresolved
+        // counter — defeating the diagnostic signal we use to spot
+        // catalog gaps.
     };
 
     /// <summary>
