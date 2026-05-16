@@ -72,6 +72,14 @@
 html, body {
     margin: 0;
     padding: 0;
+    /* Bound the viewport-level scroll to 100vh so the app-shell grid
+       can rely on .content (overflow-y: auto) as the actual scroll
+       container. Without this, .app-shell's min-height: 100vh allowed
+       the page to grow taller than the viewport and BODY would scroll
+       instead — which silently broke position: sticky on any element
+       that expected .content to be its scrolling ancestor. */
+    height: 100%;
+    overflow: hidden;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
     font-size: 14px;
     line-height: 1.5;
@@ -95,7 +103,10 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     grid-template-areas:
         "topbar topbar"
         "sidebar content";
-    min-height: 100vh;
+    /* Fixed 100vh (not min-height) so the content grid row is bounded
+       and its overflow-y: auto actually engages instead of letting the
+       body scroll. Required for position: sticky inside .content. */
+    height: 100vh;
 }
 
 .top-bar {
