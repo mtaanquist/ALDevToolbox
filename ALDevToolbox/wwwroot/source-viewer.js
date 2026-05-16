@@ -473,13 +473,34 @@ function renderReferencesPanel(root, session, fileId, editorId) {
         const groups = groupByCategory(session.results);
         for (const [category, rows] of groups) {
             const section = document.createElement("section");
-            section.className = "source-viewer__refs-group";
+            // Re-use the outline section vocabulary so the chevron / toggle
+            // affordance reads the same in both panels. Sections open by
+            // default; the click handler on the toggle flips data state +
+            // chevron + list hidden.
+            section.className = "source-viewer__refs-group source-viewer__outline-section is-open";
             section.dataset.category = category;
 
-            const heading = document.createElement("h3");
-            heading.className = "source-viewer__refs-group-heading";
-            heading.textContent = `${categoryLabel(category)} · ${rows.length.toLocaleString()}`;
-            section.appendChild(heading);
+            const toggle = document.createElement("button");
+            toggle.type = "button";
+            toggle.className = "source-viewer__outline-section-toggle";
+            toggle.setAttribute("aria-expanded", "true");
+
+            const chevron = document.createElement("span");
+            chevron.className = "source-viewer__outline-section-chevron is-open";
+            chevron.textContent = "›";
+            toggle.appendChild(chevron);
+
+            const title = document.createElement("span");
+            title.className = "source-viewer__outline-section-title";
+            title.textContent = categoryLabel(category);
+            toggle.appendChild(title);
+
+            const countSpan = document.createElement("span");
+            countSpan.className = "source-viewer__outline-section-count";
+            countSpan.textContent = `(${rows.length.toLocaleString()})`;
+            toggle.appendChild(countSpan);
+
+            section.appendChild(toggle);
 
             const list = document.createElement("ul");
             list.className = "source-viewer__refs-list";
@@ -487,6 +508,14 @@ function renderReferencesPanel(root, session, fileId, editorId) {
                 list.appendChild(buildRefsRow(r, session, fileId, editorId));
             }
             section.appendChild(list);
+
+            toggle.addEventListener("click", () => {
+                const open = section.classList.toggle("is-open");
+                toggle.setAttribute("aria-expanded", open ? "true" : "false");
+                chevron.classList.toggle("is-open", open);
+                list.hidden = !open;
+            });
+
             panel.appendChild(section);
         }
     }
