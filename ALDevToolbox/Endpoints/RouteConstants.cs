@@ -11,7 +11,7 @@ internal static class RouteConstants
     public const string Account = "/account";
     public const string AdminUsers = "/admin/users";
     public const string AdminTemplates = "/admin/templates";
-    public const string AdminBackup = "/admin/backup";
+    public const string AdminExport = "/admin/export";
     public const string SiteAdminUsers = "/site-admin/users";
     public const string SiteAdminSettings = "/site-admin/settings";
     public const string SiteAdminBackups = "/site-admin/backups";

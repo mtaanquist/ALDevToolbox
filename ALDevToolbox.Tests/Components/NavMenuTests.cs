@@ -58,7 +58,7 @@ public sealed class NavMenuTests : IDisposable
     }
 
     [Fact]
-    public void Admin_in_non_system_org_sees_per_org_users_configuration_audit_and_backup()
+    public void Admin_in_non_system_org_sees_per_org_users_configuration_audit_and_export()
     {
         _auth.SetAuthorized("admin@example.com");
         _auth.SetRoles("Admin");
@@ -73,7 +73,7 @@ public sealed class NavMenuTests : IDisposable
         cut.FindAll("a[href='/admin/configuration/defaults']").Should().NotBeEmpty();
         cut.FindAll("a[href='/admin/audit']").Should().NotBeEmpty(
             "non-SiteAdmin admins get the per-org audit log, not the cross-org one");
-        cut.FindAll("a[href='/admin/backup']").Should().NotBeEmpty();
+        cut.FindAll("a[href='/admin/export']").Should().NotBeEmpty();
 
         cut.FindAll("a[href^='/site-admin/']").Should().BeEmpty(
             "SiteAdmin-only entries must stay hidden from regular org admins");
@@ -121,7 +121,7 @@ public sealed class NavMenuTests : IDisposable
             "system org hides the per-org Users page — there are no per-org users to manage");
         cut.FindAll("a[href='/admin/configuration/defaults']").Should().BeEmpty(
             "system org has no per-org configuration");
-        cut.FindAll("a[href='/admin/backup']").Should().BeEmpty();
+        cut.FindAll("a[href='/admin/export']").Should().BeEmpty();
 
         var siteUsers = cut.FindAll("a[href='/site-admin/users']");
         siteUsers.Should().NotBeEmpty();
