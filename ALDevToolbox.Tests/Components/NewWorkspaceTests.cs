@@ -44,6 +44,7 @@ public sealed class NewWorkspaceTests : IDisposable
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString));
+        _db.AddStorageServices(_ctx.Services);
         _ctx.Services.AddSingleton<IMemoryCache>(new MemoryCache(Options.Create(new MemoryCacheOptions())));
         _ctx.Services.AddScoped<TemplateService>();
         _ctx.Services.AddScoped<ApplicationVersionService>();

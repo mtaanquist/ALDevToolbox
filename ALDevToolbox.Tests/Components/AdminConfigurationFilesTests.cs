@@ -35,6 +35,7 @@ public sealed class AdminConfigurationFilesTests : IDisposable
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString));
         _ctx.Services.AddSingleton<IMemoryCache>(new MemoryCache(Options.Create(new MemoryCacheOptions())));
+        _db.AddStorageServices(_ctx.Services);
         _ctx.Services.AddScoped<OrganizationConfigService>();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);

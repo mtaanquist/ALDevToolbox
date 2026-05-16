@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -128,6 +129,25 @@ public sealed class TestDb : IDisposable
     /// </summary>
     public OrganizationConfigService NewOrganizationConfigService(AppDbContext ctx) =>
         new(ctx, OrgContext, NewQuotaGuard(ctx), NullLogger<OrganizationConfigService>.Instance, _memoryCache);
+
+    /// <summary>
+    /// Registers the storage-quota service chain on the supplied collection
+    /// for bUnit component tests that exercise services depending on
+    /// <see cref="StorageQuotaGuard"/> (any service that mutates tenanted
+    /// state). Idempotent: adds TimeProvider, IDataProtectionProvider,
+    /// IMemoryCache, SystemSettingsService, DatabaseUsageService, and
+    /// StorageQuotaGuard. With no system_settings row and no per-org
+    /// override the guard treats every operation as unlimited.
+    /// </summary>
+    public void AddStorageServices(IServiceCollection services)
+    {
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+        services.TryAddSingleton(DataProtectionProvider);
+        services.TryAddSingleton<IMemoryCache>(_memoryCache);
+        services.AddScoped<SystemSettingsService>();
+        services.AddScoped<DatabaseUsageService>();
+        services.AddScoped<StorageQuotaGuard>();
+    }
 
     /// <summary>
     /// Returns a <see cref="StorageQuotaGuard"/> wired to the per-fixture

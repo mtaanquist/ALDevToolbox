@@ -1,5 +1,6 @@
 @using ALDevToolbox.Services
-@inject DatabaseUsageService Usage
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceProvider Services
 
 @*
     Sidebar capacity indicator. Shows the acting organisation's billable
@@ -37,10 +38,15 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Failures here should never break the layout — log + render nothing.
+        // The service is resolved lazily so this component can be dropped
+        // into layouts (NavMenu) that don't always have the storage stack
+        // wired up — e.g. component tests that exercise navigation only.
+        // Failures here should never break the layout: render nothing.
+        var usage = Services.GetService<DatabaseUsageService>();
+        if (usage is null) return;
         try
         {
-            _row = await Usage.GetForCurrentOrgAsync(CancellationToken.None);
+            _row = await usage.GetForCurrentOrgAsync(CancellationToken.None);
         }
         catch
         {

@@ -58,7 +58,7 @@ internal static class AdminEndpoints
             }
         }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
-        app.MapPost("/admin/export", async (HttpContext ctx, ExportService export, IAntiforgery antiforgery, CancellationToken ct) =>
+        app.MapPost("/admin/export/download", async (HttpContext ctx, ExportService export, IAntiforgery antiforgery, CancellationToken ct) =>
         {
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
 
