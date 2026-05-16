@@ -689,11 +689,22 @@ function parseJsonAttr(raw) {
     }
 }
 
-/// First-load resilience: enhanced-nav into this page sometimes evaluates
-/// the module before the patched .source-viewer DOM is queryable. The
-/// init() guard against double-mount makes calling it repeatedly safe,
-/// so we attempt several times across the first frame instead of relying
-/// on a single timing assumption.
+/// First-load resilience: enhanced-nav into this page can run the module
+/// before the patched .source-viewer DOM is queryable, AND Blazor's
+/// enhanced-nav response diffing has been observed to skip script
+/// execution on the first navigation entirely. Belt-and-braces:
+///
+///   1. Try init synchronously, plus across the first frame + tick.
+///   2. Listen for DOMContentLoaded for full page loads.
+///   3. Listen for Blazor's `enhancedload` event for SPA-style navs.
+///   4. Watch the body via MutationObserver — if .source-viewer
+///      appears later (Blazor finishing its DOM patch after the
+///      module loaded), init runs the moment it lands.
+///
+/// init() is idempotent thanks to its own cm-editor guard, so calling
+/// it repeatedly is harmless. The MutationObserver stays alive for the
+/// session so subsequent enhanced navs to other source-viewer pages
+/// also fire it.
 function tryInit() {
     init();
     requestAnimationFrame(() => init());
@@ -709,4 +720,25 @@ if (document.readyState === "loading") {
 
 if (typeof globalThis.Blazor !== "undefined" && globalThis.Blazor.addEventListener) {
     globalThis.Blazor.addEventListener("enhancedload", tryInit);
+}
+
+// MutationObserver fallback. Fires whenever .source-viewer appears
+// in the DOM — whether through enhanced nav, a full page load, or
+// anything else. Cheap to keep alive: we filter by selector and only
+// re-call init when the editor isn't already mounted.
+if (typeof MutationObserver !== "undefined") {
+    const observer = new MutationObserver(() => {
+        const root = document.querySelector(".source-viewer");
+        if (root && !root.querySelector(".cm-editor")) {
+            init();
+        }
+    });
+    if (document.body) {
+        observer.observe(document.body, { childList: true, subtree: true });
+    } else {
+        // body not yet parsed — wait for DOMContentLoaded to attach.
+        document.addEventListener("DOMContentLoaded", () => {
+            observer.observe(document.body, { childList: true, subtree: true });
+        }, { once: true });
+    }
 }
