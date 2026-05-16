@@ -1129,15 +1129,29 @@ public static class AlReferenceExtractor
         /// Recognises <c>field(N; "Name"; Type)</c> declarations at
         /// object scope and emits a reference for the type when it's an
         /// AL object (typically <c>Enum "Sales Document Type"</c>).
-        /// Page-side <c>field("Name"; Rec."Field")</c> declarations bind
-        /// to a Rec field instead of an object type — those are caught
-        /// by the implicit-Rec field-access handler when the walker
-        /// reaches the <c>Rec.</c> part, so this method doesn't need
-        /// to handle them.
         ///
-        /// Other type shapes — <c>Code[20]</c>, <c>Integer</c>,
-        /// <c>Decimal</c>, <c>Boolean</c>, <c>DateTime</c> — aren't AL
-        /// objects in the catalog, so they fall through silently.
+        /// Two AL field-declaration forms share the same <c>field(…)</c>
+        /// keyword:
+        /// <list type="bullet">
+        ///   <item><b>Table-side</b>:
+        ///         <c>field(&lt;id&gt;; "&lt;name&gt;"; &lt;type&gt;)</c>
+        ///         — first arg is a numeric id. The third arg is the
+        ///         AL type we want to extract.</item>
+        ///   <item><b>Page-side</b>:
+        ///         <c>field("&lt;name&gt;"; Rec."&lt;field&gt;")</c>
+        ///         — first arg is the page-field name; the second arg
+        ///         is a chain expression (typically <c>Rec.&lt;field&gt;</c>)
+        ///         that needs the regular member-chain walker to
+        ///         resolve. Consuming the parens unconditionally would
+        ///         swallow that chain, so we detect the form by peeking
+        ///         at the first token and bail out for page-side
+        ///         declarations — the main loop walks them naturally.</item>
+        /// </list>
+        ///
+        /// Other type shapes on the table side — <c>Code[20]</c>,
+        /// <c>Integer</c>, <c>Decimal</c>, <c>Boolean</c>, <c>DateTime</c>
+        /// — aren't AL objects in the catalog, so they fall through
+        /// silently after type extraction.
         /// </summary>
         private void TryConsumeFieldDeclaration()
         {
@@ -1145,9 +1159,18 @@ public static class AlReferenceExtractor
             if (!At("(")) return;
             _pos++; // (
 
-            // Three semicolon-separated args at depth 0: id; name; type.
-            // We only care about arg[2] — the type. Walk forward,
-            // tracking paren depth, counting semicolons.
+            // Detect form by the first token inside the parens. Number
+            // → table-side (id; name; type); anything else → page-side
+            // (name; expression) and we MUST NOT consume the args —
+            // chain references on the RHS need the main loop's walker.
+            if (_pos >= _tokens.Count) return;
+            if (_tokens[_pos].Kind != AlTokenKind.Number)
+            {
+                return;
+            }
+
+            // Table-side: three semicolon-separated args at depth 0
+            // (id; name; type). We only care about arg[2] — the type.
             int depth = 0;
             int semicolonsSeen = 0;
             var typeTokens = new List<AlToken>();

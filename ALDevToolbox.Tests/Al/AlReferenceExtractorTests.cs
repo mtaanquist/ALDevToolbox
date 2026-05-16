@@ -926,6 +926,102 @@ public sealed class AlReferenceExtractorTests
         labelUses.Count(r => r.TargetMemberName == "ErrB").Should().Be(1);
     }
 
+    // ── Page-form field declarations ───────────────────────────────
+
+    [Fact]
+    public void Page_form_field_declaration_lets_chain_walker_pick_up_Rec_field()
+    {
+        // Regression: TryConsumeFieldDeclaration was written for the
+        // table-form `field(<id>; <name>; <type>)` shape and consumed
+        // the entire parens. On a page, `field("Sell-to Customer No.";
+        // Rec."Sell-to Customer No.")` has a chain expression on the
+        // RHS that needs the normal member-chain walker. The handler
+        // now detects the form by peeking at the first token (Number
+        // → table form, else page form) and bails out for page form.
+        var resolver = MakeResolver();
+        resolver.AddMember("Sales Header", new AlMember("Sell-to Customer No.", "field", null, null));
+
+        const string src = """
+            page 42 "Sales Order"
+            {
+                layout
+                {
+                    area(content)
+                    {
+                        field("Sell-to Customer No."; Rec."Sell-to Customer No.")
+                        {
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(resolver, "Sales Order", "Sales Header"));
+
+        // The chain `Rec."Sell-to Customer No."` should resolve as a
+        // field_access on Sales Header — was being swallowed by the
+        // field-declaration handler before this fix.
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "Sell-to Customer No."
+            && r.ReferenceKind == "field_access");
+    }
+
+    [Fact]
+    public void Page_form_field_declaration_picks_up_chain_method_calls_on_RHS()
+    {
+        // The page-field binding RHS can be a method call too, not just
+        // a field access. `field("Editable Lines"; Rec.SalesLinesEditable())`
+        // — the method call inside the field-decl parens needs to
+        // resolve on Sales Header.
+        var resolver = MakeResolver();
+        resolver.AddMember("Sales Header", new AlMember("SalesLinesEditable", "procedure", null, null));
+
+        const string src = """
+            page 42 "Sales Order"
+            {
+                layout
+                {
+                    area(content)
+                    {
+                        field("Editable Lines"; Rec.SalesLinesEditable())
+                        {
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(resolver, "Sales Order", "Sales Header"));
+
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "SalesLinesEditable"
+            && r.ReferenceKind == "method_call");
+    }
+
+    [Fact]
+    public void Table_form_field_declaration_still_extracts_enum_type()
+    {
+        // Negative-side check: the form-detection fix must not regress
+        // the table-form enum-type extraction we added in tranche 1.
+        var resolver = MakeResolver();
+        resolver.AddType("Sales Document Type", new AlTypeRef(BaseAppId, "enum", 39, "Sales Document Type"));
+
+        const string src = """
+            table 36 "Sales Header"
+            {
+                fields
+                {
+                    field(1; "Document Type"; Enum "Sales Document Type") { }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(resolver, "Sales Header"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Sales Document Type"
+            && r.ReferenceKind == "property_object");
+    }
+
     // ── CalcFormula + SourceTableView (tranche 2) ──────────────────
 
     [Fact]
