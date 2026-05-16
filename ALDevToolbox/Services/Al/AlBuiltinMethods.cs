@@ -60,6 +60,8 @@ public static class AlBuiltinMethods
         // Misc.
         "AddLoadFields", "AddLink", "GetLink", "RemoveLink",
         "Number", "RecordLevelLocking",
+        "RecordId", "GetView", "SetView",
+        "Caption", "CaptionClass",
         // Note: AssistEdit / Lookup / Drilldown are intentionally NOT
         // listed here. Microsoft's Base App declares user procedures
         // with those names (e.g. Sales Header.AssistEdit is a real
@@ -93,6 +95,54 @@ public static class AlBuiltinMethods
     public static readonly HashSet<string> CodeunitMethods = new(StringComparer.OrdinalIgnoreCase)
     {
         "Run", "RunModal", "RunWithCheck",
+    };
+
+    /// <summary>
+    /// Methods callable on a Page instance — `SomePage.RunModal()`,
+    /// `SomePage.SetRecord(Rec)`, `SomePage.GetRecord(Rec)`. The
+    /// page-instance methods are AL-runtime, not user-declared, so
+    /// they never appear in oe_module_symbols.
+    /// </summary>
+    public static readonly HashSet<string> PageMethods = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Run", "RunModal", "SetRecord", "GetRecord",
+        "SetTableView", "GetTableView", "SetSelectionFilter",
+        "Editable", "Update", "Close", "SaveRecord",
+        "Caption",
+    };
+
+    /// <summary>
+    /// Methods callable on a Report instance — `SomeReport.RunModal()`,
+    /// `SomeReport.SaveAs(...)`.
+    /// </summary>
+    public static readonly HashSet<string> ReportMethods = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Run", "RunModal", "SaveAs", "SaveAsPdf", "SaveAsExcel",
+        "SaveAsHtml", "SaveAsWord", "SaveAsXml",
+        "SetTableView", "GetTableView",
+        "UseRequestPage", "UseSystemPrinter",
+    };
+
+    /// <summary>
+    /// Methods callable on an Xmlport instance — `SomeXmlport.Import()`,
+    /// `SomeXmlport.SetSource(...)`.
+    /// </summary>
+    public static readonly HashSet<string> XmlportMethods = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Run", "RunModal", "Import", "Export",
+        "SetSource", "SetDestination", "GetSource",
+        "SetTableView", "GetTableView",
+    };
+
+    /// <summary>
+    /// Methods callable on a Query instance — `SomeQuery.Open()`,
+    /// `SomeQuery.Read()`.
+    /// </summary>
+    public static readonly HashSet<string> QueryMethods = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Open", "Read", "Close",
+        "SetRange", "SetFilter",
+        "TopNumberOfRows", "SaveAsCsv", "SaveAsXml",
     };
 
     /// <summary>
@@ -218,6 +268,8 @@ public static class AlBuiltinMethods
         "RoundDateTime", "Time2Variant", "Variant2Time",
         // File / stream system functions occasionally surfaced as bare.
         "DownloadFromStream", "UploadIntoStream",
+        // Background session control.
+        "StartSession", "StopSession",
         // Compiler attributes that lex as `[Identifier(...)]` and
         // surface as bare-call shapes inside square brackets. Treat
         // as no-op bare callables so they don't pollute the diagnostic.
@@ -314,6 +366,11 @@ public static class AlBuiltinMethods
         // expression — handled separately — but `DATABASE.X(...)` would
         // surface here if it appears).
         "DATABASE",
+        // Current-object runtime keywords. CurrPage / currXMLport /
+        // CurrReport refer to the currently-running object instance;
+        // their methods (Update, Close, Skip, etc.) aren't in any
+        // module's catalog.
+        "CurrPage", "currXMLport", "CurrReport",
         // XML / JSON / encoding primitives also exposed as static
         // factory receivers. `XmlDocument.ReadFrom(...)` /
         // `XmlDocument.Create()` / `XmlElement.Create(...)` create
@@ -454,6 +511,14 @@ public static class AlBuiltinMethods
                 RecordMethods.Contains(memberName) || RecordSystemFields.Contains(memberName),
             "codeunit" =>
                 CodeunitMethods.Contains(memberName),
+            "page" or "pageextension" =>
+                PageMethods.Contains(memberName),
+            "report" or "reportextension" =>
+                ReportMethods.Contains(memberName),
+            "xmlport" =>
+                XmlportMethods.Contains(memberName),
+            "query" =>
+                QueryMethods.Contains(memberName),
             _ => false,
         };
     }

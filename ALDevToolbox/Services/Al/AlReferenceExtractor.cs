@@ -769,6 +769,20 @@ public static class AlReferenceExtractor
             var receiverType = _ctx.Resolver.ResolveTypeByName(nameTok.Value, kindTok.Value);
             if (receiverType is null)
             {
+                // `Kind::Value` where `Kind` isn't a canonical AL object
+                // keyword is an enum value reference (e.g. `Verbosity::Error`,
+                // `DataClassification::SystemMetadata`, `Step::Done`).
+                // The catalog doesn't track enum values, so we can't
+                // resolve the `Value` half — but the chain isn't broken,
+                // it's just a value reference we don't model. Silence
+                // the diagnostic when the kind name isn't one of the
+                // recognised AL object keywords.
+                if (!IsAlObjectKeyword(kindTok.Value)
+                    && !string.Equals(kindTok.Value, "DATABASE", StringComparison.OrdinalIgnoreCase))
+                {
+                    AdvancePastChain();
+                    return;
+                }
                 _unresolved++;
                 CaptureUnresolved("typed-literal-name", nameTok, null, kindTok.Value);
                 AdvancePastChain();
@@ -826,6 +840,20 @@ public static class AlReferenceExtractor
                         // contain references that need to surface.
                         // Walk inside the parens via the same dispatch
                         // path the main loop uses.
+                        if (followedByParen) WalkBalancedParens();
+                        return;
+                    }
+                    // Synthesised platform virtual tables (Record Field,
+                    // Record Company, etc. — stamped with the PlatformAppId
+                    // sentinel of Guid.Empty in the catalog) have no
+                    // schemas: the import doesn't write members for them.
+                    // Field accesses like `TempFieldSet.TableNo` are
+                    // legitimate but unresolvable through our metadata.
+                    // Silence the diagnostic so it doesn't crowd out real
+                    // gaps; the trade-off (lost underline) was already
+                    // implicit when we synthesised the type.
+                    if (receiverType.AppId == Guid.Empty)
+                    {
                         if (followedByParen) WalkBalancedParens();
                         return;
                     }

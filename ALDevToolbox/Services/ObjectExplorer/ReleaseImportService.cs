@@ -1737,6 +1737,12 @@ public class ReleaseImportService
         (2000000199, "Object Options"),
         (2000000200, "NAV App Installed App"),
         (2000000201, "Published Application"),
+        (2000000202, "NAV App Tenant Operation"),
+        (2000000206, "NAV App Tenant App"),
+        (2000000226, "Tenant Web Service"),
+        (2000000228, "Service Connection"),
+        (2000000232, "Page Data Personalization"),
+        (2000000244, "User Default Style Sheet"),
     };
 
     private static void WalkDeps(
