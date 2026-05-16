@@ -828,7 +828,13 @@ public static class AlReferenceExtractor
             if (_ownerTypeResolved) return _ownerTypeCache;
             _ownerTypeResolved = true;
             if (string.IsNullOrEmpty(_ctx.OwnerName)) return null;
-            _ownerTypeCache = _ctx.Resolver.ResolveTypeByName(_ctx.OwnerName);
+            // Pass the owner's catalog kind as the hint so bare self-calls
+            // on a pageextension named the same as its base page (or any
+            // similarly-named extension over its base) land on the
+            // extension's own members, not on the base object's. Without
+            // the hint, the resolver's non-extension preference would
+            // pick the base, which is the wrong receiver for self-calls.
+            _ownerTypeCache = _ctx.Resolver.ResolveTypeByName(_ctx.OwnerName, _ctx.OwnerKind);
             return _ownerTypeCache;
         }
 

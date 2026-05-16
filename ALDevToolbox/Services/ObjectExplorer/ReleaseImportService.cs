@@ -1641,32 +1641,24 @@ public class ReleaseImportService
         }
 
         /// <summary>
-        /// Maps an AL type keyword (<c>Record</c>, <c>Codeunit</c>,
-        /// <c>Page</c>, …) to the corresponding catalog kind value
-        /// (<c>table</c>, <c>codeunit</c>, <c>page</c>, …). Returns null
-        /// when the keyword isn't recognised — the resolver then falls
-        /// back to its non-extension-preference heuristic. The mapping
-        /// table is small; AL type keywords don't drift.
+        /// Maps the caller's kind hint to a catalog kind. Accepts both
+        /// AL type keywords (<c>Record</c>, <c>Codeunit</c>, <c>Page</c>, …)
+        /// and catalog kind values (<c>table</c>, <c>codeunit</c>,
+        /// <c>pageextension</c>, …) — the latter for cases like
+        /// <c>OwnerType()</c> in the extractor where we already have the
+        /// owner's catalog kind and want bare self-calls on a
+        /// pageextension named the same as its base page to land on the
+        /// extension, not on the base.
+        /// <c>Record</c> is the only keyword that doesn't passthrough —
+        /// it maps to <c>table</c>. The rest are identical except for
+        /// casing.
         /// </summary>
         private static string? MapKeywordToKind(string? keyword)
         {
             if (string.IsNullOrEmpty(keyword)) return null;
-            return keyword.ToLowerInvariant() switch
-            {
-                "record" => "table",
-                "codeunit" => "codeunit",
-                "page" => "page",
-                "report" => "report",
-                "query" => "query",
-                "xmlport" => "xmlport",
-                "interface" => "interface",
-                "enum" => "enum",
-                "controladdin" => "controladdin",
-                "permissionset" => "permissionset",
-                "profile" => "profile",
-                "requestpage" => "requestpage",
-                _ => null,
-            };
+            var lower = keyword.ToLowerInvariant();
+            if (lower == "record") return "table";
+            return lower;
         }
 
         public ALDevToolbox.Services.Al.AlMember? ResolveMember(
