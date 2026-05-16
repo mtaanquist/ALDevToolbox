@@ -70,6 +70,7 @@ internal static class SiteAdminEndpoints
                 BackupScheduleEnabled: form["BackupScheduleEnabled"] == "true" || form["BackupScheduleEnabled"] == "on",
                 BackupScheduleTimeUtc: TimeOnly.TryParse(form["BackupScheduleTimeUtc"], out var bst) ? bst : new TimeOnly(2, 0),
                 BackupRetentionCount: int.TryParse(form["BackupRetentionCount"], out var brc) ? brc : 14,
+                PerTenantBackupRetentionCount: int.TryParse(form["PerTenantBackupRetentionCount"], out var ptrc) ? ptrc : 30,
                 DefaultStorageQuotaMb: string.IsNullOrWhiteSpace(form["DefaultStorageQuotaMb"])
                     ? null
                     : int.TryParse(form["DefaultStorageQuotaMb"], out var dsq) ? dsq : null,

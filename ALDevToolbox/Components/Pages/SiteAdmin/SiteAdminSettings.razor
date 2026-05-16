@@ -100,14 +100,21 @@
                            value="@_view.BackupScheduleTimeUtc.ToString("HH:mm")" />
                 </label>
                 <label>
-                    Retention (unpinned)
+                    Retention (full backups, unpinned)
                     <input type="number" name="BackupRetentionCount"
                            value="@_view.BackupRetentionCount" min="1" max="365" />
+                </label>
+                <label>
+                    Retention (per-tenant snapshots)
+                    <input type="number" name="PerTenantBackupRetentionCount"
+                           value="@_view.PerTenantBackupRetentionCount" min="1" max="365" />
                 </label>
             </div>
             <p class="muted">
                 Pinned backups are exempt from retention pruning. Manage individual
                 backups on the <a href="/site-admin/backups">Backups</a> page.
+                Per-tenant snapshots live under each org's backup folder and
+                drive the "restore to yesterday" SiteAdmin tool.
             </p>
 
             <h2>Storage quotas</h2>

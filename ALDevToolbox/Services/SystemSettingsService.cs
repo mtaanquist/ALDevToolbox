@@ -24,6 +24,7 @@ public sealed record SystemSettingsView(
     bool BackupScheduleEnabled,
     TimeOnly BackupScheduleTimeUtc,
     int BackupRetentionCount,
+    int PerTenantBackupRetentionCount,
     int? DefaultStorageQuotaMb,
     decimal IndexSizeMultiplier,
     DateTime UpdatedAt);
@@ -48,6 +49,7 @@ public sealed record SystemSettingsInput(
     bool BackupScheduleEnabled,
     TimeOnly BackupScheduleTimeUtc,
     int BackupRetentionCount,
+    int PerTenantBackupRetentionCount,
     int? DefaultStorageQuotaMb,
     decimal IndexSizeMultiplier);
 
@@ -128,6 +130,7 @@ public sealed class SystemSettingsService
             BackupScheduleEnabled: row.BackupScheduleEnabled,
             BackupScheduleTimeUtc: row.BackupScheduleTimeUtc,
             BackupRetentionCount: row.BackupRetentionCount,
+            PerTenantBackupRetentionCount: row.PerTenantBackupRetentionCount,
             DefaultStorageQuotaMb: row.DefaultStorageQuotaMb,
             IndexSizeMultiplier: row.IndexSizeMultiplier,
             UpdatedAt: row.UpdatedAt);
@@ -160,6 +163,10 @@ public sealed class SystemSettingsService
         {
             errors["BackupRetentionCount"] = "Retention count must be between 1 and 365.";
         }
+        if (input.PerTenantBackupRetentionCount < 1 || input.PerTenantBackupRetentionCount > 365)
+        {
+            errors["PerTenantBackupRetentionCount"] = "Per-tenant retention must be between 1 and 365.";
+        }
         if (input.DefaultStorageQuotaMb is int quota && quota < 0)
         {
             errors["DefaultStorageQuotaMb"] = "Default quota must be 0 or greater. Leave blank for unlimited.";
@@ -182,6 +189,7 @@ public sealed class SystemSettingsService
         row.BackupScheduleEnabled = input.BackupScheduleEnabled;
         row.BackupScheduleTimeUtc = input.BackupScheduleTimeUtc;
         row.BackupRetentionCount = input.BackupRetentionCount;
+        row.PerTenantBackupRetentionCount = input.PerTenantBackupRetentionCount;
         row.DefaultStorageQuotaMb = input.DefaultStorageQuotaMb;
         row.IndexSizeMultiplier = input.IndexSizeMultiplier;
         row.UpdatedAt = _clock.GetUtcNow().UtcDateTime;

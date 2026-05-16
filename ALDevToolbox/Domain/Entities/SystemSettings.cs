@@ -63,6 +63,14 @@ public class SystemSettings
     public int BackupRetentionCount { get; set; } = 14;
 
     /// <summary>
+    /// Number of per-tenant snapshots retained on disk per organisation.
+    /// Independent of <see cref="BackupRetentionCount"/> so SiteAdmins can
+    /// keep a longer "restore to yesterday" tail (e.g. 30 days) without
+    /// holding 30 full pg_dumps. Pinned snapshots are exempt.
+    /// </summary>
+    public int PerTenantBackupRetentionCount { get; set; } = 30;
+
+    /// <summary>
     /// Default storage quota (in megabytes) applied to organisations that
     /// have no per-org override. Null means unlimited. The
     /// <c>StorageQuotaGuard</c> hard-blocks tenant writes once the
