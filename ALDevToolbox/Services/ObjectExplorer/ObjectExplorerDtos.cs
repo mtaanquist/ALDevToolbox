@@ -120,21 +120,35 @@ public sealed record ObjectVariableRow(
 
 /// <summary>
 /// Query envelope for <c>FindReferencesAsync</c>. Either a (kind, id) pair or
-/// a (kind, name) pair identifies the target. ID is preferred when present;
-/// name is the fallback for kinds the symbol package doesn't number
+/// a (kind, name) pair identifies the target object. ID is preferred when
+/// present; name is the fallback for kinds the symbol package doesn't number
 /// (interfaces, some extensions).
+///
+/// When <see cref="TargetMemberName"/> is non-null the query scopes to a
+/// member (procedure / field / trigger) inside that owner: phase 1 returns
+/// sibling declarations of the same name + the owner-object reference rows,
+/// phase 2 (when method-call extraction lands) will additionally surface
+/// the new <c>method_call</c> / <c>field_access</c> rows.
 /// </summary>
 public sealed record FindReferencesQuery(
     Guid TargetAppId,
     string TargetObjectKind,
     int? TargetObjectId,
-    string TargetObjectName);
+    string TargetObjectName,
+    string? TargetMemberName = null,
+    string? TargetMemberKind = null);
 
 /// <summary>
 /// One reference matched by <c>FindReferencesAsync</c>. Carries enough
 /// joined context (source module, source object, reference kind, line)
 /// for the UI to link back to the calling object's file viewer without a
 /// follow-up query.
+///
+/// For member-scoped searches the row's <see cref="Category"/> indicates
+/// which strategy produced it — "declaration" (the matched symbol itself
+/// elsewhere in the chain), "owner_type" (a variable / parameter / return
+/// referencing the owner object), or "call" (a future method-call row).
+/// The UI groups results by category before rendering.
 /// </summary>
 public sealed record ReferenceMatch(
     long Id,
@@ -147,7 +161,11 @@ public sealed record ReferenceMatch(
     int? LineNumber,
     long? SourceFileId,
     string? SourceFilePath = null,
-    string? Snippet = null);
+    string? Snippet = null,
+    string Category = "object",
+    string? MemberName = null,
+    string? MemberKind = null,
+    string? MemberSignature = null);
 
 /// <summary>
 /// Read-only projection of an <c>oe_module_files</c> row for the source viewer.
@@ -227,13 +245,21 @@ public sealed record ReleaseContentMatch(
 /// One row in the outline pane on the source-file viewer. Objects and their
 /// symbols are flattened so the panel can render them as a single ordered
 /// list keyed by line number — kind tells the renderer which icon to use.
+///
+/// <see cref="ObjectId"/> is set for object header rows (codeunit, table,
+/// page, …) and drives the cross-page anchor.
+/// <see cref="SymbolId"/> is set for procedure / field / trigger / event
+/// symbol rows and drives the outline's right-click "Find references"
+/// menu — clicking a procedure row mints a member-scoped session
+/// without having to first click the declaration in the editor.
 /// </summary>
 public sealed record SourceFileOutlineItem(
     string Kind,
     string Name,
     string? Signature,
     int LineNumber,
-    long? ObjectId);
+    long? ObjectId,
+    long? SymbolId = null);
 
 /// <summary>
 /// Minimal Module summary used by the search-filter dropdown. Lighter than

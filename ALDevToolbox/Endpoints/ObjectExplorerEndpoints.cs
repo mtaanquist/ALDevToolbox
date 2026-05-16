@@ -174,6 +174,22 @@ internal static class ObjectExplorerEndpoints
             return session is null ? Results.NotFound() : Results.Ok(session);
         }).RequireAuthorization();
 
+        // Member-scoped find: outline right-click on a procedure / field /
+        // trigger row mints a session that bundles declarations + indirect
+        // owner-type refs + (eventually) method-call refs. The symbolId
+        // here is an oe_module_symbols row, not an object id.
+        app.MapGet("/api/object-explorer/references/sessions/from-member-symbol/{symbolId:long}", async (
+            long symbolId,
+            HttpContext ctx,
+            ReferenceSessionService sessions,
+            CancellationToken ct) =>
+        {
+            var owner = OwnerKey(ctx);
+            if (owner is null) return Results.Unauthorized();
+            var session = await sessions.CreateFromMemberSymbolAsync(symbolId, owner, ct);
+            return session is null ? Results.NotFound() : Results.Ok(session);
+        }).RequireAuthorization();
+
         app.MapGet("/api/object-explorer/references/sessions/{token}", (
             string token,
             HttpContext ctx,
