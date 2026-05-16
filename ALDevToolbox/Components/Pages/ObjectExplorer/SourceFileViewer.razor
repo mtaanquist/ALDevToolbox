@@ -53,8 +53,8 @@
             <div class="source-viewer__code"
                  data-language="al"
                  data-content="@_file.Content"
-                 data-declarations="@SerializeDeclarations(_declarations)"
-                 data-resolvables="@SerializeResolvables(MergeDeclarationsAsResolvables(_resolvables, _declarations))"></div>
+                 data-declarations="@SerializeDeclarations(FilterNavigableDeclarations(_declarations))"
+                 data-resolvables="@SerializeResolvables(_resolvables)"></div>
 
             @* Drag handle between the editor and the outline. source-viewer.js
                wires the pointer events and persists the chosen width in
@@ -417,10 +417,12 @@
     }
 
     /// <summary>
-    /// Combines the call-site / field-access resolvables with declaration
-    /// spans so most interactive tokens in the file get the underline
-    /// affordance. Excludes <b>field</b> and <b>trigger</b> declarations
-    /// from the underline set:
+    /// Drops <b>field</b> and <b>trigger</b> declarations from the list
+    /// passed to <c>code-editor.js</c>. The declarations list drives both
+    /// <c>buildDeclarationDecorationExtensions</c> (the <c>cm-symbol-decl</c>
+    /// underline) and the right-click "Find references" routing, so
+    /// filtering at the source removes the visual noise AND stops the
+    /// menu from offering an action that returns nothing useful:
     /// <list type="bullet">
     ///   <item>A page-side field LHS (the page's own field name) is a
     ///         declaration, not a navigation target — the RHS
@@ -435,24 +437,20 @@
     /// </list>
     /// Object headers (codeunit / table / page / …) and member-symbol
     /// declarations (procedures, event publishers / subscribers, labels)
-    /// stay in the underlined set — they ARE useful navigation targets.
+    /// stay in the set — they ARE useful navigation targets.
     /// </summary>
-    private static IReadOnlyList<CodeViewerResolvable> MergeDeclarationsAsResolvables(
-        IReadOnlyList<CodeViewerResolvable>? resolvables,
+    private static IReadOnlyList<CodeViewerDeclaration> FilterNavigableDeclarations(
         IReadOnlyList<CodeViewerDeclaration>? declarations)
     {
-        var merged = new List<CodeViewerResolvable>(
-            (resolvables?.Count ?? 0) + (declarations?.Count ?? 0));
-        if (resolvables is not null) merged.AddRange(resolvables);
-        if (declarations is not null)
+        if (declarations is null || declarations.Count == 0)
+            return Array.Empty<CodeViewerDeclaration>();
+        var kept = new List<CodeViewerDeclaration>(declarations.Count);
+        foreach (var d in declarations)
         {
-            foreach (var d in declarations)
-            {
-                if (IsNonNavigableDeclarationKind(d.Kind)) continue;
-                merged.Add(new CodeViewerResolvable(d.Line, d.ColumnStart, d.ColumnEnd));
-            }
+            if (IsNonNavigableDeclarationKind(d.Kind)) continue;
+            kept.Add(d);
         }
-        return merged;
+        return kept;
     }
 
     private static bool IsNonNavigableDeclarationKind(string kind) =>
