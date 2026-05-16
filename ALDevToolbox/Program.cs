@@ -141,6 +141,7 @@ builder.Services.AddScoped<SystemSettingsService>();
 builder.Services.AddScoped<SiteAdminService>();
 builder.Services.AddScoped<BackupService>();
 builder.Services.AddScoped<PerTenantBackupService>();
+builder.Services.AddScoped<OffsiteBackupService>();
 builder.Services.AddScoped<DatabaseUsageService>();
 builder.Services.AddScoped<StorageQuotaGuard>();
 // MaintenanceModeState is a process-local flag — singleton lifetime so the

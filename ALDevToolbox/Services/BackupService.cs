@@ -20,7 +20,9 @@ public sealed record BackupRow(
     int? CreatedByUserId,
     string? CreatedByEmail,
     BackupKind Kind,
-    bool IsPinned);
+    bool IsPinned,
+    DateTime? OffsiteUploadedAt,
+    string? OffsiteObjectKey);
 
 /// <summary>
 /// Shells out to <c>pg_dump</c> / <c>pg_restore</c> against the application
@@ -92,7 +94,9 @@ public sealed class BackupService
                 b.CreatedByUserId,
                 b.CreatedByUser == null ? null : b.CreatedByUser.Email,
                 b.Kind,
-                b.IsPinned))
+                b.IsPinned,
+                b.OffsiteUploadedAt,
+                b.OffsiteObjectKey))
             .ToListAsync(ct);
     }
 

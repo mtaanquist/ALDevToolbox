@@ -86,5 +86,42 @@ public class SystemSettings
     /// </summary>
     public decimal IndexSizeMultiplier { get; set; } = 0.5m;
 
+    /// <summary>
+    /// When <see langword="true"/>, the scheduler uploads every successful
+    /// scheduled full pg_dump to the configured S3-compatible bucket.
+    /// Failed uploads log and continue; the local file is the source of
+    /// truth for restorability.
+    /// </summary>
+    public bool OffsiteBackupEnabled { get; set; }
+
+    /// <summary>S3 endpoint URL. Null when using AWS's default endpoint for the region.</summary>
+    public string? OffsiteEndpoint { get; set; }
+
+    public string? OffsiteRegion { get; set; }
+
+    public string? OffsiteBucket { get; set; }
+
+    /// <summary>Object key prefix inside the bucket; empty/null means "root of the bucket".</summary>
+    public string? OffsitePrefix { get; set; }
+
+    /// <summary>
+    /// Data-Protection-encrypted S3 access key id. Decryption happens
+    /// inside <see cref="Services.OffsiteBackupService"/>; plaintext
+    /// never leaves that service boundary.
+    /// </summary>
+    public string? OffsiteAccessKeyEncrypted { get; set; }
+
+    /// <summary>Data-Protection-encrypted S3 secret access key.</summary>
+    public string? OffsiteSecretKeyEncrypted { get; set; }
+
+    /// <summary>
+    /// Set to <see langword="true"/> for MinIO and other S3-compatible
+    /// servers that don't support virtual-hosted–style addressing.
+    /// </summary>
+    public bool OffsiteForcePathStyle { get; set; }
+
+    /// <summary>Objects older than this many days are pruned from the bucket. Default 90.</summary>
+    public int OffsiteRetentionDays { get; set; } = 90;
+
     public DateTime UpdatedAt { get; set; }
 }

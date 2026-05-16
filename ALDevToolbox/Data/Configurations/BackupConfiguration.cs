@@ -17,6 +17,8 @@ internal sealed class BackupConfiguration : IEntityTypeConfiguration<Backup>
         entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id");
         entity.Property(e => e.Kind).HasColumnName("kind").HasConversion<string>().IsRequired();
         entity.Property(e => e.IsPinned).HasColumnName("is_pinned").IsRequired();
+        entity.Property(e => e.OffsiteUploadedAt).HasColumnName("offsite_uploaded_at");
+        entity.Property(e => e.OffsiteObjectKey).HasColumnName("offsite_object_key");
         entity.HasIndex(e => e.FileName).IsUnique();
         entity.HasIndex(e => e.CreatedAt);
         entity.HasOne(e => e.CreatedByUser)

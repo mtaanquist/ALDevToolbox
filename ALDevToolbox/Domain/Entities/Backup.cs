@@ -49,4 +49,10 @@ public class Backup
     /// retention window.
     /// </summary>
     public bool IsPinned { get; set; }
+
+    /// <summary>UTC instant the backup was uploaded to the off-site bucket, or null when it hasn't been.</summary>
+    public DateTime? OffsiteUploadedAt { get; set; }
+
+    /// <summary>The S3 object key under which the backup was uploaded, or null when not uploaded.</summary>
+    public string? OffsiteObjectKey { get; set; }
 }

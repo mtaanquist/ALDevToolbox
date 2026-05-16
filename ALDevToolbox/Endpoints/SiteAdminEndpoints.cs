@@ -90,6 +90,67 @@ internal static class SiteAdminEndpoints
             }
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
+        app.MapPost("/site-admin/settings/offsite/save", async (
+            HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var input = new OffsiteSettingsInput(
+                Enabled: form["Enabled"] == "true" || form["Enabled"] == "on",
+                Endpoint: form["Endpoint"].ToString(),
+                Region: form["Region"].ToString(),
+                Bucket: form["Bucket"].ToString(),
+                Prefix: form["Prefix"].ToString(),
+                AccessKey: form["AccessKey"].ToString(),
+                ClearAccessKey: form["ClearAccessKey"] == "true" || form["ClearAccessKey"] == "on",
+                SecretKey: form["SecretKey"].ToString(),
+                ClearSecretKey: form["ClearSecretKey"] == "true" || form["ClearSecretKey"] == "on",
+                ForcePathStyle: form["ForcePathStyle"] == "true" || form["ForcePathStyle"] == "on",
+                RetentionDays: int.TryParse(form["RetentionDays"], out var rd) ? rd : 90);
+            try
+            {
+                await settings.SaveOffsiteAsync(input, ct);
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminSettings}?{RouteConstants.OkQuery}=offsite-saved");
+            }
+            catch (PlanValidationException ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminSettings}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString(ex.Errors.First().Value));
+            }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/settings/offsite/test", async (
+            HttpContext ctx, OffsiteBackupService offsite, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var result = await offsite.TestConnectionAsync(ct);
+            var prefix = result.Success ? "OK: " : "FAIL: ";
+            ctx.Response.Redirect($"{RouteConstants.SiteAdminSettings}?test="
+                + Uri.EscapeDataString(prefix + result.Message));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/backups/{id:int}/upload", async (
+            int id, HttpContext ctx, OffsiteBackupService offsite, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            try
+            {
+                var key = await offsite.UploadAsync(id, ct);
+                if (key is null)
+                {
+                    ctx.Response.Redirect($"{RouteConstants.SiteAdminBackups}?{RouteConstants.MsgQuery}="
+                        + Uri.EscapeDataString("Off-site backup not configured, or the local file is missing."));
+                    return;
+                }
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminBackups}?{RouteConstants.OkQuery}=uploaded");
+            }
+            catch (Exception ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString("Upload failed: " + ex.Message));
+            }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
         app.MapPost("/site-admin/settings/test-email", async (
             HttpContext ctx, IEmailService email, AppDbContext db, IOrganizationContext orgCtx,
             IAntiforgery antiforgery, ILoggerFactory loggerFactory, CancellationToken ct) =>

@@ -54,6 +54,55 @@ public sealed record SystemSettingsInput(
     decimal IndexSizeMultiplier);
 
 /// <summary>
+/// SiteAdmin-facing view of the off-site backup settings. Carries flags
+/// for whether keys are stored rather than the keys themselves; plaintext
+/// only ever materialises in <see cref="ResolvedOffsiteSettings"/>.
+/// </summary>
+public sealed record OffsiteSettingsView(
+    bool Enabled,
+    string? Endpoint,
+    string? Region,
+    string? Bucket,
+    string? Prefix,
+    bool HasAccessKey,
+    bool HasSecretKey,
+    bool ForcePathStyle,
+    int RetentionDays);
+
+/// <summary>
+/// Input for <see cref="SystemSettingsService.SaveOffsiteAsync"/>. Empty
+/// access/secret values leave the stored value untouched (same pattern as
+/// SMTP password); set the explicit "Clear" flags to wipe them.
+/// </summary>
+public sealed record OffsiteSettingsInput(
+    bool Enabled,
+    string? Endpoint,
+    string? Region,
+    string? Bucket,
+    string? Prefix,
+    string? AccessKey,
+    bool ClearAccessKey,
+    string? SecretKey,
+    bool ClearSecretKey,
+    bool ForcePathStyle,
+    int RetentionDays);
+
+/// <summary>
+/// Fully resolved off-site configuration with plaintext credentials.
+/// Held only inside <see cref="OffsiteBackupService"/>; never persisted,
+/// never logged.
+/// </summary>
+public sealed record ResolvedOffsiteSettings(
+    string? Endpoint,
+    string? Region,
+    string Bucket,
+    string? Prefix,
+    string AccessKey,
+    string SecretKey,
+    bool ForcePathStyle,
+    int RetentionDays);
+
+/// <summary>
 /// Resolved SMTP configuration. Either fully populated (host + from set) or
 /// considered unconfigured. The plaintext password is only ever held in this
 /// record — never persisted, never logged.
@@ -97,8 +146,16 @@ public sealed class SystemSettingsService
     /// <summary>Data Protection purpose string for SMTP passwords.</summary>
     public const string SmtpPasswordProtectionPurpose = "ALDevToolbox.SystemSettings.SmtpPassword";
 
+    /// <summary>Data Protection purpose string for off-site S3 access key id.</summary>
+    public const string OffsiteAccessKeyProtectionPurpose = "ALDevToolbox.SystemSettings.OffsiteAccessKey";
+
+    /// <summary>Data Protection purpose string for off-site S3 secret access key.</summary>
+    public const string OffsiteSecretKeyProtectionPurpose = "ALDevToolbox.SystemSettings.OffsiteSecretKey";
+
     private readonly AppDbContext _db;
     private readonly IDataProtector _protector;
+    private readonly IDataProtector _offsiteAccessProtector;
+    private readonly IDataProtector _offsiteSecretProtector;
     private readonly ILogger<SystemSettingsService> _logger;
     private readonly TimeProvider _clock;
 
@@ -110,6 +167,8 @@ public sealed class SystemSettingsService
     {
         _db = db;
         _protector = protectionProvider.CreateProtector(SmtpPasswordProtectionPurpose);
+        _offsiteAccessProtector = protectionProvider.CreateProtector(OffsiteAccessKeyProtectionPurpose);
+        _offsiteSecretProtector = protectionProvider.CreateProtector(OffsiteSecretKeyProtectionPurpose);
         _logger = logger;
         _clock = clock;
     }
@@ -264,6 +323,101 @@ public sealed class SystemSettingsService
             password: ReadSecret("SMTP_PASSWORD_FILE"),
             from: Environment.GetEnvironmentVariable("SMTP_FROM"),
             useStartTls: ParseBool(Environment.GetEnvironmentVariable("SMTP_USE_STARTTLS")));
+
+    /// <summary>Loads the off-site backup settings for the SiteAdmin form (no plaintext keys).</summary>
+    public async Task<OffsiteSettingsView> GetOffsiteViewAsync(CancellationToken ct = default)
+    {
+        var row = await LoadAsync(ct);
+        return new OffsiteSettingsView(
+            Enabled: row.OffsiteBackupEnabled,
+            Endpoint: row.OffsiteEndpoint,
+            Region: row.OffsiteRegion,
+            Bucket: row.OffsiteBucket,
+            Prefix: row.OffsitePrefix,
+            HasAccessKey: !string.IsNullOrEmpty(row.OffsiteAccessKeyEncrypted),
+            HasSecretKey: !string.IsNullOrEmpty(row.OffsiteSecretKeyEncrypted),
+            ForcePathStyle: row.OffsiteForcePathStyle,
+            RetentionDays: row.OffsiteRetentionDays);
+    }
+
+    /// <summary>
+    /// Persists off-site backup settings. When keys are supplied they're
+    /// encrypted via the Data Protection ring; empty keys leave the stored
+    /// value untouched. Throws <see cref="PlanValidationException"/> with
+    /// field-keyed errors so the form can render them inline.
+    /// </summary>
+    public async Task SaveOffsiteAsync(OffsiteSettingsInput input, CancellationToken ct = default)
+    {
+        var errors = new Dictionary<string, string>();
+        if (input.Enabled)
+        {
+            if (string.IsNullOrWhiteSpace(input.Bucket))
+                errors["OffsiteBucket"] = "Bucket is required when off-site backup is enabled.";
+        }
+        if (input.RetentionDays < 1 || input.RetentionDays > 3650)
+        {
+            errors["OffsiteRetentionDays"] = "Off-site retention must be between 1 and 3650 days.";
+        }
+        if (errors.Count > 0) throw new PlanValidationException(errors);
+
+        var row = await LoadAsync(ct);
+        row.OffsiteBackupEnabled = input.Enabled;
+        row.OffsiteEndpoint = NullIfBlank(input.Endpoint);
+        row.OffsiteRegion = NullIfBlank(input.Region);
+        row.OffsiteBucket = NullIfBlank(input.Bucket);
+        row.OffsitePrefix = NullIfBlank(input.Prefix);
+        row.OffsiteForcePathStyle = input.ForcePathStyle;
+        row.OffsiteRetentionDays = input.RetentionDays;
+
+        if (input.ClearAccessKey) row.OffsiteAccessKeyEncrypted = null;
+        else if (!string.IsNullOrEmpty(input.AccessKey))
+            row.OffsiteAccessKeyEncrypted = _offsiteAccessProtector.Protect(input.AccessKey);
+
+        if (input.ClearSecretKey) row.OffsiteSecretKeyEncrypted = null;
+        else if (!string.IsNullOrEmpty(input.SecretKey))
+            row.OffsiteSecretKeyEncrypted = _offsiteSecretProtector.Protect(input.SecretKey);
+
+        row.UpdatedAt = _clock.GetUtcNow().UtcDateTime;
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation(
+            "Off-site backup settings updated (enabled={Enabled}, bucket={Bucket}).",
+            row.OffsiteBackupEnabled, row.OffsiteBucket ?? "<unset>");
+    }
+
+    /// <summary>
+    /// Decrypts the stored credentials and returns a fully resolved
+    /// configuration ready for the S3 SDK. Returns <see langword="null"/>
+    /// when off-site is disabled, the bucket isn't set, or either key is
+    /// missing / undecryptable.
+    /// </summary>
+    public async Task<ResolvedOffsiteSettings?> ResolveOffsiteAsync(CancellationToken ct = default)
+    {
+        var row = await _db.SystemSettings.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == 1, ct);
+        if (row is null || !row.OffsiteBackupEnabled) return null;
+        if (string.IsNullOrWhiteSpace(row.OffsiteBucket)) return null;
+        if (string.IsNullOrEmpty(row.OffsiteAccessKeyEncrypted) || string.IsNullOrEmpty(row.OffsiteSecretKeyEncrypted)) return null;
+        string accessKey, secretKey;
+        try
+        {
+            accessKey = _offsiteAccessProtector.Unprotect(row.OffsiteAccessKeyEncrypted);
+            secretKey = _offsiteSecretProtector.Unprotect(row.OffsiteSecretKeyEncrypted);
+        }
+        catch (System.Security.Cryptography.CryptographicException ex)
+        {
+            _logger.LogError(ex, "Failed to decrypt off-site credentials; off-site backup disabled until re-entered.");
+            return null;
+        }
+        return new ResolvedOffsiteSettings(
+            Endpoint: NullIfBlank(row.OffsiteEndpoint),
+            Region: NullIfBlank(row.OffsiteRegion),
+            Bucket: row.OffsiteBucket!,
+            Prefix: NullIfBlank(row.OffsitePrefix),
+            AccessKey: accessKey,
+            SecretKey: secretKey,
+            ForcePathStyle: row.OffsiteForcePathStyle,
+            RetentionDays: row.OffsiteRetentionDays);
+    }
 
     /// <summary>
     /// Returns the system banner text, or <see langword="null"/> when none is

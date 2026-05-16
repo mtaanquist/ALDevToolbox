@@ -157,6 +157,10 @@ public sealed class BackupSchedulerTests : IDisposable
         var perTenant = new PerTenantBackupService(
             ctx, _db.OrgContext, _db.NewQuotaGuard(ctx), config,
             NullLogger<PerTenantBackupService>.Instance, _clock);
-        await scheduler.TickOnceAsync(ctx, backups, perTenant, CancellationToken.None);
+        var systemSettings = new SystemSettingsService(
+            ctx, _db.DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, _clock);
+        var offsite = new OffsiteBackupService(
+            ctx, systemSettings, backups, NullLogger<OffsiteBackupService>.Instance, _clock);
+        await scheduler.TickOnceAsync(ctx, backups, perTenant, offsite, CancellationToken.None);
     }
 }
