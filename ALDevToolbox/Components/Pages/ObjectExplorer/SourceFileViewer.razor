@@ -43,9 +43,9 @@
                     <span> › <a href="@($"/object-explorer/release/{_header.ReleaseId}")">@_header.ReleaseLabel</a></span>
                 </p>
                 <h1>@BuildBreadcrumb(_header)</h1>
-                <p class="muted">
-                    @_header.LineCount.ToString("N0") line(s)
-                </p>
+                @* Line count + cursor position render in the editor's
+                   bottom status bar (see code-editor.js → buildStatusBarExtension).
+                   The heading stays a clean breadcrumb. *@
             </div>
         </header>
 

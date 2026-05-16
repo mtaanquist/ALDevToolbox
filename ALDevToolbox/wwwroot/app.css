@@ -3814,6 +3814,34 @@ ul.form-field-error {
     background: var(--color-surface);
 }
 
+/* Bottom-docked status bar (built by buildStatusBarExtension in
+   code-editor.js). Sits below cm-scroller and inherits theme colours
+   from the editor's container. Left/right split mirrors VS Code's
+   layout — cursor position on the left, document totals on the right. */
+.cm-panels.cm-panels-bottom {
+    border-top: 1px solid var(--color-border-strong);
+    background: var(--color-surface);
+}
+
+.cm-status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 3px 10px;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+}
+
+.cm-status-bar__left,
+.cm-status-bar__right {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .cm-search.cm-panel {
     padding: 8px 10px;
     display: flex;

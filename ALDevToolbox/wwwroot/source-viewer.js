@@ -67,6 +67,11 @@ function init() {
         declarations,
         resolvables,
         dotNetRef: jsBridge,
+        // VS Code-style status bar at the bottom of the editor. Shows
+        // cursor line/col, total lines, and selection size when a range
+        // is active. The static "1,073 line(s)" caption under the page
+        // heading moves into this live readout.
+        statusBar: true,
     });
 
     if (Number.isFinite(initialLine) && initialLine >= 1) {
