@@ -68,5 +68,7 @@ public sealed class SystemSettingsAuditTests : IDisposable
         DefaultSignupAutoApprove: false,
         BackupScheduleEnabled: true,
         BackupScheduleTimeUtc: new TimeOnly(2, 0),
-        BackupRetentionCount: 14);
+        BackupRetentionCount: 14,
+        DefaultStorageQuotaMb: null,
+        IndexSizeMultiplier: 0.5m);
 }

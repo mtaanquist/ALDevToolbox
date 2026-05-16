@@ -15,6 +15,7 @@ internal static class RouteConstants
     public const string SiteAdminUsers = "/site-admin/users";
     public const string SiteAdminSettings = "/site-admin/settings";
     public const string SiteAdminBackups = "/site-admin/backups";
+    public const string SiteAdminStorage = "/site-admin/storage";
 
     public const string OkQuery = "ok";
     public const string ErrQuery = "err";

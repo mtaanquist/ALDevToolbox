@@ -24,6 +24,8 @@ public sealed record SystemSettingsView(
     bool BackupScheduleEnabled,
     TimeOnly BackupScheduleTimeUtc,
     int BackupRetentionCount,
+    int? DefaultStorageQuotaMb,
+    decimal IndexSizeMultiplier,
     DateTime UpdatedAt);
 
 /// <summary>
@@ -45,7 +47,9 @@ public sealed record SystemSettingsInput(
     bool DefaultSignupAutoApprove,
     bool BackupScheduleEnabled,
     TimeOnly BackupScheduleTimeUtc,
-    int BackupRetentionCount);
+    int BackupRetentionCount,
+    int? DefaultStorageQuotaMb,
+    decimal IndexSizeMultiplier);
 
 /// <summary>
 /// Resolved SMTP configuration. Either fully populated (host + from set) or
@@ -124,6 +128,8 @@ public sealed class SystemSettingsService
             BackupScheduleEnabled: row.BackupScheduleEnabled,
             BackupScheduleTimeUtc: row.BackupScheduleTimeUtc,
             BackupRetentionCount: row.BackupRetentionCount,
+            DefaultStorageQuotaMb: row.DefaultStorageQuotaMb,
+            IndexSizeMultiplier: row.IndexSizeMultiplier,
             UpdatedAt: row.UpdatedAt);
     }
 
@@ -154,6 +160,14 @@ public sealed class SystemSettingsService
         {
             errors["BackupRetentionCount"] = "Retention count must be between 1 and 365.";
         }
+        if (input.DefaultStorageQuotaMb is int quota && quota < 0)
+        {
+            errors["DefaultStorageQuotaMb"] = "Default quota must be 0 or greater. Leave blank for unlimited.";
+        }
+        if (input.IndexSizeMultiplier < 0m || input.IndexSizeMultiplier > 10m)
+        {
+            errors["IndexSizeMultiplier"] = "Multiplier must be between 0 and 10.";
+        }
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
         var row = await LoadAsync(ct);
@@ -168,6 +182,8 @@ public sealed class SystemSettingsService
         row.BackupScheduleEnabled = input.BackupScheduleEnabled;
         row.BackupScheduleTimeUtc = input.BackupScheduleTimeUtc;
         row.BackupRetentionCount = input.BackupRetentionCount;
+        row.DefaultStorageQuotaMb = input.DefaultStorageQuotaMb;
+        row.IndexSizeMultiplier = input.IndexSizeMultiplier;
         row.UpdatedAt = _clock.GetUtcNow().UtcDateTime;
 
         if (input.ClearSmtpPassword)

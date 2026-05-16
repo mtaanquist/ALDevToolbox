@@ -1,0 +1,135 @@
+@page "/site-admin/storage"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Services
+@inject DatabaseUsageService Usage
+
+<PageTitle>Site Admin · Storage · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Site Admin · Storage</h1>
+            <p class="muted">
+                Per-organisation database footprint. Logical bytes count user
+                data; index/metadata is the supporting on-disk overhead.
+                Billable size is <code>logical + multiplier × index</code> and
+                drives the quota check. Per-org sizes are prorated by row
+                count — accurate within a few percent for typical workloads.
+            </p>
+        </div>
+        <a class="btn btn--sm" href="/admin">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to admin</span>
+        </a>
+    </header>
+
+    @if (Ok == "quota-saved")
+    {
+        <p class="form-success" role="status">Quota saved.</p>
+    }
+    @if (!string.IsNullOrEmpty(Msg))
+    {
+        <p class="form-error" role="alert">@Msg</p>
+    }
+
+    @if (_rows is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_rows.Count == 0)
+    {
+        <p class="muted">No organisations yet.</p>
+    }
+    else
+    {
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Organisation</th>
+                    <th class="data-table__num">Logical</th>
+                    <th class="data-table__num">Index/metadata</th>
+                    <th class="data-table__num">Total on disk</th>
+                    <th class="data-table__num">Billable</th>
+                    <th class="data-table__num">Quota</th>
+                    <th class="data-table__num">Used</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var r in _rows)
+            {
+                var rowSource = r;
+                <tr>
+                    <td>
+                        @r.Name
+                        @if (r.IsSystem)
+                        {
+                            <span class="badge">system</span>
+                        }
+                        <div class="muted">@r.Slug</div>
+                    </td>
+                    <td class="data-table__num">@FormatBytes(r.LogicalBytes)</td>
+                    <td class="data-table__num">@FormatBytes(r.IndexBytes)</td>
+                    <td class="data-table__num">@FormatBytes(r.TotalBytes)</td>
+                    <td class="data-table__num">@FormatBytes(r.BillableBytes)</td>
+                    <td class="data-table__num">
+                        @(r.EffectiveQuotaMb is { } q ? $"{q} MB" : "∞")
+                        @if (r.OrgOverrideMb is null && r.SystemDefaultMb is not null)
+                        {
+                            <div class="muted">(default)</div>
+                        }
+                    </td>
+                    <td class="data-table__num">
+                        @if (r.UsedFraction is { } used)
+                        {
+                            <span>@($"{used * 100:0.0}%")</span>
+                        }
+                        else
+                        {
+                            <span class="muted">—</span>
+                        }
+                    </td>
+                    <td class="row-actions">
+                        <form method="post" action="@($"/site-admin/storage/{r.OrganizationId}/quota")"
+                              class="inline-form">
+                            <AntiforgeryToken />
+                            <input type="number" name="QuotaMb" min="0" step="1"
+                                   value="@(r.OrgOverrideMb?.ToString() ?? string.Empty)"
+                                   placeholder="default"
+                                   aria-label="Quota in megabytes"
+                                   class="inline-form__num" />
+                            <button type="submit" class="btn btn--sm">Save</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+    [SupplyParameterFromQuery(Name = "msg")] public string? Msg { get; set; }
+
+    private IReadOnlyList<DatabaseUsageService.OrgUsageRow>? _rows;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _rows = await Usage.ListAsync(CancellationToken.None);
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        double v = bytes;
+        string[] units = ["KB", "MB", "GB", "TB"];
+        var i = -1;
+        do
+        {
+            v /= 1024;
+            i++;
+        } while (v >= 1024 && i < units.Length - 1);
+        return $"{v:0.#} {units[i]}";
+    }
+}

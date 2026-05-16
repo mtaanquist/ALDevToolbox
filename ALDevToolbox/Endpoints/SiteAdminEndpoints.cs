@@ -69,7 +69,13 @@ internal static class SiteAdminEndpoints
                 DefaultSignupAutoApprove: form["DefaultSignupAutoApprove"] == "true" || form["DefaultSignupAutoApprove"] == "on",
                 BackupScheduleEnabled: form["BackupScheduleEnabled"] == "true" || form["BackupScheduleEnabled"] == "on",
                 BackupScheduleTimeUtc: TimeOnly.TryParse(form["BackupScheduleTimeUtc"], out var bst) ? bst : new TimeOnly(2, 0),
-                BackupRetentionCount: int.TryParse(form["BackupRetentionCount"], out var brc) ? brc : 14);
+                BackupRetentionCount: int.TryParse(form["BackupRetentionCount"], out var brc) ? brc : 14,
+                DefaultStorageQuotaMb: string.IsNullOrWhiteSpace(form["DefaultStorageQuotaMb"])
+                    ? null
+                    : int.TryParse(form["DefaultStorageQuotaMb"], out var dsq) ? dsq : null,
+                IndexSizeMultiplier: decimal.TryParse(form["IndexSizeMultiplier"], System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var ism)
+                    ? ism
+                    : 0.5m);
 
             try
             {
@@ -246,6 +252,38 @@ internal static class SiteAdminEndpoints
             finally
             {
                 await stream.DisposeAsync();
+            }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/storage/{orgId:int}/quota", async (
+            int orgId, HttpContext ctx, DatabaseUsageService usage, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var raw = form["QuotaMb"].ToString();
+            int? quota = string.IsNullOrWhiteSpace(raw)
+                ? null
+                : int.TryParse(raw, out var parsed) ? parsed : -1;
+            if (quota == -1)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminStorage}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString("Quota must be a non-negative whole number, or blank for the system default."));
+                return;
+            }
+            try
+            {
+                await usage.SetOrgQuotaAsync(orgId, quota, ct);
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminStorage}?{RouteConstants.OkQuery}=quota-saved");
+            }
+            catch (ArgumentOutOfRangeException ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminStorage}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminStorage}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString(ex.Message));
             }
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 

@@ -140,6 +140,7 @@ builder.Services.AddScoped<InviteService>();
 builder.Services.AddScoped<SystemSettingsService>();
 builder.Services.AddScoped<SiteAdminService>();
 builder.Services.AddScoped<BackupService>();
+builder.Services.AddScoped<DatabaseUsageService>();
 // MaintenanceModeState is a process-local flag — singleton lifetime so the
 // middleware and BackupService share the same instance.
 builder.Services.AddSingleton<MaintenanceModeState>();
