@@ -133,6 +133,7 @@
                                             @if (entry.Item.ObjectId is { } oid)
                                             {
                                                 <a href="@($"/object-explorer/object/{oid}")" title="@FormatTooltip(entry.Item)">
+                                                    <span class="source-viewer__outline-badge @KindBadgeClass(entry.Item.Kind)">@KindBadgeLabel(entry.Item.Kind)</span>
                                                     <span class="source-viewer__outline-name">@entry.Item.Name</span>
                                                     @if (!string.IsNullOrEmpty(entry.Item.Signature))
                                                     {
@@ -147,6 +148,7 @@
                                                    class="source-viewer__outline-link"
                                                    data-line="@entry.Item.LineNumber"
                                                    title="@FormatTooltip(entry.Item)">
+                                                    <span class="source-viewer__outline-badge @KindBadgeClass(entry.Item.Kind)">@KindBadgeLabel(entry.Item.Kind)</span>
                                                     <span class="source-viewer__outline-name">@entry.Item.Name</span>
                                                     @if (!string.IsNullOrEmpty(entry.Item.Signature))
                                                     {
@@ -287,6 +289,56 @@
     }
 
     private static string FormatSignature(string signature) => signature;
+
+    /// <summary>
+    /// Short label shown in the kind badge next to each outline row.
+    /// Keep it concise (≤ 9 chars) so it fits inside a 340px column
+    /// alongside the name + signature; the full kind lives on the
+    /// row's <c>title</c> tooltip.
+    /// </summary>
+    private static string KindBadgeLabel(string kind) => kind.ToLowerInvariant() switch
+    {
+        "field" => "field",
+        "trigger" => "trigger",
+        "procedure" => "proc",
+        "internal_procedure" => "internal",
+        "protected_procedure" => "protected",
+        "local_procedure" => "local",
+        "event_publisher" => "event pub",
+        "event_subscriber" => "event sub",
+        "codeunit" => "codeunit",
+        "table" => "table",
+        "tableextension" => "table ext",
+        "page" => "page",
+        "pageextension" => "page ext",
+        "report" => "report",
+        "reportextension" => "report ext",
+        "xmlport" => "xmlport",
+        "query" => "query",
+        "controladdin" => "controladd",
+        "enum" => "enum",
+        "enumextension" => "enum ext",
+        "interface" => "interface",
+        "permissionset" => "permset",
+        "permissionsetextension" => "permset ext",
+        "profile" => "profile",
+        _ => kind,
+    };
+
+    /// <summary>
+    /// CSS modifier that tints the kind badge. Procedures share one
+    /// colour family (method-like), triggers + events share another
+    /// (event-like), fields and object headers get their own tints.
+    /// </summary>
+    private static string KindBadgeClass(string kind) => kind.ToLowerInvariant() switch
+    {
+        "field" => "source-viewer__outline-badge--field",
+        "trigger" => "source-viewer__outline-badge--trigger",
+        "event_publisher" or "event_subscriber" => "source-viewer__outline-badge--event",
+        "procedure" or "internal_procedure" or "protected_procedure" or "local_procedure"
+            => "source-viewer__outline-badge--proc",
+        _ => "source-viewer__outline-badge--object",
+    };
 
     private static string FormatTooltip(SourceFileOutlineItem item)
     {

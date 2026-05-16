@@ -3232,7 +3232,7 @@ ul.form-field-error {
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 13px;
     min-width: 0;
 }
 
@@ -3240,9 +3240,61 @@ ul.form-field-error {
     flex: 0 0 auto;
     margin-left: auto;
     padding-left: 8px;
-    font-size: 11.5px;
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
     color: var(--text-3, #7a7a8a);
+}
+
+/* Kind badge — IDE-style pill next to each outline row. The label
+   indicates what kind of symbol the row represents (field, trigger,
+   procedure, etc.); the colour tint groups related kinds so the eye
+   can scan a long list quickly. Full kind name lives on the row's
+   title attribute for hover. */
+.source-viewer__outline-badge {
+    flex: 0 0 auto;
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    text-transform: lowercase;
+    line-height: 1.4;
+    color: var(--color-text);
+    background: var(--color-surface-2, rgba(124, 124, 144, 0.12));
+    border: 1px solid var(--color-border, rgba(124, 124, 144, 0.2));
+    white-space: nowrap;
+}
+
+.source-viewer__outline-badge--field {
+    background: rgba(75, 139, 255, 0.14);
+    border-color: rgba(75, 139, 255, 0.35);
+    color: #6ba3ff;
+}
+
+.source-viewer__outline-badge--trigger {
+    background: rgba(76, 201, 114, 0.14);
+    border-color: rgba(76, 201, 114, 0.35);
+    color: #4cc972;
+}
+
+.source-viewer__outline-badge--event {
+    background: rgba(229, 159, 64, 0.16);
+    border-color: rgba(229, 159, 64, 0.4);
+    color: #f0a85a;
+}
+
+.source-viewer__outline-badge--proc {
+    background: rgba(186, 134, 255, 0.16);
+    border-color: rgba(186, 134, 255, 0.4);
+    color: #c39bff;
+}
+
+.source-viewer__outline-badge--object {
+    background: rgba(124, 124, 144, 0.18);
+    border-color: rgba(124, 124, 144, 0.4);
+    color: var(--color-text-muted);
 }
 
 .source-viewer__outline-find-heading {
@@ -3572,6 +3624,85 @@ ul.form-field-error {
 .cm-symbol-menu__item--disabled {
     color: var(--text-muted, rgba(216, 216, 224, 0.45));
     cursor: not-allowed;
+}
+
+/* CodeMirror @codemirror/search panel (Ctrl/Cmd-F). The default
+   styling renders bare inputs/buttons; bring them in line with the
+   app's button + input look. */
+.cm-panels.cm-panels-top {
+    border-bottom: 1px solid var(--color-border-strong);
+    background: var(--color-surface);
+}
+
+.cm-search.cm-panel {
+    padding: 8px 10px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-family: inherit;
+}
+
+.cm-search .cm-textfield {
+    font-family: inherit;
+    font-size: 13px;
+    padding: 4px 8px;
+    color: var(--color-text);
+    background: var(--color-surface-2, var(--color-bg));
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-sm, 4px);
+    outline: none;
+}
+
+.cm-search .cm-textfield:focus {
+    border-color: var(--color-accent);
+}
+
+.cm-search .cm-button {
+    font-family: inherit;
+    font-size: 12.5px;
+    padding: 4px 10px;
+    color: var(--color-text);
+    background: transparent;
+    background-image: none;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+}
+
+.cm-search .cm-button:hover {
+    background: var(--color-surface-2, rgba(124, 124, 144, 0.12));
+}
+
+.cm-search label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12.5px;
+    color: var(--color-text-muted);
+    cursor: pointer;
+}
+
+.cm-search label input[type="checkbox"] {
+    accent-color: var(--color-accent);
+    margin: 0;
+}
+
+.cm-panel button[name="close"] {
+    margin-left: auto;
+    padding: 0 8px;
+    font-size: 16px;
+    line-height: 1;
+    color: var(--color-text-muted);
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+}
+
+.cm-panel button[name="close"]:hover {
+    color: var(--color-text);
 }
 
 /* Brief flash on the line the user navigated to via a #L<n> deep link. */
