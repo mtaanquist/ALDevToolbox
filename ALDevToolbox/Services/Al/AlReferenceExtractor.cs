@@ -132,6 +132,21 @@ public static class AlReferenceExtractor
         {
             var tok = _tokens[_pos];
 
+            // Modern AL files open with `namespace X.Y.Z;` and a sequence
+            // of `using A.B.C;` directives. The chain walker would otherwise
+            // treat each dotted name as a member chain on an unresolved
+            // head — emitting one false unresolved per directive (~17 per
+            // BC file × 17k files in a release). Consume the whole directive
+            // up to the next `;` instead.
+            if (_scopeStack.Count == 1
+                && tok.Kind == AlTokenKind.Identifier
+                && (string.Equals(tok.Value, "namespace", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(tok.Value, "using", StringComparison.OrdinalIgnoreCase)))
+            {
+                SkipToSemicolonAtTopLevel();
+                return;
+            }
+
             // Procedure / trigger heads start a new scope frame.
             if (IsScopeOpener(tok))
             {
@@ -1714,6 +1729,21 @@ public static class AlReferenceExtractor
 
         private void SkipToSemicolon()
         {
+            while (_pos < _tokens.Count && !At(";")) _pos++;
+            if (At(";")) _pos++;
+        }
+
+        /// <summary>
+        /// Consumes a top-of-file directive (<c>namespace X.Y.Z;</c> or
+        /// <c>using A.B.C;</c>) up to and including the terminating
+        /// semicolon. Doesn't touch the references list — these are
+        /// pure compile-time annotations the source-viewer doesn't need
+        /// to navigate from.
+        /// </summary>
+        private void SkipToSemicolonAtTopLevel()
+        {
+            // The directive name token itself.
+            _pos++;
             while (_pos < _tokens.Count && !At(";")) _pos++;
             if (At(";")) _pos++;
         }

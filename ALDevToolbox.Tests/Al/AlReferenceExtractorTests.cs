@@ -2013,6 +2013,59 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Namespace_and_using_directives_at_file_top_are_skipped()
+    {
+        // Modern AL files open with `namespace X.Y.Z;` then a list of
+        // `using A.B.C;` directives. Without explicit handling each one
+        // gets walked as a member chain on an unresolved head (`Microsoft`,
+        // `System`, …) and bumps the diagnostic counter. The skip happens
+        // at object scope only — body code that legitimately uses the
+        // word `using` (not a real AL pattern, defensive) would still
+        // walk normally.
+        const string src = """
+            namespace Microsoft.Bank.Banking;
+
+            using Microsoft.Foundation.Company;
+            using System.Globalization;
+            using Microsoft.Finance.GeneralLedger.Setup;
+
+            codeunit 50000 "Foo"
+            {
+                procedure Bar()
+                begin
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().BeEmpty();
+        result.Stats.UnresolvedReceivers.Should().Be(0,
+            because: "directives are pure annotations; nothing to walk");
+        result.Stats.UnresolvedSamples.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Clear_as_a_bare_call_is_treated_as_a_system_function()
+    {
+        // `Clear(SomeVar)` resets a variable to its default state. The
+        // pre-fix behaviour emitted an unresolved sample on every Clear()
+        // call because it tried to resolve Clear as a self-member.
+        const string src = """
+            procedure Foo()
+            var
+                i: Integer;
+            begin
+                Clear(i);
+                ClearAll();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().BeEmpty();
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
     public void Statement_keyword_before_paren_does_not_trigger_bare_call_resolution()
     {
         // `if (X) then` and `not (X)` syntactically place a keyword before

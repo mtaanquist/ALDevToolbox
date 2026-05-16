@@ -202,6 +202,12 @@ public static class AlBuiltinMethods
         "GlobalLanguage", "WindowsLanguage",
         // Misc.
         "TypeNameOf", "Database",
+        // Variable lifecycle.
+        "Clear", "ClearAll",
+        // Numeric / type predicates that take an arg with no receiver.
+        "IsNull", "IsNullGuid",
+        // Cast / format helpers.
+        "Increment", "Decrement",
     };
 
     /// <summary>
