@@ -73,17 +73,64 @@ public sealed class ReferenceSessionService
     }
 
     /// <summary>
+    /// Member-scoped variant: mints a session for a specific procedure /
+    /// field / trigger on an owner object. Used by the outline right-click
+    /// path (where the symbol id is known directly) and by the at-position
+    /// path when the click resolves to a member.
+    /// </summary>
+    public async Task<ReferenceSession?> CreateFromMemberSymbolAsync(
+        long symbolId, string ownerKey, CancellationToken ct = default)
+    {
+        var head = await _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Id == symbolId)
+            .Select(s => new
+            {
+                s.Kind,
+                s.Name,
+                s.Signature,
+                Owner = s.Object!,
+                ReleaseId = s.Object!.Module!.ReleaseId,
+            })
+            .SingleOrDefaultAsync(ct);
+        if (head is null) return null;
+
+        var query = new FindReferencesQuery(
+            TargetAppId: head.Owner.Module!.AppId,
+            TargetObjectKind: head.Owner.Kind,
+            TargetObjectId: head.Owner.ObjectId,
+            TargetObjectName: head.Owner.Name,
+            TargetMemberName: head.Name,
+            TargetMemberKind: head.Kind);
+
+        var results = await _objectExplorer.FindReferencesForSymbolAsync(
+            head.ReleaseId, query, ct);
+
+        var sigPart = string.IsNullOrEmpty(head.Signature) ? "" : head.Signature;
+        var label = head.Owner.ObjectId is { } oid
+            ? $"references to {head.Kind} {head.Owner.Kind} {oid} {head.Owner.Name}.{head.Name}{sigPart}"
+            : $"references to {head.Kind} {head.Owner.Kind} {head.Owner.Name}.{head.Name}{sigPart}";
+
+        return Store(label, head.ReleaseId, results, ownerKey);
+    }
+
+    /// <summary>
     /// Mints a session by clicking position: looks up the word at
     /// (line, column) in the supplied file and resolves it to a
-    /// same-Release object. Tries three strategies in order:
+    /// same-Release target. Tries four strategies in order:
     /// <list type="number">
-    ///   <item>The word itself matches an object name (case-insensitive).</item>
-    ///   <item>The click was qualified (<c>myCust.Insert</c>) — resolve the
-    ///         qualifier's declared type and look that up as the object.
-    ///         Procedure-level references aren't tracked yet, so the user
-    ///         gets references to the receiver type instead.</item>
+    ///   <item>The word matches an object name (case-insensitive) →
+    ///         object-scoped find.</item>
+    ///   <item>The click is qualified (<c>myCust.Insert</c>) — resolve the
+    ///         qualifier's declared type, look up the member symbol on that
+    ///         type → member-scoped find.</item>
+    ///   <item>The word matches a symbol declaration in the current file
+    ///         (procedure / field / trigger on this file's owner) →
+    ///         member-scoped find on the current owner.</item>
+    ///   <item>Fall back to step 2 with the receiver-type itself as the
+    ///         object — handy when the member isn't recorded yet (phase 2
+    ///         schema gap).</item>
     /// </list>
-    /// Returns null when neither strategy resolves a known object.
+    /// Returns null when nothing at the click resolves.
     /// </summary>
     public async Task<ReferenceSession?> CreateAtPositionAsync(
         long fileId, int line, int column, string ownerKey, CancellationToken ct = default)
@@ -108,39 +155,65 @@ public sealed class ReferenceSessionService
         }
 
         // Strategy 1: direct object match (case-insensitive — AL is too).
-        var target = await ResolveObjectByNameAsync(meta.ReleaseId, click.Word, ct);
+        var objectMatch = await ResolveObjectByNameAsync(meta.ReleaseId, click.Word, ct);
+        if (objectMatch is not null)
+        {
+            _logger.LogInformation(
+                "FindRefsAtPosition FileId={FileId} Word='{Word}' resolved-via=object-name to ObjectId={ObjectId}.",
+                fileId, click.Word, objectMatch.Id);
+            return await CreateFromSymbolAsync(objectMatch.Id, ownerKey, ct);
+        }
 
-        // Strategy 2: variable-receiver fallback for `myCust.Insert` style
-        // clicks. We track references at the object level, not the
-        // method-call level, so the closest correct answer is "references
-        // to the variable's declared type".
-        string? resolvedVia = target is null ? null : "name";
-        string? receiverType = null;
-        if (target is null && click.LeftContext.Operator == "."
+        // Strategy 2: qualified `var.Member`. Look up the variable's declared
+        // type, then find the member symbol on that type.
+        if (click.LeftContext.Operator == "."
             && !string.IsNullOrEmpty(click.LeftContext.Qualifier))
         {
-            receiverType = Services.Al.AlGoToDefinitionLocator
+            var receiverType = Services.Al.AlGoToDefinitionLocator
                 .ResolveVariableType(meta.Content, click.LeftContext.Qualifier!);
             if (!string.IsNullOrEmpty(receiverType))
             {
-                target = await ResolveObjectByNameAsync(meta.ReleaseId, receiverType, ct);
-                if (target is not null) resolvedVia = "variable-type";
+                var memberSymbol = await ResolveMemberSymbolAsync(
+                    meta.ReleaseId, receiverType, click.Word, ct);
+                if (memberSymbol is not null)
+                {
+                    _logger.LogInformation(
+                        "FindRefsAtPosition FileId={FileId} Word='{Word}' Qualifier='{Qual}' resolved-via=variable-member to SymbolId={SymbolId}.",
+                        fileId, click.Word, click.LeftContext.Qualifier, memberSymbol.Id);
+                    return await CreateFromMemberSymbolAsync(memberSymbol.Id, ownerKey, ct);
+                }
+
+                // Strategy 4 (member symbol wasn't found): fall back to
+                // object-scoped find on the receiver type. The user gets
+                // "references to Customer" instead of nothing.
+                var receiverObject = await ResolveObjectByNameAsync(
+                    meta.ReleaseId, receiverType, ct);
+                if (receiverObject is not null)
+                {
+                    _logger.LogInformation(
+                        "FindRefsAtPosition FileId={FileId} Word='{Word}' Qualifier='{Qual}' resolved-via=variable-type-fallback to ObjectId={ObjectId}.",
+                        fileId, click.Word, click.LeftContext.Qualifier, receiverObject.Id);
+                    return await CreateFromSymbolAsync(receiverObject.Id, ownerKey, ct);
+                }
             }
         }
 
-        if (target is null)
+        // Strategy 3: bare member click on a procedure/field declared in
+        // the current file. Resolve by walking the file's owner objects
+        // and finding a matching symbol.
+        var localMember = await ResolveMemberSymbolInFileAsync(fileId, click.Word, ct);
+        if (localMember is not null)
         {
             _logger.LogInformation(
-                "FindRefsAtPosition FileId={FileId} Path='{Path}' Word='{Word}' Qualifier='{Qual}' Receiver='{Recv}' — no object match.",
-                fileId, meta.Path, click.Word, click.LeftContext.Qualifier, receiverType);
-            return null;
+                "FindRefsAtPosition FileId={FileId} Word='{Word}' resolved-via=local-member to SymbolId={SymbolId}.",
+                fileId, click.Word, localMember.Id);
+            return await CreateFromMemberSymbolAsync(localMember.Id, ownerKey, ct);
         }
 
         _logger.LogInformation(
-            "FindRefsAtPosition FileId={FileId} Word='{Word}' resolved-via={Strategy} to ObjectId={ObjectId}.",
-            fileId, click.Word, resolvedVia, target.Id);
-
-        return await CreateFromSymbolAsync(target.Id, ownerKey, ct);
+            "FindRefsAtPosition FileId={FileId} Path='{Path}' Word='{Word}' Qualifier='{Qual}' — no match.",
+            fileId, meta.Path, click.Word, click.LeftContext.Qualifier);
+        return null;
     }
 
     private async Task<ObjectMatch?> ResolveObjectByNameAsync(
@@ -154,6 +227,44 @@ public sealed class ReferenceSessionService
             .Where(o => o.Name.ToLower() == lowered)
             .OrderBy(o => o.Kind)
             .Select(o => new ObjectMatch(o.Id))
+            .FirstOrDefaultAsync(ct);
+    }
+
+    /// <summary>
+    /// Finds a member symbol (procedure / field / trigger) by name on the
+    /// named owner object in the supplied release. Picks the first match
+    /// when multiple kinds share the name (rare but possible — e.g. a
+    /// procedure and a field with identical names).
+    /// </summary>
+    private async Task<ObjectMatch?> ResolveMemberSymbolAsync(
+        int releaseId, string ownerName, string memberName, CancellationToken ct)
+    {
+        var loweredOwner = ownerName.ToLowerInvariant();
+        var loweredMember = memberName.ToLowerInvariant();
+        return await _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Object!.Module!.ReleaseId == releaseId)
+            .Where(s => s.Object!.Name.ToLower() == loweredOwner)
+            .Where(s => s.Name.ToLower() == loweredMember)
+            .OrderBy(s => s.Kind)
+            .Select(s => new ObjectMatch(s.Id))
+            .FirstOrDefaultAsync(ct);
+    }
+
+    /// <summary>
+    /// Finds a member symbol by name inside the file the click landed on.
+    /// Covers the case where the user clicks a procedure declaration or
+    /// internal call inside the same file — no qualifier, name unambiguous
+    /// at file scope.
+    /// </summary>
+    private async Task<ObjectMatch?> ResolveMemberSymbolInFileAsync(
+        long fileId, string memberName, CancellationToken ct)
+    {
+        var loweredMember = memberName.ToLowerInvariant();
+        return await _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Object!.SourceFileId == fileId)
+            .Where(s => s.Name.ToLower() == loweredMember)
+            .OrderBy(s => s.Kind)
+            .Select(s => new ObjectMatch(s.Id))
             .FirstOrDefaultAsync(ct);
     }
 
