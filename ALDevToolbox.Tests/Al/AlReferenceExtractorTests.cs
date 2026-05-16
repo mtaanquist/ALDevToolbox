@@ -808,6 +808,164 @@ public sealed class AlReferenceExtractorTests
                 because: "scalar primitive types (Code, Decimal, Boolean) aren't AL objects");
     }
 
+    // ── CalcFormula + SourceTableView (tranche 2) ──────────────────
+
+    [Fact]
+    public void Calc_formula_emits_queried_table_and_target_field()
+    {
+        // sum("G/L Entry".Amount where(…)) — the queried table goes
+        // out as a property_object, and the .Amount field after the
+        // table name goes out as a field_access on that table.
+        var resolver = MakeResolver();
+        resolver.AddType("G/L Entry", new AlTypeRef(BaseAppId, "table", 17, "G/L Entry"));
+        resolver.AddMember("G/L Entry", new AlMember("Amount", "field", null, null));
+        resolver.AddMember("G/L Entry", new AlMember("G/L Account No.", "field", null, null));
+
+        const string src = """
+            table 15 "G/L Account"
+            {
+                fields
+                {
+                    field(50; "Balance"; Decimal)
+                    {
+                        FieldClass = FlowField;
+                        CalcFormula = sum("G/L Entry".Amount where("G/L Account No." = field("No.")));
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(resolver, "G/L Account"));
+
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "G/L Entry"
+            && r.ReferenceKind == "property_object");
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "G/L Entry"
+            && r.TargetMemberName == "Amount"
+            && r.ReferenceKind == "field_access");
+        // LHS of the where pair is a field on the queried table.
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "G/L Entry"
+            && r.TargetMemberName == "G/L Account No."
+            && r.ReferenceKind == "field_access");
+    }
+
+    [Fact]
+    public void Calc_formula_count_emits_only_the_queried_table_and_where_fields()
+    {
+        // count(…) and exist(…) don't have a target field after the
+        // table name. The handler must still emit the table and the
+        // where-clause field refs.
+        var resolver = MakeResolver();
+        resolver.AddType("Cust. Ledger Entry", new AlTypeRef(BaseAppId, "table", 21, "Cust. Ledger Entry"));
+        resolver.AddMember("Cust. Ledger Entry", new AlMember("Customer No.", "field", null, null));
+
+        const string src = """
+            table 18 Customer
+            {
+                fields
+                {
+                    field(60; "Entry Count"; Integer)
+                    {
+                        FieldClass = FlowField;
+                        CalcFormula = count("Cust. Ledger Entry" where("Customer No." = field("No.")));
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(resolver, "Customer"));
+
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "Cust. Ledger Entry"
+            && r.ReferenceKind == "property_object");
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "Cust. Ledger Entry"
+            && r.TargetMemberName == "Customer No."
+            && r.ReferenceKind == "field_access");
+        // No target field after the table → no Amount-style ref.
+        result.References.Where(r =>
+            r.TargetObjectName == "Cust. Ledger Entry"
+            && r.ReferenceKind == "field_access"
+            && r.TargetMemberName != "Customer No.").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Source_table_view_emits_field_refs_on_pages_source_table()
+    {
+        // Page's SourceTableView's where() and sorting() clauses both
+        // reference fields on the SourceTable (Rec). Both LHS-of-where
+        // and sorting list entries get field_access rows.
+        var resolver = MakeResolver();
+        resolver.AddMember("Sales Header", new AlMember("No.", "field", null, null));
+        resolver.AddMember("Sales Header", new AlMember("Document Type", "field", null, null));
+
+        const string src = """
+            page 42 "Sales Order"
+            {
+                SourceTableView = sorting("No."), where("Document Type" = filter(Order));
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(resolver, "Sales Order", "Sales Header"));
+
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "Document Type"
+            && r.ReferenceKind == "field_access");
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "No."
+            && r.ReferenceKind == "field_access");
+    }
+
+    [Fact]
+    public void Source_table_view_filter_value_does_not_leak_into_field_refs()
+    {
+        // `filter(Order)` on the RHS of the where pair shouldn't be
+        // mistaken for a field — its argument is an enum value, not
+        // a field name. The handler must only emit on the LHS of `=`.
+        var resolver = MakeResolver();
+        resolver.AddMember("Sales Header", new AlMember("Document Type", "field", null, null));
+
+        const string src = """
+            page 42 "Sales Order"
+            {
+                SourceTableView = where("Document Type" = filter(Order));
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(resolver, "Sales Order", "Sales Header"));
+
+        var fieldRefs = result.References.Where(r =>
+            r.ReferenceKind == "field_access"
+            && r.TargetObjectName == "Sales Header").ToList();
+        fieldRefs.Should().ContainSingle();
+        fieldRefs[0].TargetMemberName.Should().Be("Document Type");
+    }
+
+    [Fact]
+    public void Calc_formula_with_unknown_queried_table_drops_silently()
+    {
+        // Cross-release / typo / customer-only table not in the catalog.
+        // Don't crash, don't bump unresolved, don't emit garbage refs.
+        const string src = """
+            table 50000 "Custom"
+            {
+                fields
+                {
+                    field(10; "Total"; Decimal)
+                    {
+                        FieldClass = FlowField;
+                        CalcFormula = sum("Nonexistent Table".Amount where("X" = field("Y")));
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(MakeResolver(), "Custom"));
+
+        result.References.Where(r =>
+            r.ReferenceKind == "property_object" || r.ReferenceKind == "field_access")
+            .Should().BeEmpty();
+    }
+
     // ── EventSubscriber attribute bindings ─────────────────────────
 
     [Fact]

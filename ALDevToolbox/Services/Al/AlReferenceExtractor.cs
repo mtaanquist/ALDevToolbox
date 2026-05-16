@@ -852,6 +852,14 @@ public static class AlReferenceExtractor
             {
                 return TryConsumePermissions();
             }
+            if (string.Equals(name, "CalcFormula", StringComparison.OrdinalIgnoreCase))
+            {
+                return TryConsumeCalcFormula();
+            }
+            if (string.Equals(name, "SourceTableView", StringComparison.OrdinalIgnoreCase))
+            {
+                return TryConsumeSourceTableView();
+            }
             return false;
         }
 
@@ -1191,6 +1199,250 @@ public static class AlReferenceExtractor
                 _resolved++;
                 return;
             }
+        }
+
+        /// <summary>
+        /// Handles a flowfield's <c>CalcFormula = sum("G/L Entry".Amount
+        /// where("G/L Account No." = field("No.")));</c>. Emits up to
+        /// three reference shapes:
+        /// <list type="bullet">
+        ///   <item>The aggregator's queried table → <c>property_object</c>
+        ///         on the table.</item>
+        ///   <item>The optional <c>.&lt;field&gt;</c> following the
+        ///         table → <c>field_access</c> on that table. Only used
+        ///         by sum / min / max / average / lookup; count and
+        ///         exist don't have a target field.</item>
+        ///   <item>Each <c>&lt;field&gt; =</c> LHS inside <c>where(…)</c>
+        ///         → <c>field_access</c> on the queried table.</item>
+        /// </list>
+        /// The user's primary motivation: clicking into the table being
+        /// aggregated when investigating where a flowfield's value comes
+        /// from. v1 leaves the RHS of where pairs alone — <c>field("X")</c>
+        /// refers to a field on the owner (this) table and would require
+        /// field-context tracking we don't yet have.
+        /// </summary>
+        private bool TryConsumeCalcFormula()
+        {
+            _pos++; // property name
+            if (!At("=")) { SkipToSemicolon(); return true; }
+            _pos++; // =
+
+            // Aggregator function name (sum / count / exist / lookup / …).
+            // We don't validate which one — any Identifier followed by
+            // `(` is acceptable; the structure inside is what we read.
+            if (_pos < _tokens.Count && _tokens[_pos].Kind == AlTokenKind.Identifier)
+            {
+                _pos++;
+            }
+            if (!At("(")) { SkipToSemicolon(); return true; }
+            _pos++; // (
+
+            // Queried table: bare or quoted identifier as the first token
+            // inside the aggregator's parens.
+            AlTypeRef? queriedTable = null;
+            if (_pos < _tokens.Count
+                && (_tokens[_pos].Kind == AlTokenKind.Identifier
+                    || _tokens[_pos].Kind == AlTokenKind.QuotedIdentifier))
+            {
+                var tableTok = _tokens[_pos];
+                var resolved = _ctx.Resolver.ResolveTypeByName(tableTok.Value);
+                if (resolved is not null
+                    && string.Equals(resolved.Kind, "table", StringComparison.OrdinalIgnoreCase))
+                {
+                    queriedTable = resolved;
+                    _refs.Add(new ExtractedReference(
+                        Line: tableTok.Line,
+                        Column: tableTok.Column,
+                        TargetAppId: resolved.AppId,
+                        TargetObjectKind: resolved.Kind,
+                        TargetObjectId: resolved.ObjectId,
+                        TargetObjectName: resolved.Name,
+                        TargetMemberName: null,
+                        TargetMemberKind: null,
+                        ReferenceKind: "property_object"));
+                    _resolved++;
+                }
+                _pos++;
+            }
+
+            // Optional `.<field>` immediately after the table name —
+            // sum / min / max / average / lookup target a specific field.
+            if (queriedTable is not null && At("."))
+            {
+                _pos++;
+                if (_pos < _tokens.Count
+                    && (_tokens[_pos].Kind == AlTokenKind.Identifier
+                        || _tokens[_pos].Kind == AlTokenKind.QuotedIdentifier))
+                {
+                    EmitFieldAccessIfResolves(_tokens[_pos], queriedTable);
+                    _pos++;
+                }
+            }
+
+            // Walk the rest of the value (up to the matching `)` of
+            // the aggregator) extracting where()/sorting() field refs
+            // on the queried table.
+            if (queriedTable is not null)
+            {
+                EmitWhereSortingFieldRefs(queriedTable, stopAt: ";");
+            }
+
+            SkipToSemicolon();
+            return true;
+        }
+
+        /// <summary>
+        /// Handles a page's <c>SourceTableView = sorting("No."),
+        /// where("Document Type" = filter(Order));</c>. Field references
+        /// inside the <c>sorting(…)</c> and <c>where(…)</c> clauses are
+        /// on the page's SourceTable — same Rec binding the
+        /// implicit-field-access handler uses.
+        /// </summary>
+        private bool TryConsumeSourceTableView()
+        {
+            _pos++; // property name
+            if (!At("=")) { SkipToSemicolon(); return true; }
+            _pos++; // =
+
+            var receiver = RecType();
+            if (receiver is not null)
+            {
+                EmitWhereSortingFieldRefs(receiver, stopAt: ";");
+            }
+            SkipToSemicolon();
+            return true;
+        }
+
+        /// <summary>
+        /// Walks forward from the current position to a delimiter
+        /// (<paramref name="stopAt"/>) emitting <c>field_access</c>
+        /// references on <paramref name="receiver"/> for fields named
+        /// inside <c>where(…)</c> and <c>sorting(…)</c> clauses. The
+        /// rule: every identifier on the LHS of <c>=</c> inside a
+        /// <c>where(…)</c> is a field; every comma-separated identifier
+        /// inside <c>sorting(…)</c> is a field.
+        ///
+        /// Doesn't advance past <paramref name="stopAt"/> — callers
+        /// terminate the value via their own SkipToSemicolon.
+        /// </summary>
+        private void EmitWhereSortingFieldRefs(AlTypeRef receiver, string stopAt)
+        {
+            while (_pos < _tokens.Count && !At(stopAt))
+            {
+                var tok = _tokens[_pos];
+                if (tok.Kind == AlTokenKind.Identifier
+                    && (string.Equals(tok.Value, "where", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(tok.Value, "sorting", StringComparison.OrdinalIgnoreCase))
+                    && _pos + 1 < _tokens.Count
+                    && _tokens[_pos + 1].Kind == AlTokenKind.Punct
+                    && _tokens[_pos + 1].Value == "(")
+                {
+                    var clauseKind = tok.Value;
+                    _pos += 2; // identifier + (
+                    EmitFieldsInsideClause(receiver, clauseKind);
+                    continue;
+                }
+                _pos++;
+            }
+        }
+
+        /// <summary>
+        /// Reads tokens inside a <c>where(…)</c> or <c>sorting(…)</c>
+        /// clause starting just after the opening <c>(</c>. Tracks
+        /// paren depth so nested calls like <c>field("X")</c> or
+        /// <c>filter('A'|'B')</c> on the RHS don't bleed into the
+        /// next iteration. Stops at the matching closing <c>)</c>.
+        /// </summary>
+        private void EmitFieldsInsideClause(AlTypeRef receiver, string clauseKind)
+        {
+            bool whereClause = string.Equals(clauseKind, "where", StringComparison.OrdinalIgnoreCase);
+            int depth = 0;
+            // Track which side of `=` we're on inside a where pair:
+            // expect-LHS at the start of each segment, flip to expect-
+            // RHS after `=`, flip back at `,` (next pair).
+            bool expectLhs = true;
+            while (_pos < _tokens.Count)
+            {
+                var tok = _tokens[_pos];
+
+                if (tok.Kind == AlTokenKind.Punct)
+                {
+                    if (tok.Value == "(")
+                    {
+                        depth++;
+                        _pos++;
+                        continue;
+                    }
+                    if (tok.Value == ")")
+                    {
+                        if (depth == 0)
+                        {
+                            _pos++;
+                            return;
+                        }
+                        depth--;
+                        _pos++;
+                        continue;
+                    }
+                    if (depth == 0)
+                    {
+                        if (tok.Value == "=")
+                        {
+                            expectLhs = false;
+                            _pos++;
+                            continue;
+                        }
+                        if (tok.Value == ",")
+                        {
+                            expectLhs = true;
+                            _pos++;
+                            continue;
+                        }
+                    }
+                    _pos++;
+                    continue;
+                }
+
+                if (depth == 0
+                    && (tok.Kind == AlTokenKind.Identifier || tok.Kind == AlTokenKind.QuotedIdentifier))
+                {
+                    // sorting(…) — every comma-separated identifier is a field.
+                    // where(…) — only the LHS of each `=` pair.
+                    bool emitField = whereClause ? expectLhs : true;
+                    if (emitField)
+                    {
+                        EmitFieldAccessIfResolves(tok, receiver);
+                    }
+                    _pos++;
+                    continue;
+                }
+
+                _pos++;
+            }
+        }
+
+        /// <summary>
+        /// Emits a <c>field_access</c> reference at <paramref name="tok"/>
+        /// when its value resolves to a field on <paramref name="receiver"/>.
+        /// Silent no-op otherwise so callers can scan permissively.
+        /// </summary>
+        private void EmitFieldAccessIfResolves(AlToken tok, AlTypeRef receiver)
+        {
+            var member = _ctx.Resolver.ResolveMember(receiver, tok.Value);
+            if (member is null) return;
+            if (!string.Equals(member.Kind, "field", StringComparison.OrdinalIgnoreCase)) return;
+            var targetOwner = member.DeclaringType ?? receiver;
+            _refs.Add(new ExtractedReference(
+                Line: tok.Line,
+                Column: tok.Column,
+                TargetAppId: targetOwner.AppId,
+                TargetObjectKind: targetOwner.Kind,
+                TargetObjectId: targetOwner.ObjectId,
+                TargetObjectName: targetOwner.Name,
+                TargetMemberName: member.Name,
+                TargetMemberKind: member.Kind,
+                ReferenceKind: "field_access"));
+            _resolved++;
         }
 
         private void SkipToSemicolon()
