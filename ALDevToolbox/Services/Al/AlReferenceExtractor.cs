@@ -103,179 +103,187 @@ public static class AlReferenceExtractor
 
             while (_pos < _tokens.Count)
             {
-                var tok = _tokens[_pos];
-
-                // Procedure / trigger heads start a new scope frame.
-                if (IsScopeOpener(tok))
-                {
-                    StartProcedureScope();
-                    continue;
-                }
-
-                // Object-scope `var` keyword: scan label declarations
-                // (`Name: Label '…';`) into the bottom frame so bare uses
-                // of label vars in procedure bodies resolve through the
-                // same scope-walking path field accesses do. Object-scope
-                // non-label vars come in via _ctx.GlobalVars from the
-                // symbol package — we only need to fill the label gap
-                // because labels aren't AL object types and get skipped
-                // by the symbol-package variable importer.
-                if (_scopeStack.Count == 1
-                    && tok.Kind == AlTokenKind.Identifier
-                    && string.Equals(tok.Value, "var", StringComparison.OrdinalIgnoreCase))
-                {
-                    ScanObjectScopeLabels();
-                    continue;
-                }
-
-                // Inside a procedure / trigger body, track nested block
-                // depth. `begin` and `case` open blocks closed by `end`;
-                // we maintain the depth so the procedure's own `end;`
-                // (depth → 0) is what actually pops the scope frame, not
-                // any nested `end` inside an `if … then begin … end` or
-                // `case … end`. Without this, real BC code (which nests
-                // `begin`/`end` heavily) loses the local-variable scope
-                // partway through the procedure body.
-                if (_scopeStack.Count > 1 && tok.Kind == AlTokenKind.Identifier)
-                {
-                    if (string.Equals(tok.Value, "begin", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(tok.Value, "case", StringComparison.OrdinalIgnoreCase))
-                    {
-                        _scopeStack.Peek().BeginDepth++;
-                        _pos++;
-                        continue;
-                    }
-                    if (string.Equals(tok.Value, "end", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var frame = _scopeStack.Peek();
-                        frame.BeginDepth--;
-                        if (frame.BeginDepth <= 0)
-                        {
-                            _scopeStack.Pop();
-                        }
-                        _pos++;
-                        continue;
-                    }
-                }
-
-                // Member-access chain candidates. Two shapes trigger:
-                //   A. Identifier `.` Member …
-                //   B. Identifier `::` QuotedIdentifier (or Identifier)
-                //      `.` Member …  — the typed-literal head pattern
-                //      `Codeunit::"Sales-Post".Run(SalesHeader)` etc.
-                // Anything else just advances past.
-                if (tok.Kind == AlTokenKind.Identifier || tok.Kind == AlTokenKind.QuotedIdentifier)
-                {
-                    if (_pos + 1 < _tokens.Count
-                        && _tokens[_pos + 1].Kind == AlTokenKind.Punct
-                        && _tokens[_pos + 1].Value == ".")
-                    {
-                        TryConsumeMemberChain();
-                        continue;
-                    }
-
-                    if (_pos + 2 < _tokens.Count
-                        && _tokens[_pos + 1].Kind == AlTokenKind.DoubleColon
-                        && (_tokens[_pos + 2].Kind == AlTokenKind.Identifier
-                            || _tokens[_pos + 2].Kind == AlTokenKind.QuotedIdentifier))
-                    {
-                        TryConsumeTypedLiteralChain();
-                        continue;
-                    }
-
-                    // Bare self-procedure call: `Identifier(` with no
-                    // receiver. We only try the self-member lookup for
-                    // unquoted identifiers — quoted identifiers as bare
-                    // calls don't occur in practice (procedure names aren't
-                    // quoted at call sites in BC).
-                    if (tok.Kind == AlTokenKind.Identifier
-                        && _pos + 1 < _tokens.Count
-                        && _tokens[_pos + 1].Kind == AlTokenKind.Punct
-                        && _tokens[_pos + 1].Value == "(")
-                    {
-                        if (TryConsumeBareSelfCall()) continue;
-                    }
-
-                    // Bare use of an in-scope Label-typed variable —
-                    // `Error(UnsupportedTypeErr)` style. Emits a
-                    // label_use reference so Find references on the
-                    // label declaration surfaces all callers. Fires
-                    // BEFORE implicit-Rec field access because that
-                    // handler treats in-scope names as "skip".
-                    if (_scopeStack.Count > 1
-                        && (tok.Kind == AlTokenKind.QuotedIdentifier || tok.Kind == AlTokenKind.Identifier))
-                    {
-                        if (TryConsumeLabelUse()) continue;
-                    }
-
-                    // Implicit-Rec field access: bare quoted or unquoted
-                    // identifier with no qualifier, no `(`, no `::`, no
-                    // `.`. Inside a table / page / etc. body, AL lets you
-                    // write `"No." := 'C001'` as shorthand for
-                    // `Rec."No." := 'C001'`. Only fires when Rec is in
-                    // scope (i.e. owner kind supports Rec) and the
-                    // identifier resolves to a field on Rec's type.
-                    if (_scopeStack.Count > 1
-                        && (tok.Kind == AlTokenKind.QuotedIdentifier || tok.Kind == AlTokenKind.Identifier))
-                    {
-                        if (TryConsumeImplicitFieldAccess()) continue;
-                    }
-
-                    // Object-scope property: `Identifier = Value;` at the
-                    // top level (outside any procedure / trigger body).
-                    // SourceTable, LookupPageID, DataCaptionFields, … are
-                    // declared in property syntax and reference other AL
-                    // objects / fields the reference extractor needs to
-                    // surface. Comparisons inside procedure bodies use
-                    // the same `=` punct but the scope-depth guard
-                    // separates them.
-                    if (_scopeStack.Count == 1
-                        && tok.Kind == AlTokenKind.Identifier
-                        && _pos + 1 < _tokens.Count
-                        && _tokens[_pos + 1].Kind == AlTokenKind.Punct
-                        && _tokens[_pos + 1].Value == "=")
-                    {
-                        if (TryConsumeObjectScopeProperty()) continue;
-                    }
-
-                    // Field declaration with a typed third arg —
-                    // `field(N; "Name"; Enum "Sales Document Type")`.
-                    // The table-side three-arg form ships the field's
-                    // type as an AL object reference; extracting it
-                    // lets the source viewer underline the enum / record
-                    // name. Page-side `field("Name"; Rec."Field")` lacks
-                    // a type and is handled separately by the chain
-                    // walker (Rec.Field resolves through implicit-Rec).
-                    if (_scopeStack.Count == 1
-                        && tok.Kind == AlTokenKind.Identifier
-                        && string.Equals(tok.Value, "field", StringComparison.OrdinalIgnoreCase)
-                        && _pos + 1 < _tokens.Count
-                        && _tokens[_pos + 1].Kind == AlTokenKind.Punct
-                        && _tokens[_pos + 1].Value == "(")
-                    {
-                        TryConsumeFieldDeclaration();
-                        continue;
-                    }
-                }
-
-                // EventSubscriber attribute detection: `[ EventSubscriber ( … )`
-                // at object scope. Bindings tell the catalog "this procedure
-                // subscribes to that publisher's event", which is what
-                // makes Find references on a publisher list its subscribers.
-                if (_scopeStack.Count == 1
-                    && tok.Kind == AlTokenKind.Punct && tok.Value == "["
-                    && _pos + 1 < _tokens.Count
-                    && _tokens[_pos + 1].Kind == AlTokenKind.Identifier
-                    && string.Equals(_tokens[_pos + 1].Value, "EventSubscriber", StringComparison.OrdinalIgnoreCase))
-                {
-                    TryConsumeEventSubscriberAttribute();
-                    continue;
-                }
-
-                _pos++;
+                ProcessOneToken();
             }
 
             return new AlExtractionResult(_refs, new ExtractionStats(_resolved, _unresolved));
+        }
+
+        /// <summary>
+        /// Dispatches a single token through the same matchers Run() uses.
+        /// Extracted so <see cref="WalkBalancedParens"/> can reuse the
+        /// same dispatch when walking inside a method call's argument
+        /// list, ensuring references inside <c>Rec.Validate("X", Y.Z)</c>
+        /// emit instead of being swallowed by a SkipBalancedParens.
+        /// Advances <c>_pos</c> by at least one position each call.
+        /// </summary>
+        private void ProcessOneToken()
+        {
+            var tok = _tokens[_pos];
+
+            // Procedure / trigger heads start a new scope frame.
+            if (IsScopeOpener(tok))
+            {
+                StartProcedureScope();
+                return;
+            }
+
+            // Object-scope `var` keyword: scan label declarations
+            // (`Name: Label '…';`) into the bottom frame so bare uses
+            // of label vars in procedure bodies resolve through the
+            // same scope-walking path field accesses do.
+            if (_scopeStack.Count == 1
+                && tok.Kind == AlTokenKind.Identifier
+                && string.Equals(tok.Value, "var", StringComparison.OrdinalIgnoreCase))
+            {
+                ScanObjectScopeLabels();
+                return;
+            }
+
+            // Inside a procedure / trigger body, track nested block
+            // depth. `begin` and `case` open blocks closed by `end`;
+            // we maintain the depth so the procedure's own `end;`
+            // pops the scope frame, not any nested `end`.
+            if (_scopeStack.Count > 1 && tok.Kind == AlTokenKind.Identifier)
+            {
+                if (string.Equals(tok.Value, "begin", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(tok.Value, "case", StringComparison.OrdinalIgnoreCase))
+                {
+                    _scopeStack.Peek().BeginDepth++;
+                    _pos++;
+                    return;
+                }
+                if (string.Equals(tok.Value, "end", StringComparison.OrdinalIgnoreCase))
+                {
+                    var frame = _scopeStack.Peek();
+                    frame.BeginDepth--;
+                    if (frame.BeginDepth <= 0)
+                    {
+                        _scopeStack.Pop();
+                    }
+                    _pos++;
+                    return;
+                }
+            }
+
+            // Member-access chain candidates. Two shapes trigger:
+            //   A. Identifier `.` Member …
+            //   B. Identifier `::` QuotedIdentifier (or Identifier)
+            //      `.` Member …  — the typed-literal head pattern.
+            if (tok.Kind == AlTokenKind.Identifier || tok.Kind == AlTokenKind.QuotedIdentifier)
+            {
+                if (_pos + 1 < _tokens.Count
+                    && _tokens[_pos + 1].Kind == AlTokenKind.Punct
+                    && _tokens[_pos + 1].Value == ".")
+                {
+                    TryConsumeMemberChain();
+                    return;
+                }
+
+                if (_pos + 2 < _tokens.Count
+                    && _tokens[_pos + 1].Kind == AlTokenKind.DoubleColon
+                    && (_tokens[_pos + 2].Kind == AlTokenKind.Identifier
+                        || _tokens[_pos + 2].Kind == AlTokenKind.QuotedIdentifier))
+                {
+                    TryConsumeTypedLiteralChain();
+                    return;
+                }
+
+                // Bare self-procedure call: `Identifier(` with no receiver.
+                if (tok.Kind == AlTokenKind.Identifier
+                    && _pos + 1 < _tokens.Count
+                    && _tokens[_pos + 1].Kind == AlTokenKind.Punct
+                    && _tokens[_pos + 1].Value == "(")
+                {
+                    if (TryConsumeBareSelfCall()) return;
+                }
+
+                // Bare use of an in-scope Label-typed variable.
+                if (_scopeStack.Count > 1
+                    && (tok.Kind == AlTokenKind.QuotedIdentifier || tok.Kind == AlTokenKind.Identifier))
+                {
+                    if (TryConsumeLabelUse()) return;
+                }
+
+                // Implicit-Rec field access.
+                if (_scopeStack.Count > 1
+                    && (tok.Kind == AlTokenKind.QuotedIdentifier || tok.Kind == AlTokenKind.Identifier))
+                {
+                    if (TryConsumeImplicitFieldAccess()) return;
+                }
+
+                // Object-scope property: `Identifier = Value;`.
+                if (_scopeStack.Count == 1
+                    && tok.Kind == AlTokenKind.Identifier
+                    && _pos + 1 < _tokens.Count
+                    && _tokens[_pos + 1].Kind == AlTokenKind.Punct
+                    && _tokens[_pos + 1].Value == "=")
+                {
+                    if (TryConsumeObjectScopeProperty()) return;
+                }
+
+                // Field declaration with a typed third arg.
+                if (_scopeStack.Count == 1
+                    && tok.Kind == AlTokenKind.Identifier
+                    && string.Equals(tok.Value, "field", StringComparison.OrdinalIgnoreCase)
+                    && _pos + 1 < _tokens.Count
+                    && _tokens[_pos + 1].Kind == AlTokenKind.Punct
+                    && _tokens[_pos + 1].Value == "(")
+                {
+                    TryConsumeFieldDeclaration();
+                    return;
+                }
+            }
+
+            // EventSubscriber attribute detection.
+            if (_scopeStack.Count == 1
+                && tok.Kind == AlTokenKind.Punct && tok.Value == "["
+                && _pos + 1 < _tokens.Count
+                && _tokens[_pos + 1].Kind == AlTokenKind.Identifier
+                && string.Equals(_tokens[_pos + 1].Value, "EventSubscriber", StringComparison.OrdinalIgnoreCase))
+            {
+                TryConsumeEventSubscriberAttribute();
+                return;
+            }
+
+            _pos++;
+        }
+
+        /// <summary>
+        /// Walks tokens inside a balanced <c>( … )</c> range, dispatching
+        /// each through <see cref="ProcessOneToken"/> so references
+        /// embedded in method arguments emit naturally. Called by
+        /// <see cref="WalkMemberChain"/> after emitting a method-call
+        /// reference, replacing the previous <c>SkipBalancedParens</c>
+        /// that swallowed every arg-side reference (so
+        /// <c>Rec.Validate("Sell-to Customer No.", Customer."No.")</c>
+        /// was losing both arg references).
+        ///
+        /// Assumes <c>_pos</c> is at the opening <c>(</c>. On return,
+        /// <c>_pos</c> is past the matching <c>)</c>.
+        /// </summary>
+        private void WalkBalancedParens()
+        {
+            if (!At("(")) return;
+            _pos++; // past `(`
+            int depth = 1;
+            while (_pos < _tokens.Count)
+            {
+                if (At("("))
+                {
+                    depth++;
+                    _pos++;
+                    continue;
+                }
+                if (At(")"))
+                {
+                    depth--;
+                    _pos++;
+                    if (depth == 0) return;
+                    continue;
+                }
+                ProcessOneToken();
+            }
         }
 
         // ── Scope frames ──────────────────────────────────────────────
@@ -685,7 +693,12 @@ public static class AlReferenceExtractor
                     // counter so operators can size the residual gap.
                     if (AlBuiltinMethods.IsBuiltin(receiverType.Kind, memberTok.Value))
                     {
-                        if (followedByParen) SkipBalancedParens();
+                        // Built-in like Rec.Validate(...) — no ref to
+                        // emit for the call itself, but the args may
+                        // contain references that need to surface.
+                        // Walk inside the parens via the same dispatch
+                        // path the main loop uses.
+                        if (followedByParen) WalkBalancedParens();
                         return;
                     }
                     _unresolved++;
@@ -719,11 +732,15 @@ public static class AlReferenceExtractor
                 // we can't resolve the next type.
                 receiverType = AdvanceReceiverByMember(member);
 
-                // Skip past the method call's argument list so we don't
-                // mis-read the arguments as the continuation of the
-                // chain. The args themselves get walked by the main
-                // loop later — they aren't lost.
-                if (followedByParen) SkipBalancedParens();
+                // Walk the method call's argument list so references
+                // embedded in the args (`Rec.Validate("X", Y.Z)` —
+                // both the bare quoted "X" and the chained Y.Z) emit
+                // their refs. Was SkipBalancedParens previously, which
+                // silently dropped every arg-side reference. _pos
+                // lands past the matching `)` on return; the outer
+                // while loop's At(".") check then handles any chain
+                // continuation that follows.
+                if (followedByParen) WalkBalancedParens();
             }
         }
 
