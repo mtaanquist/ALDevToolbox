@@ -71,6 +71,16 @@ public sealed class AlReferenceExtractorTests
             Resolver: resolver,
             OwnerSourceTableName: sourceTable);
 
+    private static AlExtractContext OwnerTableExtension(StubResolver resolver, string extName, string? baseTable,
+        Dictionary<string, ResolvedVariableType>? globals = null) => new(
+            OwnerKind: "tableextension",
+            OwnerName: extName,
+            OwnerObjectId: null,
+            OwnerAppId: BaseAppId,
+            GlobalVars: globals ?? new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+            Resolver: resolver,
+            OwnerSourceTableName: baseTable);
+
     private static AlExtractContext OwnerPageExtension(StubResolver resolver, string extName, string? sourceTable,
         Dictionary<string, ResolvedVariableType>? globals = null) => new(
             OwnerKind: "pageextension",
@@ -1640,6 +1650,66 @@ public sealed class AlReferenceExtractorTests
         result.References.Should().HaveCount(2);
         result.References.Select(r => r.TargetMemberName)
             .Should().BeEquivalentTo(new[] { "Insert", "Validate" });
+    }
+
+    // ── Tableextension Rec binds to base table ─────────────────────
+
+    [Fact]
+    public void Rec_inside_a_tableextension_resolves_to_the_extended_base_table()
+    {
+        // A tableextension's Rec is conceptually the base table flattened
+        // with the extension's columns. Inside the extension's code,
+        // Rec.<base-procedure> should resolve to the BASE table's
+        // procedure, not be looked up on the extension itself.
+        const string src = """
+            tableextension 50100 "Cust Ext" extends Customer
+            {
+                procedure DoStuff()
+                begin
+                    Rec.Insert();
+                    Rec."No." := 'X';
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            OwnerTableExtension(MakeResolver(), "Cust Ext", "Customer"));
+
+        // Insert is a built-in (skipped). "No." is a field on Customer.
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Customer"
+            && r.TargetMemberName == "No."
+            && r.ReferenceKind == "field_access");
+    }
+
+    [Fact]
+    public void Rec_method_call_inside_tableextension_walks_base_then_extensions()
+    {
+        // CustomerExt is a tableextension on Customer that adds a
+        // procedure DKValidate. From INSIDE another tableextension on
+        // Customer ("Cust Ext SD"), calling Rec.DKValidate() should
+        // resolve through the base→extensions walk and target the
+        // extension that declared DKValidate (not "Cust Ext SD" itself).
+        var resolver = MakeResolver();
+        resolver.AddType("CustomerExt", new AlTypeRef(BaseAppId, "tableextension", 50000, "CustomerExt"));
+        resolver.AddExtensionOf("Customer", "CustomerExt");
+        resolver.AddMember("CustomerExt", new AlMember("DKValidate", "procedure", null, null));
+
+        const string src = """
+            tableextension 50200 "Cust Ext SD" extends Customer
+            {
+                procedure UseIt()
+                begin
+                    Rec.DKValidate();
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            OwnerTableExtension(resolver, "Cust Ext SD", "Customer"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "CustomerExt"
+            && r.TargetMemberName == "DKValidate"
+            && r.ReferenceKind == "method_call");
     }
 
     // ── Bare self-procedure calls (gap #4) ─────────────────────────

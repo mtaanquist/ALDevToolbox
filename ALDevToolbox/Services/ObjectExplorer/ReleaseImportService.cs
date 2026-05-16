@@ -1310,7 +1310,16 @@ public class ReleaseImportService
                 Owner = _db.OeModuleObjects
                     .Where(o => o.SourceFileId == f.Id)
                     .OrderBy(o => o.Id)
-                    .Select(o => new { o.Id, o.Kind, o.Name, o.ObjectId, AppId = o.Module!.AppId, o.SourceTableName })
+                    .Select(o => new
+                    {
+                        o.Id,
+                        o.Kind,
+                        o.Name,
+                        o.ObjectId,
+                        AppId = o.Module!.AppId,
+                        o.SourceTableName,
+                        o.ExtendsObjectName,
+                    })
                     .FirstOrDefault(),
             })
             .ToListAsync(ct);
@@ -1324,6 +1333,19 @@ public class ReleaseImportService
             if (file.Owner is null || string.IsNullOrEmpty(file.Content)) continue;
 
             globalsByOwner.TryGetValue(file.Owner.Id, out var globals);
+            // For tableextensions, Rec is semantically the BASE TABLE
+            // (the extension's columns are merged into the base at
+            // runtime). The base table's name lives in ExtendsObjectName
+            // — we feed it through OwnerSourceTableName so BuildGlobalScope
+            // wires Rec to (Record, base table). ResolveMember on the
+            // base table then walks base → visible extensions, which
+            // covers all three cases (base-declared, this-extension-
+            // declared, sibling-extension-declared).
+            var sourceTable = file.Owner.SourceTableName;
+            if (string.IsNullOrEmpty(sourceTable) && file.Owner.Kind == "tableextension")
+            {
+                sourceTable = file.Owner.ExtendsObjectName;
+            }
             var ctx = new ALDevToolbox.Services.Al.AlExtractContext(
                 OwnerKind: file.Owner.Kind,
                 OwnerName: file.Owner.Name,
@@ -1331,7 +1353,7 @@ public class ReleaseImportService
                 OwnerAppId: file.Owner.AppId,
                 GlobalVars: globals ?? new Dictionary<string, ALDevToolbox.Services.Al.ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
                 Resolver: ResolverFor(file.ModuleId),
-                OwnerSourceTableName: file.Owner.SourceTableName);
+                OwnerSourceTableName: sourceTable);
 
             var result = ALDevToolbox.Services.Al.AlReferenceExtractor.Extract(file.Content, ctx);
             totalUnresolved += result.Stats.UnresolvedReceivers;

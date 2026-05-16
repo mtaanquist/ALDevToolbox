@@ -290,14 +290,14 @@ public static class AlReferenceExtractor
             // Tables, pages, table extensions and page extensions expose
             // implicit Rec / xRec self-references. The receiver type
             // differs by owner kind:
-            //   - table / tableextension → Rec is the table itself
-            //     (or the extended base table; same name for extensions
-            //     since AL flattens fields).
-            //   - page / pageextension → Rec is the page's SourceTable.
-            //     Without that, Rec.X looks for field X on the page,
-            //     which doesn't have fields. The importer denormalises
-            //     SourceTable onto the owner object so we can find it
-            //     here without a catalog lookup.
+            //   - table → Rec is the table itself.
+            //   - tableextension → Rec is the BASE TABLE (the extension
+            //     is conceptually merged into it at runtime). The
+            //     importer passes the base table's name through as
+            //     OwnerSourceTableName for the tableextension case.
+            //   - page / pageextension → Rec is the page's SourceTable
+            //     (extensions inherit it from their base page; the
+            //     importer propagates).
             //   - report / reportextension / xmlport / query / requestpage
             //     also expose Rec/xRec, but the source-table binding is
             //     more varied (per-dataitem); v1 keeps the owner-itself
@@ -305,8 +305,7 @@ public static class AlReferenceExtractor
             if (OwnerSupportsRecXRec())
             {
                 ResolvedVariableType selfType;
-                if ((string.Equals(_ctx.OwnerKind, "page", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(_ctx.OwnerKind, "pageextension", StringComparison.OrdinalIgnoreCase))
+                if (HasRecordBoundOwner(_ctx.OwnerKind)
                     && !string.IsNullOrEmpty(_ctx.OwnerSourceTableName))
                 {
                     selfType = new ResolvedVariableType("Record", _ctx.OwnerSourceTableName);
@@ -321,6 +320,21 @@ public static class AlReferenceExtractor
                 // FieldRef — not a record — so we don't add it here.
             }
             return frame;
+        }
+
+        /// <summary>
+        /// Owner kinds whose Rec is wired to a table (their own, or the
+        /// one they extend), so the resolver should bind Rec to the
+        /// referenced table rather than to the owner itself. For
+        /// tableextensions, this is what makes <c>Rec.AssistEdit()</c>
+        /// inside the extension find the base table's AssistEdit
+        /// procedure — without it, ResolveMember would look in the
+        /// extension's own members only.
+        /// </summary>
+        private static bool HasRecordBoundOwner(string? ownerKind)
+        {
+            var k = ownerKind?.ToLowerInvariant();
+            return k == "page" || k == "pageextension" || k == "tableextension";
         }
 
         private bool OwnerSupportsRecXRec()
