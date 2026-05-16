@@ -1652,6 +1652,97 @@ public sealed class AlReferenceExtractorTests
             .Should().BeEquivalentTo(new[] { "Insert", "Validate" });
     }
 
+    // ── Method-call arguments emit their own references ───────────
+
+    [Fact]
+    public void Args_of_a_resolved_method_call_emit_their_own_references()
+    {
+        // Rec.Validate("Sell-to Customer No.", Customer."No.") was
+        // dropping both arg references because WalkMemberChain used
+        // SkipBalancedParens after emitting the call. Both args
+        // should now emit field_access refs in their own right —
+        // "Sell-to Customer No." via implicit-Rec on Sales Header,
+        // and Customer."No." via the chain walker on the local var.
+        var resolver = MakeResolver();
+        resolver.AddMember("Sales Header", new AlMember("Sell-to Customer No.", "field", null, null));
+        resolver.AddMember("Sales Header", new AlMember("Validate", "procedure", null, null));
+
+        const string src = """
+            page 42 "Sales Order"
+            {
+                layout
+                {
+                    area(content)
+                    {
+                        field("Sell-to Customer No."; Rec."Sell-to Customer No.")
+                        {
+                            trigger OnAfterLookup(Selected: RecordRef)
+                            var
+                                Customer: Record Customer;
+                            begin
+                                Rec.Validate("Sell-to Customer No.", Customer."No.");
+                            end;
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(resolver, "Sales Order", "Sales Header"));
+
+        // The user procedure Rec.Validate emits a method_call ref;
+        // the args inside must also emit their own field accesses
+        // rather than being swallowed by the old SkipBalancedParens.
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "Sell-to Customer No."
+            && r.ReferenceKind == "field_access");
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "Customer"
+            && r.TargetMemberName == "No."
+            && r.ReferenceKind == "field_access");
+    }
+
+    [Fact]
+    public void Args_of_a_builtin_method_call_emit_their_own_references()
+    {
+        // Rec.SetRange(...) — SetRange is a built-in, so no ref for
+        // the call itself, but the args still need to walk. Inside a
+        // page with SourceTable, the bare quoted "Sell-to Customer No."
+        // resolves via implicit-Rec on Sales Header; Customer."No."
+        // resolves via the chain walker.
+        var resolver = MakeResolver();
+        resolver.AddMember("Sales Header", new AlMember("Sell-to Customer No.", "field", null, null));
+
+        const string src = """
+            page 42 "Sales Order"
+            {
+                layout
+                {
+                    area(content)
+                    {
+                        field(X; Rec."Sell-to Customer No.")
+                        {
+                            trigger OnValidate()
+                            var
+                                Customer: Record Customer;
+                            begin
+                                Rec.SetRange("Sell-to Customer No.", Customer."No.");
+                            end;
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(resolver, "Sales Order", "Sales Header"));
+
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "Sell-to Customer No.");
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "Customer"
+            && r.TargetMemberName == "No.");
+    }
+
     // ── Tableextension Rec binds to base table ─────────────────────
 
     [Fact]

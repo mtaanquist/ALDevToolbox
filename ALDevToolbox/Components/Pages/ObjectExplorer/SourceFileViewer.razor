@@ -418,11 +418,24 @@
 
     /// <summary>
     /// Combines the call-site / field-access resolvables with declaration
-    /// spans so every interactive token in the file gets the underline
-    /// affordance — not just the call sites. Declarations stay in
-    /// <c>data-declarations</c> for the right-click routing; this is purely
-    /// the visual layer (CodeMirror's resolvable-decoration extension
-    /// treats both sets identically — an underlined span).
+    /// spans so most interactive tokens in the file get the underline
+    /// affordance. Excludes <b>field</b> and <b>trigger</b> declarations
+    /// from the underline set:
+    /// <list type="bullet">
+    ///   <item>A page-side field LHS (the page's own field name) is a
+    ///         declaration, not a navigation target — the RHS
+    ///         <c>Rec."Field"</c> is what users want to click through
+    ///         to the table's field. Underlining the LHS distracted
+    ///         from the meaningful RHS reference.</item>
+    ///   <item>Triggers (<c>OnValidate</c>, <c>OnAssistEdit</c>, …) are
+    ///         invoked by the runtime, not by user code. There's
+    ///         nothing useful to navigate to from the trigger
+    ///         declaration — Find references on a trigger returns the
+    ///         empty set in practice.</item>
+    /// </list>
+    /// Object headers (codeunit / table / page / …) and member-symbol
+    /// declarations (procedures, event publishers / subscribers, labels)
+    /// stay in the underlined set — they ARE useful navigation targets.
     /// </summary>
     private static IReadOnlyList<CodeViewerResolvable> MergeDeclarationsAsResolvables(
         IReadOnlyList<CodeViewerResolvable>? resolvables,
@@ -435,11 +448,16 @@
         {
             foreach (var d in declarations)
             {
+                if (IsNonNavigableDeclarationKind(d.Kind)) continue;
                 merged.Add(new CodeViewerResolvable(d.Line, d.ColumnStart, d.ColumnEnd));
             }
         }
         return merged;
     }
+
+    private static bool IsNonNavigableDeclarationKind(string kind) =>
+        string.Equals(kind, "field", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(kind, "trigger", StringComparison.OrdinalIgnoreCase);
 
     private static readonly JsonSerializerOptions DeclarationJsonOptions = new()
     {
