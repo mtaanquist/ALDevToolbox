@@ -695,7 +695,14 @@ public class ObjectExplorerService
                 mr.line_number           AS "LineNumber",
                 so.source_file_id        AS "SourceFileId",
                 NULL::text               AS "SourceFilePath",
-                NULL::text               AS "Snippet"
+                NULL::text               AS "Snippet",
+                CASE
+                    WHEN mr.target_member_name IS NULL THEN 'object'
+                    ELSE 'call'
+                END                      AS "Category",
+                mr.target_member_name    AS "MemberName",
+                mr.target_member_kind    AS "MemberKind",
+                NULL::text               AS "MemberSignature"
             FROM oe_module_references mr
             JOIN oe_module_objects so ON so.id = mr.source_object_id
             JOIN oe_modules        m  ON m.id  = mr.module_id
@@ -705,6 +712,16 @@ public class ObjectExplorerService
               AND (
                     ({3}::int IS NOT NULL AND mr.target_object_id = {3}::int)
                  OR ({3}::int IS NULL AND mr.target_object_name = {4})
+              )
+              -- Member filter: when the caller scoped to a procedure / field,
+              -- only return rows already tagged with the matching member
+              -- name + kind. Object-level rows (member_name IS NULL) drop
+              -- out — they're surfaced separately via the owner-type query
+              -- in FindReferencesForSymbolAsync so the UI can group them.
+              AND (
+                    {5}::text IS NULL
+                 OR (mr.target_member_name = {5}::text
+                     AND ({6}::text IS NULL OR mr.target_member_kind = {6}::text))
               )
             ORDER BY m.name, so.name, mr.id
             """;
@@ -716,7 +733,9 @@ public class ObjectExplorerService
                 query.TargetAppId,
                 query.TargetObjectKind,
                 (object?)query.TargetObjectId ?? DBNull.Value,
-                query.TargetObjectName)
+                query.TargetObjectName,
+                (object?)query.TargetMemberName ?? DBNull.Value,
+                (object?)query.TargetMemberKind ?? DBNull.Value)
             .ToListAsync(ct);
 
         // Enrich each match with the actual code-line snippet and its
@@ -727,10 +746,147 @@ public class ObjectExplorerService
         matches = await EnrichReferencesWithSnippetsAsync(matches, ct);
 
         _logger.LogInformation(
-            "FindReferences ReleaseId={ReleaseId} TargetAppId={TargetAppId} Kind={Kind} Id={Id} Name={Name} Matches={Count}",
-            releaseId, query.TargetAppId, query.TargetObjectKind, query.TargetObjectId, query.TargetObjectName, matches.Count);
+            "FindReferences ReleaseId={ReleaseId} TargetAppId={TargetAppId} Kind={Kind} Id={Id} Name={Name} Member={Member} Matches={Count}",
+            releaseId, query.TargetAppId, query.TargetObjectKind, query.TargetObjectId, query.TargetObjectName, query.TargetMemberName, matches.Count);
 
         return matches;
+    }
+
+    /// <summary>
+    /// Member-scoped find references: returns everywhere a specific
+    /// procedure / field / trigger on a specific owner object is referenced,
+    /// across the visible module chain. Composed of three result sets the UI
+    /// renders together (each row's <see cref="ReferenceMatch.Category"/>
+    /// signals which one it came from):
+    /// <list type="number">
+    ///   <item><c>declaration</c> — every <c>oe_module_symbols</c> row with
+    ///         the same (kind, name) on a matching owner across the chain.
+    ///         Surfaces overrides, internal overloads and same-name members
+    ///         on extensions.</item>
+    ///   <item><c>owner_type</c> — every <c>oe_module_references</c> row
+    ///         targeting the owner object at the object level
+    ///         (variable_type, parameter_type, return_type, extends_target,
+    ///         table_no). Indirect callers — a variable typed to this object
+    ///         is a place that could call this member.</item>
+    ///   <item><c>call</c> — every <c>oe_module_references</c> row already
+    ///         tagged with this member (target_member_name + target_member_kind).
+    ///         Empty in phase 1; populated when method-call extraction
+    ///         lands in phase 2.</item>
+    /// </list>
+    /// Phase 1's "indirect callers" answer is honest about its limitations:
+    /// declarations + owner-type references are what the existing data
+    /// supports. Phase 2 will graduate the <c>call</c> bucket from empty
+    /// to authoritative.
+    /// </summary>
+    public async Task<List<ReferenceMatch>> FindReferencesForSymbolAsync(
+        int releaseId,
+        FindReferencesQuery query,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(query.TargetMemberName))
+        {
+            throw new ArgumentException(
+                "Member-scoped find requires TargetMemberName.", nameof(query));
+        }
+
+        // (1) Sibling declarations of the matched member across the chain.
+        // Same recursive-CTE + winning-module shadowing the object-level
+        // query uses; we then join through to oe_module_symbols by owner +
+        // member name.
+        const string declarationSql = """
+            WITH RECURSIVE chain AS (
+                SELECT id, parent_release_id, 0 AS depth
+                FROM oe_releases
+                WHERE id = {0}
+                UNION ALL
+                SELECT r.id, r.parent_release_id, c.depth + 1
+                FROM oe_releases r
+                JOIN chain c ON r.id = c.parent_release_id
+            ),
+            winning AS (
+                SELECT DISTINCT ON (m.app_id) m.id, m.app_id
+                FROM oe_modules m
+                JOIN chain c ON c.id = m.release_id
+                ORDER BY m.app_id, c.depth ASC
+            )
+            SELECT
+                s.id                     AS "Id",
+                o.module_id              AS "SourceModuleId",
+                m.name                   AS "SourceModuleName",
+                o.id                     AS "SourceObjectId",
+                o.kind                   AS "SourceObjectKind",
+                o.name                   AS "SourceObjectName",
+                'declaration'::text      AS "ReferenceKind",
+                s.line_number            AS "LineNumber",
+                o.source_file_id         AS "SourceFileId",
+                NULL::text               AS "SourceFilePath",
+                NULL::text               AS "Snippet",
+                'declaration'::text      AS "Category",
+                s.name                   AS "MemberName",
+                s.kind                   AS "MemberKind",
+                s.signature              AS "MemberSignature"
+            FROM oe_module_symbols s
+            JOIN oe_module_objects o  ON o.id = s.object_id
+            JOIN oe_modules        m  ON m.id = o.module_id
+            JOIN winning           w  ON w.id = o.module_id
+            WHERE m.app_id              = {1}::uuid
+              AND o.kind                = {2}
+              AND (
+                    ({3}::int IS NOT NULL AND o.object_id = {3}::int)
+                 OR ({3}::int IS NULL AND o.name = {4})
+              )
+              AND s.name                = {5}::text
+              AND ({6}::text IS NULL OR s.kind = {6}::text)
+            ORDER BY m.name, o.name, s.line_number
+            """;
+
+        var declarations = await _db.Database
+            .SqlQueryRaw<ReferenceMatch>(
+                declarationSql,
+                releaseId,
+                query.TargetAppId,
+                query.TargetObjectKind,
+                (object?)query.TargetObjectId ?? DBNull.Value,
+                query.TargetObjectName,
+                query.TargetMemberName,
+                (object?)query.TargetMemberKind ?? DBNull.Value)
+            .ToListAsync(ct);
+
+        // (2) Phase-2 ready: rows already tagged with the matching member.
+        // Until phase 2 lands the import-pipeline change, FindReferencesAsync
+        // returns the empty set here. Reusing it keeps the call/object
+        // branch logic in one place.
+        var memberRefs = await FindReferencesAsync(releaseId, query, ct);
+
+        // (3) Owner-type references at the object level. We run the same
+        // query but with the member filter cleared so we get the
+        // object-scoped rows (variable_type, parameter_type, return_type,
+        // extends_target, table_no) — the "indirect callers" answer.
+        var ownerObjectQuery = query with { TargetMemberName = null, TargetMemberKind = null };
+        var ownerRefs = await FindReferencesAsync(releaseId, ownerObjectQuery, ct);
+        // Restamp these as owner_type so the UI groups them under
+        // "indirect references" rather than "calls".
+        ownerRefs = ownerRefs.Select(r => r with { Category = "owner_type" }).ToList();
+
+        // Concatenate. Declarations first (most direct), then concrete
+        // member calls (phase-2 will fill this), then indirect owner-type
+        // references. EnrichReferencesWithSnippetsAsync already ran inside
+        // FindReferencesAsync for the two bucket-2/3 sets; do it once for
+        // the declarations bucket so every row has a snippet.
+        declarations = await EnrichReferencesWithSnippetsAsync(declarations, ct);
+
+        var all = new List<ReferenceMatch>(declarations.Count + memberRefs.Count + ownerRefs.Count);
+        all.AddRange(declarations);
+        all.AddRange(memberRefs);
+        all.AddRange(ownerRefs);
+
+        _logger.LogInformation(
+            "FindReferencesForSymbol ReleaseId={ReleaseId} Owner={Kind}/{Id}/{Name} Member={Member}/{MemberKind} Decl={DeclCount} Call={CallCount} Owner={OwnerCount}",
+            releaseId, query.TargetObjectKind, query.TargetObjectId, query.TargetObjectName,
+            query.TargetMemberName, query.TargetMemberKind,
+            declarations.Count, memberRefs.Count, ownerRefs.Count);
+
+        return all;
     }
 
     /// <summary>
