@@ -159,6 +159,85 @@ public static class AlBuiltinMethods
     };
 
     /// <summary>
+    /// AL system functions callable without a receiver: <c>Message('Hello')</c>,
+    /// <c>Error('Boom')</c>, <c>StrSubstNo(...)</c> etc. The bare-self-call
+    /// resolver consults this list first so it doesn't try to look these up
+    /// as procedures on the file's owner object — a same-named user procedure
+    /// would shadow the system function in AL, but in practice Microsoft's
+    /// code doesn't, and treating the system function as the dominant case
+    /// stays quiet across the imported corpus.
+    ///
+    /// Coverage is the high-frequency subset of
+    /// <see href="https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/library"/>'s
+    /// "Essential functions". Extend when a real import logs a false-positive
+    /// unresolved self-call for a name that's actually a system function.
+    /// </summary>
+    public static readonly HashSet<string> BareCallableFunctions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Diagnostic / flow.
+        "Message", "Error", "Confirm", "Exit", "Quit", "Sleep",
+        "GetLastErrorText", "GetLastErrorCode", "GetLastErrorObject",
+        "GetLastErrorCallStack", "ClearLastError", "AssertError",
+        // Strings.
+        "Format", "Evaluate", "StrLen", "StrSubstNo", "StrPos", "StrCheckSum",
+        "CopyStr", "DelChr", "DelStr", "InsStr", "MaxStrLen", "IncStr",
+        "LowerCase", "UpperCase", "ConvertStr", "SelectStr",
+        "PadStr",
+        // Numerics.
+        "Abs", "Power", "Sqrt", "Round", "Random", "RandomRange",
+        // Date / time.
+        "Today", "Time", "CurrentDateTime", "WorkDate", "CreateDateTime",
+        "Date2DMY", "Date2DWY", "DMY2Date", "DWY2Date", "CalcDate",
+        // Identity / environment.
+        "CreateGuid", "CompanyName", "UserId", "UserSecurityId",
+        "GuiAllowed", "IsServiceTier", "ApplicationLanguage",
+        "GlobalLanguage", "WindowsLanguage",
+        // Misc.
+        "TypeNameOf", "Database",
+    };
+
+    /// <summary>
+    /// AL statement / operator keywords that lex as <see cref="AlTokenKind.Identifier"/>
+    /// and can syntactically appear right before <c>(</c> without being a
+    /// procedure call: <c>if (X = 5) then</c>, <c>not (Foo)</c>,
+    /// <c>while (i &lt; n) do</c>. The bare-call detector filters these so
+    /// it doesn't try to resolve them as self-procedures.
+    /// </summary>
+    public static readonly HashSet<string> StatementKeywords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Control flow.
+        "if", "then", "else", "elseif",
+        "while", "do",
+        "repeat", "until",
+        "for", "foreach", "to", "downto", "in",
+        "case", "of",
+        "with",
+        "begin", "end",
+        "exit", "return",
+        // Declarations (defensive — the scope walker skips most of these,
+        // but parametrised attributes can land here too).
+        "var", "procedure", "trigger",
+        // Operators that take a parenthesised expression.
+        "not", "and", "or", "xor", "mod", "div",
+        // Literal-shaped keywords AL exposes.
+        "true", "false",
+    };
+
+    /// <summary>
+    /// True for an AL system function callable with no receiver.
+    /// </summary>
+    public static bool IsBareCallable(string name) =>
+        !string.IsNullOrEmpty(name) && BareCallableFunctions.Contains(name);
+
+    /// <summary>
+    /// True for an AL statement / operator keyword that the bare-call
+    /// detector must skip so <c>if (X) then</c> doesn't get treated as
+    /// a call to <c>if</c>.
+    /// </summary>
+    public static bool IsStatementKeyword(string name) =>
+        !string.IsNullOrEmpty(name) && StatementKeywords.Contains(name);
+
+    /// <summary>
     /// True when <paramref name="memberName"/> is a runtime built-in
     /// for the receiver's kind. The reference extractor uses this to
     /// distinguish "real unresolved" (typo / missing import / cross-

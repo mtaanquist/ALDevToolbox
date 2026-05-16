@@ -41,19 +41,18 @@ The resolver now reads each module's `DependenciesJson`, computes the transitive
 
 **Priority**: medium. In practice users import every module they care about into one release. The pattern hits operators who layer customer-specific extensions on a parent BC release — important when it lands, but not the common shape.
 
-### 4. Bare self-procedure calls
+### 4. ~~Bare self-procedure calls~~ — RESOLVED
 
-**Pattern**: `DoStuff();` (no receiver) inside a codeunit, calling another procedure on the same object.
-
-**Symptom**: extractor only emits for `receiver.Member` chains; bare calls aren't matched. No reference row.
-
-**Mitigation in place**: the procedure declaration itself is already in `oe_module_symbols`, so the References tab's "Declarations" bucket surfaces "where is `DoStuff` defined". What's missing is "and here's everywhere it's called from inside the same object."
-
-**Fix shape**: when the extractor sees a bare `Identifier(` pattern (identifier immediately followed by `(`), and the identifier doesn't match any in-scope variable, attempt a self-reference resolution: look up the name as a member on the file's owner object. Two false-positive risks to handle: AL built-in functions (`Message`, `Error`, `Confirm`, `Exit`, etc. — bare callable system functions) and user-declared procedures on OTHER objects with the same name (no qualifier to disambiguate, so we'd surface a noisy cross-object match).
-
-**Effort**: small extractor change + an extension of `AlBuiltinMethods` to cover bare callable system functions (`Message`, `Error`, `Confirm`, `Exit`, `Format`, `Power`, `Abs`, etc.). Maybe a couple hours.
-
-**Priority**: medium. Common in well-structured codeunits where a top-level public procedure delegates to several private helpers. The omission is most visible when someone right-clicks a private procedure expecting to see its callers.
+Landed alongside the Go-to-definition wiring for call sites. The walker now
+recognises the `Identifier(` shape (no receiver), filters AL statement
+keywords (`if (X) then`, `not (X)`) and the new
+`AlBuiltinMethods.BareCallableFunctions` set (`Message`, `Error`, `Confirm`,
+`Exit`, `Format`, …), then looks the name up as a member on the file's
+owner object. On hit, emits a `method_call` reference at the bare-call
+position — so a private helper like `IndentICAccount()` shows up in the
+calling procedure's "Calls" bucket and right-click → Go to definition
+resolves through the new `(fileId, line, word)` lookup in
+`ObjectExplorerService.GoToDefinitionAsync`.
 
 ### 5. `with X do begin … end;` implicit receivers
 
@@ -135,9 +134,8 @@ Inside the `with` block, bare `"No."` is a field access on Customer and `Validat
 
 If picked up as a follow-up branch:
 
-1. **Bare self-procedure calls** (small extractor change + built-in list extension).
-2. **Cross-release shadowing** (medium catalog refactor; impacts layered-release imports).
-3. **Method-result chained access through scalar returns** (small sentinel-type addition).
-4. **`with X do …`** (real scope work; legacy-code value).
-5. **`#if` predicate inspection** (low-priority approximation).
-6. **Variant tracking** (deferred indefinitely unless a real ROI surfaces).
+1. **Cross-release shadowing** (medium catalog refactor; impacts layered-release imports).
+2. **Method-result chained access through scalar returns** (small sentinel-type addition).
+3. **`with X do …`** (real scope work; legacy-code value).
+4. **`#if` predicate inspection** (low-priority approximation).
+5. **Variant tracking** (deferred indefinitely unless a real ROI surfaces).
