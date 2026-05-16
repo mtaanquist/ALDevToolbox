@@ -542,33 +542,43 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     [Fact]
     public async Task FindReferencesForSymbolAsync_returns_sibling_declarations_in_the_chain()
     {
-        // DK Core's "CopyDepreciationBookExt" declares procedures of its own;
-        // the codeunit has multiple symbol rows. A member-scoped find against
-        // one of those names should at minimum return the symbol's own
-        // declaration row tagged Category=declaration.
+        // A member-scoped find against a real (object, member) pair in
+        // the seeded data should return at minimum the member's own
+        // declaration row tagged Category=declaration. We pick the pair
+        // from the actual oe_module_symbols table rather than hard-coding
+        // a name — symbol-package shapes vary across modules, so any
+        // assertion on a specific procedure name is brittle. The query
+        // grabs the first symbol that belongs to an object identifiable
+        // by its (kind, object id, name) triplet and uses that.
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
 
-        var copyExt = await read.OeModuleObjects
-            .Where(o => o.Name == "CopyDepreciationBookExt")
-            .Select(o => new { o.Id, ModuleAppId = o.Module!.AppId, o.Kind, o.Name, o.ObjectId })
-            .SingleAsync();
-        var procName = await read.OeModuleSymbols
-            .Where(s => s.ObjectId == copyExt.Id && s.Kind == "procedure")
-            .Select(s => s.Name)
+        var pair = await read.OeModuleSymbols
+            .OrderBy(s => s.Id)
+            .Select(s => new
+            {
+                MemberName = s.Name,
+                MemberKind = s.Kind,
+                OwnerId = s.Object!.Id,
+                OwnerKind = s.Object!.Kind,
+                OwnerObjectId = s.Object!.ObjectId,
+                OwnerName = s.Object!.Name,
+                AppId = s.Object!.Module!.AppId,
+            })
             .FirstAsync();
 
         var matches = await NewQuery(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
-            TargetAppId: copyExt.ModuleAppId,
-            TargetObjectKind: copyExt.Kind,
-            TargetObjectId: copyExt.ObjectId,
-            TargetObjectName: copyExt.Name,
-            TargetMemberName: procName,
-            TargetMemberKind: "procedure"));
+            TargetAppId: pair.AppId,
+            TargetObjectKind: pair.OwnerKind,
+            TargetObjectId: pair.OwnerObjectId,
+            TargetObjectName: pair.OwnerName,
+            TargetMemberName: pair.MemberName,
+            TargetMemberKind: pair.MemberKind));
 
         matches.Should().Contain(m => m.Category == "declaration"
-            && m.SourceObjectName == "CopyDepreciationBookExt"
-            && m.MemberName == procName);
+            && m.SourceObjectName == pair.OwnerName
+            && m.MemberName == pair.MemberName
+            && m.MemberKind == pair.MemberKind);
     }
 
     [Fact]
