@@ -17,7 +17,7 @@
 
 import { EditorView, lineNumbers, highlightActiveLineGutter, highlightSpecialChars,
     drawSelection, dropCursor, rectangularSelection, crosshairCursor,
-    highlightActiveLine, keymap, Decoration }
+    highlightActiveLine, keymap, Decoration, showPanel }
     from "https://esm.sh/@codemirror/view@6.34.1?deps=@codemirror/state@6.4.1";
 import { EditorState, Compartment, RangeSetBuilder }
     from "https://esm.sh/@codemirror/state@6.4.1";
@@ -397,6 +397,10 @@ export function mountReadOnly(container, value, language, options) {
     const decorationExtensions = buildLineDecorationExtensions(opts.lineDecorations);
     const declarationExtensions = buildDeclarationDecorationExtensions(opts.declarations);
     const resolvableExtensions = buildResolvableDecorationExtensions(opts.resolvables);
+    // Opt-in status bar: only the source-file viewer asks for it today.
+    // The diff viewer and the admin TOML/JSON editors keep their existing
+    // chrome unchanged.
+    const statusBarExtensions = opts.statusBar ? [buildStatusBarExtension()] : [];
 
     const view = new EditorView({
         parent: container,
@@ -421,6 +425,7 @@ export function mountReadOnly(container, value, language, options) {
                 ...decorationExtensions,
                 ...declarationExtensions,
                 ...resolvableExtensions,
+                ...statusBarExtensions,
                 themeCompartment.of(themeExtensions()),
             ],
         }),
@@ -782,6 +787,52 @@ function buildLineDecorationExtensions(lineDecorations) {
         }
         return builder.finish();
     })];
+}
+
+/// Bottom-docked status bar — `Ln 1, Col 1 · 1,073 lines`, plus a
+/// selection-length suffix when a range is selected. Mounts via CM6's
+/// `showPanel` extension so the panel lives inside the editor's height
+/// box and respects the same theme. Re-renders on every transaction
+/// (cursor moves and document changes both flow through `update`), but
+/// the DOM is cached on the panel so we only touch textContent.
+///
+/// Opt-in via `mountReadOnly(..., { statusBar: true })`. The diff and
+/// admin editors don't ask for it and stay untouched.
+function buildStatusBarExtension() {
+    return showPanel.of(view => {
+        const dom = document.createElement("div");
+        dom.className = "cm-status-bar";
+        const left = document.createElement("span");
+        left.className = "cm-status-bar__left";
+        const right = document.createElement("span");
+        right.className = "cm-status-bar__right";
+        dom.appendChild(left);
+        dom.appendChild(right);
+
+        const render = (state) => {
+            const sel = state.selection.main;
+            const line = state.doc.lineAt(sel.head);
+            const col = sel.head - line.from + 1;
+            const totalLines = state.doc.lines;
+            const selLen = sel.to - sel.from;
+            let pos = `Ln ${line.number.toLocaleString()}, Col ${col.toLocaleString()}`;
+            if (selLen > 0) {
+                pos += ` · ${selLen.toLocaleString()} selected`;
+            }
+            left.textContent = pos;
+            right.textContent = `${totalLines.toLocaleString()} lines`;
+        };
+
+        render(view.state);
+        return {
+            dom,
+            update(update) {
+                if (update.docChanged || update.selectionSet || update.viewportChanged) {
+                    render(update.state);
+                }
+            },
+        };
+    });
 }
 
 export function isDirty(id) {
