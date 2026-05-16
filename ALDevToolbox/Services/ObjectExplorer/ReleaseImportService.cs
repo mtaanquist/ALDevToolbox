@@ -1632,13 +1632,39 @@ public class ReleaseImportService
                             && FoundationalAppNames.Contains(m.Name))
                 .Select(m => m.AppId));
 
+        // All Microsoft-published modules in the release. Microsoft apps
+        // (first-party) have unrestricted access to each other's symbols
+        // in BC's compiler — the AL dev tools surface every Microsoft
+        // codeunit / table / page without requiring an app.json dep.
+        // Examples surfaced in the diagnostic samples:
+        //   - `_Exclude_APIV1_` / `_Exclude_APIV2_` reference
+        //     `Codeunit "O365 Setup Email"` which lives in another
+        //     Microsoft app neither lists as a dep.
+        //   - `Application Test Library` references `Library - Utility`
+        //     and friends across sibling Microsoft test-library apps.
+        //   - `Bank Account Reconciliation With AI Tests` references
+        //     `Library - ERM`, `Library - Random`, `Assert`.
+        // Third-party apps still respect declared deps + the foundational
+        // set; this expansion only applies when the importing module is
+        // Microsoft-published.
+        var allMicrosoftAppIds = new HashSet<Guid>(
+            modules
+                .Where(m => string.Equals(m.Publisher, "Microsoft", StringComparison.OrdinalIgnoreCase))
+                .Select(m => m.AppId));
+
         // Transitive closure per module, including the module itself,
         // the implicit foundational AppIds, and the PlatformAppId sentinel
-        // for the synthetic virtual-table entries.
+        // for the synthetic virtual-table entries. Microsoft-published
+        // modules additionally see every other Microsoft module in the
+        // release (see comment above on allMicrosoftAppIds).
         var result = new Dictionary<long, HashSet<Guid>>(modules.Count);
         foreach (var m in modules)
         {
             var visible = new HashSet<Guid>(implicitFoundational) { m.AppId, PlatformAppId };
+            if (string.Equals(m.Publisher, "Microsoft", StringComparison.OrdinalIgnoreCase))
+            {
+                visible.UnionWith(allMicrosoftAppIds);
+            }
             WalkDeps(m.AppId, visible, directDepsByAppId);
             result[m.Id] = visible;
         }

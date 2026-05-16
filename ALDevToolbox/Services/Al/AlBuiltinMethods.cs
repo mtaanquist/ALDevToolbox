@@ -229,6 +229,8 @@ public static class AlBuiltinMethods
         "AsBigInteger",
         // Variant / InStream introspection.
         "HasValue", "IsValue", "IsArray", "IsObject", "IsNull",
+        // Text-shape methods exposed on multiple receivers.
+        "Trim", "TrimStart", "TrimEnd", "Unwrap",
     };
 
     /// <summary>
@@ -256,11 +258,14 @@ public static class AlBuiltinMethods
         "CopyStr", "DelChr", "DelStr", "InsStr", "MaxStrLen", "IncStr",
         "LowerCase", "UpperCase", "ConvertStr", "SelectStr",
         "PadStr",
+        // Secret-text variant of StrSubstNo (BC 22+).
+        "SecretStrSubstNo",
         // Numerics.
         "Abs", "Power", "Sqrt", "Round", "Random", "RandomRange",
         // Date / time.
         "Today", "Time", "CurrentDateTime", "WorkDate", "CreateDateTime",
         "Date2DMY", "Date2DWY", "DMY2Date", "DWY2Date", "CalcDate",
+        "ClosingDate", "NormalDate",
         // Identity / environment.
         "CreateGuid", "CompanyName", "UserId", "UserSecurityId",
         "GuiAllowed", "IsServiceTier", "ApplicationLanguage",
@@ -334,6 +339,7 @@ public static class AlBuiltinMethods
         "separator", "filter",
         // Pages / pageextensions: actions.
         "action", "actionref", "customaction", "actiongroup",
+        "systemaction",
         // Pageextensions: layout / action manipulators.
         "modify", "addafter", "addbefore", "addlast", "addfirst",
         "movefirst", "movebefore", "moveafter", "movelast",
