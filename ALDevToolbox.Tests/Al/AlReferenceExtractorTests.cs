@@ -516,6 +516,159 @@ public sealed class AlReferenceExtractorTests
         insertRef.Column.Should().BeGreaterThan(1);
     }
 
+    // ── Bare self-procedure calls (gap #4) ─────────────────────────
+
+    [Fact]
+    public void Bare_self_call_resolves_to_owner_member()
+    {
+        // `DoStuff();` with no receiver — the extractor must look up
+        // DoStuff as a member on the file's owner object and emit a
+        // method_call reference so Find references / Go to definition
+        // can find it.
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper", new AlTypeRef(BaseAppId, "codeunit", 50000, "MyHelper"));
+        resolver.AddMember("MyHelper", new AlMember("DoStuff", "procedure", null, null));
+
+        const string src = """
+            procedure Outer()
+            begin
+                DoStuff();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "MyHelper"
+            && r.TargetObjectKind == "codeunit"
+            && r.TargetMemberName == "DoStuff"
+            && r.TargetMemberKind == "procedure");
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Bare_AL_system_function_does_not_emit_a_reference()
+    {
+        // Message / Error / Confirm look like bare calls but are AL runtime
+        // functions, not user procedures. Skip silently so we don't try to
+        // resolve them as self-members.
+        const string src = """
+            procedure Foo()
+            begin
+                Message('Hello world');
+                Error('Bad');
+                Confirm('Sure?', true);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().BeEmpty();
+        result.Stats.UnresolvedReceivers.Should().Be(0,
+            because: "system functions filter to silent skip — no diagnostic bump");
+    }
+
+    [Fact]
+    public void Statement_keyword_before_paren_does_not_trigger_bare_call_resolution()
+    {
+        // `if (X) then` and `not (X)` syntactically place a keyword before
+        // `(`. The bare-call detector must skip these so it doesn't try
+        // to resolve `if` or `not` as procedures.
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper", new AlTypeRef(BaseAppId, "codeunit", 50000, "MyHelper"));
+        resolver.AddMember("MyHelper", new AlMember("DoStuff", "procedure", null, null));
+
+        const string src = """
+            procedure Foo()
+            var
+                Cust: Record Customer;
+            begin
+                if (Cust.Insert()) then
+                    DoStuff();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().HaveCount(2);
+        result.References.Should().Contain(r =>
+            r.TargetMemberName == "Insert" && r.TargetObjectName == "Customer");
+        result.References.Should().Contain(r =>
+            r.TargetMemberName == "DoStuff" && r.TargetObjectName == "MyHelper");
+    }
+
+    [Fact]
+    public void Bare_self_call_inside_a_system_function_argument_still_resolves()
+    {
+        // The system-function filter must NOT consume the argument list —
+        // a `Message('x=%1', GetCount())` call needs the inner GetCount()
+        // to be picked up by the main loop as its own bare self-call.
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper", new AlTypeRef(BaseAppId, "codeunit", 50000, "MyHelper"));
+        resolver.AddMember("MyHelper", new AlMember("DoStuff", "procedure", null, null));
+        resolver.AddMember("MyHelper", new AlMember("GetCount", "procedure", null, null));
+
+        const string src = """
+            procedure Foo()
+            begin
+                Message('count=%1', GetCount());
+                DoStuff();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().HaveCount(2);
+        result.References.Select(r => r.TargetMemberName)
+            .Should().BeEquivalentTo(new[] { "GetCount", "DoStuff" });
+    }
+
+    [Fact]
+    public void Bare_call_with_variable_in_scope_is_skipped()
+    {
+        // A parameter or local named `Cust` shadows any same-named
+        // self-member — bare `Cust(...)` isn't even valid AL, but the
+        // extractor must not silently emit a self-call when the name is
+        // a known variable. (The shadow rule also matches how AL itself
+        // resolves the identifier.)
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper", new AlTypeRef(BaseAppId, "codeunit", 50000, "MyHelper"));
+        resolver.AddMember("MyHelper", new AlMember("Cust", "procedure", null, null));
+
+        const string src = """
+            procedure Foo(Cust: Record Customer)
+            begin
+                Cust.Insert();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        // The chain through the parameter Cust is what gets emitted; the
+        // same-named self procedure must not.
+        result.References.Should().ContainSingle();
+        result.References[0].TargetObjectName.Should().Be("Customer");
+        result.References[0].TargetMemberName.Should().Be("Insert");
+    }
+
+    [Fact]
+    public void Bare_call_to_unknown_name_is_dropped_and_counted_as_unresolved()
+    {
+        // A bare call we can't match against any of (system function,
+        // in-scope variable, owner-type member) is a real unresolved.
+        // No reference row, but the counter ticks so operators can size
+        // the gap.
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper", new AlTypeRef(BaseAppId, "codeunit", 50000, "MyHelper"));
+
+        const string src = """
+            procedure Foo()
+            begin
+                Mystery();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().BeEmpty();
+        result.Stats.UnresolvedReceivers.Should().Be(1);
+    }
+
     // ── Stub resolver ───────────────────────────────────────────────
 
     private sealed class StubResolver : IAlTypeResolver

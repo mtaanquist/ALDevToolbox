@@ -41,13 +41,21 @@ namespace ALDevToolbox.Services.Al;
 /// if <c>b</c> is a procedure with a known return type, ditto for
 /// method-result chains (<c>f().g()</c>).
 ///
+/// Bare self-procedure calls (<c>DoStuff();</c> with no receiver,
+/// invoking another procedure on the same owner object) are recognised:
+/// when the head identifier isn't in scope as a variable and isn't an AL
+/// system function (see <see cref="AlBuiltinMethods.BareCallableFunctions"/>),
+/// it's looked up as a member on the file's owner object and a
+/// <c>method_call</c> reference is emitted on hit. This is what makes
+/// right-click → Go to definition resolve <c>IndentICAccount()</c>-style
+/// internal calls in the source viewer.
+///
 /// Not handled in v1:
 /// <list type="bullet">
 ///   <item>Procedure-overload disambiguation by parameter types.</item>
-///   <item>Implicit receivers — bare <c>DoStuff()</c> calls on the
-///         current object. Procedure declarations are already in
-///         <c>oe_module_symbols</c>; the declaration row covers the
-///         "where is DoStuff defined" question without the extractor.</item>
+///   <item>Bare field/property access without a receiver
+///         (<c>"No." := 'C001'</c> inside a <c>with</c> block) — see
+///         gap #5 in <c>.design/al-reference-extractor-gaps.md</c>.</item>
 ///   <item>Lambdas / anonymous procedures (AL doesn't have them).</item>
 /// </list>
 /// </summary>
@@ -139,6 +147,19 @@ public static class AlReferenceExtractor
                     {
                         TryConsumeTypedLiteralChain();
                         continue;
+                    }
+
+                    // Bare self-procedure call: `Identifier(` with no
+                    // receiver. We only try the self-member lookup for
+                    // unquoted identifiers — quoted identifiers as bare
+                    // calls don't occur in practice (procedure names aren't
+                    // quoted at call sites in BC).
+                    if (tok.Kind == AlTokenKind.Identifier
+                        && _pos + 1 < _tokens.Count
+                        && _tokens[_pos + 1].Kind == AlTokenKind.Punct
+                        && _tokens[_pos + 1].Value == "(")
+                    {
+                        if (TryConsumeBareSelfCall()) continue;
                     }
                 }
 
@@ -577,6 +598,111 @@ public static class AlReferenceExtractor
                 // loop later — they aren't lost.
                 if (followedByParen) SkipBalancedParens();
             }
+        }
+
+        /// <summary>
+        /// Bare self-procedure call detector: <c>DoStuff(...)</c> with no
+        /// receiver. Three filters before emitting:
+        ///   1. AL statement / operator keyword (<c>if</c>, <c>not</c>, …) —
+        ///      these legitimately precede <c>(</c> without being calls.
+        ///   2. AL system function (<c>Message</c>, <c>Error</c>, …) — skip
+        ///      silently so we don't try to find them as self-members.
+        ///   3. In-scope variable — bare-callable variables aren't a thing
+        ///      in AL; advance without emitting.
+        /// Hit case: the identifier resolves to a member on the file's
+        /// owner type → emit a <c>method_call</c> reference and skip past
+        /// the argument list.
+        ///
+        /// Returns true when the token was handled (cursor advanced),
+        /// false when the caller should fall through to the default
+        /// "advance one token" path.
+        /// </summary>
+        private bool TryConsumeBareSelfCall()
+        {
+            var head = _tokens[_pos];
+            var name = head.Value;
+
+            if (AlBuiltinMethods.IsStatementKeyword(name))
+            {
+                // Statement / operator keyword — let the default advance
+                // walk past it. Returning false makes the main loop do
+                // exactly one _pos++ next iteration; the `(` after it is
+                // re-entered for whatever sits inside the parens.
+                return false;
+            }
+            if (AlBuiltinMethods.IsBareCallable(name))
+            {
+                // AL system function — silent skip. We DON'T consume the
+                // argument list: things like `Message(SalesHeader."No.")`
+                // have real references inside the parens the main loop
+                // still needs to walk.
+                return false;
+            }
+
+            // In-scope variable? AL doesn't allow calling a variable as
+            // a function — if the name is in scope we treat it as
+            // referenced and just advance past.
+            var key = name.ToLowerInvariant();
+            foreach (var frame in _scopeStack)
+            {
+                if (frame.Vars.ContainsKey(key))
+                {
+                    return false;
+                }
+            }
+
+            // Try to resolve as a member on the file's owner object.
+            var ownerType = OwnerType();
+            if (ownerType is null) return false;
+
+            var member = _ctx.Resolver.ResolveMember(ownerType, name);
+            if (member is null)
+            {
+                // Could be a bare AL system function we don't have on our
+                // list yet, or a same-named procedure on a related extension
+                // we don't track from this angle. Counted but not emitted.
+                _unresolved++;
+                return false;
+            }
+
+            // Tableextension-declared self-members fall through the
+            // resolver's DeclaringType path same as receiver chains.
+            var targetOwner = member.DeclaringType ?? ownerType;
+            _refs.Add(new ExtractedReference(
+                Line: head.Line,
+                Column: head.Column,
+                TargetAppId: targetOwner.AppId,
+                TargetObjectKind: targetOwner.Kind,
+                TargetObjectId: targetOwner.ObjectId,
+                TargetObjectName: targetOwner.Name,
+                TargetMemberName: member.Name,
+                TargetMemberKind: member.Kind,
+                ReferenceKind: "method_call"));
+            _resolved++;
+
+            // Advance past the identifier only. The argument list is
+            // walked by the main loop in its own right — `Outer(Cust.X())`
+            // needs the inner `Cust.X()` chain to still be picked up.
+            _pos++;
+            return true;
+        }
+
+        private AlTypeRef? _ownerTypeCache;
+        private bool _ownerTypeResolved;
+
+        /// <summary>
+        /// Lazily resolves the file owner's <see cref="AlTypeRef"/> via
+        /// the resolver. Cached because bare-self-call detection can fire
+        /// many times per file and the resolver lookup walks a dictionary
+        /// each call.
+        /// </summary>
+        private AlTypeRef? OwnerType()
+        {
+            if (_ownerTypeResolved) return _ownerTypeCache;
+            _ownerTypeResolved = true;
+            if (string.IsNullOrEmpty(_ctx.OwnerName)) return null;
+            _ownerTypeCache = _ctx.Resolver.ResolveTypeByName(_ctx.OwnerName);
+            return _ownerTypeCache;
         }
 
         private AlTypeRef? ResolveHeadType(AlToken head)

@@ -266,6 +266,97 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GoToDefinitionAsync_resolves_a_method_call_to_its_procedure_declaration()
+    {
+        // Phase-2 reference extraction emits method_call rows with
+        // TargetSymbolId pointing at the procedure declaration. The resolver
+        // must consult those rows so a Cmd/Ctrl-click on a call site (not on
+        // a declaration token) lands on the procedure's source line.
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var query = NewQuery(read);
+
+        // Pick any resolved method_call row from the fixture so the test is
+        // robust against the fixture's churn — we assert behaviour, not a
+        // specific (file, member) pair.
+        var pick = await (
+            from r in read.OeModuleReferences.AsNoTracking()
+            where r.ReferenceKind == "method_call"
+                && r.SourceObject!.SourceFileId != null
+                && r.LineNumber != null
+                && r.TargetMemberName != null
+                && r.TargetSymbolId != null
+            select new
+            {
+                FileId = r.SourceObject!.SourceFileId!.Value,
+                r.LineNumber,
+                r.TargetMemberName,
+                ExpectedSymbolLine = r.TargetSymbol!.LineNumber,
+                ExpectedSymbolFileId = r.TargetSymbol!.Object!.SourceFileId,
+            })
+            .Where(x => x.ExpectedSymbolFileId != null)
+            .FirstOrDefaultAsync();
+        pick.Should().NotBeNull(because: "DK Core's .al source contains resolved method calls");
+
+        // Reconstruct the column of the call-site identifier from the line
+        // text. The extractor stored the line number; the column has to come
+        // from a re-scan, same as production resolvables.
+        var content = await read.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == pick!.FileId).Select(f => f.Content).SingleAsync();
+        var lines = content.Replace("\r\n", "\n").Split('\n');
+        var lineText = lines[pick!.LineNumber!.Value - 1];
+        var idx = lineText.IndexOf(pick.TargetMemberName!, StringComparison.Ordinal);
+        idx.Should().BeGreaterOrEqualTo(0,
+            because: "the recorded member name should still be present on the recorded line");
+
+        var target = await query.GoToDefinitionAsync(pick.FileId, pick.LineNumber!.Value, idx + 1);
+
+        target.Should().NotBeNull();
+        target!.FileId.Should().Be(pick.ExpectedSymbolFileId!.Value);
+        target.LineNumber.Should().Be(pick.ExpectedSymbolLine);
+    }
+
+    [Fact]
+    public async Task ListResolvablesInFileAsync_returns_column_spans_for_member_access_tokens()
+    {
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var query = NewQuery(read);
+
+        // Find a file that has at least one resolved member-access row so
+        // we know the resolvables list won't be trivially empty.
+        var fileWithRefs = await read.OeModuleReferences.AsNoTracking()
+            .Where(r => (r.ReferenceKind == "method_call" || r.ReferenceKind == "field_access")
+                && r.SourceObject!.SourceFileId != null
+                && r.LineNumber != null
+                && r.TargetSymbolId != null)
+            .Select(r => r.SourceObject!.SourceFileId!.Value)
+            .FirstOrDefaultAsync();
+        fileWithRefs.Should().BeGreaterThan(0);
+
+        var resolvables = await query.ListResolvablesInFileAsync(fileWithRefs);
+
+        resolvables.Should().NotBeEmpty(
+            because: "the file has resolved method_call / field_access rows");
+        resolvables.Should().OnlyContain(r =>
+            r.Line >= 1 && r.ColumnStart >= 1 && r.ColumnEnd > r.ColumnStart);
+
+        // Verify the spans line up with actual source content — the column
+        // range should slice an identifier-shaped substring out of its line.
+        var content = await read.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == fileWithRefs).Select(f => f.Content).SingleAsync();
+        var lines = content.Replace("\r\n", "\n").Split('\n');
+        foreach (var r in resolvables.Take(20))
+        {
+            var lineText = lines[r.Line - 1];
+            (r.ColumnEnd - 1).Should().BeLessOrEqualTo(lineText.Length);
+            var slice = lineText.Substring(r.ColumnStart - 1, r.ColumnEnd - r.ColumnStart);
+            slice.Should().NotBeNullOrWhiteSpace(
+                because: "every resolvable should pin a real identifier (possibly quoted)");
+        }
+    }
+
+    [Fact]
     public async Task FindInFileAsync_returns_every_line_containing_the_clicked_word()
     {
         await SeedSingleReleaseAsync();
