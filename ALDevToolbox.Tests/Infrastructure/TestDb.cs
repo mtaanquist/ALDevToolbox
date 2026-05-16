@@ -127,7 +127,24 @@ public sealed class TestDb : IDisposable
     /// for the failure mode this isolation prevents.
     /// </summary>
     public OrganizationConfigService NewOrganizationConfigService(AppDbContext ctx) =>
-        new(ctx, OrgContext, NullLogger<OrganizationConfigService>.Instance, _memoryCache);
+        new(ctx, OrgContext, NewQuotaGuard(ctx), NullLogger<OrganizationConfigService>.Instance, _memoryCache);
+
+    /// <summary>
+    /// Returns a <see cref="StorageQuotaGuard"/> wired to the per-fixture
+    /// context. With no system-settings row and no per-org quota override
+    /// the guard treats every operation as unlimited, so tests that don't
+    /// care about quotas pass through. Tests that DO care should set the
+    /// system_settings row or the organisation override before exercising
+    /// the guarded path.
+    /// </summary>
+    public StorageQuotaGuard NewQuotaGuard(AppDbContext ctx)
+    {
+        var systemSettings = new SystemSettingsService(
+            ctx, DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
+        var usage = new DatabaseUsageService(
+            ctx, systemSettings, OrgContext, NullLogger<DatabaseUsageService>.Instance);
+        return new StorageQuotaGuard(usage, OrgContext, _memoryCache, NullLogger<StorageQuotaGuard>.Instance);
+    }
 
     /// <summary>
     /// Returns an <see cref="AuditInterceptor"/> wired to an empty

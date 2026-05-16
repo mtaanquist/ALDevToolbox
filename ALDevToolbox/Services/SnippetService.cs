@@ -25,12 +25,14 @@ public class SnippetService
     private readonly AppDbContext _db;
     private readonly ILogger<SnippetService> _logger;
     private readonly IOrganizationContext _orgContext;
+    private readonly StorageQuotaGuard _quotaGuard;
 
-    public SnippetService(AppDbContext db, ILogger<SnippetService> logger, IOrganizationContext orgContext)
+    public SnippetService(AppDbContext db, ILogger<SnippetService> logger, IOrganizationContext orgContext, StorageQuotaGuard quotaGuard)
     {
         _db = db;
         _logger = logger;
         _orgContext = orgContext;
+        _quotaGuard = quotaGuard;
     }
 
     private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
@@ -96,6 +98,7 @@ public class SnippetService
     /// <summary>Creates a snippet plus its files. Throws <see cref="PlanValidationException"/> on validation failure.</summary>
     public async Task<Snippet> CreateAsync(SnippetInput input, CancellationToken ct = default)
     {
+        await _quotaGuard.EnsureCanWriteAsync(ct);
         var orgId = RequireOrganizationId();
         await ValidateAsync(input, existingId: null, orgId, ct);
 
@@ -132,6 +135,7 @@ public class SnippetService
     /// <summary>Updates a snippet's fields and reconciles its file list.</summary>
     public async Task UpdateAsync(int id, SnippetInput input, CancellationToken ct = default)
     {
+        await _quotaGuard.EnsureCanWriteAsync(ct);
         var orgId = RequireOrganizationId();
         var existing = await _db.Snippets
             .Include(s => s.Files)
