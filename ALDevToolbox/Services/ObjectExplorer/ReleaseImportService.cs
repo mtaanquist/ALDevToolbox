@@ -1029,12 +1029,15 @@ public class ReleaseImportService
         // .al source in the layered case is rare and the extractor
         // gracefully falls back to "Rec is the page itself" (still wrong,
         // still won't underline, but no crash).
+        // Postgres UPDATE … FROM doesn't let the target alias (`ext`)
+        // appear in an inner JOIN's ON clause — only in WHERE. So we
+        // gate the extension's own release membership via a subquery
+        // instead of joining oe_modules a second time on `ext.module_id`.
         const string sql = """
             UPDATE oe_module_objects ext
             SET source_table_name = base.source_table_name
             FROM oe_module_objects base
             JOIN oe_modules base_mod ON base_mod.id = base.module_id
-            JOIN oe_modules ext_mod  ON ext_mod.id  = ext.module_id
             WHERE ext.kind = 'pageextension'
               AND ext.source_table_name IS NULL
               AND ext.extends_object_name IS NOT NULL
@@ -1042,7 +1045,9 @@ public class ReleaseImportService
               AND base.name = ext.extends_object_name
               AND base.source_table_name IS NOT NULL
               AND base_mod.release_id = {0}
-              AND ext_mod.release_id  = {0};
+              AND ext.module_id IN (
+                  SELECT id FROM oe_modules WHERE release_id = {0}
+              );
             """;
         await _db.Database.ExecuteSqlRawAsync(sql, new object[] { releaseId }, ct).ConfigureAwait(false);
     }
