@@ -144,7 +144,10 @@ public sealed record ReferenceMatch(
     string SourceObjectKind,
     string SourceObjectName,
     string ReferenceKind,
-    int? LineNumber);
+    int? LineNumber,
+    long? SourceFileId,
+    string? SourceFilePath = null,
+    string? Snippet = null);
 
 /// <summary>
 /// Read-only projection of an <c>oe_module_files</c> row for the source viewer.
@@ -262,3 +265,16 @@ public sealed record FileWordOccurrence(int Line, string LineText);
 /// is every line in the same file that contains it.
 /// </summary>
 public sealed record FileWordSearch(string Word, IReadOnlyList<FileWordOccurrence> Occurrences);
+
+/// <summary>
+/// A cached "Find references" search the source viewer keeps visible while
+/// the user navigates between result files. <see cref="TargetLabel"/> is the
+/// human-readable description for the sidebar heading ("references to
+/// <c>Customer</c>"); <see cref="Results"/> is the same list the legacy
+/// Object Detail page already renders.
+/// </summary>
+public sealed record ReferenceSession(
+    string Token,
+    string TargetLabel,
+    int ReleaseId,
+    IReadOnlyList<ReferenceMatch> Results);

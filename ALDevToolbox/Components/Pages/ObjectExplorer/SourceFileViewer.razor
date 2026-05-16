@@ -1,32 +1,39 @@
 @page "/object-explorer/file/{FileId:long}"
 @attribute [Authorize]
-@rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
+@inject ALDevToolbox.Services.ObjectExplorer.ReferenceSessionService ReferenceSessions
+@inject ALDevToolbox.Services.CacheBust Bust
 @inject IHttpContextAccessor Http
-@inject NavigationManager Nav
-@inject IJSRuntime JS
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Components.Shared
+@using System.Text.Json
+@using System.Security.Claims
 
 @*
-    Source-file viewer with AL syntax highlighting via the CodeMirror-backed
-    CodeViewer, an outline panel, and the in-source navigation gestures the
-    legacy file viewer had: Cmd/Ctrl-click a token to go to its definition,
-    right-click an object header for Find references, right-click any token
-    for Find in this file.
+    Object Explorer source-file viewer (static SSR + source-viewer.js).
+    Server renders the file content, outline and declarations into the HTML
+    response; a small ES module (wwwroot/source-viewer.js) wires up the
+    in-document affordances (outline filter, same-file jumps, Cmd-click,
+    right-click menu, Find in this file). The page is intentionally not
+    InteractiveServer — see .design/source-viewer-redesign.md for the
+    rationale (Blazor enhanced-nav strips CodeMirror's runtime <style>
+    tags on every interaction in the interactive mode).
 
-    Right-click "Find references" routes to the object detail's existing
-    Find-references panel — keeping the heavy chain-walk query on the page
-    that already implements it. Right-click "Find in this file" pops a panel
-    below the outline so the source stays open while navigating occurrences.
+    A legacy copy at /object-explorer/file-legacy/{id} stays interactive
+    for one release so env-flag rollback is possible:
+    SourceFileViewerLegacy.razor + OBJECT_EXPLORER_LEGACY_VIEWER=1.
 *@
 
 <PageTitle>@(_header?.Path ?? "Source") · AL Dev Toolbox</PageTitle>
 
-<div class="object-explorer source-viewer">
+<div class="object-explorer source-viewer"
+     data-file-id="@FileId"
+     data-initial-line="@(_highlightLine?.ToString() ?? string.Empty)"
+     data-ref-set="@(_session?.Token ?? string.Empty)">
     @if (_header is null || _file is null)
     {
-        <p class="muted">Loading…</p>
+        <p class="muted">File not found.</p>
     }
     else
     {
@@ -41,64 +48,92 @@
                     @_header.ModuleName · @_header.LineCount.ToString("N0") line(s)
                     <span> · <strong>Cmd/Ctrl-click</strong> a name to go to its definition</span>
                     <span> · <strong>Right-click</strong> for Find references / Find in file</span>
+                    <span> · <strong>Cmd/Ctrl-F</strong> to search inside this file</span>
                 </p>
             </div>
         </header>
 
         <div class="source-viewer__layout">
-            <div class="source-viewer__code">
-                <CodeViewer Content="@_file.Content"
-                            Language="al"
-                            Fluid="true"
-                            ScrollToLine="@_highlightLine"
-                            ScrollSequence="@_scrollSequence"
-                            Declarations="@_declarations"
-                            OnFindReferences="HandleFindReferences"
-                            OnGoToDefinition="HandleGoToDefinition"
-                            OnFindInFile="HandleFindInFile" />
-            </div>
+            <div class="source-viewer__code"
+                 data-language="al"
+                 data-content="@_file.Content"
+                 data-declarations="@SerializeDeclarations(_declarations)"
+                 data-resolvables="[]"></div>
 
+            @*
+                The sticky positioning lives on the outer .source-viewer__outline
+                aside. The inner .source-viewer__outline-inner takes the
+                overflow:auto so sticky and overflow don't fight on the same
+                element (a Chromium bug pattern that still bites with tall
+                flex siblings).
+            *@
             <aside class="source-viewer__outline">
-                <h2>Outline</h2>
-                @if (_outline is null || _outline.Count == 0)
-                {
-                    <p class="muted">No outline available.</p>
+                <div class="source-viewer__outline-inner">
+                @{
+                    var defaultTab = _session is not null ? "references" : "outline";
                 }
-                else
-                {
-                    <input type="text"
-                           class="source-viewer__outline-filter"
-                           placeholder="Filter symbols…"
-                           aria-label="Filter symbols"
-                           value="@_filter"
-                           @oninput="HandleFilterInput" />
+                <nav class="source-viewer__tabs" role="tablist">
+                    <button type="button"
+                            class="source-viewer__tab @(defaultTab == "outline" ? "is-active" : null)"
+                            role="tab"
+                            data-tab="outline"
+                            aria-selected="@(defaultTab == "outline" ? "true" : "false")">Outline</button>
+                    <button type="button"
+                            class="source-viewer__tab @(defaultTab == "references" ? "is-active" : null)"
+                            role="tab"
+                            data-tab="references"
+                            aria-selected="@(defaultTab == "references" ? "true" : "false")"
+                            hidden="@(_session is null)">
+                        References
+                        @if (_session is not null)
+                        {
+                            <span class="source-viewer__tab-count">@_session.Results.Count.ToString("N0")</span>
+                        }
+                    </button>
+                    <button type="button"
+                            class="source-viewer__tab"
+                            role="tab"
+                            data-tab="find"
+                            aria-selected="false"
+                            hidden>Find</button>
+                </nav>
 
-                    var groups = SourceFileOutlineGrouper.Build(_outline, _filter);
-                    if (groups.Count == 0)
+                <div class="source-viewer__panel @(defaultTab == "outline" ? "is-active" : null)"
+                     data-panel="outline"
+                     role="tabpanel">
+                    @if (_outline is null || _outline.Count == 0)
                     {
-                        <p class="muted">No matches.</p>
+                        <p class="muted">No outline available.</p>
                     }
-                    foreach (var group in groups)
+                    else
                     {
-                        var open = !_collapsedSections.Contains(group.Key);
-                        <section class="source-viewer__outline-section">
-                            <button type="button"
-                                    class="source-viewer__outline-section-toggle"
-                                    aria-expanded="@(open ? "true" : "false")"
-                                    @onclick="() => ToggleSection(group.Key)">
-                                <span class="source-viewer__outline-section-chevron @(open ? "is-open" : null)">›</span>
-                                <span class="source-viewer__outline-section-title">@group.Title</span>
-                                <span class="source-viewer__outline-section-count">(@group.Items.Count)</span>
-                            </button>
-                            @if (open)
-                            {
+                        <input type="text"
+                               class="source-viewer__outline-filter"
+                               placeholder="Filter symbols…"
+                               aria-label="Filter symbols" />
+
+                        var groups = SourceFileOutlineGrouper.Build(_outline, filter: null);
+                        <p class="muted source-viewer__outline-empty" hidden>No matches.</p>
+                        @foreach (var group in groups)
+                        {
+                            <section class="source-viewer__outline-section is-open"
+                                     data-section-key="@group.Key">
+                                <button type="button"
+                                        class="source-viewer__outline-section-toggle"
+                                        aria-expanded="true">
+                                    <span class="source-viewer__outline-section-chevron is-open">›</span>
+                                    <span class="source-viewer__outline-section-title">@group.Title</span>
+                                    <span class="source-viewer__outline-section-count">(@group.Items.Count)</span>
+                                </button>
                                 <ul class="source-viewer__outline-list">
                                     @foreach (var entry in group.Items)
                                     {
-                                        <li class="source-viewer__outline-item @(entry.IsChild ? "source-viewer__outline-item--child" : null)">
+                                        <li class="source-viewer__outline-item @(entry.IsChild ? "source-viewer__outline-item--child" : null)"
+                                            data-row-name="@entry.Item.Name">
                                             @if (entry.Item.ObjectId is { } oid)
                                             {
                                                 <a href="@($"/object-explorer/object/{oid}")" title="@FormatTooltip(entry.Item)">
+                                                    <span class="source-viewer__outline-badge @KindBadgeClass(entry.Item.Kind)">@KindBadgeLabel(entry.Item.Kind)</span>
                                                     <span class="source-viewer__outline-name">@entry.Item.Name</span>
                                                     @if (!string.IsNullOrEmpty(entry.Item.Signature))
                                                     {
@@ -109,59 +144,94 @@
                                             }
                                             else
                                             {
-                                                <button type="button"
-                                                        class="source-viewer__outline-link"
-                                                        title="@FormatTooltip(entry.Item)"
-                                                        @onclick="() => JumpToLineInThisFileAsync(entry.Item.LineNumber)">
+                                                <a href="@($"/object-explorer/file/{FileId}?line={entry.Item.LineNumber}")"
+                                                   class="source-viewer__outline-link"
+                                                   data-line="@entry.Item.LineNumber"
+                                                   title="@FormatTooltip(entry.Item)">
+                                                    <span class="source-viewer__outline-badge @KindBadgeClass(entry.Item.Kind)">@KindBadgeLabel(entry.Item.Kind)</span>
                                                     <span class="source-viewer__outline-name">@entry.Item.Name</span>
                                                     @if (!string.IsNullOrEmpty(entry.Item.Signature))
                                                     {
                                                         <span class="source-viewer__outline-sig muted">@FormatSignature(entry.Item.Signature)</span>
                                                     }
                                                     <span class="source-viewer__outline-line muted">L@(entry.Item.LineNumber)</span>
-                                                </button>
+                                                </a>
                                             }
                                         </li>
                                     }
                                 </ul>
-                            }
-                        </section>
+                            </section>
+                        }
                     }
-                }
+                </div>
 
-                @if (_findInFile is not null)
-                {
-                    <h2 class="source-viewer__outline-find-heading">Find "@_findInFile.Word"</h2>
-                    @if (_findInFile.Occurrences.Count == 0)
+                <div class="source-viewer__panel @(defaultTab == "references" ? "is-active" : null)"
+                     data-panel="references"
+                     role="tabpanel"
+                     hidden="@(_session is null)">
+                    @if (_session is not null)
                     {
-                        <p class="muted">No occurrences in this file.</p>
+                        <div class="source-viewer__refs-header">
+                            <p class="muted source-viewer__refs-target">@_session.TargetLabel</p>
+                            <button type="button"
+                                    class="btn btn--sm source-viewer__refs-close"
+                                    data-action="close-refs"
+                                    title="Close reference set">Close</button>
+                        </div>
+                        @if (_session.Results.Count == 0)
+                        {
+                            <p class="muted">No references in this Release's chain.</p>
+                        }
+                        else
+                        {
+                            <ul class="source-viewer__refs-list">
+                                @foreach (var r in _session.Results)
+                                {
+                                    var current = r.SourceFileId == FileId && r.LineNumber == _highlightLine;
+                                    <li class="source-viewer__refs-item @(current ? "is-current" : null)">
+                                        @if (r.SourceFileId is { } srcFid && r.LineNumber is { } ln)
+                                        {
+                                            var inSameFile = srcFid == FileId;
+                                            <a href="@RefUrl(srcFid, ln)"
+                                               data-line="@(inSameFile ? ln.ToString() : null)"
+                                               title="@($"{r.SourceFilePath ?? r.SourceModuleName} · L{ln} ({r.ReferenceKind})")">
+                                                <div class="source-viewer__refs-row-top">
+                                                    <span class="source-viewer__refs-name">@r.SourceObjectName</span>
+                                                    <span class="source-viewer__refs-meta muted">@r.SourceModuleName · L@(ln)</span>
+                                                </div>
+                                                @if (!string.IsNullOrEmpty(r.Snippet))
+                                                {
+                                                    <code class="source-viewer__refs-snippet">@r.Snippet</code>
+                                                }
+                                            </a>
+                                        }
+                                        else
+                                        {
+                                            <a href="@($"/object-explorer/object/{r.SourceObjectId}")"
+                                               title="@($"{r.SourceModuleName} · {r.SourceObjectName} (no source)")">
+                                                <div class="source-viewer__refs-row-top">
+                                                    <span class="source-viewer__refs-name">@r.SourceObjectName</span>
+                                                    <span class="source-viewer__refs-meta muted">@r.SourceModuleName · no source</span>
+                                                </div>
+                                            </a>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        }
                     }
-                    else
-                    {
-                        <p class="muted">@_findInFile.Occurrences.Count.ToString("N0") occurrence(s)</p>
-                        <ul class="source-viewer__find-list">
-                            @foreach (var occ in _findInFile.Occurrences)
-                            {
-                                <li>
-                                    <button type="button"
-                                            class="source-viewer__outline-link"
-                                            @onclick="() => JumpToLineInThisFileAsync(occ.Line)">
-                                        <span class="source-viewer__outline-kind">L@(occ.Line)</span>
-                                        <code class="source-viewer__find-snippet">@occ.LineText.Trim()</code>
-                                    </button>
-                                </li>
-                            }
-                        </ul>
-                        <button class="btn btn--sm" @onclick="ClearFindInFile">Clear</button>
-                    }
-                }
+                </div>
 
-                @if (_lastNavigationNotice is not null)
-                {
-                    <p class="muted source-viewer__notice" role="status">@_lastNavigationNotice</p>
-                }
+                <div class="source-viewer__panel" data-panel="find" role="tabpanel" hidden>
+                    <div class="source-viewer__find-host"></div>
+                </div>
+
+                <p class="muted source-viewer__notice" role="status" hidden></p>
+                </div>
             </aside>
         </div>
+
+        <script type="module" src="/source-viewer.js?v=@Bust.Token"></script>
     }
 </div>
 
@@ -173,11 +243,7 @@
     private List<SourceFileOutlineItem>? _outline;
     private IReadOnlyList<CodeViewerDeclaration>? _declarations;
     private int? _highlightLine;
-    private int _scrollSequence;
-    private FileWordSearch? _findInFile;
-    private string? _lastNavigationNotice;
-    private string _filter = string.Empty;
-    private readonly HashSet<string> _collapsedSections = new(StringComparer.Ordinal);
+    private ReferenceSession? _session;
 
     protected override async Task OnInitializedAsync()
     {
@@ -191,123 +257,89 @@
         if (ctx is not null && int.TryParse(ctx.Request.Query["line"], out var line) && line > 0)
         {
             _highlightLine = line;
-            _scrollSequence = 1;
         }
-    }
 
-    // ── In-source gestures ─────────────────────────────────────────────
-
-    private void HandleFindReferences(long symbolId)
-    {
-        // SymbolId is the oe_module_objects.id — navigate to the object
-        // detail page where Find references already lives.
-        Nav.NavigateTo($"/object-explorer/object/{symbolId}#find-references");
-    }
-
-    private async Task HandleGoToDefinition(CodeViewerClick click)
-    {
-        var target = await ObjectExplorer.GoToDefinitionAsync(FileId, click.Line, click.Column);
-        if (target is null)
+        var refSet = ctx?.Request.Query["refSet"].ToString();
+        if (!string.IsNullOrEmpty(refSet))
         {
-            _lastNavigationNotice = "No definition found for that token.";
-            return;
+            var owner = OwnerKey(ctx);
+            if (owner is not null)
+            {
+                _session = ReferenceSessions.Get(refSet, owner);
+            }
         }
-        _lastNavigationNotice = null;
-        if (target.FileId == FileId)
-        {
-            // Same-file jump: avoid Nav.NavigateTo (whose enhanced-nav
-            // streaming diff strips CodeMirror's runtime-injected
-            // <style> tags). Update the URL via history.replaceState
-            // and bump ScrollSequence so the editor re-scrolls in place.
-            await JumpToLineInThisFileAsync(target.LineNumber);
-            return;
-        }
-        Nav.NavigateTo($"/object-explorer/file/{target.FileId}?line={target.LineNumber}");
     }
 
-    /// <summary>
-    /// Scrolls the in-place CodeMirror viewer to <paramref name="line"/>
-    /// without going through <see cref="NavigationManager"/>. Blazor's
-    /// enhanced-navigation pipeline (which <c>NavigateTo</c> routes
-    /// through, even for fragment-only same-file URL changes) does a
-    /// streaming DOM diff against the server-rendered HTML; because the
-    /// server doesn't know about the <c>&lt;style&gt;</c> tags
-    /// CodeMirror injects at runtime, the diff strips them and the
-    /// editor loses every CSS rule it depends on (monospace font,
-    /// gutter layout, host overflow). Same-file scrolls update the URL
-    /// bar via <c>history.replaceState</c> instead — the document head
-    /// is untouched and the existing
-    /// <see cref="CodeViewer.ScrollSequence"/> token causes the viewer
-    /// to re-scroll. Cross-file jumps still go through
-    /// <c>Nav.NavigateTo</c> because the new file content needs a full
-    /// CodeMirror remount to land in any case.
-    /// </summary>
-    private async Task JumpToLineInThisFileAsync(int line)
+    private string RefUrl(long fileId, int line)
     {
-        _highlightLine = line;
-        _scrollSequence++;
-        // Queue the render *before* the JS interop. Auto-StateHasChanged
-        // at end-of-handler only fires once the awaited Task completes
-        // successfully — a hung or throwing replaceState would
-        // otherwise block the render and the user-visible scroll
-        // wouldn't happen.
-        StateHasChanged();
-
-        // URL bar update is best-effort: shareable / back-buttonable
-        // link to the line. A failure (mid-nav, half-detached
-        // circuit) shouldn't bork the click.
-        try
+        var url = Links.SourceFile(fileId, line);
+        if (_session is not null)
         {
-            await JS.InvokeVoidAsync(
-                "history.replaceState",
-                null,
-                string.Empty,
-                $"/object-explorer/file/{FileId}?line={line}");
+            url += "&refSet=" + Uri.EscapeDataString(_session.Token);
         }
-        catch (JSException)
-        {
-        }
-        catch (InvalidOperationException)
-        {
-        }
+        return url;
     }
 
-    private async Task HandleFindInFile(CodeViewerClick click)
+    private static string? OwnerKey(HttpContext? ctx)
     {
-        _findInFile = await ObjectExplorer.FindInFileAsync(FileId, click.Line, click.Column);
-        _lastNavigationNotice = null;
+        var user = ctx?.User;
+        if (user?.Identity?.IsAuthenticated != true) return null;
+        return user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? user.Identity.Name;
     }
 
-    private void ClearFindInFile()
-    {
-        _findInFile = null;
-    }
-
-    private void HandleFilterInput(ChangeEventArgs e)
-    {
-        _filter = e.Value as string ?? string.Empty;
-    }
-
-    private void ToggleSection(string key)
-    {
-        if (!_collapsedSections.Add(key))
-        {
-            _collapsedSections.Remove(key);
-        }
-    }
-
-    /// <summary>
-    /// Field signatures are already plain types ("Code[20]", "Enum");
-    /// procedure signatures are full parameter lists which CSS
-    /// truncates with ellipsis at render time.
-    /// </summary>
     private static string FormatSignature(string signature) => signature;
 
     /// <summary>
-    /// Builds the hover-tooltip text for an outline row: the full
-    /// declaration the row stands for ("Name" or "Name(sig): Return").
-    /// Used on every row so the truncated signature stays addressable.
+    /// Short label shown in the kind badge next to each outline row.
+    /// Keep it concise (≤ 9 chars) so it fits inside a 340px column
+    /// alongside the name + signature; the full kind lives on the
+    /// row's <c>title</c> tooltip.
     /// </summary>
+    private static string KindBadgeLabel(string kind) => kind.ToLowerInvariant() switch
+    {
+        "field" => "field",
+        "trigger" => "trigger",
+        "procedure" => "proc",
+        "internal_procedure" => "internal",
+        "protected_procedure" => "protected",
+        "local_procedure" => "local",
+        "event_publisher" => "event pub",
+        "event_subscriber" => "event sub",
+        "codeunit" => "codeunit",
+        "table" => "table",
+        "tableextension" => "table ext",
+        "page" => "page",
+        "pageextension" => "page ext",
+        "report" => "report",
+        "reportextension" => "report ext",
+        "xmlport" => "xmlport",
+        "query" => "query",
+        "controladdin" => "controladd",
+        "enum" => "enum",
+        "enumextension" => "enum ext",
+        "interface" => "interface",
+        "permissionset" => "permset",
+        "permissionsetextension" => "permset ext",
+        "profile" => "profile",
+        _ => kind,
+    };
+
+    /// <summary>
+    /// CSS modifier that tints the kind badge. Procedures share one
+    /// colour family (method-like), triggers + events share another
+    /// (event-like), fields and object headers get their own tints.
+    /// </summary>
+    private static string KindBadgeClass(string kind) => kind.ToLowerInvariant() switch
+    {
+        "field" => "source-viewer__outline-badge--field",
+        "trigger" => "source-viewer__outline-badge--trigger",
+        "event_publisher" or "event_subscriber" => "source-viewer__outline-badge--event",
+        "procedure" or "internal_procedure" or "protected_procedure" or "local_procedure"
+            => "source-viewer__outline-badge--proc",
+        _ => "source-viewer__outline-badge--object",
+    };
+
     private static string FormatTooltip(SourceFileOutlineItem item)
     {
         var sb = new System.Text.StringBuilder(item.Name);
@@ -317,4 +349,22 @@
         }
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Serialises declarations to JSON the way <c>code-editor.js</c>'s
+    /// <c>mountReadOnly</c> expects them: camelCase keys, single line, safe
+    /// to embed into a <c>data-*</c> attribute (browser unescaping +
+    /// JSON.parse on the client). Symbol ids round-trip as numbers since
+    /// JavaScript handles all current ALDevToolbox IDs (well below 2^53).
+    /// </summary>
+    private static string SerializeDeclarations(IReadOnlyList<CodeViewerDeclaration>? declarations)
+    {
+        if (declarations is null || declarations.Count == 0) return "[]";
+        return JsonSerializer.Serialize(declarations, DeclarationJsonOptions);
+    }
+
+    private static readonly JsonSerializerOptions DeclarationJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
 }

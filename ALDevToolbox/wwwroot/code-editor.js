@@ -26,7 +26,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab }
 import { syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatching,
     foldGutter, foldKeymap, StreamLanguage }
     from "https://esm.sh/@codemirror/language@6.10.6?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
-import { search, searchKeymap, highlightSelectionMatches }
+import { search, searchKeymap, highlightSelectionMatches, openSearchPanel }
     from "https://esm.sh/@codemirror/search@6.5.7?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap }
     from "https://esm.sh/@codemirror/autocomplete@6.18.3?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6";
@@ -468,10 +468,22 @@ export function mountReadOnly(container, value, language, options) {
 
         const items = [];
         if (onDeclaration) {
+            // Click landed on a declaration name range — we already know the
+            // symbol id, so the existing single-arg callback is fine.
             items.push({
                 label: "Find references",
                 action: () => opts.dotNetRef.invokeMethodAsync(
                     "OnFindReferences", onDeclaration.symbolId),
+            });
+        } else {
+            // Off-declaration click: the host decides whether the word
+            // under the cursor resolves to a symbol. The two-arg variant
+            // lets the host run a positional lookup server-side and fall
+            // back to "no references" UI if nothing matches.
+            items.push({
+                label: "Find references",
+                action: () => opts.dotNetRef.invokeMethodAsync(
+                    "OnFindReferencesAt", line.number, colInLine),
             });
         }
         // Disable "Go to definition" when the click lands on the declaration
@@ -582,6 +594,15 @@ export function mountReadOnly(container, value, language, options) {
 // dispatching EditorView.scrollIntoView — the effect path through CM's
 // transaction system was leaving the viewport in inconsistent states
 // when triggered from outside a CM-initiated update.
+function resetAncestorScrollLeft(start) {
+    let node = start;
+    while (node && node !== document.scrollingElement) {
+        if (node.scrollLeft) node.scrollLeft = 0;
+        node = node.parentElement;
+    }
+    if (document.scrollingElement) document.scrollingElement.scrollLeft = 0;
+}
+
 export function scrollToLine(id, lineNumber, flash) {
     const e = editors.get(id);
     if (!e) return;
@@ -611,28 +632,27 @@ export function scrollToLine(id, lineNumber, flash) {
             // state we used to see going through EditorView.scrollIntoView.
             const target = block.top - scroller.clientHeight / 2 + block.height / 2;
             scroller.scrollTop = Math.max(0, Math.min(scrollMax, target));
+            scroller.scrollLeft = 0;
         } else {
-            // Fluid mount (`Fluid="true"`): the editor's scroller is the
-            // same height as its content (overflow: visible), so it
-            // can't scroll. CodeMirror virtualises lines outside the
-            // initial viewport, so the line element may not exist for
-            // far-away targets like line 500 of 1000. Prefer
-            // EditorView.scrollIntoView — CM materialises the line
-            // before scrolling and routes through the appropriate
-            // outer container. Explicit `x: "start"` keeps the line's
-            // first column visible; the default ("nearest") leaves
-            // any pre-existing horizontal scroll in place, which
-            // looks like the first few characters got cut off after
-            // the jump. Fast-path lineEl.scrollIntoView when the
-            // target is already in the rendered viewport.
+            // Fluid mount (`Fluid="true"`): the editor's scroller is
+            // overflow:visible, so an outer container (.content) scrolls
+            // the page. Use inline:"nearest" so scrollIntoView only
+            // moves vertically — `inline:"start"` aligns the cm-line's
+            // left edge with the scrollport's left edge, but since
+            // cm-line begins AFTER the gutter, that scrolls the page
+            // right by the gutter width and chops off the start of
+            // shorter lines. The follow-up resetAncestorScrollLeft
+            // call then clears any residual horizontal scroll the
+            // previous jump (or a long line elsewhere) left behind.
             const lineEl = findLineEl();
             if (lineEl) {
-                lineEl.scrollIntoView({ block: "center", inline: "start", behavior: "auto" });
+                lineEl.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
             } else {
                 view.dispatch({
-                    effects: EditorView.scrollIntoView(line.from, { y: "center", x: "start" }),
+                    effects: EditorView.scrollIntoView(line.from, { y: "center" }),
                 });
             }
+            resetAncestorScrollLeft(scroller);
         }
     };
 
@@ -782,6 +802,16 @@ export function markPristine(id) {
 
 export function getValue(id) {
     return editors.get(id)?.view.state.doc.toString() ?? "";
+}
+
+/// Opens CodeMirror's built-in search panel from outside the editor.
+/// The default Ctrl/Cmd-F binding fires only when the editor has DOM
+/// focus; this helper lets the page-level shortcut bypass that.
+export function openSearch(id) {
+    const e = editors.get(id);
+    if (!e) return;
+    e.view.focus();
+    openSearchPanel(e.view);
 }
 
 export function setValue(id, value) {
