@@ -712,12 +712,15 @@ public static class AlReferenceExtractor
                 // Variable's declared type is a known AL runtime / system
                 // type (Dialog, RecordRef, XmlDocument, ModuleInfo, …) —
                 // or it's declared with the `DotNet` keyword which never
-                // resolves through the AL catalog by design. Silence the
+                // resolves through the AL catalog by design — or it's a
+                // BC platform virtual table by numeric id (the runtime
+                // reserves 2000000000..2000000999 for these). Silence the
                 // diagnostic so it doesn't crowd out real unresolveds.
                 if (declaredAsVar is not null
                     && (string.Equals(declaredAsVar.Keyword, "DotNet", StringComparison.OrdinalIgnoreCase)
                         || (!string.IsNullOrEmpty(declaredAsVar.TypeName)
-                            && AlBuiltinMethods.IsKnownSystemType(declaredAsVar.TypeName))))
+                            && (AlBuiltinMethods.IsKnownSystemType(declaredAsVar.TypeName)
+                                || IsPlatformVirtualTableId(declaredAsVar.TypeName)))))
                 {
                     AdvancePastChain();
                     return;
@@ -2316,6 +2319,24 @@ public static class AlReferenceExtractor
             // (#pragma) sit in the middle of declarations sometimes.
             while (_pos < _tokens.Count && _tokens[_pos].Kind == AlTokenKind.Directive) _pos++;
         }
+
+        /// <summary>
+        /// True when <paramref name="typeName"/> looks like a BC platform
+        /// virtual-table numeric id. Microsoft reserves the range
+        /// 2000000000..2000000999 for runtime-provided tables (Field,
+        /// Company, User, NAV App Installed App, …); pages that set
+        /// <c>SourceTable = 2000000206</c> end up with that numeric
+        /// string as their source_table_name when the import-time
+        /// numeric → name resolver doesn't have the id in its named
+        /// map. Treating the whole range as silently unresolvable avoids
+        /// the per-id enumeration burden — we don't have schemas for
+        /// any of these tables anyway, so the lost diagnostic detail
+        /// costs nothing.
+        /// </summary>
+        private static bool IsPlatformVirtualTableId(string typeName) =>
+            int.TryParse(typeName, out var id)
+            && id >= 2000000000
+            && id <= 2000000999;
 
         private static bool IsAlObjectKeyword(string s) =>
             string.Equals(s, "Record", StringComparison.OrdinalIgnoreCase)
