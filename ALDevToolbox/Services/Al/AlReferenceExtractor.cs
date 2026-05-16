@@ -112,16 +112,34 @@ public static class AlReferenceExtractor
                     continue;
                 }
 
-                // A standalone `end;` closes the innermost procedure scope.
-                // Object-scope (the bottom frame) is never popped.
-                if (tok.Kind == AlTokenKind.Identifier
-                    && string.Equals(tok.Value, "end", StringComparison.OrdinalIgnoreCase)
-                    && _scopeStack.Count > 1
-                    && IsTopLevelEndOfBlock(_pos))
+                // Inside a procedure / trigger body, track nested block
+                // depth. `begin` and `case` open blocks closed by `end`;
+                // we maintain the depth so the procedure's own `end;`
+                // (depth → 0) is what actually pops the scope frame, not
+                // any nested `end` inside an `if … then begin … end` or
+                // `case … end`. Without this, real BC code (which nests
+                // `begin`/`end` heavily) loses the local-variable scope
+                // partway through the procedure body.
+                if (_scopeStack.Count > 1 && tok.Kind == AlTokenKind.Identifier)
                 {
-                    _scopeStack.Pop();
-                    _pos++;
-                    continue;
+                    if (string.Equals(tok.Value, "begin", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(tok.Value, "case", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _scopeStack.Peek().BeginDepth++;
+                        _pos++;
+                        continue;
+                    }
+                    if (string.Equals(tok.Value, "end", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var frame = _scopeStack.Peek();
+                        frame.BeginDepth--;
+                        if (frame.BeginDepth <= 0)
+                        {
+                            _scopeStack.Pop();
+                        }
+                        _pos++;
+                        continue;
+                    }
                 }
 
                 // Member-access chain candidates. Two shapes trigger:
@@ -160,6 +178,19 @@ public static class AlReferenceExtractor
                         && _tokens[_pos + 1].Value == "(")
                     {
                         if (TryConsumeBareSelfCall()) continue;
+                    }
+
+                    // Implicit-Rec field access: bare quoted or unquoted
+                    // identifier with no qualifier, no `(`, no `::`, no
+                    // `.`. Inside a table / page / etc. body, AL lets you
+                    // write `"No." := 'C001'` as shorthand for
+                    // `Rec."No." := 'C001'`. Only fires when Rec is in
+                    // scope (i.e. owner kind supports Rec) and the
+                    // identifier resolves to a field on Rec's type.
+                    if (_scopeStack.Count > 1
+                        && (tok.Kind == AlTokenKind.QuotedIdentifier || tok.Kind == AlTokenKind.Identifier))
+                    {
+                        if (TryConsumeImplicitFieldAccess()) continue;
                     }
                 }
 
@@ -230,23 +261,6 @@ public static class AlReferenceExtractor
             var v = tok.Value;
             return string.Equals(v, "procedure", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(v, "trigger", StringComparison.OrdinalIgnoreCase);
-        }
-
-        /// <summary>
-        /// Heuristic: an `end` token closes a procedure scope when it's
-        /// followed by `;` and the immediately preceding context isn't
-        /// nested inside another begin block. AL's begin/end pairs
-        /// nest cleanly, so we maintain a begin-depth counter as we walk
-        /// the body. The procedure scope's frame popping aligns with the
-        /// `end;` that closes the procedure body (the outermost begin
-        /// inside the procedure).
-        /// </summary>
-        private bool IsTopLevelEndOfBlock(int endTokenIndex)
-        {
-            // The current scope frame tracks how many `begin` keywords
-            // are open inside it. The closing `end;` we care about is
-            // the one that drains the body to zero.
-            return _scopeStack.Peek().BeginDepth == 1;
         }
 
         /// <summary>
@@ -725,6 +739,119 @@ public static class AlReferenceExtractor
             if (string.IsNullOrEmpty(_ctx.OwnerName)) return null;
             _ownerTypeCache = _ctx.Resolver.ResolveTypeByName(_ctx.OwnerName);
             return _ownerTypeCache;
+        }
+
+        private AlTypeRef? _recTypeCache;
+        private bool _recTypeResolved;
+
+        /// <summary>
+        /// Lazily resolves Rec's <see cref="AlTypeRef"/> — the receiver
+        /// type implicit-field-access uses. For tables / tableextensions
+        /// this is the owner type; for pages / pageextensions it's the
+        /// SourceTable. BuildGlobalScope already encoded the choice in
+        /// the bottom scope frame's <c>rec</c> entry; we read it back
+        /// and resolve once.
+        /// </summary>
+        private AlTypeRef? RecType()
+        {
+            if (_recTypeResolved) return _recTypeCache;
+            _recTypeResolved = true;
+            // Bottom frame (object-scope) is where Rec lives. Walk to it.
+            ScopeFrame? bottom = null;
+            foreach (var frame in _scopeStack) bottom = frame;
+            if (bottom is null) return null;
+            if (!bottom.Vars.TryGetValue("rec", out var declared)) return null;
+            if (string.IsNullOrEmpty(declared.TypeName)) return null;
+            _recTypeCache = _ctx.Resolver.ResolveTypeByName(declared.TypeName);
+            return _recTypeCache;
+        }
+
+        /// <summary>
+        /// Implicit-Rec field access: a bare identifier or quoted
+        /// identifier inside a body, with no qualifier. When the owner
+        /// kind exposes Rec and the identifier matches a field on Rec's
+        /// type, emit a <c>field_access</c> reference targeting that
+        /// type. Followed-by-paren / followed-by-dot / followed-by-
+        /// double-colon shapes are filtered by the caller (those go
+        /// through the chain / typed-literal / bare-call paths).
+        ///
+        /// Filters (in order):
+        ///   1. Rec must be in scope (RecType != null).
+        ///   2. The identifier must not already match an in-scope variable
+        ///      (parameter / local / global). AL resolves variables
+        ///      first; we mirror that.
+        ///   3. Bare identifiers (not quoted): drop statement keywords
+        ///      (<c>if</c>, <c>then</c>, <c>not</c>, …), AL system
+        ///      functions (<c>Message</c>, <c>Today</c>, …), and AL
+        ///      literal-shaped keywords (<c>true</c>, <c>false</c>, …)
+        ///      via <see cref="AlBuiltinMethods.IsStatementKeyword"/> /
+        ///      <see cref="AlBuiltinMethods.IsBareCallable"/>.
+        ///      Quoted identifiers bypass these — they're almost always
+        ///      field names in AL bodies.
+        ///   4. The identifier must resolve to a member on Rec's type
+        ///      with kind = <c>field</c>. A method match doesn't emit
+        ///      (those go through the bare-self-call path when
+        ///      followed by parens, or are silently dropped here).
+        ///
+        /// Known limitation: inside a <c>with X do …</c> block the
+        /// implicit receiver is X, not Rec. Gap #5 in
+        /// <c>al-reference-extractor-gaps.md</c>; this handler would
+        /// emit on Rec's type instead of X's. False positive only fires
+        /// when both X and Rec have a same-named field — usually
+        /// resolves to a silent drop.
+        ///
+        /// Returns true when the token was handled (cursor advanced),
+        /// false when the caller should fall through to the default
+        /// "advance one token" path.
+        /// </summary>
+        private bool TryConsumeImplicitFieldAccess()
+        {
+            var head = _tokens[_pos];
+            var name = head.Value;
+
+            // 1. Rec must exist.
+            var rec = RecType();
+            if (rec is null) return false;
+
+            // 2. Skip when name is an in-scope variable.
+            var key = name.ToLowerInvariant();
+            foreach (var frame in _scopeStack)
+            {
+                if (frame.Vars.ContainsKey(key)) return false;
+            }
+
+            // 3. For bare identifiers, additional keyword / system-function
+            //    filters. Quoted identifiers bypass — they're field names.
+            if (head.Kind == AlTokenKind.Identifier)
+            {
+                if (AlBuiltinMethods.IsStatementKeyword(name)) return false;
+                if (AlBuiltinMethods.IsBareCallable(name)) return false;
+            }
+
+            // 4. Resolve as a field on Rec's type. Methods don't qualify
+            //    here — those need parens to be a call site, and bare
+            //    field-shaped accesses are what we're after.
+            var member = _ctx.Resolver.ResolveMember(rec, name);
+            if (member is null) return false;
+            if (!string.Equals(member.Kind, "field", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var targetOwner = member.DeclaringType ?? rec;
+            _refs.Add(new ExtractedReference(
+                Line: head.Line,
+                Column: head.Column,
+                TargetAppId: targetOwner.AppId,
+                TargetObjectKind: targetOwner.Kind,
+                TargetObjectId: targetOwner.ObjectId,
+                TargetObjectName: targetOwner.Name,
+                TargetMemberName: member.Name,
+                TargetMemberKind: member.Kind,
+                ReferenceKind: "field_access"));
+            _resolved++;
+            _pos++;
+            return true;
         }
 
         private AlTypeRef? ResolveHeadType(AlToken head)

@@ -625,6 +625,181 @@ public sealed class AlReferenceExtractorTests
         result.References.Should().BeEmpty();
     }
 
+    // ── Implicit-Rec field access (gap #5 sibling) ─────────────────
+
+    [Fact]
+    public void Bare_quoted_identifier_inside_table_trigger_resolves_to_field_on_owner()
+    {
+        // `"No." := 'X'` inside a table trigger is shorthand for
+        // `Rec."No." := 'X'`. The extractor must emit a field_access
+        // reference on the owner table even without the Rec qualifier.
+        const string src = """
+            trigger OnInsert()
+            begin
+                "No." := 'C001';
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(MakeResolver(), "Customer"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Customer"
+            && r.TargetMemberName == "No."
+            && r.ReferenceKind == "field_access");
+    }
+
+    [Fact]
+    public void Bare_quoted_identifier_inside_page_trigger_resolves_to_field_on_source_table()
+    {
+        // On a page with SourceTable = "Sales Header", a bare `"Sell-to
+        // Customer No."` references that field on Sales Header.
+        const string src = """
+            trigger OnAfterGetCurrRecord()
+            begin
+                if "Sell-to Customer No." = '' then exit;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(MakeResolver(), "Sales Order", "Sales Header"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "Sell-to Customer No.");
+    }
+
+    [Fact]
+    public void Bare_unquoted_identifier_matching_owner_field_resolves()
+    {
+        // Field names that don't need quotes (no spaces) still trigger
+        // implicit-field-access. Customer has a "Name" field in the
+        // fixture; bare `Name` inside a table body resolves to it.
+        const string src = """
+            trigger OnInsert()
+            begin
+                if Name = '' then
+                    Name := 'Default';
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(MakeResolver(), "Customer"));
+
+        // Two reads / writes of Name → two field_access emits.
+        result.References.Should().HaveCount(2);
+        result.References.Should().AllSatisfy(r =>
+        {
+            r.TargetObjectName.Should().Be("Customer");
+            r.TargetMemberName.Should().Be("Name");
+            r.ReferenceKind.Should().Be("field_access");
+        });
+    }
+
+    [Fact]
+    public void Local_variable_shadows_implicit_field_with_same_name()
+    {
+        // Customer has a field "Name". A local var named `Name` shadows
+        // the field — bare `Name` inside the body references the local,
+        // not the field. The extractor must not emit a field_access.
+        const string src = """
+            procedure Foo()
+            var
+                Name: Text;
+            begin
+                Name := 'shadowed';
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(MakeResolver(), "Customer"));
+
+        result.References.Should().BeEmpty(
+            because: "the local variable Name shadows the field of the same name");
+    }
+
+    [Fact]
+    public void Implicit_field_access_skips_statement_keywords_and_literals()
+    {
+        // `if`, `then`, `not`, `true`, `false`, `exit` etc. are bare
+        // identifiers that look like potential field accesses. The
+        // keyword filter must drop them before the field lookup so
+        // they don't pollute the resolved counter or emit refs.
+        const string src = """
+            trigger OnInsert()
+            begin
+                if true then
+                    exit;
+                if not Confirm('Sure?', true) then
+                    exit;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(MakeResolver(), "Customer"));
+
+        result.References.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Implicit_field_access_does_not_fire_outside_a_record_owner()
+    {
+        // Codeunits don't have Rec — implicit-field-access shouldn't
+        // even try. A bare quoted identifier inside a codeunit body
+        // is most likely a label / string / enum value, none of which
+        // we should treat as field accesses.
+        const string src = """
+            procedure Foo()
+            begin
+                "Some Token";
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Nested_begin_end_blocks_preserve_procedure_scope()
+    {
+        // Pre-fix bug: any `end;` inside a procedure body popped the
+        // scope frame, so local variables declared in the procedure
+        // were "out of scope" after the first nested end. This test
+        // exercises a deeply nested begin/end and verifies the local
+        // `Cust` parameter is still resolvable on the inner `Cust.X()`
+        // — which only works if scope wasn't popped prematurely.
+        const string src = """
+            procedure Foo(Cust: Record Customer)
+            begin
+                if true then begin
+                    if true then begin
+                        Cust.Insert();
+                    end;
+                end;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Customer"
+            && r.TargetMemberName == "Insert");
+    }
+
+    [Fact]
+    public void Case_blocks_count_toward_block_depth_alongside_begin()
+    {
+        // `case … end;` opens a block closed by `end` without a paired
+        // `begin`. The depth tracker must count `case` as an opener too,
+        // otherwise the case's `end` pops the procedure scope.
+        const string src = """
+            procedure Foo(Cust: Record Customer)
+            begin
+                case Cust.Insert() of
+                    true: exit;
+                    false: exit;
+                end;
+                Cust.Validate();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        // Both Cust.Insert() and Cust.Validate() must emit — the second
+        // one only does if the procedure scope survived the case block.
+        result.References.Should().HaveCount(2);
+        result.References.Select(r => r.TargetMemberName)
+            .Should().BeEquivalentTo(new[] { "Insert", "Validate" });
+    }
+
     // ── Bare self-procedure calls (gap #4) ─────────────────────────
 
     [Fact]
