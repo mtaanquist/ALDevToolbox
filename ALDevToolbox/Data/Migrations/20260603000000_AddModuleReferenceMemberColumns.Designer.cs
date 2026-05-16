@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260516025949_AddModuleReferenceMemberColumns")]
+    [Migration("20260603000000_AddModuleReferenceMemberColumns")]
     partial class AddModuleReferenceMemberColumns
     {
         /// <inheritdoc />
