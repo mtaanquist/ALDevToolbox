@@ -682,11 +682,25 @@ public static class AlReferenceExtractor
             //   2. head matches an object name in the type catalog (the
             //      `Customer.Insert(true)` pattern).
             // Anything else: this chain doesn't yield references.
-            var receiverType = ResolveHeadType(head);
+            var receiverType = ResolveHeadType(head, out var declaredAsVar);
             if (receiverType is null)
             {
                 _unresolved++;
-                CaptureUnresolved("head-not-in-scope", head, null);
+                // Two sub-cases for the diagnostic samples: did the var
+                // lookup miss entirely, or did it find a var whose
+                // declared type didn't resolve through the resolver?
+                // The latter points at visibility / catalog issues for
+                // a known-named type — much more actionable than "name
+                // isn't in scope".
+                if (declaredAsVar is not null)
+                {
+                    CaptureUnresolved("head-var-type-unresolved", head, null,
+                        receiverNameOverride: $"{declaredAsVar.Keyword ?? "?"} {declaredAsVar.TypeName}");
+                }
+                else
+                {
+                    CaptureUnresolved("head-not-a-variable", head, null);
+                }
                 AdvancePastChain();
                 return;
             }
@@ -2086,14 +2100,27 @@ public static class AlReferenceExtractor
             return true;
         }
 
-        private AlTypeRef? ResolveHeadType(AlToken head)
+        /// <summary>
+        /// Resolves the head identifier of a member chain. Returns the
+        /// receiver type on success; null when neither the variable
+        /// lookup nor the catalog lookup found a type.
+        /// <paramref name="declaredAsVar"/> reports the in-scope declaration
+        /// for diagnostic purposes when the catalog lookup of a declared
+        /// variable's type fails — letting the caller distinguish
+        /// "head wasn't a variable at all" from "head was a variable
+        /// but its declared type doesn't resolve" (which usually means a
+        /// visibility / dependency-graph issue worth surfacing).
+        /// </summary>
+        private AlTypeRef? ResolveHeadType(AlToken head, out ResolvedVariableType? declaredAsVar)
         {
+            declaredAsVar = null;
             // Step 1: walk the scope stack innermost-first.
             var name = head.Value.ToLowerInvariant();
             foreach (var frame in _scopeStack)
             {
                 if (frame.Vars.TryGetValue(name, out var declared))
                 {
+                    declaredAsVar = declared;
                     // Variables typed with an AL object keyword
                     // (Record Customer, Codeunit "Sales-Post") resolve
                     // to a type in the catalog. Variables typed with a

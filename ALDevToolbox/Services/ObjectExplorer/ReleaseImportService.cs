@@ -1393,17 +1393,24 @@ public class ReleaseImportService
             // tokens across the whole phase so operators can spot
             // systematic gaps (a common token shape, an uningested
             // dependency, …) without re-running with verbose logging.
+            // Cap at perFileSampleCap per file so one noisy file
+            // doesn't consume the whole bucket — we'd rather see
+            // patterns across many files than 50 lines from 3 files.
+            const int perFileSampleCap = 3;
             if (unresolvedSamples.Count < unresolvedLogCap
                 && result.Stats.UnresolvedSamples.Count > 0)
             {
+                int fromThisFile = 0;
                 foreach (var s in result.Stats.UnresolvedSamples)
                 {
                     if (unresolvedSamples.Count >= unresolvedLogCap) break;
+                    if (fromThisFile >= perFileSampleCap) break;
                     unresolvedSamples.Add((
                         file.ModuleName ?? string.Empty,
                         file.Path ?? string.Empty,
                         file.Owner.Kind + ":" + file.Owner.Name,
                         s));
+                    fromThisFile++;
                 }
             }
 
