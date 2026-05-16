@@ -57,7 +57,7 @@
                  data-language="al"
                  data-content="@_file.Content"
                  data-declarations="@SerializeDeclarations(_declarations)"
-                 data-resolvables="[]"></div>
+                 data-resolvables="@SerializeResolvables(_resolvables)"></div>
 
             @*
                 The sticky positioning lives on the outer .source-viewer__outline
@@ -203,6 +203,7 @@
     private SourceFileDetail? _file;
     private List<SourceFileOutlineItem>? _outline;
     private IReadOnlyList<CodeViewerDeclaration>? _declarations;
+    private IReadOnlyList<CodeViewerResolvable>? _resolvables;
     private int? _highlightLine;
     private ReferenceSession? _session;
 
@@ -213,6 +214,7 @@
         _file = await ObjectExplorer.GetFileAsync(FileId);
         _outline = await ObjectExplorer.GetFileOutlineAsync(FileId);
         _declarations = await ObjectExplorer.ListDeclarationsInFileAsync(FileId);
+        _resolvables = await ObjectExplorer.ListResolvablesInFileAsync(FileId);
 
         var ctx = Http.HttpContext;
         if (ctx is not null && int.TryParse(ctx.Request.Query["line"], out var line) && line > 0)
@@ -338,6 +340,21 @@
     {
         if (declarations is null || declarations.Count == 0) return "[]";
         return JsonSerializer.Serialize(declarations, DeclarationJsonOptions);
+    }
+
+    /// <summary>
+    /// Serialises resolvable ranges into the JSON shape code-editor.js'
+    /// <c>buildResolvableDecorationExtensions</c> expects on the
+    /// <c>data-resolvables</c> attribute — camelCase keys, plain array.
+    /// Underlines the tokens that <see cref="ObjectExplorerService.GoToDefinitionAsync"/>
+    /// can resolve to a definition; right-click + Cmd-click already work on
+    /// any position, but the underline tells users which tokens are clickable
+    /// without having to probe by hovering.
+    /// </summary>
+    private static string SerializeResolvables(IReadOnlyList<CodeViewerResolvable>? resolvables)
+    {
+        if (resolvables is null || resolvables.Count == 0) return "[]";
+        return JsonSerializer.Serialize(resolvables, DeclarationJsonOptions);
     }
 
     private static readonly JsonSerializerOptions DeclarationJsonOptions = new()

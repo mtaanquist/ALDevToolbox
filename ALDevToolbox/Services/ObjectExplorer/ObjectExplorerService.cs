@@ -580,10 +580,22 @@ public class ObjectExplorerService
 
     /// <summary>
     /// Resolves a Cmd/Ctrl-click in the source viewer to a navigation
-    /// target. Uses <see cref="ALDevToolbox.Services.Al.AlGoToDefinitionLocator"/>
-    /// to pull the clicked word + its surrounding context, then looks up a
-    /// matching object in the same Release. Returns null when no resolvable
-    /// target exists — the page no-ops in that case.
+    /// target. Two strategies in order:
+    ///
+    /// 1. <b>Member-access</b>: when the clicked token matches a
+    ///    <c>method_call</c> / <c>field_access</c> reference row on the same
+    ///    file + line, follow <c>TargetSymbolId</c> to the
+    ///    <see cref="ModuleSymbol"/> declaration and return its file + line.
+    ///    This is the path that resolves <c>GLAcc."Account Type"</c> and
+    ///    <c>ConfirmManagement.GetResponseOrDefault</c> — the dominant cases
+    ///    that the legacy object-name fallback couldn't reach.
+    /// 2. <b>Object-name</b>: same-Release lookup against
+    ///    <c>oe_module_objects.Name</c>. Catches bare type literals like
+    ///    <c>Customer</c> / <c>"Sales-Post"</c> that the extractor doesn't
+    ///    emit member-rows for.
+    ///
+    /// Returns <c>null</c> when neither strategy matches — the page no-ops
+    /// and shows the "No definition found" notice.
     /// </summary>
     public async Task<GoToDefinitionTarget?> GoToDefinitionAsync(
         long fileId, int line, int column, CancellationToken ct = default)
@@ -596,12 +608,37 @@ public class ObjectExplorerService
 
         var click = Services.Al.AlGoToDefinitionLocator.Inspect(meta.Content, line, column);
         if (click is null || string.IsNullOrEmpty(click.Word)) return null;
-
-        // Same-Release lookup by object name. Chain-walk semantics (for
-        // customer Releases sitting on top of BC) are a follow-up — the
-        // dominant case is Microsoft-DVD-ingest where everything lives in
-        // a single Release.
         var word = click.Word;
+
+        // 1. Member-access strategy. Phase-2 extraction stamps
+        //    method_call / field_access rows with (LineNumber, TargetMemberName,
+        //    TargetSymbolId). Match the clicked word case-insensitively (AL
+        //    identifiers are case-insensitive). Prefer rows with a resolved
+        //    TargetSymbolId — those have a direct file + line via the symbol's
+        //    owner object.
+        var memberHit = await _db.OeModuleReferences.AsNoTracking()
+            .Where(r => (r.ReferenceKind == "method_call" || r.ReferenceKind == "field_access")
+                && r.SourceObject!.SourceFileId == fileId
+                && r.LineNumber == line
+                && r.TargetMemberName != null
+                && r.TargetMemberName.ToLower() == word.ToLower())
+            .Where(r => r.TargetSymbolId != null)
+            .Select(r => new
+            {
+                SymbolLine = r.TargetSymbol!.LineNumber,
+                SymbolFileId = r.TargetSymbol!.Object!.SourceFileId,
+            })
+            .Where(x => x.SymbolFileId != null)
+            .FirstOrDefaultAsync(ct);
+        if (memberHit is not null)
+        {
+            return new GoToDefinitionTarget(memberHit.SymbolFileId!.Value, memberHit.SymbolLine);
+        }
+
+        // 2. Same-Release lookup by object name. Chain-walk semantics (for
+        //    customer Releases sitting on top of BC) are a follow-up — the
+        //    dominant case is Microsoft-DVD-ingest where everything lives in
+        //    a single Release.
         var target = await _db.OeModuleObjects.AsNoTracking()
             .Where(o => o.Module!.ReleaseId == meta.ReleaseId)
             .Where(o => o.SourceFileId != null)
@@ -612,6 +649,112 @@ public class ObjectExplorerService
         if (target?.SourceFileId is null) return null;
         return new GoToDefinitionTarget(target.SourceFileId.Value, target.LineNumber);
     }
+
+    /// <summary>
+    /// Spans inside <paramref name="fileId"/> that the source viewer should
+    /// underline as resolvable. Drives the IDE-style "what's clickable"
+    /// affordance: every token underlined here will, on right-click or
+    /// Cmd-click, resolve to a definition via <see cref="GoToDefinitionAsync"/>.
+    ///
+    /// Sources from phase-2 <c>method_call</c> / <c>field_access</c> reference
+    /// rows: each row carries <c>LineNumber</c> + <c>TargetMemberName</c>; we
+    /// re-scan the line to recover the 1-based column range. Same scanning
+    /// strategy as <see cref="ListDeclarationsInFileAsync"/> — quoted first
+    /// (<c>"Account Type"</c>), bare identifier fallback. Multiple references
+    /// on the same line are handled by walking forward through the line text
+    /// rather than always picking the first occurrence.
+    ///
+    /// Variable-declaration types (<c>variable_type</c>, <c>parameter_type</c>,
+    /// <c>return_type</c>) aren't included — those reference rows don't carry
+    /// a line number; symbol-package extraction doesn't yield source positions.
+    /// </summary>
+    public async Task<List<ALDevToolbox.Components.Shared.CodeViewerResolvable>>
+        ListResolvablesInFileAsync(long fileId, CancellationToken ct = default)
+    {
+        var content = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == fileId)
+            .Select(f => f.Content)
+            .SingleOrDefaultAsync(ct);
+        if (string.IsNullOrEmpty(content)) return new();
+
+        // Pull every member-access row on the file. TargetSymbolId may be
+        // null (e.g. cross-release receivers not yet in the local catalog) —
+        // we still underline the token because the click-time resolver can
+        // fall back to other strategies later. For now, only TargetSymbolId-
+        // resolved rows are guaranteed clickable, so filter to them.
+        var rows = await _db.OeModuleReferences.AsNoTracking()
+            .Where(r => (r.ReferenceKind == "method_call" || r.ReferenceKind == "field_access")
+                && r.SourceObject!.SourceFileId == fileId
+                && r.LineNumber != null
+                && r.TargetMemberName != null
+                && r.TargetSymbolId != null)
+            .Select(r => new { Line = r.LineNumber!.Value, Name = r.TargetMemberName! })
+            .ToListAsync(ct);
+        if (rows.Count == 0) return new();
+
+        var lines = content.Replace("\r\n", "\n").Split('\n');
+        var result = new List<ALDevToolbox.Components.Shared.CodeViewerResolvable>(rows.Count);
+        // Group by line so we can walk forward through multiple references
+        // on the same line without re-finding the first occurrence each time.
+        foreach (var byLine in rows.GroupBy(r => r.Line))
+        {
+            if (byLine.Key < 1 || byLine.Key > lines.Length) continue;
+            var lineText = lines[byLine.Key - 1];
+            // Track per-name search cursors so successive occurrences of the
+            // same identifier on one line each get their own span.
+            var cursors = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var row in byLine)
+            {
+                var quoted = "\"" + row.Name + "\"";
+                var cursor = cursors.TryGetValue(row.Name, out var c) ? c : 0;
+                int idx;
+                int matchLen;
+                idx = lineText.IndexOf(quoted, cursor, StringComparison.Ordinal);
+                if (idx >= 0)
+                {
+                    matchLen = quoted.Length;
+                }
+                else
+                {
+                    idx = IndexOfWord(lineText, row.Name, cursor);
+                    if (idx < 0) continue;
+                    matchLen = row.Name.Length;
+                }
+                cursors[row.Name] = idx + matchLen;
+                result.Add(new ALDevToolbox.Components.Shared.CodeViewerResolvable(
+                    Line: byLine.Key,
+                    ColumnStart: idx + 1,
+                    ColumnEnd: idx + 1 + matchLen));
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Word-boundary aware IndexOf — finds <paramref name="word"/> in
+    /// <paramref name="haystack"/> starting at <paramref name="start"/> only
+    /// when the surrounding characters aren't AL identifier characters
+    /// (letter, digit, underscore). Stops <c>Insert</c> from matching inside
+    /// <c>InsertRecord</c>.
+    /// </summary>
+    private static int IndexOfWord(string haystack, string word, int start)
+    {
+        var i = start;
+        while (i <= haystack.Length - word.Length)
+        {
+            var idx = haystack.IndexOf(word, i, StringComparison.Ordinal);
+            if (idx < 0) return -1;
+            var before = idx == 0 || !IsIdentChar(haystack[idx - 1]);
+            var after = idx + word.Length == haystack.Length
+                || !IsIdentChar(haystack[idx + word.Length]);
+            if (before && after) return idx;
+            i = idx + 1;
+        }
+        return -1;
+    }
+
+    private static bool IsIdentChar(char c) =>
+        char.IsLetterOrDigit(c) || c == '_';
 
     /// <summary>
     /// "Find in this file" — extracts the word at the supplied click position
