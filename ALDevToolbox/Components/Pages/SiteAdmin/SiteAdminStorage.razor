@@ -100,6 +100,14 @@
                                    class="inline-form__num" />
                             <button type="submit" class="btn btn--sm">Save</button>
                         </form>
+                        @if (!r.IsSystem)
+                        {
+                            <form method="post" action="@($"/site-admin/storage/{r.OrganizationId}/backup")"
+                                  class="inline-form">
+                                <AntiforgeryToken />
+                                <button type="submit" class="btn btn--sm" title="Take a per-tenant snapshot now">Backup now</button>
+                            </form>
+                        }
                     </td>
                 </tr>
             }

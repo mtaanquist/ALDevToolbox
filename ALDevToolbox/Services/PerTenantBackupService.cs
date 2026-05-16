@@ -1,0 +1,443 @@
+using System.Diagnostics;
+using System.IO.Compression;
+using System.Text;
+using System.Text.Json;
+using ALDevToolbox.Data;
+using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.ValueObjects;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
+
+namespace ALDevToolbox.Services;
+
+/// <summary>
+/// Row view returned by <see cref="PerTenantBackupService.ListAsync"/>.
+/// Carries the metadata the SiteAdmin UI renders without re-stating files.
+/// </summary>
+public sealed record PerTenantBackupRow(
+    int Id,
+    int OrganizationId,
+    string OrganizationName,
+    string OrganizationSlug,
+    string FileName,
+    long FileSizeBytes,
+    DateTime CreatedAt,
+    int? CreatedByUserId,
+    string? CreatedByEmail,
+    BackupKind Kind,
+    int SchemaVersion,
+    bool IsPinned);
+
+/// <summary>
+/// Logical, per-organisation snapshot service. Writes a ZIP containing one
+/// JSON array per tenanted content table for the given organisation, plus a
+/// <c>manifest.json</c> with metadata and schema version. Restore opens a
+/// single transaction that deletes the organisation's existing rows in
+/// FK-reverse order and re-inserts from the snapshot via
+/// <c>jsonb_populate_recordset</c>, then resets each table's identity
+/// sequence.
+///
+/// Auth and audit tables are excluded by design — see
+/// <see cref="TenantTableCatalog"/> — so restoring a snapshot doesn't
+/// tangle login state or forensic history. Restore refuses a snapshot
+/// whose <c>SchemaVersion</c> doesn't match the current code; this is
+/// strict on purpose so a pre-migration backup doesn't quietly drop
+/// unknown columns post-migration.
+/// </summary>
+public sealed class PerTenantBackupService
+{
+    /// <summary>Version baked into every snapshot ZIP. Bump when a migration touches a tenanted table.</summary>
+    public const int CurrentSchemaVersion = 1;
+
+    /// <summary>Filename suffix every per-tenant snapshot carries.</summary>
+    public const string FileSuffix = ".tenant.zip";
+
+    /// <summary>Manifest entry name inside the ZIP.</summary>
+    public const string ManifestEntryName = "manifest.json";
+
+    private readonly AppDbContext _db;
+    private readonly IOrganizationContext _orgContext;
+    private readonly StorageQuotaGuard _quotaGuard;
+    private readonly ILogger<PerTenantBackupService> _logger;
+    private readonly TimeProvider _clock;
+    private readonly string _connectionString;
+    private readonly string _backupsRoot;
+
+    public PerTenantBackupService(
+        AppDbContext db,
+        IOrganizationContext orgContext,
+        StorageQuotaGuard quotaGuard,
+        IConfiguration configuration,
+        ILogger<PerTenantBackupService> logger,
+        TimeProvider clock)
+    {
+        _db = db;
+        _orgContext = orgContext;
+        _quotaGuard = quotaGuard;
+        _logger = logger;
+        _clock = clock;
+        _connectionString = configuration.GetConnectionString("DefaultConnection")
+            ?? throw new InvalidOperationException(
+                "ConnectionStrings:DefaultConnection is required for PerTenantBackupService.");
+        _backupsRoot = Environment.GetEnvironmentVariable("BACKUPS_DIR")
+            ?? "/var/lib/aldevtoolbox/backups";
+    }
+
+    /// <summary>Absolute path to the per-tenant subdirectory for the given org slug.</summary>
+    public string DirectoryFor(string slug) => Path.Combine(_backupsRoot, "tenants", slug);
+
+    /// <summary>
+    /// Cross-org listing of per-tenant snapshots, optionally filtered to a
+    /// single organisation. SiteAdmin-only — bypasses the EF query filter.
+    /// </summary>
+    public async Task<List<PerTenantBackupRow>> ListAsync(int? organizationId = null, CancellationToken ct = default)
+    {
+        _orgContext.RequireSiteAdmin();
+        var q = _db.PerTenantBackups
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Include(b => b.Organization)
+            .Include(b => b.CreatedByUser)
+            .AsQueryable();
+        if (organizationId is int orgId)
+        {
+            q = q.Where(b => b.OrganizationId == orgId);
+        }
+        return await q
+            .OrderByDescending(b => b.CreatedAt)
+            .Select(b => new PerTenantBackupRow(
+                b.Id,
+                b.OrganizationId,
+                b.Organization!.Name,
+                b.Organization.Slug,
+                b.FileName,
+                b.FileSizeBytes,
+                b.CreatedAt,
+                b.CreatedByUserId,
+                b.CreatedByUser == null ? null : b.CreatedByUser.Email,
+                b.Kind,
+                b.SchemaVersion,
+                b.IsPinned))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Streams a per-tenant snapshot to the caller. Returns <c>null</c> when
+    /// the row is missing or the file on disk has been removed out-of-band.
+    /// </summary>
+    public async Task<(PerTenantBackup Row, FileStream Stream)?> OpenForDownloadAsync(int id, CancellationToken ct = default)
+    {
+        _orgContext.RequireSiteAdmin();
+        var row = await _db.PerTenantBackups
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Include(b => b.Organization)
+            .FirstOrDefaultAsync(b => b.Id == id, ct);
+        if (row is null) return null;
+        var path = ResolveFilePath(row.Organization!.Slug, row.FileName);
+        if (!File.Exists(path)) return null;
+        return (row, new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true));
+    }
+
+    /// <summary>
+    /// Writes a new per-tenant snapshot for <paramref name="organizationId"/>.
+    /// Scheduled invocations pass <see cref="BackupKind.Scheduled"/>;
+    /// ad-hoc calls require a SiteAdmin caller. The snapshot is one
+    /// <c>jsonb</c> array per tenanted content table inside a ZIP, plus a
+    /// <c>manifest.json</c> with the schema version and table list.
+    /// </summary>
+    public async Task<PerTenantBackup> CreateAsync(int organizationId, BackupKind kind, CancellationToken ct)
+    {
+        if (kind == BackupKind.AdHoc) _orgContext.RequireSiteAdmin();
+        var org = await _db.Organizations.IgnoreQueryFilters().AsNoTracking()
+            .FirstOrDefaultAsync(o => o.Id == organizationId, ct)
+            ?? throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["OrganizationId"] = $"Organization {organizationId} not found.",
+            });
+
+        var dir = DirectoryFor(org.Slug);
+        Directory.CreateDirectory(dir);
+
+        var timestamp = _clock.GetUtcNow().UtcDateTime;
+        var label = kind == BackupKind.Scheduled ? "scheduled" : "adhoc";
+        var fileName = $"{org.Slug}-{timestamp:yyyyMMddTHHmmssZ}-{label}{FileSuffix}";
+        var targetPath = Path.Combine(dir, fileName);
+
+        var sw = Stopwatch.StartNew();
+        long size;
+        await using (var stream = new FileStream(targetPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 64 * 1024, useAsync: true))
+        await using (var connection = new NpgsqlConnection(_connectionString))
+        {
+            await connection.OpenAsync(ct);
+            using var zip = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true);
+
+            var includedTables = new List<string>();
+            foreach (var table in TenantTableCatalog.ContentTables)
+            {
+                if (!TenantTableCatalog.TablesWithDirectOrgColumn.Contains(table)) continue;
+                var json = await ReadTableAsJsonAsync(connection, table, organizationId, ct);
+                var entry = zip.CreateEntry(table + ".json", CompressionLevel.Optimal);
+                await using var entryStream = entry.Open();
+                var bytes = Encoding.UTF8.GetBytes(json);
+                await entryStream.WriteAsync(bytes, ct);
+                includedTables.Add(table);
+            }
+
+            var manifest = new
+            {
+                schema_version = CurrentSchemaVersion,
+                organization_id = organizationId,
+                organization_slug = org.Slug,
+                organization_name = org.Name,
+                created_at = timestamp,
+                tables = includedTables,
+            };
+            var manifestEntry = zip.CreateEntry(ManifestEntryName, CompressionLevel.Optimal);
+            await using var manifestStream = manifestEntry.Open();
+            await JsonSerializer.SerializeAsync(manifestStream, manifest, ManifestJson, ct);
+        }
+        size = new FileInfo(targetPath).Length;
+        sw.Stop();
+
+        var row = new PerTenantBackup
+        {
+            OrganizationId = organizationId,
+            FileName = fileName,
+            FileSizeBytes = size,
+            CreatedAt = timestamp,
+            CreatedByUserId = kind == BackupKind.AdHoc ? _orgContext.CurrentUserId : null,
+            Kind = kind,
+            SchemaVersion = CurrentSchemaVersion,
+            IsPinned = false,
+        };
+        _db.PerTenantBackups.Add(row);
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Per-tenant snapshot {FileName} written for org {OrgSlug} in {ElapsedMs} ms ({SizeBytes} bytes, kind={Kind}).",
+            fileName, org.Slug, sw.ElapsedMilliseconds, size, kind);
+
+        _quotaGuard.Invalidate(organizationId);
+        await PruneRetentionAsync(organizationId, ct);
+        return row;
+    }
+
+    /// <summary>
+    /// Atomic restore. Reads the snapshot, verifies its schema version,
+    /// then in a single transaction deletes the organisation's existing
+    /// content rows in FK-reverse order and re-inserts from the snapshot
+    /// in FK order via <c>jsonb_populate_recordset</c>. Identity sequences
+    /// are realigned to MAX(id) afterwards so the next insert doesn't
+    /// collide with re-imported rows.
+    /// </summary>
+    public async Task RestoreAsync(int id, CancellationToken ct = default)
+    {
+        _orgContext.RequireSiteAdmin();
+        var row = await _db.PerTenantBackups
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Include(b => b.Organization)
+            .FirstOrDefaultAsync(b => b.Id == id, ct)
+            ?? throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["BackupId"] = "Per-tenant backup not found.",
+            });
+        if (row.SchemaVersion != CurrentSchemaVersion)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["SchemaVersion"] = $"Snapshot schema version {row.SchemaVersion} does not match current ({CurrentSchemaVersion}). Restore aborted.",
+            });
+        }
+
+        var path = ResolveFilePath(row.Organization!.Slug, row.FileName);
+        if (!File.Exists(path))
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["BackupId"] = "Snapshot file is missing from the backups directory.",
+            });
+        }
+
+        var sw = Stopwatch.StartNew();
+        await using var zipStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true);
+        using var zip = new ZipArchive(zipStream, ZipArchiveMode.Read);
+
+        var manifestEntry = zip.GetEntry(ManifestEntryName)
+            ?? throw new InvalidOperationException("Snapshot is missing manifest.json.");
+        Manifest manifest;
+        await using (var manifestStream = manifestEntry.Open())
+        {
+            manifest = await JsonSerializer.DeserializeAsync<Manifest>(manifestStream, ManifestJson, ct)
+                ?? throw new InvalidOperationException("Snapshot manifest.json is empty.");
+        }
+        if (manifest.organization_id != row.OrganizationId)
+        {
+            throw new InvalidOperationException(
+                $"Snapshot manifest organisation id {manifest.organization_id} does not match per_tenant_backups row {row.OrganizationId}.");
+        }
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(ct);
+        await using var tx = await connection.BeginTransactionAsync(ct);
+
+        // Delete in FK-reverse order so children go before parents.
+        foreach (var table in TenantTableCatalog.ContentTables.Reverse()
+                     .Where(TenantTableCatalog.TablesWithDirectOrgColumn.Contains))
+        {
+            await using var cmd = connection.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = $"DELETE FROM {table} WHERE organization_id = @org";
+            cmd.Parameters.AddWithValue("@org", row.OrganizationId);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // Insert in FK order. jsonb_populate_recordset takes a row type that
+        // PostgreSQL synthesises automatically for the table, so the JSON
+        // keys map onto column names without us re-declaring the column list.
+        foreach (var table in TenantTableCatalog.ContentTables
+                     .Where(TenantTableCatalog.TablesWithDirectOrgColumn.Contains))
+        {
+            var entry = zip.GetEntry(table + ".json");
+            if (entry is null) continue;
+            string json;
+            await using (var entryStream = entry.Open())
+            using (var reader = new StreamReader(entryStream, Encoding.UTF8))
+            {
+                json = await reader.ReadToEndAsync(ct);
+            }
+            if (string.IsNullOrWhiteSpace(json) || json == "null" || json == "[]") continue;
+
+            await using var cmd = connection.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText =
+                $"INSERT INTO {table} SELECT * FROM jsonb_populate_recordset(NULL::{table}, @rows::jsonb)";
+            cmd.Parameters.AddWithValue("@rows", json);
+            await cmd.ExecuteNonQueryAsync(ct);
+
+            // Re-align identity sequence so the next INSERT doesn't collide
+            // with restored row ids. pg_get_serial_sequence returns NULL
+            // for tables without identity columns; we tolerate that.
+            await using var resetCmd = connection.CreateCommand();
+            resetCmd.Transaction = tx;
+            resetCmd.CommandText = $"""
+                SELECT setval(pg_get_serial_sequence('{table}', 'id'),
+                              GREATEST((SELECT COALESCE(MAX(id), 0) FROM {table}), 1))
+                WHERE pg_get_serial_sequence('{table}', 'id') IS NOT NULL
+                """;
+            await resetCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        await tx.CommitAsync(ct);
+        sw.Stop();
+        _logger.LogInformation(
+            "Restored per-tenant snapshot {FileName} for org {OrgSlug} in {ElapsedMs} ms.",
+            row.FileName, row.Organization.Slug, sw.ElapsedMilliseconds);
+        _quotaGuard.Invalidate(row.OrganizationId);
+    }
+
+    /// <summary>Pins or unpins a snapshot (exempts it from retention pruning).</summary>
+    public async Task SetPinnedAsync(int id, bool pinned, CancellationToken ct = default)
+    {
+        _orgContext.RequireSiteAdmin();
+        var row = await _db.PerTenantBackups
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(b => b.Id == id, ct)
+            ?? throw new PlanValidationException(new Dictionary<string, string> { ["BackupId"] = "Backup not found." });
+        if (row.IsPinned == pinned) return;
+        row.IsPinned = pinned;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Deletes a snapshot file and its DB row. Pinned snapshots must be unpinned first.</summary>
+    public async Task DeleteAsync(int id, CancellationToken ct = default)
+    {
+        _orgContext.RequireSiteAdmin();
+        var row = await _db.PerTenantBackups
+            .IgnoreQueryFilters()
+            .Include(b => b.Organization)
+            .FirstOrDefaultAsync(b => b.Id == id, ct);
+        if (row is null) return;
+        if (row.IsPinned)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["BackupId"] = "Unpin the snapshot before deleting it.",
+            });
+        }
+        TryDeleteFile(row.Organization!.Slug, row.FileName);
+        _db.PerTenantBackups.Remove(row);
+        await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Drops unpinned snapshots past the retention count for a single organisation.</summary>
+    public async Task PruneRetentionAsync(int organizationId, CancellationToken ct = default)
+    {
+        var retention = await _db.SystemSettings.AsNoTracking()
+            .Where(s => s.Id == 1)
+            .Select(s => (int?)s.PerTenantBackupRetentionCount)
+            .FirstOrDefaultAsync(ct) ?? 30;
+        if (retention < 1) retention = 1;
+
+        var rows = await _db.PerTenantBackups
+            .IgnoreQueryFilters()
+            .Include(b => b.Organization)
+            .Where(b => b.OrganizationId == organizationId && !b.IsPinned)
+            .OrderByDescending(b => b.CreatedAt)
+            .ToListAsync(ct);
+        if (rows.Count <= retention) return;
+
+        foreach (var row in rows.Skip(retention))
+        {
+            TryDeleteFile(row.Organization!.Slug, row.FileName);
+            _db.PerTenantBackups.Remove(row);
+            _logger.LogInformation(
+                "Pruned per-tenant snapshot {FileName} for org {OrgSlug} (retention={Retention}).",
+                row.FileName, row.Organization.Slug, retention);
+        }
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private static async Task<string> ReadTableAsJsonAsync(NpgsqlConnection connection, string table, int organizationId, CancellationToken ct)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText =
+            $"SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) FROM {table} t WHERE t.organization_id = @org";
+        cmd.Parameters.AddWithValue("@org", organizationId);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result?.ToString() ?? "[]";
+    }
+
+    private string ResolveFilePath(string slug, string fileName)
+    {
+        if (fileName.Contains('/') || fileName.Contains('\\') || fileName.Contains("..", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Refusing to handle suspicious snapshot file name: {fileName}");
+        }
+        return Path.Combine(DirectoryFor(slug), fileName);
+    }
+
+    private void TryDeleteFile(string slug, string fileName)
+    {
+        try
+        {
+            var path = ResolveFilePath(slug, fileName);
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Failed to delete per-tenant snapshot {FileName}; row will be removed regardless.", fileName);
+        }
+    }
+
+    private static readonly JsonSerializerOptions ManifestJson = new() { WriteIndented = true };
+
+    private sealed record Manifest(
+        int schema_version,
+        int organization_id,
+        string organization_slug,
+        string organization_name,
+        DateTime created_at,
+        IReadOnlyList<string> tables);
+}

@@ -66,7 +66,8 @@ public sealed class BackupScheduler : BackgroundService
         await using var scope = _services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var backups = scope.ServiceProvider.GetRequiredService<BackupService>();
-        await TickOnceAsync(db, backups, ct);
+        var perTenant = scope.ServiceProvider.GetRequiredService<PerTenantBackupService>();
+        await TickOnceAsync(db, backups, perTenant, ct);
     }
 
     /// <summary>
@@ -75,7 +76,7 @@ public sealed class BackupScheduler : BackgroundService
     /// <see cref="TimeProvider"/> they control, bypassing the
     /// <c>Task.Delay</c> loop in <see cref="ExecuteAsync"/>.
     /// </summary>
-    internal async Task TickOnceAsync(AppDbContext db, BackupService backups, CancellationToken ct)
+    internal async Task TickOnceAsync(AppDbContext db, BackupService backups, PerTenantBackupService perTenant, CancellationToken ct)
     {
         var settings = await db.SystemSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == 1, ct);
@@ -111,6 +112,35 @@ public sealed class BackupScheduler : BackgroundService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Scheduled backup failed.");
+        }
+
+        // Per-tenant snapshots run after the full backup so the full pg_dump
+        // still exists if a per-tenant write fails midway. Each org is
+        // independent — a failure on one org logs and continues.
+        var orgs = await db.Organizations
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(o => !o.IsSystem && !o.IsPending)
+            .Select(o => o.Id)
+            .ToListAsync(ct);
+        foreach (var orgId in orgs)
+        {
+            try
+            {
+                var lastPerTenant = await db.PerTenantBackups
+                    .IgnoreQueryFilters()
+                    .AsNoTracking()
+                    .Where(b => b.OrganizationId == orgId && b.Kind == BackupKind.Scheduled)
+                    .OrderByDescending(b => b.CreatedAt)
+                    .Select(b => (DateTime?)b.CreatedAt)
+                    .FirstOrDefaultAsync(ct);
+                if (lastPerTenant is not null && lastPerTenant >= todayWindow) continue;
+                await perTenant.CreateAsync(orgId, BackupKind.Scheduled, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Scheduled per-tenant snapshot failed for org {OrgId}.", orgId);
+            }
         }
     }
 }

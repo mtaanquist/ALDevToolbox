@@ -256,6 +256,109 @@ internal static class SiteAdminEndpoints
             }
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
+        app.MapPost("/site-admin/storage/{orgId:int}/backup", async (
+            int orgId, HttpContext ctx, PerTenantBackupService backups,
+            IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            try
+            {
+                await backups.CreateAsync(orgId, BackupKind.AdHoc, ct);
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.OkQuery}=created");
+            }
+            catch (PlanValidationException ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString(ex.Errors.First().Value));
+            }
+            catch (Exception ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString("Snapshot failed: " + ex.Message));
+            }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapGet("/site-admin/tenant-backups/{id:int}/download", async (
+            int id, HttpContext ctx, PerTenantBackupService backups, CancellationToken ct) =>
+        {
+            var opened = await backups.OpenForDownloadAsync(id, ct);
+            if (opened is null) { ctx.Response.StatusCode = StatusCodes.Status404NotFound; return; }
+            var (row, stream) = opened.Value;
+            try
+            {
+                ctx.Response.ContentType = "application/zip";
+                var cd = new Microsoft.Net.Http.Headers.ContentDispositionHeaderValue("attachment");
+                cd.SetHttpFileName(row.FileName);
+                ctx.Response.Headers.ContentDisposition = cd.ToString();
+                ctx.Response.ContentLength = row.FileSizeBytes;
+                await stream.CopyToAsync(ctx.Response.Body, ct);
+            }
+            finally { await stream.DisposeAsync(); }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/tenant-backups/{id:int}/pin", async (
+            int id, HttpContext ctx, PerTenantBackupService backups, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            try { await backups.SetPinnedAsync(id, true, ct); }
+            catch (PlanValidationException ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString(ex.Errors.First().Value));
+                return;
+            }
+            ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.OkQuery}=pinned");
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/tenant-backups/{id:int}/unpin", async (
+            int id, HttpContext ctx, PerTenantBackupService backups, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            try { await backups.SetPinnedAsync(id, false, ct); }
+            catch (PlanValidationException ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString(ex.Errors.First().Value));
+                return;
+            }
+            ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.OkQuery}=unpinned");
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/tenant-backups/{id:int}/delete", async (
+            int id, HttpContext ctx, PerTenantBackupService backups, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            try { await backups.DeleteAsync(id, ct); }
+            catch (PlanValidationException ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString(ex.Errors.First().Value));
+                return;
+            }
+            ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.OkQuery}=deleted");
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/tenant-backups/{id:int}/restore", async (
+            int id, HttpContext ctx, PerTenantBackupService backups, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            try
+            {
+                await backups.RestoreAsync(id, ct);
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.OkQuery}=restored");
+            }
+            catch (PlanValidationException ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString(ex.Errors.First().Value));
+            }
+            catch (Exception ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString("Restore failed: " + ex.Message));
+            }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
         app.MapPost("/site-admin/storage/{orgId:int}/quota", async (
             int orgId, HttpContext ctx, DatabaseUsageService usage, IAntiforgery antiforgery, CancellationToken ct) =>
         {

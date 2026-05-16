@@ -1,0 +1,158 @@
+@page "/site-admin/tenant-backups"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Services
+@inject PerTenantBackupService Backups
+
+<PageTitle>Site Admin · Tenant snapshots · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Site Admin · Tenant snapshots</h1>
+            <p class="muted">
+                Per-organisation logical snapshots. Use these to answer
+                "restore my org to yesterday" without disturbing any other
+                tenant. Scheduled snapshots run nightly for every non-system
+                org; ad-hoc ones land here too. Restore wipes the org's
+                content and replays the snapshot in a single transaction.
+            </p>
+        </div>
+        <a class="btn btn--sm" href="/admin">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to admin</span>
+        </a>
+    </header>
+
+    @if (!string.IsNullOrEmpty(Msg))
+    {
+        <p class="form-error" role="alert">@Msg</p>
+    }
+    @if (Ok == "created")
+    {
+        <p class="form-success" role="status">Snapshot created.</p>
+    }
+    else if (Ok == "restored")
+    {
+        <p class="form-success" role="status">Snapshot restored.</p>
+    }
+    else if (Ok == "deleted")
+    {
+        <p class="form-success" role="status">Snapshot deleted.</p>
+    }
+    else if (Ok == "pinned")
+    {
+        <p class="form-success" role="status">Snapshot pinned.</p>
+    }
+    else if (Ok == "unpinned")
+    {
+        <p class="form-success" role="status">Snapshot unpinned.</p>
+    }
+
+    @if (_rows is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_rows.Count == 0)
+    {
+        <p class="muted">
+            No per-tenant snapshots yet. The next scheduled run will create
+            one per non-system organisation.
+        </p>
+    }
+    else
+    {
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Organisation</th>
+                    <th>Snapshot</th>
+                    <th>Created (UTC)</th>
+                    <th class="data-table__num">Size</th>
+                    <th>Kind</th>
+                    <th>Schema</th>
+                    <th>Pinned</th>
+                    <th>By</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var r in _rows)
+            {
+                <tr>
+                    <td>@r.OrganizationName <div class="muted">@r.OrganizationSlug</div></td>
+                    <td><code>@r.FileName</code></td>
+                    <td class="muted">@r.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td class="data-table__num">@FormatBytes(r.FileSizeBytes)</td>
+                    <td>@r.Kind</td>
+                    <td>@(r.SchemaVersion == PerTenantBackupService.CurrentSchemaVersion ? "v" + r.SchemaVersion : $"v{r.SchemaVersion} (stale)")</td>
+                    <td>@(r.IsPinned ? "Yes" : "—")</td>
+                    <td class="muted">@(r.CreatedByEmail ?? "scheduled")</td>
+                    <td class="row-actions">
+                        <a class="btn btn--sm btn--icon" title="Download" aria-label="Download"
+                           href="@($"/site-admin/tenant-backups/{r.Id}/download")">
+                            <Icon Name="download" Width="14" Height="14" />
+                        </a>
+                        @if (r.IsPinned)
+                        {
+                            <form method="post" action="@($"/site-admin/tenant-backups/{r.Id}/unpin")" style="display:inline">
+                                <AntiforgeryToken />
+                                <button type="submit" class="btn btn--sm btn--icon" title="Unpin">
+                                    <Icon Name="pin-off" Width="14" Height="14" />
+                                </button>
+                            </form>
+                        }
+                        else
+                        {
+                            <form method="post" action="@($"/site-admin/tenant-backups/{r.Id}/pin")" style="display:inline">
+                                <AntiforgeryToken />
+                                <button type="submit" class="btn btn--sm btn--icon" title="Pin">
+                                    <Icon Name="pin" Width="14" Height="14" />
+                                </button>
+                            </form>
+                        }
+                        <form method="post" action="@($"/site-admin/tenant-backups/{r.Id}/restore")"
+                              onsubmit="return confirm('Restore this snapshot? The organisation\'s current data will be replaced.');"
+                              style="display:inline">
+                            <AntiforgeryToken />
+                            <button type="submit" class="btn btn--sm btn--danger">Restore</button>
+                        </form>
+                        @if (!r.IsPinned)
+                        {
+                            <form method="post" action="@($"/site-admin/tenant-backups/{r.Id}/delete")"
+                                  onsubmit="return confirm('Delete this snapshot? This cannot be undone.');"
+                                  style="display:inline">
+                                <AntiforgeryToken />
+                                <button type="submit" class="btn btn--sm btn--icon" title="Delete">
+                                    <Icon Name="trash-2" Width="14" Height="14" />
+                                </button>
+                            </form>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+    [SupplyParameterFromQuery(Name = "msg")] public string? Msg { get; set; }
+
+    private List<PerTenantBackupRow>? _rows;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _rows = await Backups.ListAsync(null, CancellationToken.None);
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        double v = bytes;
+        string[] units = ["KB", "MB", "GB", "TB"];
+        var i = -1;
+        do { v /= 1024; i++; } while (v >= 1024 && i < units.Length - 1);
+        return $"{v:0.#} {units[i]}";
+    }
+}

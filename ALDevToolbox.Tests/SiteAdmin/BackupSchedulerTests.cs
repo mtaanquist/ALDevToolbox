@@ -147,13 +147,16 @@ public sealed class BackupSchedulerTests : IDisposable
         var sp = new ServiceCollection().BuildServiceProvider();
         var scheduler = new BackupScheduler(sp, _clock, NullLogger<BackupScheduler>.Instance);
         await using var ctx = _db.NewContext();
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:DefaultConnection"] = ctx.Database.GetConnectionString(),
+        }).Build();
         var backups = new BackupService(
-            ctx, _db.OrgContext, _maintenance,
-            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["ConnectionStrings:DefaultConnection"] = ctx.Database.GetConnectionString(),
-            }).Build(),
+            ctx, _db.OrgContext, _maintenance, config,
             NullLogger<BackupService>.Instance, _clock);
-        await scheduler.TickOnceAsync(ctx, backups, CancellationToken.None);
+        var perTenant = new PerTenantBackupService(
+            ctx, _db.OrgContext, _db.NewQuotaGuard(ctx), config,
+            NullLogger<PerTenantBackupService>.Instance, _clock);
+        await scheduler.TickOnceAsync(ctx, backups, perTenant, CancellationToken.None);
     }
 }
