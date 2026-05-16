@@ -2949,25 +2949,33 @@ ul.form-field-error {
 .source-viewer__code {
     flex: 1 1 0;
     min-width: 0;
+    /* Clip cm-editor overflow so a long line doesn't paint into the
+       sticky outline column. CodeMirror's own cm-scroller handles
+       horizontal scrolling for over-wide lines. */
+    overflow: hidden;
 }
 
 .source-viewer__outline {
+    /* Sticky positioning element (no scroll, no resize). Splitting the
+       sticky outer from the overflow:auto inner sidesteps the Chromium
+       sticky-on-overflow fragility and lets z-index lift the column
+       above any cm-editor content that paints out of the code column. */
     flex: 0 0 auto;
+    align-self: flex-start;
+    position: sticky;
+    top: 12px;
+    z-index: 2;
+}
+
+.source-viewer__outline-inner {
+    /* The visible card: width + scroll + resize live here. resize
+       requires overflow!=visible, which we have via overflow:auto. */
     width: 340px;
     min-width: 280px;
     max-width: 720px;
     resize: horizontal;
-
-    /* Sticky pins the outline to .content's top edge so it stays visible
-       while the user reads down a long file. align-items:flex-start on
-       the parent keeps the outline at its natural height, leaving the
-       flex container (which is as tall as the code column) for sticky
-       to slide within. */
-    position: sticky;
-    top: 12px;
-    max-height: calc(100vh - var(--top-bar-height, 48px) - 24px);
+    max-height: calc(100vh - var(--top-bar-height, 52px) - 24px);
     overflow: auto;
-
     border: 1px solid var(--color-border-strong);
     border-radius: var(--radius);
     padding: 12px 14px;

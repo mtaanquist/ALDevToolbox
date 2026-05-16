@@ -60,7 +60,15 @@
                  data-declarations="@SerializeDeclarations(_declarations)"
                  data-resolvables="[]"></div>
 
+            @*
+                The sticky positioning lives on the outer .source-viewer__outline
+                aside. The inner .source-viewer__outline-inner takes the
+                overflow:auto so sticky and overflow don't fight on the same
+                element (a Chromium bug pattern that still bites with tall
+                flex siblings).
+            *@
             <aside class="source-viewer__outline">
+                <div class="source-viewer__outline-inner">
                 @{
                     var defaultTab = _session is not null ? "references" : "outline";
                 }
@@ -217,6 +225,7 @@
                 </div>
 
                 <p class="muted source-viewer__notice" role="status" hidden></p>
+                </div>
             </aside>
         </div>
 
