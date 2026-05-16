@@ -545,13 +545,20 @@ public static class AlReferenceExtractor
                     return;
                 }
 
+                // Members added by a tableextension/pageextension live
+                // on the extension object, not the base. The resolver
+                // signals that via member.DeclaringType; we stamp the
+                // reference's target at the declaration site so Find
+                // references on the extension's declaration row picks
+                // this call up.
+                var targetOwner = member.DeclaringType ?? receiverType;
                 _refs.Add(new ExtractedReference(
                     Line: memberTok.Line,
                     Column: memberTok.Column,
-                    TargetAppId: receiverType.AppId,
-                    TargetObjectKind: receiverType.Kind,
-                    TargetObjectId: receiverType.ObjectId,
-                    TargetObjectName: receiverType.Name,
+                    TargetAppId: targetOwner.AppId,
+                    TargetObjectKind: targetOwner.Kind,
+                    TargetObjectId: targetOwner.ObjectId,
+                    TargetObjectName: targetOwner.Name,
                     TargetMemberName: member.Name,
                     TargetMemberKind: member.Kind,
                     ReferenceKind: refKind));
@@ -744,12 +751,21 @@ public sealed record AlTypeRef(Guid AppId, string Kind, int? ObjectId, string Na
 /// A member resolved on an owner type. <see cref="ReturnTypeName"/> is
 /// populated for procedures whose declared return type maps to another
 /// AL object — used to advance the receiver type through chained calls.
+///
+/// <see cref="DeclaringType"/> is set when the member actually lives on
+/// a *different* object than the static receiver type — the common case
+/// is a tableextension adding a procedure or field to a base table. The
+/// resolver returns the base-table receiver but tags the member as
+/// declared by the extension; the extractor stamps the emitted
+/// reference's target as the extension so a Find references on the
+/// extension's declaration row finds the call.
 /// </summary>
 public sealed record AlMember(
     string Name,
     string Kind,
     string? ReturnTypeKeyword,
-    string? ReturnTypeName);
+    string? ReturnTypeName,
+    AlTypeRef? DeclaringType = null);
 
 /// <summary>
 /// One method-call or field-access reference the extractor recovered

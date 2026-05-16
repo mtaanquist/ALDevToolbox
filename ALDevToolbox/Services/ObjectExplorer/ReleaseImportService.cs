@@ -1003,12 +1003,15 @@ public class ReleaseImportService
             })
             .ToListAsync(ct);
         var typesByName = new Dictionary<string, ALDevToolbox.Services.Al.AlTypeRef>(StringComparer.OrdinalIgnoreCase);
+        var typesByObjectId = new Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef>();
         var objectIdByName = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         foreach (var t in typeRows)
         {
+            var typeRef = new ALDevToolbox.Services.Al.AlTypeRef(t.AppId, t.Kind, t.ObjectId, t.Name);
+            typesByObjectId[t.Id] = typeRef;
             if (!typesByName.ContainsKey(t.Name))
             {
-                typesByName[t.Name] = new ALDevToolbox.Services.Al.AlTypeRef(t.AppId, t.Kind, t.ObjectId, t.Name);
+                typesByName[t.Name] = typeRef;
                 objectIdByName[t.Name] = t.Id;
             }
         }
@@ -1066,10 +1069,62 @@ public class ReleaseImportService
             dict[v.Name] = new ALDevToolbox.Services.Al.ResolvedVariableType(v.TypeKeyword, v.TypeName);
         }
 
-        // (4) Resolver: closes over the in-memory catalogs.
-        var resolver = new CatalogResolver(typesByName, objectIdByName, membersByOwner);
+        // (4) Extensions-by-base index: for each tableextension /
+        // pageextension / etc., record the base object name it targets
+        // plus the extension's own AppId + ObjectId. The resolver
+        // consults this map when a member lookup misses on the base —
+        // a procedure added via CustomerExt should be findable as a
+        // method on Customer-typed receivers, subject to visibility.
+        var extRows = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId)
+            .Where(o => o.Kind == "tableextension"
+                     || o.Kind == "pageextension"
+                     || o.Kind == "reportextension"
+                     || o.Kind == "enumextension"
+                     || o.Kind == "permissionsetextension")
+            .Where(o => o.ExtendsObjectName != null)
+            .Select(o => new
+            {
+                o.Id,
+                ExtensionAppId = o.Module!.AppId,
+                BaseName = o.ExtendsObjectName!,
+            })
+            .ToListAsync(ct);
+        var extensionsByBaseName = new Dictionary<string, List<ExtensionEntry>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var e in extRows)
+        {
+            if (!extensionsByBaseName.TryGetValue(e.BaseName, out var list))
+            {
+                list = new List<ExtensionEntry>();
+                extensionsByBaseName[e.BaseName] = list;
+            }
+            list.Add(new ExtensionEntry(e.ExtensionAppId, e.Id));
+        }
 
-        // (5) Walk every source file. For each, find its owner object
+        // (5) Per-module visibility: which AppIds is each module
+        // allowed to reach via app.json dependencies (transitively).
+        // Object resolution and extension-member lookup both filter
+        // through this so a Base App file can't reach into DK Core,
+        // a third-party extension can't reach into an unrelated
+        // third-party extension, etc.
+        var moduleVisibility = await BuildModuleVisibilityAsync(releaseId, ct);
+
+        // (6) Per-module resolver cache. All files in the same module
+        // share the same visibility set, so build the resolver once
+        // and reuse across files.
+        var resolversByModule = new Dictionary<long, ALDevToolbox.Services.Al.IAlTypeResolver>();
+        ALDevToolbox.Services.Al.IAlTypeResolver ResolverFor(long moduleId)
+        {
+            if (resolversByModule.TryGetValue(moduleId, out var cached)) return cached;
+            moduleVisibility.TryGetValue(moduleId, out var visible);
+            var r = new CatalogResolver(
+                typesByName, typesByObjectId, objectIdByName,
+                membersByOwner, extensionsByBaseName, visible);
+            resolversByModule[moduleId] = r;
+            return r;
+        }
+
+        // (7) Walk every source file. For each, find its owner object
         // (the row in oe_module_objects whose source_file_id matches),
         // build the extract context, run the extractor, and emit
         // ModuleReference rows. Saved in chunks to keep tracker
@@ -1104,7 +1159,7 @@ public class ReleaseImportService
                 OwnerObjectId: file.Owner.ObjectId,
                 OwnerAppId: file.Owner.AppId,
                 GlobalVars: globals ?? new Dictionary<string, ALDevToolbox.Services.Al.ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
-                Resolver: resolver);
+                Resolver: ResolverFor(file.ModuleId));
 
             var result = ALDevToolbox.Services.Al.AlReferenceExtractor.Extract(file.Content, ctx);
             totalUnresolved += result.Stats.UnresolvedReceivers;
@@ -1193,46 +1248,185 @@ public class ReleaseImportService
         "ControlAddIn", "PermissionSet", "Profile",
     };
 
+    /// <summary>
+    /// For each module in the release, compute the transitive set of
+    /// AppIds it can legally reach via <c>app.json</c> dependencies
+    /// (plus the module's own AppId). The reference-extractor's
+    /// resolver consults this set so a file in DK Core can resolve
+    /// types from Base App (declared dep) but not from OIOUBL
+    /// (unrelated extension). Modules whose <c>DependenciesJson</c>
+    /// references AppIds outside this release land in the visibility
+    /// set anyway — cross-release receivers don't resolve in this
+    /// pass but the set correctly captures intent.
+    /// </summary>
+    private async Task<Dictionary<long, HashSet<Guid>>> BuildModuleVisibilityAsync(
+        int releaseId, CancellationToken ct)
+    {
+        var modules = await _db.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == releaseId)
+            .Select(m => new { m.Id, m.AppId, m.DependenciesJson })
+            .ToListAsync(ct);
+
+        // Each module's direct deps as parsed from DependenciesJson.
+        var directDepsByAppId = new Dictionary<Guid, HashSet<Guid>>();
+        foreach (var m in modules)
+        {
+            directDepsByAppId[m.AppId] = ParseDependencyAppIds(m.DependenciesJson);
+        }
+
+        // Transitive closure per module, including the module itself.
+        var result = new Dictionary<long, HashSet<Guid>>(modules.Count);
+        foreach (var m in modules)
+        {
+            var visible = new HashSet<Guid> { m.AppId };
+            WalkDeps(m.AppId, visible, directDepsByAppId);
+            result[m.Id] = visible;
+        }
+        return result;
+    }
+
+    private static void WalkDeps(
+        Guid current, HashSet<Guid> acc,
+        Dictionary<Guid, HashSet<Guid>> directDepsByAppId)
+    {
+        if (!directDepsByAppId.TryGetValue(current, out var deps)) return;
+        foreach (var dep in deps)
+        {
+            // Add returns false when already present — prevents infinite
+            // recursion on (degenerate) cyclic dependency declarations.
+            if (acc.Add(dep)) WalkDeps(dep, acc, directDepsByAppId);
+        }
+    }
+
+    private static HashSet<Guid> ParseDependencyAppIds(string json)
+    {
+        var set = new HashSet<Guid>();
+        if (string.IsNullOrEmpty(json) || json == "[]") return set;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array) return set;
+            foreach (var el in doc.RootElement.EnumerateArray())
+            {
+                if (el.TryGetProperty("id", out var idProp)
+                    && idProp.ValueKind == System.Text.Json.JsonValueKind.String
+                    && Guid.TryParse(idProp.GetString(), out var id))
+                {
+                    set.Add(id);
+                }
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Malformed dep JSON shouldn't kill the import — the module
+            // just won't contribute deps to its visibility set.
+        }
+        return set;
+    }
+
     private sealed record MemberEntry(
         long SymbolId, string Name, string Kind, string? ReturnTypeKeyword, string? ReturnTypeName);
 
+    private sealed record ExtensionEntry(Guid AppId, long ObjectId);
+
     /// <summary>
     /// IAlTypeResolver implementation backed by the in-memory catalogs
-    /// built once per release. Translates the extractor's
-    /// (typeName, ownerRef, memberName) lookups into dictionary hits.
+    /// built once per release. Dependency-aware: when constructed with
+    /// a non-null <c>visibleAppIds</c> set, type and member lookups
+    /// only return matches whose declaring module's AppId is in the
+    /// caller's visibility set (the transitive closure of the caller
+    /// module's app.json dependencies). When the visibility set is
+    /// null, the resolver is permissive — used by tests that don't
+    /// care about dependency direction.
+    ///
+    /// Member lookup also walks tableextensions / pageextensions
+    /// targeting the receiver's base type: a procedure added by
+    /// CustomerExt is callable as <c>Cust.MyMethod()</c> on a
+    /// Customer-typed variable. The returned AlMember tags
+    /// <see cref="ALDevToolbox.Services.Al.AlMember.DeclaringType"/>
+    /// with the extension so the extractor stamps the reference's
+    /// target at the extension (the actual declaration site), not the
+    /// base table. Extensions are also filtered by visibility — if the
+    /// caller's module doesn't depend on the extension's module, the
+    /// extension's members are invisible.
     /// </summary>
     private sealed class CatalogResolver : ALDevToolbox.Services.Al.IAlTypeResolver
     {
         private readonly Dictionary<string, ALDevToolbox.Services.Al.AlTypeRef> _types;
+        private readonly Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef> _typesByObjectId;
         private readonly Dictionary<string, long> _objectIdByName;
         private readonly Dictionary<long, List<MemberEntry>> _members;
+        private readonly Dictionary<string, List<ExtensionEntry>> _extensionsByBaseName;
+        private readonly HashSet<Guid>? _visibleAppIds;
 
         public CatalogResolver(
             Dictionary<string, ALDevToolbox.Services.Al.AlTypeRef> types,
+            Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef> typesByObjectId,
             Dictionary<string, long> objectIdByName,
-            Dictionary<long, List<MemberEntry>> members)
+            Dictionary<long, List<MemberEntry>> members,
+            Dictionary<string, List<ExtensionEntry>> extensionsByBaseName,
+            HashSet<Guid>? visibleAppIds)
         {
             _types = types;
+            _typesByObjectId = typesByObjectId;
             _objectIdByName = objectIdByName;
             _members = members;
+            _extensionsByBaseName = extensionsByBaseName;
+            _visibleAppIds = visibleAppIds;
         }
 
         public ALDevToolbox.Services.Al.AlTypeRef? ResolveTypeByName(string typeName)
-            => _types.TryGetValue(typeName, out var t) ? t : null;
+        {
+            if (!_types.TryGetValue(typeName, out var t)) return null;
+            if (!IsVisible(t.AppId)) return null;
+            return t;
+        }
 
         public ALDevToolbox.Services.Al.AlMember? ResolveMember(
             ALDevToolbox.Services.Al.AlTypeRef owner, string memberName)
         {
-            if (!_objectIdByName.TryGetValue(owner.Name, out var ownerId)) return null;
-            if (!_members.TryGetValue(ownerId, out var list)) return null;
-            var match = list.FirstOrDefault(m =>
-                string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
-            if (match is null) return null;
-            return new ALDevToolbox.Services.Al.AlMember(
-                Name: match.Name,
-                Kind: match.Kind,
-                ReturnTypeKeyword: match.ReturnTypeKeyword,
-                ReturnTypeName: match.ReturnTypeName);
+            // Owner's own members win — same-name members on extensions
+            // are shadowed by the base's own declaration (AL dispatch).
+            if (_objectIdByName.TryGetValue(owner.Name, out var ownerId)
+                && _members.TryGetValue(ownerId, out var ownerMembers))
+            {
+                var match = ownerMembers.FirstOrDefault(m =>
+                    string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
+                if (match is not null)
+                {
+                    return new ALDevToolbox.Services.Al.AlMember(
+                        Name: match.Name,
+                        Kind: match.Kind,
+                        ReturnTypeKeyword: match.ReturnTypeKeyword,
+                        ReturnTypeName: match.ReturnTypeName);
+                }
+            }
+
+            // Walk visible extensions of this base.
+            if (_extensionsByBaseName.TryGetValue(owner.Name, out var extensions))
+            {
+                foreach (var ext in extensions)
+                {
+                    if (!IsVisible(ext.AppId)) continue;
+                    if (!_members.TryGetValue(ext.ObjectId, out var extMembers)) continue;
+                    var match = extMembers.FirstOrDefault(m =>
+                        string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
+                    if (match is null) continue;
+
+                    _typesByObjectId.TryGetValue(ext.ObjectId, out var declaringType);
+                    return new ALDevToolbox.Services.Al.AlMember(
+                        Name: match.Name,
+                        Kind: match.Kind,
+                        ReturnTypeKeyword: match.ReturnTypeKeyword,
+                        ReturnTypeName: match.ReturnTypeName,
+                        DeclaringType: declaringType);
+                }
+            }
+
+            return null;
         }
+
+        private bool IsVisible(Guid appId) =>
+            _visibleAppIds is null || _visibleAppIds.Contains(appId);
     }
 }
