@@ -534,11 +534,22 @@ public static class AlReferenceExtractor
         /// type name) pair the rest of the extractor cares about.
         /// Bare system types like <c>HttpClient</c> come back with a
         /// null Keyword — those won't resolve to AL objects later.
+        ///
+        /// When the type has an AL object keyword and the name
+        /// resolves through the catalog, emits a <c>property_object</c>
+        /// reference at the name token so var/parameter type names
+        /// (e.g. <c>GLSetup: Record "General Ledger Setup"</c>) show
+        /// up as clickable / underlinable like other resolved spans.
+        /// The keyword is passed as a kind hint so collisions like
+        /// table-and-page-of-the-same-name resolve deterministically.
         /// </summary>
         private ResolvedVariableType ReadTypeReference()
         {
             string? keyword = null;
             string typeName = string.Empty;
+            int typeNameLine = 0;
+            int typeNameColumn = 0;
+            bool sawTypeName = false;
 
             if (_pos >= _tokens.Count) return new ResolvedVariableType(null, "");
 
@@ -556,6 +567,9 @@ public static class AlReferenceExtractor
                     if (t.Kind == AlTokenKind.Identifier || t.Kind == AlTokenKind.QuotedIdentifier)
                     {
                         typeName = t.Value;
+                        typeNameLine = t.Line;
+                        typeNameColumn = t.Column;
+                        sawTypeName = true;
                         _pos++;
                     }
                 }
@@ -564,6 +578,29 @@ public static class AlReferenceExtractor
             {
                 typeName = first.Value;
                 _pos++;
+            }
+
+            // Only emit when we have an explicit AL keyword. Bare
+            // identifier types (Integer, Boolean, custom variables in
+            // scope) aren't navigable AL objects and would either
+            // mis-resolve or pollute the underline.
+            if (keyword is not null && sawTypeName && !string.IsNullOrEmpty(typeName))
+            {
+                var target = _ctx.Resolver.ResolveTypeByName(typeName, keyword);
+                if (target is not null)
+                {
+                    _refs.Add(new ExtractedReference(
+                        Line: typeNameLine,
+                        Column: typeNameColumn,
+                        TargetAppId: target.AppId,
+                        TargetObjectKind: target.Kind,
+                        TargetObjectId: target.ObjectId,
+                        TargetObjectName: target.Name,
+                        TargetMemberName: null,
+                        TargetMemberKind: null,
+                        ReferenceKind: "property_object"));
+                    _resolved++;
+                }
             }
 
             // Length qualifier on a scalar (Code[20], Text[100]) —
@@ -1146,7 +1183,14 @@ public static class AlReferenceExtractor
                     if (nameTok.Kind == AlTokenKind.Identifier
                         || nameTok.Kind == AlTokenKind.QuotedIdentifier)
                     {
-                        var target = _ctx.Resolver.ResolveTypeByName(nameTok.Value);
+                        // "table" kind hint disambiguates table vs page name
+                        // collisions: a `tabledata "General Ledger Setup"`
+                        // entry always means the Table, but BC ships pages
+                        // with the same setup names. Without the hint the
+                        // resolver could pick the page (insertion order),
+                        // the post-filter would drop it, and the user gets
+                        // no underline.
+                        var target = _ctx.Resolver.ResolveTypeByName(nameTok.Value, "table");
                         if (target is not null
                             && string.Equals(target.Kind, "table", StringComparison.OrdinalIgnoreCase))
                         {

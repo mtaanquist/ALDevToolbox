@@ -111,7 +111,13 @@ public sealed class AlReferenceExtractorTests
             && r.TargetObjectName == "Sales Line"
             && r.TargetMemberName == "InitRecord"
             && r.TargetMemberKind == "procedure");
-        result.Stats.ResolvedReferences.Should().Be(1);
+        // Parameter type `Record "Sales Line"` also emits a property_object
+        // ref so the type name in the parameter list is underlined.
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "property_object"
+            && r.TargetObjectName == "Sales Line"
+            && r.TargetObjectKind == "table");
+        result.Stats.ResolvedReferences.Should().Be(2);
         result.Stats.UnresolvedReceivers.Should().Be(0);
     }
 
@@ -233,11 +239,14 @@ public sealed class AlReferenceExtractorTests
             """;
         var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
 
-        // Three references in total:
-        //   1. SalesHeader."Sell-to Customer No." → field on Sales Header
-        //   2. SalesHeader.Customer → field on Sales Header (record-typed)
-        //   3. Customer."No." → field on Customer (chained via Customer field)
-        result.References.Should().HaveCount(3);
+        // Four references in total:
+        //   1. SalesHeader: Record "Sales Header" → property_object on type name
+        //   2. SalesHeader."Sell-to Customer No." → field on Sales Header
+        //   3. SalesHeader.Customer → field on Sales Header (record-typed)
+        //   4. Customer."No." → field on Customer (chained via Customer field)
+        result.References.Should().HaveCount(4);
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "property_object" && r.TargetObjectName == "Sales Header");
         result.References.Should().Contain(r =>
             r.TargetObjectName == "Sales Header" && r.TargetMemberName == "Sell-to Customer No.");
         result.References.Should().Contain(r =>
@@ -400,7 +409,11 @@ public sealed class AlReferenceExtractorTests
             """;
         var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
 
-        result.References.Should().BeEmpty();
+        // Only the property_object on `Record Customer`'s type name; the
+        // SystemId field access is a built-in and emits nothing.
+        result.References.Should().ContainSingle();
+        result.References[0].ReferenceKind.Should().Be("property_object");
+        result.References[0].TargetObjectName.Should().Be("Customer");
         result.Stats.UnresolvedReceivers.Should().Be(0);
     }
 
@@ -541,7 +554,7 @@ public sealed class AlReferenceExtractorTests
             """;
         var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
 
-        var insertRef = result.References.Single();
+        var insertRef = result.References.Single(r => r.TargetMemberName == "Insert");
         insertRef.Line.Should().Be(5,
             because: "Insert sits on the fifth line of the snippet (1-based)");
         // The member name starts at column 10 (after "Cust." inside the indent).
@@ -768,6 +781,85 @@ public sealed class AlReferenceExtractorTests
         perms.Select(r => r.TargetObjectName)
             .Should().BeEquivalentTo(new[] { "Customer", "Sales Header" });
         perms.Should().AllSatisfy(r => r.TargetObjectKind.Should().Be("table"));
+    }
+
+    [Fact]
+    public void Var_block_record_type_name_emits_a_property_object_reference()
+    {
+        // `GLSetup: Record "General Ledger Setup";` — the user wants the
+        // type name underlined and clickable so Find references on the
+        // Record type name in a var/parameter declaration jumps to the
+        // table. Repro of the regression in BC's `Company-Initialize`
+        // codeunit where dozens of `Record "X Setup"` declarations had
+        // no underline.
+        var resolver = MakeResolver();
+        resolver.AddType("General Ledger Setup",
+            new AlTypeRef(BaseAppId, "table", 98, "General Ledger Setup"));
+        resolver.AddType("Workflow Setup",
+            new AlTypeRef(BaseAppId, "codeunit", 1500, "Workflow Setup"));
+
+        const string src = """
+            codeunit 2 "Company-Initialize"
+            {
+                trigger OnRun()
+                var
+                    GLSetup: Record "General Ledger Setup";
+                    WorkflowSetup: Codeunit "Workflow Setup";
+                    Window: Dialog;
+                begin
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        var props = result.References
+            .Where(r => r.ReferenceKind == "property_object")
+            .ToList();
+        props.Should().ContainSingle(r =>
+            r.TargetObjectName == "General Ledger Setup" && r.TargetObjectKind == "table");
+        props.Should().ContainSingle(r =>
+            r.TargetObjectName == "Workflow Setup" && r.TargetObjectKind == "codeunit");
+        // `Dialog` is a system type — no AL keyword, no resolved name, no emission.
+        props.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Parameter_record_type_name_emits_a_property_object_reference()
+    {
+        // Same emission shape as locals — `procedure Foo(Cust: Record Customer)`
+        // underlines `Customer`.
+        const string src = """
+            procedure Foo(SalesLine: Record "Sales Line")
+            begin
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "property_object"
+            && r.TargetObjectName == "Sales Line"
+            && r.TargetObjectKind == "table");
+    }
+
+    [Fact]
+    public void Var_block_bare_scalar_type_does_not_emit()
+    {
+        // `i: Integer;`, `f: Boolean;` — no AL object keyword, must not
+        // emit. (Stub resolver would refuse to resolve these anyway,
+        // but the keyword guard is what we're asserting.)
+        const string src = """
+            procedure Foo()
+            var
+                i: Integer;
+                f: Boolean;
+                s: Text[100];
+            begin
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Where(r => r.ReferenceKind == "property_object")
+            .Should().BeEmpty();
     }
 
     [Fact]
@@ -1649,9 +1741,13 @@ public sealed class AlReferenceExtractorTests
 
         // Both Cust.Insert() and Cust.Validate() must emit — the second
         // one only does if the procedure scope survived the case block.
-        result.References.Should().HaveCount(2);
-        result.References.Select(r => r.TargetMemberName)
+        // Plus a property_object on the `Record Customer` parameter type.
+        result.References.Should().HaveCount(3);
+        result.References.Where(r => r.ReferenceKind != "property_object")
+            .Select(r => r.TargetMemberName)
             .Should().BeEquivalentTo(new[] { "Insert", "Validate" });
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "property_object" && r.TargetObjectName == "Customer");
     }
 
     // ── Method-call arguments emit their own references ───────────
@@ -1937,11 +2033,14 @@ public sealed class AlReferenceExtractorTests
             """;
         var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
 
-        result.References.Should().HaveCount(2);
+        // Two member calls plus a property_object ref on `Record Customer`.
+        result.References.Should().HaveCount(3);
         result.References.Should().Contain(r =>
             r.TargetMemberName == "Insert" && r.TargetObjectName == "Customer");
         result.References.Should().Contain(r =>
             r.TargetMemberName == "DoStuff" && r.TargetObjectName == "MyHelper");
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "property_object" && r.TargetObjectName == "Customer");
     }
 
     [Fact]
@@ -1990,10 +2089,14 @@ public sealed class AlReferenceExtractorTests
         var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
 
         // The chain through the parameter Cust is what gets emitted; the
-        // same-named self procedure must not.
-        result.References.Should().ContainSingle();
-        result.References[0].TargetObjectName.Should().Be("Customer");
-        result.References[0].TargetMemberName.Should().Be("Insert");
+        // same-named self procedure must not. Plus a property_object on
+        // the `Record Customer` parameter type.
+        result.References.Should().HaveCount(2);
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Customer"
+            && r.TargetMemberName == "Insert");
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "property_object" && r.TargetObjectName == "Customer");
     }
 
     [Fact]

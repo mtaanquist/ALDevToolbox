@@ -162,6 +162,22 @@ public sealed class ReferenceSessionService
             return null;
         }
 
+        // Strategy 0: an extracted reference at this exact (file, line)
+        // already records what the token resolves to (kind + name).
+        // Use it before the name-only DB lookup so token-level
+        // disambiguation survives: a `Record "General Ledger Setup"`
+        // type name resolves to the Table even though a Page of the
+        // same name also exists in the release.
+        var precise = await ResolveExtractedReferenceAtAsync(
+            fileId, meta.ReleaseId, line, click.Word, ct);
+        if (precise is not null)
+        {
+            _logger.LogInformation(
+                "FindRefsAtPosition FileId={FileId} Word='{Word}' resolved-via=extracted-ref to ObjectId={ObjectId} Kind={Kind}.",
+                fileId, click.Word, precise.Id, precise.Kind);
+            return await CreateFromSymbolAsync(precise.Id, ownerKey, ct);
+        }
+
         // Strategy 1: direct object match (case-insensitive — AL is too).
         var objectMatch = await ResolveObjectByNameAsync(meta.ReleaseId, click.Word, ct);
         if (objectMatch is not null)
@@ -276,7 +292,55 @@ public sealed class ReferenceSessionService
             .FirstOrDefaultAsync(ct);
     }
 
-    private sealed record ObjectMatch(long Id);
+    private sealed record ObjectMatch(long Id, string? Kind = null);
+
+    /// <summary>
+    /// Strategy 0 of <see cref="CreateAtPositionAsync"/>: look up an
+    /// extracted reference recorded on this file at the clicked line
+    /// whose target name matches the clicked word, then resolve that
+    /// reference's <c>(TargetAppId, Kind, ObjectId | Name)</c> triplet
+    /// to a same-Release <c>OeModuleObject</c>.
+    ///
+    /// Beats the name-only fallback when a name collides across kinds
+    /// (Microsoft ships pages and tables with identical setup names —
+    /// "General Ledger Setup" exists as both a Table and a Page). The
+    /// extractor already disambiguated at import time using the AL
+    /// keyword context (<c>Record "X"</c> → table, <c>Page "X"</c> →
+    /// page), so consulting that decision is more accurate than
+    /// alphabetical kind sort.
+    /// </summary>
+    private async Task<ObjectMatch?> ResolveExtractedReferenceAtAsync(
+        long fileId, int releaseId, int line, string word, CancellationToken ct)
+    {
+        var loweredWord = word.ToLowerInvariant();
+        var refRow = await _db.OeModuleReferences.AsNoTracking()
+            .Where(r => r.SourceObject!.SourceFileId == fileId)
+            .Where(r => r.LineNumber == line)
+            .Where(r => r.TargetObjectName.ToLower() == loweredWord)
+            .Select(r => new
+            {
+                r.TargetAppId,
+                r.TargetObjectKind,
+                r.TargetObjectId,
+                r.TargetObjectName,
+            })
+            .FirstOrDefaultAsync(ct);
+        if (refRow is null) return null;
+
+        var loweredName = refRow.TargetObjectName.ToLowerInvariant();
+        var loweredKind = refRow.TargetObjectKind.ToLowerInvariant();
+        var query = _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId)
+            .Where(o => o.Kind.ToLower() == loweredKind)
+            .Where(o => o.Name.ToLower() == loweredName);
+        if (refRow.TargetObjectId is { } targetObjId)
+        {
+            query = query.Where(o => o.ObjectId == targetObjId);
+        }
+        return await query
+            .Select(o => new ObjectMatch(o.Id, o.Kind))
+            .FirstOrDefaultAsync(ct);
+    }
 
     /// <summary>
     /// Retrieves a previously minted session by token. Returns null when
