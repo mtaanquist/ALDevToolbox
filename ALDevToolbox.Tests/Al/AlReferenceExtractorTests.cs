@@ -1837,7 +1837,7 @@ public sealed class AlReferenceExtractorTests
             list.Add(extensionName);
         }
 
-        public AlTypeRef? ResolveTypeByName(string typeName) =>
+        public AlTypeRef? ResolveTypeByName(string typeName, string? expectedKeyword = null) =>
             _types.TryGetValue(typeName, out var t) ? t : null;
 
         public AlMember? ResolveMember(AlTypeRef owner, string memberName)

@@ -608,17 +608,16 @@ public static class AlReferenceExtractor
         {
             // We arrive with _tokens[_pos] = Kind identifier,
             // [_pos+1] = `::`, [_pos+2] = Name (quoted or bare).
+            var kindTok = _tokens[_pos];
             _pos++; // Kind
             _pos++; // ::
             var nameTok = _tokens[_pos];
             _pos++; // Name
 
-            // The Kind token isn't checked against IsAlObjectKeyword on
-            // purpose — the resolver is keyed by Name only, and the
-            // grammar lets `Codeunit::`, `Page::`, `Report::` etc. all
-            // through the same resolution path. If the resolver finds
-            // the name, we have a receiver; otherwise drop the chain.
-            var receiverType = _ctx.Resolver.ResolveTypeByName(nameTok.Value);
+            // Pass the kind keyword as a hint so name collisions across
+            // object kinds disambiguate cleanly — `Codeunit::"Foo"`
+            // should never resolve to a Table or Page named "Foo".
+            var receiverType = _ctx.Resolver.ResolveTypeByName(nameTok.Value, kindTok.Value);
             if (receiverType is null)
             {
                 _unresolved++;
@@ -1856,7 +1855,9 @@ public static class AlReferenceExtractor
             if (bottom is null) return null;
             if (!bottom.Vars.TryGetValue("rec", out var declared)) return null;
             if (string.IsNullOrEmpty(declared.TypeName)) return null;
-            _recTypeCache = _ctx.Resolver.ResolveTypeByName(declared.TypeName);
+            // Pass the keyword: Rec on a page is `Record` → must be a
+            // table (not a tableextension someone named the same way).
+            _recTypeCache = _ctx.Resolver.ResolveTypeByName(declared.TypeName, declared.Keyword);
             return _recTypeCache;
         }
 
@@ -1960,8 +1961,11 @@ public static class AlReferenceExtractor
                     // (Record Customer, Codeunit "Sales-Post") resolve
                     // to a type in the catalog. Variables typed with a
                     // bare identifier (HttpClient, JsonObject) don't.
+                    // Pass the keyword through as a kind hint — `Record`
+                    // means "table", `Codeunit` means "codeunit", etc.
+                    // Disambiguates name collisions across kinds.
                     if (string.IsNullOrEmpty(declared.TypeName)) return null;
-                    return _ctx.Resolver.ResolveTypeByName(declared.TypeName);
+                    return _ctx.Resolver.ResolveTypeByName(declared.TypeName, declared.Keyword);
                 }
             }
 
@@ -2101,8 +2105,16 @@ public interface IAlTypeResolver
     /// to its location in the type catalog. Returns null when the name
     /// doesn't match a known object — common for system types like
     /// <c>HttpClient</c> or <c>JsonObject</c>.
+    ///
+    /// <paramref name="expectedKeyword"/> is the AL type keyword the
+    /// caller has from context (<c>Record</c>, <c>Codeunit</c>,
+    /// <c>Page</c>, <c>Report</c>, …), or null when no kind hint is
+    /// available (e.g. bare identifier with no qualifying keyword).
+    /// Implementations use it to disambiguate name collisions: a page's
+    /// SourceTable named <c>Sales Header</c> resolves to the Table, not
+    /// to a TableExtension someone happened to give the same name.
     /// </summary>
-    AlTypeRef? ResolveTypeByName(string typeName);
+    AlTypeRef? ResolveTypeByName(string typeName, string? expectedKeyword = null);
 
     /// <summary>
     /// Resolves a member on a known owner. The owner is identified by
