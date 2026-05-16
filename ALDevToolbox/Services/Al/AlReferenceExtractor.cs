@@ -290,14 +290,14 @@ public static class AlReferenceExtractor
             // Tables, pages, table extensions and page extensions expose
             // implicit Rec / xRec self-references. The receiver type
             // differs by owner kind:
-            //   - table / tableextension → Rec is the table itself
-            //     (or the extended base table; same name for extensions
-            //     since AL flattens fields).
-            //   - page / pageextension → Rec is the page's SourceTable.
-            //     Without that, Rec.X looks for field X on the page,
-            //     which doesn't have fields. The importer denormalises
-            //     SourceTable onto the owner object so we can find it
-            //     here without a catalog lookup.
+            //   - table → Rec is the table itself.
+            //   - tableextension → Rec is the BASE TABLE (the extension
+            //     is conceptually merged into it at runtime). The
+            //     importer passes the base table's name through as
+            //     OwnerSourceTableName for the tableextension case.
+            //   - page / pageextension → Rec is the page's SourceTable
+            //     (extensions inherit it from their base page; the
+            //     importer propagates).
             //   - report / reportextension / xmlport / query / requestpage
             //     also expose Rec/xRec, but the source-table binding is
             //     more varied (per-dataitem); v1 keeps the owner-itself
@@ -305,8 +305,7 @@ public static class AlReferenceExtractor
             if (OwnerSupportsRecXRec())
             {
                 ResolvedVariableType selfType;
-                if ((string.Equals(_ctx.OwnerKind, "page", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(_ctx.OwnerKind, "pageextension", StringComparison.OrdinalIgnoreCase))
+                if (HasRecordBoundOwner(_ctx.OwnerKind)
                     && !string.IsNullOrEmpty(_ctx.OwnerSourceTableName))
                 {
                     selfType = new ResolvedVariableType("Record", _ctx.OwnerSourceTableName);
@@ -321,6 +320,21 @@ public static class AlReferenceExtractor
                 // FieldRef — not a record — so we don't add it here.
             }
             return frame;
+        }
+
+        /// <summary>
+        /// Owner kinds whose Rec is wired to a table (their own, or the
+        /// one they extend), so the resolver should bind Rec to the
+        /// referenced table rather than to the owner itself. For
+        /// tableextensions, this is what makes <c>Rec.AssistEdit()</c>
+        /// inside the extension find the base table's AssistEdit
+        /// procedure — without it, ResolveMember would look in the
+        /// extension's own members only.
+        /// </summary>
+        private static bool HasRecordBoundOwner(string? ownerKind)
+        {
+            var k = ownerKind?.ToLowerInvariant();
+            return k == "page" || k == "pageextension" || k == "tableextension";
         }
 
         private bool OwnerSupportsRecXRec()
@@ -608,17 +622,16 @@ public static class AlReferenceExtractor
         {
             // We arrive with _tokens[_pos] = Kind identifier,
             // [_pos+1] = `::`, [_pos+2] = Name (quoted or bare).
+            var kindTok = _tokens[_pos];
             _pos++; // Kind
             _pos++; // ::
             var nameTok = _tokens[_pos];
             _pos++; // Name
 
-            // The Kind token isn't checked against IsAlObjectKeyword on
-            // purpose — the resolver is keyed by Name only, and the
-            // grammar lets `Codeunit::`, `Page::`, `Report::` etc. all
-            // through the same resolution path. If the resolver finds
-            // the name, we have a receiver; otherwise drop the chain.
-            var receiverType = _ctx.Resolver.ResolveTypeByName(nameTok.Value);
+            // Pass the kind keyword as a hint so name collisions across
+            // object kinds disambiguate cleanly — `Codeunit::"Foo"`
+            // should never resolve to a Table or Page named "Foo".
+            var receiverType = _ctx.Resolver.ResolveTypeByName(nameTok.Value, kindTok.Value);
             if (receiverType is null)
             {
                 _unresolved++;
@@ -815,7 +828,13 @@ public static class AlReferenceExtractor
             if (_ownerTypeResolved) return _ownerTypeCache;
             _ownerTypeResolved = true;
             if (string.IsNullOrEmpty(_ctx.OwnerName)) return null;
-            _ownerTypeCache = _ctx.Resolver.ResolveTypeByName(_ctx.OwnerName);
+            // Pass the owner's catalog kind as the hint so bare self-calls
+            // on a pageextension named the same as its base page (or any
+            // similarly-named extension over its base) land on the
+            // extension's own members, not on the base object's. Without
+            // the hint, the resolver's non-extension preference would
+            // pick the base, which is the wrong receiver for self-calls.
+            _ownerTypeCache = _ctx.Resolver.ResolveTypeByName(_ctx.OwnerName, _ctx.OwnerKind);
             return _ownerTypeCache;
         }
 
@@ -1856,7 +1875,9 @@ public static class AlReferenceExtractor
             if (bottom is null) return null;
             if (!bottom.Vars.TryGetValue("rec", out var declared)) return null;
             if (string.IsNullOrEmpty(declared.TypeName)) return null;
-            _recTypeCache = _ctx.Resolver.ResolveTypeByName(declared.TypeName);
+            // Pass the keyword: Rec on a page is `Record` → must be a
+            // table (not a tableextension someone named the same way).
+            _recTypeCache = _ctx.Resolver.ResolveTypeByName(declared.TypeName, declared.Keyword);
             return _recTypeCache;
         }
 
@@ -1960,8 +1981,11 @@ public static class AlReferenceExtractor
                     // (Record Customer, Codeunit "Sales-Post") resolve
                     // to a type in the catalog. Variables typed with a
                     // bare identifier (HttpClient, JsonObject) don't.
+                    // Pass the keyword through as a kind hint — `Record`
+                    // means "table", `Codeunit` means "codeunit", etc.
+                    // Disambiguates name collisions across kinds.
                     if (string.IsNullOrEmpty(declared.TypeName)) return null;
-                    return _ctx.Resolver.ResolveTypeByName(declared.TypeName);
+                    return _ctx.Resolver.ResolveTypeByName(declared.TypeName, declared.Keyword);
                 }
             }
 
@@ -2101,8 +2125,16 @@ public interface IAlTypeResolver
     /// to its location in the type catalog. Returns null when the name
     /// doesn't match a known object — common for system types like
     /// <c>HttpClient</c> or <c>JsonObject</c>.
+    ///
+    /// <paramref name="expectedKeyword"/> is the AL type keyword the
+    /// caller has from context (<c>Record</c>, <c>Codeunit</c>,
+    /// <c>Page</c>, <c>Report</c>, …), or null when no kind hint is
+    /// available (e.g. bare identifier with no qualifying keyword).
+    /// Implementations use it to disambiguate name collisions: a page's
+    /// SourceTable named <c>Sales Header</c> resolves to the Table, not
+    /// to a TableExtension someone happened to give the same name.
     /// </summary>
-    AlTypeRef? ResolveTypeByName(string typeName);
+    AlTypeRef? ResolveTypeByName(string typeName, string? expectedKeyword = null);
 
     /// <summary>
     /// Resolves a member on a known owner. The owner is identified by

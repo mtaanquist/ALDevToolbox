@@ -1148,8 +1148,17 @@ public class ReleaseImportService
 
         // (1) Build the type catalog: every object in this release keyed
         // by name (case-insensitive). Multiple objects can share a name
-        // across object kinds (rare but legal — a Table and a Codeunit
-        // both named "X"). Picking the first by Kind keeps it stable.
+        // across kinds and modules — e.g. Microsoft's Subscription
+        // Billing app declares a tableextension named "Sales Header"
+        // alongside the actual Sales Header table in Base Application.
+        // We store every candidate per name; the resolver chooses by
+        // visibility + non-extension preference at lookup time.
+        //
+        // Identity-keyed object-id lookup lets the post-extraction
+        // TargetSymbolId stamp (and the resolver's member lookup) find
+        // the right oe_module_objects row even when multiple objects
+        // share a name. The composite key (AppId, Kind, Name) is the
+        // catalog's canonical identity.
         var typeRows = await _db.OeModuleObjects.AsNoTracking()
             .Where(o => o.Module!.ReleaseId == releaseId)
             .Select(o => new
@@ -1161,18 +1170,21 @@ public class ReleaseImportService
                 AppId = o.Module!.AppId,
             })
             .ToListAsync(ct);
-        var typesByName = new Dictionary<string, ALDevToolbox.Services.Al.AlTypeRef>(StringComparer.OrdinalIgnoreCase);
+        var typesByName = new Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>>(StringComparer.OrdinalIgnoreCase);
         var typesByObjectId = new Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef>();
-        var objectIdByName = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        var objectIdByIdentity = new Dictionary<(Guid AppId, string Kind, string Name), long>(
+            new ObjectIdentityComparer());
         foreach (var t in typeRows)
         {
             var typeRef = new ALDevToolbox.Services.Al.AlTypeRef(t.AppId, t.Kind, t.ObjectId, t.Name);
             typesByObjectId[t.Id] = typeRef;
-            if (!typesByName.ContainsKey(t.Name))
+            if (!typesByName.TryGetValue(t.Name, out var list))
             {
-                typesByName[t.Name] = typeRef;
-                objectIdByName[t.Name] = t.Id;
+                list = new List<ALDevToolbox.Services.Al.AlTypeRef>();
+                typesByName[t.Name] = list;
             }
+            list.Add(typeRef);
+            objectIdByIdentity[(t.AppId, t.Kind, t.Name)] = t.Id;
         }
 
         // (2) Member catalog: for each owner Id, list its symbols.
@@ -1277,7 +1289,7 @@ public class ReleaseImportService
             if (resolversByModule.TryGetValue(moduleId, out var cached)) return cached;
             moduleVisibility.TryGetValue(moduleId, out var visible);
             var r = new CatalogResolver(
-                typesByName, typesByObjectId, objectIdByName,
+                typesByName, typesByObjectId, objectIdByIdentity,
                 membersByOwner, extensionsByBaseName, visible);
             resolversByModule[moduleId] = r;
             return r;
@@ -1298,7 +1310,16 @@ public class ReleaseImportService
                 Owner = _db.OeModuleObjects
                     .Where(o => o.SourceFileId == f.Id)
                     .OrderBy(o => o.Id)
-                    .Select(o => new { o.Id, o.Kind, o.Name, o.ObjectId, AppId = o.Module!.AppId, o.SourceTableName })
+                    .Select(o => new
+                    {
+                        o.Id,
+                        o.Kind,
+                        o.Name,
+                        o.ObjectId,
+                        AppId = o.Module!.AppId,
+                        o.SourceTableName,
+                        o.ExtendsObjectName,
+                    })
                     .FirstOrDefault(),
             })
             .ToListAsync(ct);
@@ -1312,6 +1333,19 @@ public class ReleaseImportService
             if (file.Owner is null || string.IsNullOrEmpty(file.Content)) continue;
 
             globalsByOwner.TryGetValue(file.Owner.Id, out var globals);
+            // For tableextensions, Rec is semantically the BASE TABLE
+            // (the extension's columns are merged into the base at
+            // runtime). The base table's name lives in ExtendsObjectName
+            // — we feed it through OwnerSourceTableName so BuildGlobalScope
+            // wires Rec to (Record, base table). ResolveMember on the
+            // base table then walks base → visible extensions, which
+            // covers all three cases (base-declared, this-extension-
+            // declared, sibling-extension-declared).
+            var sourceTable = file.Owner.SourceTableName;
+            if (string.IsNullOrEmpty(sourceTable) && file.Owner.Kind == "tableextension")
+            {
+                sourceTable = file.Owner.ExtendsObjectName;
+            }
             var ctx = new ALDevToolbox.Services.Al.AlExtractContext(
                 OwnerKind: file.Owner.Kind,
                 OwnerName: file.Owner.Name,
@@ -1319,7 +1353,7 @@ public class ReleaseImportService
                 OwnerAppId: file.Owner.AppId,
                 GlobalVars: globals ?? new Dictionary<string, ALDevToolbox.Services.Al.ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
                 Resolver: ResolverFor(file.ModuleId),
-                OwnerSourceTableName: file.Owner.SourceTableName);
+                OwnerSourceTableName: sourceTable);
 
             var result = ALDevToolbox.Services.Al.AlReferenceExtractor.Extract(file.Content, ctx);
             totalUnresolved += result.Stats.UnresolvedReceivers;
@@ -1327,7 +1361,14 @@ public class ReleaseImportService
             foreach (var r in result.References)
             {
                 long? targetSymbolId = null;
-                if (objectIdByName.TryGetValue(r.TargetObjectName, out var ownerId)
+                // Identity-keyed lookup so a tableextension named the
+                // same as the table it extends doesn't claim the table's
+                // symbols at TargetSymbolId stamp time. The reference row
+                // carries TargetAppId + TargetObjectKind + TargetObjectName
+                // — that's exactly the catalog's canonical identity.
+                if (objectIdByIdentity.TryGetValue(
+                        (r.TargetAppId, r.TargetObjectKind, r.TargetObjectName),
+                        out var ownerId)
                     && membersByOwner.TryGetValue(ownerId, out var memberList))
                 {
                     targetSymbolId = memberList.FirstOrDefault(m =>
@@ -1490,6 +1531,28 @@ public class ReleaseImportService
     private sealed record ExtensionEntry(Guid AppId, long ObjectId);
 
     /// <summary>
+    /// Composite-key comparer for object-identity lookups
+    /// <c>(AppId, Kind, Name)</c>. Kind and Name use ordinal-ignore-case
+    /// (AL identifiers are case-insensitive); AppId is a Guid with its
+    /// own structural equality. Storing identity rather than name alone
+    /// disambiguates name collisions across kinds / modules — a Table
+    /// and a TableExtension can both be named "Sales Header".
+    /// </summary>
+    private sealed class ObjectIdentityComparer : IEqualityComparer<(Guid AppId, string Kind, string Name)>
+    {
+        public bool Equals((Guid AppId, string Kind, string Name) x, (Guid AppId, string Kind, string Name) y) =>
+            x.AppId == y.AppId
+            && string.Equals(x.Kind, y.Kind, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.Name, y.Name, StringComparison.OrdinalIgnoreCase);
+
+        public int GetHashCode((Guid AppId, string Kind, string Name) obj) =>
+            HashCode.Combine(
+                obj.AppId,
+                obj.Kind.ToLowerInvariant(),
+                obj.Name.ToLowerInvariant());
+    }
+
+    /// <summary>
     /// IAlTypeResolver implementation backed by the in-memory catalogs
     /// built once per release. Dependency-aware: when constructed with
     /// a non-null <c>visibleAppIds</c> set, type and member lookups
@@ -1512,34 +1575,90 @@ public class ReleaseImportService
     /// </summary>
     private sealed class CatalogResolver : ALDevToolbox.Services.Al.IAlTypeResolver
     {
-        private readonly Dictionary<string, ALDevToolbox.Services.Al.AlTypeRef> _types;
+        private readonly Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>> _typesByName;
         private readonly Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef> _typesByObjectId;
-        private readonly Dictionary<string, long> _objectIdByName;
+        private readonly Dictionary<(Guid AppId, string Kind, string Name), long> _objectIdByIdentity;
         private readonly Dictionary<long, List<MemberEntry>> _members;
         private readonly Dictionary<string, List<ExtensionEntry>> _extensionsByBaseName;
         private readonly HashSet<Guid>? _visibleAppIds;
 
         public CatalogResolver(
-            Dictionary<string, ALDevToolbox.Services.Al.AlTypeRef> types,
+            Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>> typesByName,
             Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef> typesByObjectId,
-            Dictionary<string, long> objectIdByName,
+            Dictionary<(Guid AppId, string Kind, string Name), long> objectIdByIdentity,
             Dictionary<long, List<MemberEntry>> members,
             Dictionary<string, List<ExtensionEntry>> extensionsByBaseName,
             HashSet<Guid>? visibleAppIds)
         {
-            _types = types;
+            _typesByName = typesByName;
             _typesByObjectId = typesByObjectId;
-            _objectIdByName = objectIdByName;
+            _objectIdByIdentity = objectIdByIdentity;
             _members = members;
             _extensionsByBaseName = extensionsByBaseName;
             _visibleAppIds = visibleAppIds;
         }
 
-        public ALDevToolbox.Services.Al.AlTypeRef? ResolveTypeByName(string typeName)
+        /// <summary>
+        /// Resolves a name to a single AlTypeRef. When multiple objects
+        /// share the name (e.g. a Table and a TableExtension both named
+        /// "Sales Header" — Microsoft's Subscription Billing app does
+        /// this against Base Application's Sales Header), preference is:
+        /// <list type="number">
+        ///   <item>Visible (the caller's module can see the declaring
+        ///         AppId via app.json dependencies).</item>
+        ///   <item>Kind matches the caller's hint (<paramref name="expectedKeyword"/>).
+        ///         A page's <c>SourceTable = "Sales Header"</c> arrives
+        ///         here with keyword <c>Record</c> — a TableExtension
+        ///         named "Sales Header" can't be a page's source table,
+        ///         only the base Table can.</item>
+        ///   <item>Otherwise, a non-extension kind beats an extension
+        ///         kind. Typed-literal references in AL almost always
+        ///         mean the base object.</item>
+        /// </list>
+        /// </summary>
+        public ALDevToolbox.Services.Al.AlTypeRef? ResolveTypeByName(string typeName, string? expectedKeyword = null)
         {
-            if (!_types.TryGetValue(typeName, out var t)) return null;
-            if (!IsVisible(t.AppId)) return null;
-            return t;
+            if (!_typesByName.TryGetValue(typeName, out var candidates)) return null;
+            var expectedKind = MapKeywordToKind(expectedKeyword);
+            ALDevToolbox.Services.Al.AlTypeRef? best = null;
+            foreach (var t in candidates)
+            {
+                if (!IsVisible(t.AppId)) continue;
+                // With a kind hint, exact match wins outright — return
+                // the first exact-kind visible candidate.
+                if (expectedKind is not null
+                    && string.Equals(t.Kind, expectedKind, StringComparison.OrdinalIgnoreCase))
+                {
+                    return t;
+                }
+                if (best is null) { best = t; continue; }
+                if (IsExtensionKind(best.Kind) && !IsExtensionKind(t.Kind))
+                {
+                    best = t;
+                }
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// Maps the caller's kind hint to a catalog kind. Accepts both
+        /// AL type keywords (<c>Record</c>, <c>Codeunit</c>, <c>Page</c>, …)
+        /// and catalog kind values (<c>table</c>, <c>codeunit</c>,
+        /// <c>pageextension</c>, …) — the latter for cases like
+        /// <c>OwnerType()</c> in the extractor where we already have the
+        /// owner's catalog kind and want bare self-calls on a
+        /// pageextension named the same as its base page to land on the
+        /// extension, not on the base.
+        /// <c>Record</c> is the only keyword that doesn't passthrough —
+        /// it maps to <c>table</c>. The rest are identical except for
+        /// casing.
+        /// </summary>
+        private static string? MapKeywordToKind(string? keyword)
+        {
+            if (string.IsNullOrEmpty(keyword)) return null;
+            var lower = keyword.ToLowerInvariant();
+            if (lower == "record") return "table";
+            return lower;
         }
 
         public ALDevToolbox.Services.Al.AlMember? ResolveMember(
@@ -1547,7 +1666,10 @@ public class ReleaseImportService
         {
             // Owner's own members win — same-name members on extensions
             // are shadowed by the base's own declaration (AL dispatch).
-            if (_objectIdByName.TryGetValue(owner.Name, out var ownerId)
+            // Use the composite identity key so a same-named extension
+            // doesn't get confused with the base when looking up the
+            // owner's DB id.
+            if (_objectIdByIdentity.TryGetValue((owner.AppId, owner.Kind, owner.Name), out var ownerId)
                 && _members.TryGetValue(ownerId, out var ownerMembers))
             {
                 var match = ownerMembers.FirstOrDefault(m =>
@@ -1588,5 +1710,8 @@ public class ReleaseImportService
 
         private bool IsVisible(Guid appId) =>
             _visibleAppIds is null || _visibleAppIds.Contains(appId);
+
+        private static bool IsExtensionKind(string kind) =>
+            kind.EndsWith("extension", StringComparison.OrdinalIgnoreCase);
     }
 }
