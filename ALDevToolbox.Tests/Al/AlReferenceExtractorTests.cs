@@ -355,6 +355,91 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Typed_literal_receiver_resolves_kind_colon_colon_name()
+    {
+        // `Codeunit::"Sales-Post".Run(SalesHeader)` — the receiver is
+        // a Kind::"Name" type literal, not a variable. Extremely common
+        // BC pattern; should resolve to the Sales-Post codeunit and
+        // emit a method_call reference for Run.
+        const string src = """
+            procedure Foo()
+            var
+                SalesHeader: Record "Sales Header";
+            begin
+                Codeunit::"Sales-Post".Run(SalesHeader);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Sales-Post"
+            && r.TargetMemberName == "Run");
+    }
+
+    [Fact]
+    public void Typed_literal_with_unknown_name_drops_chain_as_unresolved()
+    {
+        // `Codeunit::"Unknown Helper".DoX()` — the literal name doesn't
+        // resolve to any object in the catalog; chain drops without
+        // false positives.
+        const string src = """
+            procedure Foo()
+            begin
+                Codeunit::"Unknown Helper".DoX();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().BeEmpty();
+        result.Stats.UnresolvedReceivers.Should().Be(1);
+    }
+
+    [Fact]
+    public void Generic_typed_var_does_not_swallow_the_next_declaration()
+    {
+        // `Dictionary of [Text, Integer]` parsed naively eats the `of`
+        // as the next variable name, breaks looking for `:`, then
+        // skips to the next `;` — silently dropping the var declared
+        // right after. ReadTypeReference now consumes `of [...]` so
+        // every subsequent declaration in the var block parses cleanly.
+        const string src = """
+            procedure Foo()
+            var
+                Lookup: Dictionary of [Text, Integer];
+                Cust: Record Customer;
+            begin
+                Cust.Insert();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        // Cust IS in scope after the Dictionary declaration; its
+        // .Insert resolves to Customer because the test fixture has
+        // Customer.Insert in the user-declared catalog.
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Customer" && r.TargetMemberName == "Insert");
+    }
+
+    [Fact]
+    public void List_typed_var_with_generic_parameter_parses_cleanly()
+    {
+        const string src = """
+            procedure Foo()
+            var
+                Names: List of [Text];
+                Cust: Record Customer;
+            begin
+                Cust.Validate();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Customer" && r.TargetMemberName == "Validate");
+    }
+
+    [Fact]
     public void Reference_carries_source_line_and_column_of_the_member()
     {
         const string src = """

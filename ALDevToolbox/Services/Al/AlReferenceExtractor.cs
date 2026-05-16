@@ -116,16 +116,30 @@ public static class AlReferenceExtractor
                     continue;
                 }
 
-                // Member-access chain candidate. Strict shape: an identifier
-                // (or quoted identifier) followed by a `.` token. Anything
-                // else just gets advanced past.
-                if ((tok.Kind == AlTokenKind.Identifier || tok.Kind == AlTokenKind.QuotedIdentifier)
-                    && _pos + 1 < _tokens.Count
-                    && _tokens[_pos + 1].Kind == AlTokenKind.Punct
-                    && _tokens[_pos + 1].Value == ".")
+                // Member-access chain candidates. Two shapes trigger:
+                //   A. Identifier `.` Member …
+                //   B. Identifier `::` QuotedIdentifier (or Identifier)
+                //      `.` Member …  — the typed-literal head pattern
+                //      `Codeunit::"Sales-Post".Run(SalesHeader)` etc.
+                // Anything else just advances past.
+                if (tok.Kind == AlTokenKind.Identifier || tok.Kind == AlTokenKind.QuotedIdentifier)
                 {
-                    TryConsumeMemberChain();
-                    continue;
+                    if (_pos + 1 < _tokens.Count
+                        && _tokens[_pos + 1].Kind == AlTokenKind.Punct
+                        && _tokens[_pos + 1].Value == ".")
+                    {
+                        TryConsumeMemberChain();
+                        continue;
+                    }
+
+                    if (_pos + 2 < _tokens.Count
+                        && _tokens[_pos + 1].Kind == AlTokenKind.DoubleColon
+                        && (_tokens[_pos + 2].Kind == AlTokenKind.Identifier
+                            || _tokens[_pos + 2].Kind == AlTokenKind.QuotedIdentifier))
+                    {
+                        TryConsumeTypedLiteralChain();
+                        continue;
+                    }
                 }
 
                 _pos++;
@@ -392,6 +406,29 @@ public static class AlReferenceExtractor
                 if (At("]")) _pos++;
             }
 
+            // Generic type parameters: `of [Type, Type, …]` on List /
+            // Dictionary / built-in generic shapes. The contents don't
+            // resolve to AL objects so the extractor never reads them,
+            // but if we don't consume the `of [...]` tail here, the
+            // var-block parser walks back into it and treats `of` as
+            // the next variable name — which silently drops the
+            // variable declared AFTER the generic-typed one. Bracket
+            // depth tracking so `[Code[20], Integer]` nests cleanly.
+            if (IsIdentifierTok(_pos, "of"))
+            {
+                _pos++; // of
+                if (At("["))
+                {
+                    int depth = 0;
+                    do
+                    {
+                        if (At("[")) depth++;
+                        else if (At("]")) depth--;
+                        _pos++;
+                    } while (_pos < _tokens.Count && depth > 0);
+                }
+            }
+
             return new ResolvedVariableType(keyword, typeName);
         }
 
@@ -409,13 +446,10 @@ public static class AlReferenceExtractor
             var head = _tokens[_pos];
             _pos++;
 
-            // Resolve the head to a type (a starting receiver). Three
-            // shapes work:
+            // Resolve the head to a type (a starting receiver). Two shapes:
             //   1. head matches a variable in any enclosing scope frame.
             //   2. head matches an object name in the type catalog (the
             //      `Customer.Insert(true)` pattern).
-            //   3. head is the start of `Codeunit::"Name"` typed
-            //      reference — handled separately below.
             // Anything else: this chain doesn't yield references.
             var receiverType = ResolveHeadType(head);
             if (receiverType is null)
@@ -425,12 +459,58 @@ public static class AlReferenceExtractor
                 return;
             }
 
-            // Walk `.member.member…`.
-            while (_pos < _tokens.Count && At("."))
+            WalkMemberChain(receiverType);
+        }
+
+        /// <summary>
+        /// Reads a typed-literal head <c>Kind::"Name"</c> followed by
+        /// <c>.member.member…</c>. The dominant BC pattern this catches:
+        /// <c>Codeunit::"Sales-Post".Run(SalesHeader)</c>,
+        /// <c>Page::"Customer Card".RunModal()</c>,
+        /// <c>Report::"Customer - List".Run()</c>.
+        /// </summary>
+        private void TryConsumeTypedLiteralChain()
+        {
+            // We arrive with _tokens[_pos] = Kind identifier,
+            // [_pos+1] = `::`, [_pos+2] = Name (quoted or bare).
+            _pos++; // Kind
+            _pos++; // ::
+            var nameTok = _tokens[_pos];
+            _pos++; // Name
+
+            // The Kind token isn't checked against IsAlObjectKeyword on
+            // purpose — the resolver is keyed by Name only, and the
+            // grammar lets `Codeunit::`, `Page::`, `Report::` etc. all
+            // through the same resolution path. If the resolver finds
+            // the name, we have a receiver; otherwise drop the chain.
+            var receiverType = _ctx.Resolver.ResolveTypeByName(nameTok.Value);
+            if (receiverType is null)
             {
-                var dotLine = _tokens[_pos].Line;
-                var dotCol = _tokens[_pos].Column;
-                _pos++;
+                _unresolved++;
+                AdvancePastChain();
+                return;
+            }
+
+            // Now walk `.member.member…` from the typed receiver.
+            // A bare `Codeunit::"Sales-Post"` with no following `.` is
+            // a typed value (e.g. passed as a parameter). No reference
+            // to emit — we still consumed the head.
+            WalkMemberChain(receiverType);
+        }
+
+        /// <summary>
+        /// Walks the <c>.member.member…</c> tail of a chain after the
+        /// head has been resolved to a receiver type. Emits one
+        /// reference per step we resolve and advances the receiver to
+        /// the member's return / declared type so chained access
+        /// continues. Skips over method-call argument lists so they
+        /// don't get misread as chain continuations.
+        /// </summary>
+        private void WalkMemberChain(AlTypeRef? receiverType)
+        {
+            while (receiverType is not null && _pos < _tokens.Count && At("."))
+            {
+                _pos++; // .
 
                 if (_pos >= _tokens.Count) break;
                 var memberTok = _tokens[_pos];
@@ -489,8 +569,6 @@ public static class AlReferenceExtractor
                 // chain. The args themselves get walked by the main
                 // loop later — they aren't lost.
                 if (followedByParen) SkipBalancedParens();
-
-                if (receiverType is null) break;
             }
         }
 
