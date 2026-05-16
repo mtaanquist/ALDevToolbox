@@ -62,5 +62,21 @@ public class SystemSettings
     /// </summary>
     public int BackupRetentionCount { get; set; } = 14;
 
+    /// <summary>
+    /// Default storage quota (in megabytes) applied to organisations that
+    /// have no per-org override. Null means unlimited. The
+    /// <c>StorageQuotaGuard</c> hard-blocks tenant writes once the
+    /// organisation's billable usage reaches the effective quota.
+    /// </summary>
+    public int? DefaultStorageQuotaMb { get; set; }
+
+    /// <summary>
+    /// Weight applied to per-org index/metadata bytes when computing the
+    /// billable size for quota checks: <c>billable = logical + multiplier *
+    /// index</c>. Lets operators charge primarily for logical data while
+    /// still soft-accounting for index/metadata overhead. Default 0.5.
+    /// </summary>
+    public decimal IndexSizeMultiplier { get; set; } = 0.5m;
+
     public DateTime UpdatedAt { get; set; }
 }

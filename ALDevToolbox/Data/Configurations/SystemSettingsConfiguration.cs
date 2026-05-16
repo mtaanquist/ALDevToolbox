@@ -24,6 +24,9 @@ internal sealed class SystemSettingsConfiguration : IEntityTypeConfiguration<Sys
         entity.Property(e => e.BackupScheduleTimeUtc).HasColumnName("backup_schedule_time_utc")
             .HasColumnType("time without time zone").IsRequired();
         entity.Property(e => e.BackupRetentionCount).HasColumnName("backup_retention_count").IsRequired();
+        entity.Property(e => e.DefaultStorageQuotaMb).HasColumnName("default_storage_quota_mb");
+        entity.Property(e => e.IndexSizeMultiplier).HasColumnName("index_size_multiplier")
+            .HasColumnType("numeric(6,3)").IsRequired();
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         // Cross-org table: no organization_id and no scoping query filter;
         // SiteAdminService gates mutations.

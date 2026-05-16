@@ -36,5 +36,13 @@ public class Organization
     /// </summary>
     public bool IsSystem { get; set; }
 
+    /// <summary>
+    /// Per-organisation override of the storage quota in megabytes. Null
+    /// means "fall back to <see cref="SystemSettings.DefaultStorageQuotaMb"/>";
+    /// if both are null the organisation has no quota (∞). See the storage
+    /// admin section of <c>.design/domain-model.md</c>.
+    /// </summary>
+    public int? StorageQuotaMb { get; set; }
+
     public DateTime CreatedAt { get; set; }
 }
