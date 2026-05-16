@@ -808,6 +808,124 @@ public sealed class AlReferenceExtractorTests
                 because: "scalar primitive types (Code, Decimal, Boolean) aren't AL objects");
     }
 
+    // ── Labels (tranche 3) ─────────────────────────────────────────
+
+    [Fact]
+    public void Bare_use_of_object_scope_label_emits_label_use()
+    {
+        // `Error(UnsupportedTypeErr)` — UnsupportedTypeErr is declared
+        // in the codeunit's object-scope var block as a Label. The bare
+        // identifier in the procedure body must resolve as a label_use
+        // reference targeting the codeunit + label name + "label" kind.
+        const string src = """
+            codeunit 50100 "Foo"
+            {
+                var
+                    UnsupportedTypeErr: Label 'Unsupported type %1.';
+
+                procedure DoStuff()
+                begin
+                    Error(UnsupportedTypeErr);
+                end;
+            }
+            """;
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper", new AlTypeRef(BaseAppId, "codeunit", 50100, "MyHelper"));
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "label_use"
+            && r.TargetMemberName == "UnsupportedTypeErr"
+            && r.TargetMemberKind == "label");
+    }
+
+    [Fact]
+    public void Procedure_local_label_use_does_not_emit_object_scope_ref()
+    {
+        // A label declared inside a procedure's var block is local to
+        // that procedure. The walker's existing ParseVarBlock adds it
+        // to the procedure frame; the implicit-Rec / label_use handlers
+        // see it as in-scope. Should still emit label_use targeting the
+        // file owner (oe_module_symbols stores procedure-locals against
+        // the owner object too).
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper", new AlTypeRef(BaseAppId, "codeunit", 50100, "MyHelper"));
+
+        const string src = """
+            codeunit 50100 "Foo"
+            {
+                procedure DoStuff()
+                var
+                    LocalErr: Label 'Local error';
+                begin
+                    Error(LocalErr);
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "label_use"
+            && r.TargetMemberName == "LocalErr");
+    }
+
+    [Fact]
+    public void Non_label_in_scope_variable_does_not_emit_label_use()
+    {
+        // A regular Record variable in scope should NOT emit label_use
+        // on its bare uses. The handler must check the type keyword
+        // matches "Label" before emitting.
+        const string src = """
+            codeunit 50100 "Foo"
+            {
+                procedure DoStuff()
+                var
+                    Cust: Record Customer;
+                begin
+                    if Cust.IsEmpty() then exit;
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Where(r => r.ReferenceKind == "label_use")
+            .Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Multiple_label_uses_in_same_procedure_emit_one_row_each()
+    {
+        // Real BC code uses Error / Message / Confirm with different
+        // label vars on different lines. Each call site should produce
+        // its own label_use row so Find references shows them all.
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper", new AlTypeRef(BaseAppId, "codeunit", 50100, "MyHelper"));
+
+        const string src = """
+            codeunit 50100 "Foo"
+            {
+                var
+                    ErrA: Label 'Err A';
+                    ErrB: Label 'Err B';
+
+                procedure DoStuff()
+                begin
+                    if true then
+                        Error(ErrA);
+                    if true then
+                        Error(ErrB);
+                    Message(ErrA);
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        var labelUses = result.References.Where(r => r.ReferenceKind == "label_use").ToList();
+        labelUses.Should().HaveCount(3);
+        labelUses.Count(r => r.TargetMemberName == "ErrA").Should().Be(2);
+        labelUses.Count(r => r.TargetMemberName == "ErrB").Should().Be(1);
+    }
+
     // ── CalcFormula + SourceTableView (tranche 2) ──────────────────
 
     [Fact]

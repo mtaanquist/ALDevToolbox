@@ -72,6 +72,21 @@ public static class AlSymbolExtractor
         @"^\s*\[",
         RegexOptions.Compiled);
 
+    // Label-typed variable declaration:
+    //   `UnsupportedTypeErr: Label 'Unsupported type %1.'[, Comment = ...][, Locked = ...];`
+    // Matches the `<name>: Label` prefix; the content is extracted from
+    // the raw line separately (StripCommentsAndStrings replaces string
+    // contents with spaces, so we can't use the stripped text for the
+    // payload).
+    //
+    // Why labels are worth pulling: when a customer reports an error
+    // message without a stack trace, developers triangulate by searching
+    // for the literal text. Surfacing labels as their own outline rows
+    // makes that triangulation a left-click rather than a content search.
+    private static readonly Regex LabelDeclarationRegex = new(
+        @"^\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*:\s*Label\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     /// <summary>
     /// Returns the declarations found in <paramref name="source"/>. The line
     /// number is 1-based and refers to the original (un-stripped) source so
@@ -200,6 +215,34 @@ public static class AlSymbolExtractor
                 continue;
             }
 
+            // Label declaration. Lives in object-level or procedure-local
+            // var blocks. Signature carries the label content so the
+            // outline / per-label tooltip can render it inline — same
+            // column page-side fields use for "what's this bound to".
+            var labelMatch = LabelDeclarationRegex.Match(stripped);
+            if (labelMatch.Success)
+            {
+                var labelRawName = labelMatch.Groups["name"].Value;
+                var labelName = Unquote(labelRawName);
+                var (lColStart, lColEnd) = FindNameColumns(rawLine, labelRawName);
+                // Pull the content from the raw line — the first
+                // single-quoted string starting after the matched
+                // `<name>: Label` prefix. Unterminated / multi-line
+                // labels degrade gracefully to null content.
+                var afterLabel = labelMatch.Index + labelMatch.Length;
+                var content = ExtractFirstSingleQuotedString(rawLine, afterLabel);
+                results.Add(new AlSymbol(
+                    Kind: "label",
+                    Name: labelName,
+                    Signature: content,
+                    FieldId: null,
+                    LineNumber: i + 1,
+                    ColumnStart: lColStart,
+                    ColumnEnd: lColEnd));
+                pendingEventKind = null;
+                continue;
+            }
+
             // Page action declaration. Gives field-style triggers
             // (OnAction in particular) an outline anchor to nest under,
             // mirroring how field-bound triggers nest under their field.
@@ -301,6 +344,38 @@ public static class AlSymbolExtractor
             return (1, 1 + rawName.Length);
         }
         return (idx + 1, idx + 1 + rawName.Length);
+    }
+
+    /// <summary>
+    /// Returns the content of the first single-quoted string in
+    /// <paramref name="raw"/> starting at <paramref name="startIdx"/>.
+    /// Doubled single quotes (<c>''</c>) un-escape to a literal
+    /// apostrophe; an unterminated string returns null. Single-line —
+    /// AL allows multi-line strings via concatenation, but label
+    /// declarations in practice fit on one line.
+    /// </summary>
+    private static string? ExtractFirstSingleQuotedString(string raw, int startIdx)
+    {
+        var i = raw.IndexOf('\'', startIdx);
+        if (i < 0) return null;
+        i++;
+        var sb = new System.Text.StringBuilder();
+        while (i < raw.Length)
+        {
+            if (raw[i] == '\'')
+            {
+                if (i + 1 < raw.Length && raw[i + 1] == '\'')
+                {
+                    sb.Append('\'');
+                    i += 2;
+                    continue;
+                }
+                return sb.ToString();
+            }
+            sb.Append(raw[i]);
+            i++;
+        }
+        return null;
     }
 
     /// <summary>

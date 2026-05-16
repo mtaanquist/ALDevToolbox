@@ -112,6 +112,22 @@ public static class AlReferenceExtractor
                     continue;
                 }
 
+                // Object-scope `var` keyword: scan label declarations
+                // (`Name: Label '…';`) into the bottom frame so bare uses
+                // of label vars in procedure bodies resolve through the
+                // same scope-walking path field accesses do. Object-scope
+                // non-label vars come in via _ctx.GlobalVars from the
+                // symbol package — we only need to fill the label gap
+                // because labels aren't AL object types and get skipped
+                // by the symbol-package variable importer.
+                if (_scopeStack.Count == 1
+                    && tok.Kind == AlTokenKind.Identifier
+                    && string.Equals(tok.Value, "var", StringComparison.OrdinalIgnoreCase))
+                {
+                    ScanObjectScopeLabels();
+                    continue;
+                }
+
                 // Inside a procedure / trigger body, track nested block
                 // depth. `begin` and `case` open blocks closed by `end`;
                 // we maintain the depth so the procedure's own `end;`
@@ -178,6 +194,18 @@ public static class AlReferenceExtractor
                         && _tokens[_pos + 1].Value == "(")
                     {
                         if (TryConsumeBareSelfCall()) continue;
+                    }
+
+                    // Bare use of an in-scope Label-typed variable —
+                    // `Error(UnsupportedTypeErr)` style. Emits a
+                    // label_use reference so Find references on the
+                    // label declaration surfaces all callers. Fires
+                    // BEFORE implicit-Rec field access because that
+                    // handler treats in-scope names as "skip".
+                    if (_scopeStack.Count > 1
+                        && (tok.Kind == AlTokenKind.QuotedIdentifier || tok.Kind == AlTokenKind.Identifier))
+                    {
+                        if (TryConsumeLabelUse()) continue;
                     }
 
                     // Implicit-Rec field access: bare quoted or unquoted
@@ -1443,6 +1471,116 @@ public static class AlReferenceExtractor
                 TargetMemberKind: member.Kind,
                 ReferenceKind: "field_access"));
             _resolved++;
+        }
+
+        // ── Label declarations + uses (tranche 3) ─────────────────────
+
+        private static readonly HashSet<string> ObjectSectionKeywords = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "procedure", "trigger", "fields", "actions", "keys",
+            "layout", "dataset", "schema", "elements", "controls",
+            "requestpage", "labels",
+        };
+
+        /// <summary>
+        /// Object-scope <c>var</c> block: scans <c>Name: Label '…';</c>
+        /// declarations and adds them to the bottom (object-scope) frame
+        /// so bare uses inside any procedure / trigger body in the file
+        /// resolve through the same scope-walk that fields and other
+        /// vars use. Non-label declarations are skipped — those come in
+        /// via the symbol-package globals already. Terminates at the
+        /// closing <c>}</c> of the object or the next section keyword
+        /// (<c>procedure</c>, <c>trigger</c>, <c>fields</c>, …).
+        /// </summary>
+        private void ScanObjectScopeLabels()
+        {
+            _pos++; // var keyword
+
+            // Find the bottom (object-scope) frame to mutate.
+            ScopeFrame? bottom = null;
+            foreach (var f in _scopeStack) bottom = f;
+            if (bottom is null) return;
+
+            int braceDepth = 0;
+            while (_pos < _tokens.Count)
+            {
+                var tok = _tokens[_pos];
+
+                if (tok.Kind == AlTokenKind.Punct)
+                {
+                    if (tok.Value == "{") { braceDepth++; _pos++; continue; }
+                    if (tok.Value == "}")
+                    {
+                        if (braceDepth == 0) return;
+                        braceDepth--;
+                        _pos++;
+                        continue;
+                    }
+                }
+                if (braceDepth == 0
+                    && tok.Kind == AlTokenKind.Identifier
+                    && ObjectSectionKeywords.Contains(tok.Value))
+                {
+                    return;
+                }
+
+                // Detect `Name : Label`. The lexer drops whitespace, so
+                // the three tokens are adjacent in the stream.
+                if ((tok.Kind == AlTokenKind.Identifier || tok.Kind == AlTokenKind.QuotedIdentifier)
+                    && _pos + 2 < _tokens.Count
+                    && _tokens[_pos + 1].Kind == AlTokenKind.Punct
+                    && _tokens[_pos + 1].Value == ":"
+                    && _tokens[_pos + 2].Kind == AlTokenKind.Identifier
+                    && string.Equals(_tokens[_pos + 2].Value, "Label", StringComparison.OrdinalIgnoreCase))
+                {
+                    var nameLower = tok.Value.ToLowerInvariant();
+                    if (!bottom.Vars.ContainsKey(nameLower))
+                    {
+                        bottom.Vars[nameLower] = new ResolvedVariableType(null, "Label");
+                    }
+                    _pos += 3;
+                    continue;
+                }
+                _pos++;
+            }
+        }
+
+        /// <summary>
+        /// Emits a <c>label_use</c> reference when the bare identifier
+        /// resolves to an in-scope variable typed <c>Label</c>. Target
+        /// is the file's owner object + the label's name + kind
+        /// <c>"label"</c>, so the existing member-scoped query (and
+        /// import-time symbol-id stamping) lights up the Find references
+        /// path identical to a procedure call.
+        /// </summary>
+        private bool TryConsumeLabelUse()
+        {
+            var tok = _tokens[_pos];
+            var key = tok.Value.ToLowerInvariant();
+            foreach (var frame in _scopeStack)
+            {
+                if (!frame.Vars.TryGetValue(key, out var declared)) continue;
+                if (!string.Equals(declared.TypeName, "Label", StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+                var owner = OwnerType();
+                if (owner is null) return false;
+                _refs.Add(new ExtractedReference(
+                    Line: tok.Line,
+                    Column: tok.Column,
+                    TargetAppId: owner.AppId,
+                    TargetObjectKind: owner.Kind,
+                    TargetObjectId: owner.ObjectId,
+                    TargetObjectName: owner.Name,
+                    TargetMemberName: tok.Value,
+                    TargetMemberKind: "label",
+                    ReferenceKind: "label_use"));
+                _resolved++;
+                _pos++;
+                return true;
+            }
+            return false;
         }
 
         private void SkipToSemicolon()
