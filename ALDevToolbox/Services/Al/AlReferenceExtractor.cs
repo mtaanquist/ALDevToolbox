@@ -112,16 +112,34 @@ public static class AlReferenceExtractor
                     continue;
                 }
 
-                // A standalone `end;` closes the innermost procedure scope.
-                // Object-scope (the bottom frame) is never popped.
-                if (tok.Kind == AlTokenKind.Identifier
-                    && string.Equals(tok.Value, "end", StringComparison.OrdinalIgnoreCase)
-                    && _scopeStack.Count > 1
-                    && IsTopLevelEndOfBlock(_pos))
+                // Inside a procedure / trigger body, track nested block
+                // depth. `begin` and `case` open blocks closed by `end`;
+                // we maintain the depth so the procedure's own `end;`
+                // (depth → 0) is what actually pops the scope frame, not
+                // any nested `end` inside an `if … then begin … end` or
+                // `case … end`. Without this, real BC code (which nests
+                // `begin`/`end` heavily) loses the local-variable scope
+                // partway through the procedure body.
+                if (_scopeStack.Count > 1 && tok.Kind == AlTokenKind.Identifier)
                 {
-                    _scopeStack.Pop();
-                    _pos++;
-                    continue;
+                    if (string.Equals(tok.Value, "begin", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(tok.Value, "case", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _scopeStack.Peek().BeginDepth++;
+                        _pos++;
+                        continue;
+                    }
+                    if (string.Equals(tok.Value, "end", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var frame = _scopeStack.Peek();
+                        frame.BeginDepth--;
+                        if (frame.BeginDepth <= 0)
+                        {
+                            _scopeStack.Pop();
+                        }
+                        _pos++;
+                        continue;
+                    }
                 }
 
                 // Member-access chain candidates. Two shapes trigger:
@@ -161,6 +179,50 @@ public static class AlReferenceExtractor
                     {
                         if (TryConsumeBareSelfCall()) continue;
                     }
+
+                    // Implicit-Rec field access: bare quoted or unquoted
+                    // identifier with no qualifier, no `(`, no `::`, no
+                    // `.`. Inside a table / page / etc. body, AL lets you
+                    // write `"No." := 'C001'` as shorthand for
+                    // `Rec."No." := 'C001'`. Only fires when Rec is in
+                    // scope (i.e. owner kind supports Rec) and the
+                    // identifier resolves to a field on Rec's type.
+                    if (_scopeStack.Count > 1
+                        && (tok.Kind == AlTokenKind.QuotedIdentifier || tok.Kind == AlTokenKind.Identifier))
+                    {
+                        if (TryConsumeImplicitFieldAccess()) continue;
+                    }
+
+                    // Object-scope property: `Identifier = Value;` at the
+                    // top level (outside any procedure / trigger body).
+                    // SourceTable, LookupPageID, DataCaptionFields, … are
+                    // declared in property syntax and reference other AL
+                    // objects / fields the reference extractor needs to
+                    // surface. Comparisons inside procedure bodies use
+                    // the same `=` punct but the scope-depth guard
+                    // separates them.
+                    if (_scopeStack.Count == 1
+                        && tok.Kind == AlTokenKind.Identifier
+                        && _pos + 1 < _tokens.Count
+                        && _tokens[_pos + 1].Kind == AlTokenKind.Punct
+                        && _tokens[_pos + 1].Value == "=")
+                    {
+                        if (TryConsumeObjectScopeProperty()) continue;
+                    }
+                }
+
+                // EventSubscriber attribute detection: `[ EventSubscriber ( … )`
+                // at object scope. Bindings tell the catalog "this procedure
+                // subscribes to that publisher's event", which is what
+                // makes Find references on a publisher list its subscribers.
+                if (_scopeStack.Count == 1
+                    && tok.Kind == AlTokenKind.Punct && tok.Value == "["
+                    && _pos + 1 < _tokens.Count
+                    && _tokens[_pos + 1].Kind == AlTokenKind.Identifier
+                    && string.Equals(_tokens[_pos + 1].Value, "EventSubscriber", StringComparison.OrdinalIgnoreCase))
+                {
+                    TryConsumeEventSubscriberAttribute();
+                    continue;
                 }
 
                 _pos++;
@@ -179,11 +241,33 @@ public static class AlReferenceExtractor
                 frame.Vars[name] = type;
             }
             // Tables, pages, table extensions and page extensions expose
-            // implicit Rec / xRec self-references that point at the
-            // object's own type. Other kinds don't.
+            // implicit Rec / xRec self-references. The receiver type
+            // differs by owner kind:
+            //   - table / tableextension → Rec is the table itself
+            //     (or the extended base table; same name for extensions
+            //     since AL flattens fields).
+            //   - page / pageextension → Rec is the page's SourceTable.
+            //     Without that, Rec.X looks for field X on the page,
+            //     which doesn't have fields. The importer denormalises
+            //     SourceTable onto the owner object so we can find it
+            //     here without a catalog lookup.
+            //   - report / reportextension / xmlport / query / requestpage
+            //     also expose Rec/xRec, but the source-table binding is
+            //     more varied (per-dataitem); v1 keeps the owner-itself
+            //     fallback there.
             if (OwnerSupportsRecXRec())
             {
-                var selfType = new ResolvedVariableType(_ctx.OwnerKind, _ctx.OwnerName);
+                ResolvedVariableType selfType;
+                if ((string.Equals(_ctx.OwnerKind, "page", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(_ctx.OwnerKind, "pageextension", StringComparison.OrdinalIgnoreCase))
+                    && !string.IsNullOrEmpty(_ctx.OwnerSourceTableName))
+                {
+                    selfType = new ResolvedVariableType("Record", _ctx.OwnerSourceTableName);
+                }
+                else
+                {
+                    selfType = new ResolvedVariableType(_ctx.OwnerKind, _ctx.OwnerName);
+                }
                 frame.Vars["rec"] = selfType;
                 frame.Vars["xrec"] = selfType;
                 // CurrFieldRef in field validate triggers, etc., is a
@@ -208,23 +292,6 @@ public static class AlReferenceExtractor
             var v = tok.Value;
             return string.Equals(v, "procedure", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(v, "trigger", StringComparison.OrdinalIgnoreCase);
-        }
-
-        /// <summary>
-        /// Heuristic: an `end` token closes a procedure scope when it's
-        /// followed by `;` and the immediately preceding context isn't
-        /// nested inside another begin block. AL's begin/end pairs
-        /// nest cleanly, so we maintain a begin-depth counter as we walk
-        /// the body. The procedure scope's frame popping aligns with the
-        /// `end;` that closes the procedure body (the outermost begin
-        /// inside the procedure).
-        /// </summary>
-        private bool IsTopLevelEndOfBlock(int endTokenIndex)
-        {
-            // The current scope frame tracks how many `begin` keywords
-            // are open inside it. The closing `end;` we care about is
-            // the one that drains the body to zero.
-            return _scopeStack.Peek().BeginDepth == 1;
         }
 
         /// <summary>
@@ -705,6 +772,500 @@ public static class AlReferenceExtractor
             return _ownerTypeCache;
         }
 
+        // ── Object-scope property extraction (item 4) ─────────────────
+
+        /// <summary>
+        /// At object-scope (outside any procedure / trigger body), AL
+        /// declarations look like <c>PropertyName = Value;</c>. We
+        /// recognise a small set of property names whose values reference
+        /// other AL objects (SourceTable, LookupPageID, …) or fields
+        /// (DataCaptionFields) and emit reference rows the source viewer
+        /// can underline and Go-to-definition can resolve.
+        ///
+        /// Returns true when the property was recognised and consumed;
+        /// false when the caller should fall through (the identifier was
+        /// not a known property — could be a custom user property the
+        /// extractor doesn't model, or any other object-scope token).
+        ///
+        /// Coverage in v1 (matches the user-facing screenshot list):
+        /// SourceTable, LookupPageID, CardPageID, DrillDownPageID,
+        /// DataCaptionFields. Deferred (need field-context tracking or
+        /// complex value-shape parsing): TableRelation, CalcFormula,
+        /// Permissions, SourceTableView, RunObject, enum-typed field
+        /// declarations.
+        /// </summary>
+        private bool TryConsumeObjectScopeProperty()
+        {
+            var head = _tokens[_pos];
+            var name = head.Value;
+
+            if (string.Equals(name, "SourceTable", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "LookupPageID", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "CardPageID", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "DrillDownPageID", StringComparison.OrdinalIgnoreCase))
+            {
+                return TryConsumeObjectReferenceProperty(name);
+            }
+            if (string.Equals(name, "DataCaptionFields", StringComparison.OrdinalIgnoreCase))
+            {
+                return TryConsumeDataCaptionFields();
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Handles single-object-reference properties — value is a name
+        /// (quoted or bare) optionally preceded by an AL object kind
+        /// keyword (e.g. <c>SourceTable = "Sales Header";</c> or
+        /// <c>RunObject = Page "Customer Card";</c>). The reference is
+        /// emitted at the line/column of the NAME token (not the keyword)
+        /// so the source-viewer underline targets the clickable text.
+        /// </summary>
+        private bool TryConsumeObjectReferenceProperty(string propertyName)
+        {
+            _pos++; // property name
+            if (!At("=")) { SkipToSemicolon(); return true; }
+            _pos++; // =
+
+            // Optional AL object kind keyword (`Page`, `Codeunit`, etc.).
+            string? kindHint = null;
+            if (_pos < _tokens.Count && _tokens[_pos].Kind == AlTokenKind.Identifier
+                && IsAlObjectKeyword(_tokens[_pos].Value))
+            {
+                kindHint = _tokens[_pos].Value;
+                _pos++;
+            }
+
+            if (_pos >= _tokens.Count) { SkipToSemicolon(); return true; }
+            var nameTok = _tokens[_pos];
+            if (nameTok.Kind != AlTokenKind.Identifier && nameTok.Kind != AlTokenKind.QuotedIdentifier)
+            {
+                SkipToSemicolon();
+                return true;
+            }
+
+            var target = _ctx.Resolver.ResolveTypeByName(nameTok.Value);
+            if (target is null)
+            {
+                // Target not in catalog (cross-release, unknown kind, etc.).
+                // Don't bump unresolved counter — that bucket is for chain
+                // receivers; property misses are common and noisy.
+                SkipToSemicolon();
+                return true;
+            }
+
+            _refs.Add(new ExtractedReference(
+                Line: nameTok.Line,
+                Column: nameTok.Column,
+                TargetAppId: target.AppId,
+                TargetObjectKind: target.Kind,
+                TargetObjectId: target.ObjectId,
+                TargetObjectName: target.Name,
+                TargetMemberName: null,
+                TargetMemberKind: null,
+                ReferenceKind: "property_object"));
+            _resolved++;
+
+            // kindHint is intentionally unused at the row level — the
+            // catalog lookup already returned the canonical kind.
+            _ = kindHint;
+            SkipToSemicolon();
+            return true;
+        }
+
+        /// <summary>
+        /// Handles <c>DataCaptionFields = "No.", "Name", "Description";</c>
+        /// style multi-field-reference properties. Each comma-separated
+        /// identifier is a field on the owner's table (the owner itself
+        /// for tables / tableextensions, the SourceTable for pages /
+        /// pageextensions). Emits one <c>field_access</c> per recognised
+        /// field — same kind as a bare <c>"No."</c> in a body, so the
+        /// source-viewer underlines and Go-to-definition treat them
+        /// identically.
+        /// </summary>
+        private bool TryConsumeDataCaptionFields()
+        {
+            _pos++; // property name
+            if (!At("=")) { SkipToSemicolon(); return true; }
+            _pos++; // =
+
+            var ownerTable = RecType();
+            if (ownerTable is null) { SkipToSemicolon(); return true; }
+
+            while (_pos < _tokens.Count && !At(";"))
+            {
+                var tok = _tokens[_pos];
+                if (tok.Kind == AlTokenKind.Identifier || tok.Kind == AlTokenKind.QuotedIdentifier)
+                {
+                    var member = _ctx.Resolver.ResolveMember(ownerTable, tok.Value);
+                    if (member is not null
+                        && string.Equals(member.Kind, "field", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var targetOwner = member.DeclaringType ?? ownerTable;
+                        _refs.Add(new ExtractedReference(
+                            Line: tok.Line,
+                            Column: tok.Column,
+                            TargetAppId: targetOwner.AppId,
+                            TargetObjectKind: targetOwner.Kind,
+                            TargetObjectId: targetOwner.ObjectId,
+                            TargetObjectName: targetOwner.Name,
+                            TargetMemberName: member.Name,
+                            TargetMemberKind: member.Kind,
+                            ReferenceKind: "field_access"));
+                        _resolved++;
+                    }
+                    _pos++;
+                    continue;
+                }
+                // Skip commas, whitespace tokens we don't care about.
+                _pos++;
+            }
+            if (At(";")) _pos++;
+            return true;
+        }
+
+        private void SkipToSemicolon()
+        {
+            while (_pos < _tokens.Count && !At(";")) _pos++;
+            if (At(";")) _pos++;
+        }
+
+        // ── EventSubscriber attribute extraction ──────────────────────
+
+        /// <summary>
+        /// Handles <c>[EventSubscriber(ObjectType::Codeunit, Codeunit::"Sales-Post",
+        /// 'OnAfterPostSalesDoc', '', false, false)]</c>. Emits one
+        /// <c>event_publisher</c>-kind reference row pointing from the
+        /// containing subscriber to the publisher's
+        /// <c>(object, event_name)</c>. The reference is what makes
+        /// Find references on the publisher list its subscribers — the
+        /// existing member-scoped query joins on
+        /// <c>(TargetObjectName, TargetMemberName, TargetMemberKind)</c>
+        /// so no query changes are needed downstream.
+        ///
+        /// AL accepts the event name (3rd arg) and the element name
+        /// (4th arg) as either single-quoted strings (legacy) or bare
+        /// identifiers (newer BC). The lexer normalises both — strings
+        /// lose their quotes, identifiers come through as-is — so the
+        /// parser doesn't have to distinguish.
+        ///
+        /// Numeric target id (<c>Codeunit::80</c>) isn't supported in
+        /// v1: BC has used the named form (<c>Codeunit::"Sales-Post"</c>)
+        /// for the last ~decade. If a real import surfaces the numeric
+        /// shape we'd extend <see cref="IAlTypeResolver"/> with an
+        /// id-based lookup.
+        /// </summary>
+        private void TryConsumeEventSubscriberAttribute()
+        {
+            var attrLine = _tokens[_pos].Line;
+            var attrCol = _tokens[_pos].Column;
+            _pos++; // [
+            _pos++; // EventSubscriber
+
+            if (!At("("))
+            {
+                SkipPastAttributeClose();
+                return;
+            }
+
+            var args = ReadParenArgs();
+            if (args.Count < 3) { SkipPastAttributeClose(); return; }
+
+            // arg[1]: typed-literal `Kind::Name` for the target object.
+            // The catalog lookup keys on the name; the kind is implicit
+            // from the catalog row.
+            var targetName = ExtractTypedLiteralName(args[1]);
+            if (string.IsNullOrEmpty(targetName))
+            {
+                SkipPastAttributeClose();
+                return;
+            }
+
+            // arg[2]: event name. String (legacy) or Identifier (newer).
+            var eventName = ExtractStringOrIdentifier(args[2]);
+            if (string.IsNullOrEmpty(eventName))
+            {
+                SkipPastAttributeClose();
+                return;
+            }
+
+            var target = _ctx.Resolver.ResolveTypeByName(targetName);
+            if (target is null)
+            {
+                // Cross-release / unknown / numeric id. Silent drop —
+                // matches the broader policy for unresolved property
+                // references; subscriber attributes against unknown
+                // targets aren't a developer error worth reporting.
+                SkipPastAttributeClose();
+                return;
+            }
+
+            _refs.Add(new ExtractedReference(
+                Line: attrLine,
+                Column: attrCol,
+                TargetAppId: target.AppId,
+                TargetObjectKind: target.Kind,
+                TargetObjectId: target.ObjectId,
+                TargetObjectName: target.Name,
+                TargetMemberName: eventName,
+                TargetMemberKind: "event_publisher",
+                ReferenceKind: "event_publisher"));
+            _resolved++;
+
+            SkipPastAttributeClose();
+        }
+
+        /// <summary>
+        /// Reads a parenthesised comma-separated argument list. Assumes
+        /// <see cref="_pos"/> is at the opening <c>(</c>. Returns one
+        /// token list per arg; leaves <see cref="_pos"/> at the token
+        /// immediately after the matching <c>)</c>. Respects nested
+        /// parens so embedded expressions don't truncate the split.
+        /// </summary>
+        private List<List<AlToken>> ReadParenArgs()
+        {
+            var args = new List<List<AlToken>>();
+            if (!At("(")) return args;
+            _pos++;
+            var current = new List<AlToken>();
+            int depth = 0;
+            while (_pos < _tokens.Count)
+            {
+                if (At("("))
+                {
+                    depth++;
+                    current.Add(_tokens[_pos]);
+                    _pos++;
+                    continue;
+                }
+                if (At(")"))
+                {
+                    if (depth == 0)
+                    {
+                        args.Add(current);
+                        _pos++;
+                        return args;
+                    }
+                    depth--;
+                    current.Add(_tokens[_pos]);
+                    _pos++;
+                    continue;
+                }
+                if (At(",") && depth == 0)
+                {
+                    args.Add(current);
+                    current = new List<AlToken>();
+                    _pos++;
+                    continue;
+                }
+                current.Add(_tokens[_pos]);
+                _pos++;
+            }
+            // Reached EOF mid-attribute; salvage what we have.
+            args.Add(current);
+            return args;
+        }
+
+        /// <summary>
+        /// Extracts the name from a <c>Kind::Name</c> typed-literal
+        /// argument. Returns null when the shape doesn't match (e.g.
+        /// numeric id, malformed). The kind itself isn't returned —
+        /// the catalog row that the name resolves to carries the
+        /// canonical kind.
+        /// </summary>
+        private static string? ExtractTypedLiteralName(List<AlToken> arg)
+        {
+            // Find the `::` token; the right-hand side is the name.
+            for (int i = 0; i < arg.Count - 1; i++)
+            {
+                if (arg[i].Kind != AlTokenKind.DoubleColon) continue;
+                var name = arg[i + 1];
+                if (name.Kind == AlTokenKind.Identifier || name.Kind == AlTokenKind.QuotedIdentifier)
+                {
+                    return name.Value;
+                }
+                // Number form (Codeunit::80) — v1 doesn't resolve.
+                return null;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Extracts the value from a single-token argument that's either a
+        /// String literal (single-quoted in source — the lexer keeps the
+        /// surrounding quotes in the token value, so we strip them here)
+        /// or a bare Identifier. AL accepts both shapes for the
+        /// event-name / element-name parameters since the move to "newer
+        /// BC" syntax — same value on the wire either way.
+        /// </summary>
+        private static string? ExtractStringOrIdentifier(List<AlToken> arg)
+        {
+            foreach (var tok in arg)
+            {
+                if (tok.Kind == AlTokenKind.String)
+                {
+                    return UnquoteString(tok.Value);
+                }
+                if (tok.Kind == AlTokenKind.Identifier
+                    || tok.Kind == AlTokenKind.QuotedIdentifier)
+                {
+                    return tok.Value;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Strips the surrounding single quotes the lexer keeps on String
+        /// tokens. <c>'foo'</c> in source → <c>"'foo'"</c> from the lexer
+        /// → <c>"foo"</c> here. Also un-escapes the doubled-quote
+        /// convention (<c>'it''s'</c> → <c>it's</c>) so the value matches
+        /// what's stored in <c>oe_module_symbols.Name</c> for the
+        /// publisher procedure.
+        /// </summary>
+        private static string UnquoteString(string raw)
+        {
+            if (raw.Length >= 2 && raw[0] == '\'' && raw[^1] == '\'')
+            {
+                return raw.Substring(1, raw.Length - 2).Replace("''", "'");
+            }
+            return raw;
+        }
+
+        /// <summary>
+        /// Advances <see cref="_pos"/> past the matching <c>]</c> of an
+        /// attribute we couldn't fully parse. Tracks bracket depth so
+        /// nested expressions don't terminate early. Used as the bailout
+        /// path when an attribute's args don't match the expected shape.
+        /// </summary>
+        private void SkipPastAttributeClose()
+        {
+            int depth = 0;
+            while (_pos < _tokens.Count)
+            {
+                if (At("[")) depth++;
+                else if (At("]"))
+                {
+                    if (depth == 0) { _pos++; return; }
+                    depth--;
+                }
+                _pos++;
+            }
+        }
+
+        private AlTypeRef? _recTypeCache;
+        private bool _recTypeResolved;
+
+        /// <summary>
+        /// Lazily resolves Rec's <see cref="AlTypeRef"/> — the receiver
+        /// type implicit-field-access uses. For tables / tableextensions
+        /// this is the owner type; for pages / pageextensions it's the
+        /// SourceTable. BuildGlobalScope already encoded the choice in
+        /// the bottom scope frame's <c>rec</c> entry; we read it back
+        /// and resolve once.
+        /// </summary>
+        private AlTypeRef? RecType()
+        {
+            if (_recTypeResolved) return _recTypeCache;
+            _recTypeResolved = true;
+            // Bottom frame (object-scope) is where Rec lives. Walk to it.
+            ScopeFrame? bottom = null;
+            foreach (var frame in _scopeStack) bottom = frame;
+            if (bottom is null) return null;
+            if (!bottom.Vars.TryGetValue("rec", out var declared)) return null;
+            if (string.IsNullOrEmpty(declared.TypeName)) return null;
+            _recTypeCache = _ctx.Resolver.ResolveTypeByName(declared.TypeName);
+            return _recTypeCache;
+        }
+
+        /// <summary>
+        /// Implicit-Rec field access: a bare identifier or quoted
+        /// identifier inside a body, with no qualifier. When the owner
+        /// kind exposes Rec and the identifier matches a field on Rec's
+        /// type, emit a <c>field_access</c> reference targeting that
+        /// type. Followed-by-paren / followed-by-dot / followed-by-
+        /// double-colon shapes are filtered by the caller (those go
+        /// through the chain / typed-literal / bare-call paths).
+        ///
+        /// Filters (in order):
+        ///   1. Rec must be in scope (RecType != null).
+        ///   2. The identifier must not already match an in-scope variable
+        ///      (parameter / local / global). AL resolves variables
+        ///      first; we mirror that.
+        ///   3. Bare identifiers (not quoted): drop statement keywords
+        ///      (<c>if</c>, <c>then</c>, <c>not</c>, …), AL system
+        ///      functions (<c>Message</c>, <c>Today</c>, …), and AL
+        ///      literal-shaped keywords (<c>true</c>, <c>false</c>, …)
+        ///      via <see cref="AlBuiltinMethods.IsStatementKeyword"/> /
+        ///      <see cref="AlBuiltinMethods.IsBareCallable"/>.
+        ///      Quoted identifiers bypass these — they're almost always
+        ///      field names in AL bodies.
+        ///   4. The identifier must resolve to a member on Rec's type
+        ///      with kind = <c>field</c>. A method match doesn't emit
+        ///      (those go through the bare-self-call path when
+        ///      followed by parens, or are silently dropped here).
+        ///
+        /// Known limitation: inside a <c>with X do …</c> block the
+        /// implicit receiver is X, not Rec. Gap #5 in
+        /// <c>al-reference-extractor-gaps.md</c>; this handler would
+        /// emit on Rec's type instead of X's. False positive only fires
+        /// when both X and Rec have a same-named field — usually
+        /// resolves to a silent drop.
+        ///
+        /// Returns true when the token was handled (cursor advanced),
+        /// false when the caller should fall through to the default
+        /// "advance one token" path.
+        /// </summary>
+        private bool TryConsumeImplicitFieldAccess()
+        {
+            var head = _tokens[_pos];
+            var name = head.Value;
+
+            // 1. Rec must exist.
+            var rec = RecType();
+            if (rec is null) return false;
+
+            // 2. Skip when name is an in-scope variable.
+            var key = name.ToLowerInvariant();
+            foreach (var frame in _scopeStack)
+            {
+                if (frame.Vars.ContainsKey(key)) return false;
+            }
+
+            // 3. For bare identifiers, additional keyword / system-function
+            //    filters. Quoted identifiers bypass — they're field names.
+            if (head.Kind == AlTokenKind.Identifier)
+            {
+                if (AlBuiltinMethods.IsStatementKeyword(name)) return false;
+                if (AlBuiltinMethods.IsBareCallable(name)) return false;
+            }
+
+            // 4. Resolve as a field on Rec's type. Methods don't qualify
+            //    here — those need parens to be a call site, and bare
+            //    field-shaped accesses are what we're after.
+            var member = _ctx.Resolver.ResolveMember(rec, name);
+            if (member is null) return false;
+            if (!string.Equals(member.Kind, "field", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var targetOwner = member.DeclaringType ?? rec;
+            _refs.Add(new ExtractedReference(
+                Line: head.Line,
+                Column: head.Column,
+                TargetAppId: targetOwner.AppId,
+                TargetObjectKind: targetOwner.Kind,
+                TargetObjectId: targetOwner.ObjectId,
+                TargetObjectName: targetOwner.Name,
+                TargetMemberName: member.Name,
+                TargetMemberKind: member.Kind,
+                ReferenceKind: "field_access"));
+            _resolved++;
+            _pos++;
+            return true;
+        }
+
         private AlTypeRef? ResolveHeadType(AlToken head)
         {
             // Step 1: walk the scope stack innermost-first.
@@ -842,7 +1403,8 @@ public sealed record AlExtractContext(
     int? OwnerObjectId,
     Guid OwnerAppId,
     IReadOnlyDictionary<string, ResolvedVariableType> GlobalVars,
-    IAlTypeResolver Resolver);
+    IAlTypeResolver Resolver,
+    string? OwnerSourceTableName = null);
 
 /// <summary>
 /// Looks up type information used during receiver-type resolution.
@@ -905,8 +1467,8 @@ public sealed record ExtractedReference(
     string TargetObjectKind,
     int? TargetObjectId,
     string TargetObjectName,
-    string TargetMemberName,
-    string TargetMemberKind,
+    string? TargetMemberName,
+    string? TargetMemberKind,
     string ReferenceKind);
 
 /// <summary>Per-file extraction statistics — used for diagnostic logging.</summary>

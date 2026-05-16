@@ -51,6 +51,8 @@ function init() {
             switch (method) {
                 case "OnFindReferences":
                     return onFindReferences(args[0]);
+                case "OnFindMemberReferences":
+                    return mintMemberSession(args[0]);
                 case "OnFindReferencesAt":
                     return onFindReferencesAt(args[0], args[1]);
                 case "OnGoToDefinition":

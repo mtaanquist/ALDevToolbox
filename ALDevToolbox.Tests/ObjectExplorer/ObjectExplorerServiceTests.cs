@@ -242,7 +242,38 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         decls.Should().Contain(d =>
             d.Name == "DK Core Event Subscribers"
             && d.ColumnStart >= 1
-            && d.ColumnEnd > d.ColumnStart);
+            && d.ColumnEnd > d.ColumnStart
+            && !d.IsMemberSymbol,
+            because: "object headers carry IsMemberSymbol = false so the host routes to /from-symbol/");
+    }
+
+    [Fact]
+    public async Task ListDeclarationsInFileAsync_includes_procedure_declarations_as_member_symbols()
+    {
+        // Procedure / field / trigger declarations need to be in the
+        // declaration list too so the source viewer underlines them and
+        // the right-click "Find references" routes through
+        // /from-member-symbol/. They carry IsMemberSymbol = true so the
+        // host can pick the right endpoint without reasoning about the
+        // kind string.
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var fileId = read.OeModuleFiles.AsQueryable()
+            .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
+
+        var decls = await NewQuery(read).ListDeclarationsInFileAsync(fileId);
+
+        decls.Where(d => d.IsMemberSymbol).Should().NotBeEmpty(
+            because: "the event subscribers codeunit declares procedures / event subscribers");
+        decls.Where(d => d.IsMemberSymbol).Should().OnlyContain(d =>
+            d.Line >= 1 && d.ColumnStart >= 1 && d.ColumnEnd > d.ColumnStart);
+        // The symbol id must come from oe_module_symbols (not the object
+        // id) — round-trip through the DbSet to verify.
+        var symbolIds = decls.Where(d => d.IsMemberSymbol).Select(d => d.SymbolId).Distinct().ToList();
+        var existing = await read.OeModuleSymbols.AsNoTracking()
+            .Where(s => symbolIds.Contains(s.Id)).CountAsync();
+        existing.Should().Be(symbolIds.Count,
+            because: "every IsMemberSymbol row's id maps to a real oe_module_symbols row");
     }
 
     [Fact]

@@ -61,6 +61,26 @@ public sealed class AlReferenceExtractorTests
             GlobalVars: globals ?? new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
             Resolver: resolver);
 
+    private static AlExtractContext OwnerPage(StubResolver resolver, string pageName, string? sourceTable,
+        Dictionary<string, ResolvedVariableType>? globals = null) => new(
+            OwnerKind: "page",
+            OwnerName: pageName,
+            OwnerObjectId: null,
+            OwnerAppId: BaseAppId,
+            GlobalVars: globals ?? new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+            Resolver: resolver,
+            OwnerSourceTableName: sourceTable);
+
+    private static AlExtractContext OwnerPageExtension(StubResolver resolver, string extName, string? sourceTable,
+        Dictionary<string, ResolvedVariableType>? globals = null) => new(
+            OwnerKind: "pageextension",
+            OwnerName: extName,
+            OwnerObjectId: null,
+            OwnerAppId: BaseAppId,
+            GlobalVars: globals ?? new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+            Resolver: resolver,
+            OwnerSourceTableName: sourceTable);
+
     // ── Behavioural tests ───────────────────────────────────────────
 
     [Fact]
@@ -514,6 +534,557 @@ public sealed class AlReferenceExtractorTests
             because: "Insert sits on the fifth line of the snippet (1-based)");
         // The member name starts at column 10 (after "Cust." inside the indent).
         insertRef.Column.Should().BeGreaterThan(1);
+    }
+
+    // ── Rec on pages / pageextensions resolves to SourceTable ──────
+
+    [Fact]
+    public void Rec_inside_a_page_resolves_to_the_source_table()
+    {
+        // On page 42 "Sales Order" with SourceTable = "Sales Header",
+        // `Rec."No."` should resolve to the field "No." on Sales Header —
+        // not as a member on the page itself (which doesn't have fields).
+        const string src = """
+            trigger OnAfterGetCurrRecord()
+            begin
+                Rec."Sell-to Customer No." := 'C001';
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(MakeResolver(), "Sales Order", "Sales Header"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "Sell-to Customer No."
+            && r.ReferenceKind == "field_access");
+    }
+
+    [Fact]
+    public void Rec_method_call_inside_a_page_resolves_via_the_source_table()
+    {
+        // `Rec.Insert()` on a page triggers the Record's Insert built-in
+        // via the SourceTable — but more importantly, calls to USER
+        // procedures defined on the source table (or on tableextensions
+        // of it) must resolve. AL pages routinely call procedures the
+        // table itself declares; this guarantees those calls underline.
+        var resolver = MakeResolver();
+        // Add a user-declared procedure on Sales Header.
+        resolver.AddMember("Sales Header", new AlMember("CheckCreditMaxBeforeInsert", "procedure", null, null));
+
+        const string src = """
+            trigger OnValidate()
+            begin
+                Rec.CheckCreditMaxBeforeInsert();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(resolver, "Sales Order", "Sales Header"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "CheckCreditMaxBeforeInsert"
+            && r.ReferenceKind == "method_call");
+    }
+
+    [Fact]
+    public void Rec_inside_a_pageextension_resolves_to_the_propagated_source_table()
+    {
+        // Pageextensions don't carry SourceTable in their own symbol-package
+        // properties; the importer's second-pass copies it from the base
+        // page. The extractor consumes that propagated value the same way.
+        const string src = """
+            trigger OnAfterGetCurrRecord()
+            begin
+                Rec."Sell-to Customer No." := 'C001';
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            OwnerPageExtension(MakeResolver(), "Sales Order Ext", "Sales Header"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "Sell-to Customer No.");
+    }
+
+    [Fact]
+    public void Rec_inside_a_page_without_source_table_falls_back_silently()
+    {
+        // Pages without an explicit SourceTable (rare — listpages typically
+        // have one, but pages without a table source exist). The extractor
+        // shouldn't crash and shouldn't produce a wrong reference; it just
+        // can't resolve the chain.
+        const string src = """
+            trigger OnOpenPage()
+            begin
+                Rec."No." := 'X';
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(MakeResolver(), "Some Card", null));
+
+        // Page owner type "page" doesn't have a "No." field; ResolveMember
+        // returns null and the chain is silently dropped (no spurious
+        // emit, no crash).
+        result.References.Should().BeEmpty();
+    }
+
+    // ── EventSubscriber attribute bindings ─────────────────────────
+
+    [Fact]
+    public void Event_subscriber_attribute_with_legacy_quoted_event_name_emits_publisher_binding()
+    {
+        // Classic Microsoft-style EventSubscriber:
+        //   [EventSubscriber(ObjectType::Codeunit, Codeunit::"Sales-Post",
+        //                    'OnAfterPostSalesDoc', '', false, false)]
+        // The subscriber row's TargetMemberName carries the event name and
+        // TargetMemberKind = "event_publisher" so Find references on the
+        // publisher procedure surfaces this binding via the existing
+        // member-scoped query.
+        const string src = """
+            codeunit 50100 "Sales Post Subscribers"
+            {
+                [EventSubscriber(ObjectType::Codeunit, Codeunit::"Sales-Post", 'OnAfterPostSalesDoc', '', false, false)]
+                local procedure HandleAfterPost(var SalesHeader: Record "Sales Header"; CommitIsSuppressed: Boolean)
+                begin
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "event_publisher"
+            && r.TargetObjectName == "Sales-Post"
+            && r.TargetObjectKind == "codeunit"
+            && r.TargetMemberName == "OnAfterPostSalesDoc"
+            && r.TargetMemberKind == "event_publisher");
+    }
+
+    [Fact]
+    public void Event_subscriber_attribute_with_bare_identifier_event_name_also_emits_binding()
+    {
+        // Newer BC dropped the apostrophes around the event name (and
+        // element name) — bare identifiers now lex as Identifier tokens
+        // instead of String tokens. Both shapes must produce the same
+        // binding so subscribers in modern code aren't missed.
+        const string src = """
+            codeunit 50101 "Sales Post Subscribers"
+            {
+                [EventSubscriber(ObjectType::Codeunit, Codeunit::"Sales-Post", OnAfterPostSalesDoc, '', false, false)]
+                local procedure HandleAfterPost()
+                begin
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "event_publisher"
+            && r.TargetObjectName == "Sales-Post"
+            && r.TargetMemberName == "OnAfterPostSalesDoc");
+    }
+
+    [Fact]
+    public void Event_subscriber_attribute_on_a_table_publisher_resolves()
+    {
+        // EventSubscriber against a Table publisher rather than a Codeunit
+        // — the typed-literal in arg[1] is `Table::"Customer"` instead of
+        // `Codeunit::"…"`. Catalog lookup uses the name; the kind comes
+        // from whatever object the name resolves to.
+        const string src = """
+            codeunit 50102 "Cust Subscribers"
+            {
+                [EventSubscriber(ObjectType::Table, Database::Customer, 'OnAfterInsertEvent', '', false, false)]
+                local procedure HandleAfterInsert()
+                begin
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "event_publisher"
+            && r.TargetObjectName == "Customer"
+            && r.TargetObjectKind == "table"
+            && r.TargetMemberName == "OnAfterInsertEvent");
+    }
+
+    [Fact]
+    public void Multiple_event_subscribers_in_one_file_each_emit_a_binding()
+    {
+        // A subscribers codeunit often contains many subscribers. Each
+        // attribute must mint its own binding row — the walker must
+        // continue past the first matched attribute without losing track.
+        const string src = """
+            codeunit 50103 "Multi"
+            {
+                [EventSubscriber(ObjectType::Codeunit, Codeunit::"Sales-Post", 'OnAfterPostSalesDoc', '', false, false)]
+                local procedure A() begin end;
+
+                [EventSubscriber(ObjectType::Table, Database::Customer, 'OnAfterInsertEvent', '', false, false)]
+                local procedure B() begin end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Where(r => r.ReferenceKind == "event_publisher")
+            .Should().HaveCount(2);
+        result.References.Where(r => r.ReferenceKind == "event_publisher")
+            .Select(r => r.TargetMemberName)
+            .Should().BeEquivalentTo(new[] { "OnAfterPostSalesDoc", "OnAfterInsertEvent" });
+    }
+
+    [Fact]
+    public void Event_subscriber_attribute_with_unknown_target_drops_silently()
+    {
+        // Target codeunit isn't in the catalog (cross-release, customer
+        // extension not imported, typo). Don't crash, don't bump the
+        // unresolved counter — the same policy property-object refs
+        // use for unknown targets.
+        const string src = """
+            codeunit 50104 "Unknown"
+            {
+                [EventSubscriber(ObjectType::Codeunit, Codeunit::"Nonexistent Cu", 'OnSomething', '', false, false)]
+                local procedure A() begin end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Where(r => r.ReferenceKind == "event_publisher")
+            .Should().BeEmpty();
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Other_attributes_alongside_event_subscriber_do_not_emit_bindings()
+    {
+        // [Test] / [HandlerFunctions(...)] / [Scope('OnPrem')] etc. must
+        // not produce event_publisher rows — only [EventSubscriber] does.
+        // The narrow `[ EventSubscriber (` detector ensures attributes
+        // with other names skip the binding path.
+        const string src = """
+            codeunit 50105 "Test Cu"
+            {
+                [Test]
+                [HandlerFunctions('SomeHandler')]
+                procedure TestSomething() begin end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Where(r => r.ReferenceKind == "event_publisher")
+            .Should().BeEmpty();
+    }
+
+    // ── Object-scope property extraction ───────────────────────────
+
+    [Fact]
+    public void Source_table_property_emits_object_reference()
+    {
+        // `SourceTable = "Sales Header";` at the top of a page is a
+        // reference to the Sales Header table. The extractor must emit
+        // a property_object row at the line/column of the name token
+        // so the source viewer can underline and Go-to-definition can
+        // resolve via the object-name fallback.
+        const string src = """
+            page 42 "Sales Order"
+            {
+                SourceTable = "Sales Header";
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(MakeResolver(), "Sales Order", null));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetObjectKind == "table"
+            && r.TargetMemberName == null
+            && r.ReferenceKind == "property_object");
+    }
+
+    [Fact]
+    public void Lookup_page_id_property_emits_page_reference()
+    {
+        const string src = """
+            table 18 Customer
+            {
+                LookupPageID = "Customer List";
+            }
+            """;
+        var resolver = MakeResolver();
+        resolver.AddType("Customer List", new AlTypeRef(BaseAppId, "page", 22, "Customer List"));
+
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(resolver, "Customer"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Customer List"
+            && r.TargetObjectKind == "page"
+            && r.ReferenceKind == "property_object");
+    }
+
+    [Fact]
+    public void Data_caption_fields_emits_one_field_access_per_listed_field()
+    {
+        // DataCaptionFields = "No.", "Name"; lists two fields on the
+        // owner table — each gets its own field_access row so the
+        // source viewer underlines each independently and Go-to-
+        // definition jumps to the field declaration on the table.
+        const string src = """
+            table 18 Customer
+            {
+                DataCaptionFields = "No.", "Name";
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(MakeResolver(), "Customer"));
+
+        result.References.Should().HaveCount(2);
+        result.References.Select(r => r.TargetMemberName)
+            .Should().BeEquivalentTo(new[] { "No.", "Name" });
+        result.References.Should().AllSatisfy(r =>
+        {
+            r.TargetObjectName.Should().Be("Customer");
+            r.ReferenceKind.Should().Be("field_access");
+        });
+    }
+
+    [Fact]
+    public void Data_caption_fields_on_a_page_targets_the_source_table()
+    {
+        // A page's DataCaptionFields refers to fields on its SourceTable,
+        // not the page itself. Uses the same SourceTable-derived Rec
+        // type the body's implicit-field-access path uses.
+        const string src = """
+            page 42 "Sales Order"
+            {
+                DataCaptionFields = "Sell-to Customer No.";
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(MakeResolver(), "Sales Order", "Sales Header"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "Sell-to Customer No.");
+    }
+
+    [Fact]
+    public void Property_extraction_does_not_fire_inside_a_procedure_body()
+    {
+        // `if x = 5 then` inside a procedure body uses the same `=`
+        // punct as a property assignment, but it's not a property —
+        // the scope-depth guard ensures property detection only fires
+        // at object scope. Without the guard this would mis-parse
+        // comparisons as property declarations.
+        var resolver = MakeResolver();
+        resolver.AddType("SourceTable", new AlTypeRef(BaseAppId, "table", 99, "SourceTable"));
+
+        const string src = """
+            codeunit 50100 "Foo"
+            {
+                procedure Foo()
+                var
+                    SourceTable: Integer;
+                begin
+                    if SourceTable = 5 then exit;
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        // No reference should leak out — neither the comparison nor any
+        // body-token gets mis-recognised as a SourceTable property
+        // referring to the table named "SourceTable" in our fixture.
+        result.References.Should().BeEmpty(
+            because: "comparisons inside procedure bodies are not property declarations");
+    }
+
+    [Fact]
+    public void Property_with_unknown_object_name_drops_silently()
+    {
+        // `SourceTable = "Some Unknown Table";` referencing a table
+        // we don't have in the catalog must not throw and must not
+        // bump the unresolved counter — silent drop. Unknown targets
+        // in property values are common (cross-release, customer
+        // extensions); they don't deserve the noise.
+        const string src = """
+            page 42 "X"
+            {
+                SourceTable = "Some Unknown Table";
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(MakeResolver(), "X", null));
+
+        result.References.Should().BeEmpty();
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    // ── Implicit-Rec field access (gap #5 sibling) ─────────────────
+
+    [Fact]
+    public void Bare_quoted_identifier_inside_table_trigger_resolves_to_field_on_owner()
+    {
+        // `"No." := 'X'` inside a table trigger is shorthand for
+        // `Rec."No." := 'X'`. The extractor must emit a field_access
+        // reference on the owner table even without the Rec qualifier.
+        const string src = """
+            trigger OnInsert()
+            begin
+                "No." := 'C001';
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(MakeResolver(), "Customer"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Customer"
+            && r.TargetMemberName == "No."
+            && r.ReferenceKind == "field_access");
+    }
+
+    [Fact]
+    public void Bare_quoted_identifier_inside_page_trigger_resolves_to_field_on_source_table()
+    {
+        // On a page with SourceTable = "Sales Header", a bare `"Sell-to
+        // Customer No."` references that field on Sales Header.
+        const string src = """
+            trigger OnAfterGetCurrRecord()
+            begin
+                if "Sell-to Customer No." = '' then exit;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(MakeResolver(), "Sales Order", "Sales Header"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "Sell-to Customer No.");
+    }
+
+    [Fact]
+    public void Bare_unquoted_identifier_matching_owner_field_resolves()
+    {
+        // Field names that don't need quotes (no spaces) still trigger
+        // implicit-field-access. Customer has a "Name" field in the
+        // fixture; bare `Name` inside a table body resolves to it.
+        const string src = """
+            trigger OnInsert()
+            begin
+                if Name = '' then
+                    Name := 'Default';
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(MakeResolver(), "Customer"));
+
+        // Two reads / writes of Name → two field_access emits.
+        result.References.Should().HaveCount(2);
+        result.References.Should().AllSatisfy(r =>
+        {
+            r.TargetObjectName.Should().Be("Customer");
+            r.TargetMemberName.Should().Be("Name");
+            r.ReferenceKind.Should().Be("field_access");
+        });
+    }
+
+    [Fact]
+    public void Local_variable_shadows_implicit_field_with_same_name()
+    {
+        // Customer has a field "Name". A local var named `Name` shadows
+        // the field — bare `Name` inside the body references the local,
+        // not the field. The extractor must not emit a field_access.
+        const string src = """
+            procedure Foo()
+            var
+                Name: Text;
+            begin
+                Name := 'shadowed';
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(MakeResolver(), "Customer"));
+
+        result.References.Should().BeEmpty(
+            because: "the local variable Name shadows the field of the same name");
+    }
+
+    [Fact]
+    public void Implicit_field_access_skips_statement_keywords_and_literals()
+    {
+        // `if`, `then`, `not`, `true`, `false`, `exit` etc. are bare
+        // identifiers that look like potential field accesses. The
+        // keyword filter must drop them before the field lookup so
+        // they don't pollute the resolved counter or emit refs.
+        const string src = """
+            trigger OnInsert()
+            begin
+                if true then
+                    exit;
+                if not Confirm('Sure?', true) then
+                    exit;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(MakeResolver(), "Customer"));
+
+        result.References.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Implicit_field_access_does_not_fire_outside_a_record_owner()
+    {
+        // Codeunits don't have Rec — implicit-field-access shouldn't
+        // even try. A bare quoted identifier inside a codeunit body
+        // is most likely a label / string / enum value, none of which
+        // we should treat as field accesses.
+        const string src = """
+            procedure Foo()
+            begin
+                "Some Token";
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Nested_begin_end_blocks_preserve_procedure_scope()
+    {
+        // Pre-fix bug: any `end;` inside a procedure body popped the
+        // scope frame, so local variables declared in the procedure
+        // were "out of scope" after the first nested end. This test
+        // exercises a deeply nested begin/end and verifies the local
+        // `Cust` parameter is still resolvable on the inner `Cust.X()`
+        // — which only works if scope wasn't popped prematurely.
+        const string src = """
+            procedure Foo(Cust: Record Customer)
+            begin
+                if true then begin
+                    if true then begin
+                        Cust.Insert();
+                    end;
+                end;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Customer"
+            && r.TargetMemberName == "Insert");
+    }
+
+    [Fact]
+    public void Case_blocks_count_toward_block_depth_alongside_begin()
+    {
+        // `case … end;` opens a block closed by `end` without a paired
+        // `begin`. The depth tracker must count `case` as an opener too,
+        // otherwise the case's `end` pops the procedure scope.
+        const string src = """
+            procedure Foo(Cust: Record Customer)
+            begin
+                case Cust.Insert() of
+                    true: exit;
+                    false: exit;
+                end;
+                Cust.Validate();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        // Both Cust.Insert() and Cust.Validate() must emit — the second
+        // one only does if the procedure scope survived the case block.
+        result.References.Should().HaveCount(2);
+        result.References.Select(r => r.TargetMemberName)
+            .Should().BeEquivalentTo(new[] { "Insert", "Validate" });
     }
 
     // ── Bare self-procedure calls (gap #4) ─────────────────────────

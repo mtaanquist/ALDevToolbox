@@ -481,10 +481,18 @@ export function mountReadOnly(container, value, language, options) {
         if (onDeclaration) {
             // Click landed on a declaration name range — we already know the
             // symbol id, so the existing single-arg callback is fine.
+            // Two ID spaces: object headers go through OnFindReferences
+            // (oe_module_objects.Id → /from-symbol/); sub-symbols
+            // (procedure / field / trigger / event) go through
+            // OnFindMemberReferences (oe_module_symbols.Id →
+            // /from-member-symbol/). isMemberSymbol decides the route.
+            const callback = onDeclaration.isMemberSymbol
+                ? "OnFindMemberReferences"
+                : "OnFindReferences";
             items.push({
                 label: "Find references",
                 action: () => opts.dotNetRef.invokeMethodAsync(
-                    "OnFindReferences", onDeclaration.symbolId),
+                    callback, onDeclaration.symbolId),
             });
         } else {
             // Off-declaration click: the host decides whether the word

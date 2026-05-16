@@ -553,8 +553,23 @@ public class ObjectExplorerService
             .Select(o => new { o.Id, o.Kind, o.Name, o.LineNumber })
             .ToListAsync(ct);
 
+        // Sub-symbol declarations (procedures, fields, triggers, event
+        // subscribers). oe_module_symbols already stamps 1-based
+        // line/column spans at import via AlSymbolExtractor, so we don't
+        // need a re-scan here — symbol rows with LineNumber > 0 are
+        // declared in source and can be made clickable directly.
+        var symbols = await _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Object!.SourceFileId == fileId
+                && s.LineNumber > 0
+                && s.ColumnEnd > s.ColumnStart)
+            .Select(s => new
+            {
+                s.Id, s.Kind, s.Name, s.LineNumber, s.ColumnStart, s.ColumnEnd,
+            })
+            .ToListAsync(ct);
+
         var lines = content.Replace("\r\n", "\n").Split('\n');
-        var result = new List<ALDevToolbox.Components.Shared.CodeViewerDeclaration>(objects.Count);
+        var result = new List<ALDevToolbox.Components.Shared.CodeViewerDeclaration>(objects.Count + symbols.Count);
         foreach (var obj in objects)
         {
             if (obj.LineNumber < 1 || obj.LineNumber > lines.Length) continue;
@@ -587,6 +602,19 @@ public class ObjectExplorerService
                 Kind: obj.Kind,
                 Name: obj.Name));
         }
+
+        foreach (var sym in symbols)
+        {
+            result.Add(new ALDevToolbox.Components.Shared.CodeViewerDeclaration(
+                SymbolId: sym.Id,
+                Line: sym.LineNumber,
+                ColumnStart: sym.ColumnStart,
+                ColumnEnd: sym.ColumnEnd,
+                Kind: sym.Kind,
+                Name: sym.Name,
+                IsMemberSymbol: true));
+        }
+
         return result;
     }
 
@@ -629,7 +657,9 @@ public class ObjectExplorerService
         //    TargetSymbolId — those have a direct file + line via the symbol's
         //    owner object.
         var memberHit = await _db.OeModuleReferences.AsNoTracking()
-            .Where(r => (r.ReferenceKind == "method_call" || r.ReferenceKind == "field_access")
+            .Where(r => (r.ReferenceKind == "method_call"
+                    || r.ReferenceKind == "field_access"
+                    || r.ReferenceKind == "event_publisher")
                 && r.SourceObject!.SourceFileId == fileId
                 && r.LineNumber == line
                 && r.TargetMemberName != null
@@ -689,18 +719,27 @@ public class ObjectExplorerService
             .SingleOrDefaultAsync(ct);
         if (string.IsNullOrEmpty(content)) return new();
 
-        // Pull every member-access row on the file. TargetSymbolId may be
-        // null (e.g. cross-release receivers not yet in the local catalog) —
-        // we still underline the token because the click-time resolver can
-        // fall back to other strategies later. For now, only TargetSymbolId-
-        // resolved rows are guaranteed clickable, so filter to them.
+        // Pull every source-extracted reference on the file (LineNumber
+        // set). Two row shapes contribute spans:
+        //   - Member-scoped (method_call / field_access): the underlined
+        //     token is the MEMBER name. Go-to-definition resolves via
+        //     the row's TargetSymbolId when present, or falls back to
+        //     object-name lookup.
+        //   - Object-scoped (property_object from SourceTable,
+        //     LookupPageID, …): the underlined token is the TARGET
+        //     OBJECT name. Go-to-definition resolves via the object-name
+        //     lookup. No member-symbol id needed.
+        // The line-text scan below uses the per-row Name to find the
+        // 1-based column span — same logic for both shapes.
         var rows = await _db.OeModuleReferences.AsNoTracking()
-            .Where(r => (r.ReferenceKind == "method_call" || r.ReferenceKind == "field_access")
-                && r.SourceObject!.SourceFileId == fileId
-                && r.LineNumber != null
-                && r.TargetMemberName != null
-                && r.TargetSymbolId != null)
-            .Select(r => new { Line = r.LineNumber!.Value, Name = r.TargetMemberName! })
+            .Where(r => r.SourceObject!.SourceFileId == fileId
+                && r.LineNumber != null)
+            .Select(r => new
+            {
+                Line = r.LineNumber!.Value,
+                Name = r.TargetMemberName ?? r.TargetObjectName,
+            })
+            .Where(x => x.Name != null && x.Name != "")
             .ToListAsync(ct);
         if (rows.Count == 0) return new();
 
