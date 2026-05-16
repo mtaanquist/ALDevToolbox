@@ -80,6 +80,7 @@ function init() {
     wireRefsCloseButton(root);
     wireSearchShortcut(root, editorId);
     wirePopstate(root, editorId);
+    wireOutlineResizer(root);
 
     // If the server already rendered a session into the references panel's
     // data-session attribute (page loaded with ?refSet=token), parse it
@@ -610,6 +611,109 @@ function wireSearchShortcut(root, editorId) {
 }
 
 // ── Outline pieces (unchanged from prior version) ────────────────
+
+// ── Outline resizer ──────────────────────────────────────────────
+//
+// Drag handle between the editor and the outline. Updates a CSS
+// custom property on the layout so the outline column flexes without
+// re-running React-style relayout, and persists the chosen width in
+// localStorage so subsequent loads inherit the user's choice. Width
+// is clamped to the same range the CSS uses (220–720px) — the panel
+// stays readable, the editor still has room.
+
+const OUTLINE_WIDTH_KEY = "aldt.source-viewer.outline-width";
+const OUTLINE_WIDTH_MIN = 220;
+const OUTLINE_WIDTH_MAX = 720;
+
+function wireOutlineResizer(root) {
+    const layout = root.querySelector(".source-viewer__layout");
+    const handle = root.querySelector(".source-viewer__resizer");
+    const outline = root.querySelector(".source-viewer__outline");
+    if (!layout || !handle || !outline) return;
+
+    // Rehydrate the last chosen width before the first paint of the
+    // resizer would otherwise let the layout flash at the default.
+    const stored = readStoredWidth();
+    if (stored !== null) {
+        layout.style.setProperty("--source-viewer-outline-width", stored + "px");
+    }
+
+    let pointerId = null;
+    let startX = 0;
+    let startWidth = 0;
+
+    handle.addEventListener("pointerdown", e => {
+        if (e.button !== 0) return;
+        pointerId = e.pointerId;
+        startX = e.clientX;
+        startWidth = outline.getBoundingClientRect().width;
+        handle.setPointerCapture(pointerId);
+        handle.classList.add("is-dragging");
+        document.body.style.cursor = "col-resize";
+        e.preventDefault();
+    });
+
+    handle.addEventListener("pointermove", e => {
+        if (pointerId === null || e.pointerId !== pointerId) return;
+        // Drag right = handle moves right = outline narrower (it's on
+        // the right of the editor). Subtract the delta so dragging the
+        // visible handle towards the outline shrinks it intuitively.
+        const delta = e.clientX - startX;
+        const next = clamp(startWidth - delta, OUTLINE_WIDTH_MIN, OUTLINE_WIDTH_MAX);
+        layout.style.setProperty("--source-viewer-outline-width", next + "px");
+    });
+
+    const endDrag = e => {
+        if (pointerId === null || (e && e.pointerId !== pointerId)) return;
+        try { handle.releasePointerCapture(pointerId); } catch { /* already released */ }
+        pointerId = null;
+        handle.classList.remove("is-dragging");
+        document.body.style.cursor = "";
+        const final = outline.getBoundingClientRect().width;
+        storeWidth(final);
+    };
+    handle.addEventListener("pointerup", endDrag);
+    handle.addEventListener("pointercancel", endDrag);
+
+    // Keyboard accessibility — left/right arrow nudges the divider in
+    // 20px steps so users without a mouse can still tune the column.
+    handle.addEventListener("keydown", e => {
+        const step = e.shiftKey ? 60 : 20;
+        let delta = 0;
+        if (e.key === "ArrowLeft") delta = step;       // grow outline
+        else if (e.key === "ArrowRight") delta = -step; // shrink outline
+        else return;
+        e.preventDefault();
+        const current = outline.getBoundingClientRect().width;
+        const next = clamp(current + delta, OUTLINE_WIDTH_MIN, OUTLINE_WIDTH_MAX);
+        layout.style.setProperty("--source-viewer-outline-width", next + "px");
+        storeWidth(next);
+    });
+}
+
+function clamp(v, lo, hi) {
+    return Math.min(Math.max(v, lo), hi);
+}
+
+function readStoredWidth() {
+    try {
+        const raw = window.localStorage?.getItem(OUTLINE_WIDTH_KEY);
+        if (!raw) return null;
+        const n = Number(raw);
+        if (!Number.isFinite(n)) return null;
+        return clamp(n, OUTLINE_WIDTH_MIN, OUTLINE_WIDTH_MAX);
+    } catch {
+        return null;
+    }
+}
+
+function storeWidth(px) {
+    try {
+        window.localStorage?.setItem(OUTLINE_WIDTH_KEY, String(Math.round(px)));
+    } catch {
+        /* storage disabled — width still applies for the session. */
+    }
+}
 
 function wireOutlineFilter(root) {
     const filter = root.querySelector(".source-viewer__outline-filter");

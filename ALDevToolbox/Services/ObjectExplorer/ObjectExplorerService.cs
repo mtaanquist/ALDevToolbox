@@ -50,11 +50,13 @@ public class ObjectExplorerService
             .ThenBy(r => r.Label)
             .Select(r => new ReleaseListItem(
                 r.Id, r.Label, r.Kind, r.Status, r.BcVersion, r.ParentReleaseId, r.ImportedAt,
-                // Both aggregates run as correlated subqueries against
-                // oe_module_files joined through oe_modules. The numbers feed
-                // the per-release Files / Size columns on the browser.
-                SourceFileCount: r.Modules.SelectMany(m => m.Files).Count(),
-                SourceContentLength: r.Modules.SelectMany(m => m.Files).Sum(f => (long)f.Content.Length),
+                // Denormalised counters stamped at ingest time. The Releases
+                // picker on a busy org used to spend most of its load budget
+                // here — a correlated subquery summing LENGTH(content) over
+                // multi-thousand-row file tables. ReleaseImportService now
+                // pins these once when the Release flips to ready.
+                SourceFileCount: r.SourceFileCount,
+                SourceContentLength: r.SourceContentLength,
                 DeletedAt: r.DeletedAt))
             .ToListAsync(ct);
     }
@@ -234,7 +236,17 @@ public class ObjectExplorerService
             .Select(f => new SourceFileHeader(
                 f.Id, f.ModuleId, f.Module!.Name,
                 f.Module.ReleaseId, f.Module.Release!.Label,
-                f.Path, f.LineCount))
+                f.Path, f.LineCount,
+                // AL enforces one object per file in practice so picking the
+                // first attached object's namespace is unambiguous. ModuleFile
+                // has no inverse collection nav onto ModuleObject (the FK
+                // direction is one-way, with SetNull on delete), so this is
+                // a correlated subquery rather than a navigation traversal.
+                // Skips gracefully when the file isn't backing an object.
+                _db.OeModuleObjects.AsNoTracking()
+                    .Where(o => o.SourceFileId == f.Id && o.Namespace != null)
+                    .Select(o => o.Namespace)
+                    .FirstOrDefault()))
             .SingleOrDefaultAsync(ct)!;
 
     // ── Cross-module search ────────────────────────────────────────────

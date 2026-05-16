@@ -23,6 +23,14 @@ internal sealed class ReleaseConfiguration : IEntityTypeConfiguration<Release>
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
+        entity.Property(e => e.SourceFileCount)
+            .HasColumnName("source_file_count")
+            .HasDefaultValue(0)
+            .IsRequired();
+        entity.Property(e => e.SourceContentLength)
+            .HasColumnName("source_content_length")
+            .HasDefaultValue(0L)
+            .IsRequired();
 
         entity.HasOne(e => e.Organization)
             .WithMany()
