@@ -3022,16 +3022,26 @@ ul.form-field-error {
     flex: 1 1 0;
     min-width: 0;
     min-height: 0;
-    /* Clip cm-editor's horizontal overflow so a long line doesn't
-       paint into the outline column. CodeMirror's own cm-scroller
-       handles horizontal scrolling inside the editor. */
+    /* Match the outline column's framed look — same border, same
+       corner radius, same surface. overflow:hidden also clips the
+       cm-editor's rounded corners so the editor body, search panel
+       and bottom status bar all sit inside the rounded box.
+       CodeMirror's own cm-scroller handles horizontal scrolling. */
     overflow: hidden;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    background: var(--color-surface);
 }
 
 /* Bound cm-editor to the code column's height so cm-scroller actually
-   scrolls instead of letting the file extend off the page. */
+   scrolls instead of letting the file extend off the page. The
+   editor's own border is suppressed — the wrapper carries the frame
+   so the inner gutter/scroller live edge-to-edge inside the radius. */
 .source-viewer__code .cm-editor {
     height: 100%;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
 }
 
 .source-viewer__outline {
