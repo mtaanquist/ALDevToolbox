@@ -179,11 +179,33 @@ public static class AlReferenceExtractor
                 frame.Vars[name] = type;
             }
             // Tables, pages, table extensions and page extensions expose
-            // implicit Rec / xRec self-references that point at the
-            // object's own type. Other kinds don't.
+            // implicit Rec / xRec self-references. The receiver type
+            // differs by owner kind:
+            //   - table / tableextension → Rec is the table itself
+            //     (or the extended base table; same name for extensions
+            //     since AL flattens fields).
+            //   - page / pageextension → Rec is the page's SourceTable.
+            //     Without that, Rec.X looks for field X on the page,
+            //     which doesn't have fields. The importer denormalises
+            //     SourceTable onto the owner object so we can find it
+            //     here without a catalog lookup.
+            //   - report / reportextension / xmlport / query / requestpage
+            //     also expose Rec/xRec, but the source-table binding is
+            //     more varied (per-dataitem); v1 keeps the owner-itself
+            //     fallback there.
             if (OwnerSupportsRecXRec())
             {
-                var selfType = new ResolvedVariableType(_ctx.OwnerKind, _ctx.OwnerName);
+                ResolvedVariableType selfType;
+                if ((string.Equals(_ctx.OwnerKind, "page", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(_ctx.OwnerKind, "pageextension", StringComparison.OrdinalIgnoreCase))
+                    && !string.IsNullOrEmpty(_ctx.OwnerSourceTableName))
+                {
+                    selfType = new ResolvedVariableType("Record", _ctx.OwnerSourceTableName);
+                }
+                else
+                {
+                    selfType = new ResolvedVariableType(_ctx.OwnerKind, _ctx.OwnerName);
+                }
                 frame.Vars["rec"] = selfType;
                 frame.Vars["xrec"] = selfType;
                 // CurrFieldRef in field validate triggers, etc., is a
@@ -842,7 +864,8 @@ public sealed record AlExtractContext(
     int? OwnerObjectId,
     Guid OwnerAppId,
     IReadOnlyDictionary<string, ResolvedVariableType> GlobalVars,
-    IAlTypeResolver Resolver);
+    IAlTypeResolver Resolver,
+    string? OwnerSourceTableName = null);
 
 /// <summary>
 /// Looks up type information used during receiver-type resolution.

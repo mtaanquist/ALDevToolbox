@@ -553,8 +553,23 @@ public class ObjectExplorerService
             .Select(o => new { o.Id, o.Kind, o.Name, o.LineNumber })
             .ToListAsync(ct);
 
+        // Sub-symbol declarations (procedures, fields, triggers, event
+        // subscribers). oe_module_symbols already stamps 1-based
+        // line/column spans at import via AlSymbolExtractor, so we don't
+        // need a re-scan here — symbol rows with LineNumber > 0 are
+        // declared in source and can be made clickable directly.
+        var symbols = await _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Object!.SourceFileId == fileId
+                && s.LineNumber > 0
+                && s.ColumnEnd > s.ColumnStart)
+            .Select(s => new
+            {
+                s.Id, s.Kind, s.Name, s.LineNumber, s.ColumnStart, s.ColumnEnd,
+            })
+            .ToListAsync(ct);
+
         var lines = content.Replace("\r\n", "\n").Split('\n');
-        var result = new List<ALDevToolbox.Components.Shared.CodeViewerDeclaration>(objects.Count);
+        var result = new List<ALDevToolbox.Components.Shared.CodeViewerDeclaration>(objects.Count + symbols.Count);
         foreach (var obj in objects)
         {
             if (obj.LineNumber < 1 || obj.LineNumber > lines.Length) continue;
@@ -587,6 +602,19 @@ public class ObjectExplorerService
                 Kind: obj.Kind,
                 Name: obj.Name));
         }
+
+        foreach (var sym in symbols)
+        {
+            result.Add(new ALDevToolbox.Components.Shared.CodeViewerDeclaration(
+                SymbolId: sym.Id,
+                Line: sym.LineNumber,
+                ColumnStart: sym.ColumnStart,
+                ColumnEnd: sym.ColumnEnd,
+                Kind: sym.Kind,
+                Name: sym.Name,
+                IsMemberSymbol: true));
+        }
+
         return result;
     }
 

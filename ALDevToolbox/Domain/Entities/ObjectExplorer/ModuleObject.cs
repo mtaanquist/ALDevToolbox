@@ -43,6 +43,25 @@ public class ModuleObject
     /// <summary>For extension objects: the name of the base object being extended. Null otherwise.</summary>
     public string? ExtendsObjectName { get; set; }
 
+    /// <summary>
+    /// For pages and pageextensions: the unquoted name of the table the
+    /// page binds <c>Rec</c> to. Populated from the page's
+    /// <c>SourceTable</c> property at import time; for pageextensions
+    /// copied from the base page after both have been imported. Null for
+    /// kinds that don't have a source table (codeunits, tables themselves,
+    /// reports, …) and for pages without an explicit SourceTable.
+    ///
+    /// Why we denormalise it onto the object row: the AL reference extractor
+    /// needs to know what <c>Rec</c> is when walking a page's triggers
+    /// (e.g. <c>Rec."No."</c> on page 42 "Sales Order" must resolve to a
+    /// field on table "Sales Header"). The page's own type catalog row
+    /// doesn't carry that — it lives in the symbol package's property
+    /// list. Resolving at extract time would require either re-parsing
+    /// the symbol package or scanning the source for the property; a
+    /// single nullable column on the owner is cheaper.
+    /// </summary>
+    public string? SourceTableName { get; set; }
+
     /// <summary>Source file this object is declared in. Null when source wasn't available.</summary>
     public long? SourceFileId { get; set; }
     public ModuleFile? SourceFile { get; set; }

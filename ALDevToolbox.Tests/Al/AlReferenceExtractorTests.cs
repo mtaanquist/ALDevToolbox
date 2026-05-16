@@ -61,6 +61,26 @@ public sealed class AlReferenceExtractorTests
             GlobalVars: globals ?? new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
             Resolver: resolver);
 
+    private static AlExtractContext OwnerPage(StubResolver resolver, string pageName, string? sourceTable,
+        Dictionary<string, ResolvedVariableType>? globals = null) => new(
+            OwnerKind: "page",
+            OwnerName: pageName,
+            OwnerObjectId: null,
+            OwnerAppId: BaseAppId,
+            GlobalVars: globals ?? new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+            Resolver: resolver,
+            OwnerSourceTableName: sourceTable);
+
+    private static AlExtractContext OwnerPageExtension(StubResolver resolver, string extName, string? sourceTable,
+        Dictionary<string, ResolvedVariableType>? globals = null) => new(
+            OwnerKind: "pageextension",
+            OwnerName: extName,
+            OwnerObjectId: null,
+            OwnerAppId: BaseAppId,
+            GlobalVars: globals ?? new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+            Resolver: resolver,
+            OwnerSourceTableName: sourceTable);
+
     // ── Behavioural tests ───────────────────────────────────────────
 
     [Fact]
@@ -514,6 +534,95 @@ public sealed class AlReferenceExtractorTests
             because: "Insert sits on the fifth line of the snippet (1-based)");
         // The member name starts at column 10 (after "Cust." inside the indent).
         insertRef.Column.Should().BeGreaterThan(1);
+    }
+
+    // ── Rec on pages / pageextensions resolves to SourceTable ──────
+
+    [Fact]
+    public void Rec_inside_a_page_resolves_to_the_source_table()
+    {
+        // On page 42 "Sales Order" with SourceTable = "Sales Header",
+        // `Rec."No."` should resolve to the field "No." on Sales Header —
+        // not as a member on the page itself (which doesn't have fields).
+        const string src = """
+            trigger OnAfterGetCurrRecord()
+            begin
+                Rec."Sell-to Customer No." := 'C001';
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(MakeResolver(), "Sales Order", "Sales Header"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "Sell-to Customer No."
+            && r.ReferenceKind == "field_access");
+    }
+
+    [Fact]
+    public void Rec_method_call_inside_a_page_resolves_via_the_source_table()
+    {
+        // `Rec.Insert()` on a page triggers the Record's Insert built-in
+        // via the SourceTable — but more importantly, calls to USER
+        // procedures defined on the source table (or on tableextensions
+        // of it) must resolve. AL pages routinely call procedures the
+        // table itself declares; this guarantees those calls underline.
+        var resolver = MakeResolver();
+        // Add a user-declared procedure on Sales Header.
+        resolver.AddMember("Sales Header", new AlMember("CheckCreditMaxBeforeInsert", "procedure", null, null));
+
+        const string src = """
+            trigger OnValidate()
+            begin
+                Rec.CheckCreditMaxBeforeInsert();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(resolver, "Sales Order", "Sales Header"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "CheckCreditMaxBeforeInsert"
+            && r.ReferenceKind == "method_call");
+    }
+
+    [Fact]
+    public void Rec_inside_a_pageextension_resolves_to_the_propagated_source_table()
+    {
+        // Pageextensions don't carry SourceTable in their own symbol-package
+        // properties; the importer's second-pass copies it from the base
+        // page. The extractor consumes that propagated value the same way.
+        const string src = """
+            trigger OnAfterGetCurrRecord()
+            begin
+                Rec."Sell-to Customer No." := 'C001';
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            OwnerPageExtension(MakeResolver(), "Sales Order Ext", "Sales Header"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "Sell-to Customer No.");
+    }
+
+    [Fact]
+    public void Rec_inside_a_page_without_source_table_falls_back_silently()
+    {
+        // Pages without an explicit SourceTable (rare — listpages typically
+        // have one, but pages without a table source exist). The extractor
+        // shouldn't crash and shouldn't produce a wrong reference; it just
+        // can't resolve the chain.
+        const string src = """
+            trigger OnOpenPage()
+            begin
+                Rec."No." := 'X';
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(MakeResolver(), "Some Card", null));
+
+        // Page owner type "page" doesn't have a "No." field; ResolveMember
+        // returns null and the chain is silently dropped (no spurious
+        // emit, no crash).
+        result.References.Should().BeEmpty();
     }
 
     // ── Bare self-procedure calls (gap #4) ─────────────────────────

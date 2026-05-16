@@ -32,6 +32,20 @@ public sealed class CodeViewerCallbacks
 /// <summary>
 /// One declaration the viewer should make clickable. Coordinates are 1-based
 /// and align with what <c>AlSymbolExtractor</c> captures at import time.
+///
+/// <see cref="SymbolId"/> identifies the underlying row — its meaning depends
+/// on <see cref="IsMemberSymbol"/>:
+/// <list type="bullet">
+///   <item><c>false</c> (object header): <c>oe_module_objects.Id</c>. The
+///         right-click "Find references" routes via
+///         <c>/from-symbol/{id}</c> (object-scoped query).</item>
+///   <item><c>true</c> (procedure / field / trigger / event symbol):
+///         <c>oe_module_symbols.Id</c>. The right-click "Find references"
+///         routes via <c>/from-member-symbol/{id}</c> (member-scoped
+///         query: declarations + calls + owner-type buckets).</item>
+/// </list>
+/// Two ID spaces don't mix — keeping the flag explicit lets the JS host
+/// pick the right endpoint without having to guess from the kind string.
 /// </summary>
 public sealed record CodeViewerDeclaration(
     long SymbolId,
@@ -39,7 +53,8 @@ public sealed record CodeViewerDeclaration(
     int ColumnStart,
     int ColumnEnd,
     string Kind,
-    string Name);
+    string Name,
+    bool IsMemberSymbol = false);
 
 /// <summary>A 1-based click position inside the viewer's source.</summary>
 public sealed record CodeViewerClick(int Line, int Column);

@@ -114,6 +114,14 @@ public class ReleaseImportService
                 await ImportOneAppAsync(orgId, release, upload, totals, ct).ConfigureAwait(false);
             }
 
+            // SourceTable propagation for pageextensions. The symbol
+            // package only carries SourceTable on the base page; the
+            // extension inherits it implicitly but ships no property of
+            // its own. Copy it across now so the reference extractor's
+            // page-Rec resolution (BuildGlobalScope) finds it for
+            // pageextensions too.
+            await PropagateSourceTableToPageExtensionsAsync(release.Id, ct).ConfigureAwait(false);
+
             // Phase 2 call-site extraction. Runs once per release, AFTER
             // every module's symbols + variables are in the DB so the
             // resolver can see types declared anywhere in this release.
@@ -418,6 +426,10 @@ public class ReleaseImportService
                 Namespace = string.IsNullOrEmpty(symObj.Namespace) ? null : symObj.Namespace,
                 ExtendsAppId = symObj.ExtendsAppId,
                 ExtendsObjectName = symObj.ExtendsObjectName,
+                // SourceTable on pages — extracted from the symbol package's
+                // property list. Pageextensions don't carry it directly; a
+                // second pass below copies the value from their base page.
+                SourceTableName = ExtractSourceTableName(symObj),
                 // Use the FK directly rather than the navigation: after the
                 // file-chunk save loop above, the file entity may have been
                 // detached from the tracker on a previous flush. The Id is
@@ -813,6 +825,28 @@ public class ReleaseImportService
         return (kind, type.ObjectId, type.ObjectName, type.Name);
     }
 
+    /// <summary>
+    /// Pulls the SourceTable name out of a page / pageextension's symbol-
+    /// package property list. The runtime value is a
+    /// <c>#&lt;32hex&gt;#&lt;name&gt;</c> hash-ref pointing at the table —
+    /// same shape as <c>TableNo</c> / <c>ExtendsTarget</c>. Returns null
+    /// for kinds that don't have the property or when parsing fails.
+    /// Pageextensions don't carry SourceTable in their own properties (they
+    /// inherit it from the base page); for those a second-pass copy below
+    /// fills the column.
+    /// </summary>
+    private static string? ExtractSourceTableName(SymbolObject symObj)
+    {
+        if (symObj.Kind != "page" && symObj.Kind != "pageextension") return null;
+        var prop = symObj.Properties.FirstOrDefault(p =>
+            string.Equals(p.Name, "SourceTable", StringComparison.OrdinalIgnoreCase));
+        if (prop is null) return null;
+        var (_, name) = ParseHashRef(prop.Value);
+        // Some symbol packages emit the bare table name when the table
+        // lives in the same module. Accept both shapes.
+        return name ?? (string.IsNullOrEmpty(prop.Value) ? null : prop.Value);
+    }
+
     private static (Guid? AppId, string? Name) ParseHashRef(string? raw)
     {
         if (string.IsNullOrEmpty(raw) || raw[0] != '#') return (null, null);
@@ -975,6 +1009,42 @@ public class ReleaseImportService
             .Select(m => m.Version)
             .FirstOrDefault();
         return baseApp;
+    }
+
+    /// <summary>
+    /// Second pass over the just-imported release: for each pageextension,
+    /// look up the page it extends (by ExtendsAppId + ExtendsObjectName,
+    /// considering modules visible to the extension's module) and copy the
+    /// base page's <c>SourceTableName</c> onto the extension. Done as a
+    /// single UPDATE … FROM SQL because EF Core can't express the
+    /// self-join cleanly and the per-row navigate-update approach would
+    /// be hundreds of tracker-loaded entities for a large release.
+    /// </summary>
+    private async Task PropagateSourceTableToPageExtensionsAsync(int releaseId, CancellationToken ct)
+    {
+        // Match by ExtendsObjectName against any base page in the same
+        // release. Cross-release base-page lookups (a customer release
+        // extending a Base App page from a parent release) are deferred
+        // alongside the broader cross-release-shadowing gap — pageextension
+        // .al source in the layered case is rare and the extractor
+        // gracefully falls back to "Rec is the page itself" (still wrong,
+        // still won't underline, but no crash).
+        const string sql = """
+            UPDATE oe_module_objects ext
+            SET source_table_name = base.source_table_name
+            FROM oe_module_objects base
+            JOIN oe_modules base_mod ON base_mod.id = base.module_id
+            JOIN oe_modules ext_mod  ON ext_mod.id  = ext.module_id
+            WHERE ext.kind = 'pageextension'
+              AND ext.source_table_name IS NULL
+              AND ext.extends_object_name IS NOT NULL
+              AND base.kind = 'page'
+              AND base.name = ext.extends_object_name
+              AND base.source_table_name IS NOT NULL
+              AND base_mod.release_id = {0}
+              AND ext_mod.release_id  = {0};
+            """;
+        await _db.Database.ExecuteSqlRawAsync(sql, new object[] { releaseId }, ct).ConfigureAwait(false);
     }
 
     // ── Mutable tally ───────────────────────────────────────────────────
@@ -1163,7 +1233,7 @@ public class ReleaseImportService
                 Owner = _db.OeModuleObjects
                     .Where(o => o.SourceFileId == f.Id)
                     .OrderBy(o => o.Id)
-                    .Select(o => new { o.Id, o.Kind, o.Name, o.ObjectId, AppId = o.Module!.AppId })
+                    .Select(o => new { o.Id, o.Kind, o.Name, o.ObjectId, AppId = o.Module!.AppId, o.SourceTableName })
                     .FirstOrDefault(),
             })
             .ToListAsync(ct);
@@ -1183,7 +1253,8 @@ public class ReleaseImportService
                 OwnerObjectId: file.Owner.ObjectId,
                 OwnerAppId: file.Owner.AppId,
                 GlobalVars: globals ?? new Dictionary<string, ALDevToolbox.Services.Al.ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
-                Resolver: ResolverFor(file.ModuleId));
+                Resolver: ResolverFor(file.ModuleId),
+                OwnerSourceTableName: file.Owner.SourceTableName);
 
             var result = ALDevToolbox.Services.Al.AlReferenceExtractor.Extract(file.Content, ctx);
             totalUnresolved += result.Stats.UnresolvedReceivers;

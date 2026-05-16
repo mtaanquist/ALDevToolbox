@@ -54,7 +54,7 @@
                  data-language="al"
                  data-content="@_file.Content"
                  data-declarations="@SerializeDeclarations(_declarations)"
-                 data-resolvables="@SerializeResolvables(_resolvables)"></div>
+                 data-resolvables="@SerializeResolvables(MergeDeclarationsAsResolvables(_resolvables, _declarations))"></div>
 
             @* Drag handle between the editor and the outline. source-viewer.js
                wires the pointer events and persists the chosen width in
@@ -412,6 +412,31 @@
     {
         if (resolvables is null || resolvables.Count == 0) return "[]";
         return JsonSerializer.Serialize(resolvables, DeclarationJsonOptions);
+    }
+
+    /// <summary>
+    /// Combines the call-site / field-access resolvables with declaration
+    /// spans so every interactive token in the file gets the underline
+    /// affordance — not just the call sites. Declarations stay in
+    /// <c>data-declarations</c> for the right-click routing; this is purely
+    /// the visual layer (CodeMirror's resolvable-decoration extension
+    /// treats both sets identically — an underlined span).
+    /// </summary>
+    private static IReadOnlyList<CodeViewerResolvable> MergeDeclarationsAsResolvables(
+        IReadOnlyList<CodeViewerResolvable>? resolvables,
+        IReadOnlyList<CodeViewerDeclaration>? declarations)
+    {
+        var merged = new List<CodeViewerResolvable>(
+            (resolvables?.Count ?? 0) + (declarations?.Count ?? 0));
+        if (resolvables is not null) merged.AddRange(resolvables);
+        if (declarations is not null)
+        {
+            foreach (var d in declarations)
+            {
+                merged.Add(new CodeViewerResolvable(d.Line, d.ColumnStart, d.ColumnEnd));
+            }
+        }
+        return merged;
     }
 
     private static readonly JsonSerializerOptions DeclarationJsonOptions = new()
