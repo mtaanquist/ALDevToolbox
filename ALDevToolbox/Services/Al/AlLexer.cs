@@ -50,6 +50,9 @@ public enum AlTokenKind
     /// <summary><c>:=</c> — assignment.</summary>
     Assign,
 
+    /// <summary><c>+=</c>, <c>-=</c>, <c>*=</c>, <c>/=</c> — compound assignment.</summary>
+    CompoundAssign,
+
     /// <summary><c>..</c> — range.</summary>
     Range,
 
@@ -264,48 +267,118 @@ public static class AlLexer
                 continue;
             }
 
-            // Number — leading digit then digits + optional decimal point.
-            // AL also has DateLiteral / TimeLiteral but they're written
-            // inside string syntax (or with `D`/`T` prefixes that fall
-            // through to identifier territory — fine for our purposes).
+            // Number — full lexical shape per Microsoft's AL grammar:
+            //   * Hex literal: 0x[0-9a-fA-F]+
+            //   * Decimal: [0-9]+ (. [0-9]+)? ([eE] [+-]? [0-9]+)?
+            //   * Optional suffix: L / U / F (case-insensitive, up to 3
+            //     chars — covers L, U, F, LL, UL, ULL).
+            // AL doesn't have a date-literal syntax of its own; dates
+            // are constructed via DMY2Date() etc.
             if (c >= '0' && c <= '9')
             {
                 var startCol = col;
                 var startLine = line;
                 var sb = new StringBuilder();
-                while (i < n && (source[i] >= '0' && source[i] <= '9'))
+
+                // Hex literal: 0x... — must have at least one hex digit
+                // after the prefix, otherwise we treat `0` as a plain
+                // number and let the `x...` lex as an identifier.
+                if (c == '0' && i + 1 < n
+                    && (source[i + 1] == 'x' || source[i + 1] == 'X')
+                    && i + 2 < n && IsHexDigit(source[i + 2]))
                 {
                     sb.Append(source[i]);
-                    i++;
-                    col++;
-                }
-                if (i < n && source[i] == '.' && i + 1 < n && source[i + 1] >= '0' && source[i + 1] <= '9')
-                {
-                    sb.Append('.');
-                    i++;
-                    col++;
-                    while (i < n && (source[i] >= '0' && source[i] <= '9'))
+                    sb.Append(source[i + 1]);
+                    i += 2; col += 2;
+                    while (i < n && IsHexDigit(source[i]))
                     {
                         sb.Append(source[i]);
-                        i++;
-                        col++;
+                        i++; col++;
                     }
                 }
+                else
+                {
+                    // Integer part.
+                    while (i < n && source[i] >= '0' && source[i] <= '9')
+                    {
+                        sb.Append(source[i]);
+                        i++; col++;
+                    }
+                    // Decimal part — require a digit after the dot so
+                    // member access like `42.ToString` doesn't get
+                    // mis-read as a malformed decimal.
+                    if (i < n && source[i] == '.'
+                        && i + 1 < n && source[i + 1] >= '0' && source[i + 1] <= '9')
+                    {
+                        sb.Append('.');
+                        i++; col++;
+                        while (i < n && source[i] >= '0' && source[i] <= '9')
+                        {
+                            sb.Append(source[i]);
+                            i++; col++;
+                        }
+                    }
+                    // Scientific exponent. Only commit when the e/E is
+                    // followed by an optional sign and at least one
+                    // digit — otherwise `1eY` would partially-consume
+                    // and leave the lexer mid-token.
+                    if (i < n && (source[i] == 'e' || source[i] == 'E'))
+                    {
+                        var look = i + 1;
+                        if (look < n && (source[look] == '+' || source[look] == '-')) look++;
+                        if (look < n && source[look] >= '0' && source[look] <= '9')
+                        {
+                            sb.Append(source[i]);
+                            i++; col++;
+                            if (i < n && (source[i] == '+' || source[i] == '-'))
+                            {
+                                sb.Append(source[i]);
+                                i++; col++;
+                            }
+                            while (i < n && source[i] >= '0' && source[i] <= '9')
+                            {
+                                sb.Append(source[i]);
+                                i++; col++;
+                            }
+                        }
+                    }
+                }
+
+                // Numeric type suffix: L / U / F (case-insensitive).
+                // MS grammar accepts L, U, F, LL, UL, ULL — we cap at 3
+                // chars so `100Llong` doesn't swallow the next identifier.
+                int suffixCount = 0;
+                while (suffixCount < 3 && i < n && IsNumericSuffixChar(source[i]))
+                {
+                    sb.Append(source[i]);
+                    i++; col++;
+                    suffixCount++;
+                }
+
                 tokens.Add(new AlToken(AlTokenKind.Number, sb.ToString(), startLine, startCol));
                 continue;
             }
 
             // Multi-char punctuation. Order matters: longer first.
             //
+            // Set: `::` `:=` `..` `<=` `>=` `<>` `+=` `-=` `*=` `/=`.
             // Confirmed against Microsoft's AL TextMate grammar
-            // (microsoft/AL grammar/alsyntax.tmlanguage): the set
-            // here covers every multi-char operator AL has —
-            // `::` `:=` `..` `<=` `>=` `<>`. Compound assignments
-            // (`+=` `-=` `*=` `/=`) exist in AL but split here into
-            // two single-Punct tokens; that's fine for the reference
-            // extractor's purposes (we never inspect assignment
-            // operators), and downstream callers that DO care can
-            // peek the next token.
+            // (microsoft/AL grammar/alsyntax.tmlanguage).
+            //
+            // `/=` must come AFTER the `//` and `/*` comment checks
+            // above; those run earlier in the loop so we can't reach
+            // here with a `/=` that's actually a comment start.
+
+            // Compound assignment: += -= *= /=.
+            if (i + 1 < n && source[i + 1] == '='
+                && (c == '+' || c == '-' || c == '*' || c == '/'))
+            {
+                var op = string.Concat(c.ToString(), "=");
+                tokens.Add(new AlToken(AlTokenKind.CompoundAssign, op, line, col));
+                i += 2; col += 2;
+                continue;
+            }
+
             if (c == ':' && i + 1 < n && source[i + 1] == ':')
             {
                 tokens.Add(new AlToken(AlTokenKind.DoubleColon, "::", line, col));
@@ -348,4 +421,10 @@ public static class AlLexer
 
     private static bool IsIdentifierPart(char c) =>
         IsIdentifierStart(c) || (c >= '0' && c <= '9');
+
+    private static bool IsHexDigit(char c) =>
+        (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+
+    private static bool IsNumericSuffixChar(char c) =>
+        c == 'L' || c == 'l' || c == 'U' || c == 'u' || c == 'F' || c == 'f';
 }

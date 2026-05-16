@@ -133,6 +133,94 @@ public sealed class AlLexerTests
     }
 
     [Fact]
+    public void Hex_literal_is_a_single_number_token()
+    {
+        var tokens = AlLexer.Tokenize("v := 0xDEADBEEF;");
+        tokens.Should().Contain(t => t.Kind == AlTokenKind.Number && t.Value == "0xDEADBEEF");
+    }
+
+    [Fact]
+    public void Hex_prefix_without_digits_treats_zero_as_number_and_x_as_identifier()
+    {
+        // Defensive: `0xy` isn't valid AL hex (no digits after the
+        // prefix). The lexer falls back to `0` + `xy` rather than
+        // mis-claim a malformed hex token.
+        var tokens = AlLexer.Tokenize("0xy");
+        tokens.Should().HaveCount(2);
+        tokens[0].Kind.Should().Be(AlTokenKind.Number);
+        tokens[0].Value.Should().Be("0");
+        tokens[1].Kind.Should().Be(AlTokenKind.Identifier);
+        tokens[1].Value.Should().Be("xy");
+    }
+
+    [Fact]
+    public void Scientific_notation_is_a_single_number_token()
+    {
+        var cases = new[]
+        {
+            ("1e6", "1e6"),
+            ("2.5e-3", "2.5e-3"),
+            ("1.0E+10", "1.0E+10"),
+        };
+        foreach (var (src, expected) in cases)
+        {
+            var tokens = AlLexer.Tokenize(src);
+            tokens.Should().ContainSingle(because: $"`{src}` is one number token");
+            tokens[0].Kind.Should().Be(AlTokenKind.Number);
+            tokens[0].Value.Should().Be(expected);
+        }
+    }
+
+    [Fact]
+    public void Numeric_suffix_is_part_of_the_number_token()
+    {
+        var cases = new[] { "42L", "100U", "3.14F", "100ll", "1ULL" };
+        foreach (var src in cases)
+        {
+            var tokens = AlLexer.Tokenize(src);
+            tokens.Should().ContainSingle(because: $"`{src}` is one number token with suffix");
+            tokens[0].Kind.Should().Be(AlTokenKind.Number);
+            tokens[0].Value.Should().Be(src);
+        }
+    }
+
+    [Fact]
+    public void Decimal_point_member_access_is_not_a_decimal_literal()
+    {
+        // `42.ToString` would historically have been ambiguous — the
+        // lexer must NOT consume the dot as part of the number, or
+        // the chained member access would lose its operator.
+        var tokens = AlLexer.Tokenize("42.ToString");
+        tokens.Should().HaveCount(3);
+        tokens[0].Kind.Should().Be(AlTokenKind.Number);
+        tokens[0].Value.Should().Be("42");
+        tokens[1].Kind.Should().Be(AlTokenKind.Punct);
+        tokens[1].Value.Should().Be(".");
+        tokens[2].Kind.Should().Be(AlTokenKind.Identifier);
+        tokens[2].Value.Should().Be("ToString");
+    }
+
+    [Fact]
+    public void Compound_assignment_operators_are_one_token_each()
+    {
+        var tokens = AlLexer.Tokenize("a += 1; b -= 2; c *= 3; d /= 4;");
+        var ops = tokens.Where(t => t.Kind == AlTokenKind.CompoundAssign)
+            .Select(t => t.Value)
+            .ToArray();
+        ops.Should().Equal(new[] { "+=", "-=", "*=", "/=" });
+    }
+
+    [Fact]
+    public void Compound_assign_slash_equals_does_not_collide_with_comment_starts()
+    {
+        // `/=` must lex as CompoundAssign, never as the start of a `//`
+        // line comment or `/*` block comment.
+        var tokens = AlLexer.Tokenize("a /= 2;");
+        tokens.Should().Contain(t => t.Kind == AlTokenKind.CompoundAssign && t.Value == "/=");
+        tokens.Should().NotContain(t => t.Kind == AlTokenKind.Punct && t.Value == "/");
+    }
+
+    [Fact]
     public void Empty_or_whitespace_only_input_yields_no_tokens()
     {
         AlLexer.Tokenize("").Should().BeEmpty();
