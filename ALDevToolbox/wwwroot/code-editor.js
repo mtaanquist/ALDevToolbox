@@ -19,7 +19,7 @@ import { EditorView, lineNumbers, highlightActiveLineGutter, highlightSpecialCha
     drawSelection, dropCursor, rectangularSelection, crosshairCursor,
     highlightActiveLine, keymap, Decoration, showPanel }
     from "https://esm.sh/@codemirror/view@6.34.1?deps=@codemirror/state@6.4.1";
-import { EditorState, Compartment, RangeSetBuilder }
+import { EditorState, Compartment, RangeSetBuilder, StateField, StateEffect }
     from "https://esm.sh/@codemirror/state@6.4.1";
 import { defaultKeymap, history, historyKeymap, indentWithTab }
     from "https://esm.sh/@codemirror/commands@6.7.1?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
@@ -401,6 +401,11 @@ export function mountReadOnly(container, value, language, options) {
     // The diff viewer and the admin TOML/JSON editors keep their existing
     // chrome unchanged.
     const statusBarExtensions = opts.statusBar ? [buildStatusBarExtension()] : [];
+    // Sticky "current line" highlight survives CodeMirror's row
+    // virtualisation because the decoration lives in editor state rather
+    // than on a DOM node. scrollToLine() dispatches setCurrentLineEffect
+    // to set/clear it.
+    const currentLineExtensions = [currentLineField, currentLineTheme];
 
     const view = new EditorView({
         parent: container,
@@ -426,6 +431,7 @@ export function mountReadOnly(container, value, language, options) {
                 ...declarationExtensions,
                 ...resolvableExtensions,
                 ...statusBarExtensions,
+                ...currentLineExtensions,
                 themeCompartment.of(themeExtensions()),
             ],
         }),
@@ -661,25 +667,29 @@ export function scrollToLine(id, lineNumber, flash) {
         }
     };
 
+    // Sticky-highlight the destination line via the state field. Doing
+    // this before the scroll so the decoration is already in place when
+    // CodeMirror paints the viewport — no first-paint flicker, and it
+    // survives the user scrolling the row off-screen and back.
+    if (flash) {
+        view.dispatch({ effects: setCurrentLineEffect.of(safeLine) });
+    }
+
     requestAnimationFrame(() => {
         doScroll();
         requestAnimationFrame(() => {
             doScroll();
-            if (!flash) return;
-            requestAnimationFrame(() => {
-                const lineEl = findLineEl();
-                if (!lineEl) return;
-                // Adding a class that's already present doesn't restart its
-                // CSS animation. Remove → force a reflow → re-add so
-                // repeated clicks on the same reference re-flash the line.
-                lineEl.classList.remove("cm-line--flash");
-                // eslint-disable-next-line no-unused-expressions
-                lineEl.offsetWidth;
-                lineEl.classList.add("cm-line--flash");
-                setTimeout(() => lineEl.classList.remove("cm-line--flash"), 1500);
-            });
         });
     });
+}
+
+/// Clear the sticky line highlight. The viewer doesn't currently expose
+/// this beyond the file-id changing (each mount starts with a fresh
+/// state), but external pages can call it via the editor id when needed.
+export function clearCurrentLine(id) {
+    const e = editors.get(id);
+    if (!e) return;
+    e.view.dispatch({ effects: setCurrentLineEffect.of(0) });
 }
 
 // Builds a CodeMirror extension that wraps each declaration name range
@@ -788,6 +798,51 @@ function buildLineDecorationExtensions(lineDecorations) {
         return builder.finish();
     })];
 }
+
+// ── Sticky current-line highlight ─────────────────────────────────
+//
+// A StateField holding a Decoration.set with at most one Decoration.line
+// at the chosen 1-based line. Dispatched via setCurrentLineEffect from
+// scrollToLine() so the row stays tinted even after the user scrolls it
+// off-screen and back (DOM classes don't survive CM's row virtualisation,
+// which is what the old fade-out animation suffered from).
+
+const setCurrentLineEffect = StateEffect.define();
+
+const currentLineField = StateField.define({
+    create() {
+        return Decoration.none;
+    },
+    update(value, tr) {
+        // Map through doc edits so the highlight follows its line when
+        // the document mutates (rare for the read-only viewer but the
+        // editor is shared with editable mounts).
+        value = value.map(tr.changes);
+        for (const effect of tr.effects) {
+            if (!effect.is(setCurrentLineEffect)) continue;
+            const lineNo = effect.value;
+            if (!Number.isInteger(lineNo) || lineNo < 1 || lineNo > tr.state.doc.lines) {
+                value = Decoration.none;
+                continue;
+            }
+            const line = tr.state.doc.line(lineNo);
+            value = Decoration.set([
+                Decoration.line({ class: "cm-line--current" }).range(line.from),
+            ]);
+        }
+        return value;
+    },
+    provide: f => EditorView.decorations.from(f),
+});
+
+// Theme rule keeps the highlight readable across CM's default theme +
+// the one-dark theme we swap in via themeCompartment. The colour itself
+// is driven by --color-accent-soft so it tracks the page theme.
+const currentLineTheme = EditorView.baseTheme({
+    ".cm-line--current": {
+        backgroundColor: "var(--color-accent-soft)",
+    },
+});
 
 /// Bottom-docked status bar — `Ln 1, Col 1 · 1,073 lines`, plus a
 /// selection-length suffix when a range is selected. Mounts via CM6's

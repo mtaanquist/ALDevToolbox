@@ -3931,14 +3931,11 @@ ul.form-field-error {
     color: var(--color-text);
 }
 
-/* Brief flash on the line the user navigated to via a #L<n> deep link. */
-.cm-line--flash {
-    animation: cm-line-flash 1.4s ease-out 1;
-}
-@keyframes cm-line-flash {
-    0%   { background: rgba(254, 215, 102, 0.55); }
-    100% { background: transparent; }
-}
+/* Sticky highlight on the line the user navigated to via a deep link
+   or a References-panel click. Backing colour comes from
+   --color-accent-soft so it tracks the active theme. The actual
+   line.background rule lives in CM6's baseTheme (currentLineTheme in
+   code-editor.js) so it survives CodeMirror's row virtualisation. */
 
 /* File viewer layout: code editor + right-rail inspector panel. The
    editor fills the remaining width and grows to its content height —
