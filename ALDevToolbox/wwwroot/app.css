@@ -2931,50 +2931,47 @@ ul.form-field-error {
    highlighting; the right rail is a thin outline pane with click-through
    navigation. Token right-click navigation will land in a follow-up PR. */
 .source-viewer__layout {
-    display: grid;
-    /* Outline column is user-resizable (drag the outline's left edge via
-       resize:horizontal). The 1fr code column flexes; outline starts at
-       340px and the user can grow it to the column they prefer. */
-    grid-template-columns: minmax(0, 1fr) auto;
+    /* Flex (not grid) keeps the outline's sticky positioning reliable —
+       grid items have intermittent sticky-vs-resize quirks across
+       browsers, while flex behaves predictably with the same scrolling
+       ancestor (.content has overflow-y: auto). */
+    display: flex;
+    align-items: flex-start;
     gap: 12px;
-    /* No align-items so cells stretch to the row height — gives the
-       sticky outline a tall containing block to slide within. */
 }
 
 @media (max-width: 1100px) {
     .source-viewer__layout {
-        grid-template-columns: 1fr;
+        flex-direction: column;
     }
 }
 
 .source-viewer__code {
+    flex: 1 1 0;
     min-width: 0;
 }
 
 .source-viewer__outline {
-    /* Sticky pins the outline to the top of the .content scroll
-       container so it stays visible while the user reads down a long
-       file. align-self: start keeps the outline at its natural height
-       inside the (stretched) grid cell — the cell itself is the row
-       height, giving sticky a tall containing block. */
-    position: sticky;
-    top: 12px;
-    align-self: start;
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
-    padding: 12px 14px;
-    background: var(--color-surface);
-    max-height: calc(100vh - var(--top-bar-height, 48px) - 24px);
-    /* Drag the outline panel wider/narrower via the browser's native
-       resize affordance (handle at the bottom-right corner). */
+    flex: 0 0 auto;
     width: 340px;
     min-width: 280px;
     max-width: 720px;
     resize: horizontal;
-    /* Both axes scroll inside the panel: y for long outlines (Base App
-       codeunits with 100+ procedures), x for procedure names that
-       overflow the column. */
+
+    /* Sticky pins the outline to .content's top edge so it stays visible
+       while the user reads down a long file. align-items:flex-start on
+       the parent keeps the outline at its natural height, leaving the
+       flex container (which is as tall as the code column) for sticky
+       to slide within. */
+    position: sticky;
+    top: 12px;
+    max-height: calc(100vh - var(--top-bar-height, 48px) - 24px);
     overflow: auto;
+
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    background: var(--color-surface);
 }
 
 /* ── Tab strip ───────────────────────────────────────────────── */

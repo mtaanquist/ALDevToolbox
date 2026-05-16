@@ -86,7 +86,14 @@ function init() {
                 `/api/object-explorer/references/sessions/at-position?fileId=${fileId}&line=${line}&column=${column}`,
                 { credentials: "same-origin" });
             if (res.status === 204 || res.status === 404) {
-                showNotice("No references found for that token.");
+                // The server couldn't resolve the clicked token to a known
+                // object. Procedure / field / variable references aren't
+                // tracked yet (the import pipeline only records
+                // object-to-object references), so this is expected for
+                // anything that isn't an object name like a table or
+                // codeunit. See .design/source-viewer-redesign.md
+                // "Procedure-level Find references".
+                showNotice("Find references currently works only for object names (tables, codeunits, pages, etc.). Procedure and field references coming soon.");
                 return;
             }
             if (!res.ok) {

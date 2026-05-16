@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 
 namespace ALDevToolbox.Services.ObjectExplorer;
 
@@ -21,15 +22,18 @@ public sealed class ReferenceSessionService
     private readonly IMemoryCache _cache;
     private readonly ObjectExplorerService _objectExplorer;
     private readonly Data.AppDbContext _db;
+    private readonly ILogger<ReferenceSessionService> _logger;
 
     public ReferenceSessionService(
         IMemoryCache cache,
         ObjectExplorerService objectExplorer,
-        Data.AppDbContext db)
+        Data.AppDbContext db,
+        ILogger<ReferenceSessionService> logger)
     {
         _cache = cache;
         _objectExplorer = objectExplorer;
         _db = db;
+        _logger = logger;
     }
 
     /// <summary>
@@ -70,34 +74,90 @@ public sealed class ReferenceSessionService
 
     /// <summary>
     /// Mints a session by clicking position: looks up the word at
-    /// (line, column) in the supplied file, resolves it to a same-Release
-    /// object (using the same locator <see cref="ObjectExplorerService.GoToDefinitionAsync"/>
-    /// uses), and runs FindReferences on it. Returns null when nothing
-    /// at the click position resolves to a known object.
+    /// (line, column) in the supplied file and resolves it to a
+    /// same-Release object. Tries three strategies in order:
+    /// <list type="number">
+    ///   <item>The word itself matches an object name (case-insensitive).</item>
+    ///   <item>The click was qualified (<c>myCust.Insert</c>) — resolve the
+    ///         qualifier's declared type and look that up as the object.
+    ///         Procedure-level references aren't tracked yet, so the user
+    ///         gets references to the receiver type instead.</item>
+    /// </list>
+    /// Returns null when neither strategy resolves a known object.
     /// </summary>
     public async Task<ReferenceSession?> CreateAtPositionAsync(
         long fileId, int line, int column, string ownerKey, CancellationToken ct = default)
     {
         var meta = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
-            .Select(f => new { f.Content, ReleaseId = f.Module!.ReleaseId })
+            .Select(f => new { f.Content, ReleaseId = f.Module!.ReleaseId, f.Path })
             .SingleOrDefaultAsync(ct);
-        if (meta is null) return null;
+        if (meta is null)
+        {
+            _logger.LogInformation("FindRefsAtPosition FileId={FileId} not found.", fileId);
+            return null;
+        }
 
         var click = Services.Al.AlGoToDefinitionLocator.Inspect(meta.Content, line, column);
-        if (click is null || string.IsNullOrEmpty(click.Word)) return null;
+        if (click is null || string.IsNullOrEmpty(click.Word))
+        {
+            _logger.LogInformation(
+                "FindRefsAtPosition FileId={FileId} Line={Line} Col={Col} no token at cursor.",
+                fileId, line, column);
+            return null;
+        }
 
-        var word = click.Word;
-        var target = await _db.OeModuleObjects.AsNoTracking()
-            .Where(o => o.Module!.ReleaseId == meta.ReleaseId)
-            .Where(o => o.Name == word)
-            .OrderBy(o => o.Kind)
-            .Select(o => new { o.Id })
-            .FirstOrDefaultAsync(ct);
-        if (target is null) return null;
+        // Strategy 1: direct object match (case-insensitive — AL is too).
+        var target = await ResolveObjectByNameAsync(meta.ReleaseId, click.Word, ct);
+
+        // Strategy 2: variable-receiver fallback for `myCust.Insert` style
+        // clicks. We track references at the object level, not the
+        // method-call level, so the closest correct answer is "references
+        // to the variable's declared type".
+        string? resolvedVia = target is null ? null : "name";
+        string? receiverType = null;
+        if (target is null && click.LeftContext.Operator == "."
+            && !string.IsNullOrEmpty(click.LeftContext.Qualifier))
+        {
+            receiverType = Services.Al.AlGoToDefinitionLocator
+                .ResolveVariableType(meta.Content, click.LeftContext.Qualifier!);
+            if (!string.IsNullOrEmpty(receiverType))
+            {
+                target = await ResolveObjectByNameAsync(meta.ReleaseId, receiverType, ct);
+                if (target is not null) resolvedVia = "variable-type";
+            }
+        }
+
+        if (target is null)
+        {
+            _logger.LogInformation(
+                "FindRefsAtPosition FileId={FileId} Path='{Path}' Word='{Word}' Qualifier='{Qual}' Receiver='{Recv}' — no object match.",
+                fileId, meta.Path, click.Word, click.LeftContext.Qualifier, receiverType);
+            return null;
+        }
+
+        _logger.LogInformation(
+            "FindRefsAtPosition FileId={FileId} Word='{Word}' resolved-via={Strategy} to ObjectId={ObjectId}.",
+            fileId, click.Word, resolvedVia, target.Id);
 
         return await CreateFromSymbolAsync(target.Id, ownerKey, ct);
     }
+
+    private async Task<ObjectMatch?> ResolveObjectByNameAsync(
+        int releaseId, string name, CancellationToken ct)
+    {
+        // AL is case-insensitive; the schema stores names with original
+        // casing, so query lower-cased on both sides.
+        var lowered = name.ToLowerInvariant();
+        return await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId)
+            .Where(o => o.Name.ToLower() == lowered)
+            .OrderBy(o => o.Kind)
+            .Select(o => new ObjectMatch(o.Id))
+            .FirstOrDefaultAsync(ct);
+    }
+
+    private sealed record ObjectMatch(long Id);
 
     /// <summary>
     /// Retrieves a previously minted session by token. Returns null when
