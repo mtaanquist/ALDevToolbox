@@ -856,13 +856,32 @@ public class ReleaseImportService
     /// </summary>
     private static string? ExtractSourceTableName(SymbolObject symObj)
     {
-        if (symObj.Kind != "page" && symObj.Kind != "pageextension") return null;
+        // Three properties bind Rec to a specific table:
+        //   - SourceTable on a page / pageextension
+        //   - TableNo on a codeunit (sets Rec when the codeunit is run
+        //     as the OnRun trigger receiver — `codeunit "Gen. Jnl.-Post"`
+        //     with `TableNo = "Gen. Journal Line"` runs against a
+        //     journal-line record, with Rec bound to that table inside
+        //     OnRun and any procedures called from it)
+        // We funnel all three through the same column on oe_module_objects
+        // (source_table_name); the AL extractor binds Rec to whatever
+        // table is named there regardless of which property populated it.
+        var propName = symObj.Kind switch
+        {
+            "page" or "pageextension" => "SourceTable",
+            "codeunit" => "TableNo",
+            _ => null,
+        };
+        if (propName is null) return null;
+
         var prop = symObj.Properties.FirstOrDefault(p =>
-            string.Equals(p.Name, "SourceTable", StringComparison.OrdinalIgnoreCase));
+            string.Equals(p.Name, propName, StringComparison.OrdinalIgnoreCase));
         if (prop is null) return null;
         var (_, name) = ParseHashRef(prop.Value);
         // Some symbol packages emit the bare table name when the table
-        // lives in the same module. Accept both shapes.
+        // lives in the same module; modern BC ships the numeric object
+        // id. Accept all three shapes — ResolveNumericSourceTableNamesAsync
+        // normalises the numeric form to a name after import.
         return name ?? (string.IsNullOrEmpty(prop.Value) ? null : prop.Value);
     }
 
@@ -1095,12 +1114,15 @@ public class ReleaseImportService
     /// </summary>
     private async Task ResolveNumericSourceTableNamesAsync(int releaseId, CancellationToken ct)
     {
+        // Filter includes codeunit alongside page / pageextension —
+        // codeunits get source_table_name from their TableNo property
+        // (a codeunit with TableNo binds Rec to the named table when run).
         const string sql = """
             UPDATE oe_module_objects pg
             SET source_table_name = t.name
             FROM oe_module_objects t
             JOIN oe_modules tm ON tm.id = t.module_id
-            WHERE pg.kind IN ('page', 'pageextension')
+            WHERE pg.kind IN ('page', 'pageextension', 'codeunit')
               AND pg.source_table_name ~ '^[0-9]+$'
               AND t.kind = 'table'
               AND t.object_id = pg.source_table_name::int

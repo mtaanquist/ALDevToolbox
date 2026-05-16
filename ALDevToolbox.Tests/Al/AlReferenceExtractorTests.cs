@@ -44,13 +44,15 @@ public sealed class AlReferenceExtractorTests
     }
 
     private static AlExtractContext OwnerCodeunit(StubResolver resolver,
-        Dictionary<string, ResolvedVariableType>? globals = null) => new(
+        Dictionary<string, ResolvedVariableType>? globals = null,
+        string? tableNo = null) => new(
             OwnerKind: "codeunit",
             OwnerName: "MyHelper",
             OwnerObjectId: 50000,
             OwnerAppId: BaseAppId,
             GlobalVars: globals ?? new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
-            Resolver: resolver);
+            Resolver: resolver,
+            OwnerSourceTableName: tableNo);
 
     private static AlExtractContext OwnerTable(StubResolver resolver, string tableName,
         Dictionary<string, ResolvedVariableType>? globals = null) => new(
@@ -1802,6 +1804,66 @@ public sealed class AlReferenceExtractorTests
             && r.TargetMemberName == "DKValidate"
             && r.ReferenceKind == "method_call");
     }
+
+    // ── Codeunit with TableNo binds Rec to that table ──────────────
+
+    [Fact]
+    public void Codeunit_with_TableNo_binds_rec_to_the_named_table()
+    {
+        // A codeunit with `TableNo = "Gen. Journal Line"` runs as the
+        // OnRun trigger receiver for that table — Rec is bound to the
+        // journal line inside OnRun and any procedures the codeunit
+        // calls. Without TableNo, codeunits have no implicit Rec.
+        var resolver = MakeResolver();
+        resolver.AddType("Gen. Journal Line", new AlTypeRef(BaseAppId, "table", 81, "Gen. Journal Line"));
+        resolver.AddMember("Gen. Journal Line", new AlMember("Amount", "field", null, null));
+        resolver.AddMember("Gen. Journal Line", new AlMember("PostLine", "procedure", null, null));
+
+        const string src = """
+            codeunit 12 "Gen. Jnl.-Post"
+            {
+                TableNo = "Gen. Journal Line";
+
+                trigger OnRun()
+                begin
+                    Rec.PostLine();
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            OwnerCodeunit(resolver, tableNo: "Gen. Journal Line"));
+
+        // Rec.PostLine resolves through TableNo → Gen. Journal Line →
+        // catalog member PostLine.
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Gen. Journal Line"
+            && r.TargetMemberName == "PostLine"
+            && r.ReferenceKind == "method_call");
+    }
+
+    [Fact]
+    public void Codeunit_without_TableNo_has_no_rec_so_chains_stay_unresolved()
+    {
+        // The default codeunit case — no TableNo, no Rec. A reference
+        // to bare `Rec` should not silently bind to anything.
+        const string src = """
+            codeunit 50000 "Foo"
+            {
+                procedure Bar()
+                begin
+                    Rec.Insert();
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        // No implicit Rec → ResolveHeadType returns null → chain
+        // drops with _unresolved counter, but no garbage reference.
+        result.References.Where(r =>
+            r.TargetObjectName != "MyHelper").Should().BeEmpty(
+            because: "without TableNo, a codeunit has no Rec to dispatch on");
+    }
+
 
     // ── Bare self-procedure calls (gap #4) ─────────────────────────
 
