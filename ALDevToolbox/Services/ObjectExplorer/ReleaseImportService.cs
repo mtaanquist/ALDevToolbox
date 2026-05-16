@@ -1532,20 +1532,35 @@ public class ReleaseImportService
     /// <summary>
     /// For each module in the release, compute the transitive set of
     /// AppIds it can legally reach via <c>app.json</c> dependencies
-    /// (plus the module's own AppId). The reference-extractor's
-    /// resolver consults this set so a file in DK Core can resolve
-    /// types from Base App (declared dep) but not from OIOUBL
-    /// (unrelated extension). Modules whose <c>DependenciesJson</c>
-    /// references AppIds outside this release land in the visibility
-    /// set anyway — cross-release receivers don't resolve in this
-    /// pass but the set correctly captures intent.
+    /// (plus the module's own AppId, plus the well-known foundational
+    /// Microsoft apps every extension implicitly resolves). The
+    /// reference-extractor's resolver consults this set so a file in
+    /// DK Core can resolve types from Base App (an implicit dep) but
+    /// not from OIOUBL (an unrelated extension).
+    ///
+    /// <para><b>Implicit foundational apps.</b> AL extensions never
+    /// declare dependencies on System Application, Base Application,
+    /// Application, or Business Foundation — the AL compiler always
+    /// makes their symbols available, and Microsoft confirmed this
+    /// matches the developer-tool experience. AMC Banking 365
+    /// Fundamentals (and ~every BC extension) ships with empty
+    /// <c>&lt;Dependencies/&gt;</c> in <c>NavxManifest.xml</c> yet
+    /// freely references <c>Codeunit "Temp Blob"</c> (System App),
+    /// <c>Record "Sales Header"</c> (Base App), etc. The visibility
+    /// set must mirror that or every such reference looks
+    /// "type-unresolved" from the resolver's perspective.
+    ///
+    /// Modules whose <c>DependenciesJson</c> references AppIds outside
+    /// this release land in the visibility set anyway — cross-release
+    /// receivers don't resolve in this pass but the set correctly
+    /// captures intent.
     /// </summary>
     private async Task<Dictionary<long, HashSet<Guid>>> BuildModuleVisibilityAsync(
         int releaseId, CancellationToken ct)
     {
         var modules = await _db.OeModules.AsNoTracking()
             .Where(m => m.ReleaseId == releaseId)
-            .Select(m => new { m.Id, m.AppId, m.DependenciesJson })
+            .Select(m => new { m.Id, m.AppId, m.Name, m.Publisher, m.DependenciesJson })
             .ToListAsync(ct);
 
         // Each module's direct deps as parsed from DependenciesJson.
@@ -1555,16 +1570,43 @@ public class ReleaseImportService
             directDepsByAppId[m.AppId] = ParseDependencyAppIds(m.DependenciesJson);
         }
 
-        // Transitive closure per module, including the module itself.
+        // The implicit foundational set: Microsoft-published modules in
+        // this release whose name matches one of the always-available
+        // platform apps. Matched by name so the GUID can drift across
+        // BC versions (Microsoft has historically restamped these).
+        // Publisher filter keeps a hypothetical third-party app called
+        // "Base Application" from sneaking into everyone's visibility.
+        var implicitFoundational = new HashSet<Guid>(
+            modules
+                .Where(m => string.Equals(m.Publisher, "Microsoft", StringComparison.OrdinalIgnoreCase)
+                            && FoundationalAppNames.Contains(m.Name))
+                .Select(m => m.AppId));
+
+        // Transitive closure per module, including the module itself
+        // and the implicit foundational AppIds.
         var result = new Dictionary<long, HashSet<Guid>>(modules.Count);
         foreach (var m in modules)
         {
-            var visible = new HashSet<Guid> { m.AppId };
+            var visible = new HashSet<Guid>(implicitFoundational) { m.AppId };
             WalkDeps(m.AppId, visible, directDepsByAppId);
             result[m.Id] = visible;
         }
         return result;
     }
+
+    /// <summary>
+    /// Well-known Microsoft module names whose AppIds are implicitly
+    /// visible to every other module in the release. These are the
+    /// "platform" apps the AL compiler always resolves against without
+    /// requiring an <c>app.json</c> dependency declaration.
+    /// </summary>
+    private static readonly HashSet<string> FoundationalAppNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "System Application",
+        "Base Application",
+        "Application",
+        "Business Foundation",
+    };
 
     private static void WalkDeps(
         Guid current, HashSet<Guid> acc,
