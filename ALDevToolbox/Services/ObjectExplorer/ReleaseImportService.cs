@@ -122,6 +122,15 @@ public class ReleaseImportService
             // pageextensions too.
             await PropagateSourceTableToPageExtensionsAsync(release.Id, ct).ConfigureAwait(false);
 
+            // SourceTable property values in modern BC (28.x+) ship as
+            // bare numeric ids ("36" for Sales Header) rather than the
+            // legacy `#<appid>#<name>` hash-ref format. Resolve any
+            // numeric values to the table's name so the reference
+            // extractor can ResolveTypeByName on it. Runs AFTER the
+            // pageextension propagation so any propagated numeric values
+            // get normalised too.
+            await ResolveNumericSourceTableNamesAsync(release.Id, ct).ConfigureAwait(false);
+
             // Phase 2 call-site extraction. Runs once per release, AFTER
             // every module's symbols + variables are in the DB so the
             // resolver can see types declared anywhere in this release.
@@ -826,14 +835,24 @@ public class ReleaseImportService
     }
 
     /// <summary>
-    /// Pulls the SourceTable name out of a page / pageextension's symbol-
-    /// package property list. The runtime value is a
-    /// <c>#&lt;32hex&gt;#&lt;name&gt;</c> hash-ref pointing at the table —
-    /// same shape as <c>TableNo</c> / <c>ExtendsTarget</c>. Returns null
-    /// for kinds that don't have the property or when parsing fails.
-    /// Pageextensions don't carry SourceTable in their own properties (they
-    /// inherit it from the base page); for those a second-pass copy below
-    /// fills the column.
+    /// Pulls the SourceTable property value out of a page /
+    /// pageextension's symbol-package properties. The value shape has
+    /// drifted across BC versions:
+    /// <list type="bullet">
+    ///   <item>Legacy (pre-28.x): <c>#&lt;32hex&gt;#&lt;name&gt;</c>
+    ///         hash-ref — same shape as <c>TableNo</c> / <c>ExtendsTarget</c>.
+    ///         <see cref="ParseHashRef"/> extracts the name.</item>
+    ///   <item>Modern (28.x+): bare numeric object id (<c>"36"</c> for
+    ///         Sales Header). We pass it through and let
+    ///         <see cref="ResolveNumericSourceTableNamesAsync"/> swap
+    ///         it for the table's name after all tables in the release
+    ///         are imported.</item>
+    ///   <item>Some packages emit the bare name. Pass-through too.</item>
+    /// </list>
+    /// Returns null for kinds without the property. Pageextensions
+    /// don't carry SourceTable in their own properties — they inherit
+    /// it from the base page, which a second-pass copy
+    /// (<see cref="PropagateSourceTableToPageExtensionsAsync"/>) fills.
     /// </summary>
     private static string? ExtractSourceTableName(SymbolObject symObj)
     {
@@ -1046,6 +1065,47 @@ public class ReleaseImportService
               AND base.source_table_name IS NOT NULL
               AND base_mod.release_id = {0}
               AND ext.module_id IN (
+                  SELECT id FROM oe_modules WHERE release_id = {0}
+              );
+            """;
+        await _db.Database.ExecuteSqlRawAsync(sql, new object[] { releaseId }, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Modern BC (28.x and later) emits a page's <c>SourceTable</c>
+    /// property in the symbol package as the bare numeric object id
+    /// (<c>"36"</c> for Sales Header), not the legacy
+    /// <c>#&lt;appid&gt;#&lt;name&gt;</c> hash-ref format
+    /// <see cref="ExtractSourceTableName"/> was originally written for.
+    /// We pass the raw value through and resolve it here: for every
+    /// page / pageextension in this release whose
+    /// <c>source_table_name</c> is digit-only, look up the table with
+    /// that <c>object_id</c> in the same release and replace the
+    /// numeric value with the table's <c>name</c>.
+    ///
+    /// Same-release scoping is intentional. Tables in parent releases
+    /// (cross-release shadowing) aren't reachable yet — that's gap #3
+    /// in <c>al-reference-extractor-gaps.md</c>; the current pageext
+    /// dependency-aware-resolver work would need a similar lift.
+    ///
+    /// Done as a single UPDATE … FROM for the same reason
+    /// <see cref="PropagateSourceTableToPageExtensionsAsync"/> uses one:
+    /// EF Core can't express the self-join cleanly and the per-row path
+    /// is a tracker load for each page in a busy release.
+    /// </summary>
+    private async Task ResolveNumericSourceTableNamesAsync(int releaseId, CancellationToken ct)
+    {
+        const string sql = """
+            UPDATE oe_module_objects pg
+            SET source_table_name = t.name
+            FROM oe_module_objects t
+            JOIN oe_modules tm ON tm.id = t.module_id
+            WHERE pg.kind IN ('page', 'pageextension')
+              AND pg.source_table_name ~ '^[0-9]+$'
+              AND t.kind = 'table'
+              AND t.object_id = pg.source_table_name::int
+              AND tm.release_id = {0}
+              AND pg.module_id IN (
                   SELECT id FROM oe_modules WHERE release_id = {0}
               );
             """;
