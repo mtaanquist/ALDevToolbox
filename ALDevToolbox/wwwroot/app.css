@@ -2969,12 +2969,15 @@ ul.form-field-error {
 
 .source-viewer__outline-inner {
     /* The visible card: width + scroll + resize live here. resize
-       requires overflow!=visible, which we have via overflow:auto. */
+       requires overflow!=visible, which we have via overflow:auto.
+       max-height leaves room for the top bar (52px) + sticky top
+       offset (12px) + a 24px bottom margin so the panel never
+       butts against the viewport edge when pinned. */
     width: 340px;
     min-width: 280px;
     max-width: 720px;
     resize: horizontal;
-    max-height: calc(100vh - var(--top-bar-height, 52px) - 24px);
+    max-height: calc(100vh - var(--top-bar-height, 52px) - 36px);
     overflow: auto;
     border: 1px solid var(--color-border-strong);
     border-radius: var(--radius);
