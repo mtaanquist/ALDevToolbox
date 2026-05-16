@@ -78,6 +78,7 @@ function init() {
     wireSameFileLinks(root, editorId, fileId);
     wireRefsCloseButton(root);
     wireSearchShortcut(root, editorId);
+    wirePopstate(root, editorId);
 
     async function onFindReferencesAt(line, column) {
         clearNotice();
@@ -156,8 +157,7 @@ function init() {
             }
             const target = await res.json();
             if (target.fileId === fileId) {
-                scrollToLine(editorId, target.lineNumber, true);
-                history.replaceState(null, "", `${FILE_URL_PREFIX}${fileId}?line=${target.lineNumber}${preservedQueryTail()}`);
+                jumpInThisFile(target.lineNumber);
                 return;
             }
             location.assign(`${FILE_URL_PREFIX}${target.fileId}?line=${target.lineNumber}${preservedQueryTail()}`);
@@ -243,8 +243,33 @@ function init() {
     }
 
     function jumpToLineInThisFile(line) {
+        jumpInThisFile(line);
+    }
+
+    /// Jumps to a line and pushes a history entry so the browser back
+    /// button restores the previous position. Outline / Find-in-file
+    /// / Cmd-click jumps all route through here. The URL preserves any
+    /// non-line query (e.g. ?refSet=) so the references panel survives.
+    function jumpInThisFile(line) {
         scrollToLine(editorId, line, true);
-        history.replaceState(null, "", `${FILE_URL_PREFIX}${fileId}?line=${line}${preservedQueryTail()}`);
+        const url = `${FILE_URL_PREFIX}${fileId}?line=${line}${preservedQueryTail()}`;
+        // Skip the push when the URL is identical to the current one —
+        // back button shouldn't have to press through duplicates.
+        if (location.pathname + location.search !== url) {
+            history.pushState(null, "", url);
+        }
+    }
+
+    /// Wires window.popstate so the editor scrolls to whatever line the
+    /// URL points at after back/forward navigation. The page itself is
+    /// the same SSR document; only the line jumps.
+    function wirePopstate(_root, eid) {
+        window.addEventListener("popstate", () => {
+            const ln = Number(new URLSearchParams(location.search).get("line"));
+            if (Number.isFinite(ln) && ln >= 1) {
+                scrollToLine(eid, ln, true);
+            }
+        });
     }
 
     function showNotice(text) {
@@ -351,7 +376,9 @@ function renderReferencesPanel(root, session, fileId, editorId) {
                         if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
                         e.preventDefault();
                         scrollToLine(editorId, ln, true);
-                        history.replaceState(null, "", a.href);
+                        if (location.pathname + location.search !== a.href.replace(location.origin, "")) {
+                            history.pushState(null, "", a.href);
+                        }
                     });
                 }
                 a.title = `${r.sourceFilePath ?? r.sourceModuleName} · L${ln} (${r.referenceKind})`;
@@ -478,7 +505,13 @@ function wireSameFileLinks(root, editorId, fileId) {
             if (!Number.isFinite(line) || line < 1) return;
             e.preventDefault();
             scrollToLine(editorId, line, true);
-            history.replaceState(null, "", `${FILE_URL_PREFIX}${fileId}?line=${line}${preservedQueryTail()}`);
+            const url = `${FILE_URL_PREFIX}${fileId}?line=${line}${preservedQueryTail()}`;
+            // pushState (not replace) so back button restores the prior
+            // line position. Skip when URL is unchanged so back doesn't
+            // press through duplicates.
+            if (location.pathname + location.search !== url) {
+                history.pushState(null, "", url);
+            }
         });
     });
 }
@@ -500,12 +533,24 @@ function parseJsonAttr(raw) {
     }
 }
 
-if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init, { once: true });
-} else {
+/// First-load resilience: enhanced-nav into this page sometimes evaluates
+/// the module before the patched .source-viewer DOM is queryable. The
+/// init() guard against double-mount makes calling it repeatedly safe,
+/// so we attempt several times across the first frame instead of relying
+/// on a single timing assumption.
+function tryInit() {
     init();
+    requestAnimationFrame(() => init());
+    setTimeout(() => init(), 50);
+    setTimeout(() => init(), 200);
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", tryInit, { once: true });
+} else {
+    tryInit();
 }
 
 if (typeof globalThis.Blazor !== "undefined" && globalThis.Blazor.addEventListener) {
-    globalThis.Blazor.addEventListener("enhancedload", init);
+    globalThis.Blazor.addEventListener("enhancedload", tryInit);
 }

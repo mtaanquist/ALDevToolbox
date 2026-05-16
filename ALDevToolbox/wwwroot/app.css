@@ -2970,26 +2970,31 @@ ul.form-field-error {
     /* Sticky positioning element (no scroll, no resize). Splitting the
        sticky outer from the overflow:auto inner sidesteps the Chromium
        sticky-on-overflow fragility and lets z-index lift the column
-       above any cm-editor content that paints out of the code column. */
+       above any cm-editor content that paints out of the code column.
+       margin-right gives a visible gap between the panel and the
+       .content scrollbar / viewport edge. */
     flex: 0 0 auto;
     align-self: flex-start;
     position: sticky;
     top: 12px;
+    margin-right: 16px;
     z-index: 2;
 }
 
 .source-viewer__outline-inner {
     /* The visible card: width + scroll + resize live here. resize
-       requires overflow!=visible, which we have via overflow:auto.
-       max-height leaves room for the top bar (52px) + sticky top
-       offset (12px) + a 24px bottom margin so the panel never
-       butts against the viewport edge when pinned. */
+       requires overflow!=visible, satisfied by overflow-y: auto.
+       overflow-x: hidden suppresses the horizontal scrollbar — long
+       names truncate with ellipsis at the row level instead, and the
+       user widens the panel via the resize handle when they need more
+       room. max-height leaves a 24px gap below the panel when sticky. */
     width: 340px;
     min-width: 280px;
     max-width: 720px;
     resize: horizontal;
     max-height: calc(100vh - var(--top-bar-height, 52px) - 36px);
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
     border: 1px solid var(--color-border-strong);
     border-radius: var(--radius);
     padding: 12px 14px;
@@ -3150,14 +3155,13 @@ ul.form-field-error {
     align-items: baseline;
     gap: 6px;
     padding: 1px 0;
-    /* Row widens to fit a fully-visible name; the outline panel's
-       overflow-x: auto then provides a horizontal scrollbar for long
-       names that exceed the column width. min-width: 100% keeps the
-       hover/click target spanning at least the panel width even when
-       the name is short. */
-    width: max-content;
-    min-width: 100%;
+    /* Rows fit the panel width — long names truncate with ellipsis on
+       the .source-viewer__outline-sig span. The user can widen the
+       panel via the resize handle on the outline-inner to see more. */
+    width: 100%;
+    min-width: 0;
     box-sizing: border-box;
+    overflow: hidden;
 }
 
 /* Same-file outline rows render as <button> instead of <a> so the
@@ -3181,13 +3185,17 @@ ul.form-field-error {
 
 .source-viewer__outline-name {
     /* AL identifiers in monospace — matches the editor's font and keeps
-       parameter signatures visually aligned. Names never truncate so a
-       glance answers "is this the procedure I'm looking for"; long
-       names spill horizontally and the outline panel's overflow-x:
-       auto provides a scrollbar. */
-    flex: 0 0 auto;
-    font-family: var(--font-mono);
+       parameter signatures visually aligned. Names truncate with
+       ellipsis when the panel isn't wide enough; the row's title
+       attribute carries the full text on hover, and the resize handle
+       on .source-viewer__outline-inner lets the user widen the panel
+       to see more. */
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
+    font-family: var(--font-mono);
 }
 
 .source-viewer__outline-sig {
