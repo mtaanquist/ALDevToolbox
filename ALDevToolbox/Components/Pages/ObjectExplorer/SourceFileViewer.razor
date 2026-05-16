@@ -3,7 +3,6 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
 @inject ALDevToolbox.Services.ObjectExplorer.ReferenceSessionService ReferenceSessions
-@inject ALDevToolbox.Services.CacheBust Bust
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Components.Shared
@@ -190,7 +189,10 @@
             </aside>
         </div>
 
-        <script type="module" src="/source-viewer.js?v=@Bust.Token"></script>
+        @* source-viewer.js is loaded at the shell (App.razor) — Blazor
+           enhanced-nav doesn't execute <script> tags injected via page
+           responses. The module's MutationObserver picks up the
+           .source-viewer DOM as soon as it appears. *@
     }
 </div>
 
