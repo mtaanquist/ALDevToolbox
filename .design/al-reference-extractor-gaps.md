@@ -21,23 +21,19 @@ The reference rows go to `oe_module_references` with the new phase-1 columns (`t
 
 ## Gaps, ordered by user-visible impact
 
-### 1. Tableextension methods on base-table receivers
+### 1. ~~Tableextension methods on base-table receivers~~ — RESOLVED
 
-**Pattern**: `Cust.MyCustomMethod()` where `MyCustomMethod` was added to the Customer table by a tableextension in some module.
+Landed alongside the dependency-aware resolver. The resolver now walks extensions targeting the base type and returns the extension's `AlMember` tagged with `DeclaringType`; the extractor stamps the reference at the extension so Find references on the extension's declaration row finds the call. Base-declared members shadow same-named extension members, matching AL dispatch.
 
-**Symptom**: extractor's resolver looks up `MyCustomMethod` on the Customer table object (owner id of the BASE table), misses, and either silently filters it as a built-in or counts it as unresolved. Either way, no reference row.
+### 2. ~~Dependency-aware resolution / disambiguation~~ — RESOLVED
 
-**Fix shape**: widen `IAlTypeResolver.ResolveMember` (and the import-side `CatalogResolver` that backs it) so a lookup on a base table also considers `oe_module_symbols` rows whose owner is a tableextension targeting that base table. The link is already in the data — `oe_module_objects.extends_app_id` + `extends_object_name` — it just isn't joined into the member catalog yet.
+The resolver now reads each module's `DependenciesJson`, computes the transitive visible-AppId set per module, and filters type + extension lookups through it. A file in Base App can no longer accidentally reach into DK Core; same-named objects across unrelated modules disambiguate correctly. Built once per release and cached per module-id so all files in the same module share the resolver instance.
 
-**Effort**: one EF query change in `ReleaseImportService.EmitCallSiteReferencesAsync`'s catalog build + a corresponding stub addition in the unit tests' `StubResolver`. Probably under an hour.
-
-**Priority**: high. Every BC implementation with custom field/procedure tableextensions sees this — `Customer."My Custom Field"`, `SalesHeader.CalcMyKpi()`, etc. The catalog change is what blocks them all.
-
-### 2. Cross-release shadowing in the resolver
+### 3. Cross-release shadowing in the resolver
 
 **Pattern**: a release whose `ParentReleaseId` points at another release. A file in the child release calls `Customer.Insert()`; the Customer table lives in the parent release (Base App), not the child's own modules.
 
-**Symptom**: `EmitCallSiteReferencesAsync` builds the type + member catalogs from the importing release only. The Customer lookup misses, the call drops.
+**Symptom**: `EmitCallSiteReferencesAsync` builds the type + member catalogs from the importing release only. The Customer lookup misses, the call drops. The new visibility set correctly *includes* the parent's AppIds (parsed from `DependenciesJson`), but the catalog itself doesn't span releases.
 
 **Fix shape**: the existing `FindReferencesAsync` query already walks the parent-release chain via a recursive CTE — reuse that pattern when building the catalogs. Either: (a) query the same recursive CTE to enumerate "every object visible to this release" before populating `typesByName`/`membersByOwner`; or (b) leave the catalog single-release and accept the loss for now since users tend to import each BC DVD as a single release.
 
@@ -45,7 +41,7 @@ The reference rows go to `oe_module_references` with the new phase-1 columns (`t
 
 **Priority**: medium. In practice users import every module they care about into one release. The pattern hits operators who layer customer-specific extensions on a parent BC release — important when it lands, but not the common shape.
 
-### 3. Bare self-procedure calls
+### 4. Bare self-procedure calls
 
 **Pattern**: `DoStuff();` (no receiver) inside a codeunit, calling another procedure on the same object.
 
@@ -59,7 +55,7 @@ The reference rows go to `oe_module_references` with the new phase-1 columns (`t
 
 **Priority**: medium. Common in well-structured codeunits where a top-level public procedure delegates to several private helpers. The omission is most visible when someone right-clicks a private procedure expecting to see its callers.
 
-### 4. `with X do begin … end;` implicit receivers
+### 5. `with X do begin … end;` implicit receivers
 
 **Pattern**:
 
@@ -80,7 +76,7 @@ Inside the `with` block, bare `"No."` is a field access on Customer and `Validat
 
 **Priority**: lower for new BC code (Microsoft marked `with` obsolete in 2020 and many style guides disable it). Higher for legacy ingestion — any pre-2020 BC codebase will have `with` blocks throughout, and Find references on procedures used heavily inside `with` blocks will look anaemic.
 
-### 5. `#if false … #endif` conditional compilation
+### 6. `#if false … #endif` conditional compilation
 
 **Pattern**:
 
@@ -98,7 +94,7 @@ Inside the `with` block, bare `"No."` is a field access on Customer and `Validat
 
 **Priority**: low. The `#if` feature is genuinely rare in shipped BC code — Microsoft added preprocessor directives relatively recently and they're more common in test artifacts than production modules.
 
-### 6. Method-result chained access through scalar returns
+### 7. Method-result chained access through scalar returns
 
 **Pattern**: `Cust.GetCustomFieldValue().Substring(1, 10)` — call a procedure that returns Text, then call Text's `Substring` on the result.
 
@@ -112,7 +108,7 @@ Inside the `with` block, bare `"No."` is a field access on Customer and `Validat
 
 **Priority**: low–medium. The shape is common in modern BC code (`MyHelper.GetCustomerName().Substring(1, 3)`) but the lost reference is the *second* hop, not the first — Find references on `GetCustomerName` still catches the call site, just not the chained `Substring` follow-up.
 
-### 7. Variant types
+### 8. Variant types
 
 **Pattern**: `var X: Variant; X := Cust; X.Validate(...);`
 
@@ -139,10 +135,9 @@ Inside the `with` block, bare `"No."` is a field access on Customer and `Validat
 
 If picked up as a follow-up branch:
 
-1. **Tableextension methods** (catalog change; immediate impact for any customer-extension corpus).
-2. **Bare self-procedure calls** (small extractor change + built-in list extension).
-3. **Cross-release shadowing** (medium catalog refactor; impacts layered-release imports).
-4. **Method-result chained access through scalar returns** (small sentinel-type addition).
-5. **`with X do …`** (real scope work; legacy-code value).
-6. **`#if` predicate inspection** (low-priority approximation).
-7. **Variant tracking** (deferred indefinitely unless a real ROI surfaces).
+1. **Bare self-procedure calls** (small extractor change + built-in list extension).
+2. **Cross-release shadowing** (medium catalog refactor; impacts layered-release imports).
+3. **Method-result chained access through scalar returns** (small sentinel-type addition).
+4. **`with X do …`** (real scope work; legacy-code value).
+5. **`#if` predicate inspection** (low-priority approximation).
+6. **Variant tracking** (deferred indefinitely unless a real ROI surfaces).

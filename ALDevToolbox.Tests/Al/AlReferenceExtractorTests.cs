@@ -215,6 +215,63 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Extension_member_resolves_and_targets_the_extension_object()
+    {
+        // CustomerExt is a tableextension on Customer that adds a
+        // procedure named DKValidate. `Cust.DKValidate()` should
+        // resolve through the extension widening and emit a reference
+        // whose target is the EXTENSION (not the base Customer), so
+        // Find references on DKValidate's declaration row picks the
+        // call up.
+        var resolver = MakeResolver();
+        resolver.AddType("CustomerExt", new AlTypeRef(BaseAppId, "tableextension", 50000, "CustomerExt"));
+        resolver.AddExtensionOf("Customer", "CustomerExt");
+        resolver.AddMember("CustomerExt", new AlMember("DKValidate", "procedure", null, null));
+
+        const string src = """
+            procedure Foo()
+            var
+                Cust: Record Customer;
+            begin
+                Cust.DKValidate();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "CustomerExt"
+            && r.TargetObjectKind == "tableextension"
+            && r.TargetMemberName == "DKValidate"
+            && r.ReferenceKind == "method_call");
+    }
+
+    [Fact]
+    public void Base_member_shadows_same_name_extension_member()
+    {
+        // Customer has a Validate procedure of its own AND
+        // CustomerExt also has one. AL dispatch picks the base, so the
+        // extractor should emit Customer.Validate — not the extension.
+        var resolver = MakeResolver();
+        resolver.AddType("CustomerExt", new AlTypeRef(BaseAppId, "tableextension", 50000, "CustomerExt"));
+        resolver.AddExtensionOf("Customer", "CustomerExt");
+        resolver.AddMember("CustomerExt", new AlMember("Validate", "procedure", null, null));
+
+        const string src = """
+            procedure Foo()
+            var
+                Cust: Record Customer;
+            begin
+                Cust.Validate();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Customer"
+            && r.TargetMemberName == "Validate");
+    }
+
+    [Fact]
     public void Type_literal_receiver_resolves_directly()
     {
         // `Customer.Insert(true)` — the qualifier is a type name, not a
@@ -467,6 +524,9 @@ public sealed class AlReferenceExtractorTests
             new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, List<AlMember>> _members =
             new(StringComparer.OrdinalIgnoreCase);
+        // baseName -> list of extension type names targeting it
+        private readonly Dictionary<string, List<string>> _extensionsByBase =
+            new(StringComparer.OrdinalIgnoreCase);
 
         public void AddType(string name, AlTypeRef type) => _types[name] = type;
 
@@ -480,14 +540,53 @@ public sealed class AlReferenceExtractorTests
             list.Add(member);
         }
 
+        /// <summary>
+        /// Declares that <paramref name="extensionName"/> is an extension of
+        /// <paramref name="baseName"/>. Member lookups on the base will
+        /// fall through to the extension's members when not found, and the
+        /// returned AlMember carries the extension's AlTypeRef in
+        /// <see cref="AlMember.DeclaringType"/> so the extractor stamps
+        /// the reference at the extension.
+        /// </summary>
+        public void AddExtensionOf(string baseName, string extensionName)
+        {
+            if (!_extensionsByBase.TryGetValue(baseName, out var list))
+            {
+                list = new List<string>();
+                _extensionsByBase[baseName] = list;
+            }
+            list.Add(extensionName);
+        }
+
         public AlTypeRef? ResolveTypeByName(string typeName) =>
             _types.TryGetValue(typeName, out var t) ? t : null;
 
         public AlMember? ResolveMember(AlTypeRef owner, string memberName)
         {
-            if (!_members.TryGetValue(owner.Name, out var list)) return null;
-            return list.FirstOrDefault(m =>
-                string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
+            // Owner's own members win — matches the real CatalogResolver's
+            // shadow semantics.
+            if (_members.TryGetValue(owner.Name, out var ownList))
+            {
+                var direct = ownList.FirstOrDefault(m =>
+                    string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
+                if (direct is not null) return direct;
+            }
+
+            // Walk extensions.
+            if (_extensionsByBase.TryGetValue(owner.Name, out var extensions))
+            {
+                foreach (var extName in extensions)
+                {
+                    if (!_members.TryGetValue(extName, out var extList)) continue;
+                    var match = extList.FirstOrDefault(m =>
+                        string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
+                    if (match is null) continue;
+                    _types.TryGetValue(extName, out var extType);
+                    return match with { DeclaringType = extType };
+                }
+            }
+
+            return null;
         }
     }
 }
