@@ -494,4 +494,45 @@ public sealed class ReleaseImportServiceTests : IDisposable
         var rel = await read.OeReleases.AsNoTracking().SingleAsync(r => r.Id == child.ReleaseId);
         rel.ParentReleaseId.Should().Be(parent.ReleaseId);
     }
+
+    // ── Phase-2 call-site references ────────────────────────────────────
+
+    [Fact]
+    public async Task Import_emits_method_call_or_field_access_references_for_DK_Core()
+    {
+        // DK Core ships actual .al source (it's a small extension wrapper
+        // with procedures that call into the Base App tables / codeunits
+        // declared in its own symbol package + variable rows). Once the
+        // per-module loop finishes, EmitCallSiteReferencesAsync runs the
+        // AL reference extractor over every file and writes method_call
+        // / field_access rows. We don't pin a specific (object, member)
+        // because the .app's source is opaque — but we DO expect the
+        // bucket to be non-empty.
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        await using var s1 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        var summary = await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "Phase 2 DK Core",
+            Kind: "first_party",
+            ParentReleaseId: null,
+            ApplicationVersionId: null,
+            Uploads: new[] { new AppFileUpload("dk.app", s1, null) }));
+
+        await using var read = _db.NewContext();
+        var refs = await read.OeModuleReferences.AsNoTracking()
+            .Where(r => r.Module!.ReleaseId == summary.ReleaseId)
+            .Where(r => r.ReferenceKind == "method_call" || r.ReferenceKind == "field_access")
+            .Select(r => new { r.ReferenceKind, r.TargetObjectName, r.TargetMemberName, r.TargetMemberKind })
+            .ToListAsync();
+
+        refs.Should().NotBeEmpty(
+            because: "DK Core's .al source contains member-access patterns the extractor must surface");
+        refs.Should().AllSatisfy(r =>
+        {
+            r.TargetMemberName.Should().NotBeNullOrEmpty(
+                because: "member-scoped rows always carry the member name");
+            r.TargetMemberKind.Should().NotBeNullOrEmpty(
+                because: "member-scoped rows always carry the member kind");
+        });
+    }
 }
