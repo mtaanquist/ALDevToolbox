@@ -625,6 +625,146 @@ public sealed class AlReferenceExtractorTests
         result.References.Should().BeEmpty();
     }
 
+    // ── Object-scope property extraction ───────────────────────────
+
+    [Fact]
+    public void Source_table_property_emits_object_reference()
+    {
+        // `SourceTable = "Sales Header";` at the top of a page is a
+        // reference to the Sales Header table. The extractor must emit
+        // a property_object row at the line/column of the name token
+        // so the source viewer can underline and Go-to-definition can
+        // resolve via the object-name fallback.
+        const string src = """
+            page 42 "Sales Order"
+            {
+                SourceTable = "Sales Header";
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(MakeResolver(), "Sales Order", null));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetObjectKind == "table"
+            && r.TargetMemberName == null
+            && r.ReferenceKind == "property_object");
+    }
+
+    [Fact]
+    public void Lookup_page_id_property_emits_page_reference()
+    {
+        const string src = """
+            table 18 Customer
+            {
+                LookupPageID = "Customer List";
+            }
+            """;
+        var resolver = MakeResolver();
+        resolver.AddType("Customer List", new AlTypeRef(BaseAppId, "page", 22, "Customer List"));
+
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(resolver, "Customer"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Customer List"
+            && r.TargetObjectKind == "page"
+            && r.ReferenceKind == "property_object");
+    }
+
+    [Fact]
+    public void Data_caption_fields_emits_one_field_access_per_listed_field()
+    {
+        // DataCaptionFields = "No.", "Name"; lists two fields on the
+        // owner table — each gets its own field_access row so the
+        // source viewer underlines each independently and Go-to-
+        // definition jumps to the field declaration on the table.
+        const string src = """
+            table 18 Customer
+            {
+                DataCaptionFields = "No.", "Name";
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(MakeResolver(), "Customer"));
+
+        result.References.Should().HaveCount(2);
+        result.References.Select(r => r.TargetMemberName)
+            .Should().BeEquivalentTo(new[] { "No.", "Name" });
+        result.References.Should().AllSatisfy(r =>
+        {
+            r.TargetObjectName.Should().Be("Customer");
+            r.ReferenceKind.Should().Be("field_access");
+        });
+    }
+
+    [Fact]
+    public void Data_caption_fields_on_a_page_targets_the_source_table()
+    {
+        // A page's DataCaptionFields refers to fields on its SourceTable,
+        // not the page itself. Uses the same SourceTable-derived Rec
+        // type the body's implicit-field-access path uses.
+        const string src = """
+            page 42 "Sales Order"
+            {
+                DataCaptionFields = "Sell-to Customer No.";
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(MakeResolver(), "Sales Order", "Sales Header"));
+
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "Sell-to Customer No.");
+    }
+
+    [Fact]
+    public void Property_extraction_does_not_fire_inside_a_procedure_body()
+    {
+        // `if x = 5 then` inside a procedure body uses the same `=`
+        // punct as a property assignment, but it's not a property —
+        // the scope-depth guard ensures property detection only fires
+        // at object scope. Without the guard this would mis-parse
+        // comparisons as property declarations.
+        var resolver = MakeResolver();
+        resolver.AddType("SourceTable", new AlTypeRef(BaseAppId, "table", 99, "SourceTable"));
+
+        const string src = """
+            codeunit 50100 "Foo"
+            {
+                procedure Foo()
+                var
+                    SourceTable: Integer;
+                begin
+                    if SourceTable = 5 then exit;
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        // No reference should leak out — neither the comparison nor any
+        // body-token gets mis-recognised as a SourceTable property
+        // referring to the table named "SourceTable" in our fixture.
+        result.References.Should().BeEmpty(
+            because: "comparisons inside procedure bodies are not property declarations");
+    }
+
+    [Fact]
+    public void Property_with_unknown_object_name_drops_silently()
+    {
+        // `SourceTable = "Some Unknown Table";` referencing a table
+        // we don't have in the catalog must not throw and must not
+        // bump the unresolved counter — silent drop. Unknown targets
+        // in property values are common (cross-release, customer
+        // extensions); they don't deserve the noise.
+        const string src = """
+            page 42 "X"
+            {
+                SourceTable = "Some Unknown Table";
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(MakeResolver(), "X", null));
+
+        result.References.Should().BeEmpty();
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
     // ── Implicit-Rec field access (gap #5 sibling) ─────────────────
 
     [Fact]

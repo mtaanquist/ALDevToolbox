@@ -717,18 +717,27 @@ public class ObjectExplorerService
             .SingleOrDefaultAsync(ct);
         if (string.IsNullOrEmpty(content)) return new();
 
-        // Pull every member-access row on the file. TargetSymbolId may be
-        // null (e.g. cross-release receivers not yet in the local catalog) —
-        // we still underline the token because the click-time resolver can
-        // fall back to other strategies later. For now, only TargetSymbolId-
-        // resolved rows are guaranteed clickable, so filter to them.
+        // Pull every source-extracted reference on the file (LineNumber
+        // set). Two row shapes contribute spans:
+        //   - Member-scoped (method_call / field_access): the underlined
+        //     token is the MEMBER name. Go-to-definition resolves via
+        //     the row's TargetSymbolId when present, or falls back to
+        //     object-name lookup.
+        //   - Object-scoped (property_object from SourceTable,
+        //     LookupPageID, …): the underlined token is the TARGET
+        //     OBJECT name. Go-to-definition resolves via the object-name
+        //     lookup. No member-symbol id needed.
+        // The line-text scan below uses the per-row Name to find the
+        // 1-based column span — same logic for both shapes.
         var rows = await _db.OeModuleReferences.AsNoTracking()
-            .Where(r => (r.ReferenceKind == "method_call" || r.ReferenceKind == "field_access")
-                && r.SourceObject!.SourceFileId == fileId
-                && r.LineNumber != null
-                && r.TargetMemberName != null
-                && r.TargetSymbolId != null)
-            .Select(r => new { Line = r.LineNumber!.Value, Name = r.TargetMemberName! })
+            .Where(r => r.SourceObject!.SourceFileId == fileId
+                && r.LineNumber != null)
+            .Select(r => new
+            {
+                Line = r.LineNumber!.Value,
+                Name = r.TargetMemberName ?? r.TargetObjectName,
+            })
+            .Where(x => x.Name != null && x.Name != "")
             .ToListAsync(ct);
         if (rows.Count == 0) return new();
 

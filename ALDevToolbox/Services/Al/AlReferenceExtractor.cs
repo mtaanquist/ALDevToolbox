@@ -192,6 +192,23 @@ public static class AlReferenceExtractor
                     {
                         if (TryConsumeImplicitFieldAccess()) continue;
                     }
+
+                    // Object-scope property: `Identifier = Value;` at the
+                    // top level (outside any procedure / trigger body).
+                    // SourceTable, LookupPageID, DataCaptionFields, … are
+                    // declared in property syntax and reference other AL
+                    // objects / fields the reference extractor needs to
+                    // surface. Comparisons inside procedure bodies use
+                    // the same `=` punct but the scope-depth guard
+                    // separates them.
+                    if (_scopeStack.Count == 1
+                        && tok.Kind == AlTokenKind.Identifier
+                        && _pos + 1 < _tokens.Count
+                        && _tokens[_pos + 1].Kind == AlTokenKind.Punct
+                        && _tokens[_pos + 1].Value == "=")
+                    {
+                        if (TryConsumeObjectScopeProperty()) continue;
+                    }
                 }
 
                 _pos++;
@@ -741,6 +758,164 @@ public static class AlReferenceExtractor
             return _ownerTypeCache;
         }
 
+        // ── Object-scope property extraction (item 4) ─────────────────
+
+        /// <summary>
+        /// At object-scope (outside any procedure / trigger body), AL
+        /// declarations look like <c>PropertyName = Value;</c>. We
+        /// recognise a small set of property names whose values reference
+        /// other AL objects (SourceTable, LookupPageID, …) or fields
+        /// (DataCaptionFields) and emit reference rows the source viewer
+        /// can underline and Go-to-definition can resolve.
+        ///
+        /// Returns true when the property was recognised and consumed;
+        /// false when the caller should fall through (the identifier was
+        /// not a known property — could be a custom user property the
+        /// extractor doesn't model, or any other object-scope token).
+        ///
+        /// Coverage in v1 (matches the user-facing screenshot list):
+        /// SourceTable, LookupPageID, CardPageID, DrillDownPageID,
+        /// DataCaptionFields. Deferred (need field-context tracking or
+        /// complex value-shape parsing): TableRelation, CalcFormula,
+        /// Permissions, SourceTableView, RunObject, enum-typed field
+        /// declarations.
+        /// </summary>
+        private bool TryConsumeObjectScopeProperty()
+        {
+            var head = _tokens[_pos];
+            var name = head.Value;
+
+            if (string.Equals(name, "SourceTable", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "LookupPageID", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "CardPageID", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "DrillDownPageID", StringComparison.OrdinalIgnoreCase))
+            {
+                return TryConsumeObjectReferenceProperty(name);
+            }
+            if (string.Equals(name, "DataCaptionFields", StringComparison.OrdinalIgnoreCase))
+            {
+                return TryConsumeDataCaptionFields();
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Handles single-object-reference properties — value is a name
+        /// (quoted or bare) optionally preceded by an AL object kind
+        /// keyword (e.g. <c>SourceTable = "Sales Header";</c> or
+        /// <c>RunObject = Page "Customer Card";</c>). The reference is
+        /// emitted at the line/column of the NAME token (not the keyword)
+        /// so the source-viewer underline targets the clickable text.
+        /// </summary>
+        private bool TryConsumeObjectReferenceProperty(string propertyName)
+        {
+            _pos++; // property name
+            if (!At("=")) { SkipToSemicolon(); return true; }
+            _pos++; // =
+
+            // Optional AL object kind keyword (`Page`, `Codeunit`, etc.).
+            string? kindHint = null;
+            if (_pos < _tokens.Count && _tokens[_pos].Kind == AlTokenKind.Identifier
+                && IsAlObjectKeyword(_tokens[_pos].Value))
+            {
+                kindHint = _tokens[_pos].Value;
+                _pos++;
+            }
+
+            if (_pos >= _tokens.Count) { SkipToSemicolon(); return true; }
+            var nameTok = _tokens[_pos];
+            if (nameTok.Kind != AlTokenKind.Identifier && nameTok.Kind != AlTokenKind.QuotedIdentifier)
+            {
+                SkipToSemicolon();
+                return true;
+            }
+
+            var target = _ctx.Resolver.ResolveTypeByName(nameTok.Value);
+            if (target is null)
+            {
+                // Target not in catalog (cross-release, unknown kind, etc.).
+                // Don't bump unresolved counter — that bucket is for chain
+                // receivers; property misses are common and noisy.
+                SkipToSemicolon();
+                return true;
+            }
+
+            _refs.Add(new ExtractedReference(
+                Line: nameTok.Line,
+                Column: nameTok.Column,
+                TargetAppId: target.AppId,
+                TargetObjectKind: target.Kind,
+                TargetObjectId: target.ObjectId,
+                TargetObjectName: target.Name,
+                TargetMemberName: null,
+                TargetMemberKind: null,
+                ReferenceKind: "property_object"));
+            _resolved++;
+
+            // kindHint is intentionally unused at the row level — the
+            // catalog lookup already returned the canonical kind.
+            _ = kindHint;
+            SkipToSemicolon();
+            return true;
+        }
+
+        /// <summary>
+        /// Handles <c>DataCaptionFields = "No.", "Name", "Description";</c>
+        /// style multi-field-reference properties. Each comma-separated
+        /// identifier is a field on the owner's table (the owner itself
+        /// for tables / tableextensions, the SourceTable for pages /
+        /// pageextensions). Emits one <c>field_access</c> per recognised
+        /// field — same kind as a bare <c>"No."</c> in a body, so the
+        /// source-viewer underlines and Go-to-definition treat them
+        /// identically.
+        /// </summary>
+        private bool TryConsumeDataCaptionFields()
+        {
+            _pos++; // property name
+            if (!At("=")) { SkipToSemicolon(); return true; }
+            _pos++; // =
+
+            var ownerTable = RecType();
+            if (ownerTable is null) { SkipToSemicolon(); return true; }
+
+            while (_pos < _tokens.Count && !At(";"))
+            {
+                var tok = _tokens[_pos];
+                if (tok.Kind == AlTokenKind.Identifier || tok.Kind == AlTokenKind.QuotedIdentifier)
+                {
+                    var member = _ctx.Resolver.ResolveMember(ownerTable, tok.Value);
+                    if (member is not null
+                        && string.Equals(member.Kind, "field", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var targetOwner = member.DeclaringType ?? ownerTable;
+                        _refs.Add(new ExtractedReference(
+                            Line: tok.Line,
+                            Column: tok.Column,
+                            TargetAppId: targetOwner.AppId,
+                            TargetObjectKind: targetOwner.Kind,
+                            TargetObjectId: targetOwner.ObjectId,
+                            TargetObjectName: targetOwner.Name,
+                            TargetMemberName: member.Name,
+                            TargetMemberKind: member.Kind,
+                            ReferenceKind: "field_access"));
+                        _resolved++;
+                    }
+                    _pos++;
+                    continue;
+                }
+                // Skip commas, whitespace tokens we don't care about.
+                _pos++;
+            }
+            if (At(";")) _pos++;
+            return true;
+        }
+
+        private void SkipToSemicolon()
+        {
+            while (_pos < _tokens.Count && !At(";")) _pos++;
+            if (At(";")) _pos++;
+        }
+
         private AlTypeRef? _recTypeCache;
         private bool _recTypeResolved;
 
@@ -1055,8 +1230,8 @@ public sealed record ExtractedReference(
     string TargetObjectKind,
     int? TargetObjectId,
     string TargetObjectName,
-    string TargetMemberName,
-    string TargetMemberKind,
+    string? TargetMemberName,
+    string? TargetMemberKind,
     string ReferenceKind);
 
 /// <summary>Per-file extraction statistics — used for diagnostic logging.</summary>
