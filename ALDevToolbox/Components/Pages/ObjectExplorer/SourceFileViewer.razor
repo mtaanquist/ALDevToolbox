@@ -50,11 +50,21 @@
         </header>
 
         <div class="source-viewer__layout">
+            @*
+                spellcheck="false" — AL identifiers (camelCase names,
+                quoted phrases like "Sell-to Customer Name") trigger
+                browser spellcheck's red squiggly underline, which is
+                trivially confusable with the resolvable / declaration
+                dotted underlines this viewer paints. Turning it off
+                across the whole editor surface so what you see under
+                a token is always us, never Chrome / Firefox.
+            *@
             <div class="source-viewer__code"
                  data-language="al"
                  data-content="@_file.Content"
                  data-declarations="@SerializeDeclarations(FilterNavigableDeclarations(_declarations))"
-                 data-resolvables="@SerializeResolvables(_resolvables)"></div>
+                 data-resolvables="@SerializeResolvables(_resolvables)"
+                 spellcheck="false"></div>
 
             @* Drag handle between the editor and the outline. source-viewer.js
                wires the pointer events and persists the chosen width in
@@ -455,7 +465,8 @@
 
     private static bool IsNonNavigableDeclarationKind(string kind) =>
         string.Equals(kind, "field", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(kind, "trigger", StringComparison.OrdinalIgnoreCase);
+        || string.Equals(kind, "trigger", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(kind, "action", StringComparison.OrdinalIgnoreCase);
 
     private static readonly JsonSerializerOptions DeclarationJsonOptions = new()
     {
