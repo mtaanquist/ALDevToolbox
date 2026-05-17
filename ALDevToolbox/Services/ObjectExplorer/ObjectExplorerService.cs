@@ -565,6 +565,7 @@ public class ObjectExplorerService
             .Select(s => new
             {
                 s.Id, s.Kind, s.Name, s.LineNumber, s.ColumnStart, s.ColumnEnd,
+                OwnerKind = s.Object!.Kind,
             })
             .ToListAsync(ct);
 
@@ -612,7 +613,8 @@ public class ObjectExplorerService
                 ColumnEnd: sym.ColumnEnd,
                 Kind: sym.Kind,
                 Name: sym.Name,
-                IsMemberSymbol: true));
+                IsMemberSymbol: true,
+                OwnerKind: sym.OwnerKind));
         }
 
         return result;

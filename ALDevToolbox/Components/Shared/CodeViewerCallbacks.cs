@@ -54,7 +54,8 @@ public sealed record CodeViewerDeclaration(
     int ColumnEnd,
     string Kind,
     string Name,
-    bool IsMemberSymbol = false);
+    bool IsMemberSymbol = false,
+    string? OwnerKind = null);
 
 /// <summary>A 1-based click position inside the viewer's source.</summary>
 public sealed record CodeViewerClick(int Line, int Column);

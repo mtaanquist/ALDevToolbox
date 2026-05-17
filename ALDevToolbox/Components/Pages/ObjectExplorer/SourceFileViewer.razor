@@ -457,16 +457,46 @@
         var kept = new List<CodeViewerDeclaration>(declarations.Count);
         foreach (var d in declarations)
         {
-            if (IsNonNavigableDeclarationKind(d.Kind)) continue;
+            if (IsNonNavigableDeclaration(d.Kind, d.OwnerKind)) continue;
             kept.Add(d);
         }
         return kept;
     }
 
-    private static bool IsNonNavigableDeclarationKind(string kind) =>
-        string.Equals(kind, "field", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(kind, "trigger", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(kind, "action", StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// Decides whether a declaration's underline + right-click "Find
+    /// references" affordance should be shown. The same kind can mean
+    /// different things depending on what kind of object holds it:
+    /// <list type="bullet">
+    ///   <item><c>field</c> on a <b>table</b> / <b>tableextension</b>
+    ///         is the canonical field declaration — a legitimate
+    ///         navigation target.</item>
+    ///   <item><c>field</c> on a <b>page</b> / <b>pageextension</b>
+    ///         / <b>report</b> / <b>requestpage</b> is a control name
+    ///         local to that surface — not a navigation target.</item>
+    ///   <item><c>action</c> only exists on pages / pageextensions, and
+    ///         the control name is page-local — never navigable.</item>
+    ///   <item><c>trigger</c> is runtime-invoked everywhere — never a
+    ///         useful Find-references target.</item>
+    /// </list>
+    /// </summary>
+    private static bool IsNonNavigableDeclaration(string kind, string? ownerKind)
+    {
+        if (string.Equals(kind, "trigger", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(kind, "action", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        if (string.Equals(kind, "field", StringComparison.OrdinalIgnoreCase))
+        {
+            // Table / tableextension field declarations ARE navigable.
+            // Everything else (page / pageextension / report / xmlport /
+            // requestpage page-control fields) is a local control name.
+            return !string.Equals(ownerKind, "table", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(ownerKind, "tableextension", StringComparison.OrdinalIgnoreCase);
+        }
+        return false;
+    }
 
     private static readonly JsonSerializerOptions DeclarationJsonOptions = new()
     {
