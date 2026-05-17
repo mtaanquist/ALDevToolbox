@@ -88,6 +88,16 @@ internal static class SnapshotCatalog
             new AlTypeRef(OwnerAppId, "codeunit", 50001, "Global Variable Usage"));
         r.AddType("Attributed Var Sample",
             new AlTypeRef(OwnerAppId, "codeunit", 50002, "Attributed Var Sample"));
+        r.AddType("Namespaced Type Sample",
+            new AlTypeRef(OwnerAppId, "codeunit", 50003, "Namespaced Type Sample"));
+
+        // Table fixture that exercises the bare-quoted-id-as-Rec-field
+        // chain head — see fixture table/AssemblyLineSample.al.
+        r.AddType("Assembly Line Sample",
+            new AlTypeRef(OwnerAppId, "table", 50001, "Assembly Line Sample"));
+        r.AddMember("Assembly Line Sample",
+            new AlMember("Document Type", "table_field", "Enum", "Sales Document Type"));
+        r.AddMember("Assembly Line Sample", new AlMember("No.", "table_field", null, null));
 
         // ── Reports / queries / xmlports / enums ─────────────────
         r.AddType("Customer List Report", new AlTypeRef(OwnerAppId, "report", 101, "Customer List Report"));

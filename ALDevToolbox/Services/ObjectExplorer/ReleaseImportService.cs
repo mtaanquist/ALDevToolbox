@@ -1480,6 +1480,29 @@ public class ReleaseImportService
             {
                 sourceTable = file.Owner.ExtendsObjectName;
             }
+            // Pageextension fallback: PropagateSourceTableToPageExtensionsAsync
+            // copies the base page's source_table_name into the
+            // extension at import end, but the join is same-release-only
+            // and requires the base page's source_table_name to be set.
+            // When either misses (cross-release base page, or the base
+            // page's source table wasn't extracted), Rec doesn't get
+            // wired in BuildGlobalScope and every `Rec.X` chain in the
+            // body fires head-not-a-variable. Catch the miss here by
+            // looking the base page up via the resolver — which catalogs
+            // every page in the current release — and asking for its
+            // source-table name through the IAlTypeResolver hook added
+            // in step 5.
+            if (string.IsNullOrEmpty(sourceTable)
+                && file.Owner.Kind == "pageextension"
+                && !string.IsNullOrEmpty(file.Owner.ExtendsObjectName))
+            {
+                var pextResolver = ResolverFor(file.ModuleId);
+                var basePage = pextResolver.ResolveTypeByName(file.Owner.ExtendsObjectName!, "Page");
+                if (basePage is not null)
+                {
+                    sourceTable = pextResolver.ResolveSourceTableName(basePage);
+                }
+            }
             var ctx = new ALDevToolbox.Services.Al.AlExtractContext(
                 OwnerKind: file.Owner.Kind,
                 OwnerName: file.Owner.Name,

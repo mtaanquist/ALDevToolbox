@@ -612,6 +612,26 @@ internal sealed class AlProcedureWalker
                     typeNameColumn = t.Column;
                     sawTypeName = true;
                     _state.Pos++;
+
+                    // Fully-qualified namespaced type reference:
+                    // `Record Microsoft.Manufacturing.StandardCost."Standard Cost Worksheet"`.
+                    // Walk the dotted prefix and use the LAST segment
+                    // as the actual type name — segments before it
+                    // are the namespace path. Modern BC ships these
+                    // increasingly often (every namespace-disambiguated
+                    // cross-app reference uses this shape).
+                    while (_state.Pos + 1 < _state.Tokens.Count
+                           && _state.At(".")
+                           && (_state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Identifier
+                               || _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.QuotedIdentifier))
+                    {
+                        _state.Pos++; // past .
+                        var segment = _state.Tokens[_state.Pos];
+                        typeName = segment.Value;
+                        typeNameLine = segment.Line;
+                        typeNameColumn = segment.Column;
+                        _state.Pos++;
+                    }
                 }
             }
         }
@@ -770,6 +790,21 @@ internal sealed class AlProcedureWalker
                             || AlExtractionState.IsPlatformVirtualTableId(declaredAsVar.TypeName)))))
             {
                 AdvancePastChain();
+                return;
+            }
+
+            // Implicit-Rec field as chain head: bare quoted (or bare)
+            // identifier inside a table / page body that doesn't match
+            // a scope variable or catalog type but DOES match a field
+            // on Rec. Common shape on tables:
+            //   `"Document Type".AsInteger()`
+            // resolves head as Rec."Document Type" (enum field), then
+            // the chain walker advances the receiver to the enum and
+            // walks `.AsInteger()` as an enum built-in. Without this
+            // fallback every implicit-Rec field used at chain-head
+            // position fires head-not-a-variable.
+            if (TryConsumeImplicitRecFieldChainHead(head))
+            {
                 return;
             }
 
@@ -1457,6 +1492,43 @@ internal sealed class AlProcedureWalker
             ReferenceKind: "variable_use"));
         _state.Resolved++;
         _state.Pos++;
+        return true;
+    }
+
+    /// <summary>
+    /// Handles a chain whose head turned out not to be a variable or
+    /// a catalog type, but matches a field on the implicit Rec
+    /// receiver. Emits a <c>field_access</c> at the head, advances
+    /// the receiver to the field's return type (an enum for
+    /// <c>"Document Type"</c>, a record for FK-typed fields, etc.),
+    /// and continues the chain via
+    /// <see cref="WalkMemberChain"/>. Returns true when the head
+    /// resolved as a Rec field — the caller is done; false to let
+    /// the existing unresolved diagnostic fire.
+    /// </summary>
+    private bool TryConsumeImplicitRecFieldChainHead(AlToken head)
+    {
+        var rec = RecType();
+        if (rec is null) return false;
+
+        var member = _state.Ctx.Resolver.ResolveMember(rec, head.Value);
+        if (member is null) return false;
+        if (!AlExtractionState.IsFieldKind(member.Kind)) return false;
+
+        var targetOwner = member.DeclaringType ?? rec;
+        _state.Refs.Add(new ExtractedReference(
+            Line: head.Line,
+            Column: head.Column,
+            TargetAppId: targetOwner.AppId,
+            TargetObjectKind: targetOwner.Kind,
+            TargetObjectId: targetOwner.ObjectId,
+            TargetObjectName: targetOwner.Name,
+            TargetMemberName: member.Name,
+            TargetMemberKind: member.Kind,
+            ReferenceKind: "field_access"));
+        _state.Resolved++;
+
+        WalkMemberChain(AdvanceReceiverByMember(member));
         return true;
     }
 

@@ -1,0 +1,45 @@
+{
+  "References": [
+    {
+      "Line": 5,
+      "Column": 40,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "enum",
+      "TargetObjectId": 50000,
+      "TargetObjectName": "Sales Document Type"
+    },
+    {
+      "Line": 15,
+      "Column": 26,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "codeunit",
+      "TargetObjectId": 80,
+      "TargetObjectName": "Sales-Post"
+    },
+    {
+      "Line": 17,
+      "Column": 16,
+      "ReferenceKind": "method_call",
+      "TargetObjectKind": "codeunit",
+      "TargetObjectId": 80,
+      "TargetObjectName": "Sales-Post",
+      "TargetMemberKind": "procedure",
+      "TargetMemberName": "Run"
+    },
+    {
+      "Line": 17,
+      "Column": 20,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 50001,
+      "TargetObjectName": "Assembly Line Sample",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Document Type"
+    }
+  ],
+  "Stats": {
+    "ResolvedReferences": 4,
+    "UnresolvedReceivers": 0,
+    "UnresolvedSamples": []
+  }
+}
