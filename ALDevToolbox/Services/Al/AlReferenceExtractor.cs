@@ -248,13 +248,19 @@ public static class AlReferenceExtractor
                     if (_procedureWalker.TryConsumeImplicitFieldAccess()) return;
                 }
 
-                // Object-scope property: `Identifier = Value;`.
+                // Object-scope property: `Identifier = Value;`. Per-kind
+                // extractor gets first chance (e.g. AlPageStructure
+                // claims SubPageLink / RunPageLink to resolve cross-page
+                // field names), then the orchestrator's shared
+                // dispatch covers the rest (SourceTable, TableRelation,
+                // …).
                 if (_state.ScopeStack.Count == 1
                     && tok.Kind == AlTokenKind.Identifier
                     && _state.Pos + 1 < _state.Tokens.Count
                     && _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Punct
                     && _state.Tokens[_state.Pos + 1].Value == "=")
                 {
+                    if (_structure.TryConsumeObjectScopeProperty(tok.Value)) return;
                     if (TryConsumeObjectScopeProperty()) return;
                 }
 
@@ -1144,6 +1150,24 @@ public interface IAlTypeResolver
     /// reference row records the name + kind, not a specific overload.
     /// </summary>
     AlMember? ResolveMember(AlTypeRef owner, string memberName);
+
+    /// <summary>
+    /// Returns the SourceTable name for an AL object that has one
+    /// (page, pageextension, requestpage, etc.), or <c>null</c> for
+    /// kinds that don't carry a source table (tables, codeunits, ...)
+    /// or when the metadata isn't available.
+    ///
+    /// Used by per-kind structure extractors that need to resolve
+    /// cross-object field references — e.g. <c>AlPageStructure</c>'s
+    /// <c>SubPageLink</c> handler keys field names off the TARGET
+    /// page's source table, not the current page's Rec (step 5 of
+    /// <c>.design/al-reference-extractor-refactor.md</c>).
+    ///
+    /// Default <c>null</c> implementation so existing stub resolvers
+    /// (unit tests, snapshot catalogs) don't need to opt in — they
+    /// can override only when a test exercises a cross-object lookup.
+    /// </summary>
+    string? ResolveSourceTableName(AlTypeRef target) => null;
 }
 
 /// <summary>Resolved reference to an AL object type used by the receiver chain.</summary>

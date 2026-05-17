@@ -57,10 +57,14 @@ internal static class SnapshotCatalog
 
         // ── Pages ─────────────────────────────────────────────────
         r.AddType("Customer List", new AlTypeRef(OwnerAppId, "page", 22, "Customer List"));
+        r.AddSourceTable("Customer List", "Customer");
         r.AddType("Customer Card", new AlTypeRef(OwnerAppId, "page", 21, "Customer Card"));
+        r.AddSourceTable("Customer Card", "Customer");
         r.AddType("Sales Order", new AlTypeRef(OwnerAppId, "page", 42, "Sales Order"));
+        r.AddSourceTable("Sales Order", "Sales Header");
         r.AddType("Customer Statistics FactBox",
             new AlTypeRef(OwnerAppId, "page", 1300, "Customer Statistics FactBox"));
+        r.AddSourceTable("Customer Statistics FactBox", "Customer");
 
         // ── Codeunits ─────────────────────────────────────────────
         r.AddType("Sales-Post", new AlTypeRef(OwnerAppId, "codeunit", 80, "Sales-Post"));
@@ -80,6 +84,7 @@ internal static class SnapshotCatalog
     {
         private readonly Dictionary<string, AlTypeRef> _types = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, List<AlMember>> _members = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> _sourceTables = new(StringComparer.OrdinalIgnoreCase);
 
         public void AddType(string name, AlTypeRef type) => _types[name] = type;
 
@@ -93,6 +98,9 @@ internal static class SnapshotCatalog
             list.Add(member);
         }
 
+        public void AddSourceTable(string objectName, string sourceTable) =>
+            _sourceTables[objectName] = sourceTable;
+
         public AlTypeRef? ResolveTypeByName(string typeName, string? expectedKeyword = null) =>
             _types.TryGetValue(typeName, out var t) ? t : null;
 
@@ -102,5 +110,8 @@ internal static class SnapshotCatalog
             return list.FirstOrDefault(m =>
                 string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
         }
+
+        public string? ResolveSourceTableName(AlTypeRef target) =>
+            _sourceTables.TryGetValue(target.Name, out var src) ? src : null;
     }
 }

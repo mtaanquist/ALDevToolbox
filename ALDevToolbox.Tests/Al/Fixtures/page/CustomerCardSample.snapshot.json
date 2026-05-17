@@ -57,6 +57,16 @@
       "TargetObjectName": "Customer Statistics FactBox"
     },
     {
+      "Line": 30,
+      "Column": 31,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "No."
+    },
+    {
       "Line": 45,
       "Column": 25,
       "ReferenceKind": "method_call",
@@ -68,7 +78,7 @@
     }
   ],
   "Stats": {
-    "ResolvedReferences": 7,
+    "ResolvedReferences": 8,
     "UnresolvedReceivers": 0,
     "UnresolvedSamples": []
   }

@@ -29,4 +29,22 @@ internal interface IAlObjectStructureExtractor
     /// scope stack has just the outermost frame).
     /// </summary>
     bool TryConsumeObjectScopeToken(AlToken tok);
+
+    /// <summary>
+    /// Tries to consume the current object-scope property
+    /// (<c>&lt;name&gt; = &lt;value&gt;;</c>) when the property name
+    /// is one the per-kind extractor wants to own. Called by the
+    /// orchestrator before its shared property dispatch, so a
+    /// per-kind handler beats the generic one. Returns <c>true</c>
+    /// when consumed (cursor advanced past the trailing
+    /// <c>;</c>); <c>false</c> to fall through to the shared
+    /// dispatch.
+    ///
+    /// Default no-op so kinds without per-property logic stay
+    /// minimal. <c>AlPageStructure</c> overrides this for
+    /// <c>SubPageLink</c> / <c>RunPageLink</c> — properties whose
+    /// LHS field names belong to the TARGET page's source table,
+    /// not the current page's Rec (step 5).
+    /// </summary>
+    bool TryConsumeObjectScopeProperty(string propertyName) => false;
 }

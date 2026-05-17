@@ -1247,12 +1247,21 @@ public class ReleaseImportService
                 o.ObjectId,
                 o.Name,
                 AppId = o.Module!.AppId,
+                o.SourceTableName,
             })
             .ToListAsync(ct);
         var typesByName = new Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>>(StringComparer.OrdinalIgnoreCase);
         var typesByObjectId = new Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef>();
         var objectIdByIdentity = new Dictionary<(Guid AppId, string Kind, string Name), long>(
             new ObjectIdentityComparer());
+        // Per-object source-table lookup so AlPageStructure can
+        // resolve cross-page SubPageLink / RunPageLink field
+        // references in step 5 — the LHS field name belongs to the
+        // TARGET page's source table, not the current page's Rec.
+        // Only populated for objects that have a SourceTable
+        // (page / pageextension / requestpage / report-dataitem in
+        // practice); other kinds skip the dictionary entry.
+        var sourceTablesByObjectId = new Dictionary<long, string>();
         foreach (var t in typeRows)
         {
             var typeRef = new ALDevToolbox.Services.Al.AlTypeRef(t.AppId, t.Kind, t.ObjectId, t.Name);
@@ -1264,6 +1273,10 @@ public class ReleaseImportService
             }
             list.Add(typeRef);
             objectIdByIdentity[(t.AppId, t.Kind, t.Name)] = t.Id;
+            if (!string.IsNullOrEmpty(t.SourceTableName))
+            {
+                sourceTablesByObjectId[t.Id] = t.SourceTableName;
+            }
         }
 
         // (1b) Synthesise catalog entries for BC platform virtual tables.
@@ -1395,7 +1408,7 @@ public class ReleaseImportService
             moduleVisibility.TryGetValue(moduleId, out var visible);
             var r = new CatalogResolver(
                 typesByName, typesByObjectId, objectIdByIdentity,
-                membersByOwner, extensionsByBaseName, visible);
+                membersByOwner, extensionsByBaseName, sourceTablesByObjectId, visible);
             resolversByModule[moduleId] = r;
             return r;
         }
@@ -1995,6 +2008,7 @@ public class ReleaseImportService
         private readonly Dictionary<(Guid AppId, string Kind, string Name), long> _objectIdByIdentity;
         private readonly Dictionary<long, List<MemberEntry>> _members;
         private readonly Dictionary<string, List<ExtensionEntry>> _extensionsByBaseName;
+        private readonly Dictionary<long, string> _sourceTablesByObjectId;
         private readonly HashSet<Guid>? _visibleAppIds;
 
         public CatalogResolver(
@@ -2003,6 +2017,7 @@ public class ReleaseImportService
             Dictionary<(Guid AppId, string Kind, string Name), long> objectIdByIdentity,
             Dictionary<long, List<MemberEntry>> members,
             Dictionary<string, List<ExtensionEntry>> extensionsByBaseName,
+            Dictionary<long, string> sourceTablesByObjectId,
             HashSet<Guid>? visibleAppIds)
         {
             _typesByName = typesByName;
@@ -2010,6 +2025,7 @@ public class ReleaseImportService
             _objectIdByIdentity = objectIdByIdentity;
             _members = members;
             _extensionsByBaseName = extensionsByBaseName;
+            _sourceTablesByObjectId = sourceTablesByObjectId;
             _visibleAppIds = visibleAppIds;
         }
 
@@ -2120,6 +2136,16 @@ public class ReleaseImportService
                 }
             }
 
+            return null;
+        }
+
+        public string? ResolveSourceTableName(ALDevToolbox.Services.Al.AlTypeRef target)
+        {
+            if (_objectIdByIdentity.TryGetValue((target.AppId, target.Kind, target.Name), out var dbId)
+                && _sourceTablesByObjectId.TryGetValue(dbId, out var source))
+            {
+                return source;
+            }
             return null;
         }
 
