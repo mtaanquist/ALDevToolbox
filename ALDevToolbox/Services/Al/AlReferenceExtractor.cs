@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using ALDevToolbox.Services.Al.Structure;
 
 namespace ALDevToolbox.Services.Al;
 
@@ -103,11 +104,31 @@ public static class AlReferenceExtractor
     {
         private readonly AlExtractionState _state;
         private readonly AlProcedureWalker _procedureWalker;
+        private readonly IAlObjectStructureExtractor _structure;
 
         public Orchestrator(List<AlToken> tokens, AlExtractContext ctx)
         {
             _state = new AlExtractionState(tokens, ctx);
             _procedureWalker = new AlProcedureWalker(_state, ProcessOneToken);
+            _structure = SelectStructure(ctx.OwnerKind, _state, _procedureWalker);
+        }
+
+        /// <summary>
+        /// Owner kind → structure extractor dispatch. Listed here as a
+        /// single static map so a maintainer can scan it without
+        /// chasing per-extractor cross-references. Unknown / unmodelled
+        /// kinds fall through to <see cref="AlNullStructure"/>. See
+        /// <c>.design/al-reference-extractor-refactor.md</c> step 4.
+        /// </summary>
+        private static IAlObjectStructureExtractor SelectStructure(
+            string ownerKind, AlExtractionState state, AlProcedureWalker procedureWalker)
+        {
+            return (ownerKind?.ToLowerInvariant()) switch
+            {
+                "table" or "tableextension" => new AlTableStructure(state, procedureWalker),
+                "page" or "pageextension" or "requestpage" => new AlPageStructure(state, procedureWalker),
+                _ => new AlNullStructure(),
+            };
         }
 
         public AlExtractionResult Run()
@@ -237,52 +258,34 @@ public static class AlReferenceExtractor
                     if (TryConsumeObjectScopeProperty()) return;
                 }
 
-                // Field declaration with a typed third arg.
+                // Object-scope DSL constructs the per-kind structure
+                // extractor owns (see Services/Al/Structure/*.cs). Per-
+                // kind disambiguation lives here: `field(...)` on a
+                // table is the canonical (id; name; type) declaration,
+                // `field(...)` on a page is a control declaration with
+                // a source-expression second arg. The structure
+                // extractor handles the kind-specific shape; the
+                // orchestrator's shared property handlers (below) cover
+                // the rest. Falls through to the generic DSL-keyword
+                // skip so kinds without dedicated structure extractors
+                // (codeunit, query, report, xmlport, enum, interface,
+                // permissionset) still get the layout/grouping-keyword
+                // first-arg skip they need.
                 if (_state.ScopeStack.Count == 1
-                    && tok.Kind == AlTokenKind.Identifier
-                    && string.Equals(tok.Value, "field", StringComparison.OrdinalIgnoreCase)
-                    && _state.Pos + 1 < _state.Tokens.Count
-                    && _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Punct
-                    && _state.Tokens[_state.Pos + 1].Value == "(")
+                    && _structure.TryConsumeObjectScopeToken(tok))
                 {
-                    TryConsumeFieldDeclaration();
                     return;
                 }
 
-                // Page part / systempart with a control-name first arg and a
-                // page-object reference second arg:
-                // `part(ControlName; "Page Name")`. The first arg is a
-                // declaration (skip); the second is a page reference we can
-                // resolve to its catalog entry — same shape as RunObject /
-                // SubPageLink page references.
-                if (_state.ScopeStack.Count == 1
-                    && tok.Kind == AlTokenKind.Identifier
-                    && (string.Equals(tok.Value, "part", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(tok.Value, "systempart", StringComparison.OrdinalIgnoreCase))
-                    && _state.Pos + 1 < _state.Tokens.Count
-                    && _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Punct
-                    && _state.Tokens[_state.Pos + 1].Value == "(")
-                {
-                    TryConsumePartDeclaration();
-                    return;
-                }
-
-                // Other page / table / report DSL keywords at object scope
-                // with a control-name first arg: `part(ControlName; Page)`,
-                // `action(ControlName)`, `actionref(ControlName; Target)`,
-                // `group(Name)`, `area(Name)`, `repeater(Name)`,
-                // `cuegroup(Name)`, `modify(Name)`, `addafter(Name)`,
-                // `dataitem(Name; Source)`, `value(N; Name)` etc. The
-                // bare-call resolver already silences the keyword itself;
-                // here we additionally skip past the FIRST argument so it
-                // doesn't get mis-emitted as an implicit-Rec field access
-                // or an unresolved chain head. The second arg (source
-                // expression / page-object reference / table reference)
-                // continues to walk through the main dispatch so its
-                // references still emit. `field` has its own dispatch
-                // above so the table-side `(N; "Name"; Type)` shape can
-                // extract the type reference; this branch only catches
-                // the non-field DSL keywords.
+                // Generic DSL keyword first-arg skip for kinds the
+                // structure extractor didn't handle. Catches
+                // `dataitem(Name; Source)`, `column(Name; Source)`,
+                // `value(N; Name)`, `textelement(...)`, etc. —
+                // kind-specific structure extractors for these land in
+                // follow-up work; until then the generic skip prevents
+                // mis-emission. The second arg continues to walk
+                // through the main dispatch so source-table / page
+                // references inside the construct still emit.
                 if (_state.ScopeStack.Count == 1
                     && tok.Kind == AlTokenKind.Identifier
                     && _state.Pos + 1 < _state.Tokens.Count
@@ -630,205 +633,10 @@ public static class AlReferenceExtractor
             return true;
         }
 
-        /// <summary>
-        /// Recognises <c>field(N; "Name"; Type)</c> declarations at
-        /// object scope and emits a reference for the type when it's an
-        /// AL object (typically <c>Enum "Sales Document Type"</c>).
-        ///
-        /// Two AL field-declaration forms share the same <c>field(…)</c>
-        /// keyword:
-        /// <list type="bullet">
-        ///   <item><b>Table-side</b>:
-        ///         <c>field(&lt;id&gt;; "&lt;name&gt;"; &lt;type&gt;)</c>
-        ///         — first arg is a numeric id. The third arg is the
-        ///         AL type we want to extract.</item>
-        ///   <item><b>Page-side</b>:
-        ///         <c>field("&lt;name&gt;"; Rec."&lt;field&gt;")</c>
-        ///         — first arg is the page-field name; the second arg
-        ///         is a chain expression (typically <c>Rec.&lt;field&gt;</c>)
-        ///         that needs the regular member-chain walker to
-        ///         resolve. Consuming the parens unconditionally would
-        ///         swallow that chain, so we detect the form by peeking
-        ///         at the first token and bail out for page-side
-        ///         declarations — the main loop walks them naturally.</item>
-        /// </list>
-        ///
-        /// Other type shapes on the table side — <c>Code[20]</c>,
-        /// <c>Integer</c>, <c>Decimal</c>, <c>Boolean</c>, <c>DateTime</c>
-        /// — aren't AL objects in the catalog, so they fall through
-        /// silently after type extraction.
-        /// </summary>
-        private void TryConsumeFieldDeclaration()
-        {
-            _state.Pos++; // field
-            if (!_state.At("(")) return;
-            _state.Pos++; // (
-
-            // Detect form by the first token inside the parens. Number
-            // → table-side (id; name; type). Anything else → page-side
-            // (controlName; sourceExpression). For page-side we need to
-            // walk PAST the controlName + the `;` separator before
-            // returning, so the main loop picks up the source expression
-            // (Rec."No.", a variable, a function call) and the controlName
-            // doesn't get caught by implicit-Rec field-access as a Rec
-            // field reference. Without this skip the `field("No."; ...)`
-            // form emits a bogus field_access on the page-field's own
-            // declared name.
-            if (_state.Pos >= _state.Tokens.Count) return;
-            if (_state.Tokens[_state.Pos].Kind != AlTokenKind.Number)
-            {
-                _state.SkipDslKeywordFirstArg(alreadyPastOpenParen: true);
-                return;
-            }
-
-            // Table-side: three semicolon-separated args at depth 0
-            // (id; name; type). We only care about arg[2] — the type.
-            int depth = 0;
-            int semicolonsSeen = 0;
-            var typeTokens = new List<AlToken>();
-            while (_state.Pos < _state.Tokens.Count)
-            {
-                var tok = _state.Tokens[_state.Pos];
-                if (tok.Kind == AlTokenKind.Punct)
-                {
-                    if (tok.Value == "(") { depth++; _state.Pos++; continue; }
-                    if (tok.Value == ")")
-                    {
-                        if (depth == 0) { _state.Pos++; break; }
-                        depth--;
-                        _state.Pos++;
-                        continue;
-                    }
-                    if (tok.Value == ";" && depth == 0)
-                    {
-                        semicolonsSeen++;
-                        _state.Pos++;
-                        continue;
-                    }
-                }
-                if (semicolonsSeen == 2)
-                {
-                    typeTokens.Add(tok);
-                }
-                _state.Pos++;
-            }
-
-            EmitTypedReference(typeTokens);
-
-            // The declaration's trailing `{ … }` block contains its
-            // own properties (Caption, TableRelation, ToolTip, …) — the
-            // main loop walks them in their own right.
-        }
-
-        /// <summary>
-        /// Handles <c>part(ControlName; "Page Name")</c> and
-        /// <c>systempart(ControlName; SystemPartType)</c> declarations on
-        /// pages. The first arg is the part's control name (a declaration
-        /// — skip), the second is the page reference we resolve to its
-        /// catalog entry. Emits a <c>property_object</c> reference on the
-        /// page-name token so Find references / Go to definition / the
-        /// underline all work the same way they do on
-        /// <c>RunObject = Page "X"</c>.
-        ///
-        /// For <c>systempart</c>, the second arg is an enum value
-        /// (BrickLayout / Links / Notes / Outlook etc.) rather than a
-        /// page reference — those don't resolve to a catalog entry but
-        /// also don't need to. The same skip-first-arg + try-resolve-
-        /// second handles both forms cleanly: when the second arg isn't
-        /// a known catalog name, no reference emits and the diagnostic
-        /// stays quiet.
-        /// </summary>
-        private void TryConsumePartDeclaration()
-        {
-            _state.Pos++; // part / systempart
-            if (!_state.At("(")) return;
-            _state.Pos++; // (
-
-            // First arg: control name (Identifier or QuotedIdentifier).
-            // Skip through to the `;` separator using the same depth-0
-            // walker the generic DSL skip uses.
-            _state.SkipDslKeywordFirstArg(alreadyPastOpenParen: true);
-            if (_state.Pos >= _state.Tokens.Count) return;
-
-            // Second arg: the page reference. Optionally preceded by the
-            // `Page` keyword (rare in part declarations but legal).
-            if (_state.Pos < _state.Tokens.Count && _state.Tokens[_state.Pos].Kind == AlTokenKind.Identifier
-                && AlExtractionState.IsAlObjectKeyword(_state.Tokens[_state.Pos].Value))
-            {
-                _state.Pos++;
-            }
-            if (_state.Pos >= _state.Tokens.Count) return;
-            var nameTok = _state.Tokens[_state.Pos];
-            if (nameTok.Kind != AlTokenKind.Identifier
-                && nameTok.Kind != AlTokenKind.QuotedIdentifier)
-            {
-                return;
-            }
-
-            var target = _state.Ctx.Resolver.ResolveTypeByName(nameTok.Value, "Page");
-            if (target is not null)
-            {
-                _state.Refs.Add(new ExtractedReference(
-                    Line: nameTok.Line,
-                    Column: nameTok.Column,
-                    TargetAppId: target.AppId,
-                    TargetObjectKind: target.Kind,
-                    TargetObjectId: target.ObjectId,
-                    TargetObjectName: target.Name,
-                    TargetMemberName: null,
-                    TargetMemberKind: null,
-                    ReferenceKind: "property_object"));
-                _state.Resolved++;
-            }
-            // Don't try to consume past — the part's body `{ … }` opens
-            // immediately after `)` and the main loop walks the property
-            // values (ApplicationArea, Visible, SubPageLink, …) in their
-            // own right.
-        }
-
-        /// <summary>
-        /// Emits a reference for an AL-object-typed value: when the token
-        /// stream looks like <c>&lt;kind&gt; Name</c> (e.g.
-        /// <c>Enum "Sales Document Type"</c>, <c>Record Customer</c>),
-        /// resolves Name in the catalog and emits a
-        /// <c>property_object</c> row. The kind keyword is required so
-        /// scalar types like <c>Code[20]</c> don't try to resolve
-        /// <c>Code</c> as an object.
-        /// </summary>
-        private void EmitTypedReference(List<AlToken> tokens)
-        {
-            if (tokens.Count < 2) return;
-
-            // Find the kind keyword + immediate name pair. Walk forward
-            // so `Enum "X"` inside parentheses-stripped tokens still
-            // resolves correctly when there's leading / trailing noise.
-            for (int i = 0; i < tokens.Count - 1; i++)
-            {
-                var kw = tokens[i];
-                if (kw.Kind != AlTokenKind.Identifier) continue;
-                if (!AlExtractionState.IsAlObjectKeyword(kw.Value)) continue;
-                var nameTok = tokens[i + 1];
-                if (nameTok.Kind != AlTokenKind.Identifier
-                    && nameTok.Kind != AlTokenKind.QuotedIdentifier)
-                {
-                    continue;
-                }
-                var target = _state.Ctx.Resolver.ResolveTypeByName(nameTok.Value);
-                if (target is null) return;
-                _state.Refs.Add(new ExtractedReference(
-                    Line: nameTok.Line,
-                    Column: nameTok.Column,
-                    TargetAppId: target.AppId,
-                    TargetObjectKind: target.Kind,
-                    TargetObjectId: target.ObjectId,
-                    TargetObjectName: target.Name,
-                    TargetMemberName: null,
-                    TargetMemberKind: null,
-                    ReferenceKind: "property_object"));
-                _state.Resolved++;
-                return;
-            }
-        }
+        // Per-kind structure extractors (Services/Al/Structure/*.cs)
+        // own TryConsumeFieldDeclaration, TryConsumePartDeclaration,
+        // and EmitTypedReference. See step 4 of
+        // .design/al-reference-extractor-refactor.md.
 
         /// <summary>
         /// Handles a flowfield's <c>CalcFormula = sum("G/L Entry".Amount
