@@ -1272,7 +1272,8 @@ public sealed record UnresolvedSample(
     int Line,
     int Column,
     string? ReceiverKind = null,
-    string? ReceiverName = null);
+    string? ReceiverName = null,
+    Guid? ReceiverAppId = null);
 
 /// <summary>Result envelope: extracted rows plus the run's stats.</summary>
 public sealed record AlExtractionResult(

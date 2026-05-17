@@ -182,7 +182,13 @@ internal sealed class AlExtractionState
             Line: tok.Line,
             Column: tok.Column,
             ReceiverKind: receiver?.Kind,
-            ReceiverName: receiver?.Name ?? receiverNameOverride));
+            ReceiverName: receiver?.Name ?? receiverNameOverride,
+            // AppId pins which catalog object the resolver chose when
+            // multiple modules ship same-named objects. Operators can
+            // then SQL `oe_module_objects` + `oe_module_symbols` for
+            // that exact (AppId, Kind, Name) triple to see whether the
+            // catalog actually has the missing member.
+            ReceiverAppId: receiver?.AppId));
     }
 
     // ── Static helpers ──────────────────────────────────────────────

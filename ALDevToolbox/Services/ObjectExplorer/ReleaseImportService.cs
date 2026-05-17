@@ -1624,7 +1624,7 @@ public class ReleaseImportService
             foreach (var (module, path, owner, sample) in unresolvedSamples)
             {
                 _logger.LogInformation(
-                    "Phase-2 unresolved sample: ReleaseId={ReleaseId} Reason={Reason} Token='{Token}' Line={Line} Col={Col} Owner={Owner} ReceiverKind={ReceiverKind} ReceiverName='{ReceiverName}' Module={Module} Path={Path}",
+                    "Phase-2 unresolved sample: ReleaseId={ReleaseId} Reason={Reason} Token='{Token}' Line={Line} Col={Col} Owner={Owner} ReceiverKind={ReceiverKind} ReceiverName='{ReceiverName}' ReceiverAppId={ReceiverAppId} Module={Module} Path={Path}",
                     releaseId,
                     sample.Reason,
                     sample.Token,
@@ -1633,6 +1633,7 @@ public class ReleaseImportService
                     owner,
                     sample.ReceiverKind ?? "(n/a)",
                     sample.ReceiverName ?? string.Empty,
+                    sample.ReceiverAppId?.ToString() ?? "(n/a)",
                     module,
                     path);
             }
