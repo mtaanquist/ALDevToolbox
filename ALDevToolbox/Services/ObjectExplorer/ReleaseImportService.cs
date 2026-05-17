@@ -690,6 +690,7 @@ public class ReleaseImportService
                 case "table_field":
                 case "page_field":
                 case "page_action":
+                case "query_column":
                     break;
                 default:
                     continue;

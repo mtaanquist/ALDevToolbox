@@ -421,6 +421,68 @@ public sealed class AlSymbolExtractorTests
     }
 
     [Fact]
+    public void Extracts_query_column_declarations()
+    {
+        // `column(Name; "Source")` and `filter(Name; "Source")` inside
+        // a query body become query_column symbols on the query type
+        // so `MyQuery.Name` chains resolve through the catalog. Without
+        // this, every access like
+        // `CustLedgEntryRemainAmt.Sum_Remaining_Amt_LCY` strands as a
+        // chain-step unresolved.
+        var source = """
+            query 21 "Cust. Ledg. Entry Remain. Amt."
+            {
+                elements
+                {
+                    dataitem(Cust_Ledger_Entry; "Cust. Ledger Entry")
+                    {
+                        filter(Document_Type; "Document Type") { }
+                        column(Sum_Remaining_Amt_LCY; "Remaining Amt. (LCY)")
+                        {
+                            Method = Sum;
+                        }
+                    }
+                }
+            }
+            """;
+
+        var columns = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "query_column")
+            .ToList();
+
+        columns.Should().HaveCount(2);
+        columns.Select(c => c.Name).Should().BeEquivalentTo(
+            new[] { "Document_Type", "Sum_Remaining_Amt_LCY" });
+        columns.Single(c => c.Name == "Sum_Remaining_Amt_LCY")
+            .Signature.Should().Be("\"Remaining Amt. (LCY)\"");
+    }
+
+    [Fact]
+    public void Query_column_does_not_fire_on_page_field_line()
+    {
+        // The query_column extraction is owner-kind gated so a page
+        // body's `field(name; expr)` keeps emitting page_field, not a
+        // hypothetical "column" mismatch.
+        var source = """
+            page 50100 "My List"
+            {
+                layout
+                {
+                    addafter("No.")
+                    {
+                        field("Sell-to Customer No."; Rec."Sell-to Customer No.") { }
+                    }
+                }
+            }
+            """;
+
+        var symbols = AlSymbolExtractor.Extract(source);
+
+        symbols.Should().NotContain(s => s.Kind == "query_column");
+        symbols.Should().Contain(s => s.Kind == "page_field" && s.Name == "Sell-to Customer No.");
+    }
+
+    [Fact]
     public void Table_field_form_wins_over_page_field_form()
     {
         // The table-side regex requires id;name;type — strictly more
