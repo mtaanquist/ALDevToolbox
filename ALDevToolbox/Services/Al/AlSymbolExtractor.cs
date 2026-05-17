@@ -87,6 +87,23 @@ public static class AlSymbolExtractor
         @"^\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*:\s*Label\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // Generic variable declaration: `Name: Type;` at start of line.
+    // Captures the name token so ReleaseImportService can stamp source
+    // line/column onto the matching ModuleVariable row (positions
+    // unblock Go-to-definition on object-scope globals — see
+    // .design/al-reference-extractor-refactor.md step 2). The trailing
+    // `;` distinguishes a declaration from random `name: expr` shapes
+    // that don't exist as standalone statements in AL grammar. Lines
+    // that match LabelDeclarationRegex (the more specific Label form)
+    // are filtered out by ordering — labels match first.
+    //
+    // Multi-name declarations (`A, B: Integer;`) emit nothing — the
+    // name token doesn't permit commas. Rare for object-scope globals
+    // in practice; if it ever shows up we'd extend the parser.
+    private static readonly Regex VarDeclarationRegex = new(
+        @"^\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*:\s*[^;]+;",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     /// <summary>
     /// Returns the declarations found in <paramref name="source"/>. The line
     /// number is 1-based and refers to the original (un-stripped) source so
@@ -253,6 +270,33 @@ public static class AlSymbolExtractor
                     LineNumber: i + 1,
                     ColumnStart: lColStart,
                     ColumnEnd: lColEnd));
+                pendingEventKind = null;
+                continue;
+            }
+
+            // Variable declarations inside object-scope or procedure-
+            // local var blocks: `Name: Type;`. Used by
+            // ReleaseImportService to stamp source line/column onto the
+            // matching ModuleVariable row (procedure-local vars over-
+            // emit here and are silently discarded by the name match).
+            // Comes before the procedure/trigger declaration regex so a
+            // line shaped like `Foo: Bar;` doesn't accidentally compete
+            // with anything more specific upstream. Labels are picked
+            // off above by the more specific LabelDeclarationRegex.
+            var varMatch = VarDeclarationRegex.Match(stripped);
+            if (varMatch.Success)
+            {
+                var varRawName = varMatch.Groups["name"].Value;
+                var varName = Unquote(varRawName);
+                var (vColStart, vColEnd) = FindNameColumns(rawLine, varRawName);
+                results.Add(new AlSymbol(
+                    Kind: "var_declaration",
+                    Name: varName,
+                    Signature: null,
+                    FieldId: null,
+                    LineNumber: i + 1,
+                    ColumnStart: vColStart,
+                    ColumnEnd: vColEnd));
                 pendingEventKind = null;
                 continue;
             }

@@ -471,7 +471,7 @@ public class ReleaseImportService
             }
 
             EmitSymbols(orgId, module, obj, symObj, extractedForObject);
-            EmitVariables(orgId, module, obj, symObj);
+            EmitVariables(orgId, module, obj, symObj, extractedForObject);
             EmitReferences(orgId, module, obj, symObj, totals);
 
             objectsPending++;
@@ -688,11 +688,27 @@ public class ReleaseImportService
         }
     }
 
-    private void EmitVariables(int orgId, OeModule module, OeModuleObject obj, SymbolObject symObj)
+    private void EmitVariables(
+        int orgId, OeModule module, OeModuleObject obj, SymbolObject symObj,
+        IReadOnlyList<AlSymbol> extractedSymbols)
     {
+        // Symbol packages carry variable name + type but not source
+        // positions; the source extractor's var_declaration rows fill
+        // that gap. First-declaration-wins on name collisions — in
+        // practice, object-scope globals appear in the file before any
+        // procedure-local var with the same name. See
+        // .design/al-reference-extractor-refactor.md step 2.
+        var positionsByName = new Dictionary<string, AlSymbol>(StringComparer.OrdinalIgnoreCase);
+        foreach (var sym in extractedSymbols)
+        {
+            if (sym.Kind != "var_declaration") continue;
+            positionsByName.TryAdd(sym.Name, sym);
+        }
+
         foreach (var variable in symObj.Variables)
         {
             var (targetKind, targetId, targetName, typeKeyword) = ResolveVariableTarget(variable.Type, module.AppId);
+            positionsByName.TryGetValue(variable.Name, out var pos);
             _db.OeModuleVariables.Add(new OeModuleVariable
             {
                 OrganizationId = orgId,
@@ -705,6 +721,9 @@ public class ReleaseImportService
                 TargetObjectKind = targetKind,
                 TargetObjectId = targetId,
                 TargetObjectName = targetName,
+                LineNumber = pos?.LineNumber ?? 0,
+                ColumnStart = pos?.ColumnStart ?? 0,
+                ColumnEnd = pos?.ColumnEnd ?? 0,
             });
         }
     }
