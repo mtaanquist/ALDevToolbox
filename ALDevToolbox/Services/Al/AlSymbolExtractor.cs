@@ -180,7 +180,14 @@ public static class AlSymbolExtractor
                 }
                 var (fColStart, fColEnd) = FindNameColumns(rawLine, fieldRawName);
                 results.Add(new AlSymbol(
-                    Kind: "field",
+                    // table-side field declaration. The regex shape
+                    // (id; name; type) is unique to tables /
+                    // tableextensions; pages use the name+expr form
+                    // matched below. Disambiguated kinds let every
+                    // downstream consumer read a context-free value
+                    // (see .design/al-reference-extractor-refactor.md
+                    // step 1).
+                    Kind: "table_field",
                     Name: fieldName,
                     Signature: string.IsNullOrEmpty(fieldType) ? null : fieldType,
                     FieldId: fieldId,
@@ -199,7 +206,14 @@ public static class AlSymbolExtractor
                 var expr = pageFieldMatch.Groups["expr"].Value.Trim();
                 var (fColStart, fColEnd) = FindNameColumns(rawLine, fieldRawName);
                 results.Add(new AlSymbol(
-                    Kind: "field",
+                    // page-side field declaration (name; expr). Page
+                    // fields are local control names — not navigation
+                    // targets — so the navigability filter in
+                    // SourceFileViewer treats them differently from
+                    // table_field. The shape disambiguates the owner
+                    // kind without the consumer needing to join back
+                    // to the object row.
+                    Kind: "page_field",
                     Name: fieldName,
                     // Stash the source expression in Signature so the
                     // outline tooltip can show what the page field is
@@ -253,7 +267,12 @@ public static class AlSymbolExtractor
                 var actionName = Unquote(actionRawName);
                 var (aColStart, aColEnd) = FindNameColumns(rawLine, actionRawName);
                 results.Add(new AlSymbol(
-                    Kind: "action",
+                    // Page actions — page-local control names, not
+                    // navigation targets. page_action carries the owner
+                    // context directly so the navigability filter in
+                    // SourceFileViewer doesn't need to join back to
+                    // the object row.
+                    Kind: "page_action",
                     Name: actionName,
                     Signature: null,
                     FieldId: null,

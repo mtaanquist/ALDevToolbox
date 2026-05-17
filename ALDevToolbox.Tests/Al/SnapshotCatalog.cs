@@ -28,9 +28,9 @@ internal static class SnapshotCatalog
 
         // ── Tables ────────────────────────────────────────────────
         r.AddType("Customer", new AlTypeRef(OwnerAppId, "table", 18, "Customer"));
-        r.AddMember("Customer", new AlMember("No.", "field", "Code", "20"));
-        r.AddMember("Customer", new AlMember("Name", "field", "Text", "100"));
-        r.AddMember("Customer", new AlMember("Phone No.", "field", "Text", "30"));
+        r.AddMember("Customer", new AlMember("No.", "table_field","Code", "20"));
+        r.AddMember("Customer", new AlMember("Name", "table_field","Text", "100"));
+        r.AddMember("Customer", new AlMember("Phone No.", "table_field","Text", "30"));
         r.AddMember("Customer", new AlMember("Insert", "procedure", null, null));
         r.AddMember("Customer", new AlMember("Modify", "procedure", null, null));
         r.AddMember("Customer", new AlMember("Get", "procedure", null, null));
@@ -38,22 +38,22 @@ internal static class SnapshotCatalog
         r.AddMember("Customer", new AlMember("SetRange", "procedure", null, null));
 
         r.AddType("Sales Header", new AlTypeRef(OwnerAppId, "table", 36, "Sales Header"));
-        r.AddMember("Sales Header", new AlMember("No.", "field", null, null));
-        r.AddMember("Sales Header", new AlMember("Document Type", "field", null, null));
-        r.AddMember("Sales Header", new AlMember("Sell-to Customer No.", "field", null, null));
-        r.AddMember("Sales Header", new AlMember("Customer", "field", "Record", "Customer"));
+        r.AddMember("Sales Header", new AlMember("No.", "table_field",null, null));
+        r.AddMember("Sales Header", new AlMember("Document Type", "table_field",null, null));
+        r.AddMember("Sales Header", new AlMember("Sell-to Customer No.", "table_field",null, null));
+        r.AddMember("Sales Header", new AlMember("Customer", "table_field","Record", "Customer"));
         r.AddMember("Sales Header", new AlMember("Insert", "procedure", null, null));
         r.AddMember("Sales Header", new AlMember("Validate", "procedure", null, null));
 
         r.AddType("Sales Line", new AlTypeRef(OwnerAppId, "table", 37, "Sales Line"));
-        r.AddMember("Sales Line", new AlMember("No.", "field", null, null));
-        r.AddMember("Sales Line", new AlMember("Document Type", "field", null, null));
-        r.AddMember("Sales Line", new AlMember("Type", "field", null, null));
+        r.AddMember("Sales Line", new AlMember("No.", "table_field",null, null));
+        r.AddMember("Sales Line", new AlMember("Document Type", "table_field",null, null));
+        r.AddMember("Sales Line", new AlMember("Type", "table_field",null, null));
         r.AddMember("Sales Line", new AlMember("InitRecord", "procedure", null, null));
 
         r.AddType("Item", new AlTypeRef(OwnerAppId, "table", 27, "Item"));
-        r.AddMember("Item", new AlMember("No.", "field", null, null));
-        r.AddMember("Item", new AlMember("Description", "field", null, null));
+        r.AddMember("Item", new AlMember("No.", "table_field",null, null));
+        r.AddMember("Item", new AlMember("Description", "table_field",null, null));
 
         // ── Pages ─────────────────────────────────────────────────
         r.AddType("Customer List", new AlTypeRef(OwnerAppId, "page", 22, "Customer List"));

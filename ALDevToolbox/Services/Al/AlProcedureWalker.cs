@@ -180,6 +180,22 @@ internal sealed class AlExtractionState
         && id >= 2000000000
         && id <= 2000000999;
 
+    /// <summary>
+    /// True for any of the disambiguated field-kind values
+    /// (<c>table_field</c>, <c>page_field</c>) the symbol extractor
+    /// emits. Replaces the per-call <c>string.Equals(member.Kind, "field", …)</c>
+    /// checks that pre-dated the kind split — keeps the resolver's
+    /// "is this a field?" check stable as the persisted vocabulary
+    /// expands. (See .design/al-reference-extractor-refactor.md
+    /// step 1.) In practice the resolver only ever returns
+    /// <c>table_field</c> on a real receiver — page fields aren't
+    /// catalog members on tables — but accepting both keeps the
+    /// helper safe to use anywhere a field-shape check is needed.
+    /// </summary>
+    public static bool IsFieldKind(string? kind) =>
+        string.Equals(kind, "table_field", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(kind, "page_field", StringComparison.OrdinalIgnoreCase);
+
     public static bool IsAlObjectKeyword(string s) =>
         string.Equals(s, "Record", StringComparison.OrdinalIgnoreCase)
         || string.Equals(s, "Codeunit", StringComparison.OrdinalIgnoreCase)
@@ -1288,7 +1304,7 @@ internal sealed class AlProcedureWalker
         //    field-shaped accesses are what we're after.
         var member = _state.Ctx.Resolver.ResolveMember(rec, name);
         if (member is null) return false;
-        if (!string.Equals(member.Kind, "field", StringComparison.OrdinalIgnoreCase))
+        if (!AlExtractionState.IsFieldKind(member.Kind))
         {
             return false;
         }
@@ -1391,7 +1407,7 @@ internal sealed class AlProcedureWalker
     {
         var member = _state.Ctx.Resolver.ResolveMember(receiver, tok.Value);
         if (member is null) return;
-        if (!string.Equals(member.Kind, "field", StringComparison.OrdinalIgnoreCase)) return;
+        if (!AlExtractionState.IsFieldKind(member.Kind)) return;
         var targetOwner = member.DeclaringType ?? receiver;
         _state.Refs.Add(new ExtractedReference(
             Line: tok.Line,

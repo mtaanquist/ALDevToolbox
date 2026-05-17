@@ -7,7 +7,7 @@
       "TargetObjectKind": "table",
       "TargetObjectId": 36,
       "TargetObjectName": "Sales Header",
-      "TargetMemberKind": "field",
+      "TargetMemberKind": "table_field",
       "TargetMemberName": "Sell-to Customer No."
     },
     {
@@ -35,7 +35,7 @@
       "TargetObjectKind": "table",
       "TargetObjectId": 36,
       "TargetObjectName": "Sales Header",
-      "TargetMemberKind": "field",
+      "TargetMemberKind": "table_field",
       "TargetMemberName": "Sell-to Customer No."
     },
     {

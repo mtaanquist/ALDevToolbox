@@ -335,10 +335,13 @@ public sealed class AlSymbolExtractorTests
             """;
 
         var fields = AlSymbolExtractor.Extract(source)
-            .Where(s => s.Kind == "field")
+            .Where(s => s.Kind == "table_field" || s.Kind == "page_field")
             .ToList();
 
         fields.Should().HaveCount(2);
+        fields.Should().OnlyContain(f => f.Kind == "table_field",
+            "the table-side (id; name; type) shape always emits table_field per "
+            + ".design/al-reference-extractor-refactor.md step 1");
         fields[0].Name.Should().Be("Document Type");
         fields[0].FieldId.Should().Be(1);
         fields[0].Signature.Should().Be("Enum \"Sales Document Type\"");
@@ -373,10 +376,13 @@ public sealed class AlSymbolExtractorTests
             """;
 
         var fields = AlSymbolExtractor.Extract(source)
-            .Where(s => s.Kind == "field")
+            .Where(s => s.Kind == "table_field" || s.Kind == "page_field")
             .ToList();
 
         fields.Should().ContainSingle();
+        fields[0].Kind.Should().Be("page_field",
+            "the page-side (name; expr) shape always emits page_field per "
+            + ".design/al-reference-extractor-refactor.md step 1");
         fields[0].Name.Should().Be("Sell-to Customer No.");
         fields[0].FieldId.Should().BeNull();
         fields[0].Signature.Should().Be("Rec.\"Sell-to Customer No.\"");
@@ -406,7 +412,7 @@ public sealed class AlSymbolExtractorTests
             """;
 
         var actions = AlSymbolExtractor.Extract(source)
-            .Where(s => s.Kind == "action")
+            .Where(s => s.Kind == "page_action")
             .ToList();
 
         actions.Should().ContainSingle();
@@ -424,7 +430,7 @@ public sealed class AlSymbolExtractorTests
             """;
 
         var fields = AlSymbolExtractor.Extract(source)
-            .Where(s => s.Kind == "field")
+            .Where(s => s.Kind == "table_field" || s.Kind == "page_field")
             .ToList();
 
         fields.Should().ContainSingle();
@@ -440,7 +446,7 @@ public sealed class AlSymbolExtractorTests
         var source = "    field(1; \"No.\"; Code[20])\n";
 
         var fields = AlSymbolExtractor.Extract(source)
-            .Where(s => s.Kind == "field")
+            .Where(s => s.Kind == "table_field" || s.Kind == "page_field")
             .ToList();
 
         fields.Should().ContainSingle();
@@ -466,7 +472,7 @@ public sealed class AlSymbolExtractorTests
             """;
 
         var fields = AlSymbolExtractor.Extract(source)
-            .Where(s => s.Kind == "field")
+            .Where(s => s.Kind == "table_field" || s.Kind == "page_field")
             .ToList();
 
         fields.Should().ContainSingle();

@@ -23,7 +23,7 @@
       "TargetObjectKind": "table",
       "TargetObjectId": 36,
       "TargetObjectName": "Sales Header",
-      "TargetMemberKind": "field",
+      "TargetMemberKind": "table_field",
       "TargetMemberName": "Document Type"
     },
     {
@@ -61,7 +61,7 @@
       "TargetObjectKind": "table",
       "TargetObjectId": 18,
       "TargetObjectName": "Customer",
-      "TargetMemberKind": "field",
+      "TargetMemberKind": "table_field",
       "TargetMemberName": "No."
     },
     {

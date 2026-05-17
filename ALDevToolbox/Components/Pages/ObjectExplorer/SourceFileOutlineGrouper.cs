@@ -88,7 +88,8 @@ public static class SourceFileOutlineGrouper
 
             switch (item.Kind)
             {
-                case "field":
+                case "table_field":
+                case "page_field":
                     currentField = item;
                     currentFieldVisible = Matches(item);
                     activeParent = "field";
@@ -98,7 +99,7 @@ public static class SourceFileOutlineGrouper
                     }
                     break;
 
-                case "action":
+                case "page_action":
                     currentAction = item;
                     currentActionVisible = Matches(item);
                     activeParent = "action";

@@ -475,7 +475,7 @@ public static class AlReferenceExtractor
                 {
                     var member = _state.Ctx.Resolver.ResolveMember(ownerTable, tok.Value);
                     if (member is not null
-                        && string.Equals(member.Kind, "field", StringComparison.OrdinalIgnoreCase))
+                        && AlExtractionState.IsFieldKind(member.Kind))
                     {
                         var targetOwner = member.DeclaringType ?? ownerTable;
                         _state.Refs.Add(new ExtractedReference(

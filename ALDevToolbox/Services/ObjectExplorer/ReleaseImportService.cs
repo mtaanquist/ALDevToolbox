@@ -556,7 +556,12 @@ public class ReleaseImportService
                     }
                     queue.Enqueue(sym);
                     break;
-                case "field":
+                case "table_field":
+                    // Only table-side fields ship in symObj.Fields, so only
+                    // table_field needs to seed the dedup index. Page fields
+                    // (page_field, emitted by the source extractor) never
+                    // collide here — they fall through to the source-only
+                    // re-emission loop below.
                     fieldByName.TryAdd(sym.Name, sym);
                     if (sym.FieldId is { } id) fieldById.TryAdd(id, sym);
                     break;
@@ -625,7 +630,11 @@ public class ReleaseImportService
                 OrganizationId = orgId,
                 ModuleId = module.Id,
                 Object = obj,
-                Kind = "field",
+                // symObj.Fields only carries table-side fields — page
+                // fields aren't in symbol packages — so the persisted
+                // kind is always table_field here. See
+                // .design/al-reference-extractor-refactor.md step 1.
+                Kind = "table_field",
                 Name = field.Name,
                 Signature = field.Type.Name,
                 FieldId = field.Id,
@@ -655,8 +664,9 @@ public class ReleaseImportService
                 case "trigger":
                 case "event_publisher":
                 case "event_subscriber":
-                case "field":
-                case "action":
+                case "table_field":
+                case "page_field":
+                case "page_action":
                     break;
                 default:
                     continue;
