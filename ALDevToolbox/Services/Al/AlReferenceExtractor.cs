@@ -248,6 +248,16 @@ public static class AlReferenceExtractor
                     if (_procedureWalker.TryConsumeImplicitFieldAccess()) return;
                 }
 
+                // Bare global-variable reference inside a procedure
+                // body. Runs after implicit-Rec field access so a
+                // global named the same as a Rec field doesn't
+                // shadow the field (extremely unlikely in practice).
+                if (_state.ScopeStack.Count > 1
+                    && tok.Kind == AlTokenKind.Identifier)
+                {
+                    if (_procedureWalker.TryConsumeGlobalVariableUse()) return;
+                }
+
                 // Object-scope property: `Identifier = Value;`. Per-kind
                 // extractor gets first chance (e.g. AlPageStructure
                 // claims SubPageLink / RunPageLink to resolve cross-page

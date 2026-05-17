@@ -70,6 +70,11 @@ internal static class SnapshotCatalog
         r.AddType("Sales-Post", new AlTypeRef(OwnerAppId, "codeunit", 80, "Sales-Post"));
         r.AddMember("Sales-Post", new AlMember("Run", "procedure", null, null));
 
+        // Snapshot-fixture owners that need OwnerType() to resolve
+        // (e.g. so variable_use refs find a target owner).
+        r.AddType("Global Variable Usage",
+            new AlTypeRef(OwnerAppId, "codeunit", 50001, "Global Variable Usage"));
+
         // ── Reports / queries / xmlports / enums ─────────────────
         r.AddType("Customer List Report", new AlTypeRef(OwnerAppId, "report", 101, "Customer List Report"));
         r.AddType("Customer Query", new AlTypeRef(OwnerAppId, "query", 101, "Customer Query"));

@@ -1326,6 +1326,94 @@ internal sealed class AlProcedureWalker
     }
 
     /// <summary>
+    /// Bare identifier in a procedure body that resolves to an
+    /// object-scope global variable (not a local, not a Label, not
+    /// Rec / xRec). Emits a <c>variable_use</c> reference targeted at
+    /// the file's owner with <c>TargetMemberName = &lt;var&gt;</c>;
+    /// the import-side stamps the actual <c>TargetVariableId</c> from
+    /// <c>oe_module_variables</c>. Right-click "Find references" on
+    /// a global then returns these rows in a single seek (filtered
+    /// index on <c>target_variable_id</c>).
+    ///
+    /// Filters (in order):
+    ///   1. Must be inside a procedure / trigger body
+    ///      (<c>ScopeStack.Count &gt; 1</c>).
+    ///   2. Name must resolve in the GLOBAL frame and NOT in any
+    ///      inner (procedure-local / parameter) frame — locals
+    ///      shadow globals in AL, same as every block-scoped
+    ///      language.
+    ///   3. Skip the special <c>rec</c> / <c>xrec</c> entries that
+    ///      <see cref="BuildAndPushGlobalScope"/> seeds — they're
+    ///      implicit-receiver shortcuts, not user-declared globals.
+    ///   4. Skip Label-typed entries; <see cref="TryConsumeLabelUse"/>
+    ///      runs ahead of this and handles them as <c>label_use</c>.
+    ///
+    /// Returns true when the token was consumed (cursor advanced),
+    /// false to fall through. See
+    /// <c>.design/al-reference-extractor-refactor.md</c> step 6.
+    /// </summary>
+    public bool TryConsumeGlobalVariableUse()
+    {
+        if (_state.ScopeStack.Count <= 1) return false;
+
+        var tok = _state.Tokens[_state.Pos];
+        var name = tok.Value;
+        var key = name.ToLowerInvariant();
+
+        // rec / xrec are special — not navigable globals.
+        if (string.Equals(key, "rec", StringComparison.Ordinal)
+            || string.Equals(key, "xrec", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // Walk innermost-first. The global frame is the LAST one
+        // iterated. Hits in non-global frames mean the name is a
+        // local / parameter — silently consume.
+        ScopeFrame? matchFrame = null;
+        ResolvedVariableType? matchType = null;
+        ScopeFrame? globalFrame = null;
+        foreach (var frame in _state.ScopeStack)
+        {
+            globalFrame = frame; // last-iterated wins
+            if (matchFrame is null && frame.Vars.TryGetValue(key, out var declared))
+            {
+                matchFrame = frame;
+                matchType = declared;
+            }
+        }
+        if (matchFrame is null) return false;
+        if (!ReferenceEquals(matchFrame, globalFrame)) return false;
+
+        // Labels run through TryConsumeLabelUse before we get here,
+        // but a bare Label identifier whose label-use path bailed
+        // (e.g. no owner type) could still land here. Defer the
+        // emission to the label path.
+        if (matchType is not null
+            && string.Equals(matchType.TypeName, "Label", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var owner = OwnerType();
+        if (owner is null) return false;
+
+        _state.Refs.Add(new ExtractedReference(
+            Line: tok.Line,
+            Column: tok.Column,
+            TargetAppId: owner.AppId,
+            TargetObjectKind: owner.Kind,
+            TargetObjectId: owner.ObjectId,
+            TargetObjectName: owner.Name,
+            TargetMemberName: name,
+            TargetMemberKind: "global_variable",
+            ReferenceKind: "variable_use"));
+        _state.Resolved++;
+        _state.Pos++;
+        return true;
+    }
+
+    /// <summary>
     /// Resolves the head identifier of a member chain. Returns the
     /// receiver type on success; null when neither the variable
     /// lookup nor the catalog lookup found a type.

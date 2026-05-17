@@ -1,0 +1,7 @@
+{
+  "OwnerName": "Global Variable Usage",
+  "OwnerObjectId": 50001,
+  "Globals": [
+    { "Name": "Counter", "TypeName": "Integer" }
+  ]
+}

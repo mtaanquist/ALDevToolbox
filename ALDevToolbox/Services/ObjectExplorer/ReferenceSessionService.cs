@@ -126,13 +126,12 @@ public sealed class ReferenceSessionService
 
     /// <summary>
     /// Mints a session for an object-scope global variable click.
-    /// Today's session is empty — variable-use references land in
-    /// oe_module_references in step 6 of the refactor — but the
-    /// session is still minted so the right-click affordance
-    /// acknowledges the click instead of silently dropping it. The
-    /// matching variable's source position (added in step 2) is what
-    /// Go-to-definition uses to land on the declaration line. See
-    /// <c>.design/al-reference-extractor-refactor.md</c> step 3b.
+    /// Queries <c>oe_module_references</c> for <c>variable_use</c>
+    /// rows that the import-side stamped with this variable's id
+    /// (step 6). Misses turn into an empty session — fine, the
+    /// click is still acknowledged. See
+    /// <c>.design/al-reference-extractor-refactor.md</c> step 3b
+    /// (resolver) + step 6 (emission).
     /// </summary>
     public async Task<ReferenceSession?> CreateFromGlobalVariableAsync(
         long variableId, string ownerKey, CancellationToken ct = default)
@@ -149,8 +148,31 @@ public sealed class ReferenceSessionService
             .SingleOrDefaultAsync(ct);
         if (head is null) return null;
 
+        var rows = await _db.OeModuleReferences.AsNoTracking()
+            .Where(r => r.TargetVariableId == variableId)
+            .Where(r => r.Module!.ReleaseId == head.ReleaseId)
+            .Select(r => new ReferenceMatch(
+                r.Id,
+                r.ModuleId,
+                r.Module!.Name,
+                r.SourceObjectId,
+                r.SourceObject!.Kind,
+                r.SourceObject!.Name,
+                r.ReferenceKind,
+                r.LineNumber,
+                r.SourceObject!.SourceFileId,
+                r.SourceObject!.SourceFile!.Path,
+                null,
+                "variable_use",
+                null,
+                null,
+                null))
+            .OrderBy(m => m.SourceObjectName)
+            .ThenBy(m => m.LineNumber)
+            .ToListAsync(ct);
+
         var label = $"references to variable {head.OwnerKind} {head.OwnerName}.{head.Name}";
-        return Store(label, head.ReleaseId, Array.Empty<ReferenceMatch>(), ownerKey);
+        return Store(label, head.ReleaseId, rows, ownerKey);
     }
 
     /// <summary>

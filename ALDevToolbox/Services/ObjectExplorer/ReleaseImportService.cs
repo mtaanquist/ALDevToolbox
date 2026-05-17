@@ -1341,14 +1341,21 @@ public class ReleaseImportService
             .Select(v => new
             {
                 OwnerId = v.Object!.Id,
+                v.Id,
                 v.Name,
                 v.TypeKeyword,
                 v.TypeName,
             })
             .ToListAsync(ct);
         var globalsByOwner = new Dictionary<long, Dictionary<string, ALDevToolbox.Services.Al.ResolvedVariableType>>();
+        // Per-(owner, lowered name) → variable id lookup so the
+        // reference-emit loop can stamp TargetVariableId on
+        // variable_use rows (step 6). Built alongside globalsByOwner
+        // to share the single varRows scan.
+        var variableIdByOwnerAndName = new Dictionary<(long OwnerId, string Name), long>();
         foreach (var v in varRows)
         {
+            variableIdByOwnerAndName[(v.OwnerId, v.Name.ToLowerInvariant())] = v.Id;
             if (string.IsNullOrEmpty(v.TypeName)) continue;
             if (!globalsByOwner.TryGetValue(v.OwnerId, out var dict))
             {
@@ -1513,6 +1520,7 @@ public class ReleaseImportService
             foreach (var r in result.References)
             {
                 long? targetSymbolId = null;
+                long? targetVariableId = null;
                 // Identity-keyed lookup so a tableextension named the
                 // same as the table it extends doesn't claim the table's
                 // symbols at TargetSymbolId stamp time. The reference row
@@ -1526,6 +1534,22 @@ public class ReleaseImportService
                     targetSymbolId = memberList.FirstOrDefault(m =>
                         string.Equals(m.Name, r.TargetMemberName, StringComparison.OrdinalIgnoreCase)
                         && string.Equals(m.Kind, r.TargetMemberKind, StringComparison.OrdinalIgnoreCase))?.SymbolId;
+                }
+
+                // Stamp variable_use rows with the resolved
+                // oe_module_variables FK so right-click "Find
+                // references" on a global lands on the filtered
+                // index (ix_oe_module_references_target_variable).
+                // The extractor targets the file's owner with
+                // TargetMemberName = variable name; we look up the
+                // DB id by (owner, name). See step 6.
+                if (string.Equals(r.ReferenceKind, "variable_use", StringComparison.Ordinal)
+                    && r.TargetMemberName is not null
+                    && variableIdByOwnerAndName.TryGetValue(
+                        (file.Owner.Id, r.TargetMemberName.ToLowerInvariant()),
+                        out var variableId))
+                {
+                    targetVariableId = variableId;
                 }
 
                 _db.OeModuleReferences.Add(new OeModuleReference
@@ -1543,6 +1567,7 @@ public class ReleaseImportService
                     TargetMemberName = r.TargetMemberName,
                     TargetMemberKind = r.TargetMemberKind,
                     TargetSymbolId = targetSymbolId,
+                    TargetVariableId = targetVariableId,
                 });
                 totalEmitted++;
                 pending++;

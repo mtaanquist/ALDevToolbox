@@ -1,0 +1,39 @@
+{
+  "References": [
+    {
+      "Line": 5,
+      "Column": 9,
+      "ReferenceKind": "variable_use",
+      "TargetObjectKind": "codeunit",
+      "TargetObjectId": 50001,
+      "TargetObjectName": "Global Variable Usage",
+      "TargetMemberKind": "global_variable",
+      "TargetMemberName": "Counter"
+    },
+    {
+      "Line": 10,
+      "Column": 9,
+      "ReferenceKind": "variable_use",
+      "TargetObjectKind": "codeunit",
+      "TargetObjectId": 50001,
+      "TargetObjectName": "Global Variable Usage",
+      "TargetMemberKind": "global_variable",
+      "TargetMemberName": "Counter"
+    },
+    {
+      "Line": 15,
+      "Column": 14,
+      "ReferenceKind": "variable_use",
+      "TargetObjectKind": "codeunit",
+      "TargetObjectId": 50001,
+      "TargetObjectName": "Global Variable Usage",
+      "TargetMemberKind": "global_variable",
+      "TargetMemberName": "Counter"
+    }
+  ],
+  "Stats": {
+    "ResolvedReferences": 3,
+    "UnresolvedReceivers": 0,
+    "UnresolvedSamples": []
+  }
+}
