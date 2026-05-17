@@ -86,6 +86,8 @@ internal static class SnapshotCatalog
         // (e.g. so variable_use refs find a target owner).
         r.AddType("Global Variable Usage",
             new AlTypeRef(OwnerAppId, "codeunit", 50001, "Global Variable Usage"));
+        r.AddType("Attributed Var Sample",
+            new AlTypeRef(OwnerAppId, "codeunit", 50002, "Attributed Var Sample"));
 
         // ── Reports / queries / xmlports / enums ─────────────────
         r.AddType("Customer List Report", new AlTypeRef(OwnerAppId, "report", 101, "Customer List Report"));

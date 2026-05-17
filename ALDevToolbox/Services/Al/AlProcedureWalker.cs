@@ -74,6 +74,31 @@ internal sealed class AlExtractionState
         if (At(";")) Pos++;
     }
 
+    /// <summary>
+    /// Skips a <c>[…]</c> attribute starting at the current <c>[</c>
+    /// token. Tracks bracket depth so a nested
+    /// <c>[Foo([Bar])]</c> shape closes cleanly. No-op when the
+    /// cursor isn't at <c>[</c>. Used by the procedure walker's
+    /// var-block and parameter parsers — attributes can appear
+    /// between <c>var</c> and a variable declaration
+    /// (<c>[SecurityFiltering(SecurityFilter::Filtered)]</c>) and
+    /// without explicit skipping the declaration's name gets
+    /// mis-read as the attribute's name and the actual variable
+    /// disappears from scope.
+    /// </summary>
+    public void SkipAttribute()
+    {
+        if (!At("[")) return;
+        Pos++; // past [
+        int depth = 1;
+        while (Pos < Tokens.Count && depth > 0)
+        {
+            if (At("[")) depth++;
+            else if (At("]")) depth--;
+            Pos++;
+        }
+    }
+
     public void SkipBalancedParens()
     {
         if (!At("(")) return;
@@ -442,6 +467,16 @@ internal sealed class AlProcedureWalker
 
         while (_state.Pos < _state.Tokens.Count && !_state.At(")"))
         {
+            // Attribute on a parameter (rare but legal — same shape
+            // as var-block attributes). Skip before reading the name
+            // so the attribute's identifier doesn't claim the
+            // parameter slot.
+            if (_state.At("["))
+            {
+                _state.SkipAttribute();
+                continue;
+            }
+
             // Optional `var` modifier on a parameter — pass by ref.
             if (_state.IsIdentifierTok(_state.Pos, "var")) _state.Pos++;
 
@@ -482,6 +517,18 @@ internal sealed class AlProcedureWalker
         // `name[, name]*: Type;`. Stop at `begin`.
         while (_state.Pos < _state.Tokens.Count && !_state.IsIdentifierTok(_state.Pos, "begin"))
         {
+            // Attributes on the variable declaration (the AL
+            // [SecurityFiltering(SecurityFilter::Filtered)] shape).
+            // Skip the entire [...] before parsing the next name —
+            // otherwise the attribute's identifier gets mis-read as
+            // the variable name and the actual declaration gets
+            // swallowed by the SkipToSemicolonOrBegin recovery.
+            if (_state.At("["))
+            {
+                _state.SkipAttribute();
+                continue;
+            }
+
             if (_state.Tokens[_state.Pos].Kind != AlTokenKind.Identifier
                 && _state.Tokens[_state.Pos].Kind != AlTokenKind.QuotedIdentifier)
             {
