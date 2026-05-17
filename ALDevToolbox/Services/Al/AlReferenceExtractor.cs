@@ -70,7 +70,9 @@ public static class AlReferenceExtractor
     {
         if (string.IsNullOrEmpty(source))
         {
-            return new AlExtractionResult(Array.Empty<ExtractedReference>(), new ExtractionStats(0, 0));
+            return new AlExtractionResult(
+                Array.Empty<ExtractedReference>(),
+                new ExtractionStats(0, 0, Array.Empty<UnresolvedSample>()));
         }
 
         var tokens = AlLexer.Tokenize(source);
@@ -84,9 +86,16 @@ public static class AlReferenceExtractor
         private readonly AlExtractContext _ctx;
         private readonly Stack<ScopeFrame> _scopeStack = new();
         private readonly List<ExtractedReference> _refs = new();
+        private readonly List<UnresolvedSample> _unresolvedSamples = new();
         private int _unresolved;
         private int _resolved;
         private int _pos;
+
+        // Cap per-file samples so a pathological file (machine-generated,
+        // dependency-on-an-uningested-app) doesn't balloon memory. The
+        // import pipeline reservoir-merges a smaller global cap on top
+        // of these.
+        private const int UnresolvedSampleCap = 20;
 
         public Walker(List<AlToken> tokens, AlExtractContext ctx)
         {
@@ -106,7 +115,9 @@ public static class AlReferenceExtractor
                 ProcessOneToken();
             }
 
-            return new AlExtractionResult(_refs, new ExtractionStats(_resolved, _unresolved));
+            return new AlExtractionResult(
+                _refs,
+                new ExtractionStats(_resolved, _unresolved, _unresolvedSamples));
         }
 
         /// <summary>
@@ -120,6 +131,21 @@ public static class AlReferenceExtractor
         private void ProcessOneToken()
         {
             var tok = _tokens[_pos];
+
+            // Modern AL files open with `namespace X.Y.Z;` and a sequence
+            // of `using A.B.C;` directives. The chain walker would otherwise
+            // treat each dotted name as a member chain on an unresolved
+            // head — emitting one false unresolved per directive (~17 per
+            // BC file × 17k files in a release). Consume the whole directive
+            // up to the next `;` instead.
+            if (_scopeStack.Count == 1
+                && tok.Kind == AlTokenKind.Identifier
+                && (string.Equals(tok.Value, "namespace", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(tok.Value, "using", StringComparison.OrdinalIgnoreCase)))
+            {
+                SkipToSemicolonAtTopLevel();
+                return;
+            }
 
             // Procedure / trigger heads start a new scope frame.
             if (IsScopeOpener(tok))
@@ -231,6 +257,52 @@ public static class AlReferenceExtractor
                     && _tokens[_pos + 1].Value == "(")
                 {
                     TryConsumeFieldDeclaration();
+                    return;
+                }
+
+                // Page part / systempart with a control-name first arg and a
+                // page-object reference second arg:
+                // `part(ControlName; "Page Name")`. The first arg is a
+                // declaration (skip); the second is a page reference we can
+                // resolve to its catalog entry — same shape as RunObject /
+                // SubPageLink page references.
+                if (_scopeStack.Count == 1
+                    && tok.Kind == AlTokenKind.Identifier
+                    && (string.Equals(tok.Value, "part", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(tok.Value, "systempart", StringComparison.OrdinalIgnoreCase))
+                    && _pos + 1 < _tokens.Count
+                    && _tokens[_pos + 1].Kind == AlTokenKind.Punct
+                    && _tokens[_pos + 1].Value == "(")
+                {
+                    TryConsumePartDeclaration();
+                    return;
+                }
+
+                // Other page / table / report DSL keywords at object scope
+                // with a control-name first arg: `part(ControlName; Page)`,
+                // `action(ControlName)`, `actionref(ControlName; Target)`,
+                // `group(Name)`, `area(Name)`, `repeater(Name)`,
+                // `cuegroup(Name)`, `modify(Name)`, `addafter(Name)`,
+                // `dataitem(Name; Source)`, `value(N; Name)` etc. The
+                // bare-call resolver already silences the keyword itself;
+                // here we additionally skip past the FIRST argument so it
+                // doesn't get mis-emitted as an implicit-Rec field access
+                // or an unresolved chain head. The second arg (source
+                // expression / page-object reference / table reference)
+                // continues to walk through the main dispatch so its
+                // references still emit. `field` has its own dispatch
+                // above so the table-side `(N; "Name"; Type)` shape can
+                // extract the type reference; this branch only catches
+                // the non-field DSL keywords.
+                if (_scopeStack.Count == 1
+                    && tok.Kind == AlTokenKind.Identifier
+                    && _pos + 1 < _tokens.Count
+                    && _tokens[_pos + 1].Kind == AlTokenKind.Punct
+                    && _tokens[_pos + 1].Value == "("
+                    && AlBuiltinMethods.IsObjectDslKeyword(tok.Value))
+                {
+                    _pos++; // the DSL keyword itself
+                    SkipDslKeywordFirstArg();
                     return;
                 }
             }
@@ -534,11 +606,22 @@ public static class AlReferenceExtractor
         /// type name) pair the rest of the extractor cares about.
         /// Bare system types like <c>HttpClient</c> come back with a
         /// null Keyword — those won't resolve to AL objects later.
+        ///
+        /// When the type has an AL object keyword and the name
+        /// resolves through the catalog, emits a <c>property_object</c>
+        /// reference at the name token so var/parameter type names
+        /// (e.g. <c>GLSetup: Record "General Ledger Setup"</c>) show
+        /// up as clickable / underlinable like other resolved spans.
+        /// The keyword is passed as a kind hint so collisions like
+        /// table-and-page-of-the-same-name resolve deterministically.
         /// </summary>
         private ResolvedVariableType ReadTypeReference()
         {
             string? keyword = null;
             string typeName = string.Empty;
+            int typeNameLine = 0;
+            int typeNameColumn = 0;
+            bool sawTypeName = false;
 
             if (_pos >= _tokens.Count) return new ResolvedVariableType(null, "");
 
@@ -556,6 +639,9 @@ public static class AlReferenceExtractor
                     if (t.Kind == AlTokenKind.Identifier || t.Kind == AlTokenKind.QuotedIdentifier)
                     {
                         typeName = t.Value;
+                        typeNameLine = t.Line;
+                        typeNameColumn = t.Column;
+                        sawTypeName = true;
                         _pos++;
                     }
                 }
@@ -564,6 +650,29 @@ public static class AlReferenceExtractor
             {
                 typeName = first.Value;
                 _pos++;
+            }
+
+            // Only emit when we have an explicit AL keyword. Bare
+            // identifier types (Integer, Boolean, custom variables in
+            // scope) aren't navigable AL objects and would either
+            // mis-resolve or pollute the underline.
+            if (keyword is not null && sawTypeName && !string.IsNullOrEmpty(typeName))
+            {
+                var target = _ctx.Resolver.ResolveTypeByName(typeName, keyword);
+                if (target is not null)
+                {
+                    _refs.Add(new ExtractedReference(
+                        Line: typeNameLine,
+                        Column: typeNameColumn,
+                        TargetAppId: target.AppId,
+                        TargetObjectKind: target.Kind,
+                        TargetObjectId: target.ObjectId,
+                        TargetObjectName: target.Name,
+                        TargetMemberName: null,
+                        TargetMemberKind: null,
+                        ReferenceKind: "property_object"));
+                    _resolved++;
+                }
             }
 
             // Length qualifier on a scalar (Code[20], Text[100]) —
@@ -614,15 +723,71 @@ public static class AlReferenceExtractor
             var head = _tokens[_pos];
             _pos++;
 
+            // AL built-in static APIs like `CODEUNIT.Run(...)`,
+            // `PAGE.RunModal(...)`, `NavApp.GetCurrentModuleInfo(...)`.
+            // These are runtime dispatchers, not user variables or
+            // catalog types — silently skip the chain (no reference
+            // to emit, no diagnostic bump) but walk inside the args
+            // via the main dispatch path so typed-literals like
+            // `Codeunit::"Foo"` inside `CODEUNIT.Run(Codeunit::"Foo")`
+            // still surface as references.
+            if (AlBuiltinMethods.IsBuiltinStaticReceiver(head.Value))
+            {
+                while (_pos < _tokens.Count && At("."))
+                {
+                    _pos++; // .
+                    if (_pos < _tokens.Count
+                        && (_tokens[_pos].Kind == AlTokenKind.Identifier
+                            || _tokens[_pos].Kind == AlTokenKind.QuotedIdentifier))
+                    {
+                        _pos++; // member
+                    }
+                    if (_pos < _tokens.Count && At("(")) WalkBalancedParens();
+                }
+                return;
+            }
+
             // Resolve the head to a type (a starting receiver). Two shapes:
             //   1. head matches a variable in any enclosing scope frame.
             //   2. head matches an object name in the type catalog (the
             //      `Customer.Insert(true)` pattern).
             // Anything else: this chain doesn't yield references.
-            var receiverType = ResolveHeadType(head);
+            var receiverType = ResolveHeadType(head, out var declaredAsVar);
             if (receiverType is null)
             {
+                // Variable's declared type is a known AL runtime / system
+                // type (Dialog, RecordRef, XmlDocument, ModuleInfo, …) —
+                // or it's declared with the `DotNet` keyword which never
+                // resolves through the AL catalog by design — or it's a
+                // BC platform virtual table by numeric id (the runtime
+                // reserves 2000000000..2000000999 for these). Silence the
+                // diagnostic so it doesn't crowd out real unresolveds.
+                if (declaredAsVar is not null
+                    && (string.Equals(declaredAsVar.Keyword, "DotNet", StringComparison.OrdinalIgnoreCase)
+                        || (!string.IsNullOrEmpty(declaredAsVar.TypeName)
+                            && (AlBuiltinMethods.IsKnownSystemType(declaredAsVar.TypeName)
+                                || IsPlatformVirtualTableId(declaredAsVar.TypeName)))))
+                {
+                    AdvancePastChain();
+                    return;
+                }
+
                 _unresolved++;
+                // Two sub-cases for the diagnostic samples: did the var
+                // lookup miss entirely, or did it find a var whose
+                // declared type didn't resolve through the resolver?
+                // The latter points at visibility / catalog issues for
+                // a known-named type — much more actionable than "name
+                // isn't in scope".
+                if (declaredAsVar is not null)
+                {
+                    CaptureUnresolved("head-var-type-unresolved", head, null,
+                        receiverNameOverride: $"{declaredAsVar.Keyword ?? "?"} {declaredAsVar.TypeName}");
+                }
+                else
+                {
+                    CaptureUnresolved("head-not-a-variable", head, null);
+                }
                 AdvancePastChain();
                 return;
             }
@@ -653,7 +818,22 @@ public static class AlReferenceExtractor
             var receiverType = _ctx.Resolver.ResolveTypeByName(nameTok.Value, kindTok.Value);
             if (receiverType is null)
             {
+                // `Kind::Value` where `Kind` isn't a canonical AL object
+                // keyword is an enum value reference (e.g. `Verbosity::Error`,
+                // `DataClassification::SystemMetadata`, `Step::Done`).
+                // The catalog doesn't track enum values, so we can't
+                // resolve the `Value` half — but the chain isn't broken,
+                // it's just a value reference we don't model. Silence
+                // the diagnostic when the kind name isn't one of the
+                // recognised AL object keywords.
+                if (!IsAlObjectKeyword(kindTok.Value)
+                    && !string.Equals(kindTok.Value, "DATABASE", StringComparison.OrdinalIgnoreCase))
+                {
+                    AdvancePastChain();
+                    return;
+                }
                 _unresolved++;
+                CaptureUnresolved("typed-literal-name", nameTok, null, kindTok.Value);
                 AdvancePastChain();
                 return;
             }
@@ -712,7 +892,22 @@ public static class AlReferenceExtractor
                         if (followedByParen) WalkBalancedParens();
                         return;
                     }
+                    // Synthesised platform virtual tables (Record Field,
+                    // Record Company, etc. — stamped with the PlatformAppId
+                    // sentinel of Guid.Empty in the catalog) have no
+                    // schemas: the import doesn't write members for them.
+                    // Field accesses like `TempFieldSet.TableNo` are
+                    // legitimate but unresolvable through our metadata.
+                    // Silence the diagnostic so it doesn't crowd out real
+                    // gaps; the trade-off (lost underline) was already
+                    // implicit when we synthesised the type.
+                    if (receiverType.AppId == Guid.Empty)
+                    {
+                        if (followedByParen) WalkBalancedParens();
+                        return;
+                    }
                     _unresolved++;
+                    CaptureUnresolved("chain-step", memberTok, receiverType);
                     AdvancePastRemainingChain();
                     return;
                 }
@@ -793,6 +988,58 @@ public static class AlReferenceExtractor
                 // still needs to walk.
                 return false;
             }
+            if (AlBuiltinMethods.IsObjectDslKeyword(name))
+            {
+                // Page / pageextension / tableextension / report /
+                // xmlport / enum / permissionset declarative keyword —
+                // `area(content)`, `field("X"; Rec."Y")`, `value(N; "Z")`,
+                // `modify(SomeField) { … }`. These look identical to
+                // procedure calls to the lexer but introduce nested
+                // declarative structure; the arg list still walks
+                // through the main loop so the inner expressions (a
+                // page-field's `Rec."Y"` reference, for example)
+                // continue to emit.
+                return false;
+            }
+
+            // Implicit-Rec method call. On a page / pageextension /
+            // tableextension / codeunit-with-TableNo body, a bare
+            // `Insert();` is shorthand for `Rec.Insert();` and
+            // `SetCurrentKey(X);` is `Rec.SetCurrentKey(X);`. The
+            // RecordMethods list is the authoritative set of Record
+            // built-ins, so the check is just "owner has Rec AND name
+            // is a RecordMethod" → silent skip. Without this, every
+            // implicit-Rec call in BC pages surfaces as a bare-call
+            // unresolved.
+            if (RecType() is not null && AlBuiltinMethods.RecordMethods.Contains(name))
+            {
+                return false;
+            }
+
+            // Fallback: even when Rec isn't bound, the bare call's name
+            // might match a Record / Page / Codeunit / Common built-in
+            // method. This catches mis-parsed chain calls (e.g. the
+            // chain head got dropped earlier so `SomeRec.Insert(...)`
+            // surfaces as bare `Insert(...)`), Rec-method shorthand in
+            // contexts the explicit Rec check doesn't cover, and
+            // text/variant-method bare uses (`Trim`, `Unwrap`,
+            // `HasValue`, `AsInteger`). False-positive risk is a real
+            // user procedure named after a built-in — vanishingly rare
+            // in BC's corpus since the name would shadow the built-in.
+            if (AlBuiltinMethods.RecordMethods.Contains(name)
+                || AlBuiltinMethods.RecordSystemFields.Contains(name)
+                || AlBuiltinMethods.CodeunitMethods.Contains(name)
+                || AlBuiltinMethods.PageMethods.Contains(name)
+                || AlBuiltinMethods.ReportMethods.Contains(name)
+                || AlBuiltinMethods.XmlportMethods.Contains(name)
+                || AlBuiltinMethods.QueryMethods.Contains(name)
+                || AlBuiltinMethods.CommonMethods.Contains(name)
+                || AlBuiltinMethods.TextMethods.Contains(name)
+                || AlBuiltinMethods.CollectionMethods.Contains(name)
+                || AlBuiltinMethods.JsonMethods.Contains(name))
+            {
+                return false;
+            }
 
             // In-scope variable? AL doesn't allow calling a variable as
             // a function — if the name is in scope we treat it as
@@ -817,6 +1064,7 @@ public static class AlReferenceExtractor
                 // list yet, or a same-named procedure on a related extension
                 // we don't track from this angle. Counted but not emitted.
                 _unresolved++;
+                CaptureUnresolved("bare-call", head, ownerType);
                 return false;
             }
 
@@ -925,6 +1173,13 @@ public static class AlReferenceExtractor
             }
             if (string.Equals(name, "Permissions", StringComparison.OrdinalIgnoreCase))
             {
+                return TryConsumePermissions();
+            }
+            if (string.Equals(name, "AccessByPermission", StringComparison.OrdinalIgnoreCase))
+            {
+                // Same `tabledata "Name" = <rights>` value shape as
+                // Permissions, just on a per-action / per-control
+                // property instead of an object-level one.
                 return TryConsumePermissions();
             }
             if (string.Equals(name, "CalcFormula", StringComparison.OrdinalIgnoreCase))
@@ -1146,7 +1401,14 @@ public static class AlReferenceExtractor
                     if (nameTok.Kind == AlTokenKind.Identifier
                         || nameTok.Kind == AlTokenKind.QuotedIdentifier)
                     {
-                        var target = _ctx.Resolver.ResolveTypeByName(nameTok.Value);
+                        // "table" kind hint disambiguates table vs page name
+                        // collisions: a `tabledata "General Ledger Setup"`
+                        // entry always means the Table, but BC ships pages
+                        // with the same setup names. Without the hint the
+                        // resolver could pick the page (insertion order),
+                        // the post-filter would drop it, and the user gets
+                        // no underline.
+                        var target = _ctx.Resolver.ResolveTypeByName(nameTok.Value, "table");
                         if (target is not null
                             && string.Equals(target.Kind, "table", StringComparison.OrdinalIgnoreCase))
                         {
@@ -1207,12 +1469,19 @@ public static class AlReferenceExtractor
             _pos++; // (
 
             // Detect form by the first token inside the parens. Number
-            // → table-side (id; name; type); anything else → page-side
-            // (name; expression) and we MUST NOT consume the args —
-            // chain references on the RHS need the main loop's walker.
+            // → table-side (id; name; type). Anything else → page-side
+            // (controlName; sourceExpression). For page-side we need to
+            // walk PAST the controlName + the `;` separator before
+            // returning, so the main loop picks up the source expression
+            // (Rec."No.", a variable, a function call) and the controlName
+            // doesn't get caught by implicit-Rec field-access as a Rec
+            // field reference. Without this skip the `field("No."; ...)`
+            // form emits a bogus field_access on the page-field's own
+            // declared name.
             if (_pos >= _tokens.Count) return;
             if (_tokens[_pos].Kind != AlTokenKind.Number)
             {
+                SkipDslKeywordFirstArg(alreadyPastOpenParen: true);
                 return;
             }
 
@@ -1253,6 +1522,72 @@ public static class AlReferenceExtractor
             // The declaration's trailing `{ … }` block contains its
             // own properties (Caption, TableRelation, ToolTip, …) — the
             // main loop walks them in their own right.
+        }
+
+        /// <summary>
+        /// Handles <c>part(ControlName; "Page Name")</c> and
+        /// <c>systempart(ControlName; SystemPartType)</c> declarations on
+        /// pages. The first arg is the part's control name (a declaration
+        /// — skip), the second is the page reference we resolve to its
+        /// catalog entry. Emits a <c>property_object</c> reference on the
+        /// page-name token so Find references / Go to definition / the
+        /// underline all work the same way they do on
+        /// <c>RunObject = Page "X"</c>.
+        ///
+        /// For <c>systempart</c>, the second arg is an enum value
+        /// (BrickLayout / Links / Notes / Outlook etc.) rather than a
+        /// page reference — those don't resolve to a catalog entry but
+        /// also don't need to. The same skip-first-arg + try-resolve-
+        /// second handles both forms cleanly: when the second arg isn't
+        /// a known catalog name, no reference emits and the diagnostic
+        /// stays quiet.
+        /// </summary>
+        private void TryConsumePartDeclaration()
+        {
+            _pos++; // part / systempart
+            if (!At("(")) return;
+            _pos++; // (
+
+            // First arg: control name (Identifier or QuotedIdentifier).
+            // Skip through to the `;` separator using the same depth-0
+            // walker the generic DSL skip uses.
+            SkipDslKeywordFirstArg(alreadyPastOpenParen: true);
+            if (_pos >= _tokens.Count) return;
+
+            // Second arg: the page reference. Optionally preceded by the
+            // `Page` keyword (rare in part declarations but legal).
+            if (_pos < _tokens.Count && _tokens[_pos].Kind == AlTokenKind.Identifier
+                && IsAlObjectKeyword(_tokens[_pos].Value))
+            {
+                _pos++;
+            }
+            if (_pos >= _tokens.Count) return;
+            var nameTok = _tokens[_pos];
+            if (nameTok.Kind != AlTokenKind.Identifier
+                && nameTok.Kind != AlTokenKind.QuotedIdentifier)
+            {
+                return;
+            }
+
+            var target = _ctx.Resolver.ResolveTypeByName(nameTok.Value, "Page");
+            if (target is not null)
+            {
+                _refs.Add(new ExtractedReference(
+                    Line: nameTok.Line,
+                    Column: nameTok.Column,
+                    TargetAppId: target.AppId,
+                    TargetObjectKind: target.Kind,
+                    TargetObjectId: target.ObjectId,
+                    TargetObjectName: target.Name,
+                    TargetMemberName: null,
+                    TargetMemberKind: null,
+                    ReferenceKind: "property_object"));
+                _resolved++;
+            }
+            // Don't try to consume past — the part's body `{ … }` opens
+            // immediately after `)` and the main loop walks the property
+            // values (ApplicationArea, Visible, SubPageLink, …) in their
+            // own right.
         }
 
         /// <summary>
@@ -1659,6 +1994,70 @@ public static class AlReferenceExtractor
             if (At(";")) _pos++;
         }
 
+        /// <summary>
+        /// Consumes a top-of-file directive (<c>namespace X.Y.Z;</c> or
+        /// <c>using A.B.C;</c>) up to and including the terminating
+        /// semicolon. Doesn't touch the references list — these are
+        /// pure compile-time annotations the source-viewer doesn't need
+        /// to navigate from.
+        /// </summary>
+        private void SkipToSemicolonAtTopLevel()
+        {
+            // The directive name token itself.
+            _pos++;
+            while (_pos < _tokens.Count && !At(";")) _pos++;
+            if (At(";")) _pos++;
+        }
+
+        /// <summary>
+        /// Consumes the first argument of a page / table / report DSL
+        /// keyword's parens. The first arg is always a declaration name
+        /// (control / part / action / group / area / repeater / cuegroup /
+        /// etc.) — OR an unresolvable reference target on
+        /// <c>modify(Name)</c> / <c>addAfter(Name)</c> / <c>addLast(Name)</c>
+        /// where Name refers to a control in the base page we don't have
+        /// a way to look up. Either way it isn't a navigation target,
+        /// and walking it through the regular dispatch mis-emits
+        /// references (e.g. <c>"No."</c> in <c>field("No."; Rec."No.")</c>
+        /// getting picked up as an implicit-Rec field access on the
+        /// page's source table).
+        ///
+        /// Stops at the first <c>;</c> at depth 0 (separator before
+        /// the next arg) or <c>)</c> (end of the call) — leaves
+        /// <c>_pos</c> pointing JUST PAST that separator so the regular
+        /// dispatch picks up the second / source-expression argument.
+        /// </summary>
+        private void SkipDslKeywordFirstArg(bool alreadyPastOpenParen = false)
+        {
+            if (!alreadyPastOpenParen)
+            {
+                if (!At("(")) return;
+                _pos++; // (
+            }
+            int depth = 0;
+            while (_pos < _tokens.Count)
+            {
+                var tok = _tokens[_pos];
+                if (tok.Kind == AlTokenKind.Punct)
+                {
+                    if (tok.Value == "(") { depth++; _pos++; continue; }
+                    if (tok.Value == ")")
+                    {
+                        if (depth == 0) { _pos++; return; }
+                        depth--;
+                        _pos++;
+                        continue;
+                    }
+                    if (tok.Value == ";" && depth == 0)
+                    {
+                        _pos++;
+                        return;
+                    }
+                }
+                _pos++;
+            }
+        }
+
         // ── EventSubscriber attribute extraction ──────────────────────
 
         /// <summary>
@@ -1997,14 +2396,27 @@ public static class AlReferenceExtractor
             return true;
         }
 
-        private AlTypeRef? ResolveHeadType(AlToken head)
+        /// <summary>
+        /// Resolves the head identifier of a member chain. Returns the
+        /// receiver type on success; null when neither the variable
+        /// lookup nor the catalog lookup found a type.
+        /// <paramref name="declaredAsVar"/> reports the in-scope declaration
+        /// for diagnostic purposes when the catalog lookup of a declared
+        /// variable's type fails — letting the caller distinguish
+        /// "head wasn't a variable at all" from "head was a variable
+        /// but its declared type doesn't resolve" (which usually means a
+        /// visibility / dependency-graph issue worth surfacing).
+        /// </summary>
+        private AlTypeRef? ResolveHeadType(AlToken head, out ResolvedVariableType? declaredAsVar)
         {
+            declaredAsVar = null;
             // Step 1: walk the scope stack innermost-first.
             var name = head.Value.ToLowerInvariant();
             foreach (var frame in _scopeStack)
             {
                 if (frame.Vars.TryGetValue(name, out var declared))
                 {
+                    declaredAsVar = declared;
                     // Variables typed with an AL object keyword
                     // (Record Customer, Codeunit "Sales-Post") resolve
                     // to a type in the catalog. Variables typed with a
@@ -2065,6 +2477,30 @@ public static class AlReferenceExtractor
             } while (_pos < _tokens.Count && depth > 0);
         }
 
+        // ── Diagnostics ───────────────────────────────────────────────
+
+        /// <summary>
+        /// Captures an unresolved reference up to <see cref="UnresolvedSampleCap"/>
+        /// per file. The receiver type (when known) is recorded as a
+        /// <c>kind:name</c> pair so the import-side aggregator can show
+        /// "all chain-steps on table:Customer that failed" without re-running.
+        /// Pass a <paramref name="receiverNameOverride"/> when the receiver
+        /// isn't a resolved AlTypeRef (e.g. a typed-literal whose name didn't
+        /// resolve — the caller has only the unresolved name to record).
+        /// </summary>
+        private void CaptureUnresolved(
+            string reason, AlToken tok, AlTypeRef? receiver, string? receiverNameOverride = null)
+        {
+            if (_unresolvedSamples.Count >= UnresolvedSampleCap) return;
+            _unresolvedSamples.Add(new UnresolvedSample(
+                Reason: reason,
+                Token: tok.Value,
+                Line: tok.Line,
+                Column: tok.Column,
+                ReceiverKind: receiver?.Kind,
+                ReceiverName: receiver?.Name ?? receiverNameOverride));
+        }
+
         // ── Token utilities ───────────────────────────────────────────
 
         private bool At(string punct) =>
@@ -2083,6 +2519,24 @@ public static class AlReferenceExtractor
             // (#pragma) sit in the middle of declarations sometimes.
             while (_pos < _tokens.Count && _tokens[_pos].Kind == AlTokenKind.Directive) _pos++;
         }
+
+        /// <summary>
+        /// True when <paramref name="typeName"/> looks like a BC platform
+        /// virtual-table numeric id. Microsoft reserves the range
+        /// 2000000000..2000000999 for runtime-provided tables (Field,
+        /// Company, User, NAV App Installed App, …); pages that set
+        /// <c>SourceTable = 2000000206</c> end up with that numeric
+        /// string as their source_table_name when the import-time
+        /// numeric → name resolver doesn't have the id in its named
+        /// map. Treating the whole range as silently unresolvable avoids
+        /// the per-id enumeration burden — we don't have schemas for
+        /// any of these tables anyway, so the lost diagnostic detail
+        /// costs nothing.
+        /// </summary>
+        private static bool IsPlatformVirtualTableId(string typeName) =>
+            int.TryParse(typeName, out var id)
+            && id >= 2000000000
+            && id <= 2000000999;
 
         private static bool IsAlObjectKeyword(string s) =>
             string.Equals(s, "Record", StringComparison.OrdinalIgnoreCase)
@@ -2214,7 +2668,44 @@ public sealed record ExtractedReference(
     string ReferenceKind);
 
 /// <summary>Per-file extraction statistics — used for diagnostic logging.</summary>
-public sealed record ExtractionStats(int ResolvedReferences, int UnresolvedReceivers);
+public sealed record ExtractionStats(
+    int ResolvedReferences,
+    int UnresolvedReceivers,
+    IReadOnlyList<UnresolvedSample> UnresolvedSamples);
+
+/// <summary>
+/// A single unresolved reference captured for diagnostic logging. The
+/// extractor caps these per-file so a pathological file doesn't blow
+/// out memory; the import pipeline aggregates a small bucket across
+/// files and logs the first N at end-of-phase so operators can spot
+/// patterns (e.g. systematic gaps for a specific token shape, a
+/// particular catalog name missing, …).
+///
+/// <para><b>Reasons:</b></para>
+/// <list type="bullet">
+///   <item><c>head-not-in-scope</c> — the chain's head identifier wasn't
+///     a known variable, parameter, scope-frame entry, or catalog type.
+///     Common cases: aliases, with-do shadowing, types from packages we
+///     haven't ingested yet.</item>
+///   <item><c>typed-literal-name</c> — <c>Kind::"Name"</c> where Name
+///     didn't resolve as Kind. Usually a cross-release reference we
+///     don't see in this release's catalog.</item>
+///   <item><c>chain-step</c> — a <c>.member</c> didn't resolve on the
+///     known receiver. Most often a tableextension/pageextension we
+///     don't model, or an event-published procedure we haven't linked.</item>
+///   <item><c>bare-call</c> — an unqualified identifier followed by
+///     <c>(</c> that wasn't a system function, in-scope variable, or
+///     own-member. Often a procedure on a dependency object we don't
+///     surface from this owner's scope.</item>
+/// </list>
+/// </summary>
+public sealed record UnresolvedSample(
+    string Reason,
+    string Token,
+    int Line,
+    int Column,
+    string? ReceiverKind = null,
+    string? ReceiverName = null);
 
 /// <summary>Result envelope: extracted rows plus the run's stats.</summary>
 public sealed record AlExtractionResult(

@@ -111,7 +111,13 @@ public sealed class AlReferenceExtractorTests
             && r.TargetObjectName == "Sales Line"
             && r.TargetMemberName == "InitRecord"
             && r.TargetMemberKind == "procedure");
-        result.Stats.ResolvedReferences.Should().Be(1);
+        // Parameter type `Record "Sales Line"` also emits a property_object
+        // ref so the type name in the parameter list is underlined.
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "property_object"
+            && r.TargetObjectName == "Sales Line"
+            && r.TargetObjectKind == "table");
+        result.Stats.ResolvedReferences.Should().Be(2);
         result.Stats.UnresolvedReceivers.Should().Be(0);
     }
 
@@ -199,8 +205,11 @@ public sealed class AlReferenceExtractorTests
     public void System_typed_variable_yields_no_reference()
     {
         // `Client: HttpClient` is a runtime type, not an AL object.
-        // Its members aren't in the type catalog, so the receiver
-        // resolution returns null and the reference is dropped.
+        // HttpClient lives in `AlBuiltinMethods.KnownSystemTypes`, so
+        // the chain through it is silently skipped — no reference
+        // emitted AND no unresolved-counter bump. Without the system-
+        // type filter every HttpClient.Get call in BC's REST stack
+        // would inflate the diagnostic.
         const string src = """
             procedure Foo()
             var
@@ -212,7 +221,7 @@ public sealed class AlReferenceExtractorTests
         var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
 
         result.References.Should().BeEmpty();
-        result.Stats.UnresolvedReceivers.Should().Be(1);
+        result.Stats.UnresolvedReceivers.Should().Be(0);
     }
 
     [Fact]
@@ -233,11 +242,14 @@ public sealed class AlReferenceExtractorTests
             """;
         var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
 
-        // Three references in total:
-        //   1. SalesHeader."Sell-to Customer No." → field on Sales Header
-        //   2. SalesHeader.Customer → field on Sales Header (record-typed)
-        //   3. Customer."No." → field on Customer (chained via Customer field)
-        result.References.Should().HaveCount(3);
+        // Four references in total:
+        //   1. SalesHeader: Record "Sales Header" → property_object on type name
+        //   2. SalesHeader."Sell-to Customer No." → field on Sales Header
+        //   3. SalesHeader.Customer → field on Sales Header (record-typed)
+        //   4. Customer."No." → field on Customer (chained via Customer field)
+        result.References.Should().HaveCount(4);
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "property_object" && r.TargetObjectName == "Sales Header");
         result.References.Should().Contain(r =>
             r.TargetObjectName == "Sales Header" && r.TargetMemberName == "Sell-to Customer No.");
         result.References.Should().Contain(r =>
@@ -400,7 +412,11 @@ public sealed class AlReferenceExtractorTests
             """;
         var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
 
-        result.References.Should().BeEmpty();
+        // Only the property_object on `Record Customer`'s type name; the
+        // SystemId field access is a built-in and emits nothing.
+        result.References.Should().ContainSingle();
+        result.References[0].ReferenceKind.Should().Be("property_object");
+        result.References[0].TargetObjectName.Should().Be("Customer");
         result.Stats.UnresolvedReceivers.Should().Be(0);
     }
 
@@ -541,7 +557,7 @@ public sealed class AlReferenceExtractorTests
             """;
         var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
 
-        var insertRef = result.References.Single();
+        var insertRef = result.References.Single(r => r.TargetMemberName == "Insert");
         insertRef.Line.Should().Be(5,
             because: "Insert sits on the fifth line of the snippet (1-based)");
         // The member name starts at column 10 (after "Cust." inside the indent).
@@ -768,6 +784,85 @@ public sealed class AlReferenceExtractorTests
         perms.Select(r => r.TargetObjectName)
             .Should().BeEquivalentTo(new[] { "Customer", "Sales Header" });
         perms.Should().AllSatisfy(r => r.TargetObjectKind.Should().Be("table"));
+    }
+
+    [Fact]
+    public void Var_block_record_type_name_emits_a_property_object_reference()
+    {
+        // `GLSetup: Record "General Ledger Setup";` — the user wants the
+        // type name underlined and clickable so Find references on the
+        // Record type name in a var/parameter declaration jumps to the
+        // table. Repro of the regression in BC's `Company-Initialize`
+        // codeunit where dozens of `Record "X Setup"` declarations had
+        // no underline.
+        var resolver = MakeResolver();
+        resolver.AddType("General Ledger Setup",
+            new AlTypeRef(BaseAppId, "table", 98, "General Ledger Setup"));
+        resolver.AddType("Workflow Setup",
+            new AlTypeRef(BaseAppId, "codeunit", 1500, "Workflow Setup"));
+
+        const string src = """
+            codeunit 2 "Company-Initialize"
+            {
+                trigger OnRun()
+                var
+                    GLSetup: Record "General Ledger Setup";
+                    WorkflowSetup: Codeunit "Workflow Setup";
+                    Window: Dialog;
+                begin
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        var props = result.References
+            .Where(r => r.ReferenceKind == "property_object")
+            .ToList();
+        props.Should().ContainSingle(r =>
+            r.TargetObjectName == "General Ledger Setup" && r.TargetObjectKind == "table");
+        props.Should().ContainSingle(r =>
+            r.TargetObjectName == "Workflow Setup" && r.TargetObjectKind == "codeunit");
+        // `Dialog` is a system type — no AL keyword, no resolved name, no emission.
+        props.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Parameter_record_type_name_emits_a_property_object_reference()
+    {
+        // Same emission shape as locals — `procedure Foo(Cust: Record Customer)`
+        // underlines `Customer`.
+        const string src = """
+            procedure Foo(SalesLine: Record "Sales Line")
+            begin
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "property_object"
+            && r.TargetObjectName == "Sales Line"
+            && r.TargetObjectKind == "table");
+    }
+
+    [Fact]
+    public void Var_block_bare_scalar_type_does_not_emit()
+    {
+        // `i: Integer;`, `f: Boolean;` — no AL object keyword, must not
+        // emit. (Stub resolver would refuse to resolve these anyway,
+        // but the keyword guard is what we're asserting.)
+        const string src = """
+            procedure Foo()
+            var
+                i: Integer;
+                f: Boolean;
+                s: Text[100];
+            begin
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Where(r => r.ReferenceKind == "property_object")
+            .Should().BeEmpty();
     }
 
     [Fact]
@@ -1649,9 +1744,13 @@ public sealed class AlReferenceExtractorTests
 
         // Both Cust.Insert() and Cust.Validate() must emit — the second
         // one only does if the procedure scope survived the case block.
-        result.References.Should().HaveCount(2);
-        result.References.Select(r => r.TargetMemberName)
+        // Plus a property_object on the `Record Customer` parameter type.
+        result.References.Should().HaveCount(3);
+        result.References.Where(r => r.ReferenceKind != "property_object")
+            .Select(r => r.TargetMemberName)
             .Should().BeEquivalentTo(new[] { "Insert", "Validate" });
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "property_object" && r.TargetObjectName == "Customer");
     }
 
     // ── Method-call arguments emit their own references ───────────
@@ -1917,6 +2016,379 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Namespace_and_using_directives_at_file_top_are_skipped()
+    {
+        // Modern AL files open with `namespace X.Y.Z;` then a list of
+        // `using A.B.C;` directives. Without explicit handling each one
+        // gets walked as a member chain on an unresolved head (`Microsoft`,
+        // `System`, …) and bumps the diagnostic counter. The skip happens
+        // at object scope only — body code that legitimately uses the
+        // word `using` (not a real AL pattern, defensive) would still
+        // walk normally.
+        const string src = """
+            namespace Microsoft.Bank.Banking;
+
+            using Microsoft.Foundation.Company;
+            using System.Globalization;
+            using Microsoft.Finance.GeneralLedger.Setup;
+
+            codeunit 50000 "Foo"
+            {
+                procedure Bar()
+                begin
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().BeEmpty();
+        result.Stats.UnresolvedReceivers.Should().Be(0,
+            because: "directives are pure annotations; nothing to walk");
+        result.Stats.UnresolvedSamples.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Clear_as_a_bare_call_is_treated_as_a_system_function()
+    {
+        // `Clear(SomeVar)` resets a variable to its default state. The
+        // pre-fix behaviour emitted an unresolved sample on every Clear()
+        // call because it tried to resolve Clear as a self-member.
+        const string src = """
+            procedure Foo()
+            var
+                i: Integer;
+            begin
+                Clear(i);
+                ClearAll();
+                Commit();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().BeEmpty();
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Page_field_control_name_is_not_emitted_as_a_Rec_field_access()
+    {
+        // `field("No."; Rec."No.") { ... }` — the LHS quoted identifier
+        // is the page-field's DECLARATION (control name); the RHS chain
+        // is the actual source-table field reference. Without the
+        // DSL-keyword first-arg skip, the LHS falls through to implicit-
+        // Rec field access against the page's source table, emitting a
+        // bogus field_access on the page-field's own control name.
+        // Outcome: only the RHS Rec."No." emits a reference; the LHS
+        // `"No."` does not.
+        var resolver = MakeResolver();
+        resolver.AddMember("Sales Header", new AlMember("No.", "field", null, null));
+
+        const string src = """
+            page 50000 "Sales Order"
+            {
+                SourceTable = "Sales Header";
+                layout
+                {
+                    area(content)
+                    {
+                        field("No."; Rec."No.") { ApplicationArea = All; }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(resolver, "Sales Order", "Sales Header"));
+
+        // Only the RHS Rec."No." resolves. The LHS control name is skipped.
+        result.References.Where(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "No.")
+            .Should().HaveCount(1,
+                because: "LHS is a declaration (control name), only the RHS Rec.\"No.\" should emit");
+    }
+
+    [Fact]
+    public void Page_part_second_arg_resolves_to_the_referenced_page()
+    {
+        // `part(ControlName; "Page Name")` — the second arg is a page
+        // reference we should resolve so Find references / Cmd-click
+        // work the same way they do on `RunObject = Page "X"`. The
+        // first arg (control name) is still skipped as a declaration.
+        var resolver = MakeResolver();
+        resolver.AddType("Sales Doc. Check Factbox",
+            new AlTypeRef(BaseAppId, "page", 9081, "Sales Doc. Check Factbox"));
+
+        const string src = """
+            page 50000 "Sales Order"
+            {
+                SourceTable = "Sales Header";
+                layout
+                {
+                    area(factboxes)
+                    {
+                        part(SalesDocCheckFactbox; "Sales Doc. Check Factbox")
+                        {
+                            ApplicationArea = All;
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(resolver, "Sales Order", "Sales Header"));
+
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "property_object"
+            && r.TargetObjectKind == "page"
+            && r.TargetObjectName == "Sales Doc. Check Factbox");
+        // The control name (first arg) does NOT emit any reference.
+        result.References.Should().NotContain(r =>
+            r.TargetMemberName == "SalesDocCheckFactbox"
+            || r.TargetObjectName == "SalesDocCheckFactbox");
+    }
+
+    [Fact]
+    public void Page_part_action_group_first_args_are_not_emitted_as_references()
+    {
+        // `part(ControlName; PageRef)`, `action(ControlName)`,
+        // `actionref(ControlName; Target)`, `group(Name)`,
+        // `area(Name)` — the FIRST argument of each is a declaration
+        // name or an unresolvable base-page reference. None of them are
+        // navigation targets; none should emit references.
+        const string src = """
+            page 50000 "Sales Order"
+            {
+                SourceTable = "Sales Header";
+                layout
+                {
+                    area(factboxes)
+                    {
+                        part(SalesDocCheckFactbox; "Sales Doc. Check Factbox")
+                        {
+                            ApplicationArea = All;
+                        }
+                    }
+                }
+                actions
+                {
+                    area(processing)
+                    {
+                        action(Statistics) { ApplicationArea = All; }
+                        action("Co&mments") { ApplicationArea = All; }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(MakeResolver(), "Sales Order", "Sales Header"));
+
+        // None of the control names should surface as Rec field accesses
+        // or any other reference kind.
+        result.References.Should().NotContain(r =>
+            r.TargetMemberName == "SalesDocCheckFactbox"
+            || r.TargetMemberName == "Statistics"
+            || r.TargetMemberName == "Co&mments"
+            || r.TargetMemberName == "factboxes"
+            || r.TargetMemberName == "processing");
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Pageextension_modify_addafter_target_names_are_not_emitted()
+    {
+        // `modify(TargetName) { ... }` and `addafter(TargetName) { ... }`
+        // — TargetName references a control in the base page, which we
+        // can't resolve. The first-arg skip silences these so they
+        // don't surface as unresolved variables or bogus Rec field
+        // accesses.
+        const string src = """
+            pageextension 50000 "Sales Order Ext" extends "Sales Order"
+            {
+                layout
+                {
+                    modify("No.") { Caption = 'Custom No.'; }
+                    addafter("Sell-to Customer No.")
+                    {
+                        field(MyNewField; Rec.MyNewField) { ApplicationArea = All; }
+                    }
+                }
+            }
+            """;
+        var resolver = MakeResolver();
+        resolver.AddType("Sales Order", new AlTypeRef(BaseAppId, "page", 42, "Sales Order"));
+        // The pageextension's Rec.MyNewField needs MyNewField on the
+        // extended page's source table or the chain step bumps the
+        // unresolved counter. Add it so we can assert the dispatch
+        // ITSELF doesn't bump.
+        resolver.AddMember("Sales Header", new AlMember("MyNewField", "field", null, null));
+        var result = AlReferenceExtractor.Extract(src,
+            OwnerPageExtension(resolver, "Sales Order Ext", "Sales Header"));
+
+        // No emission for the modify / addafter target names. The
+        // field inside addafter still walks normally for its RHS.
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Page_declarative_DSL_keywords_do_not_count_as_bare_calls()
+    {
+        // `area(content) { group(General) { field("X"; Rec."Y") {} } }` —
+        // the layout / actions / field block inside a page is
+        // declarative, not procedural. Without explicit handling each
+        // keyword surfaces as a bare-call unresolved.
+        const string src = """
+            page 50000 "Sales Order"
+            {
+                SourceTable = "Sales Header";
+                layout
+                {
+                    area(content)
+                    {
+                        group(General)
+                        {
+                            field("No."; Rec."No.")
+                            {
+                                ApplicationArea = All;
+                            }
+                            field("Sell-to Customer No."; Rec."Sell-to Customer No.")
+                            {
+                                ApplicationArea = All;
+                            }
+                        }
+                    }
+                }
+                actions
+                {
+                    area(processing)
+                    {
+                        action(Post)
+                        {
+                            ApplicationArea = All;
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(MakeResolver(), "Sales Order", "Sales Header"));
+
+        // No DSL keyword should land in the unresolved samples.
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            new[] { "area", "group", "field", "action" }.Contains(s.Token));
+    }
+
+    [Fact]
+    public void Pageextension_change_keywords_do_not_count_as_bare_calls()
+    {
+        // `addAfter`, `addBefore`, `addLast`, `modify` are pageextension
+        // layout / action manipulators. Same skip rule as page DSL keywords.
+        const string src = """
+            pageextension 50000 "Customer Card Ext" extends "Customer Card"
+            {
+                layout
+                {
+                    addAfter("Name")
+                    {
+                        field(MyField; Rec.MyField) { }
+                    }
+                    modify("Name")
+                    {
+                        Caption = 'Customer';
+                    }
+                }
+            }
+            """;
+        var resolver = MakeResolver();
+        resolver.AddType("Customer Card", new AlTypeRef(BaseAppId, "page", 21, "Customer Card"));
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            new[] { "addAfter", "modify", "field" }.Contains(s.Token));
+    }
+
+    [Fact]
+    public void Enum_value_keyword_does_not_count_as_a_bare_call()
+    {
+        // `value(N; "Label") { Caption = '…'; }` is enum value declaration.
+        const string src = """
+            enum 50000 "AMC Bank Status"
+            {
+                value(0; "Pending") { Caption = 'Pending'; }
+                value(1; "Done") { Caption = 'Done'; }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "value");
+    }
+
+    [Fact]
+    public void Variable_typed_as_a_known_system_type_does_not_bump_unresolved()
+    {
+        // `var X: Dialog; X.Open(...)` — Dialog isn't in the AL catalog,
+        // it's a runtime primitive. The chain head IS in scope (the var
+        // is declared) but the type doesn't resolve and never will.
+        // Skip silently so the diagnostic isn't crowded with these.
+        const string src = """
+            procedure Foo()
+            var
+                Window: Dialog;
+                RecRef: RecordRef;
+                XmlDoc: XmlDocument;
+            begin
+                Window.Open('Loading...');
+                RecRef.Open('Customer');
+                XmlDoc.ReadFrom('<root />');
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0,
+            because: "Dialog / RecordRef / XmlDocument are known system types");
+    }
+
+    [Fact]
+    public void Codeunit_run_as_a_builtin_static_receiver_is_skipped()
+    {
+        // `CODEUNIT.Run(Codeunit::"Sales-Post")` — CODEUNIT here is
+        // the AL runtime dispatcher, not a user variable. Same for
+        // PAGE.RunModal, REPORT.RunModal, NavApp.GetCurrentModuleInfo.
+        // The static-receiver branch walks the arg list through the
+        // main dispatch so inner typed-literals like `CODEUNIT::"X"`
+        // and inner identifiers (passed-by-reference vars) continue
+        // to walk normally.
+        const string src = """
+            procedure Foo()
+            var
+                AppInfo: ModuleInfo;
+            begin
+                CODEUNIT.Run(CODEUNIT::"Sales-Post");
+                NavApp.GetCurrentModuleInfo(AppInfo);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0,
+            because: "CODEUNIT/NavApp are built-in static receivers; AppInfo's ModuleInfo type is a known system type");
+    }
+
+    [Fact]
+    public void Record_DeleteAll_is_a_builtin_not_unresolved()
+    {
+        // `Customer.DeleteAll();` — DeleteAll is a Record built-in.
+        const string src = """
+            procedure Foo()
+            var
+                Cust: Record Customer;
+            begin
+                Cust.DeleteAll();
+                Cust.ModifyAll("Name", 'X');
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Where(r => r.ReferenceKind != "property_object")
+            .Should().BeEmpty(because: "DeleteAll and ModifyAll are Record built-ins");
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
     public void Statement_keyword_before_paren_does_not_trigger_bare_call_resolution()
     {
         // `if (X) then` and `not (X)` syntactically place a keyword before
@@ -1937,11 +2409,64 @@ public sealed class AlReferenceExtractorTests
             """;
         var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
 
-        result.References.Should().HaveCount(2);
+        // Two member calls plus a property_object ref on `Record Customer`.
+        result.References.Should().HaveCount(3);
         result.References.Should().Contain(r =>
             r.TargetMemberName == "Insert" && r.TargetObjectName == "Customer");
         result.References.Should().Contain(r =>
             r.TargetMemberName == "DoStuff" && r.TargetObjectName == "MyHelper");
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "property_object" && r.TargetObjectName == "Customer");
+    }
+
+    [Fact]
+    public void Chain_on_scalar_text_variable_does_not_bump_unresolved()
+    {
+        // `procedure RemoveShortWords(Text: Text[250]): Text[250]; var
+        //  Result: Text[250]; begin Result := CopyStr(Result.TrimEnd(), ...)`
+        // — both the parameter and the local are in scope, but their
+        // declared type "Text" is a language primitive that doesn't
+        // resolve through the AL catalog. Without Text in
+        // KnownSystemTypes every such chain bumps head-var-type-unresolved
+        // — extremely common in BC's helper procedures.
+        const string src = """
+            procedure RemoveShortWords(Text: Text[250]): Text[250];
+            var
+                Result: Text[250];
+            begin
+                Result := CopyStr(Result.TrimEnd(), 1, MaxStrLen(Result));
+                Text := Result;
+                exit(Text.Split(' '));
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0,
+            because: "Text scalar types are KnownSystemTypes; chains through them silence");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "Result" || s.Token == "Text");
+    }
+
+    [Fact]
+    public void Bare_call_of_a_record_method_name_silences_even_without_Rec()
+    {
+        // Catches mis-parsed chain calls (`SomeRec.INIT()` losing its
+        // head and surfacing as bare `INIT()`) and implicit-Rec shapes
+        // the explicit-Rec check doesn't cover. Trade-off: a real user
+        // procedure named after a Record built-in would also silence.
+        const string src = """
+            procedure DoWork()
+            begin
+                INIT();
+                Insert();
+                SetCurrentKey('No.');
+                AsInteger();
+                Trim();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0);
     }
 
     [Fact]
@@ -1990,10 +2515,14 @@ public sealed class AlReferenceExtractorTests
         var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
 
         // The chain through the parameter Cust is what gets emitted; the
-        // same-named self procedure must not.
-        result.References.Should().ContainSingle();
-        result.References[0].TargetObjectName.Should().Be("Customer");
-        result.References[0].TargetMemberName.Should().Be("Insert");
+        // same-named self procedure must not. Plus a property_object on
+        // the `Record Customer` parameter type.
+        result.References.Should().HaveCount(2);
+        result.References.Should().ContainSingle(r =>
+            r.TargetObjectName == "Customer"
+            && r.TargetMemberName == "Insert");
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "property_object" && r.TargetObjectName == "Customer");
     }
 
     [Fact]

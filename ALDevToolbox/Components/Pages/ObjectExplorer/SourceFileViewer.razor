@@ -50,11 +50,21 @@
         </header>
 
         <div class="source-viewer__layout">
+            @*
+                spellcheck="false" — AL identifiers (camelCase names,
+                quoted phrases like "Sell-to Customer Name") trigger
+                browser spellcheck's red squiggly underline, which is
+                trivially confusable with the resolvable / declaration
+                dotted underlines this viewer paints. Turning it off
+                across the whole editor surface so what you see under
+                a token is always us, never Chrome / Firefox.
+            *@
             <div class="source-viewer__code"
                  data-language="al"
                  data-content="@_file.Content"
-                 data-declarations="@SerializeDeclarations(_declarations)"
-                 data-resolvables="@SerializeResolvables(MergeDeclarationsAsResolvables(_resolvables, _declarations))"></div>
+                 data-declarations="@SerializeDeclarations(FilterNavigableDeclarations(_declarations))"
+                 data-resolvables="@SerializeResolvables(_resolvables)"
+                 spellcheck="false"></div>
 
             @* Drag handle between the editor and the outline. source-viewer.js
                wires the pointer events and persists the chosen width in
@@ -417,10 +427,12 @@
     }
 
     /// <summary>
-    /// Combines the call-site / field-access resolvables with declaration
-    /// spans so most interactive tokens in the file get the underline
-    /// affordance. Excludes <b>field</b> and <b>trigger</b> declarations
-    /// from the underline set:
+    /// Drops <b>field</b> and <b>trigger</b> declarations from the list
+    /// passed to <c>code-editor.js</c>. The declarations list drives both
+    /// <c>buildDeclarationDecorationExtensions</c> (the <c>cm-symbol-decl</c>
+    /// underline) and the right-click "Find references" routing, so
+    /// filtering at the source removes the visual noise AND stops the
+    /// menu from offering an action that returns nothing useful:
     /// <list type="bullet">
     ///   <item>A page-side field LHS (the page's own field name) is a
     ///         declaration, not a navigation target — the RHS
@@ -435,29 +447,56 @@
     /// </list>
     /// Object headers (codeunit / table / page / …) and member-symbol
     /// declarations (procedures, event publishers / subscribers, labels)
-    /// stay in the underlined set — they ARE useful navigation targets.
+    /// stay in the set — they ARE useful navigation targets.
     /// </summary>
-    private static IReadOnlyList<CodeViewerResolvable> MergeDeclarationsAsResolvables(
-        IReadOnlyList<CodeViewerResolvable>? resolvables,
+    private static IReadOnlyList<CodeViewerDeclaration> FilterNavigableDeclarations(
         IReadOnlyList<CodeViewerDeclaration>? declarations)
     {
-        var merged = new List<CodeViewerResolvable>(
-            (resolvables?.Count ?? 0) + (declarations?.Count ?? 0));
-        if (resolvables is not null) merged.AddRange(resolvables);
-        if (declarations is not null)
+        if (declarations is null || declarations.Count == 0)
+            return Array.Empty<CodeViewerDeclaration>();
+        var kept = new List<CodeViewerDeclaration>(declarations.Count);
+        foreach (var d in declarations)
         {
-            foreach (var d in declarations)
-            {
-                if (IsNonNavigableDeclarationKind(d.Kind)) continue;
-                merged.Add(new CodeViewerResolvable(d.Line, d.ColumnStart, d.ColumnEnd));
-            }
+            if (IsNonNavigableDeclaration(d.Kind, d.OwnerKind)) continue;
+            kept.Add(d);
         }
-        return merged;
+        return kept;
     }
 
-    private static bool IsNonNavigableDeclarationKind(string kind) =>
-        string.Equals(kind, "field", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(kind, "trigger", StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// Decides whether a declaration's underline + right-click "Find
+    /// references" affordance should be shown. The same kind can mean
+    /// different things depending on what kind of object holds it:
+    /// <list type="bullet">
+    ///   <item><c>field</c> on a <b>table</b> / <b>tableextension</b>
+    ///         is the canonical field declaration — a legitimate
+    ///         navigation target.</item>
+    ///   <item><c>field</c> on a <b>page</b> / <b>pageextension</b>
+    ///         / <b>report</b> / <b>requestpage</b> is a control name
+    ///         local to that surface — not a navigation target.</item>
+    ///   <item><c>action</c> only exists on pages / pageextensions, and
+    ///         the control name is page-local — never navigable.</item>
+    ///   <item><c>trigger</c> is runtime-invoked everywhere — never a
+    ///         useful Find-references target.</item>
+    /// </list>
+    /// </summary>
+    private static bool IsNonNavigableDeclaration(string kind, string? ownerKind)
+    {
+        if (string.Equals(kind, "trigger", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(kind, "action", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        if (string.Equals(kind, "field", StringComparison.OrdinalIgnoreCase))
+        {
+            // Table / tableextension field declarations ARE navigable.
+            // Everything else (page / pageextension / report / xmlport /
+            // requestpage page-control fields) is a local control name.
+            return !string.Equals(ownerKind, "table", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(ownerKind, "tableextension", StringComparison.OrdinalIgnoreCase);
+        }
+        return false;
+    }
 
     private static readonly JsonSerializerOptions DeclarationJsonOptions = new()
     {

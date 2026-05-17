@@ -50,6 +50,19 @@ public class ModuleReference
     public int? LineNumber { get; set; }
 
     /// <summary>
+    /// 1-based column of the FIRST character of the referenced token on
+    /// <see cref="LineNumber"/>. Stamped at Phase-2 extraction time from
+    /// <c>ExtractedReference.Column</c>. Lets the source viewer skip the
+    /// text-search fallback in <c>ListResolvablesInFileAsync</c> — which
+    /// otherwise lands on the leftmost occurrence and mis-underlines the
+    /// page-field DECLARATION name when the same identifier appears twice
+    /// on the line (e.g. <c>field("No."; Rec."No.")</c>). Null for legacy
+    /// rows imported before this column existed; the resolvable lookup
+    /// falls back to text-search in that case.
+    /// </summary>
+    public int? ColumnNumber { get; set; }
+
+    /// <summary>
     /// Member symbol name when the reference is scoped to a procedure / field
     /// / trigger inside the owner object (e.g. a future <c>method_call</c> or
     /// <c>field_access</c> reference_kind). Null for the existing

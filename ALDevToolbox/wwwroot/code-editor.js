@@ -414,6 +414,11 @@ export function mountReadOnly(container, value, language, options) {
             extensions: [
                 EditorView.editable.of(false),
                 EditorState.readOnly.of(true),
+                // Disable browser spellcheck on the editor content.
+                // AL identifiers ("Sell-to Customer Name" etc.) light
+                // up with red squiggles that are easy to confuse with
+                // our resolvable / declaration dotted underlines.
+                EditorView.contentAttributes.of({ spellcheck: "false" }),
                 lineNumbers(),
                 highlightSpecialChars(),
                 foldGutter(),
