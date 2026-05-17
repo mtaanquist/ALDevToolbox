@@ -101,6 +101,24 @@ public sealed class ReferenceResolver
                 "local-member");
         }
 
+        // Strategy: global-variable. The clicked token matches an
+        // object-scope global variable on the file's owner object.
+        // Catches the SalesDocCheckFactboxVisible-style click that
+        // pre-refactor fell through to "no match" because globals
+        // live in oe_module_variables, not oe_module_symbols. The
+        // position columns added by step 2 are what lets
+        // Go-to-definition land on the declaration line; this
+        // strategy is the corresponding Find-references entry
+        // point. See .design/al-reference-extractor-refactor.md
+        // step 3b.
+        var global = await TryResolveGlobalVariableAsync(ctx.FileId, ctx.Word, ct);
+        if (global is not null)
+        {
+            return new ReferenceResolution(
+                new ResolutionTarget.GlobalVariable(global.Id, global.OwnerObjectId),
+                "global-variable");
+        }
+
         return null;
     }
 
@@ -204,7 +222,28 @@ public sealed class ReferenceResolver
             .FirstOrDefaultAsync(ct);
     }
 
+    /// <summary>
+    /// Looks up an object-scope global variable named
+    /// <paramref name="word"/> on the file's owner object. Returns the
+    /// variable id plus the owner object id; the caller's session
+    /// query keys off the pair. Misses silently — globals are scoped
+    /// per object, so a name that doesn't match any global is just
+    /// a different identifier.
+    /// </summary>
+    private async Task<GlobalVarMatch?> TryResolveGlobalVariableAsync(
+        long fileId, string word, CancellationToken ct)
+    {
+        var loweredWord = word.ToLowerInvariant();
+        return await _db.OeModuleVariables.AsNoTracking()
+            .Where(v => v.Object!.SourceFileId == fileId)
+            .Where(v => v.Name.ToLower() == loweredWord)
+            .OrderBy(v => v.Id)
+            .Select(v => new GlobalVarMatch(v.Id, v.ObjectId))
+            .FirstOrDefaultAsync(ct);
+    }
+
     private sealed record DbMatch(long Id);
+    private sealed record GlobalVarMatch(long Id, long OwnerObjectId);
 }
 
 /// <summary>
@@ -243,4 +282,5 @@ public abstract record ResolutionTarget
 {
     public sealed record CatalogObject(long ObjectId) : ResolutionTarget;
     public sealed record MemberSymbol(long SymbolId) : ResolutionTarget;
+    public sealed record GlobalVariable(long VariableId, long OwnerObjectId) : ResolutionTarget;
 }

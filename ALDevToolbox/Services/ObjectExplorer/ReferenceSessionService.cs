@@ -125,6 +125,35 @@ public sealed class ReferenceSessionService
     }
 
     /// <summary>
+    /// Mints a session for an object-scope global variable click.
+    /// Today's session is empty — variable-use references land in
+    /// oe_module_references in step 6 of the refactor — but the
+    /// session is still minted so the right-click affordance
+    /// acknowledges the click instead of silently dropping it. The
+    /// matching variable's source position (added in step 2) is what
+    /// Go-to-definition uses to land on the declaration line. See
+    /// <c>.design/al-reference-extractor-refactor.md</c> step 3b.
+    /// </summary>
+    public async Task<ReferenceSession?> CreateFromGlobalVariableAsync(
+        long variableId, string ownerKey, CancellationToken ct = default)
+    {
+        var head = await _db.OeModuleVariables.AsNoTracking()
+            .Where(v => v.Id == variableId)
+            .Select(v => new
+            {
+                v.Name,
+                ReleaseId = v.Module!.ReleaseId,
+                OwnerName = v.Object!.Name,
+                OwnerKind = v.Object!.Kind,
+            })
+            .SingleOrDefaultAsync(ct);
+        if (head is null) return null;
+
+        var label = $"references to variable {head.OwnerKind} {head.OwnerName}.{head.Name}";
+        return Store(label, head.ReleaseId, Array.Empty<ReferenceMatch>(), ownerKey);
+    }
+
+    /// <summary>
     /// Mints a session by clicking position: looks up the word at
     /// (line, column) in the supplied file, then delegates the
     /// "what does this token point at?" question to
@@ -184,6 +213,11 @@ public sealed class ReferenceSessionService
                     "FindRefsAtPosition FileId={FileId} Word='{Word}' Qualifier='{Qual}' resolved-via={Reason} to SymbolId={SymbolId}.",
                     fileId, click.Word, click.LeftContext.Qualifier, resolution.Reason, member.SymbolId);
                 return await CreateFromMemberSymbolAsync(member.SymbolId, ownerKey, ct);
+            case ResolutionTarget.GlobalVariable variable:
+                _logger.LogInformation(
+                    "FindRefsAtPosition FileId={FileId} Word='{Word}' resolved-via={Reason} to VariableId={VariableId} on OwnerObjectId={OwnerObjectId}.",
+                    fileId, click.Word, resolution.Reason, variable.VariableId, variable.OwnerObjectId);
+                return await CreateFromGlobalVariableAsync(variable.VariableId, ownerKey, ct);
             default:
                 _logger.LogInformation(
                     "FindRefsAtPosition FileId={FileId} resolved to unknown target {Target}.",
