@@ -40,6 +40,8 @@ public static class AlBuiltinMethods
         "SetRange", "SetFilter", "GetFilter", "GetFilters", "ClearMarks",
         "SetCurrentKey", "SetView", "GetView", "SetPosition", "GetPosition",
         "SetAutoCalcFields", "CalcFields", "CalcSums",
+        "SetAscending", "GetAscending", "Ascending",
+        "SetSecurityFilterOnRespectiveTables",
         "CopyFilter", "CopyFilters", "FilterGroup", "HasFilter",
         "Mark", "MarkedOnly", "Marking",
         "Ascending", "IsTemporary",
@@ -231,6 +233,10 @@ public static class AlBuiltinMethods
         "HasValue", "IsValue", "IsArray", "IsObject", "IsNull",
         // Text-shape methods exposed on multiple receivers.
         "Trim", "TrimStart", "TrimEnd", "Unwrap",
+        "Split", "Replace", "Substring",
+        // Stream / blob primitives (TempBlob, File, InStream, OutStream).
+        "CreateInStream", "CreateOutStream",
+        "ReadText", "WriteText", "Read", "Write", "EOS",
     };
 
     /// <summary>
@@ -292,9 +298,13 @@ public static class AlBuiltinMethods
         "StartSession", "StopSession",
         // AL property-value constructors. Appear inside property values
         // like `TableRelation = Customer."No." where(Blocked = const(false))`
-        // or `SubPageLink = "No." = field("No.")`. They look like calls
-        // but introduce filter / constant / field-binding expressions.
-        "const", "filter", "where", "upperlimit",
+        // or `SubPageLink = "No." = field("No.")` or
+        // `SourceTableView = sorting("No.") order(ascending) where(Type = const(Item))`.
+        // They look like calls but introduce filter / constant / sort /
+        // field-binding expressions.
+        "const", "filter", "where", "upperlimit", "sorting", "order",
+        // Session / instance identifiers — AL system functions returning ints.
+        "ServiceInstanceId", "SessionId",
         // Compiler attributes that lex as `[Identifier(...)]` and
         // surface as bare-call shapes inside square brackets. Treat
         // as no-op bare callables so they don't pollute the diagnostic.
@@ -432,6 +442,18 @@ public static class AlBuiltinMethods
     /// </summary>
     public static readonly HashSet<string> KnownSystemTypes = new(StringComparer.OrdinalIgnoreCase)
     {
+        // Scalar AL types — these surface as variable types when the
+        // declared shape is `var X: Text[250]` etc. The chain walker
+        // legitimately finds them in scope but the type doesn't
+        // resolve through the catalog (they're language primitives,
+        // not AL objects). Without silencing, every chain through a
+        // Text / Integer / Decimal variable (e.g. `Result.TrimEnd()`,
+        // `MyText.Split(' ')`) shows up as head-var-type-unresolved.
+        // Length qualifiers like `[250]` are stripped before lookup so
+        // `Text[250]` matches `"Text"` here.
+        "Text", "Code", "Integer", "Decimal", "Boolean",
+        "Date", "Time", "DateTime", "Char", "Byte",
+        "BigInteger", "Real", "Option",
         // Runtime references and variants.
         "Dialog", "RecordRef", "RecordId", "FieldRef", "KeyRef",
         "Variant", "Guid", "DateFormula", "BigText",

@@ -970,6 +970,31 @@ public static class AlReferenceExtractor
                 return false;
             }
 
+            // Fallback: even when Rec isn't bound, the bare call's name
+            // might match a Record / Page / Codeunit / Common built-in
+            // method. This catches mis-parsed chain calls (e.g. the
+            // chain head got dropped earlier so `SomeRec.Insert(...)`
+            // surfaces as bare `Insert(...)`), Rec-method shorthand in
+            // contexts the explicit Rec check doesn't cover, and
+            // text/variant-method bare uses (`Trim`, `Unwrap`,
+            // `HasValue`, `AsInteger`). False-positive risk is a real
+            // user procedure named after a built-in — vanishingly rare
+            // in BC's corpus since the name would shadow the built-in.
+            if (AlBuiltinMethods.RecordMethods.Contains(name)
+                || AlBuiltinMethods.RecordSystemFields.Contains(name)
+                || AlBuiltinMethods.CodeunitMethods.Contains(name)
+                || AlBuiltinMethods.PageMethods.Contains(name)
+                || AlBuiltinMethods.ReportMethods.Contains(name)
+                || AlBuiltinMethods.XmlportMethods.Contains(name)
+                || AlBuiltinMethods.QueryMethods.Contains(name)
+                || AlBuiltinMethods.CommonMethods.Contains(name)
+                || AlBuiltinMethods.TextMethods.Contains(name)
+                || AlBuiltinMethods.CollectionMethods.Contains(name)
+                || AlBuiltinMethods.JsonMethods.Contains(name))
+            {
+                return false;
+            }
+
             // In-scope variable? AL doesn't allow calling a variable as
             // a function — if the name is in scope we treat it as
             // referenced and just advance past.

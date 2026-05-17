@@ -2263,6 +2263,56 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Chain_on_scalar_text_variable_does_not_bump_unresolved()
+    {
+        // `procedure RemoveShortWords(Text: Text[250]): Text[250]; var
+        //  Result: Text[250]; begin Result := CopyStr(Result.TrimEnd(), ...)`
+        // — both the parameter and the local are in scope, but their
+        // declared type "Text" is a language primitive that doesn't
+        // resolve through the AL catalog. Without Text in
+        // KnownSystemTypes every such chain bumps head-var-type-unresolved
+        // — extremely common in BC's helper procedures.
+        const string src = """
+            procedure RemoveShortWords(Text: Text[250]): Text[250];
+            var
+                Result: Text[250];
+            begin
+                Result := CopyStr(Result.TrimEnd(), 1, MaxStrLen(Result));
+                Text := Result;
+                exit(Text.Split(' '));
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0,
+            because: "Text scalar types are KnownSystemTypes; chains through them silence");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "Result" || s.Token == "Text");
+    }
+
+    [Fact]
+    public void Bare_call_of_a_record_method_name_silences_even_without_Rec()
+    {
+        // Catches mis-parsed chain calls (`SomeRec.INIT()` losing its
+        // head and surfacing as bare `INIT()`) and implicit-Rec shapes
+        // the explicit-Rec check doesn't cover. Trade-off: a real user
+        // procedure named after a Record built-in would also silence.
+        const string src = """
+            procedure DoWork()
+            begin
+                INIT();
+                Insert();
+                SetCurrentKey('No.');
+                AsInteger();
+                Trim();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
     public void Bare_self_call_inside_a_system_function_argument_still_resolves()
     {
         // The system-function filter must NOT consume the argument list —
