@@ -11,9 +11,22 @@ namespace ALDevToolbox.Services.Al;
 /// <c>JObject.Add(...)</c>, <c>SomeText.Contains(...)</c> are quietly
 /// skipped instead of inflating the unresolved counter.
 ///
-/// Coverage is the everyday-AL subset; the canonical source is
-/// <see href="https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/library"/>
-/// — extend this list when a real-world import logs an unresolved
+/// Coverage is the everyday-AL subset. Two canonical references for
+/// future updates:
+/// <list type="bullet">
+///   <item>Microsoft's "Methods (Auto)" library reference at
+///     <see href="https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/developer/methods-auto/library"/>
+///     — authoritative for every receiver-typed method (Record /
+///     Codeunit / Page / Text / Json / …).</item>
+///   <item>The AL VS Code extension's highlight grammar at
+///     <see href="https://github.com/microsoft/AL/blob/master/highlightjs_al/src/al.js"/>
+///     — flat lists for type identifiers (<c>BUILTIN_TYPES_KEYWORDS</c>),
+///     statement / operator keywords (<c>NORMAL_KEYWORDS</c>,
+///     <c>OPERATOR_KEYWORDS</c>, <c>LITERAL_KEYWORDS</c>) and DSL
+///     keywords inside object bodies (<c>METADATA_KEYWORDS</c>).
+///     Cross-referenced when bulk-updating the sets below.</item>
+/// </list>
+/// Extend this list when a real-world import logs an unresolved
 /// receiver that's actually a built-in we missed.
 ///
 /// <para><b>EXTENDING WHEN MICROSOFT ADDS NEW METHODS / TYPES:</b></para>
@@ -391,7 +404,7 @@ public static class AlBuiltinMethods
         "action", "actionref", "customaction", "actiongroup",
         "systemaction",
         // Pageextensions: layout / action manipulators.
-        "modify", "addafter", "addbefore", "addlast", "addfirst",
+        "modify", "add", "addafter", "addbefore", "addlast", "addfirst",
         "movefirst", "movebefore", "moveafter", "movelast",
         "addchange",
         // Tables / tableextensions: structure.
@@ -480,6 +493,15 @@ public static class AlBuiltinMethods
     /// can't be resolved through our catalog, so silence the
     /// diagnostic.
     /// </summary>
+    /// <para>Canonical reference: the AL extension's highlight-grammar
+    /// keeps the full list of built-in type identifiers at
+    /// <see href="https://github.com/microsoft/AL/blob/master/highlightjs_al/src/al.js"/>
+    /// (search for <c>BUILTIN_TYPES_KEYWORDS</c>). When that list
+    /// grows in a new BC release, mirror the new entries below.
+    /// Note: AL object kind keywords (codeunit, page, table, …) live
+    /// in <c>AlReferenceExtractor.IsAlObjectKeyword</c> instead — those
+    /// belong to variables whose type names resolve through the
+    /// catalog, not to be silenced here.</para>
     public static readonly HashSet<string> KnownSystemTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         // Scalar AL types — these surface as variable types when the
@@ -494,6 +516,8 @@ public static class AlBuiltinMethods
         "Text", "Code", "Integer", "Decimal", "Boolean",
         "Date", "Time", "DateTime", "Char", "Byte",
         "BigInteger", "Real", "Option",
+        // String-constant scalars.
+        "Label", "TextConst", "Blob",
         // Runtime references and variants.
         "Dialog", "RecordRef", "RecordId", "FieldRef", "KeyRef",
         "Variant", "Guid", "DateFormula", "BigText",
@@ -507,8 +531,8 @@ public static class AlBuiltinMethods
         "XmlDocument", "XmlElement", "XmlNode", "XmlNodeList",
         "XmlAttribute", "XmlAttributeCollection", "XmlComment",
         "XmlText", "XmlCData", "XmlDeclaration", "XmlDocumentType",
-        "XmlNamespaceManager", "XmlReadOptions", "XmlWriteOptions",
-        "XmlProcessingInstruction",
+        "XmlNamespaceManager", "XmlNameTable", "XmlReadOptions",
+        "XmlWriteOptions", "XmlProcessingInstruction",
         "JsonObject", "JsonArray", "JsonValue", "JsonToken",
         // I/O.
         "InStream", "OutStream", "File", "TempBlob",
@@ -518,15 +542,36 @@ public static class AlBuiltinMethods
         // App metadata.
         "ModuleInfo", "ModuleDependencyInfo",
         // .NET interop.
-        "DotNet",
+        "DotNet", "DotNetAssembly", "DotNetTypeDeclaration",
+        "Automation",
         // Generic collections (built-in generics).
         "List", "Dictionary",
         // Encoding / text / cryptography.
         "TextEncoding", "Encoding", "TextBuilder", "StringBuilder",
         "Base64Convert", "CryptographyManagement",
+        // Notification primitives.
+        "Notification", "NotificationScope",
+        // Filter / view / record-level primitives.
+        "FilterPageBuilder", "TableFilter", "SecurityFilter",
+        "View", "Views", "AnalysisView", "AnalysisViews",
+        // Enum-shaped runtime primitives — variables typed against
+        // these legitimately surface as in-scope but can't resolve to
+        // an AL object. List mirrors the AL extension's
+        // BUILTIN_TYPES_KEYWORDS (see class doc-comment).
+        "ClientType", "ConnectionType", "DataClassification",
+        "DataScope", "DefaultLayout", "ErrorType",
+        "ExecutionContext", "ExecutionMode", "FieldClass",
+        "FieldType", "Joker", "ObjectType", "PageResult",
+        "SecurityFiltering", "SessionSettings",
+        "TableConnectionType", "TransactionModel", "TransactionType",
+        "Verbosity", "WebServiceActionResultCode",
+        // Test-scaffolding receivers.
+        "TestAction", "TestField", "TestFilterField",
+        "TestPermissions",
+        // Page / chart parts.
+        "ChartPart",
         // Misc primitives.
-        "Version", "Duration",
-        "ErrorInfo", "Notification", "FilterPageBuilder",
+        "Version", "Duration", "ErrorInfo",
     };
 
     /// <summary>
@@ -555,10 +600,14 @@ public static class AlBuiltinMethods
         "case", "of",
         "with",
         "begin", "end",
-        "exit", "return",
+        "exit", "return", "break",
+        // Assertion / error-trap operators.
+        "asserterror",
         // Declarations (defensive — the scope walker skips most of these,
         // but parametrised attributes can land here too).
-        "var", "procedure", "trigger",
+        "var", "procedure", "trigger", "event",
+        // Procedure / variable modifiers.
+        "local", "internal", "protected", "temporary",
         // Operators that take a parenthesised expression.
         "not", "and", "or", "xor", "mod", "div",
         // Literal-shaped keywords AL exposes.
