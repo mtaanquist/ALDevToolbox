@@ -49,6 +49,22 @@ public static class AlSymbolExtractor
         @"^\s*action\s*\(\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*\)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // Query column / filter declaration: `column(Sum_Remaining_Amt_LCY;
+    // "Remaining Amt. (LCY)")` and `filter(Document_Type; "Document Type")`
+    // inside a `query`'s `dataitem` block. Surfaces as a member of the
+    // query type so `MyQuery.Sum_Remaining_Amt_LCY` chains through the
+    // resolver instead of stranding as a chain-step unresolved. The
+    // source is always a single bare or quoted field name on the
+    // surrounding dataitem's record — the simpler quoted-or-bare shape
+    // for `expr` lets quoted identifiers carrying parens (like
+    // <c>"Remaining Amt. (LCY)"</c>) round-trip correctly. Reports also
+    // use `column(...)` with similar shape; we deliberately skip those
+    // for now because nothing in the imported corpus accesses report
+    // columns as chain members.
+    private static readonly Regex QueryColumnDeclarationRegex = new(
+        @"^\s*(?:column|filter)\s*\(\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*;\s*(?<expr>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*\)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     // The object-header declaration line: `table 36 "Sales Header"`,
     // `codeunit 80 "Sales-Post"`, `tableextension 7300 "ItemExt" extends "Item"`
     // etc. We only care about the *primary* object name (not the `extends`
@@ -122,6 +138,7 @@ public static class AlSymbolExtractor
         var inBlockComment = false;
         var pendingEventKind = (string?)null; // "publisher" / "subscriber" / null
         var objectDeclEmitted = false;
+        var ownerKind = (string?)null; // populated from the object header so per-kind regexes can scope themselves
 
         for (var i = 0; i < lines.Length; i++)
         {
@@ -157,6 +174,7 @@ public static class AlSymbolExtractor
                         ColumnStart: objColStart,
                         ColumnEnd: objColEnd));
                     objectDeclEmitted = true;
+                    ownerKind = objMatch.Groups["type"].Value.ToLowerInvariant();
                     continue;
                 }
             }
@@ -213,6 +231,34 @@ public static class AlSymbolExtractor
                     ColumnEnd: fColEnd));
                 pendingEventKind = null;
                 continue;
+            }
+
+            // Query column / filter declarations. Owner-kind gated so a
+            // hypothetical `column(...)` outside a query body doesn't
+            // accidentally consume the line. Emitted as `query_column`
+            // so the chain walker resolves `MyQuery.ColumnName` against
+            // these rows. (See .design/al-reference-extractor-refactor.md
+            // step 1.)
+            if (string.Equals(ownerKind, "query", StringComparison.OrdinalIgnoreCase))
+            {
+                var queryColMatch = QueryColumnDeclarationRegex.Match(stripped);
+                if (queryColMatch.Success)
+                {
+                    var colRawName = queryColMatch.Groups["name"].Value;
+                    var colName = Unquote(colRawName);
+                    var colExpr = queryColMatch.Groups["expr"].Value.Trim();
+                    var (qColStart, qColEnd) = FindNameColumns(rawLine, colRawName);
+                    results.Add(new AlSymbol(
+                        Kind: "query_column",
+                        Name: colName,
+                        Signature: string.IsNullOrEmpty(colExpr) ? null : colExpr,
+                        FieldId: null,
+                        LineNumber: i + 1,
+                        ColumnStart: qColStart,
+                        ColumnEnd: qColEnd));
+                    pendingEventKind = null;
+                    continue;
+                }
             }
 
             var pageFieldMatch = PageFieldDeclarationRegex.Match(stripped);

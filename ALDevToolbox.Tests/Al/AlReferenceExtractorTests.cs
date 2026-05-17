@@ -2418,6 +2418,44 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Query_column_access_resolves_when_the_column_is_a_catalog_member()
+    {
+        // `MyQuery.Sum_Remaining_Amt_LCY` on a query-typed receiver
+        // resolves once query_column rows are catalogued — they're
+        // declared inside the query's `column(Name; Source)` shape
+        // and persisted by the source extractor.
+        var resolver = MakeResolver();
+        var queryRef = new AlTypeRef(BaseAppId, "query", 21, "Cust. Ledg. Entry Remain. Amt.");
+        resolver.AddType("Cust. Ledg. Entry Remain. Amt.", queryRef);
+        resolver.AddMember(queryRef.Name, new AlMember(
+            Name: "Sum_Remaining_Amt_LCY",
+            Kind: "query_column",
+            ReturnTypeKeyword: null,
+            ReturnTypeName: null));
+        const string src = """
+            procedure ReadTotal(): Decimal
+            var
+                CustLedgEntryRemainAmt: Query "Cust. Ledg. Entry Remain. Amt.";
+                TotalAmount: Decimal;
+            begin
+                CustLedgEntryRemainAmt.Open();
+                if CustLedgEntryRemainAmt.Read() then
+                    TotalAmount := CustLedgEntryRemainAmt.Sum_Remaining_Amt_LCY;
+                exit(TotalAmount);
+            end;
+            """;
+
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0,
+            because: "Open / Read are query built-ins; Sum_Remaining_Amt_LCY is a catalogued query_column");
+        result.References.Should().Contain(r =>
+            r.TargetObjectKind == "query"
+            && r.TargetObjectName == "Cust. Ledg. Entry Remain. Amt."
+            && r.TargetMemberName == "Sum_Remaining_Amt_LCY");
+    }
+
+    [Fact]
     public void Record_DeleteAll_is_a_builtin_not_unresolved()
     {
         // `Customer.DeleteAll();` — DeleteAll is a Record built-in.
