@@ -105,6 +105,37 @@ public sealed class AppPackageReaderTests
     }
 
     [Fact]
+    public void ParseExtendsRef_returns_bare_name_when_no_appid_wrapper()
+    {
+        // Real-world repro: ReportExtensions in Microsoft_DK_Core.app
+        // ship `Target = "Cancel FA Ledger Entries"` with no
+        // `#appid#` wrapper. Same shape shows up on same-app
+        // TableExtensions (e.g. `tableextension "Mfg. Location"
+        // extends Location` inside Base App). The chain walker keys
+        // `_extensionsByBaseName` by name only, so losing the AppId
+        // is fine — losing the name strands the extension's fields
+        // and methods as unresolved chain-steps.
+        var (appId, name) = AppPackageReader.ParseExtendsRef("Cancel FA Ledger Entries");
+
+        appId.Should().BeNull();
+        name.Should().Be("Cancel FA Ledger Entries");
+    }
+
+    [Fact]
+    public void ParseExtendsRef_strips_namespace_from_unwrapped_qualified_target()
+    {
+        // A same-app TableExtension can also ship its target as a
+        // bare namespace-qualified name (no `#appid#` wrapper). Strip
+        // the namespace so the extension-walk key matches the base
+        // object's unqualified `Name`.
+        var (appId, name) = AppPackageReader.ParseExtendsRef(
+            "Microsoft.Inventory.Location.Location");
+
+        appId.Should().BeNull();
+        name.Should().Be("Location");
+    }
+
+    [Fact]
     public async Task ReadAsync_resolves_cross_module_variable_subtypes()
     {
         await using var stream = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
