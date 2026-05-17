@@ -1157,6 +1157,13 @@ public static class AlReferenceExtractor
             {
                 return TryConsumePermissions();
             }
+            if (string.Equals(name, "AccessByPermission", StringComparison.OrdinalIgnoreCase))
+            {
+                // Same `tabledata "Name" = <rights>` value shape as
+                // Permissions, just on a per-action / per-control
+                // property instead of an object-level one.
+                return TryConsumePermissions();
+            }
             if (string.Equals(name, "CalcFormula", StringComparison.OrdinalIgnoreCase))
             {
                 return TryConsumeCalcFormula();
