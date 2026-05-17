@@ -47,10 +47,20 @@
       "TargetObjectName": "Customer",
       "TargetMemberKind": "procedure",
       "TargetMemberName": "Validate"
+    },
+    {
+      "Line": 28,
+      "Column": 43,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Name"
     }
   ],
   "Stats": {
-    "ResolvedReferences": 5,
+    "ResolvedReferences": 6,
     "UnresolvedReceivers": 0,
     "UnresolvedSamples": []
   }

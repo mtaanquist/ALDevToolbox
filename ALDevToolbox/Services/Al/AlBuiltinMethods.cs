@@ -134,6 +134,39 @@ public static class AlBuiltinMethods
     /// in <c>oe_module_symbols</c> but a <c>Cust."SystemId"</c> access
     /// shouldn't count as unresolved.
     /// </summary>
+    /// <summary>
+    /// Subset of <see cref="RecordMethods"/> that takes one or more
+    /// field-name arguments (as bare or quoted identifiers, e.g.
+    /// <c>Rec.SetRange("No.", '...')</c> or
+    /// <c>Item.FieldNo("Qty. on Assembly Order")</c>). When the chain
+    /// walker sees one of these called on a record receiver, it sets
+    /// <see cref="AlExtractionState.CurrentFieldReceiver"/> for the
+    /// duration of the parens so bare identifiers inside resolve as
+    /// field accesses on that receiver — otherwise they'd fall
+    /// through to no-emit (no chain head, no Rec in scope for a
+    /// codeunit, etc.) and Find references on a tableextension-
+    /// declared field wouldn't pick them up.
+    ///
+    /// Some entries here (<c>CalcFields</c>) take MULTIPLE field
+    /// names; the field-receiver context applies to the whole arg
+    /// list, not just the first arg. False positives only fire if a
+    /// non-field arg happens to lex as an identifier matching a
+    /// field name on the receiver — vanishingly rare in practice and
+    /// always silenced by the catalog lookup miss when it doesn't.
+    /// </summary>
+    public static readonly HashSet<string> FieldNameTakingMethods = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Validate", "ValidateAll",
+        "SetRange", "SetFilter",
+        "FieldNo", "FieldName", "FieldCaption",
+        "FieldExists", "FieldActive", "FieldError",
+        "TestField",
+        "CalcFields", "CalcSums",
+        "SetCurrentKey", "SetAscending",
+        "GetFilter", "GetFilters", "GetRangeMin", "GetRangeMax",
+        "AddLoadFields", "SetLoadFields",
+    };
+
     public static readonly HashSet<string> RecordSystemFields = new(StringComparer.OrdinalIgnoreCase)
     {
         "SystemId",

@@ -55,6 +55,17 @@ internal static class SnapshotCatalog
         r.AddMember("Item", new AlMember("No.", "table_field",null, null));
         r.AddMember("Item", new AlMember("Description", "table_field",null, null));
 
+        // Tableextension on Item mirroring BC's `Asm. Item` shape:
+        // adds Assembly-related flow fields to the base Item table.
+        // Used by the snapshot fixture that exercises extension-walk
+        // field resolution (`Item."Qty. on Assembly Order"` should
+        // resolve through _extensionsByBaseName).
+        r.AddType("Asm. Item",
+            new AlTypeRef(OwnerAppId, "tableextension", 905, "Asm. Item"));
+        r.AddMember("Asm. Item", new AlMember("Qty. on Assembly Order", "table_field", null, null));
+        r.AddMember("Asm. Item", new AlMember("Qty. on Asm. Component", "table_field", null, null));
+        r.AddExtensionOf("Item", "Asm. Item");
+
         // Tables used by query / report fixtures to exercise the
         // dataitem-alias registration path (see AlDataItemDsl).
         r.AddType("Vendor", new AlTypeRef(OwnerAppId, "table", 23, "Vendor"));
@@ -92,6 +103,8 @@ internal static class SnapshotCatalog
             new AlTypeRef(OwnerAppId, "codeunit", 50003, "Namespaced Type Sample"));
         r.AddType("Namespaced Typed Literal",
             new AlTypeRef(OwnerAppId, "codeunit", 50004, "Namespaced Typed Literal"));
+        r.AddType("Tableext Field Access",
+            new AlTypeRef(OwnerAppId, "codeunit", 50005, "Tableext Field Access"));
         // Table referenced by the namespaced typed-literal fixture
         // (`Database::Microsoft.Assembly.Document."Assembly Header"`).
         r.AddType("Assembly Header",
@@ -120,6 +133,12 @@ internal static class SnapshotCatalog
         private readonly Dictionary<string, AlTypeRef> _types = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, List<AlMember>> _members = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, string> _sourceTables = new(StringComparer.OrdinalIgnoreCase);
+        // baseName → list of extension type names targeting it. Mirrors
+        // the production CatalogResolver's _extensionsByBaseName walk so
+        // fixtures that exercise tableextension / pageextension member
+        // lookup behave the same way an imported BC release would.
+        private readonly Dictionary<string, List<string>> _extensionsByBase =
+            new(StringComparer.OrdinalIgnoreCase);
 
         public void AddType(string name, AlTypeRef type) => _types[name] = type;
 
@@ -136,14 +155,45 @@ internal static class SnapshotCatalog
         public void AddSourceTable(string objectName, string sourceTable) =>
             _sourceTables[objectName] = sourceTable;
 
+        public void AddExtensionOf(string baseName, string extensionName)
+        {
+            if (!_extensionsByBase.TryGetValue(baseName, out var list))
+            {
+                list = new List<string>();
+                _extensionsByBase[baseName] = list;
+            }
+            list.Add(extensionName);
+        }
+
         public AlTypeRef? ResolveTypeByName(string typeName, string? expectedKeyword = null) =>
             _types.TryGetValue(typeName, out var t) ? t : null;
 
         public AlMember? ResolveMember(AlTypeRef owner, string memberName)
         {
-            if (!_members.TryGetValue(owner.Name, out var list)) return null;
-            return list.FirstOrDefault(m =>
-                string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
+            // Owner's own members win — same shadow semantics as the
+            // production CatalogResolver.
+            if (_members.TryGetValue(owner.Name, out var ownList))
+            {
+                var direct = ownList.FirstOrDefault(m =>
+                    string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
+                if (direct is not null) return direct;
+            }
+
+            // Walk visible extensions.
+            if (_extensionsByBase.TryGetValue(owner.Name, out var extensions))
+            {
+                foreach (var extName in extensions)
+                {
+                    if (!_members.TryGetValue(extName, out var extList)) continue;
+                    var match = extList.FirstOrDefault(m =>
+                        string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
+                    if (match is null) continue;
+                    _types.TryGetValue(extName, out var extType);
+                    return match with { DeclaringType = extType };
+                }
+            }
+
+            return null;
         }
 
         public string? ResolveSourceTableName(AlTypeRef target) =>

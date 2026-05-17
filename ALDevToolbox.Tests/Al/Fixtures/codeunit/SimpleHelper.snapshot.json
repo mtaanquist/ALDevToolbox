@@ -37,6 +37,16 @@
       "TargetMemberName": "Validate"
     },
     {
+      "Line": 9,
+      "Column": 30,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 36,
+      "TargetObjectName": "Sales Header",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Sell-to Customer No."
+    },
+    {
       "Line": 10,
       "Column": 19,
       "ReferenceKind": "method_call",
@@ -75,6 +85,16 @@
       "TargetMemberName": "Validate"
     },
     {
+      "Line": 19,
+      "Column": 27,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Name"
+    },
+    {
       "Line": 20,
       "Column": 18,
       "ReferenceKind": "method_call",
@@ -86,7 +106,7 @@
     }
   ],
   "Stats": {
-    "ResolvedReferences": 9,
+    "ResolvedReferences": 11,
     "UnresolvedReceivers": 0,
     "UnresolvedSamples": []
   }

@@ -43,6 +43,21 @@ internal sealed class AlExtractionState
     public AlTypeRef? RecTypeCache;
     public bool RecTypeResolved;
 
+    /// <summary>
+    /// Receiver context for the bare field-name arguments inside a
+    /// record built-in method's parens — e.g. inside
+    /// <c>Item.Validate("Qty. on Assembly Order", 0)</c> this is set
+    /// to the Item table for the duration of the parens so the bare
+    /// quoted identifier <c>"Qty. on Assembly Order"</c> resolves as
+    /// a <c>field_access</c> on Item (which then walks the extension
+    /// chain to Asm. Item if needed). Saved + restored at the call
+    /// boundary, so nested chains like
+    /// <c>OuterRec.Validate(OtherRec.FieldNo("X"), 0)</c> get the
+    /// right per-call receiver. Null when not inside such a call —
+    /// the dispatch hook silently no-ops.
+    /// </summary>
+    public AlTypeRef? CurrentFieldReceiver;
+
     public AlExtractionState(List<AlToken> tokens, AlExtractContext ctx)
     {
         Tokens = tokens;
@@ -975,7 +990,7 @@ internal sealed class AlProcedureWalker
                     // contain references that need to surface.
                     // Walk inside the parens via the same dispatch
                     // path the main loop uses.
-                    if (followedByParen) WalkBalancedParens();
+                    if (followedByParen) WalkArgsForBuiltin(receiverType, memberTok.Value);
                     return;
                 }
                 // Synthesised platform virtual tables (Record Field,
@@ -1022,17 +1037,45 @@ internal sealed class AlProcedureWalker
             // declared type for a field). Stop the chain when the
             // member yields a non-record/non-object type or when
             // we can't resolve the next type.
+            var preAdvanceReceiver = receiverType;
             receiverType = AdvanceReceiverByMember(member);
 
             // Walk the method call's argument list so references
             // embedded in the args (`Rec.Validate("X", Y.Z)` —
             // both the bare quoted "X" and the chained Y.Z) emit
-            // their refs. Was SkipBalancedParens previously, which
-            // silently dropped every arg-side reference. Pos
-            // lands past the matching `)` on return; the outer
-            // while loop's At(".") check then handles any chain
-            // continuation that follows.
-            if (followedByParen) WalkBalancedParens();
+            // their refs. Pos lands past the matching `)` on
+            // return; the outer while loop's At(".") check then
+            // handles any chain continuation that follows.
+            if (followedByParen) WalkArgsForBuiltin(preAdvanceReceiver, memberTok.Value);
+        }
+    }
+
+    /// <summary>
+    /// Walks a method call's argument list, with bonus context: when
+    /// the called method takes field-name arguments (Validate /
+    /// SetRange / FieldNo / CalcFields / …), set
+    /// <see cref="AlExtractionState.CurrentFieldReceiver"/> to the
+    /// receiver for the duration of the parens so the bare-arg
+    /// dispatch hook can resolve identifiers as field accesses on
+    /// it. Properly nests: a nested call inside (like
+    /// <c>OuterRec.Validate(InnerRec.FieldNo("X"), 0)</c>) saves and
+    /// restores the slot so the inner call sees its own receiver,
+    /// not the outer's.
+    /// </summary>
+    private void WalkArgsForBuiltin(AlTypeRef receiver, string methodName)
+    {
+        var saved = _state.CurrentFieldReceiver;
+        _state.CurrentFieldReceiver =
+            AlBuiltinMethods.FieldNameTakingMethods.Contains(methodName)
+                ? receiver
+                : null;
+        try
+        {
+            WalkBalancedParens();
+        }
+        finally
+        {
+            _state.CurrentFieldReceiver = saved;
         }
     }
 
@@ -1540,6 +1583,56 @@ internal sealed class AlProcedureWalker
             TargetMemberName: name,
             TargetMemberKind: "global_variable",
             ReferenceKind: "variable_use"));
+        _state.Resolved++;
+        _state.Pos++;
+        return true;
+    }
+
+    /// <summary>
+    /// Resolves a bare identifier (typically quoted) as a field
+    /// access on the current field-receiver context — set by
+    /// <see cref="WalkArgsForBuiltin"/> while walking the arg list of
+    /// a record built-in that takes field names (Validate / SetRange
+    /// / FieldNo / CalcFields / …). Without this hook, inside
+    /// <c>Item.FieldNo("Qty. on Assembly Order")</c> the bare quoted
+    /// id <c>"Qty. on Assembly Order"</c> would fall through every
+    /// dispatch (no chain head, no Rec for a codeunit owner, no
+    /// matching scope variable) and no field_access reference would
+    /// emit — Find references on the field's declaration row (often
+    /// on a tableextension like <c>Asm. Item</c>) would miss the
+    /// call. Returns true when consumed; false to fall through.
+    ///
+    /// Skips when the identifier matches a local / parameter /
+    /// global variable in scope — AL's resolution prefers variable
+    /// values over field-name string-coercion in those positions.
+    /// </summary>
+    public bool TryResolveFieldReceiverContext(AlToken tok)
+    {
+        var receiver = _state.CurrentFieldReceiver;
+        if (receiver is null) return false;
+
+        var name = tok.Value;
+        var key = name.ToLowerInvariant();
+        foreach (var frame in _state.ScopeStack)
+        {
+            if (frame.Vars.ContainsKey(key)) return false;
+        }
+
+        var member = _state.Ctx.Resolver.ResolveMember(receiver, name);
+        if (member is null) return false;
+        if (!AlExtractionState.IsFieldKind(member.Kind)) return false;
+
+        var targetOwner = member.DeclaringType ?? receiver;
+        _state.Refs.Add(new ExtractedReference(
+            Line: tok.Line,
+            Column: tok.Column,
+            TargetAppId: targetOwner.AppId,
+            TargetObjectKind: targetOwner.Kind,
+            TargetObjectId: targetOwner.ObjectId,
+            TargetObjectName: targetOwner.Name,
+            TargetMemberName: member.Name,
+            TargetMemberKind: member.Kind,
+            ReferenceKind: "field_access"));
         _state.Resolved++;
         _state.Pos++;
         return true;

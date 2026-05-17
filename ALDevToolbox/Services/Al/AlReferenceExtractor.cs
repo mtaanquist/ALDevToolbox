@@ -261,6 +261,20 @@ public static class AlReferenceExtractor
                     if (_procedureWalker.TryConsumeGlobalVariableUse()) return;
                 }
 
+                // Bare quoted-or-unquoted identifier inside the parens
+                // of a record built-in that takes a field name (e.g.
+                // `Item.FieldNo("Qty. on Assembly Order")`). The chain
+                // walker sets CurrentFieldReceiver to the call's
+                // receiver for the duration of those parens; this
+                // hook emits field_access against it. No-op when not
+                // in such a context.
+                if (_state.ScopeStack.Count > 1
+                    && (tok.Kind == AlTokenKind.Identifier
+                        || tok.Kind == AlTokenKind.QuotedIdentifier))
+                {
+                    if (_procedureWalker.TryResolveFieldReceiverContext(tok)) return;
+                }
+
                 // Object-scope property: `Identifier = Value;`. Per-kind
                 // extractor gets first chance (e.g. AlPageStructure
                 // claims SubPageLink / RunPageLink to resolve cross-page
