@@ -905,10 +905,29 @@ internal sealed class AlProcedureWalker
             return;
         }
 
-        // Now walk `.member.member…` from the typed receiver.
-        // A bare `Codeunit::"Sales-Post"` with no following `.` is
-        // a typed value (e.g. passed as a parameter). No reference
-        // to emit — we still consumed the head.
+        // Emit a property_object reference at the typed-literal's
+        // name token. Gives Find references / Go-to-definition / the
+        // underline on `Codeunit::"Sales-Post"`, `Page::"Customer Card"`,
+        // and `Database::Microsoft.Assembly.Document."Assembly Header"`
+        // — same shape RunObject / SourceTable property values already
+        // emit. Fires regardless of whether the typed literal is
+        // standalone (`Database::"Foo"` as a parameter) or precedes
+        // a chain (`Codeunit::"Sales-Post".Run(...)`); the
+        // method_call on the chained `.Run` emits separately via
+        // WalkMemberChain below.
+        _state.Refs.Add(new ExtractedReference(
+            Line: nameTok.Line,
+            Column: nameTok.Column,
+            TargetAppId: receiverType.AppId,
+            TargetObjectKind: receiverType.Kind,
+            TargetObjectId: receiverType.ObjectId,
+            TargetObjectName: receiverType.Name,
+            TargetMemberName: null,
+            TargetMemberKind: null,
+            ReferenceKind: "property_object"));
+        _state.Resolved++;
+
+        // Walk `.member.member…` from the typed receiver, if any.
         WalkMemberChain(receiverType);
     }
 

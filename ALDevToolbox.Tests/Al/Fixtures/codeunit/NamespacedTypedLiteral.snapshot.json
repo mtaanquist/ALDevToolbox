@@ -9,6 +9,22 @@
       "TargetObjectName": "Assembly Header"
     },
     {
+      "Line": 8,
+      "Column": 58,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 36,
+      "TargetObjectName": "Assembly Header"
+    },
+    {
+      "Line": 9,
+      "Column": 19,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "codeunit",
+      "TargetObjectId": 80,
+      "TargetObjectName": "Sales-Post"
+    },
+    {
       "Line": 9,
       "Column": 32,
       "ReferenceKind": "method_call",
@@ -20,7 +36,7 @@
     }
   ],
   "Stats": {
-    "ResolvedReferences": 2,
+    "ResolvedReferences": 4,
     "UnresolvedReceivers": 0,
     "UnresolvedSamples": []
   }
