@@ -16,6 +16,46 @@ namespace ALDevToolbox.Services.Al;
 /// — extend this list when a real-world import logs an unresolved
 /// receiver that's actually a built-in we missed.
 ///
+/// <para><b>EXTENDING WHEN MICROSOFT ADDS NEW METHODS / TYPES:</b></para>
+/// <list type="bullet">
+///   <item><b>New method on a Record</b> (`Customer.NewMethod()`)
+///     → add to <see cref="RecordMethods"/>.</item>
+///   <item><b>New system field on Record</b> (`Rec.SystemSomething`)
+///     → add to <see cref="RecordSystemFields"/>.</item>
+///   <item><b>New method on Codeunit / Page / Report / Xmlport /
+///     Query receivers</b> → add to the matching `XxxMethods` set
+///     below; the kind-dispatch in <see cref="IsBuiltin"/> already
+///     covers every AL object kind.</item>
+///   <item><b>New method on Text / List / Dictionary / Json</b>
+///     → add to <see cref="TextMethods"/> / <see cref="CollectionMethods"/>
+///     / <see cref="JsonMethods"/>.</item>
+///   <item><b>Method exposed on multiple receivers</b>
+///     (`.AsInteger()`, `.HasValue()`, `.Trim()`) → add to
+///     <see cref="CommonMethods"/>; checked regardless of receiver.</item>
+///   <item><b>New AL system function callable with no receiver</b>
+///     (`Message(...)`, `StrSubstNo(...)`, the AL `[Attribute]`-style
+///     keywords) → add to <see cref="BareCallableFunctions"/>.</item>
+///   <item><b>New AL statement / operator keyword that lexes as an
+///     identifier</b> (`if`, `not`, `xor`) → add to
+///     <see cref="StatementKeywords"/>.</item>
+///   <item><b>New AL declarative-DSL keyword inside an object body</b>
+///     (`area`, `group`, `field`, `value`, page/table layout
+///     constructs) → add to <see cref="ObjectDslKeywords"/>.</item>
+///   <item><b>New AL built-in static API receiver</b>
+///     (`CODEUNIT.Run(...)`, `Session.X(...)`, `XmlDocument.Create()`)
+///     → add to <see cref="BuiltinStaticReceivers"/>.</item>
+///   <item><b>New AL runtime type that variables can be declared
+///     as</b> (`Dialog`, `RecordRef`, `HttpClient`, new scalar like
+///     `Text` / `Decimal`) → add to <see cref="KnownSystemTypes"/>
+///     so chains through variables of that type silence cleanly.</item>
+/// </list>
+///
+/// <para>BC platform virtual-table ids and names live in a separate
+/// list at <c>ReleaseImportService.PlatformVirtualTables</c> — the
+/// chain-walker also has a <c>IsPlatformVirtualTableId</c> range
+/// check (2000000000..2000000999) in <c>AlReferenceExtractor.cs</c>
+/// as a safety net.</para>
+///
 /// Why a hand-curated allow-list instead of querying Microsoft's
 /// system-symbols package: the symbol package isn't shipped in the
 /// .app files our import pipeline ingests, and even when it would

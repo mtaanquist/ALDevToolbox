@@ -1676,6 +1676,13 @@ public class ReleaseImportService
     /// visible to every other module in the release. These are the
     /// "platform" apps the AL compiler always resolves against without
     /// requiring an <c>app.json</c> dependency declaration.
+    ///
+    /// <para><b>EXTENDING:</b> when Microsoft introduces a new
+    /// foundational umbrella app (every extension can reference it
+    /// without declaring a dep), add its display name here. Matched
+    /// case-insensitively against <c>OeModule.Name</c> + a
+    /// Publisher = "Microsoft" filter so a third-party can't ship an
+    /// app with the same name to widen visibility.</para>
     /// </summary>
     private static readonly HashSet<string> FoundationalAppNames = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -1711,6 +1718,15 @@ public class ReleaseImportService
     /// field-specific accesses (<c>TempFieldSet.TableNo</c>) still
     /// drop as <c>chain-step</c> unresolveds because we don't have the
     /// platform-table schemas — acceptable trade-off given the volume.
+    ///
+    /// <para><b>EXTENDING:</b> if a new BC version adds a platform
+    /// virtual table — or renames an existing one — add an entry
+    /// here. The numeric range safety net
+    /// (<c>AlReferenceExtractor.IsPlatformVirtualTableId</c>) silences
+    /// the diagnostic even for unlisted ids, but the named entry is
+    /// what lets `Record &lt;Name&gt;` chains resolve cleanly through
+    /// the synthetic catalog. Source for the canonical id → name map:
+    /// hougaard.com (cited at the call site below).</para>
     /// </summary>
     private static readonly (int Id, string Name)[] PlatformVirtualTables =
     {
