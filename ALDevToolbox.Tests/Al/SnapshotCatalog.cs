@@ -1,0 +1,106 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using ALDevToolbox.Services.Al;
+
+namespace ALDevToolbox.Tests.Al;
+
+/// <summary>
+/// Shared in-memory type catalog every snapshot fixture resolves against.
+///
+/// Kept intentionally narrow — only types and members a fixture actually
+/// names. Adding entries here is fine; removing one risks invalidating
+/// committed snapshots. Modelled on the unit-test <c>StubResolver</c> in
+/// <see cref="AlReferenceExtractorTests"/> but exposed as a singleton so
+/// the per-fixture <see cref="AlExtractContext"/> can hand the same
+/// resolver to every test without rebuilding the catalog per call.
+/// </summary>
+internal static class SnapshotCatalog
+{
+    public static readonly Guid OwnerAppId =
+        Guid.Parse("437dbf0e-84ff-417a-965d-ed2bb9650972");
+
+    public static readonly IAlTypeResolver Resolver = Build();
+
+    private static IAlTypeResolver Build()
+    {
+        var r = new InMemoryResolver();
+
+        // ── Tables ────────────────────────────────────────────────
+        r.AddType("Customer", new AlTypeRef(OwnerAppId, "table", 18, "Customer"));
+        r.AddMember("Customer", new AlMember("No.", "field", "Code", "20"));
+        r.AddMember("Customer", new AlMember("Name", "field", "Text", "100"));
+        r.AddMember("Customer", new AlMember("Phone No.", "field", "Text", "30"));
+        r.AddMember("Customer", new AlMember("Insert", "procedure", null, null));
+        r.AddMember("Customer", new AlMember("Modify", "procedure", null, null));
+        r.AddMember("Customer", new AlMember("Get", "procedure", null, null));
+        r.AddMember("Customer", new AlMember("Validate", "procedure", null, null));
+        r.AddMember("Customer", new AlMember("SetRange", "procedure", null, null));
+
+        r.AddType("Sales Header", new AlTypeRef(OwnerAppId, "table", 36, "Sales Header"));
+        r.AddMember("Sales Header", new AlMember("No.", "field", null, null));
+        r.AddMember("Sales Header", new AlMember("Document Type", "field", null, null));
+        r.AddMember("Sales Header", new AlMember("Sell-to Customer No.", "field", null, null));
+        r.AddMember("Sales Header", new AlMember("Customer", "field", "Record", "Customer"));
+        r.AddMember("Sales Header", new AlMember("Insert", "procedure", null, null));
+        r.AddMember("Sales Header", new AlMember("Validate", "procedure", null, null));
+
+        r.AddType("Sales Line", new AlTypeRef(OwnerAppId, "table", 37, "Sales Line"));
+        r.AddMember("Sales Line", new AlMember("No.", "field", null, null));
+        r.AddMember("Sales Line", new AlMember("Document Type", "field", null, null));
+        r.AddMember("Sales Line", new AlMember("Type", "field", null, null));
+        r.AddMember("Sales Line", new AlMember("InitRecord", "procedure", null, null));
+
+        r.AddType("Item", new AlTypeRef(OwnerAppId, "table", 27, "Item"));
+        r.AddMember("Item", new AlMember("No.", "field", null, null));
+        r.AddMember("Item", new AlMember("Description", "field", null, null));
+
+        // ── Pages ─────────────────────────────────────────────────
+        r.AddType("Customer List", new AlTypeRef(OwnerAppId, "page", 22, "Customer List"));
+        r.AddType("Customer Card", new AlTypeRef(OwnerAppId, "page", 21, "Customer Card"));
+        r.AddType("Sales Order", new AlTypeRef(OwnerAppId, "page", 42, "Sales Order"));
+        r.AddType("Customer Statistics FactBox",
+            new AlTypeRef(OwnerAppId, "page", 1300, "Customer Statistics FactBox"));
+
+        // ── Codeunits ─────────────────────────────────────────────
+        r.AddType("Sales-Post", new AlTypeRef(OwnerAppId, "codeunit", 80, "Sales-Post"));
+        r.AddMember("Sales-Post", new AlMember("Run", "procedure", null, null));
+
+        // ── Reports / queries / xmlports / enums ─────────────────
+        r.AddType("Customer List Report", new AlTypeRef(OwnerAppId, "report", 101, "Customer List Report"));
+        r.AddType("Customer Query", new AlTypeRef(OwnerAppId, "query", 101, "Customer Query"));
+        r.AddType("Item Source", new AlTypeRef(OwnerAppId, "xmlport", 101, "Item Source"));
+        r.AddType("Sales Document Type",
+            new AlTypeRef(OwnerAppId, "enum", 50000, "Sales Document Type"));
+
+        return r;
+    }
+
+    private sealed class InMemoryResolver : IAlTypeResolver
+    {
+        private readonly Dictionary<string, AlTypeRef> _types = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, List<AlMember>> _members = new(StringComparer.OrdinalIgnoreCase);
+
+        public void AddType(string name, AlTypeRef type) => _types[name] = type;
+
+        public void AddMember(string ownerName, AlMember member)
+        {
+            if (!_members.TryGetValue(ownerName, out var list))
+            {
+                list = new List<AlMember>();
+                _members[ownerName] = list;
+            }
+            list.Add(member);
+        }
+
+        public AlTypeRef? ResolveTypeByName(string typeName, string? expectedKeyword = null) =>
+            _types.TryGetValue(typeName, out var t) ? t : null;
+
+        public AlMember? ResolveMember(AlTypeRef owner, string memberName)
+        {
+            if (!_members.TryGetValue(owner.Name, out var list)) return null;
+            return list.FirstOrDefault(m =>
+                string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+}

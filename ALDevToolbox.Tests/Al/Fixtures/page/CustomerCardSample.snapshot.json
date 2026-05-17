@@ -1,0 +1,75 @@
+{
+  "References": [
+    {
+      "Line": 4,
+      "Column": 19,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer"
+    },
+    {
+      "Line": 13,
+      "Column": 34,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "field",
+      "TargetMemberName": "No."
+    },
+    {
+      "Line": 17,
+      "Column": 33,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "field",
+      "TargetMemberName": "Name"
+    },
+    {
+      "Line": 23,
+      "Column": 29,
+      "ReferenceKind": "method_call",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "procedure",
+      "TargetMemberName": "Validate"
+    },
+    {
+      "Line": 23,
+      "Column": 38,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "field",
+      "TargetMemberName": "Name"
+    },
+    {
+      "Line": 27,
+      "Column": 30,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "page",
+      "TargetObjectId": 1300,
+      "TargetObjectName": "Customer Statistics FactBox"
+    },
+    {
+      "Line": 45,
+      "Column": 25,
+      "ReferenceKind": "method_call",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "procedure",
+      "TargetMemberName": "Modify"
+    }
+  ],
+  "Stats": {
+    "ResolvedReferences": 7,
+    "UnresolvedReceivers": 0,
+    "UnresolvedSamples": []
+  }
+}

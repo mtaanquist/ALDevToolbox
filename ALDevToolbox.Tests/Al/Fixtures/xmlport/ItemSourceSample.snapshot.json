@@ -1,0 +1,21 @@
+{
+  "References": [],
+  "Stats": {
+    "ResolvedReferences": 0,
+    "UnresolvedReceivers": 2,
+    "UnresolvedSamples": [
+      {
+        "Reason": "head-not-a-variable",
+        "Token": "ItemRow",
+        "Line": 13,
+        "Column": 36
+      },
+      {
+        "Reason": "head-not-a-variable",
+        "Token": "ItemRow",
+        "Line": 16,
+        "Column": 43
+      }
+    ]
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "References": [
+    {
+      "Line": 5,
+      "Column": 29,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 36,
+      "TargetObjectName": "Sales Header"
+    },
+    {
+      "Line": 6,
+      "Column": 29,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "codeunit",
+      "TargetObjectId": 80,
+      "TargetObjectName": "Sales-Post"
+    },
+    {
+      "Line": 8,
+      "Column": 37,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 36,
+      "TargetObjectName": "Sales Header",
+      "TargetMemberKind": "field",
+      "TargetMemberName": "Document Type"
+    },
+    {
+      "Line": 9,
+      "Column": 21,
+      "ReferenceKind": "method_call",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 36,
+      "TargetObjectName": "Sales Header",
+      "TargetMemberKind": "procedure",
+      "TargetMemberName": "Validate"
+    },
+    {
+      "Line": 10,
+      "Column": 19,
+      "ReferenceKind": "method_call",
+      "TargetObjectKind": "codeunit",
+      "TargetObjectId": 80,
+      "TargetObjectName": "Sales-Post",
+      "TargetMemberKind": "procedure",
+      "TargetMemberName": "Run"
+    },
+    {
+      "Line": 15,
+      "Column": 26,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer"
+    },
+    {
+      "Line": 18,
+      "Column": 18,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "field",
+      "TargetMemberName": "No."
+    },
+    {
+      "Line": 19,
+      "Column": 18,
+      "ReferenceKind": "method_call",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "procedure",
+      "TargetMemberName": "Validate"
+    },
+    {
+      "Line": 20,
+      "Column": 18,
+      "ReferenceKind": "method_call",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "procedure",
+      "TargetMemberName": "Insert"
+    }
+  ],
+  "Stats": {
+    "ResolvedReferences": 9,
+    "UnresolvedReceivers": 0,
+    "UnresolvedSamples": []
+  }
+}
