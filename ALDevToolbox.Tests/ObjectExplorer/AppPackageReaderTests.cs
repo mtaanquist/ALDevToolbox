@@ -72,6 +72,39 @@ public sealed class AppPackageReaderTests
     }
 
     [Fact]
+    public void ParseExtendsRef_strips_namespace_prefix_from_qualified_target()
+    {
+        // Modern BC symbol packages encode the extends target as a
+        // namespace-qualified name even when the .al source writes the
+        // bare name (`extends "BOM Buffer"`). The base object itself
+        // is catalogued unqualified, so the qualified form has to be
+        // stripped here — otherwise the chain walker's
+        // _extensionsByBaseName lookup, the pageextension SourceTable
+        // propagation SQL, and the extends_target reference row all
+        // miss. Repro: BC's `tableextension "Asm. BOM Buffer" extends
+        // "BOM Buffer"` ships with TargetObject
+        // `#<appid>#Microsoft.Inventory.BOM.BOM Buffer`; a
+        // `BOMBuffer.TransferFromAsmHeader(...)` chain fires
+        // chain-step because the extension isn't found.
+        var (appId, name) = AppPackageReader.ParseExtendsRef(
+            "#437dbf0e84ff417a965ded2bb9650972#Microsoft.Inventory.BOM.BOM Buffer");
+
+        appId.Should().Be(Guid.Parse("437dbf0e-84ff-417a-965d-ed2bb9650972"));
+        name.Should().Be("BOM Buffer");
+    }
+
+    [Fact]
+    public void ParseExtendsRef_passes_bare_name_through_unchanged()
+    {
+        // Older BC and same-namespace cases ship the bare name.
+        var (appId, name) = AppPackageReader.ParseExtendsRef(
+            "#437dbf0e84ff417a965ded2bb9650972#Company Information");
+
+        appId.Should().Be(Guid.Parse("437dbf0e-84ff-417a-965d-ed2bb9650972"));
+        name.Should().Be("Company Information");
+    }
+
+    [Fact]
     public async Task ReadAsync_resolves_cross_module_variable_subtypes()
     {
         await using var stream = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));

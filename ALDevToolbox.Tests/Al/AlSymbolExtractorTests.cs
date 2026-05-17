@@ -10,13 +10,14 @@ namespace ALDevToolbox.Tests.Al;
 /// </summary>
 public sealed class AlSymbolExtractorTests
 {
-    // Most tests below pre-date the field / object_declaration extraction
-    // and only care about procedures, triggers, and events. The helper
-    // hides the object header row so those assertions stay focused; tests
-    // that exercise the new kinds call the extractor directly.
+    // Most tests below pre-date the field / object_declaration /
+    // var_declaration extraction and only care about procedures,
+    // triggers, and events. The helper hides those extras so the older
+    // assertions stay focused; tests that exercise the new kinds call
+    // the extractor directly.
     private static IReadOnlyList<AlSymbol> ExtractNonHeader(string source) =>
         AlSymbolExtractor.Extract(source)
-            .Where(s => s.Kind != "object_declaration")
+            .Where(s => s.Kind != "object_declaration" && s.Kind != "var_declaration")
             .ToList();
 
     [Fact]
@@ -335,10 +336,13 @@ public sealed class AlSymbolExtractorTests
             """;
 
         var fields = AlSymbolExtractor.Extract(source)
-            .Where(s => s.Kind == "field")
+            .Where(s => s.Kind == "table_field" || s.Kind == "page_field")
             .ToList();
 
         fields.Should().HaveCount(2);
+        fields.Should().OnlyContain(f => f.Kind == "table_field",
+            "the table-side (id; name; type) shape always emits table_field per "
+            + ".design/al-reference-extractor-refactor.md step 1");
         fields[0].Name.Should().Be("Document Type");
         fields[0].FieldId.Should().Be(1);
         fields[0].Signature.Should().Be("Enum \"Sales Document Type\"");
@@ -373,10 +377,13 @@ public sealed class AlSymbolExtractorTests
             """;
 
         var fields = AlSymbolExtractor.Extract(source)
-            .Where(s => s.Kind == "field")
+            .Where(s => s.Kind == "table_field" || s.Kind == "page_field")
             .ToList();
 
         fields.Should().ContainSingle();
+        fields[0].Kind.Should().Be("page_field",
+            "the page-side (name; expr) shape always emits page_field per "
+            + ".design/al-reference-extractor-refactor.md step 1");
         fields[0].Name.Should().Be("Sell-to Customer No.");
         fields[0].FieldId.Should().BeNull();
         fields[0].Signature.Should().Be("Rec.\"Sell-to Customer No.\"");
@@ -406,7 +413,7 @@ public sealed class AlSymbolExtractorTests
             """;
 
         var actions = AlSymbolExtractor.Extract(source)
-            .Where(s => s.Kind == "action")
+            .Where(s => s.Kind == "page_action")
             .ToList();
 
         actions.Should().ContainSingle();
@@ -424,7 +431,7 @@ public sealed class AlSymbolExtractorTests
             """;
 
         var fields = AlSymbolExtractor.Extract(source)
-            .Where(s => s.Kind == "field")
+            .Where(s => s.Kind == "table_field" || s.Kind == "page_field")
             .ToList();
 
         fields.Should().ContainSingle();
@@ -440,7 +447,7 @@ public sealed class AlSymbolExtractorTests
         var source = "    field(1; \"No.\"; Code[20])\n";
 
         var fields = AlSymbolExtractor.Extract(source)
-            .Where(s => s.Kind == "field")
+            .Where(s => s.Kind == "table_field" || s.Kind == "page_field")
             .ToList();
 
         fields.Should().ContainSingle();
@@ -466,11 +473,65 @@ public sealed class AlSymbolExtractorTests
             """;
 
         var fields = AlSymbolExtractor.Extract(source)
-            .Where(s => s.Kind == "field")
+            .Where(s => s.Kind == "table_field" || s.Kind == "page_field")
             .ToList();
 
         fields.Should().ContainSingle();
         fields[0].Name.Should().Be("Real");
+    }
+
+    // ── Variable declarations ─────────────────────────────────────
+
+    [Fact]
+    public void Extracts_object_scope_var_declaration_positions()
+    {
+        // Object-scope globals appear in oe_module_variables (typed from
+        // the symbol package's binary metadata), but the package doesn't
+        // carry source line/column. The extractor's var_declaration row
+        // is what ReleaseImportService joins on to stamp positions for
+        // Go-to-definition. See .design/al-reference-extractor-refactor.md
+        // step 2.
+        var source = """
+            page 50100 "Sales Helper"
+            {
+                var
+                    SalesDocCheckFactboxVisible: Boolean;
+                    HelperCust: Record Customer;
+            }
+            """;
+
+        var vars = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "var_declaration")
+            .ToList();
+
+        vars.Should().HaveCount(2);
+        vars[0].Name.Should().Be("SalesDocCheckFactboxVisible");
+        vars[0].LineNumber.Should().Be(4);
+        vars[0].ColumnStart.Should().BeGreaterThan(1);
+        vars[1].Name.Should().Be("HelperCust");
+        vars[1].LineNumber.Should().Be(5);
+    }
+
+    [Fact]
+    public void Label_declaration_wins_over_var_declaration()
+    {
+        // A Label-typed variable matches both regex shapes; the more
+        // specific Label form runs first and the var path only emits
+        // for non-Label declarations.
+        var source = """
+            codeunit 50100 "Foo"
+            {
+                var
+                    UnsupportedTypeErr: Label 'Unsupported type %1.';
+                    Counter: Integer;
+            }
+            """;
+
+        var extracted = AlSymbolExtractor.Extract(source).ToList();
+
+        extracted.Should().Contain(s => s.Kind == "label" && s.Name == "UnsupportedTypeErr");
+        extracted.Should().Contain(s => s.Kind == "var_declaration" && s.Name == "Counter");
+        extracted.Should().NotContain(s => s.Kind == "var_declaration" && s.Name == "UnsupportedTypeErr");
     }
 
     // ── Label declarations ─────────────────────────────────────────

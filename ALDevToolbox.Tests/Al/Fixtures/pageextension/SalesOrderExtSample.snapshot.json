@@ -1,0 +1,67 @@
+{
+  "References": [
+    {
+      "Line": 7,
+      "Column": 47,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 36,
+      "TargetObjectName": "Sales Header",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Sell-to Customer No."
+    },
+    {
+      "Line": 25,
+      "Column": 38,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer"
+    },
+    {
+      "Line": 27,
+      "Column": 33,
+      "ReferenceKind": "method_call",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "procedure",
+      "TargetMemberName": "Get"
+    },
+    {
+      "Line": 27,
+      "Column": 41,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 36,
+      "TargetObjectName": "Sales Header",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Sell-to Customer No."
+    },
+    {
+      "Line": 28,
+      "Column": 34,
+      "ReferenceKind": "method_call",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "procedure",
+      "TargetMemberName": "Validate"
+    },
+    {
+      "Line": 28,
+      "Column": 43,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Name"
+    }
+  ],
+  "Stats": {
+    "ResolvedReferences": 6,
+    "UnresolvedReceivers": 0,
+    "UnresolvedSamples": []
+  }
+}

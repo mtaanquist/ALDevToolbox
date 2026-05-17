@@ -24,8 +24,8 @@ public sealed class SourceFileOutlineGrouperTests
         var input = new[]
         {
             Item("table", "Sales Header", 1, objectId: 36),
-            Item("field", "Document Type", 5, "Enum"),
-            Item("field", "No.", 10, "Code[20]"),
+            Item("table_field", "Document Type", 5, "Enum"),
+            Item("table_field", "No.", 10, "Code[20]"),
             Item("procedure", "GetCustomer", 100, "()"),
             Item("local_procedure", "ComputeTotal", 130, "()"),
         };
@@ -48,9 +48,9 @@ public sealed class SourceFileOutlineGrouperTests
         var input = new[]
         {
             Item("table", "Sales Header", 1, objectId: 36),
-            Item("field", "No.", 5, "Code[20]"),
+            Item("table_field", "No.", 5, "Code[20]"),
             Item("trigger", "OnValidate", 7),
-            Item("field", "Description", 12, "Text[100]"),
+            Item("table_field", "Description", 12, "Text[100]"),
             Item("trigger", "OnLookup", 14),
             Item("trigger", "OnValidate", 16),
         };
@@ -75,7 +75,7 @@ public sealed class SourceFileOutlineGrouperTests
         var input = new[]
         {
             Item("table", "Sales Header", 1, objectId: 36),
-            Item("field", "No.", 5, "Code[20]"),
+            Item("table_field", "No.", 5, "Code[20]"),
             Item("trigger", "OnValidate", 7),       // field-bound
             Item("trigger", "OnInsert", 200),       // table-level
             Item("trigger", "OnModify", 205),       // table-level
@@ -120,9 +120,9 @@ public sealed class SourceFileOutlineGrouperTests
         var input = new[]
         {
             Item("page", "Customer List", 1, objectId: 22),
-            Item("action", "Post", 50),
+            Item("page_action", "Post", 50),
             Item("trigger", "OnAction", 52),
-            Item("action", "Release", 60),
+            Item("page_action", "Release", 60),
             Item("trigger", "OnAction", 62),
         };
 
@@ -145,9 +145,9 @@ public sealed class SourceFileOutlineGrouperTests
         var input = new[]
         {
             Item("pageextension", "Sales Header Ext", 1, objectId: 50100),
-            Item("field", "Sell-to Customer No.", 50),
+            Item("page_field", "Sell-to Customer No.", 50),
             Item("trigger", "OnValidate", 52),
-            Item("action", "Post", 100),
+            Item("page_action", "Post", 100),
             Item("trigger", "OnAction", 102),
         };
 
@@ -183,8 +183,8 @@ public sealed class SourceFileOutlineGrouperTests
         var input = new[]
         {
             Item("table", "Sales Header", 1, objectId: 36),
-            Item("field", "Document Type", 5, "Enum"),
-            Item("field", "Sell-to Customer No.", 10, "Code[20]"),
+            Item("table_field", "Document Type", 5, "Enum"),
+            Item("table_field", "Sell-to Customer No.", 10, "Code[20]"),
             Item("procedure", "GetCustomer", 100, "()"),
             Item("procedure", "PostSalesHeader", 130, "()"),
         };
@@ -208,9 +208,9 @@ public sealed class SourceFileOutlineGrouperTests
         var input = new[]
         {
             Item("table", "Sales Header", 1, objectId: 36),
-            Item("field", "Document Type", 5, "Enum"),
+            Item("table_field", "Document Type", 5, "Enum"),
             Item("trigger", "OnValidate", 7),
-            Item("field", "No.", 10, "Code[20]"),
+            Item("table_field", "No.", 10, "Code[20]"),
         };
 
         var groups = SourceFileOutlineGrouper.Build(input, filter: "onvalidate");

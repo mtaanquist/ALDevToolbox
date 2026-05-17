@@ -95,4 +95,18 @@ public class ModuleReference
     public long? TargetSymbolId { get; set; }
 
     public ModuleSymbol? TargetSymbol { get; set; }
+
+    /// <summary>
+    /// Direct FK to a <see cref="ModuleVariable"/> when the reference
+    /// is a <c>variable_use</c> — a bare identifier in a procedure
+    /// body that resolves to an object-scope global on the file's
+    /// owner. Stamped at import time from the
+    /// <c>(SourceObject, TargetMemberName)</c> pair. Null for every
+    /// other reference kind. Indexed so right-click "Find references"
+    /// on a global variable returns its uses in a single seek. See
+    /// <c>.design/al-reference-extractor-refactor.md</c> step 6.
+    /// </summary>
+    public long? TargetVariableId { get; set; }
+
+    public ModuleVariable? TargetVariable { get; set; }
 }

@@ -21,6 +21,9 @@ internal sealed class ModuleVariableConfiguration : IEntityTypeConfiguration<Mod
         entity.Property(e => e.TargetObjectKind).HasColumnName("target_object_kind");
         entity.Property(e => e.TargetObjectId).HasColumnName("target_object_id");
         entity.Property(e => e.TargetObjectName).HasColumnName("target_object_name");
+        entity.Property(e => e.LineNumber).HasColumnName("line_number").IsRequired();
+        entity.Property(e => e.ColumnStart).HasColumnName("column_start").IsRequired();
+        entity.Property(e => e.ColumnEnd).HasColumnName("column_end").IsRequired();
 
         entity.HasOne(e => e.Organization)
             .WithMany()

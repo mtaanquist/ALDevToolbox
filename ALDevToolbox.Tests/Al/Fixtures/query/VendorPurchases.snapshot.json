@@ -1,0 +1,95 @@
+{
+  "References": [
+    {
+      "Line": 7,
+      "Column": 33,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 23,
+      "TargetObjectName": "Vendor"
+    },
+    {
+      "Line": 9,
+      "Column": 30,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 23,
+      "TargetObjectName": "Vendor",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "SystemId"
+    },
+    {
+      "Line": 12,
+      "Column": 34,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 23,
+      "TargetObjectName": "Vendor",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "No."
+    },
+    {
+      "Line": 15,
+      "Column": 26,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 23,
+      "TargetObjectName": "Vendor",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Name"
+    },
+    {
+      "Line": 18,
+      "Column": 37,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 25,
+      "TargetObjectName": "Vendor Ledger Entry"
+    },
+    {
+      "Line": 20,
+      "Column": 32,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 25,
+      "TargetObjectName": "Vendor Ledger Entry",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Vendor No."
+    },
+    {
+      "Line": 20,
+      "Column": 61,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 23,
+      "TargetObjectName": "Vendor",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "No."
+    },
+    {
+      "Line": 22,
+      "Column": 45,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 25,
+      "TargetObjectName": "Vendor Ledger Entry",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Purchase (LCY)"
+    },
+    {
+      "Line": 26,
+      "Column": 36,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 25,
+      "TargetObjectName": "Vendor Ledger Entry",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Posting Date"
+    }
+  ],
+  "Stats": {
+    "ResolvedReferences": 9,
+    "UnresolvedReceivers": 0,
+    "UnresolvedSamples": []
+  }
+}

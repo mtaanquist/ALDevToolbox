@@ -1,0 +1,47 @@
+{
+  "References": [
+    {
+      "Line": 8,
+      "Column": 32,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer"
+    },
+    {
+      "Line": 10,
+      "Column": 32,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "No."
+    },
+    {
+      "Line": 13,
+      "Column": 34,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Name"
+    },
+    {
+      "Line": 16,
+      "Column": 33,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Phone No."
+    }
+  ],
+  "Stats": {
+    "ResolvedReferences": 4,
+    "UnresolvedReceivers": 0,
+    "UnresolvedSamples": []
+  }
+}

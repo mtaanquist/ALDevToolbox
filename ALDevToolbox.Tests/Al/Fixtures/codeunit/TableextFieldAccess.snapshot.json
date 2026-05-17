@@ -1,0 +1,47 @@
+{
+  "References": [
+    {
+      "Line": 3,
+      "Column": 53,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 27,
+      "TargetObjectName": "Item"
+    },
+    {
+      "Line": 7,
+      "Column": 33,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "tableextension",
+      "TargetObjectId": 905,
+      "TargetObjectName": "Asm. Item",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Qty. on Asm. Component"
+    },
+    {
+      "Line": 8,
+      "Column": 17,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "tableextension",
+      "TargetObjectId": 905,
+      "TargetObjectName": "Asm. Item",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Qty. on Assembly Order"
+    },
+    {
+      "Line": 10,
+      "Column": 23,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "tableextension",
+      "TargetObjectId": 905,
+      "TargetObjectName": "Asm. Item",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Qty. on Asm. Component"
+    }
+  ],
+  "Stats": {
+    "ResolvedReferences": 4,
+    "UnresolvedReceivers": 0,
+    "UnresolvedSamples": []
+  }
+}

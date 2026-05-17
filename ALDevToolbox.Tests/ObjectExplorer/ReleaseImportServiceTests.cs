@@ -141,7 +141,7 @@ public sealed class ReleaseImportServiceTests : IDisposable
         var profileTable = await read.OeModuleObjects.AsNoTracking()
             .SingleAsync(o => o.Kind == "table" && o.Name == "OIOUBL-Profile");
         var fields = await read.OeModuleSymbols.AsNoTracking()
-            .Where(s => s.ObjectId == profileTable.Id && s.Kind == "field")
+            .Where(s => s.ObjectId == profileTable.Id && s.Kind == "table_field")
             .OrderBy(s => s.FieldId)
             .ToListAsync();
         fields.Should().HaveCount(2);

@@ -342,8 +342,8 @@
     /// </summary>
     private static string KindBadgeLabel(string kind) => kind.ToLowerInvariant() switch
     {
-        "field" => "field",
-        "action" => "action",
+        "table_field" or "page_field" => "field",
+        "page_action" => "action",
         "trigger" => "trigger",
         "label" => "label",
         "procedure" => "proc",
@@ -378,8 +378,8 @@
     /// </summary>
     private static string KindBadgeClass(string kind) => kind.ToLowerInvariant() switch
     {
-        "field" => "source-viewer__outline-badge--field",
-        "action" => "source-viewer__outline-badge--action",
+        "table_field" or "page_field" => "source-viewer__outline-badge--field",
+        "page_action" => "source-viewer__outline-badge--action",
         "trigger" => "source-viewer__outline-badge--trigger",
         "label" => "source-viewer__outline-badge--label",
         "event_publisher" or "event_subscriber" => "source-viewer__outline-badge--event",
@@ -457,7 +457,7 @@
         var kept = new List<CodeViewerDeclaration>(declarations.Count);
         foreach (var d in declarations)
         {
-            if (IsNonNavigableDeclaration(d.Kind, d.OwnerKind)) continue;
+            if (IsNonNavigableDeclaration(d.Kind)) continue;
             kept.Add(d);
         }
         return kept;
@@ -465,38 +465,23 @@
 
     /// <summary>
     /// Decides whether a declaration's underline + right-click "Find
-    /// references" affordance should be shown. The same kind can mean
-    /// different things depending on what kind of object holds it:
+    /// references" affordance should be shown. After the symbol-kind
+    /// split (see .design/al-reference-extractor-refactor.md step 1),
+    /// the kind alone carries the navigation intent — no owner-kind
+    /// join needed:
     /// <list type="bullet">
-    ///   <item><c>field</c> on a <b>table</b> / <b>tableextension</b>
-    ///         is the canonical field declaration — a legitimate
-    ///         navigation target.</item>
-    ///   <item><c>field</c> on a <b>page</b> / <b>pageextension</b>
-    ///         / <b>report</b> / <b>requestpage</b> is a control name
-    ///         local to that surface — not a navigation target.</item>
-    ///   <item><c>action</c> only exists on pages / pageextensions, and
-    ///         the control name is page-local — never navigable.</item>
+    ///   <item><c>table_field</c> is the canonical field declaration —
+    ///         a legitimate navigation target.</item>
+    ///   <item><c>page_field</c> / <c>page_action</c> are page-local
+    ///         control names — not navigation targets.</item>
     ///   <item><c>trigger</c> is runtime-invoked everywhere — never a
     ///         useful Find-references target.</item>
     /// </list>
     /// </summary>
-    private static bool IsNonNavigableDeclaration(string kind, string? ownerKind)
-    {
-        if (string.Equals(kind, "trigger", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(kind, "action", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-        if (string.Equals(kind, "field", StringComparison.OrdinalIgnoreCase))
-        {
-            // Table / tableextension field declarations ARE navigable.
-            // Everything else (page / pageextension / report / xmlport /
-            // requestpage page-control fields) is a local control name.
-            return !string.Equals(ownerKind, "table", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(ownerKind, "tableextension", StringComparison.OrdinalIgnoreCase);
-        }
-        return false;
-    }
+    private static bool IsNonNavigableDeclaration(string kind) =>
+        string.Equals(kind, "trigger", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(kind, "page_field", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(kind, "page_action", StringComparison.OrdinalIgnoreCase);
 
     private static readonly JsonSerializerOptions DeclarationJsonOptions = new()
     {

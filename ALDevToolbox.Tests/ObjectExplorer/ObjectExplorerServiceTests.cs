@@ -483,8 +483,10 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         detail!.ModuleName.Should().Be("OIOUBL");
         detail.SourceFilePath.Should().NotBeNullOrEmpty();
 
-        // Two fields surface as field symbols.
-        detail.Symbols.Where(s => s.Kind == "field").Should().HaveCount(2);
+        // Two fields surface as table-field symbols (the OIOUBL-Profile
+        // table has two fields). Symbol kind is "table_field" after the
+        // refactor in .design/al-reference-extractor-refactor.md step 1.
+        detail.Symbols.Where(s => s.Kind == "table_field").Should().HaveCount(2);
     }
 
     // ── Find references — same release ─────────────────────────────────

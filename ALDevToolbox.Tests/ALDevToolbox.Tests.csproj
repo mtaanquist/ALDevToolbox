@@ -66,6 +66,15 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>Fixtures\%(RecursiveDir)%(Filename)%(Extension)</Link>
     </None>
+    <!-- AL reference-extractor snapshot fixtures: paired .al + .snapshot.json
+         files under Al/Fixtures/<owner-kind>/. Copied with their relative path
+         preserved so AlReferenceExtractorSnapshotTests can enumerate them at
+         runtime and write back the .snapshot.json files in-place when missing
+         (so the test author re-runs once, then commits the baselines). -->
+    <None Include="Al\Fixtures\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Al\Fixtures\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </None>
   </ItemGroup>
 
 </Project>

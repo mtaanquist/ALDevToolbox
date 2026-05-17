@@ -341,13 +341,30 @@ public static class AppPackageReader
     /// and by some Properties like <c>TableNo</c>. Returns
     /// <c>(null, null)</c> when the string isn't in that shape.
     /// </summary>
-    private static (Guid? AppId, string? Name) ParseExtendsRef(string? raw)
+    internal static (Guid? AppId, string? Name) ParseExtendsRef(string? raw)
     {
         if (string.IsNullOrEmpty(raw) || raw[0] != '#') return (null, null);
         var second = raw.IndexOf('#', 1);
         if (second != 33) return (null, null); // need exactly 32 hex digits between '#'s
         if (!Guid.TryParseExact(raw.AsSpan(1, 32), "N", out var guid)) return (null, null);
         var name = raw.Substring(34);
+        // Modern BC symbol packages encode the extends target as a
+        // namespace-qualified name (`#<appid>#Microsoft.Inventory.BOM.BOM Buffer`)
+        // for cross- AND same-namespace references — even though the
+        // .al source just writes `extends "BOM Buffer"`. The base
+        // object itself is catalogued by its unqualified name
+        // (oe_module_objects.Name = "BOM Buffer"), so storing the
+        // qualified form here would mismatch every downstream
+        // consumer that joins extends_object_name back to the base
+        // object's Name: the chain walker's `_extensionsByBaseName`
+        // lookup, the pageextension SourceTable propagation SQL, the
+        // extends_target reference row, and the UI display. Strip
+        // the namespace prefix and keep only the last segment.
+        var lastDot = name.LastIndexOf('.');
+        if (lastDot >= 0 && lastDot + 1 < name.Length)
+        {
+            name = name.Substring(lastDot + 1);
+        }
         return (guid, name);
     }
 

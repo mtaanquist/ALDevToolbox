@@ -755,6 +755,10 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("target_symbol_id");
 
+                    b.Property<long?>("TargetVariableId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("target_variable_id");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ModuleId");
@@ -765,6 +769,10 @@ namespace ALDevToolbox.Data.Migrations
                         .HasDatabaseName("ix_oe_module_references_source_object");
 
                     b.HasIndex("TargetSymbolId");
+
+                    b.HasIndex("TargetVariableId")
+                        .HasDatabaseName("ix_oe_module_references_target_variable")
+                        .HasFilter("\"target_variable_id\" IS NOT NULL");
 
                     b.HasIndex("TargetAppId", "TargetObjectKind", "TargetObjectId")
                         .HasDatabaseName("ix_oe_module_references_target_id");
@@ -855,6 +863,18 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnName("id");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("ColumnEnd")
+                        .HasColumnType("integer")
+                        .HasColumnName("column_end");
+
+                    b.Property<int>("ColumnStart")
+                        .HasColumnType("integer")
+                        .HasColumnName("column_start");
+
+                    b.Property<int>("LineNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("line_number");
 
                     b.Property<long>("ModuleId")
                         .HasColumnType("bigint")
@@ -2459,6 +2479,11 @@ namespace ALDevToolbox.Data.Migrations
                         .HasForeignKey("TargetSymbolId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleVariable", "TargetVariable")
+                        .WithMany()
+                        .HasForeignKey("TargetVariableId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Module");
 
                     b.Navigation("Organization");
@@ -2466,6 +2491,8 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("SourceObject");
 
                     b.Navigation("TargetSymbol");
+
+                    b.Navigation("TargetVariable");
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol", b =>
