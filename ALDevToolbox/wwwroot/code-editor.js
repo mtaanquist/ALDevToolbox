@@ -17,16 +17,16 @@
 
 import { EditorView, lineNumbers, highlightActiveLineGutter, highlightSpecialChars,
     drawSelection, dropCursor, rectangularSelection, crosshairCursor,
-    highlightActiveLine, keymap, Decoration }
+    highlightActiveLine, keymap, Decoration, showPanel }
     from "https://esm.sh/@codemirror/view@6.34.1?deps=@codemirror/state@6.4.1";
-import { EditorState, Compartment, RangeSetBuilder }
+import { EditorState, Compartment, RangeSetBuilder, StateField, StateEffect }
     from "https://esm.sh/@codemirror/state@6.4.1";
 import { defaultKeymap, history, historyKeymap, indentWithTab }
     from "https://esm.sh/@codemirror/commands@6.7.1?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
 import { syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatching,
     foldGutter, foldKeymap, StreamLanguage }
     from "https://esm.sh/@codemirror/language@6.10.6?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
-import { search, searchKeymap, highlightSelectionMatches }
+import { search, searchKeymap, highlightSelectionMatches, openSearchPanel }
     from "https://esm.sh/@codemirror/search@6.5.7?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1";
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap }
     from "https://esm.sh/@codemirror/autocomplete@6.18.3?deps=@codemirror/state@6.4.1,@codemirror/view@6.34.1,@codemirror/language@6.10.6";
@@ -397,6 +397,15 @@ export function mountReadOnly(container, value, language, options) {
     const decorationExtensions = buildLineDecorationExtensions(opts.lineDecorations);
     const declarationExtensions = buildDeclarationDecorationExtensions(opts.declarations);
     const resolvableExtensions = buildResolvableDecorationExtensions(opts.resolvables);
+    // Opt-in status bar: only the source-file viewer asks for it today.
+    // The diff viewer and the admin TOML/JSON editors keep their existing
+    // chrome unchanged.
+    const statusBarExtensions = opts.statusBar ? [buildStatusBarExtension()] : [];
+    // Sticky "current line" highlight survives CodeMirror's row
+    // virtualisation because the decoration lives in editor state rather
+    // than on a DOM node. scrollToLine() dispatches setCurrentLineEffect
+    // to set/clear it.
+    const currentLineExtensions = [currentLineField, currentLineTheme];
 
     const view = new EditorView({
         parent: container,
@@ -405,6 +414,11 @@ export function mountReadOnly(container, value, language, options) {
             extensions: [
                 EditorView.editable.of(false),
                 EditorState.readOnly.of(true),
+                // Disable browser spellcheck on the editor content.
+                // AL identifiers ("Sell-to Customer Name" etc.) light
+                // up with red squiggles that are easy to confuse with
+                // our resolvable / declaration dotted underlines.
+                EditorView.contentAttributes.of({ spellcheck: "false" }),
                 lineNumbers(),
                 highlightSpecialChars(),
                 foldGutter(),
@@ -421,6 +435,8 @@ export function mountReadOnly(container, value, language, options) {
                 ...decorationExtensions,
                 ...declarationExtensions,
                 ...resolvableExtensions,
+                ...statusBarExtensions,
+                ...currentLineExtensions,
                 themeCompartment.of(themeExtensions()),
             ],
         }),
@@ -468,10 +484,30 @@ export function mountReadOnly(container, value, language, options) {
 
         const items = [];
         if (onDeclaration) {
+            // Click landed on a declaration name range — we already know the
+            // symbol id, so the existing single-arg callback is fine.
+            // Two ID spaces: object headers go through OnFindReferences
+            // (oe_module_objects.Id → /from-symbol/); sub-symbols
+            // (procedure / field / trigger / event) go through
+            // OnFindMemberReferences (oe_module_symbols.Id →
+            // /from-member-symbol/). isMemberSymbol decides the route.
+            const callback = onDeclaration.isMemberSymbol
+                ? "OnFindMemberReferences"
+                : "OnFindReferences";
             items.push({
                 label: "Find references",
                 action: () => opts.dotNetRef.invokeMethodAsync(
-                    "OnFindReferences", onDeclaration.symbolId),
+                    callback, onDeclaration.symbolId),
+            });
+        } else {
+            // Off-declaration click: the host decides whether the word
+            // under the cursor resolves to a symbol. The two-arg variant
+            // lets the host run a positional lookup server-side and fall
+            // back to "no references" UI if nothing matches.
+            items.push({
+                label: "Find references",
+                action: () => opts.dotNetRef.invokeMethodAsync(
+                    "OnFindReferencesAt", line.number, colInLine),
             });
         }
         // Disable "Go to definition" when the click lands on the declaration
@@ -582,6 +618,15 @@ export function mountReadOnly(container, value, language, options) {
 // dispatching EditorView.scrollIntoView — the effect path through CM's
 // transaction system was leaving the viewport in inconsistent states
 // when triggered from outside a CM-initiated update.
+function resetAncestorScrollLeft(start) {
+    let node = start;
+    while (node && node !== document.scrollingElement) {
+        if (node.scrollLeft) node.scrollLeft = 0;
+        node = node.parentElement;
+    }
+    if (document.scrollingElement) document.scrollingElement.scrollLeft = 0;
+}
+
 export function scrollToLine(id, lineNumber, flash) {
     const e = editors.get(id);
     if (!e) return;
@@ -611,50 +656,53 @@ export function scrollToLine(id, lineNumber, flash) {
             // state we used to see going through EditorView.scrollIntoView.
             const target = block.top - scroller.clientHeight / 2 + block.height / 2;
             scroller.scrollTop = Math.max(0, Math.min(scrollMax, target));
+            scroller.scrollLeft = 0;
         } else {
-            // Fluid mount (`Fluid="true"`): the editor's scroller is the
-            // same height as its content (overflow: visible), so it
-            // can't scroll. CodeMirror virtualises lines outside the
-            // initial viewport, so the line element may not exist for
-            // far-away targets like line 500 of 1000. Prefer
-            // EditorView.scrollIntoView — CM materialises the line
-            // before scrolling and routes through the appropriate
-            // outer container. Explicit `x: "start"` keeps the line's
-            // first column visible; the default ("nearest") leaves
-            // any pre-existing horizontal scroll in place, which
-            // looks like the first few characters got cut off after
-            // the jump. Fast-path lineEl.scrollIntoView when the
-            // target is already in the rendered viewport.
+            // Fluid mount (`Fluid="true"`): the editor's scroller is
+            // overflow:visible, so an outer container (.content) scrolls
+            // the page. Use inline:"nearest" so scrollIntoView only
+            // moves vertically — `inline:"start"` aligns the cm-line's
+            // left edge with the scrollport's left edge, but since
+            // cm-line begins AFTER the gutter, that scrolls the page
+            // right by the gutter width and chops off the start of
+            // shorter lines. The follow-up resetAncestorScrollLeft
+            // call then clears any residual horizontal scroll the
+            // previous jump (or a long line elsewhere) left behind.
             const lineEl = findLineEl();
             if (lineEl) {
-                lineEl.scrollIntoView({ block: "center", inline: "start", behavior: "auto" });
+                lineEl.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
             } else {
                 view.dispatch({
-                    effects: EditorView.scrollIntoView(line.from, { y: "center", x: "start" }),
+                    effects: EditorView.scrollIntoView(line.from, { y: "center" }),
                 });
             }
+            resetAncestorScrollLeft(scroller);
         }
     };
+
+    // Sticky-highlight the destination line via the state field. Doing
+    // this before the scroll so the decoration is already in place when
+    // CodeMirror paints the viewport — no first-paint flicker, and it
+    // survives the user scrolling the row off-screen and back.
+    if (flash) {
+        view.dispatch({ effects: setCurrentLineEffect.of(safeLine) });
+    }
 
     requestAnimationFrame(() => {
         doScroll();
         requestAnimationFrame(() => {
             doScroll();
-            if (!flash) return;
-            requestAnimationFrame(() => {
-                const lineEl = findLineEl();
-                if (!lineEl) return;
-                // Adding a class that's already present doesn't restart its
-                // CSS animation. Remove → force a reflow → re-add so
-                // repeated clicks on the same reference re-flash the line.
-                lineEl.classList.remove("cm-line--flash");
-                // eslint-disable-next-line no-unused-expressions
-                lineEl.offsetWidth;
-                lineEl.classList.add("cm-line--flash");
-                setTimeout(() => lineEl.classList.remove("cm-line--flash"), 1500);
-            });
         });
     });
+}
+
+/// Clear the sticky line highlight. The viewer doesn't currently expose
+/// this beyond the file-id changing (each mount starts with a fresh
+/// state), but external pages can call it via the editor id when needed.
+export function clearCurrentLine(id) {
+    const e = editors.get(id);
+    if (!e) return;
+    e.view.dispatch({ effects: setCurrentLineEffect.of(0) });
 }
 
 // Builds a CodeMirror extension that wraps each declaration name range
@@ -764,6 +812,97 @@ function buildLineDecorationExtensions(lineDecorations) {
     })];
 }
 
+// ── Sticky current-line highlight ─────────────────────────────────
+//
+// A StateField holding a Decoration.set with at most one Decoration.line
+// at the chosen 1-based line. Dispatched via setCurrentLineEffect from
+// scrollToLine() so the row stays tinted even after the user scrolls it
+// off-screen and back (DOM classes don't survive CM's row virtualisation,
+// which is what the old fade-out animation suffered from).
+
+const setCurrentLineEffect = StateEffect.define();
+
+const currentLineField = StateField.define({
+    create() {
+        return Decoration.none;
+    },
+    update(value, tr) {
+        // Map through doc edits so the highlight follows its line when
+        // the document mutates (rare for the read-only viewer but the
+        // editor is shared with editable mounts).
+        value = value.map(tr.changes);
+        for (const effect of tr.effects) {
+            if (!effect.is(setCurrentLineEffect)) continue;
+            const lineNo = effect.value;
+            if (!Number.isInteger(lineNo) || lineNo < 1 || lineNo > tr.state.doc.lines) {
+                value = Decoration.none;
+                continue;
+            }
+            const line = tr.state.doc.line(lineNo);
+            value = Decoration.set([
+                Decoration.line({ class: "cm-line--current" }).range(line.from),
+            ]);
+        }
+        return value;
+    },
+    provide: f => EditorView.decorations.from(f),
+});
+
+// Theme rule keeps the highlight readable across CM's default theme +
+// the one-dark theme we swap in via themeCompartment. The colour itself
+// is driven by --color-accent-soft so it tracks the page theme.
+const currentLineTheme = EditorView.baseTheme({
+    ".cm-line--current": {
+        backgroundColor: "var(--color-accent-soft)",
+    },
+});
+
+/// Bottom-docked status bar — `Ln 1, Col 1 · 1,073 lines`, plus a
+/// selection-length suffix when a range is selected. Mounts via CM6's
+/// `showPanel` extension so the panel lives inside the editor's height
+/// box and respects the same theme. Re-renders on every transaction
+/// (cursor moves and document changes both flow through `update`), but
+/// the DOM is cached on the panel so we only touch textContent.
+///
+/// Opt-in via `mountReadOnly(..., { statusBar: true })`. The diff and
+/// admin editors don't ask for it and stay untouched.
+function buildStatusBarExtension() {
+    return showPanel.of(view => {
+        const dom = document.createElement("div");
+        dom.className = "cm-status-bar";
+        const left = document.createElement("span");
+        left.className = "cm-status-bar__left";
+        const right = document.createElement("span");
+        right.className = "cm-status-bar__right";
+        dom.appendChild(left);
+        dom.appendChild(right);
+
+        const render = (state) => {
+            const sel = state.selection.main;
+            const line = state.doc.lineAt(sel.head);
+            const col = sel.head - line.from + 1;
+            const totalLines = state.doc.lines;
+            const selLen = sel.to - sel.from;
+            let pos = `Ln ${line.number.toLocaleString()}, Col ${col.toLocaleString()}`;
+            if (selLen > 0) {
+                pos += ` · ${selLen.toLocaleString()} selected`;
+            }
+            left.textContent = pos;
+            right.textContent = `${totalLines.toLocaleString()} lines`;
+        };
+
+        render(view.state);
+        return {
+            dom,
+            update(update) {
+                if (update.docChanged || update.selectionSet || update.viewportChanged) {
+                    render(update.state);
+                }
+            },
+        };
+    });
+}
+
 export function isDirty(id) {
     return editors.get(id)?.dirty ?? false;
 }
@@ -782,6 +921,16 @@ export function markPristine(id) {
 
 export function getValue(id) {
     return editors.get(id)?.view.state.doc.toString() ?? "";
+}
+
+/// Opens CodeMirror's built-in search panel from outside the editor.
+/// The default Ctrl/Cmd-F binding fires only when the editor has DOM
+/// focus; this helper lets the page-level shortcut bypass that.
+export function openSearch(id) {
+    const e = editors.get(id);
+    if (!e) return;
+    e.view.focus();
+    openSearchPanel(e.view);
 }
 
 export function setValue(id, value) {

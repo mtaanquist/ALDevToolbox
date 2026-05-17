@@ -494,4 +494,121 @@ public sealed class ReleaseImportServiceTests : IDisposable
         var rel = await read.OeReleases.AsNoTracking().SingleAsync(r => r.Id == child.ReleaseId);
         rel.ParentReleaseId.Should().Be(parent.ReleaseId);
     }
+
+    // ── Phase-2 call-site references ────────────────────────────────────
+
+    [Fact]
+    public async Task Pages_source_table_name_resolves_from_numeric_id_to_table_name()
+    {
+        // Modern BC (28.x+) emits a page's SourceTable property as a
+        // bare numeric object id (e.g. "36" for Sales Header). The
+        // import path stores the raw value and a second-pass resolver
+        // swaps the numeric id for the table's name so the reference
+        // extractor's Rec → SourceTable binding (BuildGlobalScope) can
+        // ResolveTypeByName on it. Without the resolution, Rec.X chains
+        // on the page drop because "36" doesn't match any catalog entry.
+        //
+        // Invariant under test: every page whose numeric SourceTable id
+        // points to a table imported in this release has had the id
+        // swapped for the table's name. Pages whose SourceTable points
+        // to a table outside this release (cross-release shadowing —
+        // gap #3 in al-reference-extractor-gaps.md) can legitimately
+        // keep a numeric value; those aren't this fix's job. The test
+        // also asserts that the resolver fires at all on the fixtures
+        // — at least one page must have started as numeric and been
+        // resolved, otherwise the test has no signal.
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        await using var s1 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
+        var summary = await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "SourceTable resolution",
+            Kind: "first_party",
+            ParentReleaseId: null,
+            ApplicationVersionId: null,
+            Uploads: new[]
+            {
+                new AppFileUpload("Microsoft_DK_Core.app", s1, null),
+                new AppFileUpload("Microsoft_OIOUBL.app", s2, null),
+            }));
+
+        await using var read = _db.NewContext();
+        var pages = await read.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == summary.ReleaseId
+                && (o.Kind == "page" || o.Kind == "pageextension"))
+            .Select(o => new { o.Name, o.Kind, o.SourceTableName })
+            .ToListAsync();
+
+        var inReleaseTableIds = await read.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == summary.ReleaseId
+                && o.Kind == "table"
+                && o.ObjectId != null)
+            .Select(o => o.ObjectId!.Value)
+            .ToListAsync();
+        var inReleaseTableIdSet = new HashSet<int>(inReleaseTableIds);
+
+        // Any page whose SourceTable points to a table in this release
+        // must have its source_table_name resolved to that table's name
+        // (i.e. no longer digit-only).
+        var unresolved = pages
+            .Where(p => p.SourceTableName != null
+                && System.Text.RegularExpressions.Regex.IsMatch(p.SourceTableName, "^[0-9]+$"))
+            .Where(p => int.TryParse(p.SourceTableName, out var id) && inReleaseTableIdSet.Contains(id))
+            .ToList();
+        unresolved.Should().BeEmpty(
+            because: "for every page whose numeric SourceTable id matches a table imported in this "
+                   + "release, the resolver should have swapped the id for the table's name");
+
+        // Smoke check that the resolver actually ran on at least one
+        // page in the fixture — guards against the test silently
+        // becoming a no-op if a future fixture switch eliminates the
+        // numeric form. Resolved pages have a non-numeric, non-empty
+        // source_table_name; pre-fix they'd have been numeric.
+        pages.Should().Contain(p =>
+            p.SourceTableName != null
+            && p.SourceTableName.Length > 0
+            && !System.Text.RegularExpressions.Regex.IsMatch(p.SourceTableName, "^[0-9]+$"),
+            because: "at least one page in DK Core / OIOUBL fixtures should have its SourceTable "
+                   + "resolved to a table name — either via the legacy hash-ref path or the "
+                   + "numeric resolver added by this change");
+    }
+
+    [Fact]
+    public async Task Import_emits_method_call_or_field_access_references_for_DK_Core()
+    {
+        // DK Core ships actual .al source (it's a small extension wrapper
+        // with procedures that call into the Base App tables / codeunits
+        // declared in its own symbol package + variable rows). Once the
+        // per-module loop finishes, EmitCallSiteReferencesAsync runs the
+        // AL reference extractor over every file and writes method_call
+        // / field_access rows. We don't pin a specific (object, member)
+        // because the .app's source is opaque — but we DO expect the
+        // bucket to be non-empty.
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        await using var s1 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        var summary = await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "Phase 2 DK Core",
+            Kind: "first_party",
+            ParentReleaseId: null,
+            ApplicationVersionId: null,
+            Uploads: new[] { new AppFileUpload("dk.app", s1, null) }));
+
+        await using var read = _db.NewContext();
+        var refs = await read.OeModuleReferences.AsNoTracking()
+            .Where(r => r.Module!.ReleaseId == summary.ReleaseId)
+            .Where(r => r.ReferenceKind == "method_call" || r.ReferenceKind == "field_access")
+            .Select(r => new { r.ReferenceKind, r.TargetObjectName, r.TargetMemberName, r.TargetMemberKind })
+            .ToListAsync();
+
+        refs.Should().NotBeEmpty(
+            because: "DK Core's .al source contains member-access patterns the extractor must surface");
+        refs.Should().AllSatisfy(r =>
+        {
+            r.TargetMemberName.Should().NotBeNullOrEmpty(
+                because: "member-scoped rows always carry the member name");
+            r.TargetMemberKind.Should().NotBeNullOrEmpty(
+                because: "member-scoped rows always carry the member kind");
+        });
+    }
 }

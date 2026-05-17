@@ -3,6 +3,14 @@
 :root {
     --color-bg: #fafafa;
     --color-surface: #ffffff;
+    /* Second surface tier — used by panels-within-panels: code snippet
+       boxes, kind badges, the search input, status bar chips. Light enough
+       above the page bg to read as a distinct surface, not so dark it
+       fights the body text. */
+    --color-surface-2: #f4f5f7;
+    /* Hover background for clickable rows. Subtle in light mode, the dark
+       block below uses a translucent white. */
+    --color-surface-strong: rgba(0, 0, 0, 0.04);
     --color-border: #e6e6e8;
     --color-border-strong: #d2d3d8;
     --color-text: #1f2024;
@@ -33,6 +41,8 @@
     :root:not([data-theme="light"]) {
         --color-bg: #16181c;
         --color-surface: #1d2024;
+        --color-surface-2: #262a30;
+        --color-surface-strong: rgba(255, 255, 255, 0.06);
         --color-border: #2c2f36;
         --color-border-strong: #3a3e47;
         --color-text: #e6e7ea;
@@ -52,6 +62,8 @@
 :root[data-theme="dark"] {
     --color-bg: #16181c;
     --color-surface: #1d2024;
+    --color-surface-2: #262a30;
+    --color-surface-strong: rgba(255, 255, 255, 0.06);
     --color-border: #2c2f36;
     --color-border-strong: #3a3e47;
     --color-text: #e6e7ea;
@@ -72,6 +84,14 @@
 html, body {
     margin: 0;
     padding: 0;
+    /* Bound the viewport-level scroll to 100vh so the app-shell grid
+       can rely on .content (overflow-y: auto) as the actual scroll
+       container. Without this, .app-shell's min-height: 100vh allowed
+       the page to grow taller than the viewport and BODY would scroll
+       instead — which silently broke position: sticky on any element
+       that expected .content to be its scrolling ancestor. */
+    height: 100%;
+    overflow: hidden;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
     font-size: 14px;
     line-height: 1.5;
@@ -95,7 +115,10 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     grid-template-areas:
         "topbar topbar"
         "sidebar content";
-    min-height: 100vh;
+    /* Fixed 100vh (not min-height) so the content grid row is bounded
+       and its overflow-y: auto actually engages instead of letting the
+       body scroll. Required for position: sticky inside .content. */
+    height: 100vh;
 }
 
 .top-bar {
@@ -2927,42 +2950,238 @@ ul.form-field-error {
     font-weight: 600;
 }
 
-/* Source-file viewer (SourceFileViewer.razor). Uses CodeViewer for syntax
-   highlighting; the right rail is a thin outline pane with click-through
-   navigation. Token right-click navigation will land in a follow-up PR. */
+/* Source-file viewer (SourceFileViewer.razor) — IDE-style layout: page
+   header pinned at top, code area scrolls inside the cm-editor, the
+   outline is always next to it. The page itself doesn't scroll
+   (height: 100% inside .content's bounded scrollport) — that's the
+   pattern users expect from a code viewer. Narrow viewports drop
+   back to the page-scroll behaviour because internal scrolling
+   feels cramped on small screens. */
+.source-viewer {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.source-viewer > .admin-page__header {
+    flex: 0 0 auto;
+}
+
 .source-viewer__layout {
-    display: grid;
-    grid-template-columns: 1fr 280px;
-    gap: 12px;
-    align-items: start;
+    display: flex;
+    align-items: stretch;
+    flex: 1 1 0;
+    min-height: 0;
+    gap: 0;
+}
+
+/* Drag handle between the editor column and the outline. Stretches the
+   full height of the layout; the JS handler updates a CSS custom
+   property (`--source-viewer-outline-width`) on the layout root, which
+   the outline reads from `.source-viewer__outline-inner` so the resize
+   stays cheap (no React-style relayout, just the two columns flexing).
+   The hover hairline matches the toolbar accent colour so the handle
+   feels discoverable without dominating the layout. */
+.source-viewer__resizer {
+    flex: 0 0 12px;
+    cursor: col-resize;
+    position: relative;
+    user-select: none;
+    /* Layout breathing room — visually equivalent to the previous gap
+       of 12px so existing screenshots still line up. */
+    margin: 0 4px;
+}
+
+.source-viewer__resizer::before {
+    content: "";
+    position: absolute;
+    inset: 0 5px;
+    border-radius: 2px;
+    background: transparent;
+    transition: background 80ms ease-out;
+}
+
+.source-viewer__resizer:hover::before,
+.source-viewer__resizer.is-dragging::before {
+    background: var(--color-accent);
+    opacity: 0.55;
 }
 
 @media (max-width: 1100px) {
+    .source-viewer {
+        height: auto;
+        min-height: 100%;
+    }
     .source-viewer__layout {
-        grid-template-columns: 1fr;
+        flex: 0 0 auto;
+        flex-direction: column;
+    }
+    .source-viewer__code .cm-editor {
+        height: auto;
+    }
+    .source-viewer__outline-inner {
+        height: auto;
+        max-height: calc(100vh - var(--top-bar-height, 52px) - 36px);
+    }
+    /* The drag handle only makes sense in the side-by-side layout. */
+    .source-viewer__resizer {
+        display: none;
     }
 }
 
 .source-viewer__code {
+    flex: 1 1 0;
     min-width: 0;
+    min-height: 0;
+    /* Match the outline column's framed look — same border, same
+       corner radius, same surface. overflow:hidden also clips the
+       cm-editor's rounded corners so the editor body, search panel
+       and bottom status bar all sit inside the rounded box.
+       CodeMirror's own cm-scroller handles horizontal scrolling. */
+    overflow: hidden;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+}
+
+/* Bound cm-editor to the code column's height so cm-scroller actually
+   scrolls instead of letting the file extend off the page. The
+   editor's own border is suppressed — the wrapper carries the frame
+   so the inner gutter/scroller live edge-to-edge inside the radius. */
+.source-viewer__code .cm-editor {
+    height: 100%;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
 }
 
 .source-viewer__outline {
-    /* Stick to the viewport so the outline follows the user up and
-       down a long file without scrolling out of reach. align-items:
-       start on the grid parent gives sticky a stable containing
-       block to compute against. */
-    position: sticky;
-    top: 12px;
+    /* Width is driven by --source-viewer-outline-width on the layout
+       root; the drag handler updates that and the column flexes here.
+       The clamp matches what the JS handler enforces, duplicated here
+       so a stale localStorage value still renders a usable column. */
+    flex: 0 0 auto;
+    align-self: stretch;
+    margin-right: 16px;
+    display: flex;
+    flex-direction: column;
+    width: clamp(220px,
+                 var(--source-viewer-outline-width, 340px),
+                 720px);
+}
+
+.source-viewer__outline-inner {
+    /* Width is driven by the layout's --source-viewer-outline-width
+       custom property, set by the drag-handle JS handler. The fallback
+       (340px) matches the previous default when JS hasn't loaded or
+       the user hasn't dragged yet. The two boundaries keep the column
+       readable while still letting the editor have space; the drag
+       handler clamps to the same range. */
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
     border: 1px solid var(--color-border-strong);
     border-radius: var(--radius);
     padding: 12px 14px;
     background: var(--color-surface);
-    max-height: calc(100vh - 24px);
-    /* Both axes scroll inside the panel: y for long outlines (Base App
-       codeunits with 100+ procedures), x for procedure names that
-       overflow the 280px column. */
-    overflow: auto;
+}
+
+
+/* ── Tab strip ───────────────────────────────────────────────── */
+
+.source-viewer__tabs {
+    display: flex;
+    gap: 4px;
+    margin: 0 0 12px 0;
+    padding: 0 0 4px 0;
+    border-bottom: 1px solid var(--color-border-strong);
+}
+
+.source-viewer__tab {
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--color-text-muted);
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.source-viewer__tab:hover {
+    color: var(--color-text);
+}
+
+.source-viewer__tab.is-active {
+    color: var(--color-text);
+    border-bottom-color: var(--color-accent);
+}
+
+.source-viewer__tab[hidden] {
+    display: none;
+}
+
+/* Right-anchor the Help tab so it sits opposite the navigational tabs. */
+.source-viewer__tab--end {
+    margin-left: auto;
+}
+
+.source-viewer__help {
+    margin: 4px 0 0 0;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.source-viewer__help dt {
+    margin-top: 10px;
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.source-viewer__help dt:first-of-type {
+    margin-top: 0;
+}
+
+.source-viewer__help dd {
+    margin: 2px 0 0 0;
+    color: var(--color-text-secondary);
+}
+
+.source-viewer__help kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface-2, rgba(124, 124, 144, 0.12));
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.4;
+}
+
+.source-viewer__tab-count {
+    display: inline-block;
+    min-width: 18px;
+    padding: 0 5px;
+    background: var(--color-surface-2);
+    border-radius: 999px;
+    font-size: 10.5px;
+    text-align: center;
+    color: var(--color-text-muted);
+}
+
+.source-viewer__panel {
+    display: none;
+}
+
+.source-viewer__panel.is-active {
+    display: block;
 }
 
 .source-viewer__outline h2 {
@@ -2974,21 +3193,31 @@ ul.form-field-error {
     letter-spacing: 0.03em;
 }
 
+/* Matches the global form-input styling so the filter doesn't feel
+   foreign next to the rest of the app's text inputs. Same padding,
+   border, radius and background as <c>.admin-form input[type="text"]</c>;
+   only the bottom margin is panel-specific. */
 .source-viewer__outline-filter {
     width: 100%;
     box-sizing: border-box;
-    padding: 6px 8px;
+    padding: 8px 10px;
     margin: 0 0 10px 0;
-    background: var(--color-surface-2, #1c1c28);
+    background: var(--color-surface);
     border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius-sm, 4px);
-    color: inherit;
-    font-size: 12.5px;
+    border-radius: var(--radius);
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: 13.5px;
+}
+
+.source-viewer__outline-filter::placeholder {
+    color: var(--color-text-secondary);
 }
 
 .source-viewer__outline-filter:focus {
-    outline: 1px solid var(--color-accent, #6585ff);
-    outline-offset: 0;
+    outline: 2px solid var(--color-accent);
+    outline-offset: -1px;
+    border-color: var(--color-accent);
 }
 
 .source-viewer__outline-section + .source-viewer__outline-section {
@@ -3046,8 +3275,8 @@ ul.form-field-error {
 }
 
 .source-viewer__outline-item {
-    line-height: 1.45;
-    font-size: 12.5px;
+    line-height: 1.5;
+    font-size: 14px;
 }
 
 .source-viewer__outline-item--child {
@@ -3061,14 +3290,13 @@ ul.form-field-error {
     align-items: baseline;
     gap: 6px;
     padding: 1px 0;
-    /* Row widens to fit a fully-visible name; the outline panel's
-       overflow-x: auto then provides a horizontal scrollbar for long
-       names that exceed the column width. min-width: 100% keeps the
-       hover/click target spanning at least the panel width even when
-       the name is short. */
-    width: max-content;
-    min-width: 100%;
+    /* Rows fit the panel width — long names truncate with ellipsis on
+       the .source-viewer__outline-sig span. The user can widen the
+       panel via the resize handle on the outline-inner to see more. */
+    width: 100%;
+    min-width: 0;
     box-sizing: border-box;
+    overflow: hidden;
 }
 
 /* Same-file outline rows render as <button> instead of <a> so the
@@ -3092,13 +3320,17 @@ ul.form-field-error {
 
 .source-viewer__outline-name {
     /* AL identifiers in monospace — matches the editor's font and keeps
-       parameter signatures visually aligned. Names never truncate so a
-       glance answers "is this the procedure I'm looking for"; long
-       names spill horizontally and the outline panel's overflow-x:
-       auto provides a scrollbar. */
-    flex: 0 0 auto;
-    font-family: var(--font-mono);
+       parameter signatures visually aligned. Names truncate with
+       ellipsis when the panel isn't wide enough; the row's title
+       attribute carries the full text on hover, and the resize handle
+       on .source-viewer__outline-inner lets the user widen the panel
+       to see more. */
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
+    font-family: var(--font-mono);
 }
 
 .source-viewer__outline-sig {
@@ -3111,7 +3343,7 @@ ul.form-field-error {
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 14px;
     min-width: 0;
 }
 
@@ -3119,9 +3351,78 @@ ul.form-field-error {
     flex: 0 0 auto;
     margin-left: auto;
     padding-left: 8px;
-    font-size: 11.5px;
+    font-size: 13px;
     font-variant-numeric: tabular-nums;
     color: var(--text-3, #7a7a8a);
+}
+
+/* Kind badge — IDE-style pill next to each outline row. The label
+   indicates what kind of symbol the row represents (field, trigger,
+   procedure, etc.); the colour tint groups related kinds so the eye
+   can scan a long list quickly. Full kind name lives on the row's
+   title attribute for hover. */
+.source-viewer__outline-badge {
+    flex: 0 0 auto;
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    text-transform: lowercase;
+    line-height: 1.4;
+    color: var(--color-text);
+    background: var(--color-surface-2, rgba(124, 124, 144, 0.12));
+    border: 1px solid var(--color-border, rgba(124, 124, 144, 0.2));
+    white-space: nowrap;
+}
+
+.source-viewer__outline-badge--field {
+    background: rgba(75, 139, 255, 0.14);
+    border-color: rgba(75, 139, 255, 0.35);
+    color: #6ba3ff;
+}
+
+.source-viewer__outline-badge--action {
+    background: rgba(255, 184, 64, 0.16);
+    border-color: rgba(255, 184, 64, 0.4);
+    color: #f0b85a;
+}
+
+.source-viewer__outline-badge--trigger {
+    background: rgba(76, 201, 114, 0.14);
+    border-color: rgba(76, 201, 114, 0.35);
+    color: #4cc972;
+}
+
+.source-viewer__outline-badge--event {
+    background: rgba(229, 159, 64, 0.16);
+    border-color: rgba(229, 159, 64, 0.4);
+    color: #f0a85a;
+}
+
+.source-viewer__outline-badge--label {
+    /* Cyan family — distinct from fields (blue), procedures (purple),
+       and triggers/events (green/orange). Labels show up frequently in
+       large codeunits and benefit from being visually separable so a
+       developer triangulating a customer-reported error string can
+       spot them at a glance. */
+    background: rgba(80, 190, 200, 0.16);
+    border-color: rgba(80, 190, 200, 0.4);
+    color: #6ec9d2;
+}
+
+.source-viewer__outline-badge--proc {
+    background: rgba(186, 134, 255, 0.16);
+    border-color: rgba(186, 134, 255, 0.4);
+    color: #c39bff;
+}
+
+.source-viewer__outline-badge--object {
+    background: rgba(124, 124, 144, 0.18);
+    border-color: rgba(124, 124, 144, 0.4);
+    color: var(--color-text-muted);
 }
 
 .source-viewer__outline-find-heading {
@@ -3163,6 +3464,209 @@ ul.form-field-error {
     border: 1px dashed var(--color-border-strong);
     border-radius: var(--radius);
     font-size: 12.5px;
+}
+
+.source-viewer__refs-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.source-viewer__refs-target {
+    margin: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.source-viewer__refs-close {
+    flex: 0 0 auto;
+}
+
+.source-viewer__refs-list {
+    list-style: none;
+    margin: 8px 0 0 0;
+    padding: 0;
+}
+
+.source-viewer__refs-item {
+    padding: 2px 0;
+    line-height: 1.4;
+}
+
+/* Whole row is wrapped in <a> for keyboard / middle-click navigation.
+   Kill the default accent colour on the link itself — the kind badge
+   carries the "what is this" signal now, and the row's text should sit
+   as body copy, not as a wall of blue. The hover background keeps the
+   row feeling clickable. */
+.source-viewer__refs-item a {
+    text-decoration: none;
+    display: block;
+    padding: 6px 8px;
+    border-radius: var(--radius);
+    color: var(--color-text);
+}
+
+.source-viewer__refs-item a:hover {
+    background: var(--color-surface-strong);
+}
+
+.source-viewer__refs-item a:hover .source-viewer__refs-name {
+    text-decoration: underline;
+}
+
+/* Refs groups borrow the outline-section chevron + heading styles for
+   collapsibility. The vertical rhythm between groups matches the
+   outline panel so the two read as a paired pattern. */
+.source-viewer__refs-group + .source-viewer__refs-group {
+    margin-top: 8px;
+}
+
+.source-viewer__refs-group:not(.is-open) .source-viewer__refs-list {
+    display: none;
+}
+
+/* Member sub-row: indented under the object-row so the visual hierarchy
+   reads object → member → call-site snippet. Badge keeps the row in sync
+   with the outline pane's chip vocabulary (proc / local / trigger / …). */
+.source-viewer__refs-member-row {
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+    margin-top: 3px;
+    margin-left: 4px;
+    min-width: 0;
+}
+
+.source-viewer__refs-member-name {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+/* Outline right-click menu — one-item popover for Find references on a
+   procedure / field / trigger / object row. Positioned by JS at the
+   click point. */
+.source-viewer__outline-menu {
+    position: fixed;
+    z-index: 100;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 12px var(--color-shadow, rgba(0, 0, 0, 0.4));
+    padding: 4px 0;
+    min-width: 180px;
+}
+
+.source-viewer__outline-menu-item {
+    display: block;
+    width: 100%;
+    padding: 6px 12px;
+    background: transparent;
+    border: 0;
+    color: var(--color-text);
+    font: inherit;
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.source-viewer__outline-menu-item:hover {
+    background: var(--color-surface-2, rgba(124, 124, 144, 0.12));
+}
+
+/* Object-row: badge + name on the left, module/line meta pinned right.
+   Tabular row layout means the eye scans the badge column first, then the
+   name, then drifts right for the location — same rhythm as the outline. */
+.source-viewer__refs-row-top {
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+}
+
+.source-viewer__refs-snippet {
+    display: block;
+    margin-top: 4px;
+    margin-left: 4px;
+    font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+    font-size: 12px;
+    color: var(--color-text-muted);
+    background: var(--color-surface-2);
+    padding: 3px 8px;
+    border-left: 2px solid var(--color-border-strong);
+    border-radius: 0 3px 3px 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.source-viewer__refs-item.is-current a {
+    background: var(--color-accent-soft, rgba(99, 102, 241, 0.15));
+    font-weight: 500;
+}
+
+.source-viewer__refs-name {
+    font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+    font-size: 13px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+/* Hover-only tooltip for a refs row. Stays out of the document flow —
+   appended to <body> by source-viewer.js so the row can stay visually
+   tight while the extension / file path / kind details surface on
+   demand. */
+.source-viewer__refs-tooltip {
+    position: absolute;
+    z-index: 200;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    box-shadow: 0 6px 18px var(--color-shadow);
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--color-text);
+    pointer-events: none;
+}
+
+.source-viewer__refs-tooltip[hidden] {
+    display: none;
+}
+
+.source-viewer__refs-tooltip-where {
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+
+.source-viewer__refs-tooltip-loc {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--color-text-muted);
+    word-break: break-all;
+}
+
+.source-viewer__refs-tooltip-member {
+    margin-top: 6px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+}
+
+.source-viewer__refs-tooltip-kind {
+    margin-top: 6px;
+    font-size: 11px;
 }
 .source-viewer__body {
     padding: 0;
@@ -3373,14 +3877,118 @@ ul.form-field-error {
     cursor: not-allowed;
 }
 
-/* Brief flash on the line the user navigated to via a #L<n> deep link. */
-.cm-line--flash {
-    animation: cm-line-flash 1.4s ease-out 1;
+/* CodeMirror @codemirror/search panel (Ctrl/Cmd-F). The default
+   styling renders bare inputs/buttons; bring them in line with the
+   app's button + input look. */
+.cm-panels.cm-panels-top {
+    border-bottom: 1px solid var(--color-border-strong);
+    background: var(--color-surface);
 }
-@keyframes cm-line-flash {
-    0%   { background: rgba(254, 215, 102, 0.55); }
-    100% { background: transparent; }
+
+/* Bottom-docked status bar (built by buildStatusBarExtension in
+   code-editor.js). Sits below cm-scroller and inherits theme colours
+   from the editor's container. Left/right split mirrors VS Code's
+   layout — cursor position on the left, document totals on the right. */
+.cm-panels.cm-panels-bottom {
+    border-top: 1px solid var(--color-border-strong);
+    background: var(--color-surface);
 }
+
+.cm-status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 3px 10px;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+}
+
+.cm-status-bar__left,
+.cm-status-bar__right {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cm-search.cm-panel {
+    padding: 8px 10px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-family: inherit;
+}
+
+.cm-search .cm-textfield {
+    font-family: inherit;
+    font-size: 13px;
+    padding: 4px 8px;
+    color: var(--color-text);
+    background: var(--color-surface-2, var(--color-bg));
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-sm, 4px);
+    outline: none;
+}
+
+.cm-search .cm-textfield:focus {
+    border-color: var(--color-accent);
+}
+
+.cm-search .cm-button {
+    font-family: inherit;
+    font-size: 12.5px;
+    padding: 4px 10px;
+    color: var(--color-text);
+    background: transparent;
+    background-image: none;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+}
+
+.cm-search .cm-button:hover {
+    background: var(--color-surface-2, rgba(124, 124, 144, 0.12));
+}
+
+.cm-search label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12.5px;
+    color: var(--color-text-muted);
+    cursor: pointer;
+}
+
+.cm-search label input[type="checkbox"] {
+    accent-color: var(--color-accent);
+    margin: 0;
+}
+
+.cm-panel button[name="close"] {
+    margin-left: auto;
+    padding: 0 8px;
+    font-size: 16px;
+    line-height: 1;
+    color: var(--color-text-muted);
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+}
+
+.cm-panel button[name="close"]:hover {
+    color: var(--color-text);
+}
+
+/* Sticky highlight on the line the user navigated to via a deep link
+   or a References-panel click. Backing colour comes from
+   --color-accent-soft so it tracks the active theme. The actual
+   line.background rule lives in CM6's baseTheme (currentLineTheme in
+   code-editor.js) so it survives CodeMirror's row virtualisation. */
 
 /* File viewer layout: code editor + right-rail inspector panel. The
    editor fills the remaining width and grows to its content height —

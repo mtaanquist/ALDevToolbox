@@ -118,6 +118,31 @@ public class ReleaseImportService
                 await ImportOneAppAsync(orgId, release, upload, totals, ct).ConfigureAwait(false);
             }
 
+            // SourceTable propagation for pageextensions. The symbol
+            // package only carries SourceTable on the base page; the
+            // extension inherits it implicitly but ships no property of
+            // its own. Copy it across now so the reference extractor's
+            // page-Rec resolution (BuildGlobalScope) finds it for
+            // pageextensions too.
+            await PropagateSourceTableToPageExtensionsAsync(release.Id, ct).ConfigureAwait(false);
+
+            // SourceTable property values in modern BC (28.x+) ship as
+            // bare numeric ids ("36" for Sales Header) rather than the
+            // legacy `#<appid>#<name>` hash-ref format. Resolve any
+            // numeric values to the table's name so the reference
+            // extractor can ResolveTypeByName on it. Runs AFTER the
+            // pageextension propagation so any propagated numeric values
+            // get normalised too.
+            await ResolveNumericSourceTableNamesAsync(release.Id, ct).ConfigureAwait(false);
+
+            // Phase 2 call-site extraction. Runs once per release, AFTER
+            // every module's symbols + variables are in the DB so the
+            // resolver can see types declared anywhere in this release.
+            // Cross-release receivers (DK Core file references Customer
+            // from a parent Base App release) currently drop — phase 2.1
+            // can add the chain walk when needed.
+            await EmitCallSiteReferencesAsync(orgId, release.Id, totals, ct).ConfigureAwait(false);
+
             // Pin the platform/application version from the canonical Base App
             // module when one came in this Release. Continue to leave null if
             // the upload was third-party-only. Re-find via the cleared tracker
@@ -128,6 +153,19 @@ public class ReleaseImportService
             ready.BcVersion = InferBcVersion(release.Id);
             ready.Status = "ready";
             ready.UpdatedAt = DateTime.UtcNow;
+
+            // Stamp the denormalised file count + content-size totals so the
+            // Releases picker doesn't recompute them via correlated subqueries
+            // on every page load. The file set is immutable after a Release
+            // goes ready, so a single snapshot here is enough.
+            var totalsRow = await _db.OeModuleFiles.AsNoTracking()
+                .Where(f => f.Module!.ReleaseId == release.Id)
+                .GroupBy(_ => 1)
+                .Select(g => new { Count = g.Count(), Length = g.Sum(f => (long)f.Content.Length) })
+                .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+            ready.SourceFileCount = totalsRow?.Count ?? 0;
+            ready.SourceContentLength = totalsRow?.Length ?? 0;
+
             await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
             _logger.LogInformation(
@@ -401,6 +439,10 @@ public class ReleaseImportService
                 Namespace = string.IsNullOrEmpty(symObj.Namespace) ? null : symObj.Namespace,
                 ExtendsAppId = symObj.ExtendsAppId,
                 ExtendsObjectName = symObj.ExtendsObjectName,
+                // SourceTable on pages — extracted from the symbol package's
+                // property list. Pageextensions don't carry it directly; a
+                // second pass below copies the value from their base page.
+                SourceTableName = ExtractSourceTableName(symObj),
                 // Use the FK directly rather than the navigation: after the
                 // file-chunk save loop above, the file entity may have been
                 // detached from the tracker on a previous flush. The Id is
@@ -572,6 +614,11 @@ public class ReleaseImportService
                 line = extracted.LineNumber;
                 colStart = extracted.ColumnStart;
                 colEnd = extracted.ColumnEnd;
+                // Mark the extracted field row consumed so the
+                // page-field pass below doesn't re-emit it. Table-side
+                // fields ship in symObj.Fields; page-side ones don't, so
+                // we only need the dedup on table flows.
+                consumedExtracted.Add(extracted);
             }
             _db.OeModuleSymbols.Add(new OeModuleSymbol
             {
@@ -588,12 +635,15 @@ public class ReleaseImportService
             });
         }
 
-        // Locals / triggers / event subscribers / event publishers that the
-        // compiler stripped from the symbol package — pick them up from
-        // source so the outline shows them. consumedExtracted holds every
-        // AlSymbol already mapped into a symbol-package row above, which
-        // also correctly handles overloads (the queue dequeue gave each
-        // package method a distinct extractor row).
+        // Locals / triggers / event subscribers / event publishers / page
+        // fields / actions that the symbol package omits — pick them up
+        // from the source extractor so the outline shows them.
+        // consumedExtracted holds every AlSymbol already mapped into a
+        // symbol-package row above, which also correctly handles
+        // overloads (the queue dequeue gave each package method a distinct
+        // extractor row) and table-field/page-field disambiguation
+        // (table fields enter symObj.Fields and consume their matching
+        // extractor row; page fields don't, so they fall through here).
         foreach (var sym in extractedSymbols)
         {
             switch (sym.Kind)
@@ -605,6 +655,8 @@ public class ReleaseImportService
                 case "trigger":
                 case "event_publisher":
                 case "event_subscriber":
+                case "field":
+                case "action":
                     break;
                 default:
                     continue;
@@ -618,6 +670,7 @@ public class ReleaseImportService
                 Kind = sym.Kind,
                 Name = sym.Name,
                 Signature = sym.Signature,
+                FieldId = sym.FieldId,
                 LineNumber = sym.LineNumber,
                 ColumnStart = sym.ColumnStart,
                 ColumnEnd = sym.ColumnEnd,
@@ -785,6 +838,57 @@ public class ReleaseImportService
         return (kind, type.ObjectId, type.ObjectName, type.Name);
     }
 
+    /// <summary>
+    /// Pulls the SourceTable property value out of a page /
+    /// pageextension's symbol-package properties. The value shape has
+    /// drifted across BC versions:
+    /// <list type="bullet">
+    ///   <item>Legacy (pre-28.x): <c>#&lt;32hex&gt;#&lt;name&gt;</c>
+    ///         hash-ref — same shape as <c>TableNo</c> / <c>ExtendsTarget</c>.
+    ///         <see cref="ParseHashRef"/> extracts the name.</item>
+    ///   <item>Modern (28.x+): bare numeric object id (<c>"36"</c> for
+    ///         Sales Header). We pass it through and let
+    ///         <see cref="ResolveNumericSourceTableNamesAsync"/> swap
+    ///         it for the table's name after all tables in the release
+    ///         are imported.</item>
+    ///   <item>Some packages emit the bare name. Pass-through too.</item>
+    /// </list>
+    /// Returns null for kinds without the property. Pageextensions
+    /// don't carry SourceTable in their own properties — they inherit
+    /// it from the base page, which a second-pass copy
+    /// (<see cref="PropagateSourceTableToPageExtensionsAsync"/>) fills.
+    /// </summary>
+    private static string? ExtractSourceTableName(SymbolObject symObj)
+    {
+        // Three properties bind Rec to a specific table:
+        //   - SourceTable on a page / pageextension
+        //   - TableNo on a codeunit (sets Rec when the codeunit is run
+        //     as the OnRun trigger receiver — `codeunit "Gen. Jnl.-Post"`
+        //     with `TableNo = "Gen. Journal Line"` runs against a
+        //     journal-line record, with Rec bound to that table inside
+        //     OnRun and any procedures called from it)
+        // We funnel all three through the same column on oe_module_objects
+        // (source_table_name); the AL extractor binds Rec to whatever
+        // table is named there regardless of which property populated it.
+        var propName = symObj.Kind switch
+        {
+            "page" or "pageextension" => "SourceTable",
+            "codeunit" => "TableNo",
+            _ => null,
+        };
+        if (propName is null) return null;
+
+        var prop = symObj.Properties.FirstOrDefault(p =>
+            string.Equals(p.Name, propName, StringComparison.OrdinalIgnoreCase));
+        if (prop is null) return null;
+        var (_, name) = ParseHashRef(prop.Value);
+        // Some symbol packages emit the bare table name when the table
+        // lives in the same module; modern BC ships the numeric object
+        // id. Accept all three shapes — ResolveNumericSourceTableNamesAsync
+        // normalises the numeric form to a name after import.
+        return name ?? (string.IsNullOrEmpty(prop.Value) ? null : prop.Value);
+    }
+
     private static (Guid? AppId, string? Name) ParseHashRef(string? raw)
     {
         if (string.IsNullOrEmpty(raw) || raw[0] != '#') return (null, null);
@@ -949,6 +1053,115 @@ public class ReleaseImportService
         return baseApp;
     }
 
+    /// <summary>
+    /// Second pass over the just-imported release: for each pageextension,
+    /// look up the page it extends (by ExtendsAppId + ExtendsObjectName,
+    /// considering modules visible to the extension's module) and copy the
+    /// base page's <c>SourceTableName</c> onto the extension. Done as a
+    /// single UPDATE … FROM SQL because EF Core can't express the
+    /// self-join cleanly and the per-row navigate-update approach would
+    /// be hundreds of tracker-loaded entities for a large release.
+    /// </summary>
+    private async Task PropagateSourceTableToPageExtensionsAsync(int releaseId, CancellationToken ct)
+    {
+        // Match by ExtendsObjectName against any base page in the same
+        // release. Cross-release base-page lookups (a customer release
+        // extending a Base App page from a parent release) are deferred
+        // alongside the broader cross-release-shadowing gap — pageextension
+        // .al source in the layered case is rare and the extractor
+        // gracefully falls back to "Rec is the page itself" (still wrong,
+        // still won't underline, but no crash).
+        // Postgres UPDATE … FROM doesn't let the target alias (`ext`)
+        // appear in an inner JOIN's ON clause — only in WHERE. So we
+        // gate the extension's own release membership via a subquery
+        // instead of joining oe_modules a second time on `ext.module_id`.
+        const string sql = """
+            UPDATE oe_module_objects ext
+            SET source_table_name = base.source_table_name
+            FROM oe_module_objects base
+            JOIN oe_modules base_mod ON base_mod.id = base.module_id
+            WHERE ext.kind = 'pageextension'
+              AND ext.source_table_name IS NULL
+              AND ext.extends_object_name IS NOT NULL
+              AND base.kind = 'page'
+              AND base.name = ext.extends_object_name
+              AND base.source_table_name IS NOT NULL
+              AND base_mod.release_id = {0}
+              AND ext.module_id IN (
+                  SELECT id FROM oe_modules WHERE release_id = {0}
+              );
+            """;
+        await _db.Database.ExecuteSqlRawAsync(sql, new object[] { releaseId }, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Modern BC (28.x and later) emits a page's <c>SourceTable</c>
+    /// property in the symbol package as the bare numeric object id
+    /// (<c>"36"</c> for Sales Header), not the legacy
+    /// <c>#&lt;appid&gt;#&lt;name&gt;</c> hash-ref format
+    /// <see cref="ExtractSourceTableName"/> was originally written for.
+    /// We pass the raw value through and resolve it here: for every
+    /// page / pageextension in this release whose
+    /// <c>source_table_name</c> is digit-only, look up the table with
+    /// that <c>object_id</c> in the same release and replace the
+    /// numeric value with the table's <c>name</c>.
+    ///
+    /// Same-release scoping is intentional. Tables in parent releases
+    /// (cross-release shadowing) aren't reachable yet — that's gap #3
+    /// in <c>al-reference-extractor-gaps.md</c>; the current pageext
+    /// dependency-aware-resolver work would need a similar lift.
+    ///
+    /// Done as a single UPDATE … FROM for the same reason
+    /// <see cref="PropagateSourceTableToPageExtensionsAsync"/> uses one:
+    /// EF Core can't express the self-join cleanly and the per-row path
+    /// is a tracker load for each page in a busy release.
+    /// </summary>
+    private async Task ResolveNumericSourceTableNamesAsync(int releaseId, CancellationToken ct)
+    {
+        // Filter includes codeunit alongside page / pageextension —
+        // codeunits get source_table_name from their TableNo property
+        // (a codeunit with TableNo binds Rec to the named table when run).
+        const string sql = """
+            UPDATE oe_module_objects pg
+            SET source_table_name = t.name
+            FROM oe_module_objects t
+            JOIN oe_modules tm ON tm.id = t.module_id
+            WHERE pg.kind IN ('page', 'pageextension', 'codeunit')
+              AND pg.source_table_name ~ '^[0-9]+$'
+              AND t.kind = 'table'
+              AND t.object_id = pg.source_table_name::int
+              AND tm.release_id = {0}
+              AND pg.module_id IN (
+                  SELECT id FROM oe_modules WHERE release_id = {0}
+              );
+            """;
+        await _db.Database.ExecuteSqlRawAsync(sql, new object[] { releaseId }, ct).ConfigureAwait(false);
+
+        // Second pass: numeric SourceTable values that fall in the BC
+        // platform-table id range (2000000001 – 2000000999) don't match
+        // any real table in oe_module_objects (the platform tables live
+        // in the AL runtime, not in any module's symbol package). Walk
+        // the PlatformVirtualTables map and rewrite the source_table_name
+        // for any matching numeric value. Without this, every page with
+        // `SourceTable = 2000000200` (NAV App Installed App) leaves
+        // source_table_name as the numeric string, Rec binding becomes
+        // `Record 2000000200`, and the chain-walker logs head-var-type-
+        // unresolved on every Rec.X access.
+        const string platformSql = """
+            UPDATE oe_module_objects
+            SET source_table_name = {0}
+            WHERE source_table_name = {1}
+              AND module_id IN (SELECT id FROM oe_modules WHERE release_id = {2});
+            """;
+        foreach (var vt in PlatformVirtualTables)
+        {
+            await _db.Database.ExecuteSqlRawAsync(
+                platformSql,
+                new object[] { vt.Name, vt.Id.ToString(), releaseId },
+                ct).ConfigureAwait(false);
+        }
+    }
+
     // ── Mutable tally ───────────────────────────────────────────────────
 
     private sealed class ImportTotals
@@ -958,5 +1171,933 @@ public class ReleaseImportService
         public int ObjectsImported;
         public int ReferencesImported;
         public int SourceFilesImported;
+    }
+
+    // ── Phase-2 call-site extraction ───────────────────────────────────
+
+    /// <summary>
+    /// Runs <see cref="ALDevToolbox.Services.Al.AlReferenceExtractor"/>
+    /// over every source file in the freshly-imported release and emits
+    /// one <c>method_call</c> or <c>field_access</c> reference per
+    /// resolved member access. Single-pass over the release's files; the
+    /// type + member catalogs are built once up-front from data the
+    /// per-module loop already wrote.
+    ///
+    /// Cross-release shadowing isn't handled here — a DK Core file
+    /// calling <c>Customer.Insert()</c> against a Customer table that
+    /// lives in a parent Base App release would drop the reference.
+    /// In practice users tend to import every module they care about
+    /// into one release (the BC DVD convention); cross-release call
+    /// sites can be added later by reusing the recursive-CTE chain walk.
+    /// </summary>
+    private async Task EmitCallSiteReferencesAsync(
+        int orgId, int releaseId, ImportTotals totals, CancellationToken ct)
+    {
+        _db.ChangeTracker.Clear();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        // (1) Build the type catalog: every object in this release keyed
+        // by name (case-insensitive). Multiple objects can share a name
+        // across kinds and modules — e.g. Microsoft's Subscription
+        // Billing app declares a tableextension named "Sales Header"
+        // alongside the actual Sales Header table in Base Application.
+        // We store every candidate per name; the resolver chooses by
+        // visibility + non-extension preference at lookup time.
+        //
+        // Identity-keyed object-id lookup lets the post-extraction
+        // TargetSymbolId stamp (and the resolver's member lookup) find
+        // the right oe_module_objects row even when multiple objects
+        // share a name. The composite key (AppId, Kind, Name) is the
+        // catalog's canonical identity.
+        var typeRows = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId)
+            .Select(o => new
+            {
+                o.Id,
+                o.Kind,
+                o.ObjectId,
+                o.Name,
+                AppId = o.Module!.AppId,
+            })
+            .ToListAsync(ct);
+        var typesByName = new Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>>(StringComparer.OrdinalIgnoreCase);
+        var typesByObjectId = new Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef>();
+        var objectIdByIdentity = new Dictionary<(Guid AppId, string Kind, string Name), long>(
+            new ObjectIdentityComparer());
+        foreach (var t in typeRows)
+        {
+            var typeRef = new ALDevToolbox.Services.Al.AlTypeRef(t.AppId, t.Kind, t.ObjectId, t.Name);
+            typesByObjectId[t.Id] = typeRef;
+            if (!typesByName.TryGetValue(t.Name, out var list))
+            {
+                list = new List<ALDevToolbox.Services.Al.AlTypeRef>();
+                typesByName[t.Name] = list;
+            }
+            list.Add(typeRef);
+            objectIdByIdentity[(t.AppId, t.Kind, t.Name)] = t.Id;
+        }
+
+        // (1b) Synthesise catalog entries for BC platform virtual tables.
+        // These live in the AL runtime (ids 2000000001 – 2000000999 reserved),
+        // not in any module's symbol package, but extensions reference them
+        // freely: `TempFieldSet: Record Field;`, `User.SetRange("User Name", X);`.
+        // Without synthesis the type lookup fails and the chain is logged
+        // as an unresolved variable type — even though the reference is
+        // legitimate runtime API. Stamped with PlatformAppId (Guid.Empty)
+        // so visibility-aware resolvers can recognise them; the resolver
+        // already treats PlatformAppId as visible to everyone via the
+        // FoundationalAppNames-style implicit-visibility rule (see below).
+        foreach (var vt in PlatformVirtualTables)
+        {
+            var typeRef = new ALDevToolbox.Services.Al.AlTypeRef(PlatformAppId, "table", vt.Id, vt.Name);
+            if (!typesByName.TryGetValue(vt.Name, out var list))
+            {
+                list = new List<ALDevToolbox.Services.Al.AlTypeRef>();
+                typesByName[vt.Name] = list;
+            }
+            list.Add(typeRef);
+            // No oe_module_objects.Id for synthetic entries — typesByObjectId
+            // and objectIdByIdentity stay unaugmented (they're keyed off
+            // the DB row id, which doesn't exist here). The chain walker
+            // only needs typesByName + RecordMethods to resolve calls
+            // like `TempFieldSet.GET(...)` against these tables.
+        }
+
+        // (2) Member catalog: for each owner Id, list its symbols.
+        // Keyed by Id because owner names aren't unique across kinds.
+        var memberRows = await _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Object!.Module!.ReleaseId == releaseId)
+            .Select(s => new
+            {
+                OwnerId = s.Object!.Id,
+                SymbolId = s.Id,
+                s.Name,
+                s.Kind,
+                s.ReturnType,
+            })
+            .ToListAsync(ct);
+        var membersByOwner = new Dictionary<long, List<MemberEntry>>();
+        foreach (var m in memberRows)
+        {
+            if (!membersByOwner.TryGetValue(m.OwnerId, out var list))
+            {
+                list = new List<MemberEntry>();
+                membersByOwner[m.OwnerId] = list;
+            }
+            // ReturnType is the raw "Record Customer" / "Code[20]" string
+            // from the symbol package. Pull the AL type name out of it
+            // so chained access can resolve through return types.
+            var (retKw, retName) = ParseReturnType(m.ReturnType);
+            list.Add(new MemberEntry(m.SymbolId, m.Name, m.Kind, retKw, retName));
+        }
+
+        // (3) Per-object globals from oe_module_variables. Keyed by
+        // (objectId, lowered name). Built once; the per-file loop
+        // grabs its file's owner-object id and filters.
+        var varRows = await _db.OeModuleVariables.AsNoTracking()
+            .Where(v => v.Object!.Module!.ReleaseId == releaseId)
+            .Select(v => new
+            {
+                OwnerId = v.Object!.Id,
+                v.Name,
+                v.TypeKeyword,
+                v.TypeName,
+            })
+            .ToListAsync(ct);
+        var globalsByOwner = new Dictionary<long, Dictionary<string, ALDevToolbox.Services.Al.ResolvedVariableType>>();
+        foreach (var v in varRows)
+        {
+            if (string.IsNullOrEmpty(v.TypeName)) continue;
+            if (!globalsByOwner.TryGetValue(v.OwnerId, out var dict))
+            {
+                dict = new Dictionary<string, ALDevToolbox.Services.Al.ResolvedVariableType>(StringComparer.OrdinalIgnoreCase);
+                globalsByOwner[v.OwnerId] = dict;
+            }
+            dict[v.Name] = new ALDevToolbox.Services.Al.ResolvedVariableType(v.TypeKeyword, v.TypeName);
+        }
+
+        // (4) Extensions-by-base index: for each tableextension /
+        // pageextension / etc., record the base object name it targets
+        // plus the extension's own AppId + ObjectId. The resolver
+        // consults this map when a member lookup misses on the base —
+        // a procedure added via CustomerExt should be findable as a
+        // method on Customer-typed receivers, subject to visibility.
+        var extRows = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId)
+            .Where(o => o.Kind == "tableextension"
+                     || o.Kind == "pageextension"
+                     || o.Kind == "reportextension"
+                     || o.Kind == "enumextension"
+                     || o.Kind == "permissionsetextension")
+            .Where(o => o.ExtendsObjectName != null)
+            .Select(o => new
+            {
+                o.Id,
+                ExtensionAppId = o.Module!.AppId,
+                BaseName = o.ExtendsObjectName!,
+            })
+            .ToListAsync(ct);
+        var extensionsByBaseName = new Dictionary<string, List<ExtensionEntry>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var e in extRows)
+        {
+            if (!extensionsByBaseName.TryGetValue(e.BaseName, out var list))
+            {
+                list = new List<ExtensionEntry>();
+                extensionsByBaseName[e.BaseName] = list;
+            }
+            list.Add(new ExtensionEntry(e.ExtensionAppId, e.Id));
+        }
+
+        // (5) Per-module visibility: which AppIds is each module
+        // allowed to reach via app.json dependencies (transitively).
+        // Object resolution and extension-member lookup both filter
+        // through this so a Base App file can't reach into DK Core,
+        // a third-party extension can't reach into an unrelated
+        // third-party extension, etc.
+        var moduleVisibility = await BuildModuleVisibilityAsync(releaseId, ct);
+
+        // (6) Per-module resolver cache. All files in the same module
+        // share the same visibility set, so build the resolver once
+        // and reuse across files.
+        var resolversByModule = new Dictionary<long, ALDevToolbox.Services.Al.IAlTypeResolver>();
+        ALDevToolbox.Services.Al.IAlTypeResolver ResolverFor(long moduleId)
+        {
+            if (resolversByModule.TryGetValue(moduleId, out var cached)) return cached;
+            moduleVisibility.TryGetValue(moduleId, out var visible);
+            var r = new CatalogResolver(
+                typesByName, typesByObjectId, objectIdByIdentity,
+                membersByOwner, extensionsByBaseName, visible);
+            resolversByModule[moduleId] = r;
+            return r;
+        }
+
+        // (7) Walk every source file. For each, find its owner object
+        // (the row in oe_module_objects whose source_file_id matches),
+        // build the extract context, run the extractor, and emit
+        // ModuleReference rows. Saved in chunks to keep tracker
+        // pressure bounded.
+        var files = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Module!.ReleaseId == releaseId)
+            .Select(f => new
+            {
+                f.Id,
+                f.Content,
+                f.Path,
+                ModuleId = f.ModuleId,
+                ModuleName = f.Module!.Name,
+                Owner = _db.OeModuleObjects
+                    .Where(o => o.SourceFileId == f.Id)
+                    .OrderBy(o => o.Id)
+                    .Select(o => new
+                    {
+                        o.Id,
+                        o.Kind,
+                        o.Name,
+                        o.ObjectId,
+                        AppId = o.Module!.AppId,
+                        o.SourceTableName,
+                        o.ExtendsObjectName,
+                    })
+                    .FirstOrDefault(),
+            })
+            .ToListAsync(ct);
+
+        int totalEmitted = 0;
+        int totalUnresolved = 0;
+        int pending = 0;
+        // Diagnostic bucket: first N unresolved references seen across all
+        // files in this phase. Capped low so a pathological release doesn't
+        // bloat the log; the per-file extractor also caps internally so
+        // late files still get a chance to contribute samples even when
+        // earlier files were noisy.
+        const int unresolvedLogCap = 50;
+        var unresolvedSamples = new List<(string Module, string Path, string Owner, ALDevToolbox.Services.Al.UnresolvedSample Sample)>(unresolvedLogCap);
+        foreach (var file in files)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (file.Owner is null || string.IsNullOrEmpty(file.Content)) continue;
+
+            globalsByOwner.TryGetValue(file.Owner.Id, out var globals);
+            // For tableextensions, Rec is semantically the BASE TABLE
+            // (the extension's columns are merged into the base at
+            // runtime). The base table's name lives in ExtendsObjectName
+            // — we feed it through OwnerSourceTableName so BuildGlobalScope
+            // wires Rec to (Record, base table). ResolveMember on the
+            // base table then walks base → visible extensions, which
+            // covers all three cases (base-declared, this-extension-
+            // declared, sibling-extension-declared).
+            var sourceTable = file.Owner.SourceTableName;
+            if (string.IsNullOrEmpty(sourceTable) && file.Owner.Kind == "tableextension")
+            {
+                sourceTable = file.Owner.ExtendsObjectName;
+            }
+            var ctx = new ALDevToolbox.Services.Al.AlExtractContext(
+                OwnerKind: file.Owner.Kind,
+                OwnerName: file.Owner.Name,
+                OwnerObjectId: file.Owner.ObjectId,
+                OwnerAppId: file.Owner.AppId,
+                GlobalVars: globals ?? new Dictionary<string, ALDevToolbox.Services.Al.ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+                Resolver: ResolverFor(file.ModuleId),
+                OwnerSourceTableName: sourceTable);
+
+            var result = ALDevToolbox.Services.Al.AlReferenceExtractor.Extract(file.Content, ctx);
+            totalUnresolved += result.Stats.UnresolvedReceivers;
+
+            // Diagnostic sampling: capture the first N unresolved
+            // tokens across the whole phase so operators can spot
+            // systematic gaps (a common token shape, an uningested
+            // dependency, …) without re-running with verbose logging.
+            // Cap at perFileSampleCap per file so one noisy file
+            // doesn't consume the whole bucket — we'd rather see
+            // patterns across many files than 50 lines from 3 files.
+            const int perFileSampleCap = 3;
+            if (unresolvedSamples.Count < unresolvedLogCap
+                && result.Stats.UnresolvedSamples.Count > 0)
+            {
+                int fromThisFile = 0;
+                foreach (var s in result.Stats.UnresolvedSamples)
+                {
+                    if (unresolvedSamples.Count >= unresolvedLogCap) break;
+                    if (fromThisFile >= perFileSampleCap) break;
+                    unresolvedSamples.Add((
+                        file.ModuleName ?? string.Empty,
+                        file.Path ?? string.Empty,
+                        file.Owner.Kind + ":" + file.Owner.Name,
+                        s));
+                    fromThisFile++;
+                }
+            }
+
+            foreach (var r in result.References)
+            {
+                long? targetSymbolId = null;
+                // Identity-keyed lookup so a tableextension named the
+                // same as the table it extends doesn't claim the table's
+                // symbols at TargetSymbolId stamp time. The reference row
+                // carries TargetAppId + TargetObjectKind + TargetObjectName
+                // — that's exactly the catalog's canonical identity.
+                if (objectIdByIdentity.TryGetValue(
+                        (r.TargetAppId, r.TargetObjectKind, r.TargetObjectName),
+                        out var ownerId)
+                    && membersByOwner.TryGetValue(ownerId, out var memberList))
+                {
+                    targetSymbolId = memberList.FirstOrDefault(m =>
+                        string.Equals(m.Name, r.TargetMemberName, StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(m.Kind, r.TargetMemberKind, StringComparison.OrdinalIgnoreCase))?.SymbolId;
+                }
+
+                _db.OeModuleReferences.Add(new OeModuleReference
+                {
+                    OrganizationId = orgId,
+                    ModuleId = file.ModuleId,
+                    SourceObjectId = file.Owner.Id,
+                    TargetAppId = r.TargetAppId,
+                    TargetObjectKind = r.TargetObjectKind,
+                    TargetObjectId = r.TargetObjectId,
+                    TargetObjectName = r.TargetObjectName,
+                    ReferenceKind = r.ReferenceKind,
+                    LineNumber = r.Line,
+                    ColumnNumber = r.Column,
+                    TargetMemberName = r.TargetMemberName,
+                    TargetMemberKind = r.TargetMemberKind,
+                    TargetSymbolId = targetSymbolId,
+                });
+                totalEmitted++;
+                pending++;
+            }
+
+            if (pending >= 500)
+            {
+                await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+                _db.ChangeTracker.Clear();
+                pending = 0;
+            }
+        }
+        if (pending > 0)
+        {
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            _db.ChangeTracker.Clear();
+        }
+
+        totals.ReferencesImported += totalEmitted;
+        _logger.LogInformation(
+            "Phase-2 call-site references: ReleaseId={ReleaseId} Files={Files} Emitted={Emitted} Unresolved={Unresolved} Elapsed={Elapsed}ms",
+            releaseId, files.Count, totalEmitted, totalUnresolved, sw.ElapsedMilliseconds);
+
+        if (unresolvedSamples.Count > 0)
+        {
+            // One log line per sample so existing grep/structured-log
+            // tooling can slice by Reason without parsing a multi-line
+            // entry. Includes the file's module+path+owner so the dev
+            // can open the source viewer to inspect the token in
+            // context. Capped at unresolvedLogCap (see above).
+            foreach (var (module, path, owner, sample) in unresolvedSamples)
+            {
+                _logger.LogInformation(
+                    "Phase-2 unresolved sample: ReleaseId={ReleaseId} Reason={Reason} Token='{Token}' Line={Line} Col={Col} Owner={Owner} ReceiverKind={ReceiverKind} ReceiverName='{ReceiverName}' Module={Module} Path={Path}",
+                    releaseId,
+                    sample.Reason,
+                    sample.Token,
+                    sample.Line,
+                    sample.Column,
+                    owner,
+                    sample.ReceiverKind ?? "(n/a)",
+                    sample.ReceiverName ?? string.Empty,
+                    module,
+                    path);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Pulls the AL type out of a symbol-package return-type string
+    /// like <c>"Record Customer"</c>, <c>"Code[20]"</c>,
+    /// <c>"Codeunit \"Sales-Post\""</c>. Returns (null, null) for scalar
+    /// types so the extractor's chained-access loop terminates on the
+    /// next step.
+    /// </summary>
+    private static (string? Keyword, string? TypeName) ParseReturnType(string? returnType)
+    {
+        if (string.IsNullOrEmpty(returnType)) return (null, null);
+        var trimmed = returnType.Trim();
+        foreach (var kw in ReturnTypeKeywords)
+        {
+            if (trimmed.StartsWith(kw, StringComparison.OrdinalIgnoreCase)
+                && trimmed.Length > kw.Length
+                && char.IsWhiteSpace(trimmed[kw.Length]))
+            {
+                var rest = trimmed.Substring(kw.Length).TrimStart();
+                if (rest.StartsWith('"') && rest.EndsWith('"') && rest.Length >= 2)
+                {
+                    return (kw, rest.Substring(1, rest.Length - 2));
+                }
+                return (kw, rest);
+            }
+        }
+        return (null, null);
+    }
+
+    private static readonly string[] ReturnTypeKeywords = new[]
+    {
+        "Record", "Codeunit", "Page", "Report", "Query", "XmlPort",
+        "Interface", "Enum", "RequestPage", "TestPage", "TestPart",
+        "ControlAddIn", "PermissionSet", "Profile",
+    };
+
+    /// <summary>
+    /// For each module in the release, compute the transitive set of
+    /// AppIds it can legally reach via <c>app.json</c> dependencies
+    /// (plus the module's own AppId, plus the well-known foundational
+    /// Microsoft apps every extension implicitly resolves). The
+    /// reference-extractor's resolver consults this set so a file in
+    /// DK Core can resolve types from Base App (an implicit dep) but
+    /// not from OIOUBL (an unrelated extension).
+    ///
+    /// <para><b>Implicit foundational apps.</b> AL extensions never
+    /// declare dependencies on System Application, Base Application,
+    /// Application, or Business Foundation — the AL compiler always
+    /// makes their symbols available, and Microsoft confirmed this
+    /// matches the developer-tool experience. AMC Banking 365
+    /// Fundamentals (and ~every BC extension) ships with empty
+    /// <c>&lt;Dependencies/&gt;</c> in <c>NavxManifest.xml</c> yet
+    /// freely references <c>Codeunit "Temp Blob"</c> (System App),
+    /// <c>Record "Sales Header"</c> (Base App), etc. The visibility
+    /// set must mirror that or every such reference looks
+    /// "type-unresolved" from the resolver's perspective.
+    ///
+    /// Modules whose <c>DependenciesJson</c> references AppIds outside
+    /// this release land in the visibility set anyway — cross-release
+    /// receivers don't resolve in this pass but the set correctly
+    /// captures intent.
+    /// </summary>
+    private async Task<Dictionary<long, HashSet<Guid>>> BuildModuleVisibilityAsync(
+        int releaseId, CancellationToken ct)
+    {
+        var modules = await _db.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == releaseId)
+            .Select(m => new { m.Id, m.AppId, m.Name, m.Publisher, m.DependenciesJson })
+            .ToListAsync(ct);
+
+        // Each module's direct deps as parsed from DependenciesJson.
+        var directDepsByAppId = new Dictionary<Guid, HashSet<Guid>>();
+        foreach (var m in modules)
+        {
+            directDepsByAppId[m.AppId] = ParseDependencyAppIds(m.DependenciesJson);
+        }
+
+        // The implicit foundational set: Microsoft-published modules in
+        // this release whose name matches one of the always-available
+        // platform apps. Matched by name so the GUID can drift across
+        // BC versions (Microsoft has historically restamped these).
+        // Publisher filter keeps a hypothetical third-party app called
+        // "Base Application" from sneaking into everyone's visibility.
+        var implicitFoundational = new HashSet<Guid>(
+            modules
+                .Where(m => string.Equals(m.Publisher, "Microsoft", StringComparison.OrdinalIgnoreCase)
+                            && FoundationalAppNames.Contains(m.Name))
+                .Select(m => m.AppId));
+
+        // All Microsoft-published modules in the release. Microsoft apps
+        // (first-party) have unrestricted access to each other's symbols
+        // in BC's compiler — the AL dev tools surface every Microsoft
+        // codeunit / table / page without requiring an app.json dep.
+        // Examples surfaced in the diagnostic samples:
+        //   - `_Exclude_APIV1_` / `_Exclude_APIV2_` reference
+        //     `Codeunit "O365 Setup Email"` which lives in another
+        //     Microsoft app neither lists as a dep.
+        //   - `Application Test Library` references `Library - Utility`
+        //     and friends across sibling Microsoft test-library apps.
+        //   - `Bank Account Reconciliation With AI Tests` references
+        //     `Library - ERM`, `Library - Random`, `Assert`.
+        // Third-party apps still respect declared deps + the foundational
+        // set; this expansion only applies when the importing module is
+        // Microsoft-published.
+        var allMicrosoftAppIds = new HashSet<Guid>(
+            modules
+                .Where(m => string.Equals(m.Publisher, "Microsoft", StringComparison.OrdinalIgnoreCase))
+                .Select(m => m.AppId));
+
+        // Transitive closure per module, including the module itself,
+        // the implicit foundational AppIds, and the PlatformAppId sentinel
+        // for the synthetic virtual-table entries. Microsoft-published
+        // modules additionally see every other Microsoft module in the
+        // release (see comment above on allMicrosoftAppIds).
+        var result = new Dictionary<long, HashSet<Guid>>(modules.Count);
+        foreach (var m in modules)
+        {
+            var visible = new HashSet<Guid>(implicitFoundational) { m.AppId, PlatformAppId };
+            if (string.Equals(m.Publisher, "Microsoft", StringComparison.OrdinalIgnoreCase))
+            {
+                visible.UnionWith(allMicrosoftAppIds);
+            }
+            WalkDeps(m.AppId, visible, directDepsByAppId);
+            result[m.Id] = visible;
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Well-known Microsoft module names whose AppIds are implicitly
+    /// visible to every other module in the release. These are the
+    /// "platform" apps the AL compiler always resolves against without
+    /// requiring an <c>app.json</c> dependency declaration.
+    ///
+    /// <para><b>EXTENDING:</b> when Microsoft introduces a new
+    /// foundational umbrella app (every extension can reference it
+    /// without declaring a dep), add its display name here. Matched
+    /// case-insensitively against <c>OeModule.Name</c> + a
+    /// Publisher = "Microsoft" filter so a third-party can't ship an
+    /// app with the same name to widen visibility.</para>
+    /// </summary>
+    private static readonly HashSet<string> FoundationalAppNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "System Application",
+        "Base Application",
+        "Application",
+        "Business Foundation",
+    };
+
+    /// <summary>
+    /// Sentinel AppId for the synthetic platform virtual tables (and
+    /// any other catalog entry that doesn't belong to a specific
+    /// imported module). Every module's visibility set includes this
+    /// AppId so chains through <c>Record Field</c>, <c>Record Company</c>
+    /// etc. resolve cleanly. <see cref="Guid.Empty"/> as a sentinel is
+    /// safe because real BC AppIds are always non-empty GUIDs.
+    /// </summary>
+    private static readonly Guid PlatformAppId = Guid.Empty;
+
+    /// <summary>
+    /// BC platform virtual tables — runtime-provided system tables
+    /// every extension can reference but no module's symbol package
+    /// declares. The id range <c>2000000001 – 2000000999</c> is
+    /// reserved by Microsoft for these; names have been stable across
+    /// BC versions (the compiler emits canonical names like
+    /// <c>"Field"</c> / <c>"Company"</c> / <c>"User"</c> rather than
+    /// the numeric id when these are referenced from AL source).
+    ///
+    /// Synthesised as catalog entries during Phase-2 so type lookups
+    /// on <c>TempFieldSet: Record Field</c> and similar variable
+    /// declarations succeed. Chain steps like <c>TempFieldSet.GET(...)</c>
+    /// then resolve through <see cref="ALDevToolbox.Services.Al.AlBuiltinMethods.RecordMethods"/>;
+    /// field-specific accesses (<c>TempFieldSet.TableNo</c>) still
+    /// drop as <c>chain-step</c> unresolveds because we don't have the
+    /// platform-table schemas — acceptable trade-off given the volume.
+    ///
+    /// <para><b>EXTENDING:</b> if a new BC version adds a platform
+    /// virtual table — or renames an existing one — add an entry
+    /// here. The numeric range safety net
+    /// (<c>AlReferenceExtractor.IsPlatformVirtualTableId</c>) silences
+    /// the diagnostic even for unlisted ids, but the named entry is
+    /// what lets `Record &lt;Name&gt;` chains resolve cleanly through
+    /// the synthetic catalog. Source for the canonical id → name map:
+    /// hougaard.com (cited at the call site below).</para>
+    /// </summary>
+    private static readonly (int Id, string Name)[] PlatformVirtualTables =
+    {
+        // Source: https://www.hougaard.com/all-the-2-billion-tables-in-business-central-v16/
+        // — authoritative enumeration of the BC virtual-table id space.
+        // The IsPlatformVirtualTableId range check still catches any
+        // numeric id we miss; this map is for named-type chain resolution
+        // (`TempFieldSet: Record Field` etc.).
+        (2000000001, "Object"),
+        (2000000004, "Permission Set"),
+        (2000000005, "Permission"),
+        (2000000006, "Company"),
+        (2000000007, "Date"),
+        (2000000009, "Session"),
+        (2000000020, "Drive"),
+        (2000000022, "File"),
+        (2000000026, "Integer"),
+        (2000000028, "Table Information"),
+        (2000000029, "System Object"),
+        (2000000038, "AllObj"),
+        (2000000039, "Printer"),
+        (2000000040, "License Information"),
+        (2000000041, "Field"),
+        (2000000043, "License Permission"),
+        (2000000044, "Permission Range"),
+        (2000000045, "Windows Language"),
+        (2000000048, "Database"),
+        (2000000049, "Code Coverage"),
+        (2000000053, "Access Control"),
+        (2000000055, "SID - Account ID"),
+        (2000000058, "AllObjWithCaption"),
+        (2000000063, "Key"),
+        (2000000065, "Send-To Program"),
+        (2000000066, "Style Sheet"),
+        (2000000067, "User Default Style Sheet"),
+        (2000000068, "Record Link"),
+        (2000000069, "Add-in"),
+        (2000000071, "Object Metadata"),
+        (2000000072, "Profile"),
+        (2000000073, "User Personalization"),
+        (2000000074, "Profile Metadata"),
+        (2000000075, "User Metadata"),
+        (2000000076, "Web Service"),
+        (2000000078, "Chart"),
+        (2000000080, "Page Data Personalization"),
+        (2000000081, "Upgrade Blob Storage"),
+        (2000000082, "Report Layout"),
+        (2000000083, "Tenant Profile Setting"),
+        (2000000084, "Tenant Profile Extension"),
+        (2000000086, "Profile Configuration Symbols"),
+        (2000000095, "API Webhook Subscription"),
+        (2000000096, "API Webhook Notification"),
+        (2000000097, "API Webhook Entity"),
+        (2000000098, "API Webhook Notification Aggr"),
+        (2000000103, "Debugger Watch Value"),
+        (2000000107, "Isolated Storage"),
+        (2000000110, "Active Session"),
+        (2000000111, "Session Event"),
+        (2000000112, "Server Instance"),
+        (2000000114, "Document Service"),
+        (2000000120, "User"),
+        (2000000121, "User Property"),
+        (2000000130, "Device"),
+        (2000000135, "Table Synch. Setup"),
+        (2000000136, "Table Metadata"),
+        (2000000137, "CodeUnit Metadata"),
+        (2000000138, "Page Metadata"),
+        (2000000139, "Report Metadata"),
+        (2000000140, "Event Subscription"),
+        (2000000141, "Table Relations Metadata"),
+        (2000000142, "Query Metadata"),
+        (2000000143, "Page Action"),
+        (2000000144, "Power BI Blob"),
+        (2000000145, "Power BI Default Selection"),
+        (2000000146, "Intelligent Cloud"),
+        (2000000152, "NAV App Data Archive"),
+        (2000000153, "NAV App Installed App"),
+        (2000000154, "Database Locks"),
+        (2000000157, "NAV App Extra"),
+        (2000000159, "Data Sensitivity"),
+        (2000000162, "NAV App Capabilities"),
+        (2000000163, "NAV App Object Prerequisites"),
+        (2000000164, "Time Zone"),
+        (2000000165, "Tenant Permission Set"),
+        (2000000166, "Tenant Permission"),
+        (2000000167, "Aggregate Permission Set"),
+        (2000000168, "Tenant Web Service"),
+        (2000000169, "NAV App Tenant Add-In"),
+        (2000000170, "Configuration Package File"),
+        (2000000171, "Page Table Field"),
+        (2000000172, "Table Field Types"),
+        (2000000173, "Intelligent Cloud Status"),
+        (2000000175, "Scheduled Task"),
+        (2000000177, "Tenant Profile"),
+        (2000000178, "All Profile"),
+        (2000000179, "OData Edm Type"),
+        (2000000180, "Media Set"),
+        (2000000181, "Media"),
+        (2000000182, "Media Resources"),
+        (2000000183, "Tenant Media Set"),
+        (2000000184, "Tenant Media"),
+        (2000000185, "Tenant Media Thumbnails"),
+        (2000000186, "Profile Page Metadata"),
+        (2000000187, "Tenant Profile Page Metadata"),
+        (2000000188, "User Page Metadata"),
+        (2000000189, "Tenant License State"),
+        (2000000190, "Entitlement Set"),
+        (2000000191, "Entitlement"),
+        (2000000192, "Page Control Field"),
+        (2000000193, "Api Web Service"),
+        (2000000194, "Webhook Notification"),
+        (2000000195, "Membership Entitlement"),
+        (2000000196, "Object Options"),
+        (2000000197, "Token Cache"),
+        (2000000198, "Page Documentation"),
+        (2000000199, "Webhook Subscription"),
+        (2000000200, "NAV App Tenant Operation"),
+        (2000000201, "NAV App Setting"),
+        (2000000202, "All Control Fields"),
+        (2000000203, "Report Data Items"),
+        (2000000204, "Page Info And Fields"),
+        (2000000205, "Object Access Intent Override"),
+        (2000000206, "Published Application"),
+        (2000000207, "Application Object Metadata"),
+        (2000000208, "Application Resource"),
+        (2000000209, "Application Dependency"),
+        (2000000210, "Tenant Feature Key"),
+        (2000000211, "Feature Key"),
+        (2000000212, "Installed Application"),
+        (2000000213, "Designed Query"),
+        (2000000214, "Designed Query Caption"),
+        (2000000215, "Designed Query Category"),
+        (2000000216, "Designed Query Column"),
+        (2000000217, "Designed Query Column Filter"),
+        (2000000218, "Designed Query Data Item"),
+        (2000000219, "Designed Query Filter"),
+        (2000000220, "Designed Query Join"),
+        (2000000221, "Designed Query Order By"),
+    };
+
+    private static void WalkDeps(
+        Guid current, HashSet<Guid> acc,
+        Dictionary<Guid, HashSet<Guid>> directDepsByAppId)
+    {
+        if (!directDepsByAppId.TryGetValue(current, out var deps)) return;
+        foreach (var dep in deps)
+        {
+            // Add returns false when already present — prevents infinite
+            // recursion on (degenerate) cyclic dependency declarations.
+            if (acc.Add(dep)) WalkDeps(dep, acc, directDepsByAppId);
+        }
+    }
+
+    private static HashSet<Guid> ParseDependencyAppIds(string json)
+    {
+        var set = new HashSet<Guid>();
+        if (string.IsNullOrEmpty(json) || json == "[]") return set;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array) return set;
+            foreach (var el in doc.RootElement.EnumerateArray())
+            {
+                if (el.TryGetProperty("id", out var idProp)
+                    && idProp.ValueKind == System.Text.Json.JsonValueKind.String
+                    && Guid.TryParse(idProp.GetString(), out var id))
+                {
+                    set.Add(id);
+                }
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Malformed dep JSON shouldn't kill the import — the module
+            // just won't contribute deps to its visibility set.
+        }
+        return set;
+    }
+
+    private sealed record MemberEntry(
+        long SymbolId, string Name, string Kind, string? ReturnTypeKeyword, string? ReturnTypeName);
+
+    private sealed record ExtensionEntry(Guid AppId, long ObjectId);
+
+    /// <summary>
+    /// Composite-key comparer for object-identity lookups
+    /// <c>(AppId, Kind, Name)</c>. Kind and Name use ordinal-ignore-case
+    /// (AL identifiers are case-insensitive); AppId is a Guid with its
+    /// own structural equality. Storing identity rather than name alone
+    /// disambiguates name collisions across kinds / modules — a Table
+    /// and a TableExtension can both be named "Sales Header".
+    /// </summary>
+    private sealed class ObjectIdentityComparer : IEqualityComparer<(Guid AppId, string Kind, string Name)>
+    {
+        public bool Equals((Guid AppId, string Kind, string Name) x, (Guid AppId, string Kind, string Name) y) =>
+            x.AppId == y.AppId
+            && string.Equals(x.Kind, y.Kind, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.Name, y.Name, StringComparison.OrdinalIgnoreCase);
+
+        public int GetHashCode((Guid AppId, string Kind, string Name) obj) =>
+            HashCode.Combine(
+                obj.AppId,
+                obj.Kind.ToLowerInvariant(),
+                obj.Name.ToLowerInvariant());
+    }
+
+    /// <summary>
+    /// IAlTypeResolver implementation backed by the in-memory catalogs
+    /// built once per release. Dependency-aware: when constructed with
+    /// a non-null <c>visibleAppIds</c> set, type and member lookups
+    /// only return matches whose declaring module's AppId is in the
+    /// caller's visibility set (the transitive closure of the caller
+    /// module's app.json dependencies). When the visibility set is
+    /// null, the resolver is permissive — used by tests that don't
+    /// care about dependency direction.
+    ///
+    /// Member lookup also walks tableextensions / pageextensions
+    /// targeting the receiver's base type: a procedure added by
+    /// CustomerExt is callable as <c>Cust.MyMethod()</c> on a
+    /// Customer-typed variable. The returned AlMember tags
+    /// <see cref="ALDevToolbox.Services.Al.AlMember.DeclaringType"/>
+    /// with the extension so the extractor stamps the reference's
+    /// target at the extension (the actual declaration site), not the
+    /// base table. Extensions are also filtered by visibility — if the
+    /// caller's module doesn't depend on the extension's module, the
+    /// extension's members are invisible.
+    /// </summary>
+    private sealed class CatalogResolver : ALDevToolbox.Services.Al.IAlTypeResolver
+    {
+        private readonly Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>> _typesByName;
+        private readonly Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef> _typesByObjectId;
+        private readonly Dictionary<(Guid AppId, string Kind, string Name), long> _objectIdByIdentity;
+        private readonly Dictionary<long, List<MemberEntry>> _members;
+        private readonly Dictionary<string, List<ExtensionEntry>> _extensionsByBaseName;
+        private readonly HashSet<Guid>? _visibleAppIds;
+
+        public CatalogResolver(
+            Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>> typesByName,
+            Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef> typesByObjectId,
+            Dictionary<(Guid AppId, string Kind, string Name), long> objectIdByIdentity,
+            Dictionary<long, List<MemberEntry>> members,
+            Dictionary<string, List<ExtensionEntry>> extensionsByBaseName,
+            HashSet<Guid>? visibleAppIds)
+        {
+            _typesByName = typesByName;
+            _typesByObjectId = typesByObjectId;
+            _objectIdByIdentity = objectIdByIdentity;
+            _members = members;
+            _extensionsByBaseName = extensionsByBaseName;
+            _visibleAppIds = visibleAppIds;
+        }
+
+        /// <summary>
+        /// Resolves a name to a single AlTypeRef. When multiple objects
+        /// share the name (e.g. a Table and a TableExtension both named
+        /// "Sales Header" — Microsoft's Subscription Billing app does
+        /// this against Base Application's Sales Header), preference is:
+        /// <list type="number">
+        ///   <item>Visible (the caller's module can see the declaring
+        ///         AppId via app.json dependencies).</item>
+        ///   <item>Kind matches the caller's hint (<paramref name="expectedKeyword"/>).
+        ///         A page's <c>SourceTable = "Sales Header"</c> arrives
+        ///         here with keyword <c>Record</c> — a TableExtension
+        ///         named "Sales Header" can't be a page's source table,
+        ///         only the base Table can.</item>
+        ///   <item>Otherwise, a non-extension kind beats an extension
+        ///         kind. Typed-literal references in AL almost always
+        ///         mean the base object.</item>
+        /// </list>
+        /// </summary>
+        public ALDevToolbox.Services.Al.AlTypeRef? ResolveTypeByName(string typeName, string? expectedKeyword = null)
+        {
+            if (!_typesByName.TryGetValue(typeName, out var candidates)) return null;
+            var expectedKind = MapKeywordToKind(expectedKeyword);
+            ALDevToolbox.Services.Al.AlTypeRef? best = null;
+            foreach (var t in candidates)
+            {
+                if (!IsVisible(t.AppId)) continue;
+                // With a kind hint, exact match wins outright — return
+                // the first exact-kind visible candidate.
+                if (expectedKind is not null
+                    && string.Equals(t.Kind, expectedKind, StringComparison.OrdinalIgnoreCase))
+                {
+                    return t;
+                }
+                if (best is null) { best = t; continue; }
+                if (IsExtensionKind(best.Kind) && !IsExtensionKind(t.Kind))
+                {
+                    best = t;
+                }
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// Maps the caller's kind hint to a catalog kind. Accepts both
+        /// AL type keywords (<c>Record</c>, <c>Codeunit</c>, <c>Page</c>, …)
+        /// and catalog kind values (<c>table</c>, <c>codeunit</c>,
+        /// <c>pageextension</c>, …) — the latter for cases like
+        /// <c>OwnerType()</c> in the extractor where we already have the
+        /// owner's catalog kind and want bare self-calls on a
+        /// pageextension named the same as its base page to land on the
+        /// extension, not on the base.
+        /// <c>Record</c> is the only keyword that doesn't passthrough —
+        /// it maps to <c>table</c>. The rest are identical except for
+        /// casing.
+        /// </summary>
+        private static string? MapKeywordToKind(string? keyword)
+        {
+            if (string.IsNullOrEmpty(keyword)) return null;
+            var lower = keyword.ToLowerInvariant();
+            if (lower == "record") return "table";
+            return lower;
+        }
+
+        public ALDevToolbox.Services.Al.AlMember? ResolveMember(
+            ALDevToolbox.Services.Al.AlTypeRef owner, string memberName)
+        {
+            // Owner's own members win — same-name members on extensions
+            // are shadowed by the base's own declaration (AL dispatch).
+            // Use the composite identity key so a same-named extension
+            // doesn't get confused with the base when looking up the
+            // owner's DB id.
+            if (_objectIdByIdentity.TryGetValue((owner.AppId, owner.Kind, owner.Name), out var ownerId)
+                && _members.TryGetValue(ownerId, out var ownerMembers))
+            {
+                var match = ownerMembers.FirstOrDefault(m =>
+                    string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
+                if (match is not null)
+                {
+                    return new ALDevToolbox.Services.Al.AlMember(
+                        Name: match.Name,
+                        Kind: match.Kind,
+                        ReturnTypeKeyword: match.ReturnTypeKeyword,
+                        ReturnTypeName: match.ReturnTypeName);
+                }
+            }
+
+            // Walk visible extensions of this base.
+            if (_extensionsByBaseName.TryGetValue(owner.Name, out var extensions))
+            {
+                foreach (var ext in extensions)
+                {
+                    if (!IsVisible(ext.AppId)) continue;
+                    if (!_members.TryGetValue(ext.ObjectId, out var extMembers)) continue;
+                    var match = extMembers.FirstOrDefault(m =>
+                        string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
+                    if (match is null) continue;
+
+                    _typesByObjectId.TryGetValue(ext.ObjectId, out var declaringType);
+                    return new ALDevToolbox.Services.Al.AlMember(
+                        Name: match.Name,
+                        Kind: match.Kind,
+                        ReturnTypeKeyword: match.ReturnTypeKeyword,
+                        ReturnTypeName: match.ReturnTypeName,
+                        DeclaringType: declaringType);
+                }
+            }
+
+            return null;
+        }
+
+        private bool IsVisible(Guid appId) =>
+            _visibleAppIds is null || _visibleAppIds.Contains(appId);
+
+        private static bool IsExtensionKind(string kind) =>
+            kind.EndsWith("extension", StringComparison.OrdinalIgnoreCase);
     }
 }

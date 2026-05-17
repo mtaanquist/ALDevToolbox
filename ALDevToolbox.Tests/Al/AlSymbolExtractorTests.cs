@@ -348,6 +348,91 @@ public sealed class AlSymbolExtractorTests
     }
 
     [Fact]
+    public void Extracts_page_field_declarations()
+    {
+        // Page / pageextension fields use a name+expression shape instead
+        // of id+name+type. The extractor needs to pick these up so the
+        // outline grouper can nest field-bound triggers (OnValidate,
+        // OnLookup, OnAssistEdit, …) under their parent field.
+        var source = """
+            pageextension 50100 "Sales Header Ext" extends "Sales Header"
+            {
+                layout
+                {
+                    addafter("No.")
+                    {
+                        field("Sell-to Customer No."; Rec."Sell-to Customer No.")
+                        {
+                            trigger OnValidate()
+                            begin
+                            end;
+                        }
+                    }
+                }
+            }
+            """;
+
+        var fields = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "field")
+            .ToList();
+
+        fields.Should().ContainSingle();
+        fields[0].Name.Should().Be("Sell-to Customer No.");
+        fields[0].FieldId.Should().BeNull();
+        fields[0].Signature.Should().Be("Rec.\"Sell-to Customer No.\"");
+    }
+
+    [Fact]
+    public void Extracts_page_action_declarations()
+    {
+        // Action declarations anchor OnAction triggers in the outline,
+        // the same way field declarations anchor OnValidate.
+        var source = """
+            page 50100 "My List"
+            {
+                actions
+                {
+                    area(processing)
+                    {
+                        action("Post")
+                        {
+                            trigger OnAction()
+                            begin
+                            end;
+                        }
+                    }
+                }
+            }
+            """;
+
+        var actions = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "action")
+            .ToList();
+
+        actions.Should().ContainSingle();
+        actions[0].Name.Should().Be("Post");
+    }
+
+    [Fact]
+    public void Table_field_form_wins_over_page_field_form()
+    {
+        // The table-side regex requires id;name;type — strictly more
+        // information than the page-side form. When a row matches the
+        // table shape, we keep it as a table-style field (FieldId set).
+        var source = """
+                field(1; "No."; Code[20])
+            """;
+
+        var fields = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "field")
+            .ToList();
+
+        fields.Should().ContainSingle();
+        fields[0].FieldId.Should().Be(1);
+        fields[0].Signature.Should().Be("Code[20]");
+    }
+
+    [Fact]
     public void Field_columns_point_at_the_name_token()
     {
         // The click affordance underlines the name, not the field keyword
@@ -386,5 +471,101 @@ public sealed class AlSymbolExtractorTests
 
         fields.Should().ContainSingle();
         fields[0].Name.Should().Be("Real");
+    }
+
+    // ── Label declarations ─────────────────────────────────────────
+
+    [Fact]
+    public void Extracts_object_scope_label_declaration_with_content()
+    {
+        // The label content stashed in Signature is what makes the
+        // customer-error-message search-and-navigate use case work —
+        // the developer pastes the error text into search, lands here.
+        var source = """
+            codeunit 50100 "Foo"
+            {
+                var
+                    UnsupportedTypeErr: Label 'Unsupported type %1.', Comment = '%1 is the type name';
+            }
+            """;
+
+        var labels = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "label")
+            .ToList();
+
+        labels.Should().ContainSingle();
+        labels[0].Name.Should().Be("UnsupportedTypeErr");
+        labels[0].Signature.Should().Be("Unsupported type %1.");
+    }
+
+    [Fact]
+    public void Extracts_procedure_local_label_declaration()
+    {
+        // Procedure-local labels are common when an error message is
+        // only used in one procedure. AlSymbolExtractor is line-based
+        // so it picks them up the same way as object-scope labels.
+        var source = """
+            codeunit 50100 "Foo"
+            {
+                procedure DoStuff()
+                var
+                    LocalErr: Label 'Local error %1.';
+                begin
+                end;
+            }
+            """;
+
+        var labels = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "label")
+            .ToList();
+
+        labels.Should().ContainSingle();
+        labels[0].Name.Should().Be("LocalErr");
+        labels[0].Signature.Should().Be("Local error %1.");
+    }
+
+    [Fact]
+    public void Label_with_doubled_apostrophe_unescapes_correctly()
+    {
+        // AL escapes single quotes as `''`. The content extractor must
+        // un-double them so the stored signature matches what the user
+        // would search for ("won't" not "won''t").
+        var source = """
+            codeunit 50100 "Foo"
+            {
+                var
+                    Err: Label 'It''s broken.';
+            }
+            """;
+
+        var labels = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "label")
+            .ToList();
+
+        labels.Should().ContainSingle();
+        labels[0].Signature.Should().Be("It's broken.");
+    }
+
+    [Fact]
+    public void Non_label_var_declarations_are_not_emitted_as_labels()
+    {
+        // Variables typed as anything other than Label must not get
+        // label rows. The regex specifically requires `Label` after the
+        // colon, so a Record / Integer / Code variable shouldn't match.
+        var source = """
+            codeunit 50100 "Foo"
+            {
+                var
+                    Cust: Record Customer;
+                    Counter: Integer;
+                    Code: Code[20];
+            }
+            """;
+
+        var labels = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "label")
+            .ToList();
+
+        labels.Should().BeEmpty();
     }
 }

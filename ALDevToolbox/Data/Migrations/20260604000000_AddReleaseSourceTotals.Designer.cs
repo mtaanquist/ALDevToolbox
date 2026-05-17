@@ -3,6 +3,7 @@ using System;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260604000000_AddReleaseSourceTotals")]
+    partial class AddReleaseSourceTotals
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -177,14 +180,6 @@ namespace ALDevToolbox.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("kind");
-
-                    b.Property<string>("OffsiteObjectKey")
-                        .HasColumnType("text")
-                        .HasColumnName("offsite_object_key");
-
-                    b.Property<DateTime?>("OffsiteUploadedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("offsite_uploaded_at");
 
                     b.HasKey("Id");
 
@@ -672,10 +667,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("source_file_id");
 
-                    b.Property<string>("SourceTableName")
-                        .HasColumnType("text")
-                        .HasColumnName("source_table_name");
-
                     b.HasKey("Id");
 
                     b.HasIndex("OrganizationId");
@@ -699,10 +690,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnName("id");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<int?>("ColumnNumber")
-                        .HasColumnType("integer")
-                        .HasColumnName("column_number");
 
                     b.Property<int?>("LineNumber")
                         .HasColumnType("integer")
@@ -1034,10 +1021,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("slug");
 
-                    b.Property<int?>("StorageQuotaMb")
-                        .HasColumnType("integer")
-                        .HasColumnName("storage_quota_mb");
-
                     b.HasKey("Id");
 
                     b.HasIndex("IsSystem")
@@ -1232,59 +1215,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("password_reset_tokens", (string)null);
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.PerTenantBackup", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<int?>("CreatedByUserId")
-                        .HasColumnType("integer")
-                        .HasColumnName("created_by_user_id");
-
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("file_name");
-
-                    b.Property<long>("FileSizeBytes")
-                        .HasColumnType("bigint")
-                        .HasColumnName("file_size_bytes");
-
-                    b.Property<bool>("IsPinned")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_pinned");
-
-                    b.Property<string>("Kind")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("kind");
-
-                    b.Property<int>("OrganizationId")
-                        .HasColumnType("integer")
-                        .HasColumnName("organization_id");
-
-                    b.Property<int>("SchemaVersion")
-                        .HasColumnType("integer")
-                        .HasColumnName("schema_version");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("OrganizationId", "CreatedAt")
-                        .HasDatabaseName("ix_per_tenant_backups_org_created");
-
-                    b.ToTable("per_tenant_backups", (string)null);
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.RuntimeTemplate", b =>
@@ -1706,54 +1636,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<bool>("DefaultSignupAutoApprove")
                         .HasColumnType("boolean")
                         .HasColumnName("default_signup_auto_approve");
-
-                    b.Property<int?>("DefaultStorageQuotaMb")
-                        .HasColumnType("integer")
-                        .HasColumnName("default_storage_quota_mb");
-
-                    b.Property<decimal>("IndexSizeMultiplier")
-                        .HasColumnType("numeric(6,3)")
-                        .HasColumnName("index_size_multiplier");
-
-                    b.Property<string>("OffsiteAccessKeyEncrypted")
-                        .HasColumnType("text")
-                        .HasColumnName("offsite_access_key_encrypted");
-
-                    b.Property<bool>("OffsiteBackupEnabled")
-                        .HasColumnType("boolean")
-                        .HasColumnName("offsite_backup_enabled");
-
-                    b.Property<string>("OffsiteBucket")
-                        .HasColumnType("text")
-                        .HasColumnName("offsite_bucket");
-
-                    b.Property<string>("OffsiteEndpoint")
-                        .HasColumnType("text")
-                        .HasColumnName("offsite_endpoint");
-
-                    b.Property<bool>("OffsiteForcePathStyle")
-                        .HasColumnType("boolean")
-                        .HasColumnName("offsite_force_path_style");
-
-                    b.Property<string>("OffsitePrefix")
-                        .HasColumnType("text")
-                        .HasColumnName("offsite_prefix");
-
-                    b.Property<string>("OffsiteRegion")
-                        .HasColumnType("text")
-                        .HasColumnName("offsite_region");
-
-                    b.Property<int>("OffsiteRetentionDays")
-                        .HasColumnType("integer")
-                        .HasColumnName("offsite_retention_days");
-
-                    b.Property<string>("OffsiteSecretKeyEncrypted")
-                        .HasColumnType("text")
-                        .HasColumnName("offsite_secret_key_encrypted");
-
-                    b.Property<int>("PerTenantBackupRetentionCount")
-                        .HasColumnType("integer")
-                        .HasColumnName("per_tenant_backup_retention_count");
 
                     b.Property<string>("SmtpFrom")
                         .HasColumnType("text")
@@ -2589,24 +2471,6 @@ namespace ALDevToolbox.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.PerTenantBackup", b =>
-                {
-                    b.HasOne("ALDevToolbox.Domain.Entities.User", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("CreatedByUser");
-
-                    b.Navigation("Organization");
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.RuntimeTemplate", b =>

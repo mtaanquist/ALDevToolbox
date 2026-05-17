@@ -1,4 +1,5 @@
 ﻿@inject IHttpContextAccessor Http
+@inject ALDevToolbox.Services.CacheBust Bust
 <!DOCTYPE html>
 @* data-theme is rendered server-side from the aldt-theme cookie so Blazor's
    enhanced-navigation diff sees a value matching what the client already has
@@ -39,6 +40,22 @@
     <script src="@Assets["theme.js"]"></script>
     <script src="@Assets["generate.js"]"></script>
     <script src="@Assets["js/webauthn.js"]"></script>
+    @*
+        Object Explorer source viewer's client glue.
+        Loaded at the shell level (not on the source-viewer page itself)
+        because Blazor's enhanced-navigation diff doesn't execute
+        <script> tags that appear in page responses — confirmed by the
+        network tab on a fresh navigation. With the script in the shell
+        it loads once per session; the module's MutationObserver waits
+        for .source-viewer to appear in the DOM and runs init() only
+        when needed, so non-source-viewer pages pay nothing.
+
+        ?v=token cache-buster comes from CacheBust (singleton, GUID
+        prefix per process start) so deploys invalidate cleanly; the
+        module forwards the same token to its dynamic import of
+        /code-editor.js via import.meta.url.
+    *@
+    <script type="module" src="/source-viewer.js?v=@Bust.Token"></script>
 </body>
 
 </html>

@@ -1,6 +1,7 @@
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
@@ -241,7 +242,38 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         decls.Should().Contain(d =>
             d.Name == "DK Core Event Subscribers"
             && d.ColumnStart >= 1
-            && d.ColumnEnd > d.ColumnStart);
+            && d.ColumnEnd > d.ColumnStart
+            && !d.IsMemberSymbol,
+            because: "object headers carry IsMemberSymbol = false so the host routes to /from-symbol/");
+    }
+
+    [Fact]
+    public async Task ListDeclarationsInFileAsync_includes_procedure_declarations_as_member_symbols()
+    {
+        // Procedure / field / trigger declarations need to be in the
+        // declaration list too so the source viewer underlines them and
+        // the right-click "Find references" routes through
+        // /from-member-symbol/. They carry IsMemberSymbol = true so the
+        // host can pick the right endpoint without reasoning about the
+        // kind string.
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var fileId = read.OeModuleFiles.AsQueryable()
+            .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
+
+        var decls = await NewQuery(read).ListDeclarationsInFileAsync(fileId);
+
+        decls.Where(d => d.IsMemberSymbol).Should().NotBeEmpty(
+            because: "the event subscribers codeunit declares procedures / event subscribers");
+        decls.Where(d => d.IsMemberSymbol).Should().OnlyContain(d =>
+            d.Line >= 1 && d.ColumnStart >= 1 && d.ColumnEnd > d.ColumnStart);
+        // The symbol id must come from oe_module_symbols (not the object
+        // id) — round-trip through the DbSet to verify.
+        var symbolIds = decls.Where(d => d.IsMemberSymbol).Select(d => d.SymbolId).Distinct().ToList();
+        var existing = await read.OeModuleSymbols.AsNoTracking()
+            .Where(s => symbolIds.Contains(s.Id)).CountAsync();
+        existing.Should().Be(symbolIds.Count,
+            because: "every IsMemberSymbol row's id maps to a real oe_module_symbols row");
     }
 
     [Fact]
@@ -262,6 +294,97 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         target.Should().NotBeNull();
         target!.FileId.Should().Be(fileId);
         target.LineNumber.Should().Be(decl.Line);
+    }
+
+    [Fact]
+    public async Task GoToDefinitionAsync_resolves_a_method_call_to_its_procedure_declaration()
+    {
+        // Phase-2 reference extraction emits method_call rows with
+        // TargetSymbolId pointing at the procedure declaration. The resolver
+        // must consult those rows so a Cmd/Ctrl-click on a call site (not on
+        // a declaration token) lands on the procedure's source line.
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var query = NewQuery(read);
+
+        // Pick any resolved method_call row from the fixture so the test is
+        // robust against the fixture's churn — we assert behaviour, not a
+        // specific (file, member) pair.
+        var pick = await (
+            from r in read.OeModuleReferences.AsNoTracking()
+            where r.ReferenceKind == "method_call"
+                && r.SourceObject!.SourceFileId != null
+                && r.LineNumber != null
+                && r.TargetMemberName != null
+                && r.TargetSymbolId != null
+            select new
+            {
+                FileId = r.SourceObject!.SourceFileId!.Value,
+                r.LineNumber,
+                r.TargetMemberName,
+                ExpectedSymbolLine = r.TargetSymbol!.LineNumber,
+                ExpectedSymbolFileId = r.TargetSymbol!.Object!.SourceFileId,
+            })
+            .Where(x => x.ExpectedSymbolFileId != null)
+            .FirstOrDefaultAsync();
+        pick.Should().NotBeNull(because: "DK Core's .al source contains resolved method calls");
+
+        // Reconstruct the column of the call-site identifier from the line
+        // text. The extractor stored the line number; the column has to come
+        // from a re-scan, same as production resolvables.
+        var content = await read.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == pick!.FileId).Select(f => f.Content).SingleAsync();
+        var lines = content.Replace("\r\n", "\n").Split('\n');
+        var lineText = lines[pick!.LineNumber!.Value - 1];
+        var idx = lineText.IndexOf(pick.TargetMemberName!, StringComparison.Ordinal);
+        idx.Should().BeGreaterOrEqualTo(0,
+            because: "the recorded member name should still be present on the recorded line");
+
+        var target = await query.GoToDefinitionAsync(pick.FileId, pick.LineNumber!.Value, idx + 1);
+
+        target.Should().NotBeNull();
+        target!.FileId.Should().Be(pick.ExpectedSymbolFileId!.Value);
+        target.LineNumber.Should().Be(pick.ExpectedSymbolLine);
+    }
+
+    [Fact]
+    public async Task ListResolvablesInFileAsync_returns_column_spans_for_member_access_tokens()
+    {
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var query = NewQuery(read);
+
+        // Find a file that has at least one resolved member-access row so
+        // we know the resolvables list won't be trivially empty.
+        var fileWithRefs = await read.OeModuleReferences.AsNoTracking()
+            .Where(r => (r.ReferenceKind == "method_call" || r.ReferenceKind == "field_access")
+                && r.SourceObject!.SourceFileId != null
+                && r.LineNumber != null
+                && r.TargetSymbolId != null)
+            .Select(r => r.SourceObject!.SourceFileId!.Value)
+            .FirstOrDefaultAsync();
+        fileWithRefs.Should().BeGreaterThan(0);
+
+        var resolvables = await query.ListResolvablesInFileAsync(fileWithRefs);
+
+        resolvables.Should().NotBeEmpty(
+            because: "the file has resolved method_call / field_access rows");
+        resolvables.Should().OnlyContain(r =>
+            r.Line >= 1 && r.ColumnStart >= 1 && r.ColumnEnd > r.ColumnStart);
+
+        // Verify the spans line up with actual source content — the column
+        // range should slice an identifier-shaped substring out of its line.
+        var content = await read.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == fileWithRefs).Select(f => f.Content).SingleAsync();
+        var lines = content.Replace("\r\n", "\n").Split('\n');
+        foreach (var r in resolvables.Take(20))
+        {
+            var lineText = lines[r.Line - 1];
+            (r.ColumnEnd - 1).Should().BeLessOrEqualTo(lineText.Length);
+            var slice = lineText.Substring(r.ColumnStart - 1, r.ColumnEnd - r.ColumnStart);
+            slice.Should().NotBeNullOrWhiteSpace(
+                because: "every resolvable should pin a real identifier (possibly quoted)");
+        }
     }
 
     [Fact]
@@ -384,6 +507,11 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         matches.Should().Contain(m =>
             m.ReferenceKind == "variable_type"
             && m.SourceObjectName == "CopyDepreciationBookExt");
+        // SourceFileId is needed for the file-viewer links in
+        // OeObjectDetail.razor's references table; every row pointing at an
+        // object whose source we have should expose it.
+        matches.Should().Contain(m => m.SourceFileId.HasValue,
+            because: "DK Core's referencing objects ship with source");
     }
 
     [Fact]
@@ -529,5 +657,98 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         matches.Should().NotBeEmpty();
         matches.Should().OnlyContain(m => childModuleIds.Contains(m.SourceModuleId),
             because: "the child's same-AppId module shadows the parent's");
+    }
+
+    // ── Find references — member-scoped ────────────────────────────────
+
+    [Fact]
+    public async Task FindReferencesForSymbolAsync_returns_sibling_declarations_in_the_chain()
+    {
+        // A member-scoped find against a real (object, member) pair in
+        // the seeded data should return at minimum the member's own
+        // declaration row tagged Category=declaration. We pick the pair
+        // from the actual oe_module_symbols table rather than hard-coding
+        // a name — symbol-package shapes vary across modules, so any
+        // assertion on a specific procedure name is brittle. The query
+        // grabs the first symbol that belongs to an object identifiable
+        // by its (kind, object id, name) triplet and uses that.
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+
+        var pair = await read.OeModuleSymbols
+            .OrderBy(s => s.Id)
+            .Select(s => new
+            {
+                MemberName = s.Name,
+                MemberKind = s.Kind,
+                OwnerId = s.Object!.Id,
+                OwnerKind = s.Object!.Kind,
+                OwnerObjectId = s.Object!.ObjectId,
+                OwnerName = s.Object!.Name,
+                AppId = s.Object!.Module!.AppId,
+            })
+            .FirstAsync();
+
+        var matches = await NewQuery(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
+            TargetAppId: pair.AppId,
+            TargetObjectKind: pair.OwnerKind,
+            TargetObjectId: pair.OwnerObjectId,
+            TargetObjectName: pair.OwnerName,
+            TargetMemberName: pair.MemberName,
+            TargetMemberKind: pair.MemberKind));
+
+        matches.Should().Contain(m => m.Category == "declaration"
+            && m.SourceObjectName == pair.OwnerName
+            && m.MemberName == pair.MemberName
+            && m.MemberKind == pair.MemberKind);
+    }
+
+    [Fact]
+    public async Task FindReferencesForSymbolAsync_surfaces_owner_type_indirect_refs()
+    {
+        // FindReferencesForSymbolAsync's third bucket is owner-type rows —
+        // the object-level references already in the DB (variable_type,
+        // parameter_type, …) for the owner of the member we're searching.
+        // Even though no method-call rows are populated in phase 1, the
+        // user should see "indirect references via type" answers.
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+
+        var matches = await NewQuery(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
+            TargetAppId: BaseAppId,
+            TargetObjectKind: "codeunit",
+            TargetObjectId: 5624,
+            TargetObjectName: "Cancel FA Ledger Entries",
+            TargetMemberName: "AnyProcedureName",
+            TargetMemberKind: "procedure"));
+
+        // The owner Codeunit 5624 is referenced as a variable_type from
+        // DK Core's CopyDepreciationBookExt — those indirect-via-type rows
+        // belong in the owner_type bucket so the UI groups them under
+        // "Indirect references".
+        matches.Should().Contain(m => m.Category == "owner_type"
+            && m.ReferenceKind == "variable_type"
+            && m.SourceObjectName == "CopyDepreciationBookExt");
+    }
+
+    [Fact]
+    public async Task FindReferencesForSymbolAsync_call_bucket_is_empty_in_phase_one()
+    {
+        // Phase 1 leaves target_member_name NULL on every imported row;
+        // the call bucket is wired up but should return zero results
+        // until the importer starts populating member-scoped references.
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+
+        var matches = await NewQuery(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
+            TargetAppId: BaseAppId,
+            TargetObjectKind: "codeunit",
+            TargetObjectId: 5624,
+            TargetObjectName: "Cancel FA Ledger Entries",
+            TargetMemberName: "AnyProcedureName",
+            TargetMemberKind: "procedure"));
+
+        matches.Should().NotContain(m => m.Category == "call",
+            because: "the importer doesn't populate target_member_name yet");
     }
 }

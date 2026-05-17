@@ -50,11 +50,13 @@ public class ObjectExplorerService
             .ThenBy(r => r.Label)
             .Select(r => new ReleaseListItem(
                 r.Id, r.Label, r.Kind, r.Status, r.BcVersion, r.ParentReleaseId, r.ImportedAt,
-                // Both aggregates run as correlated subqueries against
-                // oe_module_files joined through oe_modules. The numbers feed
-                // the per-release Files / Size columns on the browser.
-                SourceFileCount: r.Modules.SelectMany(m => m.Files).Count(),
-                SourceContentLength: r.Modules.SelectMany(m => m.Files).Sum(f => (long)f.Content.Length),
+                // Denormalised counters stamped at ingest time. The Releases
+                // picker on a busy org used to spend most of its load budget
+                // here — a correlated subquery summing LENGTH(content) over
+                // multi-thousand-row file tables. ReleaseImportService now
+                // pins these once when the Release flips to ready.
+                SourceFileCount: r.SourceFileCount,
+                SourceContentLength: r.SourceContentLength,
                 DeletedAt: r.DeletedAt))
             .ToListAsync(ct);
     }
@@ -234,7 +236,17 @@ public class ObjectExplorerService
             .Select(f => new SourceFileHeader(
                 f.Id, f.ModuleId, f.Module!.Name,
                 f.Module.ReleaseId, f.Module.Release!.Label,
-                f.Path, f.LineCount))
+                f.Path, f.LineCount,
+                // AL enforces one object per file in practice so picking the
+                // first attached object's namespace is unambiguous. ModuleFile
+                // has no inverse collection nav onto ModuleObject (the FK
+                // direction is one-way, with SetNull on delete), so this is
+                // a correlated subquery rather than a navigation traversal.
+                // Skips gracefully when the file isn't backing an object.
+                _db.OeModuleObjects.AsNoTracking()
+                    .Where(o => o.SourceFileId == f.Id && o.Namespace != null)
+                    .Select(o => o.Namespace)
+                    .FirstOrDefault()))
             .SingleOrDefaultAsync(ct)!;
 
     // ── Cross-module search ────────────────────────────────────────────
@@ -490,7 +502,7 @@ public class ObjectExplorerService
         var symbols = await _db.OeModuleSymbols.AsNoTracking()
             .Where(s => s.Object!.SourceFileId == fileId)
             .Where(s => s.LineNumber > 0)
-            .Select(s => new { s.ObjectId, s.Kind, s.Name, s.Signature, s.LineNumber })
+            .Select(s => new { s.Id, s.ObjectId, s.Kind, s.Name, s.Signature, s.LineNumber })
             .ToListAsync(ct);
 
         var items = new List<SourceFileOutlineItem>(objects.Count + symbols.Count);
@@ -500,7 +512,7 @@ public class ObjectExplorerService
         }
         foreach (var s in symbols)
         {
-            items.Add(new SourceFileOutlineItem(s.Kind, s.Name, s.Signature, s.LineNumber, null));
+            items.Add(new SourceFileOutlineItem(s.Kind, s.Name, s.Signature, s.LineNumber, null, s.Id));
         }
         return items.OrderBy(i => i.LineNumber).ToList();
     }
@@ -541,8 +553,24 @@ public class ObjectExplorerService
             .Select(o => new { o.Id, o.Kind, o.Name, o.LineNumber })
             .ToListAsync(ct);
 
+        // Sub-symbol declarations (procedures, fields, triggers, event
+        // subscribers). oe_module_symbols already stamps 1-based
+        // line/column spans at import via AlSymbolExtractor, so we don't
+        // need a re-scan here — symbol rows with LineNumber > 0 are
+        // declared in source and can be made clickable directly.
+        var symbols = await _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Object!.SourceFileId == fileId
+                && s.LineNumber > 0
+                && s.ColumnEnd > s.ColumnStart)
+            .Select(s => new
+            {
+                s.Id, s.Kind, s.Name, s.LineNumber, s.ColumnStart, s.ColumnEnd,
+                OwnerKind = s.Object!.Kind,
+            })
+            .ToListAsync(ct);
+
         var lines = content.Replace("\r\n", "\n").Split('\n');
-        var result = new List<ALDevToolbox.Components.Shared.CodeViewerDeclaration>(objects.Count);
+        var result = new List<ALDevToolbox.Components.Shared.CodeViewerDeclaration>(objects.Count + symbols.Count);
         foreach (var obj in objects)
         {
             if (obj.LineNumber < 1 || obj.LineNumber > lines.Length) continue;
@@ -575,15 +603,41 @@ public class ObjectExplorerService
                 Kind: obj.Kind,
                 Name: obj.Name));
         }
+
+        foreach (var sym in symbols)
+        {
+            result.Add(new ALDevToolbox.Components.Shared.CodeViewerDeclaration(
+                SymbolId: sym.Id,
+                Line: sym.LineNumber,
+                ColumnStart: sym.ColumnStart,
+                ColumnEnd: sym.ColumnEnd,
+                Kind: sym.Kind,
+                Name: sym.Name,
+                IsMemberSymbol: true,
+                OwnerKind: sym.OwnerKind));
+        }
+
         return result;
     }
 
     /// <summary>
     /// Resolves a Cmd/Ctrl-click in the source viewer to a navigation
-    /// target. Uses <see cref="ALDevToolbox.Services.Al.AlGoToDefinitionLocator"/>
-    /// to pull the clicked word + its surrounding context, then looks up a
-    /// matching object in the same Release. Returns null when no resolvable
-    /// target exists — the page no-ops in that case.
+    /// target. Two strategies in order:
+    ///
+    /// 1. <b>Member-access</b>: when the clicked token matches a
+    ///    <c>method_call</c> / <c>field_access</c> reference row on the same
+    ///    file + line, follow <c>TargetSymbolId</c> to the
+    ///    <see cref="ModuleSymbol"/> declaration and return its file + line.
+    ///    This is the path that resolves <c>GLAcc."Account Type"</c> and
+    ///    <c>ConfirmManagement.GetResponseOrDefault</c> — the dominant cases
+    ///    that the legacy object-name fallback couldn't reach.
+    /// 2. <b>Object-name</b>: same-Release lookup against
+    ///    <c>oe_module_objects.Name</c>. Catches bare type literals like
+    ///    <c>Customer</c> / <c>"Sales-Post"</c> that the extractor doesn't
+    ///    emit member-rows for.
+    ///
+    /// Returns <c>null</c> when neither strategy matches — the page no-ops
+    /// and shows the "No definition found" notice.
     /// </summary>
     public async Task<GoToDefinitionTarget?> GoToDefinitionAsync(
         long fileId, int line, int column, CancellationToken ct = default)
@@ -596,12 +650,39 @@ public class ObjectExplorerService
 
         var click = Services.Al.AlGoToDefinitionLocator.Inspect(meta.Content, line, column);
         if (click is null || string.IsNullOrEmpty(click.Word)) return null;
-
-        // Same-Release lookup by object name. Chain-walk semantics (for
-        // customer Releases sitting on top of BC) are a follow-up — the
-        // dominant case is Microsoft-DVD-ingest where everything lives in
-        // a single Release.
         var word = click.Word;
+
+        // 1. Member-access strategy. Phase-2 extraction stamps
+        //    method_call / field_access rows with (LineNumber, TargetMemberName,
+        //    TargetSymbolId). Match the clicked word case-insensitively (AL
+        //    identifiers are case-insensitive). Prefer rows with a resolved
+        //    TargetSymbolId — those have a direct file + line via the symbol's
+        //    owner object.
+        var memberHit = await _db.OeModuleReferences.AsNoTracking()
+            .Where(r => (r.ReferenceKind == "method_call"
+                    || r.ReferenceKind == "field_access"
+                    || r.ReferenceKind == "event_publisher")
+                && r.SourceObject!.SourceFileId == fileId
+                && r.LineNumber == line
+                && r.TargetMemberName != null
+                && r.TargetMemberName.ToLower() == word.ToLower())
+            .Where(r => r.TargetSymbolId != null)
+            .Select(r => new
+            {
+                SymbolLine = r.TargetSymbol!.LineNumber,
+                SymbolFileId = r.TargetSymbol!.Object!.SourceFileId,
+            })
+            .Where(x => x.SymbolFileId != null)
+            .FirstOrDefaultAsync(ct);
+        if (memberHit is not null)
+        {
+            return new GoToDefinitionTarget(memberHit.SymbolFileId!.Value, memberHit.SymbolLine);
+        }
+
+        // 2. Same-Release lookup by object name. Chain-walk semantics (for
+        //    customer Releases sitting on top of BC) are a follow-up — the
+        //    dominant case is Microsoft-DVD-ingest where everything lives in
+        //    a single Release.
         var target = await _db.OeModuleObjects.AsNoTracking()
             .Where(o => o.Module!.ReleaseId == meta.ReleaseId)
             .Where(o => o.SourceFileId != null)
@@ -612,6 +693,151 @@ public class ObjectExplorerService
         if (target?.SourceFileId is null) return null;
         return new GoToDefinitionTarget(target.SourceFileId.Value, target.LineNumber);
     }
+
+    /// <summary>
+    /// Spans inside <paramref name="fileId"/> that the source viewer should
+    /// underline as resolvable. Drives the IDE-style "what's clickable"
+    /// affordance: every token underlined here will, on right-click or
+    /// Cmd-click, resolve to a definition via <see cref="GoToDefinitionAsync"/>.
+    ///
+    /// Sources from phase-2 <c>method_call</c> / <c>field_access</c> reference
+    /// rows: each row carries <c>LineNumber</c> + <c>TargetMemberName</c>; we
+    /// re-scan the line to recover the 1-based column range. Same scanning
+    /// strategy as <see cref="ListDeclarationsInFileAsync"/> — quoted first
+    /// (<c>"Account Type"</c>), bare identifier fallback. Multiple references
+    /// on the same line are handled by walking forward through the line text
+    /// rather than always picking the first occurrence.
+    ///
+    /// Variable-declaration types (<c>variable_type</c>, <c>parameter_type</c>,
+    /// <c>return_type</c>) aren't included — those reference rows don't carry
+    /// a line number; symbol-package extraction doesn't yield source positions.
+    /// </summary>
+    public async Task<List<ALDevToolbox.Components.Shared.CodeViewerResolvable>>
+        ListResolvablesInFileAsync(long fileId, CancellationToken ct = default)
+    {
+        var content = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == fileId)
+            .Select(f => f.Content)
+            .SingleOrDefaultAsync(ct);
+        if (string.IsNullOrEmpty(content)) return new();
+
+        // Pull every source-extracted reference on the file (LineNumber
+        // set). Two row shapes contribute spans:
+        //   - Member-scoped (method_call / field_access): the underlined
+        //     token is the MEMBER name. Go-to-definition resolves via
+        //     the row's TargetSymbolId when present, or falls back to
+        //     object-name lookup.
+        //   - Object-scoped (property_object from SourceTable,
+        //     LookupPageID, …): the underlined token is the TARGET
+        //     OBJECT name. Go-to-definition resolves via the object-name
+        //     lookup. No member-symbol id needed.
+        // The line-text scan below uses the per-row Name to find the
+        // 1-based column span — same logic for both shapes.
+        var rows = await _db.OeModuleReferences.AsNoTracking()
+            .Where(r => r.SourceObject!.SourceFileId == fileId
+                && r.LineNumber != null)
+            .Select(r => new
+            {
+                Line = r.LineNumber!.Value,
+                Column = r.ColumnNumber,
+                Name = r.TargetMemberName ?? r.TargetObjectName,
+            })
+            .Where(x => x.Name != null && x.Name != "")
+            .ToListAsync(ct);
+        if (rows.Count == 0) return new();
+
+        var lines = content.Replace("\r\n", "\n").Split('\n');
+        var result = new List<ALDevToolbox.Components.Shared.CodeViewerResolvable>(rows.Count);
+        // Group by line so the text-search fallback below can walk forward
+        // through multiple references on the same line without re-finding
+        // the first occurrence each time. Rows with `Column` set bypass
+        // the search entirely.
+        foreach (var byLine in rows.GroupBy(r => r.Line))
+        {
+            if (byLine.Key < 1 || byLine.Key > lines.Length) continue;
+            var lineText = lines[byLine.Key - 1];
+            // Track per-name search cursors for the text-search path so
+            // successive occurrences of the same identifier on one line
+            // each get their own span.
+            var cursors = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var row in byLine)
+            {
+                // Fast path: the extractor stamped the column at emission
+                // time. Use it directly and skip the text-search — the
+                // search lands on the leftmost occurrence which is wrong
+                // when the same identifier appears twice on a line (e.g.
+                // `field("No."; Rec."No.")` should underline the RHS
+                // Rec."No.", not the LHS control name).
+                if (row.Column is { } colStart && colStart >= 1
+                    && colStart <= lineText.Length + 1)
+                {
+                    var col0 = colStart - 1;
+                    var nameLen = row.Name!.Length;
+                    // The stored column points at the FIRST char of the
+                    // identifier. If the source has a quote there, the
+                    // underline span needs to include the quotes too.
+                    var matchLen = (col0 < lineText.Length && lineText[col0] == '"')
+                        ? nameLen + 2
+                        : nameLen;
+                    result.Add(new ALDevToolbox.Components.Shared.CodeViewerResolvable(
+                        Line: byLine.Key,
+                        ColumnStart: colStart,
+                        ColumnEnd: colStart + matchLen));
+                    continue;
+                }
+
+                // Fallback for legacy rows imported before column_number
+                // existed: walk the line text forward to find the name.
+                var quoted = "\"" + row.Name + "\"";
+                var cursor = cursors.TryGetValue(row.Name!, out var c) ? c : 0;
+                int idx;
+                int fallbackLen;
+                idx = lineText.IndexOf(quoted, cursor, StringComparison.Ordinal);
+                if (idx >= 0)
+                {
+                    fallbackLen = quoted.Length;
+                }
+                else
+                {
+                    idx = IndexOfWord(lineText, row.Name!, cursor);
+                    if (idx < 0) continue;
+                    fallbackLen = row.Name!.Length;
+                }
+                cursors[row.Name!] = idx + fallbackLen;
+                result.Add(new ALDevToolbox.Components.Shared.CodeViewerResolvable(
+                    Line: byLine.Key,
+                    ColumnStart: idx + 1,
+                    ColumnEnd: idx + 1 + fallbackLen));
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Word-boundary aware IndexOf — finds <paramref name="word"/> in
+    /// <paramref name="haystack"/> starting at <paramref name="start"/> only
+    /// when the surrounding characters aren't AL identifier characters
+    /// (letter, digit, underscore). Stops <c>Insert</c> from matching inside
+    /// <c>InsertRecord</c>.
+    /// </summary>
+    private static int IndexOfWord(string haystack, string word, int start)
+    {
+        var i = start;
+        while (i <= haystack.Length - word.Length)
+        {
+            var idx = haystack.IndexOf(word, i, StringComparison.Ordinal);
+            if (idx < 0) return -1;
+            var before = idx == 0 || !IsIdentChar(haystack[idx - 1]);
+            var after = idx + word.Length == haystack.Length
+                || !IsIdentChar(haystack[idx + word.Length]);
+            if (before && after) return idx;
+            i = idx + 1;
+        }
+        return -1;
+    }
+
+    private static bool IsIdentChar(char c) =>
+        char.IsLetterOrDigit(c) || c == '_';
 
     /// <summary>
     /// "Find in this file" — extracts the word at the supplied click position
@@ -692,7 +918,17 @@ public class ObjectExplorerService
                 so.kind                  AS "SourceObjectKind",
                 so.name                  AS "SourceObjectName",
                 mr.reference_kind        AS "ReferenceKind",
-                mr.line_number           AS "LineNumber"
+                mr.line_number           AS "LineNumber",
+                so.source_file_id        AS "SourceFileId",
+                NULL::text               AS "SourceFilePath",
+                NULL::text               AS "Snippet",
+                CASE
+                    WHEN mr.target_member_name IS NULL THEN 'object'
+                    ELSE 'call'
+                END                      AS "Category",
+                mr.target_member_name    AS "MemberName",
+                mr.target_member_kind    AS "MemberKind",
+                NULL::text               AS "MemberSignature"
             FROM oe_module_references mr
             JOIN oe_module_objects so ON so.id = mr.source_object_id
             JOIN oe_modules        m  ON m.id  = mr.module_id
@@ -702,6 +938,16 @@ public class ObjectExplorerService
               AND (
                     ({3}::int IS NOT NULL AND mr.target_object_id = {3}::int)
                  OR ({3}::int IS NULL AND mr.target_object_name = {4})
+              )
+              -- Member filter: when the caller scoped to a procedure / field,
+              -- only return rows already tagged with the matching member
+              -- name + kind. Object-level rows (member_name IS NULL) drop
+              -- out — they're surfaced separately via the owner-type query
+              -- in FindReferencesForSymbolAsync so the UI can group them.
+              AND (
+                    {5}::text IS NULL
+                 OR (mr.target_member_name = {5}::text
+                     AND ({6}::text IS NULL OR mr.target_member_kind = {6}::text))
               )
             ORDER BY m.name, so.name, mr.id
             """;
@@ -713,13 +959,209 @@ public class ObjectExplorerService
                 query.TargetAppId,
                 query.TargetObjectKind,
                 (object?)query.TargetObjectId ?? DBNull.Value,
-                query.TargetObjectName)
+                query.TargetObjectName,
+                (object?)query.TargetMemberName ?? DBNull.Value,
+                (object?)query.TargetMemberKind ?? DBNull.Value)
             .ToListAsync(ct);
 
+        // Enrich each match with the actual code-line snippet and its
+        // file path so the References panel can render VS-Code-style rows
+        // (module · L42 · the code on that line). Source-file content is
+        // shared across many matches in long files, so we load each file
+        // once and reuse it for every same-file row.
+        matches = await EnrichReferencesWithSnippetsAsync(matches, ct);
+
         _logger.LogInformation(
-            "FindReferences ReleaseId={ReleaseId} TargetAppId={TargetAppId} Kind={Kind} Id={Id} Name={Name} Matches={Count}",
-            releaseId, query.TargetAppId, query.TargetObjectKind, query.TargetObjectId, query.TargetObjectName, matches.Count);
+            "FindReferences ReleaseId={ReleaseId} TargetAppId={TargetAppId} Kind={Kind} Id={Id} Name={Name} Member={Member} Matches={Count}",
+            releaseId, query.TargetAppId, query.TargetObjectKind, query.TargetObjectId, query.TargetObjectName, query.TargetMemberName, matches.Count);
 
         return matches;
     }
+
+    /// <summary>
+    /// Member-scoped find references: returns everywhere a specific
+    /// procedure / field / trigger on a specific owner object is referenced,
+    /// across the visible module chain. Composed of three result sets the UI
+    /// renders together (each row's <see cref="ReferenceMatch.Category"/>
+    /// signals which one it came from):
+    /// <list type="number">
+    ///   <item><c>declaration</c> — every <c>oe_module_symbols</c> row with
+    ///         the same (kind, name) on a matching owner across the chain.
+    ///         Surfaces overrides, internal overloads and same-name members
+    ///         on extensions.</item>
+    ///   <item><c>owner_type</c> — every <c>oe_module_references</c> row
+    ///         targeting the owner object at the object level
+    ///         (variable_type, parameter_type, return_type, extends_target,
+    ///         table_no). Indirect callers — a variable typed to this object
+    ///         is a place that could call this member.</item>
+    ///   <item><c>call</c> — every <c>oe_module_references</c> row already
+    ///         tagged with this member (target_member_name + target_member_kind).
+    ///         Empty in phase 1; populated when method-call extraction
+    ///         lands in phase 2.</item>
+    /// </list>
+    /// Phase 1's "indirect callers" answer is honest about its limitations:
+    /// declarations + owner-type references are what the existing data
+    /// supports. Phase 2 will graduate the <c>call</c> bucket from empty
+    /// to authoritative.
+    /// </summary>
+    public async Task<List<ReferenceMatch>> FindReferencesForSymbolAsync(
+        int releaseId,
+        FindReferencesQuery query,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(query.TargetMemberName))
+        {
+            throw new ArgumentException(
+                "Member-scoped find requires TargetMemberName.", nameof(query));
+        }
+
+        // (1) Sibling declarations of the matched member across the chain.
+        // Same recursive-CTE + winning-module shadowing the object-level
+        // query uses; we then join through to oe_module_symbols by owner +
+        // member name.
+        const string declarationSql = """
+            WITH RECURSIVE chain AS (
+                SELECT id, parent_release_id, 0 AS depth
+                FROM oe_releases
+                WHERE id = {0}
+                UNION ALL
+                SELECT r.id, r.parent_release_id, c.depth + 1
+                FROM oe_releases r
+                JOIN chain c ON r.id = c.parent_release_id
+            ),
+            winning AS (
+                SELECT DISTINCT ON (m.app_id) m.id, m.app_id
+                FROM oe_modules m
+                JOIN chain c ON c.id = m.release_id
+                ORDER BY m.app_id, c.depth ASC
+            )
+            SELECT
+                s.id                     AS "Id",
+                o.module_id              AS "SourceModuleId",
+                m.name                   AS "SourceModuleName",
+                o.id                     AS "SourceObjectId",
+                o.kind                   AS "SourceObjectKind",
+                o.name                   AS "SourceObjectName",
+                'declaration'::text      AS "ReferenceKind",
+                s.line_number            AS "LineNumber",
+                o.source_file_id         AS "SourceFileId",
+                NULL::text               AS "SourceFilePath",
+                NULL::text               AS "Snippet",
+                'declaration'::text      AS "Category",
+                s.name                   AS "MemberName",
+                s.kind                   AS "MemberKind",
+                s.signature              AS "MemberSignature"
+            FROM oe_module_symbols s
+            JOIN oe_module_objects o  ON o.id = s.object_id
+            JOIN oe_modules        m  ON m.id = o.module_id
+            JOIN winning           w  ON w.id = o.module_id
+            WHERE m.app_id              = {1}::uuid
+              AND o.kind                = {2}
+              AND (
+                    ({3}::int IS NOT NULL AND o.object_id = {3}::int)
+                 OR ({3}::int IS NULL AND o.name = {4})
+              )
+              AND s.name                = {5}::text
+              AND ({6}::text IS NULL OR s.kind = {6}::text)
+            ORDER BY m.name, o.name, s.line_number
+            """;
+
+        var declarations = await _db.Database
+            .SqlQueryRaw<ReferenceMatch>(
+                declarationSql,
+                releaseId,
+                query.TargetAppId,
+                query.TargetObjectKind,
+                (object?)query.TargetObjectId ?? DBNull.Value,
+                query.TargetObjectName,
+                query.TargetMemberName,
+                (object?)query.TargetMemberKind ?? DBNull.Value)
+            .ToListAsync(ct);
+
+        // (2) Phase-2 ready: rows already tagged with the matching member.
+        // Until phase 2 lands the import-pipeline change, FindReferencesAsync
+        // returns the empty set here. Reusing it keeps the call/object
+        // branch logic in one place.
+        var memberRefs = await FindReferencesAsync(releaseId, query, ct);
+
+        // (3) Owner-type references at the object level. We run the same
+        // query but with the member filter cleared so we get the
+        // object-scoped rows (variable_type, parameter_type, return_type,
+        // extends_target, table_no) — the "indirect callers" answer.
+        var ownerObjectQuery = query with { TargetMemberName = null, TargetMemberKind = null };
+        var ownerRefs = await FindReferencesAsync(releaseId, ownerObjectQuery, ct);
+        // Restamp these as owner_type so the UI groups them under
+        // "indirect references" rather than "calls".
+        ownerRefs = ownerRefs.Select(r => r with { Category = "owner_type" }).ToList();
+
+        // Concatenate. Declarations first (most direct), then concrete
+        // member calls (phase-2 will fill this), then indirect owner-type
+        // references. EnrichReferencesWithSnippetsAsync already ran inside
+        // FindReferencesAsync for the two bucket-2/3 sets; do it once for
+        // the declarations bucket so every row has a snippet.
+        declarations = await EnrichReferencesWithSnippetsAsync(declarations, ct);
+
+        var all = new List<ReferenceMatch>(declarations.Count + memberRefs.Count + ownerRefs.Count);
+        all.AddRange(declarations);
+        all.AddRange(memberRefs);
+        all.AddRange(ownerRefs);
+
+        _logger.LogInformation(
+            "FindReferencesForSymbol ReleaseId={ReleaseId} Owner={Kind}/{Id}/{Name} Member={Member}/{MemberKind} Decl={DeclCount} Call={CallCount} Owner={OwnerCount}",
+            releaseId, query.TargetObjectKind, query.TargetObjectId, query.TargetObjectName,
+            query.TargetMemberName, query.TargetMemberKind,
+            declarations.Count, memberRefs.Count, ownerRefs.Count);
+
+        return all;
+    }
+
+    /// <summary>
+    /// Loads source-file content once per distinct file id and stamps each
+    /// <see cref="ReferenceMatch"/> with the matching line's text plus the
+    /// file's path. Rows pointing at modules that ship without source
+    /// (SourceFileId == null) are returned unchanged. The snippet is
+    /// trimmed and capped to keep the response payload bounded.
+    /// </summary>
+    private async Task<List<ReferenceMatch>> EnrichReferencesWithSnippetsAsync(
+        List<ReferenceMatch> matches, CancellationToken ct)
+    {
+        var fileIds = matches
+            .Where(m => m.SourceFileId.HasValue && m.LineNumber.HasValue)
+            .Select(m => m.SourceFileId!.Value)
+            .Distinct()
+            .ToList();
+        if (fileIds.Count == 0) return matches;
+
+        var files = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => fileIds.Contains(f.Id))
+            .Select(f => new { f.Id, f.Path, f.Content })
+            .ToListAsync(ct);
+
+        var lookup = files.ToDictionary(
+            f => f.Id,
+            f => (Path: f.Path, Lines: SplitLines(f.Content)));
+
+        var enriched = new List<ReferenceMatch>(matches.Count);
+        foreach (var m in matches)
+        {
+            if (m.SourceFileId is { } fid && m.LineNumber is { } ln
+                && lookup.TryGetValue(fid, out var data)
+                && ln >= 1 && ln <= data.Lines.Length)
+            {
+                var raw = data.Lines[ln - 1].TrimEnd();
+                if (raw.Length > 200) raw = raw[..200] + "…";
+                enriched.Add(m with { SourceFilePath = data.Path, Snippet = raw });
+            }
+            else
+            {
+                enriched.Add(m);
+            }
+        }
+        return enriched;
+    }
+
+    private static string[] SplitLines(string content) =>
+        string.IsNullOrEmpty(content)
+            ? Array.Empty<string>()
+            : content.Replace("\r\n", "\n").Split('\n');
 }

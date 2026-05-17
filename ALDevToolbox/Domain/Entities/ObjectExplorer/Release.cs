@@ -58,6 +58,22 @@ public class Release
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 
+    /// <summary>
+    /// Denormalised total <c>oe_module_files</c> count across every module in this
+    /// Release, stamped when ingest flips to <c>ready</c>. Cached so the Releases
+    /// picker doesn't have to fan out a correlated subquery over multi-thousand-row
+    /// file tables for every page load. Updated only by import / management code —
+    /// nothing else mutates the file set after a Release goes ready.
+    /// </summary>
+    public int SourceFileCount { get; set; }
+
+    /// <summary>
+    /// Denormalised sum of <c>LENGTH(content)</c> across this Release's source
+    /// files. Counterpart to <see cref="SourceFileCount"/> for the "Size" column on
+    /// the Releases picker.
+    /// </summary>
+    public long SourceContentLength { get; set; }
+
     /// <summary>Soft-delete marker. Null = active.</summary>
     public DateTime? DeletedAt { get; set; }
 

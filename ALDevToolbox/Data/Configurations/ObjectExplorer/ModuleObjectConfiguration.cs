@@ -19,6 +19,7 @@ internal sealed class ModuleObjectConfiguration : IEntityTypeConfiguration<Modul
         entity.Property(e => e.Namespace).HasColumnName("namespace");
         entity.Property(e => e.ExtendsAppId).HasColumnName("extends_app_id");
         entity.Property(e => e.ExtendsObjectName).HasColumnName("extends_object_name");
+        entity.Property(e => e.SourceTableName).HasColumnName("source_table_name");
         entity.Property(e => e.SourceFileId).HasColumnName("source_file_id");
         entity.Property(e => e.LineNumber).HasColumnName("line_number").IsRequired();
 
