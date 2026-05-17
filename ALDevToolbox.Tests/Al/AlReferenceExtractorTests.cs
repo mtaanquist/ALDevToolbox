@@ -2369,6 +2369,55 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void ProductName_and_SYSTEM_are_builtin_static_receivers()
+    {
+        // `PRODUCTNAME.Full()` / `ProductName.Short()` retrieves the
+        // configured app name (BC navsettings.json); `SYSTEM.Clear(X)`
+        // is the disambiguating prefix for the bare-callable `Clear`
+        // when a user procedure of the same name is in scope. Both
+        // heads are AL runtime, not user variables.
+        const string src = """
+            procedure Foo(var Key: Variant)
+            var
+                FullName: Text;
+            begin
+                FullName := PRODUCTNAME.Full();
+                FullName := ProductName.Short();
+                SYSTEM.Clear(Key);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0,
+            because: "PRODUCTNAME and SYSTEM are built-in static receivers");
+    }
+
+    [Fact]
+    public void Enum_typed_variable_chains_through_builtin_methods_silently()
+    {
+        // `FeatureToUpdate.Names` / `.Ordinals` / `.AsInteger()` /
+        // `.FromInteger(N)` are runtime methods on every enum value;
+        // they don't appear in the catalog. The List returned by
+        // Names/Ordinals threads into `.Contains`, `.IndexOf`, `.Get`
+        // — collection built-ins that terminate the chain quietly.
+        var resolver = MakeResolver();
+        resolver.AddType("Feature To Update", new AlTypeRef(BaseAppId, "enum", 50100, "Feature To Update"));
+        const string src = """
+            procedure FeatureKeyMatches(FeatureToUpdate: Enum "Feature To Update"; FeatureKey: Text): Boolean
+            begin
+                if FeatureToUpdate.Names.Contains(FeatureKey) then
+                    exit(FeatureToUpdate.AsInteger() =
+                        FeatureToUpdate.Ordinals.Get(FeatureToUpdate.Names.IndexOf(FeatureKey)));
+                exit(false);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0,
+            because: "Names / Ordinals / AsInteger are enum built-ins");
+    }
+
+    [Fact]
     public void Record_DeleteAll_is_a_builtin_not_unresolved()
     {
         // `Customer.DeleteAll();` — DeleteAll is a Record built-in.

@@ -42,6 +42,9 @@ namespace ALDevToolbox.Services.Al;
 ///   <item><b>New method on Text / List / Dictionary / Json</b>
 ///     → add to <see cref="TextMethods"/> / <see cref="CollectionMethods"/>
 ///     / <see cref="JsonMethods"/>.</item>
+///   <item><b>New method on an Enum receiver</b>
+///     (`MyEnum.Names`, `MyEnum.FromInteger(...)`) → add to
+///     <see cref="EnumMethods"/>.</item>
 ///   <item><b>Method exposed on multiple receivers</b>
 ///     (`.AsInteger()`, `.HasValue()`, `.Trim()`) → add to
 ///     <see cref="CommonMethods"/>; checked regardless of receiver.</item>
@@ -297,6 +300,31 @@ public static class AlBuiltinMethods
     };
 
     /// <summary>
+    /// Methods exposed on an Enum / EnumExtension receiver — variables
+    /// typed as <c>Enum "Feature To Update"</c> get these in addition
+    /// to the per-enum values. They're not declared on the enum object
+    /// itself, so the catalog can't resolve them; the chain walker
+    /// consults this list when the receiver kind is <c>enum</c> /
+    /// <c>enumextension</c>.
+    ///
+    /// <para>Canonical reference: the BC "Enum Methods" / "Enum Data
+    /// Type" docs (Names, Ordinals, GetValueAt, FromInteger). The
+    /// <c>AsInteger</c> overload lives in <see cref="CommonMethods"/>
+    /// because Option / Variant / record-bound enum fields share it.</para>
+    /// </summary>
+    public static readonly HashSet<string> EnumMethods = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Reflection over the enum's value set. Names / Ordinals return
+        // List of [Text] / List of [Integer] respectively; downstream
+        // .IndexOf / .Get / .Contains land in CollectionMethods.
+        "Names", "Ordinals",
+        // Lookup by ordinal — returns the enum value.
+        "GetValueAt", "FromInteger",
+        // Per-value caption (BC 23+).
+        "Caption",
+    };
+
+    /// <summary>
     /// Catch-all: a name we treat as built-in regardless of receiver
     /// kind. Add sparingly — these get filtered everywhere they
     /// appear in a chain.
@@ -536,6 +564,13 @@ public static class AlBuiltinMethods
         // Static kind dispatchers. `CODEUNIT.Run(...)`, `PAGE.RunModal(...)`,
         // `REPORT.RunModal(...)`, `XMLPORT.Import(...)`, `QUERY.Open(...)`.
         "CODEUNIT", "PAGE", "REPORT", "XMLPORT", "QUERY", "ENUM",
+        // Explicit system-namespace prefix. `SYSTEM.Clear(X)` is the AL
+        // disambiguator for system functions when a user procedure of
+        // the same name is in scope; same surface as the bare call.
+        "SYSTEM",
+        // BC application-name accessor. `ProductName.Full()` /
+        // `.Marketing()` / `.Short()` return the configured app names.
+        "ProductName",
         // App metadata / lifecycle.
         "NavApp",
         // Session-scoped runtime APIs.
@@ -745,6 +780,8 @@ public static class AlBuiltinMethods
                 XmlportMethods.Contains(memberName),
             "query" =>
                 QueryMethods.Contains(memberName),
+            "enum" or "enumextension" =>
+                EnumMethods.Contains(memberName),
             _ => false,
         };
     }
