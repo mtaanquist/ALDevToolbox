@@ -312,6 +312,15 @@ public static class AlBuiltinMethods
         "Message", "Error", "Confirm", "Exit", "Quit", "Sleep",
         "GetLastErrorText", "GetLastErrorCode", "GetLastErrorObject",
         "GetLastErrorCallStack", "ClearLastError", "AssertError",
+        // Collected-errors API (BC 22+ try-collect pattern). Added
+        // alongside the existing error helpers so a bare
+        // `HasCollectedErrors()` / `GetCollectedErrors()` etc. doesn't
+        // fire as a self-method.
+        "ClearCollectedErrors", "GetCollectedErrors",
+        "HasCollectedErrors", "IsCollectingErrors",
+        // Dialog system functions surfaced as bare. StrMenu is the
+        // common one — pops a Choose-an-option modal.
+        "StrMenu", "HideSubsequentDialogs", "LogInternalError",
         // Strings.
         "Format", "Evaluate", "StrLen", "StrSubstNo", "StrPos", "StrCheckSum",
         "CopyStr", "DelChr", "DelStr", "InsStr", "MaxStrLen", "IncStr",
@@ -319,16 +328,67 @@ public static class AlBuiltinMethods
         "PadStr",
         // Secret-text variant of StrSubstNo (BC 22+).
         "SecretStrSubstNo",
+        // SecretText instance methods (Unwrap is also in CommonMethods).
+        "IsEmpty",
         // Numerics.
-        "Abs", "Power", "Sqrt", "Round", "Random", "RandomRange",
+        "Abs", "Power", "Sqrt", "Round", "Random", "RandomRange", "Randomize",
         // Date / time.
         "Today", "Time", "CurrentDateTime", "WorkDate", "CreateDateTime",
         "Date2DMY", "Date2DWY", "DMY2Date", "DWY2Date", "CalcDate",
         "ClosingDate", "NormalDate",
+        "DT2Date", "DT2Time", "DaTi2Variant", "Variant2Date",
         // Identity / environment.
         "CreateGuid", "CompanyName", "UserId", "UserSecurityId",
         "GuiAllowed", "IsServiceTier", "ApplicationLanguage",
         "GlobalLanguage", "WindowsLanguage",
+        "TenantId", "SID", "ServiceInstanceId", "SessionId",
+        "ApplicationIdentifier", "ApplicationPath", "TemporaryPath",
+        "SerialNumber",
+        // Encryption.
+        "Encrypt", "Decrypt", "EncryptionEnabled", "EncryptionKeyExists",
+        "CreateEncryptionKey", "DeleteEncryptionKey",
+        "ExportEncryptionKey", "ImportEncryptionKey",
+        // Database admin / connections.
+        "AlterKey", "ChangeUserPassword", "CheckLicenseFile",
+        "CopyCompany", "CurrentTransactionType",
+        "DataFileInformation", "ExportData", "ImportData",
+        "GetDefaultTableConnection", "HasTableConnection",
+        "RegisterTableConnection", "SetDefaultTableConnection",
+        "UnregisterTableConnection",
+        "IsInWriteTransaction", "LastUsedRowVersion", "MinimumActiveRowVersion",
+        "LockTimeout", "LockTimeoutDuration",
+        "SelectLatestVersion", "SetUserPassword",
+        // Session control / telemetry.
+        "ApplicationArea", "CurrentClientType", "CurrentExecutionMode",
+        "DefaultClientType", "EnableVerboseTelemetry",
+        "GetCurrentModuleExecutionContext", "GetExecutionContext",
+        "GetModuleExecutionContext", "IsSessionActive",
+        "LogAuditMessage", "LogMessage", "LogSecurityAudit",
+        "SendTraceTag", "SetDocumentServiceToken",
+        // Array / arg helpers.
+        "ArrayLen", "CompressArray", "CopyArray", "CopyStream",
+        "CanLoadType", "CaptionClassTranslate",
+        // Code-coverage runtime API.
+        "CodeCoverageInclude", "CodeCoverageLoad", "CodeCoverageLog",
+        "CodeCoverageRefresh",
+        // Object import / export.
+        "ExportObjects", "ImportObjects",
+        // URL helpers.
+        "GetDocumentUrl", "GetDotNetType", "GetUrl",
+        "ImportStreamWithUrlAccess",
+        // File system functions with distinctive names. Common-name
+        // File methods (Open / Close / Read / Write / Erase / Copy /
+        // Create / Rename / Exists / Len / Name / Pos / Seek / Trunc /
+        // TextMode / WriteMode / View) are intentionally NOT here —
+        // they're already covered by the receiver-method fallback via
+        // CommonMethods / QueryMethods / PageMethods, and adding them
+        // here would suppress real user procedures of the same name
+        // (any `Update()` / `Open()` / `Read()` on a user codeunit
+        // would lose its method_call reference).
+        "CreateTempFile", "Download", "DownloadFromStream",
+        "Upload", "UploadIntoStream",
+        "GetStamp", "SetStamp", "IsPathTemporary",
+        "ViewFromStream",
         // Misc.
         "TypeNameOf", "Database",
         // Variable lifecycle.
@@ -345,8 +405,6 @@ public static class AlBuiltinMethods
         "Hyperlink",
         // Date / time helpers also exposed as bare functions.
         "RoundDateTime", "Time2Variant", "Variant2Time",
-        // File / stream system functions occasionally surfaced as bare.
-        "DownloadFromStream", "UploadIntoStream",
         // Background session control.
         "StartSession", "StopSession",
         // AL property-value constructors. Appear inside property values
@@ -356,8 +414,6 @@ public static class AlBuiltinMethods
         // They look like calls but introduce filter / constant / sort /
         // field-binding expressions.
         "const", "filter", "where", "upperlimit", "sorting", "order",
-        // Session / instance identifiers — AL system functions returning ints.
-        "ServiceInstanceId", "SessionId",
         // Compiler attributes that lex as `[Identifier(...)]` and
         // surface as bare-call shapes inside square brackets. Treat
         // as no-op bare callables so they don't pollute the diagnostic.
