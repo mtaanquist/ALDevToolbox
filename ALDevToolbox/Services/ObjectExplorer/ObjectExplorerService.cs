@@ -737,6 +737,7 @@ public class ObjectExplorerService
             .Select(r => new
             {
                 Line = r.LineNumber!.Value,
+                Column = r.ColumnNumber,
                 Name = r.TargetMemberName ?? r.TargetObjectName,
             })
             .Where(x => x.Name != null && x.Name != "")
@@ -745,37 +746,66 @@ public class ObjectExplorerService
 
         var lines = content.Replace("\r\n", "\n").Split('\n');
         var result = new List<ALDevToolbox.Components.Shared.CodeViewerResolvable>(rows.Count);
-        // Group by line so we can walk forward through multiple references
-        // on the same line without re-finding the first occurrence each time.
+        // Group by line so the text-search fallback below can walk forward
+        // through multiple references on the same line without re-finding
+        // the first occurrence each time. Rows with `Column` set bypass
+        // the search entirely.
         foreach (var byLine in rows.GroupBy(r => r.Line))
         {
             if (byLine.Key < 1 || byLine.Key > lines.Length) continue;
             var lineText = lines[byLine.Key - 1];
-            // Track per-name search cursors so successive occurrences of the
-            // same identifier on one line each get their own span.
+            // Track per-name search cursors for the text-search path so
+            // successive occurrences of the same identifier on one line
+            // each get their own span.
             var cursors = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (var row in byLine)
             {
+                // Fast path: the extractor stamped the column at emission
+                // time. Use it directly and skip the text-search — the
+                // search lands on the leftmost occurrence which is wrong
+                // when the same identifier appears twice on a line (e.g.
+                // `field("No."; Rec."No.")` should underline the RHS
+                // Rec."No.", not the LHS control name).
+                if (row.Column is { } colStart && colStart >= 1
+                    && colStart <= lineText.Length + 1)
+                {
+                    var col0 = colStart - 1;
+                    var nameLen = row.Name!.Length;
+                    // The stored column points at the FIRST char of the
+                    // identifier. If the source has a quote there, the
+                    // underline span needs to include the quotes too.
+                    var matchLen = (col0 < lineText.Length && lineText[col0] == '"')
+                        ? nameLen + 2
+                        : nameLen;
+                    result.Add(new ALDevToolbox.Components.Shared.CodeViewerResolvable(
+                        Line: byLine.Key,
+                        ColumnStart: colStart,
+                        ColumnEnd: colStart + matchLen));
+                    continue;
+                }
+
+                // Fallback for legacy rows imported before column_number
+                // existed: walk the line text forward to find the name.
                 var quoted = "\"" + row.Name + "\"";
-                var cursor = cursors.TryGetValue(row.Name, out var c) ? c : 0;
+                var cursor = cursors.TryGetValue(row.Name!, out var c) ? c : 0;
                 int idx;
-                int matchLen;
+                int fallbackLen;
                 idx = lineText.IndexOf(quoted, cursor, StringComparison.Ordinal);
                 if (idx >= 0)
                 {
-                    matchLen = quoted.Length;
+                    fallbackLen = quoted.Length;
                 }
                 else
                 {
-                    idx = IndexOfWord(lineText, row.Name, cursor);
+                    idx = IndexOfWord(lineText, row.Name!, cursor);
                     if (idx < 0) continue;
-                    matchLen = row.Name.Length;
+                    fallbackLen = row.Name!.Length;
                 }
-                cursors[row.Name] = idx + matchLen;
+                cursors[row.Name!] = idx + fallbackLen;
                 result.Add(new ALDevToolbox.Components.Shared.CodeViewerResolvable(
                     Line: byLine.Key,
                     ColumnStart: idx + 1,
-                    ColumnEnd: idx + 1 + matchLen));
+                    ColumnEnd: idx + 1 + fallbackLen));
             }
         }
         return result;

@@ -1493,6 +1493,7 @@ public class ReleaseImportService
                     TargetObjectName = r.TargetObjectName,
                     ReferenceKind = r.ReferenceKind,
                     LineNumber = r.Line,
+                    ColumnNumber = r.Column,
                     TargetMemberName = r.TargetMemberName,
                     TargetMemberKind = r.TargetMemberKind,
                     TargetSymbolId = targetSymbolId,

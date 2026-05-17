@@ -20,6 +20,7 @@ internal sealed class ModuleReferenceConfiguration : IEntityTypeConfiguration<Mo
         entity.Property(e => e.TargetObjectName).HasColumnName("target_object_name").IsRequired();
         entity.Property(e => e.ReferenceKind).HasColumnName("reference_kind").IsRequired();
         entity.Property(e => e.LineNumber).HasColumnName("line_number");
+        entity.Property(e => e.ColumnNumber).HasColumnName("column_number");
         entity.Property(e => e.TargetMemberName).HasColumnName("target_member_name");
         entity.Property(e => e.TargetMemberKind).HasColumnName("target_member_kind");
         entity.Property(e => e.TargetSymbolId).HasColumnName("target_symbol_id");
