@@ -1,0 +1,27 @@
+{
+  "References": [
+    {
+      "Line": 5,
+      "Column": 32,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 36,
+      "TargetObjectName": "Assembly Header"
+    },
+    {
+      "Line": 9,
+      "Column": 32,
+      "ReferenceKind": "method_call",
+      "TargetObjectKind": "codeunit",
+      "TargetObjectId": 80,
+      "TargetObjectName": "Sales-Post",
+      "TargetMemberKind": "procedure",
+      "TargetMemberName": "Run"
+    }
+  ],
+  "Stats": {
+    "ResolvedReferences": 2,
+    "UnresolvedReceivers": 0,
+    "UnresolvedSamples": []
+  }
+}

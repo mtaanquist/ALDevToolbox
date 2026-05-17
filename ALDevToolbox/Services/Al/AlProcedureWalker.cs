@@ -854,6 +854,31 @@ internal sealed class AlProcedureWalker
         var nameTok = _state.Tokens[_state.Pos];
         _state.Pos++; // Name
 
+        // Fully-qualified namespaced typed literal:
+        //   `Database::Microsoft.Assembly.Document."Assembly Header"`
+        // Take the LAST segment as the actual name; segments before
+        // it are the namespace path. Same treatment ReadTypeReference
+        // applies to var-block `Record Foo.Bar."Baz"` declarations.
+        //
+        // Critical lookahead: STOP when the next segment is followed
+        // by `(` — that's a method call on the resolved type (e.g.
+        // `Codeunit::"Sales-Post".Run(SalesHeader)`), not a namespace
+        // continuation, and it has to be left to WalkMemberChain.
+        // Without the guard the loop would greedily eat the `.Run`
+        // chain step and mis-resolve "Run" as the type name.
+        while (_state.Pos + 1 < _state.Tokens.Count
+               && _state.At(".")
+               && (_state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Identifier
+                   || _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.QuotedIdentifier)
+               && !(_state.Pos + 2 < _state.Tokens.Count
+                    && _state.Tokens[_state.Pos + 2].Kind == AlTokenKind.Punct
+                    && _state.Tokens[_state.Pos + 2].Value == "("))
+        {
+            _state.Pos++; // .
+            nameTok = _state.Tokens[_state.Pos];
+            _state.Pos++;
+        }
+
         // Pass the kind keyword as a hint so name collisions across
         // object kinds disambiguate cleanly — `Codeunit::"Foo"`
         // should never resolve to a Table or Page named "Foo".

@@ -90,6 +90,12 @@ internal static class SnapshotCatalog
             new AlTypeRef(OwnerAppId, "codeunit", 50002, "Attributed Var Sample"));
         r.AddType("Namespaced Type Sample",
             new AlTypeRef(OwnerAppId, "codeunit", 50003, "Namespaced Type Sample"));
+        r.AddType("Namespaced Typed Literal",
+            new AlTypeRef(OwnerAppId, "codeunit", 50004, "Namespaced Typed Literal"));
+        // Table referenced by the namespaced typed-literal fixture
+        // (`Database::Microsoft.Assembly.Document."Assembly Header"`).
+        r.AddType("Assembly Header",
+            new AlTypeRef(OwnerAppId, "table", 36, "Assembly Header"));
 
         // Table fixture that exercises the bare-quoted-id-as-Rec-field
         // chain head — see fixture table/AssemblyLineSample.al.
