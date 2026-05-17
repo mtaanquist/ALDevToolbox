@@ -2070,6 +2070,124 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Page_field_control_name_is_not_emitted_as_a_Rec_field_access()
+    {
+        // `field("No."; Rec."No.") { ... }` — the LHS quoted identifier
+        // is the page-field's DECLARATION (control name); the RHS chain
+        // is the actual source-table field reference. Without the
+        // DSL-keyword first-arg skip, the LHS falls through to implicit-
+        // Rec field access against the page's source table, emitting a
+        // bogus field_access on the page-field's own control name.
+        // Outcome: only the RHS Rec."No." emits a reference; the LHS
+        // `"No."` does not.
+        var resolver = MakeResolver();
+        resolver.AddMember("Sales Header", new AlMember("No.", "field", null, null));
+
+        const string src = """
+            page 50000 "Sales Order"
+            {
+                SourceTable = "Sales Header";
+                layout
+                {
+                    area(content)
+                    {
+                        field("No."; Rec."No.") { ApplicationArea = All; }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(resolver, "Sales Order", "Sales Header"));
+
+        // Only the RHS Rec."No." resolves. The LHS control name is skipped.
+        result.References.Where(r =>
+            r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "No.")
+            .Should().HaveCount(1,
+                because: "LHS is a declaration (control name), only the RHS Rec.\"No.\" should emit");
+    }
+
+    [Fact]
+    public void Page_part_action_group_first_args_are_not_emitted_as_references()
+    {
+        // `part(ControlName; PageRef)`, `action(ControlName)`,
+        // `actionref(ControlName; Target)`, `group(Name)`,
+        // `area(Name)` — the FIRST argument of each is a declaration
+        // name or an unresolvable base-page reference. None of them are
+        // navigation targets; none should emit references.
+        const string src = """
+            page 50000 "Sales Order"
+            {
+                SourceTable = "Sales Header";
+                layout
+                {
+                    area(factboxes)
+                    {
+                        part(SalesDocCheckFactbox; "Sales Doc. Check Factbox")
+                        {
+                            ApplicationArea = All;
+                        }
+                    }
+                }
+                actions
+                {
+                    area(processing)
+                    {
+                        action(Statistics) { ApplicationArea = All; }
+                        action("Co&mments") { ApplicationArea = All; }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(MakeResolver(), "Sales Order", "Sales Header"));
+
+        // None of the control names should surface as Rec field accesses
+        // or any other reference kind.
+        result.References.Should().NotContain(r =>
+            r.TargetMemberName == "SalesDocCheckFactbox"
+            || r.TargetMemberName == "Statistics"
+            || r.TargetMemberName == "Co&mments"
+            || r.TargetMemberName == "factboxes"
+            || r.TargetMemberName == "processing");
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Pageextension_modify_addafter_target_names_are_not_emitted()
+    {
+        // `modify(TargetName) { ... }` and `addafter(TargetName) { ... }`
+        // — TargetName references a control in the base page, which we
+        // can't resolve. The first-arg skip silences these so they
+        // don't surface as unresolved variables or bogus Rec field
+        // accesses.
+        const string src = """
+            pageextension 50000 "Sales Order Ext" extends "Sales Order"
+            {
+                layout
+                {
+                    modify("No.") { Caption = 'Custom No.'; }
+                    addafter("Sell-to Customer No.")
+                    {
+                        field(MyNewField; Rec.MyNewField) { ApplicationArea = All; }
+                    }
+                }
+            }
+            """;
+        var resolver = MakeResolver();
+        resolver.AddType("Sales Order", new AlTypeRef(BaseAppId, "page", 42, "Sales Order"));
+        // The pageextension's Rec.MyNewField needs MyNewField on the
+        // extended page's source table or the chain step bumps the
+        // unresolved counter. Add it so we can assert the dispatch
+        // ITSELF doesn't bump.
+        resolver.AddMember("Sales Header", new AlMember("MyNewField", "field", null, null));
+        var result = AlReferenceExtractor.Extract(src,
+            OwnerPageExtension(resolver, "Sales Order Ext", "Sales Header"));
+
+        // No emission for the modify / addafter target names. The
+        // field inside addafter still walks normally for its RHS.
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
     public void Page_declarative_DSL_keywords_do_not_count_as_bare_calls()
     {
         // `area(content) { group(General) { field("X"; Rec."Y") {} } }` —

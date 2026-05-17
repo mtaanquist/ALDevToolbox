@@ -259,6 +259,34 @@ public static class AlReferenceExtractor
                     TryConsumeFieldDeclaration();
                     return;
                 }
+
+                // Other page / table / report DSL keywords at object scope
+                // with a control-name first arg: `part(ControlName; Page)`,
+                // `action(ControlName)`, `actionref(ControlName; Target)`,
+                // `group(Name)`, `area(Name)`, `repeater(Name)`,
+                // `cuegroup(Name)`, `modify(Name)`, `addafter(Name)`,
+                // `dataitem(Name; Source)`, `value(N; Name)` etc. The
+                // bare-call resolver already silences the keyword itself;
+                // here we additionally skip past the FIRST argument so it
+                // doesn't get mis-emitted as an implicit-Rec field access
+                // or an unresolved chain head. The second arg (source
+                // expression / page-object reference / table reference)
+                // continues to walk through the main dispatch so its
+                // references still emit. `field` has its own dispatch
+                // above so the table-side `(N; "Name"; Type)` shape can
+                // extract the type reference; this branch only catches
+                // the non-field DSL keywords.
+                if (_scopeStack.Count == 1
+                    && tok.Kind == AlTokenKind.Identifier
+                    && _pos + 1 < _tokens.Count
+                    && _tokens[_pos + 1].Kind == AlTokenKind.Punct
+                    && _tokens[_pos + 1].Value == "("
+                    && AlBuiltinMethods.IsObjectDslKeyword(tok.Value))
+                {
+                    _pos++; // the DSL keyword itself
+                    SkipDslKeywordFirstArg();
+                    return;
+                }
             }
 
             // EventSubscriber attribute detection.
@@ -1416,12 +1444,19 @@ public static class AlReferenceExtractor
             _pos++; // (
 
             // Detect form by the first token inside the parens. Number
-            // → table-side (id; name; type); anything else → page-side
-            // (name; expression) and we MUST NOT consume the args —
-            // chain references on the RHS need the main loop's walker.
+            // → table-side (id; name; type). Anything else → page-side
+            // (controlName; sourceExpression). For page-side we need to
+            // walk PAST the controlName + the `;` separator before
+            // returning, so the main loop picks up the source expression
+            // (Rec."No.", a variable, a function call) and the controlName
+            // doesn't get caught by implicit-Rec field-access as a Rec
+            // field reference. Without this skip the `field("No."; ...)`
+            // form emits a bogus field_access on the page-field's own
+            // declared name.
             if (_pos >= _tokens.Count) return;
             if (_tokens[_pos].Kind != AlTokenKind.Number)
             {
+                SkipDslKeywordFirstArg(alreadyPastOpenParen: true);
                 return;
             }
 
@@ -1881,6 +1916,55 @@ public static class AlReferenceExtractor
             _pos++;
             while (_pos < _tokens.Count && !At(";")) _pos++;
             if (At(";")) _pos++;
+        }
+
+        /// <summary>
+        /// Consumes the first argument of a page / table / report DSL
+        /// keyword's parens. The first arg is always a declaration name
+        /// (control / part / action / group / area / repeater / cuegroup /
+        /// etc.) — OR an unresolvable reference target on
+        /// <c>modify(Name)</c> / <c>addAfter(Name)</c> / <c>addLast(Name)</c>
+        /// where Name refers to a control in the base page we don't have
+        /// a way to look up. Either way it isn't a navigation target,
+        /// and walking it through the regular dispatch mis-emits
+        /// references (e.g. <c>"No."</c> in <c>field("No."; Rec."No.")</c>
+        /// getting picked up as an implicit-Rec field access on the
+        /// page's source table).
+        ///
+        /// Stops at the first <c>;</c> at depth 0 (separator before
+        /// the next arg) or <c>)</c> (end of the call) — leaves
+        /// <c>_pos</c> pointing JUST PAST that separator so the regular
+        /// dispatch picks up the second / source-expression argument.
+        /// </summary>
+        private void SkipDslKeywordFirstArg(bool alreadyPastOpenParen = false)
+        {
+            if (!alreadyPastOpenParen)
+            {
+                if (!At("(")) return;
+                _pos++; // (
+            }
+            int depth = 0;
+            while (_pos < _tokens.Count)
+            {
+                var tok = _tokens[_pos];
+                if (tok.Kind == AlTokenKind.Punct)
+                {
+                    if (tok.Value == "(") { depth++; _pos++; continue; }
+                    if (tok.Value == ")")
+                    {
+                        if (depth == 0) { _pos++; return; }
+                        depth--;
+                        _pos++;
+                        continue;
+                    }
+                    if (tok.Value == ";" && depth == 0)
+                    {
+                        _pos++;
+                        return;
+                    }
+                }
+                _pos++;
+            }
         }
 
         // ── EventSubscriber attribute extraction ──────────────────────
