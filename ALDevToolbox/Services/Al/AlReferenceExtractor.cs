@@ -260,6 +260,24 @@ public static class AlReferenceExtractor
                     return;
                 }
 
+                // Page part / systempart with a control-name first arg and a
+                // page-object reference second arg:
+                // `part(ControlName; "Page Name")`. The first arg is a
+                // declaration (skip); the second is a page reference we can
+                // resolve to its catalog entry — same shape as RunObject /
+                // SubPageLink page references.
+                if (_scopeStack.Count == 1
+                    && tok.Kind == AlTokenKind.Identifier
+                    && (string.Equals(tok.Value, "part", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(tok.Value, "systempart", StringComparison.OrdinalIgnoreCase))
+                    && _pos + 1 < _tokens.Count
+                    && _tokens[_pos + 1].Kind == AlTokenKind.Punct
+                    && _tokens[_pos + 1].Value == "(")
+                {
+                    TryConsumePartDeclaration();
+                    return;
+                }
+
                 // Other page / table / report DSL keywords at object scope
                 // with a control-name first arg: `part(ControlName; Page)`,
                 // `action(ControlName)`, `actionref(ControlName; Target)`,
@@ -1504,6 +1522,72 @@ public static class AlReferenceExtractor
             // The declaration's trailing `{ … }` block contains its
             // own properties (Caption, TableRelation, ToolTip, …) — the
             // main loop walks them in their own right.
+        }
+
+        /// <summary>
+        /// Handles <c>part(ControlName; "Page Name")</c> and
+        /// <c>systempart(ControlName; SystemPartType)</c> declarations on
+        /// pages. The first arg is the part's control name (a declaration
+        /// — skip), the second is the page reference we resolve to its
+        /// catalog entry. Emits a <c>property_object</c> reference on the
+        /// page-name token so Find references / Go to definition / the
+        /// underline all work the same way they do on
+        /// <c>RunObject = Page "X"</c>.
+        ///
+        /// For <c>systempart</c>, the second arg is an enum value
+        /// (BrickLayout / Links / Notes / Outlook etc.) rather than a
+        /// page reference — those don't resolve to a catalog entry but
+        /// also don't need to. The same skip-first-arg + try-resolve-
+        /// second handles both forms cleanly: when the second arg isn't
+        /// a known catalog name, no reference emits and the diagnostic
+        /// stays quiet.
+        /// </summary>
+        private void TryConsumePartDeclaration()
+        {
+            _pos++; // part / systempart
+            if (!At("(")) return;
+            _pos++; // (
+
+            // First arg: control name (Identifier or QuotedIdentifier).
+            // Skip through to the `;` separator using the same depth-0
+            // walker the generic DSL skip uses.
+            SkipDslKeywordFirstArg(alreadyPastOpenParen: true);
+            if (_pos >= _tokens.Count) return;
+
+            // Second arg: the page reference. Optionally preceded by the
+            // `Page` keyword (rare in part declarations but legal).
+            if (_pos < _tokens.Count && _tokens[_pos].Kind == AlTokenKind.Identifier
+                && IsAlObjectKeyword(_tokens[_pos].Value))
+            {
+                _pos++;
+            }
+            if (_pos >= _tokens.Count) return;
+            var nameTok = _tokens[_pos];
+            if (nameTok.Kind != AlTokenKind.Identifier
+                && nameTok.Kind != AlTokenKind.QuotedIdentifier)
+            {
+                return;
+            }
+
+            var target = _ctx.Resolver.ResolveTypeByName(nameTok.Value, "Page");
+            if (target is not null)
+            {
+                _refs.Add(new ExtractedReference(
+                    Line: nameTok.Line,
+                    Column: nameTok.Column,
+                    TargetAppId: target.AppId,
+                    TargetObjectKind: target.Kind,
+                    TargetObjectId: target.ObjectId,
+                    TargetObjectName: target.Name,
+                    TargetMemberName: null,
+                    TargetMemberKind: null,
+                    ReferenceKind: "property_object"));
+                _resolved++;
+            }
+            // Don't try to consume past — the part's body `{ … }` opens
+            // immediately after `)` and the main loop walks the property
+            // values (ApplicationArea, Visible, SubPageLink, …) in their
+            // own right.
         }
 
         /// <summary>

@@ -2107,6 +2107,45 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Page_part_second_arg_resolves_to_the_referenced_page()
+    {
+        // `part(ControlName; "Page Name")` — the second arg is a page
+        // reference we should resolve so Find references / Cmd-click
+        // work the same way they do on `RunObject = Page "X"`. The
+        // first arg (control name) is still skipped as a declaration.
+        var resolver = MakeResolver();
+        resolver.AddType("Sales Doc. Check Factbox",
+            new AlTypeRef(BaseAppId, "page", 9081, "Sales Doc. Check Factbox"));
+
+        const string src = """
+            page 50000 "Sales Order"
+            {
+                SourceTable = "Sales Header";
+                layout
+                {
+                    area(factboxes)
+                    {
+                        part(SalesDocCheckFactbox; "Sales Doc. Check Factbox")
+                        {
+                            ApplicationArea = All;
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerPage(resolver, "Sales Order", "Sales Header"));
+
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "property_object"
+            && r.TargetObjectKind == "page"
+            && r.TargetObjectName == "Sales Doc. Check Factbox");
+        // The control name (first arg) does NOT emit any reference.
+        result.References.Should().NotContain(r =>
+            r.TargetMemberName == "SalesDocCheckFactbox"
+            || r.TargetObjectName == "SalesDocCheckFactbox");
+    }
+
+    [Fact]
     public void Page_part_action_group_first_args_are_not_emitted_as_references()
     {
         // `part(ControlName; PageRef)`, `action(ControlName)`,
