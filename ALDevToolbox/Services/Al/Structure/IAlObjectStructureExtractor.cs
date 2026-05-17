@@ -47,4 +47,21 @@ internal interface IAlObjectStructureExtractor
     /// not the current page's Rec (step 5).
     /// </summary>
     bool TryConsumeObjectScopeProperty(string propertyName) => false;
+
+    /// <summary>
+    /// Called for a bare identifier or quoted identifier at object
+    /// scope that no other dispatch consumed — no following <c>.</c>,
+    /// <c>::</c>, <c>(</c>, or <c>=</c>. Lets per-kind extractors that
+    /// track context (query / report / xmlport tracking the current
+    /// <c>dataitem</c> / <c>tableelement</c> source table) emit
+    /// field_access on bare field references inside
+    /// <c>column(name; expr)</c>, <c>filter(name; expr)</c>,
+    /// <c>fieldelement(name; expr)</c> style source expressions.
+    ///
+    /// Returns <c>true</c> when consumed (cursor advanced past the
+    /// token); <c>false</c> to let the orchestrator fall through to
+    /// its default single-token advance. Default no-op so kinds
+    /// without dataitem context stay minimal.
+    /// </summary>
+    bool TryResolveObjectScopeBareIdentifier(AlToken tok) => false;
 }

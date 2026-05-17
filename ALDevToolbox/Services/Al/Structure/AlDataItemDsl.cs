@@ -20,14 +20,26 @@ namespace ALDevToolbox.Services.Al.Structure;
 /// </summary>
 internal static class AlDataItemDsl
 {
-    public static bool TryConsumeAliasedSourceDeclaration(
+    /// <summary>
+    /// Consumes the declaration when the token matches the expected
+    /// keyword shape. Returns <c>(true, sourceTable)</c> on a hit —
+    /// <paramref name="sourceTable"/> is the resolved source-table
+    /// AlTypeRef so the per-kind structure can record it as the
+    /// current dataitem context for subsequent column / filter
+    /// source-expression resolution. <c>sourceTable</c> is null when
+    /// the token shape matched but the source name didn't resolve
+    /// in the catalog (rare). Returns <c>(false, null)</c> when the
+    /// token shape didn't match — the caller falls through to its
+    /// other dispatches.
+    /// </summary>
+    public static (bool Consumed, AlTypeRef? SourceTable) TryConsumeAliasedSourceDeclaration(
         AlExtractionState state, string keyword, AlToken tok)
     {
-        if (tok.Kind != AlTokenKind.Identifier) return false;
-        if (!string.Equals(tok.Value, keyword, StringComparison.OrdinalIgnoreCase)) return false;
-        if (state.Pos + 1 >= state.Tokens.Count) return false;
+        if (tok.Kind != AlTokenKind.Identifier) return (false, null);
+        if (!string.Equals(tok.Value, keyword, StringComparison.OrdinalIgnoreCase)) return (false, null);
+        if (state.Pos + 1 >= state.Tokens.Count) return (false, null);
         var next = state.Tokens[state.Pos + 1];
-        if (next.Kind != AlTokenKind.Punct || next.Value != "(") return false;
+        if (next.Kind != AlTokenKind.Punct || next.Value != "(") return (false, null);
 
         state.Pos++; // past keyword
         state.Pos++; // past (
@@ -52,7 +64,7 @@ internal static class AlDataItemDsl
                 if (current.Value == "(") { depth++; state.Pos++; continue; }
                 if (current.Value == ")")
                 {
-                    if (depth == 0) return true;
+                    if (depth == 0) return (true, null);
                     depth--;
                     state.Pos++;
                     continue;
@@ -74,13 +86,13 @@ internal static class AlDataItemDsl
         {
             state.Pos++;
         }
-        if (state.Pos >= state.Tokens.Count) return true;
+        if (state.Pos >= state.Tokens.Count) return (true, null);
 
         var sourceTok = state.Tokens[state.Pos];
         if (sourceTok.Kind != AlTokenKind.Identifier
             && sourceTok.Kind != AlTokenKind.QuotedIdentifier)
         {
-            return true;
+            return (true, null);
         }
 
         var resolved = state.Ctx.Resolver.ResolveTypeByName(sourceTok.Value, "Record");
@@ -115,7 +127,49 @@ internal static class AlDataItemDsl
                         new ResolvedVariableType("Record", resolved.Name);
                 }
             }
+            state.Pos++;
+            return (true, resolved);
         }
+        state.Pos++;
+        return (true, null);
+    }
+
+    /// <summary>
+    /// Emits a <c>field_access</c> reference when
+    /// <paramref name="tok"/> resolves to a field on the most-recent
+    /// dataitem / tableelement source table
+    /// (<paramref name="currentSource"/>). Advances the cursor past
+    /// the token on a hit so the orchestrator returns without its
+    /// fallback advance. Silent no-op when
+    /// <paramref name="currentSource"/> is null (no dataitem context
+    /// yet) or the token isn't a known field on it — common case at
+    /// object scope where bare tokens have many meanings.
+    /// </summary>
+    public static bool TryEmitBareFieldOnSource(
+        AlExtractionState state, AlTypeRef? currentSource, AlToken tok)
+    {
+        if (currentSource is null) return false;
+        if (tok.Kind != AlTokenKind.Identifier && tok.Kind != AlTokenKind.QuotedIdentifier)
+        {
+            return false;
+        }
+
+        var member = state.Ctx.Resolver.ResolveMember(currentSource, tok.Value);
+        if (member is null) return false;
+        if (!AlExtractionState.IsFieldKind(member.Kind)) return false;
+
+        var targetOwner = member.DeclaringType ?? currentSource;
+        state.Refs.Add(new ExtractedReference(
+            Line: tok.Line,
+            Column: tok.Column,
+            TargetAppId: targetOwner.AppId,
+            TargetObjectKind: targetOwner.Kind,
+            TargetObjectId: targetOwner.ObjectId,
+            TargetObjectName: targetOwner.Name,
+            TargetMemberName: member.Name,
+            TargetMemberKind: member.Kind,
+            ReferenceKind: "field_access"));
+        state.Resolved++;
         state.Pos++;
         return true;
     }

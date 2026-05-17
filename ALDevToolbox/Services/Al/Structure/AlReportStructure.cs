@@ -7,15 +7,20 @@ namespace ALDevToolbox.Services.Al.Structure;
 /// nested dataitems where a child references the parent's alias
 /// (<c>DataItemLink = "Field" = ParentAlias."Field";</c>).
 ///
+/// Tracks the most-recent dataitem's source table so bare field
+/// references inside <c>column(name; SourceField)</c> resolve
+/// against the right table. See <c>AlQueryStructure</c> for the
+/// most-recent-wins rationale.
+///
 /// Reports also embed a <c>requestpage { … }</c> block whose layout
 /// uses page-style <c>field(Name; expr)</c> control declarations.
 /// Those keep the generic DSL first-arg skip — the orchestrator's
-/// fallthrough handles them. A future per-kind <c>requestpage</c>
-/// extractor could resolve their source expressions properly.
+/// fallthrough handles them.
 /// </summary>
 internal sealed class AlReportStructure : IAlObjectStructureExtractor
 {
     private readonly AlExtractionState _state;
+    private AlTypeRef? _currentDataItemSource;
 
     public AlReportStructure(AlExtractionState state, AlProcedureWalker procedureWalker)
     {
@@ -23,6 +28,16 @@ internal sealed class AlReportStructure : IAlObjectStructureExtractor
         _ = procedureWalker;
     }
 
-    public bool TryConsumeObjectScopeToken(AlToken tok) =>
-        AlDataItemDsl.TryConsumeAliasedSourceDeclaration(_state, "dataitem", tok);
+    public bool TryConsumeObjectScopeToken(AlToken tok)
+    {
+        var (consumed, source) = AlDataItemDsl.TryConsumeAliasedSourceDeclaration(_state, "dataitem", tok);
+        if (consumed && source is not null)
+        {
+            _currentDataItemSource = source;
+        }
+        return consumed;
+    }
+
+    public bool TryResolveObjectScopeBareIdentifier(AlToken tok) =>
+        AlDataItemDsl.TryEmitBareFieldOnSource(_state, _currentDataItemSource, tok);
 }

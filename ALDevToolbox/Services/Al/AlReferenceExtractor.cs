@@ -329,6 +329,18 @@ public static class AlReferenceExtractor
                 return;
             }
 
+            // Last-chance object-scope bare identifier hook: per-kind
+            // extractors that track a current dataitem / tableelement
+            // source resolve bare field references inside
+            // `column(name; SourceField)` / `filter(name; SourceField)`
+            // / `fieldelement(name; SourceField)` source expressions
+            // here. Default no-op for kinds without dataitem context.
+            if (_state.ScopeStack.Count == 1
+                && (tok.Kind == AlTokenKind.Identifier || tok.Kind == AlTokenKind.QuotedIdentifier))
+            {
+                if (_structure.TryResolveObjectScopeBareIdentifier(tok)) return;
+            }
+
             _state.Pos++;
         }
 
