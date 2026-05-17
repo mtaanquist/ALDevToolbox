@@ -1,7 +1,16 @@
 {
-  "References": [],
+  "References": [
+    {
+      "Line": 9,
+      "Column": 32,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer"
+    }
+  ],
   "Stats": {
-    "ResolvedReferences": 0,
+    "ResolvedReferences": 1,
     "UnresolvedReceivers": 0,
     "UnresolvedSamples": []
   }

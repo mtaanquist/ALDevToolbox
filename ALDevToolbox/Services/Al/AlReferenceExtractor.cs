@@ -127,6 +127,9 @@ public static class AlReferenceExtractor
             {
                 "table" or "tableextension" => new AlTableStructure(state, procedureWalker),
                 "page" or "pageextension" or "requestpage" => new AlPageStructure(state, procedureWalker),
+                "query" => new AlQueryStructure(state, procedureWalker),
+                "report" or "reportextension" => new AlReportStructure(state, procedureWalker),
+                "xmlport" => new AlXmlportStructure(state, procedureWalker),
                 _ => new AlNullStructure(),
             };
         }

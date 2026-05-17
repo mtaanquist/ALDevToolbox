@@ -1,21 +1,37 @@
 {
-  "References": [],
+  "References": [
+    {
+      "Line": 11,
+      "Column": 35,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 27,
+      "TargetObjectName": "Item"
+    },
+    {
+      "Line": 13,
+      "Column": 44,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 27,
+      "TargetObjectName": "Item",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "No."
+    },
+    {
+      "Line": 16,
+      "Column": 51,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 27,
+      "TargetObjectName": "Item",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Description"
+    }
+  ],
   "Stats": {
-    "ResolvedReferences": 0,
-    "UnresolvedReceivers": 2,
-    "UnresolvedSamples": [
-      {
-        "Reason": "head-not-a-variable",
-        "Token": "ItemRow",
-        "Line": 13,
-        "Column": 36
-      },
-      {
-        "Reason": "head-not-a-variable",
-        "Token": "ItemRow",
-        "Line": 16,
-        "Column": 43
-      }
-    ]
+    "ResolvedReferences": 3,
+    "UnresolvedReceivers": 0,
+    "UnresolvedSamples": []
   }
 }

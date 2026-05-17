@@ -1,0 +1,35 @@
+{
+  "References": [
+    {
+      "Line": 7,
+      "Column": 33,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 23,
+      "TargetObjectName": "Vendor"
+    },
+    {
+      "Line": 18,
+      "Column": 37,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 25,
+      "TargetObjectName": "Vendor Ledger Entry"
+    },
+    {
+      "Line": 20,
+      "Column": 61,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 23,
+      "TargetObjectName": "Vendor",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "No."
+    }
+  ],
+  "Stats": {
+    "ResolvedReferences": 3,
+    "UnresolvedReceivers": 0,
+    "UnresolvedSamples": []
+  }
+}

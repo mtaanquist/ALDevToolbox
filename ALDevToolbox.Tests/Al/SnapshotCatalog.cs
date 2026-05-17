@@ -55,6 +55,18 @@ internal static class SnapshotCatalog
         r.AddMember("Item", new AlMember("No.", "table_field",null, null));
         r.AddMember("Item", new AlMember("Description", "table_field",null, null));
 
+        // Tables used by query / report fixtures to exercise the
+        // dataitem-alias registration path (see AlDataItemDsl).
+        r.AddType("Vendor", new AlTypeRef(OwnerAppId, "table", 23, "Vendor"));
+        r.AddMember("Vendor", new AlMember("No.", "table_field", null, null));
+        r.AddMember("Vendor", new AlMember("Name", "table_field", null, null));
+        r.AddMember("Vendor", new AlMember("SystemId", "table_field", null, null));
+
+        r.AddType("Vendor Ledger Entry", new AlTypeRef(OwnerAppId, "table", 25, "Vendor Ledger Entry"));
+        r.AddMember("Vendor Ledger Entry", new AlMember("Vendor No.", "table_field", null, null));
+        r.AddMember("Vendor Ledger Entry", new AlMember("Purchase (LCY)", "table_field", null, null));
+        r.AddMember("Vendor Ledger Entry", new AlMember("Posting Date", "table_field", null, null));
+
         // ── Pages ─────────────────────────────────────────────────
         r.AddType("Customer List", new AlTypeRef(OwnerAppId, "page", 22, "Customer List"));
         r.AddSourceTable("Customer List", "Customer");
