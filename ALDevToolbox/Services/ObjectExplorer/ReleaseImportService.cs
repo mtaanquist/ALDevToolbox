@@ -288,19 +288,42 @@ public class ReleaseImportService
         // DVD. Falling back to pkg.SourceFiles only when no .Source.zip
         // was provided keeps single-file partner uploads (which never pair
         // a zip) working as before.
+        //
+        // Both branches dedupe by path with last-write-wins. Microsoft's
+        // System.app (observed on BC 28.1) ships duplicate entries that
+        // normalise to the same canonical path (e.g. two src/dotnet.al's);
+        // failing the entire 110-module import on a content collision the
+        // user can't fix isn't worth it, so we keep one and log a warning.
         IReadOnlyDictionary<string, string> sourceFiles;
         if (upload.SourceZipStream is not null)
         {
             var fromZip = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var (path, content) in ReadSourceZip(upload.SourceZipStream))
             {
+                if (fromZip.ContainsKey(path))
+                {
+                    _logger.LogWarning(
+                        "Duplicate source path in .Source.zip for {Module}: {Path} — keeping last occurrence",
+                        pkg.Manifest.Name, path);
+                }
                 fromZip[path] = content;
             }
             sourceFiles = fromZip;
         }
         else
         {
-            sourceFiles = pkg.SourceFiles.ToDictionary(f => f.Path, f => f.Content, StringComparer.OrdinalIgnoreCase);
+            var fromEmbedded = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var file in pkg.SourceFiles)
+            {
+                if (fromEmbedded.ContainsKey(file.Path))
+                {
+                    _logger.LogWarning(
+                        "Duplicate embedded source path in {Module}: {Path} — keeping last occurrence",
+                        pkg.Manifest.Name, file.Path);
+                }
+                fromEmbedded[file.Path] = file.Content;
+            }
+            sourceFiles = fromEmbedded;
         }
 
         await WriteModuleAsync(orgId, release, upload, pkg, sourceFiles, totals, ct).ConfigureAwait(false);
