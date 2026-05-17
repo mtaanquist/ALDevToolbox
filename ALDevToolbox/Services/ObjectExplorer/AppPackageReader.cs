@@ -336,36 +336,61 @@ public static class AppPackageReader
     }
 
     /// <summary>
-    /// Decodes the <c>#&lt;32 hex digits&gt;#&lt;target name&gt;</c> form
-    /// used by symbol-package <c>TargetObject</c> / <c>Target</c> strings
-    /// and by some Properties like <c>TableNo</c>. Returns
-    /// <c>(null, null)</c> when the string isn't in that shape.
+    /// Decodes a symbol-package extends-target string into its
+    /// <c>(AppId?, BaseObjectName?)</c> components. Three shapes occur
+    /// in practice:
+    /// <list type="bullet">
+    ///   <item><b><c>#&lt;32 hex&gt;#&lt;qualified name&gt;</c></b> — the
+    ///     modern cross-app form (e.g. OIOUBL extending Base App's
+    ///     <c>Customer</c>). Returns the AppId and the last namespace
+    ///     segment.</item>
+    ///   <item><b><c>&lt;qualified name&gt;</c></b> — same-app extensions
+    ///     and ReportExtensions ship without the <c>#appid#</c>
+    ///     wrapper (BC's Base App writes <c>Target = "Cancel FA Ledger
+    ///     Entries"</c> for ReportExtensions, and same-namespace
+    ///     TableExtensions like <c>Mfg. Location</c> extends
+    ///     <c>Location</c> in Base App). Returns (null, last segment).</item>
+    ///   <item><b>null / empty / malformed <c>#</c>-prefix</b> — returns
+    ///     (null, null).</item>
+    /// </list>
+    /// <para>Whichever shape we get, the namespace prefix is stripped:
+    /// the base object itself is catalogued by its unqualified name
+    /// (<c>oe_module_objects.Name = "BOM Buffer"</c>), so storing the
+    /// qualified form here would mismatch every downstream consumer
+    /// that joins <c>extends_object_name</c> back to the base
+    /// object's <c>Name</c> — the chain walker's
+    /// <c>_extensionsByBaseName</c> lookup, the pageextension
+    /// SourceTable propagation SQL, the <c>extends_target</c>
+    /// reference row, and the UI display.</para>
+    /// <para>Returning a name without an AppId is fine for the
+    /// extension-walk path (keyed by name only), but the
+    /// <c>extends_target</c> reference row in <c>EmitReferences</c>
+    /// requires both — same-app extensions lose that one click-target
+    /// rather than the entire membership.</para>
     /// </summary>
     internal static (Guid? AppId, string? Name) ParseExtendsRef(string? raw)
     {
-        if (string.IsNullOrEmpty(raw) || raw[0] != '#') return (null, null);
-        var second = raw.IndexOf('#', 1);
-        if (second != 33) return (null, null); // need exactly 32 hex digits between '#'s
-        if (!Guid.TryParseExact(raw.AsSpan(1, 32), "N", out var guid)) return (null, null);
-        var name = raw.Substring(34);
-        // Modern BC symbol packages encode the extends target as a
-        // namespace-qualified name (`#<appid>#Microsoft.Inventory.BOM.BOM Buffer`)
-        // for cross- AND same-namespace references — even though the
-        // .al source just writes `extends "BOM Buffer"`. The base
-        // object itself is catalogued by its unqualified name
-        // (oe_module_objects.Name = "BOM Buffer"), so storing the
-        // qualified form here would mismatch every downstream
-        // consumer that joins extends_object_name back to the base
-        // object's Name: the chain walker's `_extensionsByBaseName`
-        // lookup, the pageextension SourceTable propagation SQL, the
-        // extends_target reference row, and the UI display. Strip
-        // the namespace prefix and keep only the last segment.
+        if (string.IsNullOrEmpty(raw)) return (null, null);
+
+        Guid? guid = null;
+        string name = raw;
+
+        if (raw[0] == '#')
+        {
+            var second = raw.IndexOf('#', 1);
+            if (second != 33) return (null, null); // need exactly 32 hex digits between '#'s
+            if (!Guid.TryParseExact(raw.AsSpan(1, 32), "N", out var parsed)) return (null, null);
+            guid = parsed;
+            name = raw.Substring(34);
+        }
+
         var lastDot = name.LastIndexOf('.');
         if (lastDot >= 0 && lastDot + 1 < name.Length)
         {
             name = name.Substring(lastDot + 1);
         }
-        return (guid, name);
+
+        return string.IsNullOrEmpty(name) ? (null, null) : (guid, name);
     }
 
     private static IReadOnlyList<SymbolProperty> ToProperties(IReadOnlyList<RawProperty>? raws)
