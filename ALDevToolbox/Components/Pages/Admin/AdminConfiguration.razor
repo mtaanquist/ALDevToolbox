@@ -3,15 +3,16 @@
 @inject NavigationManager Nav
 
 @*
-    The configuration surface is split into four sub-pages under
-    /admin/configuration/* (Issue #61). This page exists only so legacy
-    bookmarks and the admin dashboard tile keep working — it redirects to
-    the Defaults sub-page on load.
+    /admin/configuration is the org-level configuration surface (identity +
+    MCP integration). The template-shaping pages (defaults / logo / files /
+    workspace settings) moved under /admin/templates/* — this page redirects
+    to the identity sub-page so the legacy bookmark still lands somewhere
+    useful.
 *@
 
 @code {
     protected override void OnInitialized()
     {
-        Nav.NavigateTo("/admin/configuration/defaults", replace: true);
+        Nav.NavigateTo("/admin/configuration/identity", replace: true);
     }
 }

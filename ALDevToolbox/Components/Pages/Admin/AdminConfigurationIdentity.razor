@@ -1,0 +1,252 @@
+@page "/admin/configuration/identity"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject OrganizationConfigService Config
+@inject AppDbContext Db
+@inject IOrganizationContext OrgCtx
+@inject NavigationManager Nav
+@inject ILogger<AdminConfigurationIdentity> Log
+@using ALDevToolbox.Data
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Domain.ValueObjects
+@using Microsoft.EntityFrameworkCore
+
+@*
+    Organisation identity and email-domain claims. The display name shown in
+    the top bar comes from Organization.Name; rename it here. Email domains
+    are globally unique — claiming one routes future signups from that domain
+    into this org as Pending users (admin still approves via /admin/users).
+*@
+
+<PageTitle>Identity · Configuration · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page admin-configuration">
+    <header class="admin-page__header">
+        <div>
+            <h1>Identity</h1>
+            <p class="muted">
+                How this organisation is named and which email domains it
+                claims for automatic signup routing.
+            </p>
+        </div>
+        <div class="admin-page__header-actions">
+            <a class="btn btn--sm" href="/admin">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to admin</span>
+            </a>
+        </div>
+    </header>
+
+    @if (_loading)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        <section class="admin-section">
+            <h2>Organisation name</h2>
+            @if (!string.IsNullOrEmpty(_nameOkMessage))
+            {
+                <p class="form-success" role="status">@_nameOkMessage</p>
+            }
+            @if (!string.IsNullOrEmpty(_nameErrMessage))
+            {
+                <div class="form-error" role="alert"><p>@_nameErrMessage</p></div>
+            }
+            <div class="form-grid form-grid--narrow">
+                <section class="form-section">
+                    <label class="section-label" for="org-name">Name</label>
+                    <input id="org-name" type="text" required minlength="2" maxlength="80"
+                           @bind="_name" @bind:event="oninput" />
+                    <small class="muted">
+                        Shown next to the user's name in the top bar and in the admin tools.
+                        Renaming takes effect for new logins — current sessions keep their
+                        cached name until they sign out and back in.
+                    </small>
+                </section>
+                <section class="form-section">
+                    <label class="section-label" for="org-slug">Slug (read-only)</label>
+                    <input id="org-slug" type="text" value="@_slug" readonly disabled />
+                    <small class="muted">
+                        The slug is baked into every signed-in cookie's org claim and
+                        every saved URL; it can't be changed without invalidating both.
+                    </small>
+                </section>
+                <section class="form-section">
+                    <button type="button" class="btn btn--primary"
+                            @onclick="SaveNameAsync"
+                            disabled="@(_savingName || _name == _baseName)">
+                        <Icon Name="save" Width="14" Height="14" />
+                        <span>@(_savingName ? "Saving…" : "Rename")</span>
+                    </button>
+                </section>
+            </div>
+        </section>
+
+        <section class="admin-section">
+            <h2>Email domains</h2>
+            <p class="muted">
+                When someone signs up with an email at one of these domains we
+                attach them to this organisation as a Pending user — they still
+                need an admin's approval via <a href="/admin/users">Users</a>.
+                A domain belongs to exactly one organisation deployment-wide.
+            </p>
+            @if (!string.IsNullOrEmpty(_domainOkMessage))
+            {
+                <p class="form-success" role="status">@_domainOkMessage</p>
+            }
+            @if (!string.IsNullOrEmpty(_domainErrMessage))
+            {
+                <div class="form-error" role="alert"><p>@_domainErrMessage</p></div>
+            }
+
+            @if (_domains.Count == 0)
+            {
+                <p class="muted">No email domains claimed yet.</p>
+            }
+            else
+            {
+                <ul class="email-domain-list">
+                    @foreach (var domain in _domains)
+                    {
+                        <li class="email-domain-row">
+                            <code>@domain.Domain</code>
+                            <button type="button" class="btn btn--sm" @onclick="() => RemoveAsync(domain.Id)" disabled="@_savingDomain">
+                                <Icon Name="trash-2" Width="14" Height="14" />
+                                <span>Remove</span>
+                            </button>
+                        </li>
+                    }
+                </ul>
+            }
+
+            <div class="form-grid form-grid--narrow">
+                <section class="form-section">
+                    <label class="section-label" for="org-domain">Add domain</label>
+                    <input id="org-domain" type="text" placeholder="e.g. acme.com" maxlength="253"
+                           @bind="_newDomain" @bind:event="oninput" />
+                    <small class="muted">Lowercased; a leading <code>@@</code> is stripped if you paste it.</small>
+                </section>
+                <section class="form-section">
+                    <button type="button" class="btn btn--primary"
+                            @onclick="AddAsync"
+                            disabled="@(_savingDomain || string.IsNullOrWhiteSpace(_newDomain))">
+                        <Icon Name="plus" Width="14" Height="14" />
+                        <span>@(_savingDomain ? "Saving…" : "Add domain")</span>
+                    </button>
+                </section>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private bool _savingName;
+    private bool _savingDomain;
+    private string? _nameOkMessage;
+    private string? _nameErrMessage;
+    private string? _domainOkMessage;
+    private string? _domainErrMessage;
+
+    private string _name = string.Empty;
+    private string _baseName = string.Empty;
+    private string _slug = string.Empty;
+    private string _newDomain = string.Empty;
+    private List<OrganizationEmailDomain> _domains = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var orgId = OrgCtx.CurrentOrganizationId
+            ?? throw new InvalidOperationException("No organisation in scope.");
+        var org = await Db.Organizations.AsNoTracking().FirstAsync(o => o.Id == orgId);
+        _name = _baseName = org.Name;
+        _slug = org.Slug;
+        _domains = await Config.ListEmailDomainsAsync();
+        _loading = false;
+    }
+
+    private async Task SaveNameAsync()
+    {
+        if (_savingName || _name == _baseName) return;
+        _savingName = true;
+        _nameOkMessage = null;
+        _nameErrMessage = null;
+        try
+        {
+            await Config.RenameOrganizationAsync(_name);
+            _baseName = _name.Trim();
+            _name = _baseName;
+            _nameOkMessage = "Organisation renamed. Sign out and back in to see it in the top bar.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _nameErrMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to rename organisation.");
+            _nameErrMessage = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _savingName = false;
+        }
+    }
+
+    private async Task AddAsync()
+    {
+        if (_savingDomain) return;
+        _savingDomain = true;
+        _domainOkMessage = null;
+        _domainErrMessage = null;
+        try
+        {
+            await Config.AddEmailDomainAsync(_newDomain);
+            _newDomain = string.Empty;
+            _domains = await Config.ListEmailDomainsAsync();
+            _domainOkMessage = "Domain added.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _domainErrMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to add email domain.");
+            _domainErrMessage = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _savingDomain = false;
+        }
+    }
+
+    private async Task RemoveAsync(int domainId)
+    {
+        if (_savingDomain) return;
+        _savingDomain = true;
+        _domainOkMessage = null;
+        _domainErrMessage = null;
+        try
+        {
+            await Config.RemoveEmailDomainAsync(domainId);
+            _domains = await Config.ListEmailDomainsAsync();
+            _domainOkMessage = "Domain removed.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to remove email domain.");
+            _domainErrMessage = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _savingDomain = false;
+        }
+    }
+}

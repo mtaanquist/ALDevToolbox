@@ -111,6 +111,7 @@ internal static class AccountEndpoints
                     displayName: form["DisplayName"].ToString(),
                     password: form["Password"].ToString(),
                     organizationSlug: form["OrganizationSlug"].ToString(),
+                    organizationName: form["OrganizationName"].ToString(),
                     ct);
 
                 if (outcome == SignupOutcome.EmailAlreadyTaken)

@@ -25,6 +25,11 @@ internal static class EndpointHelpers
             new(HttpOrganizationContext.UserIdClaim, user.Id.ToString()),
             new(HttpOrganizationContext.OrganizationIdClaim, user.OrganizationId.ToString()),
             new("org_name", user.Organization?.Name ?? string.Empty),
+            // Cached per-org MCP opt-out. Authoritative check still runs at
+            // /mcp request time against the DB so a stale claim can't smuggle
+            // a banned org back in; this claim only feeds the nav-link
+            // visibility so the link disappears without a DB hit per render.
+            new("org_mcp_enabled", (user.Organization?.McpEnabled ?? true) ? "true" : "false"),
         };
         if (user.IsSiteAdmin)
         {

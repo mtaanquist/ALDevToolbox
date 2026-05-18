@@ -128,7 +128,21 @@ public sealed class TestDb : IDisposable
     /// for the failure mode this isolation prevents.
     /// </summary>
     public OrganizationConfigService NewOrganizationConfigService(AppDbContext ctx) =>
-        new(ctx, OrgContext, NewQuotaGuard(ctx), NullLogger<OrganizationConfigService>.Instance, _memoryCache);
+        new(ctx, OrgContext, NewQuotaGuard(ctx), NullLogger<OrganizationConfigService>.Instance, _memoryCache, McpAvailability);
+
+    /// <summary>
+    /// Per-fixture MCP availability state. Defaults to enabled so tests that
+    /// don't care about the toggle behave as if the SiteAdmin has flipped it
+    /// on. Tests that care (the org-level toggle tests) flip this directly.
+    /// </summary>
+    public ALDevToolbox.Services.Mcp.McpAvailabilityState McpAvailability { get; } = CreateMcpAvailability();
+
+    private static ALDevToolbox.Services.Mcp.McpAvailabilityState CreateMcpAvailability()
+    {
+        var state = new ALDevToolbox.Services.Mcp.McpAvailabilityState();
+        state.Set(true);
+        return state;
+    }
 
     /// <summary>
     /// Registers the storage-quota service chain on the supplied collection
@@ -144,6 +158,7 @@ public sealed class TestDb : IDisposable
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton(DataProtectionProvider);
         services.TryAddSingleton<IMemoryCache>(_memoryCache);
+        services.TryAddSingleton<ALDevToolbox.Services.Mcp.IMcpAvailability>(McpAvailability);
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<DatabaseUsageService>();
         services.AddScoped<StorageQuotaGuard>();

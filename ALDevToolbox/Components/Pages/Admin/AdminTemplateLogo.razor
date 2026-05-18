@@ -1,9 +1,9 @@
-@page "/admin/configuration/logo"
+@page "/admin/templates/logo"
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @inject OrganizationConfigService Config
 @inject NavigationManager Nav
-@inject ILogger<AdminConfigurationLogo> Log
+@inject ILogger<AdminTemplateLogo> Log
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 @using Microsoft.AspNetCore.Components.Forms
@@ -201,7 +201,7 @@
             {
                 await Config.UploadLogoAsync(_pendingLogoContentType ?? string.Empty, _pendingLogoBytes);
             }
-            Nav.NavigateTo("/admin/configuration/logo?ok=saved", forceLoad: true);
+            Nav.NavigateTo("/admin/templates/logo?ok=saved", forceLoad: true);
         }
         catch (PlanValidationException ex)
         {

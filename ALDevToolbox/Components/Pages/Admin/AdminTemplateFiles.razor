@@ -1,9 +1,9 @@
-@page "/admin/configuration/files"
+@page "/admin/templates/files"
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @inject OrganizationConfigService Config
 @inject NavigationManager Nav
-@inject ILogger<AdminConfigurationFiles> Log
+@inject ILogger<AdminTemplateFiles> Log
 @using ALDevToolbox.Domain.ValueObjects
 
 @*
@@ -295,7 +295,7 @@
                     MustacheEnabled: f.MustacheEnabled, Scope: f.Scope))
                 .ToList();
             await Config.SaveFilesAsync(inputs);
-            Nav.NavigateTo("/admin/configuration/files?ok=saved", forceLoad: true);
+            Nav.NavigateTo("/admin/templates/files?ok=saved", forceLoad: true);
         }
         catch (PlanValidationException ex)
         {

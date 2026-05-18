@@ -1,9 +1,9 @@
-@page "/admin/configuration/defaults"
+@page "/admin/templates/defaults"
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @inject OrganizationConfigService Config
 @inject NavigationManager Nav
-@inject ILogger<AdminConfigurationDefaults> Log
+@inject ILogger<AdminTemplateDefaults> Log
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.ValueObjects
 
@@ -197,7 +197,7 @@
                 DefaultSupportedCountries: _countries
                     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                     .ToList()));
-            Nav.NavigateTo("/admin/configuration/defaults?ok=saved", forceLoad: true);
+            Nav.NavigateTo("/admin/templates/defaults?ok=saved", forceLoad: true);
         }
         catch (PlanValidationException ex)
         {

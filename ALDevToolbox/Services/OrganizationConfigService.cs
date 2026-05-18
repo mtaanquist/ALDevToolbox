@@ -6,6 +6,7 @@ using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.Seed;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services.Mcp;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Tomlyn;
@@ -36,6 +37,7 @@ public class OrganizationConfigService
         new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "image/svg+xml", "image/png" };
 
     private static readonly Regex PathRegex = new(@"^[A-Za-z0-9._\-]+(?:/[A-Za-z0-9._\-]+)*$", RegexOptions.Compiled);
+    private static readonly Regex DomainRegex = new(@"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)+$", RegexOptions.Compiled);
     private static readonly Regex SvgScriptTagRegex = new(@"<script\b[^>]*>.*?</script\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
     private static readonly Regex SvgEventAttrRegex = new(@"\s+on[a-zA-Z]+\s*=\s*(""[^""]*""|'[^']*'|[^\s>]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
@@ -44,19 +46,22 @@ public class OrganizationConfigService
     private readonly StorageQuotaGuard _quotaGuard;
     private readonly ILogger<OrganizationConfigService> _logger;
     private readonly IMemoryCache _cache;
+    private readonly IMcpAvailability _mcpAvailability;
 
     public OrganizationConfigService(
         AppDbContext db,
         IOrganizationContext orgContext,
         StorageQuotaGuard quotaGuard,
         ILogger<OrganizationConfigService> logger,
-        IMemoryCache cache)
+        IMemoryCache cache,
+        IMcpAvailability mcpAvailability)
     {
         _db = db;
         _orgContext = orgContext;
         _quotaGuard = quotaGuard;
         _logger = logger;
         _cache = cache;
+        _mcpAvailability = mcpAvailability;
     }
 
     private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
@@ -187,6 +192,152 @@ public class OrganizationConfigService
         _logger.LogInformation(
             "Updated organisation code-workspace JSON for org {OrgId} ({Bytes} bytes).",
             orgId, codeWorkspaceJson.Length);
+    }
+
+    /// <summary>
+    /// Renames the current organisation. The slug is intentionally not
+    /// editable — it's baked into the <c>org_id</c>/<c>org_name</c> claim set
+    /// at sign-in and into any saved URLs. Cached <c>org_name</c> claims on
+    /// open sessions stay stale until the next sign-in (same posture as
+    /// display-name and role changes).
+    /// </summary>
+    public async Task RenameOrganizationAsync(string newName, CancellationToken ct = default)
+    {
+        var trimmed = newName?.Trim() ?? string.Empty;
+        if (trimmed.Length is < 2 or > 80)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Name"] = "Organisation name must be 2–80 characters.",
+            });
+        }
+
+        var orgId = RequireOrganizationId();
+        var org = await _db.Organizations.FirstAsync(o => o.Id == orgId, ct);
+        if (string.Equals(org.Name, trimmed, StringComparison.Ordinal)) return;
+        org.Name = trimmed;
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("Renamed org {OrgId} to {Name}.", orgId, trimmed);
+    }
+
+    /// <summary>Lists the email domains claimed by the current organisation.</summary>
+    public Task<List<OrganizationEmailDomain>> ListEmailDomainsAsync(CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        return _db.OrganizationEmailDomains
+            .AsNoTracking()
+            .Where(d => d.OrganizationId == orgId)
+            .OrderBy(d => d.Domain)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Claims a new email domain for the current organisation. Domains are
+    /// globally unique so a successful add blocks every other org from
+    /// claiming the same domain — a friendly error surfaces if it's already
+    /// taken (whether by this org or another).
+    /// </summary>
+    public async Task AddEmailDomainAsync(string domain, CancellationToken ct = default)
+    {
+        var normalised = NormaliseDomain(domain);
+        if (!DomainRegex.IsMatch(normalised) || normalised.Length > 253)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Domain"] = "Enter a valid domain like 'acme.com'.",
+            });
+        }
+
+        var orgId = RequireOrganizationId();
+        var existing = await _db.OrganizationEmailDomains
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(d => d.Domain == normalised, ct);
+        if (existing is not null)
+        {
+            var msg = existing.OrganizationId == orgId
+                ? "That domain is already on the list."
+                : "That domain is claimed by another organisation.";
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Domain"] = msg,
+            });
+        }
+
+        _db.OrganizationEmailDomains.Add(new OrganizationEmailDomain
+        {
+            OrganizationId = orgId,
+            Domain = normalised,
+            CreatedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("Org {OrgId} claimed email domain {Domain}.", orgId, normalised);
+    }
+
+    /// <summary>Removes one of the current organisation's email-domain claims.</summary>
+    public async Task RemoveEmailDomainAsync(int domainId, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        // Query filter scopes to the current org, so cross-org IDs return null.
+        var row = await _db.OrganizationEmailDomains.FirstOrDefaultAsync(d => d.Id == domainId, ct);
+        if (row is null) return;
+        _db.OrganizationEmailDomains.Remove(row);
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("Org {OrgId} released email domain {Domain}.", orgId, row.Domain);
+    }
+
+    /// <summary>
+    /// Toggles the per-org MCP opt-out. Refuses when the site-wide
+    /// <see cref="IMcpAvailability"/> is off — the UI also disables the
+    /// checkbox in that case but the service enforces it independently so a
+    /// forged POST can't flip a hidden setting.
+    /// </summary>
+    public async Task SetMcpEnabledAsync(bool enabled, CancellationToken ct = default)
+    {
+        if (!_mcpAvailability.IsEnabled)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["McpEnabled"] = "MCP is disabled site-wide. Ask a site admin to enable it first.",
+            });
+        }
+        var orgId = RequireOrganizationId();
+        var org = await _db.Organizations.FirstAsync(o => o.Id == orgId, ct);
+        if (org.McpEnabled == enabled) return;
+        org.McpEnabled = enabled;
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("Org {OrgId} set MCP enabled = {Enabled}.", orgId, enabled);
+    }
+
+    private static string NormaliseDomain(string? input)
+    {
+        var trimmed = (input ?? string.Empty).Trim().ToLowerInvariant();
+        if (trimmed.StartsWith('@')) trimmed = trimmed[1..];
+        return trimmed;
+    }
+
+    /// <summary>
+    /// Extracts the domain part of an email and looks up the claiming
+    /// organisation, if any. Used by signup to route users to a known org
+    /// without requiring them to type a slug. Bypasses query filters because
+    /// signup runs pre-login (no org in scope) and the routing must see
+    /// claims across every org.
+    /// </summary>
+    public async Task<Organization?> ResolveOrganizationByEmailAsync(string email, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(email)) return null;
+        var at = email.LastIndexOf('@');
+        if (at < 0 || at == email.Length - 1) return null;
+        var domain = email[(at + 1)..].Trim().ToLowerInvariant();
+        if (domain.Length == 0) return null;
+
+        var claim = await _db.OrganizationEmailDomains
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(d => d.Domain == domain)
+            .Select(d => d.Organization)
+            .FirstOrDefaultAsync(ct);
+        return claim;
     }
 
     /// <summary>

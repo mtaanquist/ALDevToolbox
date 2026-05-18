@@ -71,13 +71,26 @@ public sealed class AccountService
 
     /// <summary>
     /// Creates a pending user (and signup request) for an existing or
-    /// brand-new organisation. The slug discriminator: empty / unmatched
-    /// creates a new pending org and a single user inside it; matched
-    /// attaches the user to the existing org as a Pending User awaiting
-    /// approval. Caller must not have already validated form input.
+    /// brand-new organisation. Resolution order:
+    /// <list type="number">
+    ///   <item>If the email matches a domain claimed by an org via
+    ///         <see cref="OrganizationConfigService.AddEmailDomainAsync"/>,
+    ///         the user is routed to that org as Pending — typed slug and
+    ///         org name are ignored (the admin-claimed domain is
+    ///         authoritative, so a domain squatter can't spin up a fake
+    ///         org).</item>
+    ///   <item>Otherwise, if <paramref name="organizationSlug"/> matches an
+    ///         existing org, the user is attached as Pending.</item>
+    ///   <item>Otherwise a brand-new org is created with the supplied
+    ///         <paramref name="organizationName"/>; the slug is derived from
+    ///         that name (not the user's display name). The new admin is
+    ///         auto-approved because no in-org admin exists to do the
+    ///         approving (see <c>.design/auth-and-audit.md</c>).</item>
+    /// </list>
     /// </summary>
     public async Task<(SignupOutcome Outcome, User? User, Organization? Organization)> SignupAsync(
-        string email, string displayName, string password, string? organizationSlug, CancellationToken ct = default)
+        string email, string displayName, string password, string? organizationSlug,
+        string? organizationName, CancellationToken ct = default)
     {
         var errors = new Dictionary<string, string>();
         ValidateEmail(email, errors);
@@ -102,12 +115,18 @@ public sealed class AccountService
         var now = _clock.GetUtcNow().UtcDateTime;
         Organization org;
         bool createdNewOrg = false;
-        if (slug.Length == 0)
+
+        var domainMatch = await ResolveOrganizationByEmailDomainAsync(normalised, ct);
+        if (domainMatch is not null)
         {
-            var fallback = string.IsNullOrWhiteSpace(displayName)
-                ? "org-" + Guid.NewGuid().ToString("N")[..8]
-                : Slugify(displayName);
-            org = await CreatePendingOrganizationAsync(fallback, displayName.Trim(), now, ct);
+            org = domainMatch;
+        }
+        else if (slug.Length == 0)
+        {
+            ValidateOrganizationName(organizationName, errors);
+            if (errors.Count > 0) throw new PlanValidationException(errors);
+            var trimmedName = organizationName!.Trim();
+            org = await CreatePendingOrganizationAsync(Slugify(trimmedName), trimmedName, now, ct);
             createdNewOrg = true;
         }
         else
@@ -117,7 +136,10 @@ public sealed class AccountService
                 .FirstOrDefaultAsync(o => o.Slug == slug, ct);
             if (match is null)
             {
-                org = await CreatePendingOrganizationAsync(slug, displayName.Trim(), now, ct);
+                ValidateOrganizationName(organizationName, errors);
+                if (errors.Count > 0) throw new PlanValidationException(errors);
+                var trimmedName = organizationName!.Trim();
+                org = await CreatePendingOrganizationAsync(slug, trimmedName, now, ct);
                 createdNewOrg = true;
             }
             else
@@ -274,6 +296,29 @@ public sealed class AccountService
         }
     }
 
+    private static void ValidateOrganizationName(string? value, Dictionary<string, string> errors)
+    {
+        var trimmed = value?.Trim() ?? string.Empty;
+        if (trimmed.Length is < 2 or > 80)
+        {
+            errors["OrganizationName"] = "Organisation name must be 2–80 characters.";
+        }
+    }
+
+    private async Task<Organization?> ResolveOrganizationByEmailDomainAsync(string normalisedEmail, CancellationToken ct)
+    {
+        var at = normalisedEmail.LastIndexOf('@');
+        if (at < 0 || at == normalisedEmail.Length - 1) return null;
+        var domain = normalisedEmail[(at + 1)..];
+        if (domain.Length == 0) return null;
+        return await _db.OrganizationEmailDomains
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(d => d.Domain == domain)
+            .Select(d => d.Organization!)
+            .FirstOrDefaultAsync(ct);
+    }
+
     private async Task<int> CountActiveAdminsAsync(int orgId, CancellationToken ct)
     {
         return await _db.Users.IgnoreQueryFilters()
@@ -282,7 +327,7 @@ public sealed class AccountService
                              && u.Status == UserStatus.Active, ct);
     }
 
-    private async Task<Organization> CreatePendingOrganizationAsync(string slug, string displayName, DateTime now, CancellationToken ct)
+    private async Task<Organization> CreatePendingOrganizationAsync(string slug, string organizationName, DateTime now, CancellationToken ct)
     {
         var safeSlug = Slugify(slug);
         var candidate = safeSlug;
@@ -294,7 +339,7 @@ public sealed class AccountService
         }
         var org = new Organization
         {
-            Name = string.IsNullOrWhiteSpace(displayName) ? candidate : displayName,
+            Name = string.IsNullOrWhiteSpace(organizationName) ? candidate : organizationName,
             Slug = candidate,
             IsPending = true,
             IsSystem = false,

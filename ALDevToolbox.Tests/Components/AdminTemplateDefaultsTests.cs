@@ -20,12 +20,12 @@ namespace ALDevToolbox.Tests.Components;
 /// CLAUDE.md §"Always have the end user in mind" requires the form's HTML
 /// min/required attributes to mirror the server rules.
 /// </summary>
-public sealed class AdminConfigurationDefaultsTests : IDisposable
+public sealed class AdminTemplateDefaultsTests : IDisposable
 {
     private readonly TestDb _db = new();
     private readonly TestContext _ctx = new();
 
-    public AdminConfigurationDefaultsTests()
+    public AdminTemplateDefaultsTests()
     {
         var auth = _ctx.AddTestAuthorization();
         auth.SetAuthorized("admin@example.com");
@@ -66,7 +66,7 @@ public sealed class AdminConfigurationDefaultsTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminConfigurationDefaults>();
+        var cut = _ctx.RenderComponent<AdminTemplateDefaults>();
 
         // The page shows "Loading…" until OnInitializedAsync resolves three
         // DB reads inside OrganizationConfigService. WaitForState is cheaper
@@ -87,7 +87,7 @@ public sealed class AdminConfigurationDefaultsTests : IDisposable
     [Fact]
     public void Form_renders_html_validation_attributes_matching_the_server_rules()
     {
-        var cut = _ctx.RenderComponent<AdminConfigurationDefaults>();
+        var cut = _ctx.RenderComponent<AdminTemplateDefaults>();
 
         cut.WaitForState(() => cut.FindAll("#cfg-publisher").Any(), TimeSpan.FromSeconds(5));
 

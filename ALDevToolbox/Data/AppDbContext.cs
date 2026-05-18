@@ -115,6 +115,7 @@ public class AppDbContext : DbContext
     }
 
     public DbSet<Organization> Organizations => Set<Organization>();
+    public DbSet<OrganizationEmailDomain> OrganizationEmailDomains => Set<OrganizationEmailDomain>();
     public DbSet<User> Users => Set<User>();
     public DbSet<SignupRequest> SignupRequests => Set<SignupRequest>();
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
@@ -191,6 +192,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OrganizationSettings>(modelBuilder);
         ScopeToOrganization<OrganizationAsset>(modelBuilder);
         ScopeToOrganization<OrganizationFile>(modelBuilder);
+        ScopeToOrganization<OrganizationEmailDomain>(modelBuilder);
         ScopeToOrganization<OeRelease>(modelBuilder);
         ScopeToOrganization<OeModule>(modelBuilder);
         ScopeToOrganization<OeModuleFile>(modelBuilder);

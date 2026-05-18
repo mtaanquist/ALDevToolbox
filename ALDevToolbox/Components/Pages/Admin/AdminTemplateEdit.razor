@@ -264,7 +264,7 @@
 
             @* The defaults_json and app_source_cop_json blobs are no longer
                edited from the structured form: their visible knobs moved to
-               /admin/configuration/defaults (url, logo, supported countries,
+               /admin/templates/defaults (url, logo, supported countries,
                publisher) and the rest stays on the entity for the TOML editor
                to round-trip. Only the optional workspace-settings overlay
                survives here since it's per-template by design.
@@ -281,7 +281,7 @@
                     <details class="admin-template-edit__org-base">
                         <summary>
                             <Icon Name="eye" Width="14" Height="14" />
-                            <span>Organisation base (read-only — edit at <a href="/admin/configuration/workspace">Configuration · Workspace</a>)</span>
+                            <span>Organisation base (read-only — edit at <a href="/admin/templates/workspace">Templates · Workspace</a>)</span>
                         </summary>
                         <pre class="admin-template-edit__org-base-body"><code>@_orgCodeWorkspaceJson</code></pre>
                     </details>
@@ -353,11 +353,11 @@
                     Org-wide text files emitted at the workspace root when this
                     template is picked. New entries default to off — tick the
                     ones that belong with this template. Curate the library at
-                    <a href="/admin/configuration/files">Configuration · Files</a>.
+                    <a href="/admin/templates/files">Templates · Files</a>.
                 </small>
                 @if (_availableOrgFiles.Count == 0)
                 {
-                    <p class="muted">No always-included files configured yet. Add one under <a href="/admin/configuration/files">Configuration · Files</a>.</p>
+                    <p class="muted">No always-included files configured yet. Add one under <a href="/admin/templates/files">Templates · Files</a>.</p>
                 }
                 else
                 {

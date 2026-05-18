@@ -1,7 +1,9 @@
+using ALDevToolbox.Data;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.Account;
 using ALDevToolbox.Services.Mcp;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace ALDevToolbox.Endpoints;
@@ -88,7 +90,38 @@ internal static class McpEndpoints
             return app;
         }
 
-        app.MapMcp("/mcp").RequireAuthorization(PatAuthenticationHandler.AuthenticationScheme);
+        app.MapMcp("/mcp")
+            .RequireAuthorization(PatAuthenticationHandler.AuthenticationScheme)
+            // Per-org opt-out (Issue: per-org MCP toggle). Authoritative
+            // check at request time — the `org_mcp_enabled` claim on the
+            // cookie/PAT principal feeds the nav-link visibility but can be
+            // stale; this lookup against the live row is what actually
+            // refuses a request from an opted-out org.
+            .AddEndpointFilter(async (ctx, next) =>
+            {
+                var orgCtx = ctx.HttpContext.RequestServices.GetRequiredService<IOrganizationContext>();
+                var orgId = orgCtx.CurrentOrganizationId;
+                if (orgId is null)
+                {
+                    return Results.Unauthorized();
+                }
+                var db = ctx.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+                var enabled = await db.Organizations
+                    .IgnoreQueryFilters()
+                    .Where(o => o.Id == orgId.Value)
+                    .Select(o => (bool?)o.McpEnabled)
+                    .FirstOrDefaultAsync(ctx.HttpContext.RequestAborted);
+                if (enabled != true)
+                {
+                    ctx.HttpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+                    ctx.HttpContext.Response.ContentType = "text/plain; charset=utf-8";
+                    await ctx.HttpContext.Response.WriteAsync(
+                        "MCP is disabled for this organisation.",
+                        ctx.HttpContext.RequestAborted);
+                    return Results.Empty;
+                }
+                return await next(ctx);
+            });
         return app;
     }
 }

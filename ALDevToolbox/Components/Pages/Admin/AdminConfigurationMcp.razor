@@ -1,0 +1,144 @@
+@page "/admin/configuration/mcp"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject OrganizationConfigService Config
+@inject AppDbContext Db
+@inject IOrganizationContext OrgCtx
+@inject IMcpAvailability McpAvailability
+@inject ILogger<AdminConfigurationMcp> Log
+@using ALDevToolbox.Data
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services.Mcp
+@using Microsoft.EntityFrameworkCore
+
+@*
+    Per-organisation MCP opt-out. Only operable when the SiteAdmin has
+    enabled MCP site-wide on /site-admin/settings; otherwise the checkbox is
+    disabled and a notice points the admin at the SiteAdmin. Server enforces
+    the same gate on POST.
+*@
+
+<PageTitle>MCP integration · Configuration · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page admin-configuration">
+    <header class="admin-page__header">
+        <div>
+            <h1>MCP integration</h1>
+            <p class="muted">
+                Decide whether this organisation exposes the MCP server to its
+                users. Personal access tokens minted in this org will be
+                refused at <code>/mcp</code> while it's off.
+            </p>
+        </div>
+        <div class="admin-page__header-actions">
+            <a class="btn btn--sm" href="/admin">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to admin</span>
+            </a>
+        </div>
+    </header>
+
+    @if (_loading)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        @if (!McpAvailability.IsEnabled)
+        {
+            <div class="form-error" role="alert">
+                <p>
+                    MCP is disabled site-wide. The toggle below is read-only — a
+                    site admin needs to enable MCP on
+                    <code>/site-admin/settings</code> before per-org settings
+                    take effect.
+                </p>
+            </div>
+        }
+        @if (!string.IsNullOrEmpty(_okMessage))
+        {
+            <p class="form-success" role="status">@_okMessage</p>
+        }
+        @if (!string.IsNullOrEmpty(_errMessage))
+        {
+            <div class="form-error" role="alert"><p>@_errMessage</p></div>
+        }
+
+        <section class="admin-section">
+            <div class="form-grid form-grid--narrow">
+                <section class="form-section">
+                    <label class="section-label">
+                        <input type="checkbox"
+                               @bind="_enabled"
+                               disabled="@(!McpAvailability.IsEnabled || _saving)" />
+                        <span>Enable MCP for this organisation</span>
+                    </label>
+                    <small class="muted">
+                        Turning this off hides the MCP nav entry for users in
+                        this organisation on their next sign-in and refuses
+                        their MCP requests at the server immediately.
+                    </small>
+                </section>
+                <section class="form-section">
+                    <button type="button" class="btn btn--primary"
+                            @onclick="SaveAsync"
+                            disabled="@(_saving || !McpAvailability.IsEnabled || _enabled == _baseEnabled)">
+                        <Icon Name="save" Width="14" Height="14" />
+                        <span>@(_saving ? "Saving…" : "Save")</span>
+                    </button>
+                </section>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private bool _saving;
+    private string? _okMessage;
+    private string? _errMessage;
+
+    private bool _enabled;
+    private bool _baseEnabled;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var orgId = OrgCtx.CurrentOrganizationId
+            ?? throw new InvalidOperationException("No organisation in scope.");
+        _enabled = _baseEnabled = await Db.Organizations
+            .AsNoTracking()
+            .Where(o => o.Id == orgId)
+            .Select(o => o.McpEnabled)
+            .FirstAsync();
+        _loading = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving || _enabled == _baseEnabled) return;
+        _saving = true;
+        _okMessage = null;
+        _errMessage = null;
+        try
+        {
+            await Config.SetMcpEnabledAsync(_enabled);
+            _baseEnabled = _enabled;
+            _okMessage = "MCP setting saved. Users in this organisation see the change on their next sign-in.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _errMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+            _enabled = _baseEnabled;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to set per-org MCP enabled.");
+            _errMessage = "An unexpected error occurred. The change was not saved.";
+            _enabled = _baseEnabled;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

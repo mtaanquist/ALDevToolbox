@@ -61,7 +61,7 @@ public sealed class AccountServiceTests : IDisposable
         var ctx = _db.NewContext();
         var svc = NewAccounts(ctx);
         var (outcome, user, org) = await svc.SignupAsync(
-            "alice@example.com", "Alice", "verylongpassword12345", "acme");
+            "alice@example.com", "Alice", "verylongpassword12345", "acme", null);
 
         outcome.Should().Be(SignupOutcome.PendingApproval);
         user.Should().NotBeNull();
@@ -76,7 +76,7 @@ public sealed class AccountServiceTests : IDisposable
         var ctx = _db.NewContext();
         var svc = NewAccounts(ctx);
         var (outcome, user, org) = await svc.SignupAsync(
-            "bob@example.com", "Bob", "verylongpassword12345", null);
+            "bob@example.com", "Bob", "verylongpassword12345", null, "Bob's Org");
 
         outcome.Should().Be(SignupOutcome.OrganizationProvisioned);
         // Brand-new orgs auto-approve their first user (we have no superuser
@@ -99,9 +99,74 @@ public sealed class AccountServiceTests : IDisposable
     {
         var ctx = _db.NewContext();
         var svc = NewAccounts(ctx);
-        Func<Task> act = () => svc.SignupAsync("c@example.com", "Carol", "short", null);
+        Func<Task> act = () => svc.SignupAsync("c@example.com", "Carol", "short", null, "Carol's Org");
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("Password");
+    }
+
+    [Fact]
+    public async Task Signup_new_org_uses_provided_organisation_name_not_display_name()
+    {
+        var ctx = _db.NewContext();
+        var svc = NewAccounts(ctx);
+        var (outcome, _, org) = await svc.SignupAsync(
+            "dani@example.com", "Dani — Engineering", "verylongpassword12345",
+            organizationSlug: null, organizationName: "Acme Holdings");
+
+        outcome.Should().Be(SignupOutcome.OrganizationProvisioned);
+        org!.Name.Should().Be("Acme Holdings",
+            "the org name should come from the new OrganizationName field, not from the user's display name");
+        org.Slug.Should().StartWith("acme",
+            "the slug should derive from the org name (Slugify), not the display name");
+    }
+
+    [Fact]
+    public async Task Signup_new_org_requires_organisation_name_when_slug_blank()
+    {
+        var ctx = _db.NewContext();
+        var svc = NewAccounts(ctx);
+        Func<Task> act = () => svc.SignupAsync(
+            "ed@example.com", "Ed", "verylongpassword12345",
+            organizationSlug: null, organizationName: null);
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("OrganizationName");
+    }
+
+    [Fact]
+    public async Task Signup_routes_via_claimed_email_domain_even_when_slug_is_typed()
+    {
+        // The Default org has claimed acme.com.
+        await using (var seed = _db.NewContext())
+        {
+            seed.OrganizationEmailDomains.Add(new OrganizationEmailDomain
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Domain = "acme.com",
+                CreatedAt = _clock.GetUtcNow().UtcDateTime,
+            });
+            // And a Different org exists that the user would otherwise have
+            // attached themselves to via slug.
+            seed.Organizations.Add(new Organization
+            {
+                Id = 555, Name = "Different", Slug = "different",
+                IsPending = false, CreatedAt = _clock.GetUtcNow().UtcDateTime,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var ctx = _db.NewContext();
+        var svc = NewAccounts(ctx);
+        var (outcome, user, org) = await svc.SignupAsync(
+            "fran@acme.com", "Fran", "verylongpassword12345",
+            organizationSlug: "different", organizationName: "Made Up");
+
+        outcome.Should().Be(SignupOutcome.PendingApproval,
+            "domain-routed signups land as Pending — admins of the claiming org still approve via /admin/users");
+        org!.Id.Should().Be(TestDb.DefaultOrgId,
+            "the email-domain match should win over the user's typed slug");
+        user!.Status.Should().Be(UserStatus.Pending);
+        user.Role.Should().Be(UserRole.User);
     }
 
     [Fact]

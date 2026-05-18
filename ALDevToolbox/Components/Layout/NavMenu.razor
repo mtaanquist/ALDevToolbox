@@ -59,21 +59,26 @@
                     <span>Piper</span>
                 </NavLink>
             </li>
-            @* MCP link only shows when the user is signed in *and* the
-               SiteAdmin has enabled MCP under /site-admin/settings. The
-               availability flag is held in a singleton primed at startup
-               and refreshed on save, so this branch never issues a DB
-               query during render. *@
+            @* MCP link only shows when the user is signed in, the SiteAdmin
+               has enabled MCP under /site-admin/settings, *and* the user's
+               own organisation hasn't opted out under
+               /admin/configuration/mcp. The site-wide flag is held in a
+               singleton primed at startup; the per-org flag rides on the
+               auth cookie's `org_mcp_enabled` claim — neither branch
+               touches the database during render. *@
             @if (McpAvailability.IsEnabled)
             {
                 <AuthorizeView>
-                    <Authorized>
-                        <li>
-                            <NavLink class="nav-link" href="/tools/mcp" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <Icon Name="bot" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>MCP</span>
-                            </NavLink>
-                        </li>
+                    <Authorized Context="mcpCtx">
+                        @if (mcpCtx.User.FindFirst("org_mcp_enabled")?.Value != "false")
+                        {
+                            <li>
+                                <NavLink class="nav-link" href="/tools/mcp" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                    <Icon Name="bot" Width="18" Height="18" Css="nav-link__icon" />
+                                    <span>MCP</span>
+                                </NavLink>
+                            </li>
+                        }
                     </Authorized>
                 </AuthorizeView>
             }
@@ -96,12 +101,55 @@
                             <span>Dashboard</span>
                         </NavLink>
                     </li>
-                    <li>
-                        <NavLink class="nav-link" href="/admin/templates" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                            <Icon Name="layers" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>Templates</span>
-                        </NavLink>
-                    </li>
+                    @if (!isSystemOrg)
+                    {
+                        <li>
+                            <div class="nav-group">
+                                <div class="nav-link nav-link--group">
+                                    <Icon Name="layers" Width="18" Height="18" Css="nav-link__icon" />
+                                    <span>Templates</span>
+                                </div>
+                                <ul class="nav-sublist">
+                                    <li>
+                                        <NavLink class="nav-link nav-link--sub" href="/admin/templates" Match="NavLinkMatch.All" ActiveClass="active">
+                                            <span>Browse</span>
+                                        </NavLink>
+                                    </li>
+                                    <li>
+                                        <NavLink class="nav-link nav-link--sub" href="/admin/templates/defaults" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                            <span>Defaults</span>
+                                        </NavLink>
+                                    </li>
+                                    <li>
+                                        <NavLink class="nav-link nav-link--sub" href="/admin/templates/logo" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                            <span>Logo</span>
+                                        </NavLink>
+                                    </li>
+                                    <li>
+                                        <NavLink class="nav-link nav-link--sub" href="/admin/templates/files" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                            <span>Always-included files</span>
+                                        </NavLink>
+                                    </li>
+                                    <li>
+                                        <NavLink class="nav-link nav-link--sub" href="/admin/templates/workspace" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                            <span>Workspace settings</span>
+                                        </NavLink>
+                                    </li>
+                                </ul>
+                            </div>
+                        </li>
+                    }
+                    else
+                    {
+                        @* System org still needs the templates browser, just
+                           without the per-org template-shaping sub-pages. *@
+                        <li>
+                            <NavLink class="nav-link" href="/admin/templates" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                <Icon Name="layers" Width="18" Height="18" Css="nav-link__icon" />
+                                <span>Templates</span>
+                            </NavLink>
+                        </li>
+                    }
                     <li>
                         <NavLink class="nav-link" href="/admin/modules" Match="NavLinkMatch.Prefix" ActiveClass="active">
                             <Icon Name="package" Width="18" Height="18" Css="nav-link__icon" />
@@ -162,23 +210,13 @@
                                 </div>
                                 <ul class="nav-sublist">
                                     <li>
-                                        <NavLink class="nav-link nav-link--sub" href="/admin/configuration/defaults" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                            <span>Defaults</span>
+                                        <NavLink class="nav-link nav-link--sub" href="/admin/configuration/identity" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                            <span>Identity</span>
                                         </NavLink>
                                     </li>
                                     <li>
-                                        <NavLink class="nav-link nav-link--sub" href="/admin/configuration/logo" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                            <span>Logo</span>
-                                        </NavLink>
-                                    </li>
-                                    <li>
-                                        <NavLink class="nav-link nav-link--sub" href="/admin/configuration/files" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                            <span>Always-included files</span>
-                                        </NavLink>
-                                    </li>
-                                    <li>
-                                        <NavLink class="nav-link nav-link--sub" href="/admin/configuration/workspace" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                            <span>Workspace settings</span>
+                                        <NavLink class="nav-link nav-link--sub" href="/admin/configuration/mcp" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                            <span>MCP integration</span>
                                         </NavLink>
                                     </li>
                                 </ul>
