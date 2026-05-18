@@ -178,6 +178,11 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     border-right: 1px solid var(--color-border);
     padding: 20px 12px;
     overflow-y: auto;
+    /* Flex column so the inner .sidebar-nav can fill the full height,
+       which in turn lets the storage indicator pin to the bottom via
+       margin-top: auto. */
+    display: flex;
+    flex-direction: column;
 }
 
 .content {
@@ -199,7 +204,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 /* ---------- Sidebar nav ---------- */
 
-.sidebar-nav { display: flex; flex-direction: column; gap: 18px; }
+.sidebar-nav { display: flex; flex-direction: column; gap: 18px; flex: 1; min-height: 0; }
 
 .nav-section__label {
     font-size: 11px;

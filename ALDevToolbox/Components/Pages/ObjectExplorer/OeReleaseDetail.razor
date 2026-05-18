@@ -1,6 +1,11 @@
 @page "/object-explorer/release/{ReleaseId:int}"
 @attribute [Authorize]
-@rendermode InteractiveServer
+@* prerender:false — under default InteractiveServer the page rendered
+   twice (once during the static prerender, once after the circuit took
+   over), so the table briefly appeared and then "refreshed". Skipping
+   prerender lets the first paint be the loading state and the data
+   loads exactly once on the interactive pass. *@
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
 @inject NavigationManager Nav
@@ -279,20 +284,56 @@
         await ReloadAsync();
     }
 
+    // Debounce window for text inputs. Without it, every keystroke triggered
+    // an immediate ReloadAsync — the queries pile up and the scoped EF
+    // context can't be entered concurrently, so a fast typer hits errors
+    // when one search starts before the previous finishes. 250ms is short
+    // enough to feel live and long enough to coalesce a burst of keystrokes
+    // into a single query. _reloadGate serialises the actual reload as a
+    // belt-and-braces guard for the case where a query takes longer than
+    // the debounce window.
+    private static readonly TimeSpan SearchDebounce = TimeSpan.FromMilliseconds(250);
+    private CancellationTokenSource? _searchDebounceCts;
+    private readonly SemaphoreSlim _reloadGate = new(1, 1);
+
     private async Task OnSearchChanged(ChangeEventArgs args)
     {
         _search = args.Value?.ToString() ?? string.Empty;
-        await ReloadAsync();
+        await DebounceReloadAsync();
     }
 
     private async Task OnNamespaceChanged(ChangeEventArgs args)
     {
         _namespace = args.Value?.ToString() ?? string.Empty;
+        await DebounceReloadAsync();
+    }
+
+    private async Task DebounceReloadAsync()
+    {
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _searchDebounceCts = cts;
+        try
+        {
+            await Task.Delay(SearchDebounce, cts.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+        if (cts.IsCancellationRequested) return;
         await ReloadAsync();
+        StateHasChanged();
     }
 
     private async Task ReloadAsync()
     {
+        // Serialise reloads so a slow query and a fast typer never share
+        // the same scoped DbContext at the same time.
+        await _reloadGate.WaitAsync();
+        try
+        {
         // Keep the URL in step with the filter state on every reload —
         // ensures a result-detail click followed by browser-back lands
         // back on the same search results without re-typing.
@@ -332,6 +373,11 @@
                     : await ObjectExplorer.SearchContentInReleaseAsync(
                         ReleaseId, trimmedSearch, moduleId, take: 200);
                 break;
+        }
+        }
+        finally
+        {
+            _reloadGate.Release();
         }
     }
 

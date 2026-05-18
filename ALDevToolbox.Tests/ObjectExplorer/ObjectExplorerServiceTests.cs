@@ -706,13 +706,13 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task FindReferencesForSymbolAsync_surfaces_owner_type_indirect_refs()
+    public async Task FindReferencesForSymbolAsync_omits_owner_type_indirect_refs()
     {
-        // FindReferencesForSymbolAsync's third bucket is owner-type rows —
-        // the object-level references already in the DB (variable_type,
-        // parameter_type, …) for the owner of the member we're searching.
-        // Even though no method-call rows are populated in phase 1, the
-        // user should see "indirect references via type" answers.
+        // Owner-type rows (variable_type, parameter_type, …) dominated the
+        // result set on large releases and most users found them noise
+        // rather than signal, so the bucket is currently disabled — see
+        // ObjectExplorerService.FindReferencesForSymbolAsync. If the
+        // bucket comes back, flip this test back to assert containment.
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
 
@@ -724,13 +724,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             TargetMemberName: "AnyProcedureName",
             TargetMemberKind: "procedure"));
 
-        // The owner Codeunit 5624 is referenced as a variable_type from
-        // DK Core's CopyDepreciationBookExt — those indirect-via-type rows
-        // belong in the owner_type bucket so the UI groups them under
-        // "Indirect references".
-        matches.Should().Contain(m => m.Category == "owner_type"
-            && m.ReferenceKind == "variable_type"
-            && m.SourceObjectName == "CopyDepreciationBookExt");
+        matches.Should().NotContain(m => m.Category == "owner_type");
     }
 
     [Fact]
