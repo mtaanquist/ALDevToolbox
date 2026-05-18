@@ -16,8 +16,9 @@
     <header class="page-header">
         <h1>New extension</h1>
         <p class="muted">
-            Generate a standalone extension that drops into an existing AL
-            workspace. Pick a template and the modules it should reference.
+            Scaffold a standalone extension that drops into an existing AL
+            workspace. Pick the workspace template it should sit alongside
+            and the modules it depends on.
         </p>
     </header>
 
@@ -28,8 +29,9 @@
     else if (_templates.Count == 0)
     {
         <p class="muted">
-            No active runtime templates are available. Seed the database or add one
-            through the admin section before generating an extension.
+            No active workspace templates are available. Ask an admin to add
+            one under <a href="/admin/templates">Templates</a> before
+            generating an extension.
         </p>
     }
     else
@@ -60,7 +62,7 @@
                 }
 
                 <section class="form-section">
-                    <label class="section-label" for="ext-template">Runtime template</label>
+                    <label class="section-label" for="ext-template">Workspace template</label>
                     <select id="ext-template" name="TemplateKey" required
                             disabled="@(_workspaceContext is not null)"
                             @bind="_templateKey" @bind:after="OnTemplateChanged">

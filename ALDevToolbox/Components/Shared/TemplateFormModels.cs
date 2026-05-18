@@ -50,6 +50,13 @@ public sealed class TemplateFormState
     public string DefaultApplicationVersionKey { get; set; } = string.Empty;
     public List<string> DefaultModuleKeys { get; } = new();
 
+    /// <summary>
+    /// Workspace-relative paths of the always-included organisation files this
+    /// template opts into. Bound to a checkbox list on the template editor;
+    /// the service resolves the paths to ids on save.
+    /// </summary>
+    public List<string> IncludedFilePaths { get; } = new();
+
     /// <summary>Ordered <c>[[extensions]]</c> declarations under this template.</summary>
     public List<ExtensionForm> Extensions { get; } = new();
 
@@ -96,6 +103,10 @@ public sealed class TemplateFormState
             DefaultApplicationVersionKey = source.DefaultApplicationVersionKey ?? string.Empty,
         };
         foreach (var key in source.DefaultModuleKeys) state.DefaultModuleKeys.Add(key);
+        if (source.IncludedFilePaths is not null)
+        {
+            foreach (var path in source.IncludedFilePaths) state.IncludedFilePaths.Add(path);
+        }
         foreach (var ext in source.Extensions) state.Extensions.Add(ExtensionForm.From(ext));
         return state;
     }
@@ -125,7 +136,8 @@ public sealed class TemplateFormState
             : DefaultApplicationVersionKey,
         DefaultModuleKeys: DefaultModuleKeys.ToList(),
         Extensions: Extensions.Select(e => e.ToAuthoring()).ToList(),
-        CodeWorkspaceJson: string.IsNullOrWhiteSpace(CodeWorkspaceJson) ? null : CodeWorkspaceJson);
+        CodeWorkspaceJson: string.IsNullOrWhiteSpace(CodeWorkspaceJson) ? null : CodeWorkspaceJson,
+        IncludedFilePaths: IncludedFilePaths.ToList());
 
     internal static readonly JsonSerializerOptions PrettyJson = new() { WriteIndented = true };
 

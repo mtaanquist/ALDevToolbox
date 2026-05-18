@@ -82,6 +82,8 @@ public class TemplateService
             .Include(t => t.WorkspaceExtensions.OrderBy(e => e.Ordering))
             .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
                 .ThenInclude(d => d.Module!)
+            .Include(t => t.IncludedFiles.OrderBy(j => j.Ordering))
+                .ThenInclude(j => j.OrganizationFile!)
             .Include(t => t.DefaultApplicationVersion)
             .ToListAsync(ct);
 
@@ -272,6 +274,8 @@ public class TemplateService
                 .ThenInclude(e => e.Dependencies.OrderBy(d => d.Ordering))
             .Include(t => t.DefaultModules.OrderBy(d => d.Ordering))
                 .ThenInclude(d => d.Module!)
+            .Include(t => t.IncludedFiles.OrderBy(j => j.Ordering))
+                .ThenInclude(j => j.OrganizationFile!)
             .Include(t => t.DefaultApplicationVersion)
             .FirstOrDefaultAsync(ct);
 
@@ -304,7 +308,12 @@ public class TemplateService
                 .Select(d => d.Module!.Key)
                 .ToList(),
             Extensions: extensions,
-            CodeWorkspaceJson: template.CodeWorkspaceJson);
+            CodeWorkspaceJson: template.CodeWorkspaceJson,
+            IncludedFilePaths: template.IncludedFiles
+                .OrderBy(j => j.Ordering)
+                .Where(j => j.OrganizationFile is not null)
+                .Select(j => j.OrganizationFile!.Path)
+                .ToList());
     }
 
     private Task HydrateExtensionFolderTreeAsync(RuntimeTemplate template, CancellationToken ct)
@@ -376,7 +385,7 @@ public class TemplateService
     /// </summary>
     public async Task<RuntimeTemplate> CreateAsync(TemplateAuthoring input, CancellationToken ct = default)
     {
-        var (defaults, appSourceCop, defaultModuleIds, appVersionId) =
+        var (defaults, appSourceCop, defaultModuleIds, appVersionId, includedFileIds) =
             await ValidateAsync(input, existingId: null, ct);
 
         var now = DateTime.UtcNow;
@@ -410,6 +419,14 @@ public class TemplateService
                     Ordering = i,
                 })
                 .ToList(),
+            IncludedFiles = includedFileIds
+                .Select((fileId, i) => new RuntimeTemplateIncludedFile
+                {
+                    OrganizationId = orgId,
+                    OrganizationFileId = fileId,
+                    Ordering = i,
+                })
+                .ToList(),
         };
 
         _db.RuntimeTemplates.Add(template);
@@ -435,6 +452,7 @@ public class TemplateService
             .Include(t => t.WorkspaceExtensions)
                 .ThenInclude(e => e.Dependencies)
             .Include(t => t.DefaultModules)
+            .Include(t => t.IncludedFiles)
             .FirstOrDefaultAsync(t => t.Id == id, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
             {
@@ -443,7 +461,7 @@ public class TemplateService
 
         // Key is immutable after creation — ignore whatever the input carries.
         var validatable = input with { Key = existing.Key };
-        var (defaults, appSourceCop, defaultModuleIds, appVersionId) =
+        var (defaults, appSourceCop, defaultModuleIds, appVersionId, includedFileIds) =
             await ValidateAsync(validatable, existingId: id, ct);
 
         existing.Runtime = input.Runtime.Trim();
@@ -474,6 +492,7 @@ public class TemplateService
         foreach (var ext in fresh) existing.WorkspaceExtensions.Add(ext);
 
         ReconcileDefaultModules(existing, defaultModuleIds, orgId);
+        ReconcileIncludedFiles(existing, includedFileIds, orgId);
 
         await _db.SaveChangesAsync(ct);
 
@@ -585,6 +604,44 @@ public class TemplateService
         foreach (var row in toRemove)
         {
             existing.DefaultModules.Remove(row);
+        }
+    }
+
+    /// <summary>
+    /// Mirror of <see cref="ReconcileDefaultModules"/> for the per-template
+    /// always-included file join. Matches by <c>OrganizationFileId</c> so the
+    /// admin can reorder without churning primary keys; the unique index on
+    /// <c>(runtime_template_id, organization_file_id)</c> prevents the swap-cycle
+    /// case the same way.
+    /// </summary>
+    private static void ReconcileIncludedFiles(RuntimeTemplate existing, IReadOnlyList<int> fileIds, int orgId)
+    {
+        var existingByFileId = existing.IncludedFiles.ToDictionary(d => d.OrganizationFileId);
+
+        for (var i = 0; i < fileIds.Count; i++)
+        {
+            var fileId = fileIds[i];
+            if (existingByFileId.TryGetValue(fileId, out var row))
+            {
+                if (row.Ordering != i) row.Ordering = i;
+                row.OrganizationFile = null;
+            }
+            else
+            {
+                existing.IncludedFiles.Add(new RuntimeTemplateIncludedFile
+                {
+                    OrganizationId = orgId,
+                    Ordering = i,
+                    OrganizationFileId = fileId,
+                });
+            }
+        }
+
+        var keep = new HashSet<int>(fileIds);
+        var toRemove = existing.IncludedFiles.Where(d => !keep.Contains(d.OrganizationFileId)).ToList();
+        foreach (var row in toRemove)
+        {
+            existing.IncludedFiles.Remove(row);
         }
     }
 
@@ -764,7 +821,7 @@ public class TemplateService
     /// aggregated <see cref="PlanValidationException"/> with one entry per
     /// problem so the editor can highlight everything at once.
     /// </summary>
-    private async Task<(TemplateDefaults Defaults, AppSourceCopSettings AppSourceCop, IReadOnlyList<int> DefaultModuleIds, int? DefaultApplicationVersionId)>
+    private async Task<(TemplateDefaults Defaults, AppSourceCopSettings AppSourceCop, IReadOnlyList<int> DefaultModuleIds, int? DefaultApplicationVersionId, IReadOnlyList<int> IncludedFileIds)>
         ValidateAsync(TemplateAuthoring input, int? existingId, CancellationToken ct)
     {
         var errors = new Dictionary<string, string>();
@@ -774,9 +831,46 @@ public class TemplateService
         ValidateExtensions(input.Extensions, errors);
         var defaultModuleIds = await ResolveDefaultModuleIdsAsync(input, errors, ct);
         var defaultApplicationVersionId = await ResolveApplicationVersionIdAsync(input, errors, ct);
+        var includedFileIds = await ResolveIncludedFileIdsAsync(input, errors, ct);
 
         if (errors.Count > 0) throw new PlanValidationException(errors);
-        return (defaults, appSourceCop, defaultModuleIds, defaultApplicationVersionId);
+        return (defaults, appSourceCop, defaultModuleIds, defaultApplicationVersionId, includedFileIds);
+    }
+
+    /// <summary>
+    /// Resolves the per-template always-included file paths to organisation
+    /// file ids. Unknown paths land in <paramref name="errors"/>; preserves
+    /// the caller's order (deduplicated by path).
+    /// </summary>
+    private async Task<IReadOnlyList<int>> ResolveIncludedFileIdsAsync(
+        TemplateAuthoring input, Dictionary<string, string> errors, CancellationToken ct)
+    {
+        var paths = input.IncludedFilePaths;
+        if (paths is null || paths.Count == 0) return Array.Empty<int>();
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var orderedUnique = new List<string>();
+        foreach (var p in paths)
+        {
+            var trimmed = p?.Trim();
+            if (!string.IsNullOrEmpty(trimmed) && seen.Add(trimmed)) orderedUnique.Add(trimmed);
+        }
+        if (orderedUnique.Count == 0) return Array.Empty<int>();
+
+        var matched = await _db.OrganizationFiles
+            .AsNoTracking()
+            .Where(f => orderedUnique.Contains(f.Path))
+            .Select(f => new { f.Path, f.Id })
+            .ToListAsync(ct);
+        var idByPath = matched.ToDictionary(m => m.Path, m => m.Id, StringComparer.Ordinal);
+
+        var missing = orderedUnique.Where(p => !idByPath.ContainsKey(p)).ToList();
+        if (missing.Count > 0)
+        {
+            errors[nameof(input.IncludedFilePaths)] = $"Unknown included file(s): {string.Join(", ", missing)}.";
+            return Array.Empty<int>();
+        }
+        return orderedUnique.Select(p => idByPath[p]).ToList();
     }
 
     /// <summary>

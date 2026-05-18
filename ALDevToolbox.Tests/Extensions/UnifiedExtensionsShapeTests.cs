@@ -94,7 +94,7 @@ public sealed class UnifiedExtensionsShapeTests
     [Fact]
     public void ModuleExtensionFolder_mirrors_the_workspace_recursive_tree()
     {
-        var module = new Module { OrganizationId = 1, Key = "document-capture", Name = "Document Capture" };
+        var module = new Module { OrganizationId = 1, Key = "document-capture", Name = "Document Capture", ExtensionName = "DocumentCapture" };
         var src = new ModuleExtensionFolder { OrganizationId = 1, Path = "src" };
         var subfolder = new ModuleExtensionFolder { OrganizationId = 1, Path = "interfaces", ParentFolder = src };
         src.Folders.Add(subfolder);

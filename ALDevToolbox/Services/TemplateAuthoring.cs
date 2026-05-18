@@ -33,7 +33,14 @@ public record TemplateAuthoring(
     /// keys win on `settings`, replace wholesale elsewhere). See
     /// <see cref="GenerationService"/>.
     /// </summary>
-    string? CodeWorkspaceJson = null);
+    string? CodeWorkspaceJson = null,
+    /// <summary>
+    /// Workspace-relative paths of organisation-level always-included files
+    /// the template opts into. References by <see cref="Domain.Entities.OrganizationFile.Path"/>
+    /// rather than database id so the TOML round-trip stays portable across
+    /// orgs / exports. The service resolves them to ids on save.
+    /// </summary>
+    IReadOnlyList<string>? IncludedFilePaths = null);
 
 /// <summary>One declared extension in the authoring payload.</summary>
 public record ExtensionAuthoring(

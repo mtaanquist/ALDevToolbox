@@ -129,6 +129,12 @@ is_default = false
 [[template.default_modules]]
 key = "document-capture"
 
+# Optional: the organisation's always-included files this template opts into.
+# Paths reference rows in organization_files; new templates default to empty
+# (admins explicitly tick the files that belong with each template via the
+# editor). Empty / missing means the template emits no org files.
+included_files = [".editorconfig", "README.md"]
+
 # Required: defaults merged into every generated app.json. The form pre-fills
 # from these, the user edits, the final values flow into per-extension app.json.
 [defaults]
@@ -227,8 +233,9 @@ Each module's TOML document. Modules now carry their own folder/file tree alongs
 
 ```toml
 [module]
-key = "document-capture"
-name = "Document Capture"
+key = "document-capture"            # admin / URL slug (lowercase-hyphen)
+name = "Document Capture"           # display name shown in pickers
+extension_name = "DocumentCapture"  # PascalCase: ZIP folder name AND rendered AL extension name
 id_range_size = 200             # optional; null/missing = use template default
 
 [[module.dependencies]]
@@ -276,17 +283,20 @@ category = "ForNAV"
 
 These are the variables available when seeding AL files into a generated extension. See `generation-engine.md` for substitution behaviour.
 
+Canonical names are snake_case to match the rest of the TOML schema. Legacy camelCase names (`{{workspaceName}}`, `{{shortName}}`, `{{moduleName}}`) still resolve as aliases — the renderer logs one warning per render listing any encountered so admins can rename their files at leisure.
+
 | Variable                | Description                                                |
 |-------------------------|------------------------------------------------------------|
 | `{{name}}`              | Full rendered extension name                               |
-| `{{workspaceName}}`     | The workspace name from the form                           |
-| `{{shortName}}`         | Workspace name with whitespace removed                     |
-| `{{moduleName}}`        | Module's display name (for module-cloned extensions)       |
-| `{{publisher}}`         | Publisher field from defaults                              |
+| `{{workspace_name}}`    | The workspace name from the form                           |
+| `{{short_name}}`        | Workspace name with whitespace removed                     |
+| `{{module_name}}`       | Module's `extension_name` (PascalCase) for module-cloned extensions |
+| `{{publisher}}`         | `OrganizationSettings.DefaultPublisher`                    |
 | `{{extension_prefix}}`  | Per-workspace short identifier from the plan, e.g. "CRO"   |
 | `{{affix}}`             | `defaults.affix` when `affixType ∈ {Prefix, Suffix}`; empty when `None`. Replaces the pre-unified `{{prefix}}` / `{{suffix}}`. |
 | `{{namespace}}`         | The folder path, dot-separated                             |
 | `{{guid}}`              | A fresh GUID per call                                      |
+| `{{tenant_id}}`         | Tenant GUID captured on the New Workspace form; empty for standalone extensions |
 
 ## TOML as an authoring surface
 
@@ -318,4 +328,4 @@ Implementation: walk all active rows, serialise each template/module/catalogue b
 - The `README.md` boilerplate written into a generated workspace — it's emitted by `GenerationService` and shaped by template metadata, not edited directly.
 - Binary files inside template or module folders. v1 stores file content as UTF-8 text only; PNGs, ZIPs, or anything else non-text don't have a place in `workspace_extension_files` / `module_extension_files`. If we need binary template assets later, the likely shape is a separate `*_file_blobs` table or a URL-fetched asset; defer until there's a real ask.
 
-The org logo, default publisher / ID range / brief / core description, and the always-included files appended to every generated workspace **are** admin-editable from `/admin/configuration` and live in the database (`organization_assets`, `organization_settings`, `organization_files`). Fresh orgs start without any of these rows — admins fill them in once they need them.
+The org logo, default publisher / URL / logo / supported countries / ID range / brief / core description, and the always-included file library **are** admin-editable from `/admin/configuration` and live in the database (`organization_assets`, `organization_settings`, `organization_files`). Fresh orgs start without any of these rows — admins fill them in once they need them. Templates opt into specific organisation files via the `runtime_template_included_files` join (TOML field: `[template] included_files`) — a new file in the library is off-by-default until at least one template lists it.

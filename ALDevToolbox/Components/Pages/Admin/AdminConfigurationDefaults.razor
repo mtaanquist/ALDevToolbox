@@ -4,6 +4,7 @@
 @inject OrganizationConfigService Config
 @inject NavigationManager Nav
 @inject ILogger<AdminConfigurationDefaults> Log
+@using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.ValueObjects
 
 @*
@@ -61,6 +62,34 @@
                     <small class="muted">Used as the <code>publisher</code> for every generated <code>app.json</code>.</small>
                 </section>
 
+                <section class="form-section">
+                    <label class="section-label" for="cfg-url">Default URL</label>
+                    <input id="cfg-url" type="text"
+                           placeholder="e.g. https://acme.com"
+                           @bind="_url" @bind:event="oninput" />
+                    <small class="muted">Spliced into every generated <code>app.json</code> as the <code>url</code> field. Blank = omit.</small>
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label" for="cfg-logo">Default logo path</label>
+                    <input id="cfg-logo" type="text"
+                           placeholder="e.g. ../.assets/images/logo.png"
+                           @bind="_logo" @bind:event="oninput" />
+                    <small class="muted">Spliced into every generated <code>app.json</code> as the <code>logo</code> field. Blank = omit.</small>
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label" for="cfg-countries">Default supported countries</label>
+                    <input id="cfg-countries" type="text"
+                           placeholder="e.g. dk, no, se"
+                           @bind="_countries" @bind:event="oninput" />
+                    <small class="muted">
+                        Comma-separated two-letter country codes spliced into every
+                        generated <code>AppSourceCop.json</code>'s
+                        <code>supportedCountries</code> array.
+                    </small>
+                </section>
+
                 <section class="form-section--row">
                     <div class="form-section form-section--id">
                         <label class="section-label" for="cfg-from">Default ID range — from</label>
@@ -76,15 +105,16 @@
 
                 <section class="form-section">
                     <label class="section-label" for="cfg-brief">Default brief</label>
+                    <MustacheVarsHint />
                     <input id="cfg-brief" type="text"
-                           placeholder="e.g. Customisations and reports for Acme."
+                           placeholder="e.g. Customisations and reports for {{workspace_name}}."
                            @bind="_brief" @bind:event="oninput" />
                 </section>
 
                 <section class="form-section">
                     <label class="section-label" for="cfg-desc">Default core description</label>
                     <textarea id="cfg-desc" rows="3"
-                              placeholder="Longer description prefilled into the New Workspace form."
+                              placeholder="Longer description prefilled into the New Workspace form. {{workspace_name}} is substituted at generation time."
                               @bind="_description" @bind:event="oninput"></textarea>
                 </section>
             </div>
@@ -105,19 +135,28 @@
     private int _idTo;
     private string _brief = string.Empty;
     private string _description = string.Empty;
+    private string _url = string.Empty;
+    private string _logo = string.Empty;
+    private string _countries = string.Empty;
 
     private string _basePublisher = string.Empty;
     private int _baseIdFrom;
     private int _baseIdTo;
     private string _baseBrief = string.Empty;
     private string _baseDescription = string.Empty;
+    private string _baseUrl = string.Empty;
+    private string _baseLogo = string.Empty;
+    private string _baseCountries = string.Empty;
 
     private bool IsDirty =>
         _publisher != _basePublisher
         || _idFrom != _baseIdFrom
         || _idTo != _baseIdTo
         || _brief != _baseBrief
-        || _description != _baseDescription;
+        || _description != _baseDescription
+        || _url != _baseUrl
+        || _logo != _baseLogo
+        || _countries != _baseCountries;
 
     protected override async Task OnInitializedAsync()
     {
@@ -133,6 +172,9 @@
         _idTo = _baseIdTo = config.Settings.DefaultIdRangeTo;
         _brief = _baseBrief = config.Settings.DefaultBrief;
         _description = _baseDescription = config.Settings.DefaultCoreDescription;
+        _url = _baseUrl = config.Settings.DefaultUrl ?? string.Empty;
+        _logo = _baseLogo = config.Settings.DefaultLogo ?? string.Empty;
+        _countries = _baseCountries = string.Join(", ", config.Settings.DefaultSupportedCountries);
         _loading = false;
     }
 
@@ -149,7 +191,12 @@
                 DefaultIdRangeFrom: _idFrom,
                 DefaultIdRangeTo: _idTo,
                 DefaultBrief: _brief,
-                DefaultCoreDescription: _description));
+                DefaultCoreDescription: _description,
+                DefaultUrl: _url,
+                DefaultLogo: _logo,
+                DefaultSupportedCountries: _countries
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .ToList()));
             Nav.NavigateTo("/admin/configuration/defaults?ok=saved", forceLoad: true);
         }
         catch (PlanValidationException ex)

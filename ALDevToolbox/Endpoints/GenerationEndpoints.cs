@@ -33,7 +33,8 @@ internal static class GenerationEndpoints
                 SelectedModuleKeys: form["SelectedModuleKeys"]
                     .Where(s => !string.IsNullOrEmpty(s))
                     .Select(s => s!)
-                    .ToList());
+                    .ToList(),
+                TenantId: form["TenantId"].ToString().Trim());
 
             try
             {

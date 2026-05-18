@@ -14,8 +14,9 @@
     <header class="page-header">
         <h1>New workspace</h1>
         <p class="muted">
-            Generate a fresh AL workspace from a runtime template. Pick the
-            template, customise the defaults, then download the ZIP.
+            Spin up a fresh AL workspace from one of your organisation's
+            workspace templates. Pick the template, tweak the defaults that
+            don't fit your project, and download the ZIP.
         </p>
     </header>
 
@@ -26,8 +27,9 @@
     else if (_templates.Count == 0)
     {
         <p class="muted">
-            No active runtime templates are available. Seed the database or add one
-            through the admin section before generating a workspace.
+            No active workspace templates are available. Ask an admin to add
+            one under <a href="/admin/templates">Templates</a> before
+            generating a workspace.
         </p>
     }
     else
@@ -38,7 +40,7 @@
                 <input type="hidden" name="GenToken" value="" />
 
                 <section class="form-section">
-                    <label class="section-label" for="ws-template">Runtime template</label>
+                    <label class="section-label" for="ws-template">Workspace template</label>
                     <select id="ws-template" name="TemplateKey" required
                             @bind="_templateKey" @bind:after="OnTemplateChanged">
                         @foreach (var t in _templates)
@@ -71,6 +73,21 @@
                            @bind="_brief" @bind:event="oninput" />
                     <textarea name="Description" rows="3" placeholder="Longer description (optional)"
                               @bind="_description" @bind:event="oninput"></textarea>
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label" for="ws-tenant">Tenant ID</label>
+                    <input id="ws-tenant" type="text" name="TenantId"
+                           pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                           placeholder="e.g. 8a4f1c3e-1b2d-4e6f-9c1a-3d5b7e9f2a4c"
+                           title="GUID in 8-4-4-4-12 hex form."
+                           @bind="_tenantId" @bind:event="oninput" />
+                    <small class="muted">
+                        Your Microsoft Entra (Azure AD) tenant ID — the GUID
+                        found in the Entra admin portal. Optional; leave blank
+                        if you don't need it. Available in templates and
+                        always-included files as <code>&#123;&#123;tenant_id&#125;&#125;</code>.
+                    </small>
                 </section>
 
                 <IdRangeEditor IdPrefix="ws-core"
@@ -244,6 +261,12 @@
     /// <summary>Cache of the picked template's optional extensions for rendering checkboxes.</summary>
     private List<WorkspaceExtension> _optionalExtensions = new();
     private bool _includeExamples = true;
+    /// <summary>
+    /// Microsoft Entra tenant ID surfaced via <c>{{tenant_id}}</c> mustache
+    /// substitution. Optional — users who don't know it leave it blank;
+    /// downstream substitutions then resolve to the empty string.
+    /// </summary>
+    private string _tenantId = string.Empty;
 
     private OrganizationConfig? _orgConfig;
 
@@ -393,14 +416,20 @@
             ? "Workspace"
             : StripWhitespace(_workspaceName);
 
-        var children = new List<PreviewNode>
+        var children = new List<PreviewNode>();
+
+        // The org logo is the only inherent workspace-level asset left — the
+        // ruleset, .gitignore, and README stub all moved onto OrganizationFile
+        // rows the admin opts each template into. Show .assets/images/logo.png
+        // only when an org logo has actually been uploaded; for a fresh org
+        // the directory wouldn't exist in the ZIP.
+        if (_orgConfig?.Logo is not null)
         {
-            PreviewNode.Folder(".assets", new[]
+            children.Add(PreviewNode.Folder(".assets", new[]
             {
                 PreviewNode.Folder("images", new[] { PreviewNode.File("logo.png") }),
-                PreviewNode.Folder("rulesets", new[] { PreviewNode.File("Company.ruleset.json") }),
-            }),
-        };
+            }));
+        }
 
         var includeCop = _selected?.AppSourceCop.Include ?? true;
         if (_selected is not null)
@@ -421,16 +450,29 @@
                 var module = _modules.FirstOrDefault(m => m.Key == key);
                 if (module is null) continue;
                 // Module-cloned extension folder name mirrors GenerationService:
-                // the module's Key is what lands in the ZIP, not the display name.
+                // the module's ExtensionName (PascalCase) is what lands in the
+                // ZIP. Module.Key stays as the admin slug / dep ref target.
                 children.Add(PreviewNode.Extension(
-                    module.Key,
+                    module.ExtensionName,
                     ExtensionPreviewBuilder.BuildContents(module.ExtensionFolders, _includeExamples, includeCop)));
             }
         }
 
         children.Add(PreviewNode.File($"{rootName}.code-workspace"));
-        children.Add(PreviewNode.File(".gitignore"));
-        children.Add(PreviewNode.File("README.md"));
+
+        // Always-included org files the picked template has opted into.
+        // Mirrors WorkspaceZipBuilder.WriteOrgFiles so the preview matches the
+        // ZIP. Files with nested paths (e.g. docs/onboarding.md) materialise as
+        // intermediate folders here just like they will inside the archive.
+        if (_selected is not null && _orgConfig is not null)
+        {
+            var byId = _orgConfig.Files.ToDictionary(f => f.Id);
+            foreach (var joined in _selected.IncludedFiles.OrderBy(j => j.Ordering))
+            {
+                if (!byId.TryGetValue(joined.OrganizationFileId, out var file)) continue;
+                AddOrgFileNode(children, file.Path);
+            }
+        }
 
         return PreviewTreeBuilder.SortForDisplay(
             new PreviewNode(rootName, PreviewNodeKind.Workspace, children));
@@ -438,4 +480,44 @@
 
     private static string StripWhitespace(string value) =>
         new(value.Where(c => !char.IsWhiteSpace(c)).ToArray());
+
+    /// <summary>
+    /// Walks a forward-slash-separated <paramref name="path"/> and grafts it
+    /// into the preview tree under <paramref name="siblings"/>, materialising
+    /// intermediate folders as needed. Duplicates fold into the existing
+    /// node so two org files in the same subdirectory share one parent.
+    /// </summary>
+    private static void AddOrgFileNode(IList<PreviewNode> siblings, string path)
+    {
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0) return;
+        AddRecursive(siblings, segments, 0);
+    }
+
+    private static void AddRecursive(IList<PreviewNode> siblings, string[] segments, int idx)
+    {
+        var name = segments[idx];
+        if (idx == segments.Length - 1)
+        {
+            if (!siblings.Any(n => n.Kind == PreviewNodeKind.File && n.Name == name))
+            {
+                siblings.Add(PreviewNode.File(name));
+            }
+            return;
+        }
+        var existing = siblings.FirstOrDefault(n => n.Kind == PreviewNodeKind.Folder && n.Name == name);
+        if (existing is null)
+        {
+            var children = new List<PreviewNode>();
+            siblings.Add(new PreviewNode(name, PreviewNodeKind.Folder, children));
+            AddRecursive(children, segments, idx + 1);
+        }
+        else if (existing.Children is IList<PreviewNode> nestedList)
+        {
+            // The factory always allocates a mutable List<> here, so the cast
+            // is safe for nodes we built ourselves. External nodes (none
+            // currently) would be silently skipped which is a fine fallback.
+            AddRecursive(nestedList, segments, idx + 1);
+        }
+    }
 }

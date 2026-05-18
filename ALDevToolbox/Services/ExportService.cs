@@ -110,6 +110,7 @@ public class ExportService
                     {
                         Key = module.Key,
                         Name = module.Name,
+                        ExtensionName = module.ExtensionName,
                         IdRangeSize = module.IdRangeSize,
                         Deprecated = module.Deprecated,
                         Dependencies = module.Dependencies
@@ -238,6 +239,7 @@ public class ExportService
                     Path = f.Path,
                     Content = f.Content,
                     MustacheEnabled = f.MustacheEnabled,
+                    Scope = f.Scope.ToString(),
                 })
                 .ToList(),
         };

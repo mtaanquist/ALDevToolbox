@@ -44,15 +44,16 @@ public sealed class CrossOrgConfigIsolationTests : IDisposable
                     Content = new byte[] { 0x07, 0x77, 0x07 },
                     UpdatedAt = DateTime.UtcNow,
                 });
+            var defaultFile = new OrganizationFile
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Path = ".editorconfig",
+                Content = "default-org-content",
+                Ordering = 0,
+                UpdatedAt = DateTime.UtcNow,
+            };
             ctx.OrganizationFiles.AddRange(
-                new OrganizationFile
-                {
-                    OrganizationId = TestDb.DefaultOrgId,
-                    Path = ".editorconfig",
-                    Content = "default-org-content",
-                    Ordering = 0,
-                    UpdatedAt = DateTime.UtcNow,
-                },
+                defaultFile,
                 new OrganizationFile
                 {
                     OrganizationId = TestDb.OtherOrgId,
@@ -61,8 +62,21 @@ public sealed class CrossOrgConfigIsolationTests : IDisposable
                     Ordering = 0,
                     UpdatedAt = DateTime.UtcNow,
                 });
-            ctx.RuntimeTemplates.Add(
-                TemplateBuilder.Default("runtime-default", organizationId: TestDb.DefaultOrgId));
+            // Save the file first so its primary key is populated; the
+            // template-included-files join needs an existing FK target.
+            await ctx.SaveChangesAsync();
+
+            var template = TemplateBuilder.Default("runtime-default", organizationId: TestDb.DefaultOrgId);
+            // Opt the template into the org's .editorconfig — the generator
+            // now filters OrganizationFile rows by the per-template join, so
+            // unopted files don't land in the ZIP.
+            template.IncludedFiles.Add(new RuntimeTemplateIncludedFile
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                OrganizationFileId = defaultFile.Id,
+                Ordering = 0,
+            });
+            ctx.RuntimeTemplates.Add(template);
             await ctx.SaveChangesAsync();
         }
 

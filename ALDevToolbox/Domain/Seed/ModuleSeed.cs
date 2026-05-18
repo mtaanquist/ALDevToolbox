@@ -14,6 +14,12 @@ public class ModuleSeed
 {
     public string Key { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    /// <summary>
+    /// PascalCase ZIP folder name / rendered AL extension name. Distinct from
+    /// <see cref="Key"/> (the admin/URL slug) — see
+    /// <see cref="ALDevToolbox.Domain.Entities.Module.ExtensionName"/>.
+    /// </summary>
+    public string ExtensionName { get; set; } = string.Empty;
     public int? IdRangeSize { get; set; }
 
     /// <summary>

@@ -197,8 +197,8 @@ public sealed class TemplateTomlMapperRoundTripTests
         var template = TemplateBuilder.Default();
         template.DefaultModules = new List<RuntimeTemplateDefaultModule>
         {
-            new() { Ordering = 0, Module = new Module { Key = "alpha", Name = "Alpha" } },
-            new() { Ordering = 1, Module = new Module { Key = "beta", Name = "Beta" } },
+            new() { Ordering = 0, Module = new Module { Key = "alpha", Name = "Alpha", ExtensionName = "Alpha" } },
+            new() { Ordering = 1, Module = new Module { Key = "beta", Name = "Beta", ExtensionName = "Beta" } },
         };
 
         var toml = TemplateTomlMapper.ToToml(template);
@@ -251,7 +251,11 @@ public sealed class TemplateTomlMapperRoundTripTests
 
         var parsed = TemplateTomlMapper.FromToml(toml, deprecated: false);
 
-        parsed.Key.Should().Be("runtime-new");
+        // Blank scaffold ships with an empty key on purpose — admins must
+        // type their own slug before saving. The placeholder in the
+        // structured form and the TOML comment above the line both teach
+        // the rule; pre-filling a value would just have to be deleted.
+        parsed.Key.Should().BeEmpty();
         parsed.Runtime.Should().Be("26");
 
         // One required Core extension is the only uncommented [[extensions]]

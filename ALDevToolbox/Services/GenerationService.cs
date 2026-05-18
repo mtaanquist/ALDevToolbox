@@ -123,9 +123,11 @@ public class GenerationService
             ? new List<FolderNode>()
             : BuildFolderTree(scaffold.Folders);
 
-        // The sibling rewrite path needs the org's workspace JSON template;
-        // the standalone-only path doesn't — skip the DB hit when not needed.
-        var orgConfig = sibling is null ? null : await GetOrgConfigAsync(ct);
+        // OrgConfig is needed both for the sibling-rewrite path (which
+        // needs the org's workspace JSON template) and for the per-extension
+        // org files the standalone extension might opt into via
+        // RuntimeTemplateIncludedFile. Always load it now.
+        var orgConfig = await GetOrgConfigAsync(ct);
 
         var (stream, fileCount, folderName) = await _zipBuilder.BuildStandaloneAsync(
             plan, template, folderRoots, sibling, orgConfig, ct);
@@ -156,6 +158,7 @@ public class GenerationService
             .Where(t => t.DeletedAt == null && t.Key == key)
             .Include(t => t.WorkspaceExtensions.OrderBy(e => e.Ordering))
                 .ThenInclude(e => e.Dependencies.OrderBy(d => d.Ordering))
+            .Include(t => t.IncludedFiles.OrderBy(j => j.Ordering))
             .FirstOrDefaultAsync(ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
             {
@@ -277,10 +280,11 @@ public class GenerationService
 
     private EmittableExtension BuildFromModule(Module module, RuntimeTemplate template, ProjectPlan plan, int from, int to)
     {
-        // Module-cloned extension name defaults to "{{extension_prefix}} {module.name}".
-        // The substitution happens up-front so the resolved name is stable for
-        // downstream dep resolution.
-        var nameTemplate = $"{{{{extension_prefix}}}} {module.Name}";
+        // The cloned extension's folder name and rendered AL name both come
+        // from Module.ExtensionName (a PascalCase admin-controlled value).
+        // Module.Key stays as the URL/admin slug and the dep ref target —
+        // not the folder.
+        var nameTemplate = $"{{{{extension_prefix}}}} {module.ExtensionName}";
         var name = SubstituteScalar(nameTemplate, plan, template);
 
         // Module dependencies (from module_dependencies) become literal deps.
@@ -293,7 +297,7 @@ public class GenerationService
             .ToList();
 
         return new EmittableExtension(
-            Path: module.Key,
+            Path: module.ExtensionName,
             Name: name,
             Id: Guid.NewGuid(),
             IdRangeFrom: from,
@@ -303,7 +307,7 @@ public class GenerationService
             Publisher: template.Defaults.Publisher,
             IsModuleClone: true,
             ModuleKey: module.Key,
-            ModuleName: module.Name,
+            ModuleName: module.ExtensionName,
             FolderRoots: BuildModuleFolderTree(module.ExtensionFolders),
             Dependencies: deps);
     }
@@ -406,7 +410,8 @@ public class GenerationService
             Publisher: template.Defaults.Publisher,
             ExtensionPrefix: plan.ExtensionPrefix,
             Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
-            FolderPath: string.Empty);
+            FolderPath: string.Empty,
+            TenantId: plan.TenantId);
         return _mustache.Render(source, ctx);
     }
 

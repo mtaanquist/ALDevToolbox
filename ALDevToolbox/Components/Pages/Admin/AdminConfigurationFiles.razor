@@ -69,7 +69,8 @@
                             <div class="org-file-row__head">
                                 <span><code>@file.Path</code></span>
                                 <span class="muted">
-                                    @(file.MustacheEnabled ? "mustache on" : "mustache off")
+                                    @(file.Scope == OrganizationFileScope.EveryExtension ? "per extension" : "workspace root")
+                                    · @(file.MustacheEnabled ? "mustache on" : "mustache off")
                                 </span>
                             </div>
                             <div class="org-file-row__body">
@@ -105,6 +106,21 @@
                     <input type="checkbox" @bind="_editMustache" />
                     <span>Substitute mustache variables when generating</span>
                 </label>
+                <section class="form-section">
+                    <label class="section-label">Emit into</label>
+                    <label class="check-row">
+                        <input type="radio" name="cfg-file-scope"
+                               checked="@(_editScope == OrganizationFileScope.WorkspaceRoot)"
+                               @onchange="@(() => _editScope = OrganizationFileScope.WorkspaceRoot)" />
+                        <span>Workspace root — the file lands once at the workspace root (path is workspace-relative).</span>
+                    </label>
+                    <label class="check-row">
+                        <input type="radio" name="cfg-file-scope"
+                               checked="@(_editScope == OrganizationFileScope.EveryExtension)"
+                               @onchange="@(() => _editScope = OrganizationFileScope.EveryExtension)" />
+                        <span>Every extension — the file is duplicated inside each extension folder (Core, Hotfix, every module clone). Mustache renders per-extension so <code>{{name}}</code> resolves to each extension's name.</span>
+                    </label>
+                </section>
                 <div class="form-actions">
                     <button type="button" class="btn" @onclick="ApplyEdit">
                         <Icon Name="check" Width="12" Height="12" />
@@ -140,6 +156,7 @@
     private string _editPath = string.Empty;
     private string _editContent = string.Empty;
     private bool _editMustache;
+    private OrganizationFileScope _editScope = OrganizationFileScope.WorkspaceRoot;
 
     private sealed class FileRow
     {
@@ -147,12 +164,13 @@
         public string Path { get; set; } = string.Empty;
         public string Content { get; set; } = string.Empty;
         public bool MustacheEnabled { get; set; }
+        public OrganizationFileScope Scope { get; set; } = OrganizationFileScope.WorkspaceRoot;
         public int Ordering { get; set; }
 
         public FileRow Clone() => new()
         {
             Id = Id, Path = Path, Content = Content,
-            MustacheEnabled = MustacheEnabled, Ordering = Ordering,
+            MustacheEnabled = MustacheEnabled, Scope = Scope, Ordering = Ordering,
         };
     }
 
@@ -165,7 +183,7 @@
             {
                 var a = _files[i]; var b = _baseFiles[i];
                 if (a.Id != b.Id || a.Path != b.Path || a.Content != b.Content
-                    || a.MustacheEnabled != b.MustacheEnabled || a.Ordering != b.Ordering)
+                    || a.MustacheEnabled != b.MustacheEnabled || a.Scope != b.Scope || a.Ordering != b.Ordering)
                 {
                     return true;
                 }
@@ -187,7 +205,7 @@
             .Select(f => new FileRow
             {
                 Id = f.Id, Path = f.Path, Content = f.Content,
-                MustacheEnabled = f.MustacheEnabled, Ordering = f.Ordering,
+                MustacheEnabled = f.MustacheEnabled, Scope = f.Scope, Ordering = f.Ordering,
             })
             .ToList();
         _baseFiles = _files.Select(f => f.Clone()).ToList();
@@ -200,6 +218,7 @@
         _editPath = row.Path;
         _editContent = row.Content;
         _editMustache = row.MustacheEnabled;
+        _editScope = row.Scope;
         _localError = null;
     }
 
@@ -209,6 +228,7 @@
         _editPath = string.Empty;
         _editContent = string.Empty;
         _editMustache = false;
+        _editScope = OrganizationFileScope.WorkspaceRoot;
         _localError = null;
     }
 
@@ -239,6 +259,7 @@
                 Path = path,
                 Content = _editContent,
                 MustacheEnabled = _editMustache,
+                Scope = _editScope,
                 Ordering = _files.Count,
             });
         }
@@ -247,6 +268,7 @@
             _editing.Path = path;
             _editing.Content = _editContent;
             _editing.MustacheEnabled = _editMustache;
+            _editing.Scope = _editScope;
         }
         CancelEdit();
     }
@@ -270,7 +292,7 @@
             var inputs = _files
                 .Select(f => new OrganizationFileInput(
                     Id: f.Id, Path: f.Path, Content: f.Content,
-                    MustacheEnabled: f.MustacheEnabled))
+                    MustacheEnabled: f.MustacheEnabled, Scope: f.Scope))
                 .ToList();
             await Config.SaveFilesAsync(inputs);
             Nav.NavigateTo("/admin/configuration/files?ok=saved", forceLoad: true);

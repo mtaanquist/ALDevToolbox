@@ -82,6 +82,13 @@ public class TemplateMetaSeed
     /// concern, not app.json content.
     /// </summary>
     public List<TemplateDefaultModuleSeed> DefaultModules { get; set; } = new();
+
+    /// <summary>
+    /// Workspace-relative paths of the organisation's always-included files
+    /// this template opts into. Empty / missing means "no opt-in" — new
+    /// templates default to emitting no org files until the admin ticks them.
+    /// </summary>
+    public List<string> IncludedFiles { get; set; } = new();
 }
 
 /// <summary>One <c>[[template.default_modules]]</c> entry.</summary>
