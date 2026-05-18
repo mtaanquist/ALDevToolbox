@@ -288,19 +288,42 @@ public class ReleaseImportService
         // DVD. Falling back to pkg.SourceFiles only when no .Source.zip
         // was provided keeps single-file partner uploads (which never pair
         // a zip) working as before.
+        //
+        // Both branches dedupe by path with last-write-wins. Microsoft's
+        // System.app (observed on BC 28.1) ships duplicate entries that
+        // normalise to the same canonical path (e.g. two src/dotnet.al's);
+        // failing the entire 110-module import on a content collision the
+        // user can't fix isn't worth it, so we keep one and log a warning.
         IReadOnlyDictionary<string, string> sourceFiles;
         if (upload.SourceZipStream is not null)
         {
             var fromZip = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var (path, content) in ReadSourceZip(upload.SourceZipStream))
             {
+                if (fromZip.ContainsKey(path))
+                {
+                    _logger.LogWarning(
+                        "Duplicate source path in .Source.zip for {Module}: {Path} — keeping last occurrence",
+                        pkg.Manifest.Name, path);
+                }
                 fromZip[path] = content;
             }
             sourceFiles = fromZip;
         }
         else
         {
-            sourceFiles = pkg.SourceFiles.ToDictionary(f => f.Path, f => f.Content, StringComparer.OrdinalIgnoreCase);
+            var fromEmbedded = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var file in pkg.SourceFiles)
+            {
+                if (fromEmbedded.ContainsKey(file.Path))
+                {
+                    _logger.LogWarning(
+                        "Duplicate embedded source path in {Module}: {Path} — keeping last occurrence",
+                        pkg.Manifest.Name, file.Path);
+                }
+                fromEmbedded[file.Path] = file.Content;
+            }
+            sourceFiles = fromEmbedded;
         }
 
         await WriteModuleAsync(orgId, release, upload, pkg, sourceFiles, totals, ct).ConfigureAwait(false);
@@ -471,7 +494,7 @@ public class ReleaseImportService
             }
 
             EmitSymbols(orgId, module, obj, symObj, extractedForObject);
-            EmitVariables(orgId, module, obj, symObj);
+            EmitVariables(orgId, module, obj, symObj, extractedForObject);
             EmitReferences(orgId, module, obj, symObj, totals);
 
             objectsPending++;
@@ -556,7 +579,12 @@ public class ReleaseImportService
                     }
                     queue.Enqueue(sym);
                     break;
-                case "field":
+                case "table_field":
+                    // Only table-side fields ship in symObj.Fields, so only
+                    // table_field needs to seed the dedup index. Page fields
+                    // (page_field, emitted by the source extractor) never
+                    // collide here — they fall through to the source-only
+                    // re-emission loop below.
                     fieldByName.TryAdd(sym.Name, sym);
                     if (sym.FieldId is { } id) fieldById.TryAdd(id, sym);
                     break;
@@ -625,7 +653,11 @@ public class ReleaseImportService
                 OrganizationId = orgId,
                 ModuleId = module.Id,
                 Object = obj,
-                Kind = "field",
+                // symObj.Fields only carries table-side fields — page
+                // fields aren't in symbol packages — so the persisted
+                // kind is always table_field here. See
+                // .design/al-reference-extractor-refactor.md step 1.
+                Kind = "table_field",
                 Name = field.Name,
                 Signature = field.Type.Name,
                 FieldId = field.Id,
@@ -655,8 +687,10 @@ public class ReleaseImportService
                 case "trigger":
                 case "event_publisher":
                 case "event_subscriber":
-                case "field":
-                case "action":
+                case "table_field":
+                case "page_field":
+                case "page_action":
+                case "query_column":
                     break;
                 default:
                     continue;
@@ -678,11 +712,27 @@ public class ReleaseImportService
         }
     }
 
-    private void EmitVariables(int orgId, OeModule module, OeModuleObject obj, SymbolObject symObj)
+    private void EmitVariables(
+        int orgId, OeModule module, OeModuleObject obj, SymbolObject symObj,
+        IReadOnlyList<AlSymbol> extractedSymbols)
     {
+        // Symbol packages carry variable name + type but not source
+        // positions; the source extractor's var_declaration rows fill
+        // that gap. First-declaration-wins on name collisions — in
+        // practice, object-scope globals appear in the file before any
+        // procedure-local var with the same name. See
+        // .design/al-reference-extractor-refactor.md step 2.
+        var positionsByName = new Dictionary<string, AlSymbol>(StringComparer.OrdinalIgnoreCase);
+        foreach (var sym in extractedSymbols)
+        {
+            if (sym.Kind != "var_declaration") continue;
+            positionsByName.TryAdd(sym.Name, sym);
+        }
+
         foreach (var variable in symObj.Variables)
         {
             var (targetKind, targetId, targetName, typeKeyword) = ResolveVariableTarget(variable.Type, module.AppId);
+            positionsByName.TryGetValue(variable.Name, out var pos);
             _db.OeModuleVariables.Add(new OeModuleVariable
             {
                 OrganizationId = orgId,
@@ -695,6 +745,9 @@ public class ReleaseImportService
                 TargetObjectKind = targetKind,
                 TargetObjectId = targetId,
                 TargetObjectName = targetName,
+                LineNumber = pos?.LineNumber ?? 0,
+                ColumnStart = pos?.ColumnStart ?? 0,
+                ColumnEnd = pos?.ColumnEnd ?? 0,
             });
         }
     }
@@ -1218,12 +1271,21 @@ public class ReleaseImportService
                 o.ObjectId,
                 o.Name,
                 AppId = o.Module!.AppId,
+                o.SourceTableName,
             })
             .ToListAsync(ct);
         var typesByName = new Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>>(StringComparer.OrdinalIgnoreCase);
         var typesByObjectId = new Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef>();
         var objectIdByIdentity = new Dictionary<(Guid AppId, string Kind, string Name), long>(
             new ObjectIdentityComparer());
+        // Per-object source-table lookup so AlPageStructure can
+        // resolve cross-page SubPageLink / RunPageLink field
+        // references in step 5 — the LHS field name belongs to the
+        // TARGET page's source table, not the current page's Rec.
+        // Only populated for objects that have a SourceTable
+        // (page / pageextension / requestpage / report-dataitem in
+        // practice); other kinds skip the dictionary entry.
+        var sourceTablesByObjectId = new Dictionary<long, string>();
         foreach (var t in typeRows)
         {
             var typeRef = new ALDevToolbox.Services.Al.AlTypeRef(t.AppId, t.Kind, t.ObjectId, t.Name);
@@ -1235,6 +1297,10 @@ public class ReleaseImportService
             }
             list.Add(typeRef);
             objectIdByIdentity[(t.AppId, t.Kind, t.Name)] = t.Id;
+            if (!string.IsNullOrEmpty(t.SourceTableName))
+            {
+                sourceTablesByObjectId[t.Id] = t.SourceTableName;
+            }
         }
 
         // (1b) Synthesise catalog entries for BC platform virtual tables.
@@ -1299,14 +1365,21 @@ public class ReleaseImportService
             .Select(v => new
             {
                 OwnerId = v.Object!.Id,
+                v.Id,
                 v.Name,
                 v.TypeKeyword,
                 v.TypeName,
             })
             .ToListAsync(ct);
         var globalsByOwner = new Dictionary<long, Dictionary<string, ALDevToolbox.Services.Al.ResolvedVariableType>>();
+        // Per-(owner, lowered name) → variable id lookup so the
+        // reference-emit loop can stamp TargetVariableId on
+        // variable_use rows (step 6). Built alongside globalsByOwner
+        // to share the single varRows scan.
+        var variableIdByOwnerAndName = new Dictionary<(long OwnerId, string Name), long>();
         foreach (var v in varRows)
         {
+            variableIdByOwnerAndName[(v.OwnerId, v.Name.ToLowerInvariant())] = v.Id;
             if (string.IsNullOrEmpty(v.TypeName)) continue;
             if (!globalsByOwner.TryGetValue(v.OwnerId, out var dict))
             {
@@ -1366,7 +1439,7 @@ public class ReleaseImportService
             moduleVisibility.TryGetValue(moduleId, out var visible);
             var r = new CatalogResolver(
                 typesByName, typesByObjectId, objectIdByIdentity,
-                membersByOwner, extensionsByBaseName, visible);
+                membersByOwner, extensionsByBaseName, sourceTablesByObjectId, visible);
             resolversByModule[moduleId] = r;
             return r;
         }
@@ -1431,6 +1504,29 @@ public class ReleaseImportService
             {
                 sourceTable = file.Owner.ExtendsObjectName;
             }
+            // Pageextension fallback: PropagateSourceTableToPageExtensionsAsync
+            // copies the base page's source_table_name into the
+            // extension at import end, but the join is same-release-only
+            // and requires the base page's source_table_name to be set.
+            // When either misses (cross-release base page, or the base
+            // page's source table wasn't extracted), Rec doesn't get
+            // wired in BuildGlobalScope and every `Rec.X` chain in the
+            // body fires head-not-a-variable. Catch the miss here by
+            // looking the base page up via the resolver — which catalogs
+            // every page in the current release — and asking for its
+            // source-table name through the IAlTypeResolver hook added
+            // in step 5.
+            if (string.IsNullOrEmpty(sourceTable)
+                && file.Owner.Kind == "pageextension"
+                && !string.IsNullOrEmpty(file.Owner.ExtendsObjectName))
+            {
+                var pextResolver = ResolverFor(file.ModuleId);
+                var basePage = pextResolver.ResolveTypeByName(file.Owner.ExtendsObjectName!, "Page");
+                if (basePage is not null)
+                {
+                    sourceTable = pextResolver.ResolveSourceTableName(basePage);
+                }
+            }
             var ctx = new ALDevToolbox.Services.Al.AlExtractContext(
                 OwnerKind: file.Owner.Kind,
                 OwnerName: file.Owner.Name,
@@ -1471,6 +1567,7 @@ public class ReleaseImportService
             foreach (var r in result.References)
             {
                 long? targetSymbolId = null;
+                long? targetVariableId = null;
                 // Identity-keyed lookup so a tableextension named the
                 // same as the table it extends doesn't claim the table's
                 // symbols at TargetSymbolId stamp time. The reference row
@@ -1484,6 +1581,22 @@ public class ReleaseImportService
                     targetSymbolId = memberList.FirstOrDefault(m =>
                         string.Equals(m.Name, r.TargetMemberName, StringComparison.OrdinalIgnoreCase)
                         && string.Equals(m.Kind, r.TargetMemberKind, StringComparison.OrdinalIgnoreCase))?.SymbolId;
+                }
+
+                // Stamp variable_use rows with the resolved
+                // oe_module_variables FK so right-click "Find
+                // references" on a global lands on the filtered
+                // index (ix_oe_module_references_target_variable).
+                // The extractor targets the file's owner with
+                // TargetMemberName = variable name; we look up the
+                // DB id by (owner, name). See step 6.
+                if (string.Equals(r.ReferenceKind, "variable_use", StringComparison.Ordinal)
+                    && r.TargetMemberName is not null
+                    && variableIdByOwnerAndName.TryGetValue(
+                        (file.Owner.Id, r.TargetMemberName.ToLowerInvariant()),
+                        out var variableId))
+                {
+                    targetVariableId = variableId;
                 }
 
                 _db.OeModuleReferences.Add(new OeModuleReference
@@ -1501,6 +1614,7 @@ public class ReleaseImportService
                     TargetMemberName = r.TargetMemberName,
                     TargetMemberKind = r.TargetMemberKind,
                     TargetSymbolId = targetSymbolId,
+                    TargetVariableId = targetVariableId,
                 });
                 totalEmitted++;
                 pending++;
@@ -1534,7 +1648,7 @@ public class ReleaseImportService
             foreach (var (module, path, owner, sample) in unresolvedSamples)
             {
                 _logger.LogInformation(
-                    "Phase-2 unresolved sample: ReleaseId={ReleaseId} Reason={Reason} Token='{Token}' Line={Line} Col={Col} Owner={Owner} ReceiverKind={ReceiverKind} ReceiverName='{ReceiverName}' Module={Module} Path={Path}",
+                    "Phase-2 unresolved sample: ReleaseId={ReleaseId} Reason={Reason} Token='{Token}' Line={Line} Col={Col} Owner={Owner} ReceiverKind={ReceiverKind} ReceiverName='{ReceiverName}' ReceiverAppId={ReceiverAppId} Module={Module} Path={Path}",
                     releaseId,
                     sample.Reason,
                     sample.Token,
@@ -1543,6 +1657,7 @@ public class ReleaseImportService
                     owner,
                     sample.ReceiverKind ?? "(n/a)",
                     sample.ReceiverName ?? string.Empty,
+                    sample.ReceiverAppId?.ToString() ?? "(n/a)",
                     module,
                     path);
             }
@@ -1966,6 +2081,7 @@ public class ReleaseImportService
         private readonly Dictionary<(Guid AppId, string Kind, string Name), long> _objectIdByIdentity;
         private readonly Dictionary<long, List<MemberEntry>> _members;
         private readonly Dictionary<string, List<ExtensionEntry>> _extensionsByBaseName;
+        private readonly Dictionary<long, string> _sourceTablesByObjectId;
         private readonly HashSet<Guid>? _visibleAppIds;
 
         public CatalogResolver(
@@ -1974,6 +2090,7 @@ public class ReleaseImportService
             Dictionary<(Guid AppId, string Kind, string Name), long> objectIdByIdentity,
             Dictionary<long, List<MemberEntry>> members,
             Dictionary<string, List<ExtensionEntry>> extensionsByBaseName,
+            Dictionary<long, string> sourceTablesByObjectId,
             HashSet<Guid>? visibleAppIds)
         {
             _typesByName = typesByName;
@@ -1981,6 +2098,7 @@ public class ReleaseImportService
             _objectIdByIdentity = objectIdByIdentity;
             _members = members;
             _extensionsByBaseName = extensionsByBaseName;
+            _sourceTablesByObjectId = sourceTablesByObjectId;
             _visibleAppIds = visibleAppIds;
         }
 
@@ -2091,6 +2209,16 @@ public class ReleaseImportService
                 }
             }
 
+            return null;
+        }
+
+        public string? ResolveSourceTableName(ALDevToolbox.Services.Al.AlTypeRef target)
+        {
+            if (_objectIdByIdentity.TryGetValue((target.AppId, target.Kind, target.Name), out var dbId)
+                && _sourceTablesByObjectId.TryGetValue(dbId, out var source))
+            {
+                return source;
+            }
             return null;
         }
 

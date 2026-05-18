@@ -29,15 +29,15 @@ public sealed class AlReferenceExtractorTests
         r.AddMember("Customer", new AlMember("Insert", "procedure", null, null));
         r.AddMember("Customer", new AlMember("Validate", "procedure", null, null));
         r.AddMember("Customer", new AlMember("Get", "procedure", null, null));
-        r.AddMember("Customer", new AlMember("No.", "field", null, null));
-        r.AddMember("Customer", new AlMember("Name", "field", null, null));
+        r.AddMember("Customer", new AlMember("No.", "table_field",null, null));
+        r.AddMember("Customer", new AlMember("Name", "table_field",null, null));
         // Members on Sales Header — one field returns a record so we can
         // test chained access through a record-typed field.
-        r.AddMember("Sales Header", new AlMember("Sell-to Customer No.", "field", null, null));
-        r.AddMember("Sales Header", new AlMember("Customer", "field", "Record", "Customer"));
+        r.AddMember("Sales Header", new AlMember("Sell-to Customer No.", "table_field",null, null));
+        r.AddMember("Sales Header", new AlMember("Customer", "table_field","Record", "Customer"));
         // Members on Sales Line.
         r.AddMember("Sales Line", new AlMember("InitRecord", "procedure", null, null));
-        r.AddMember("Sales Line", new AlMember("No.", "field", null, null));
+        r.AddMember("Sales Line", new AlMember("No.", "table_field",null, null));
         // Members on Sales-Post.
         r.AddMember("Sales-Post", new AlMember("Run", "procedure", null, null));
         return r;
@@ -1046,7 +1046,7 @@ public sealed class AlReferenceExtractorTests
         // now detects the form by peeking at the first token (Number
         // → table form, else page form) and bails out for page form.
         var resolver = MakeResolver();
-        resolver.AddMember("Sales Header", new AlMember("Sell-to Customer No.", "field", null, null));
+        resolver.AddMember("Sales Header", new AlMember("Sell-to Customer No.", "table_field",null, null));
 
         const string src = """
             page 42 "Sales Order"
@@ -1139,8 +1139,8 @@ public sealed class AlReferenceExtractorTests
         // table name goes out as a field_access on that table.
         var resolver = MakeResolver();
         resolver.AddType("G/L Entry", new AlTypeRef(BaseAppId, "table", 17, "G/L Entry"));
-        resolver.AddMember("G/L Entry", new AlMember("Amount", "field", null, null));
-        resolver.AddMember("G/L Entry", new AlMember("G/L Account No.", "field", null, null));
+        resolver.AddMember("G/L Entry", new AlMember("Amount", "table_field",null, null));
+        resolver.AddMember("G/L Entry", new AlMember("G/L Account No.", "table_field",null, null));
 
         const string src = """
             table 15 "G/L Account"
@@ -1179,7 +1179,7 @@ public sealed class AlReferenceExtractorTests
         // where-clause field refs.
         var resolver = MakeResolver();
         resolver.AddType("Cust. Ledger Entry", new AlTypeRef(BaseAppId, "table", 21, "Cust. Ledger Entry"));
-        resolver.AddMember("Cust. Ledger Entry", new AlMember("Customer No.", "field", null, null));
+        resolver.AddMember("Cust. Ledger Entry", new AlMember("Customer No.", "table_field",null, null));
 
         const string src = """
             table 18 Customer
@@ -1217,8 +1217,8 @@ public sealed class AlReferenceExtractorTests
         // reference fields on the SourceTable (Rec). Both LHS-of-where
         // and sorting list entries get field_access rows.
         var resolver = MakeResolver();
-        resolver.AddMember("Sales Header", new AlMember("No.", "field", null, null));
-        resolver.AddMember("Sales Header", new AlMember("Document Type", "field", null, null));
+        resolver.AddMember("Sales Header", new AlMember("No.", "table_field",null, null));
+        resolver.AddMember("Sales Header", new AlMember("Document Type", "table_field",null, null));
 
         const string src = """
             page 42 "Sales Order"
@@ -1245,7 +1245,7 @@ public sealed class AlReferenceExtractorTests
         // mistaken for a field — its argument is an enum value, not
         // a field name. The handler must only emit on the LHS of `=`.
         var resolver = MakeResolver();
-        resolver.AddMember("Sales Header", new AlMember("Document Type", "field", null, null));
+        resolver.AddMember("Sales Header", new AlMember("Document Type", "table_field",null, null));
 
         const string src = """
             page 42 "Sales Order"
@@ -1765,7 +1765,7 @@ public sealed class AlReferenceExtractorTests
         // "Sell-to Customer No." via implicit-Rec on Sales Header,
         // and Customer."No." via the chain walker on the local var.
         var resolver = MakeResolver();
-        resolver.AddMember("Sales Header", new AlMember("Sell-to Customer No.", "field", null, null));
+        resolver.AddMember("Sales Header", new AlMember("Sell-to Customer No.", "table_field",null, null));
         resolver.AddMember("Sales Header", new AlMember("Validate", "procedure", null, null));
 
         const string src = """
@@ -1812,7 +1812,7 @@ public sealed class AlReferenceExtractorTests
         // resolves via implicit-Rec on Sales Header; Customer."No."
         // resolves via the chain walker.
         var resolver = MakeResolver();
-        resolver.AddMember("Sales Header", new AlMember("Sell-to Customer No.", "field", null, null));
+        resolver.AddMember("Sales Header", new AlMember("Sell-to Customer No.", "table_field",null, null));
 
         const string src = """
             page 42 "Sales Order"
@@ -1915,7 +1915,7 @@ public sealed class AlReferenceExtractorTests
         // calls. Without TableNo, codeunits have no implicit Rec.
         var resolver = MakeResolver();
         resolver.AddType("Gen. Journal Line", new AlTypeRef(BaseAppId, "table", 81, "Gen. Journal Line"));
-        resolver.AddMember("Gen. Journal Line", new AlMember("Amount", "field", null, null));
+        resolver.AddMember("Gen. Journal Line", new AlMember("Amount", "table_field",null, null));
         resolver.AddMember("Gen. Journal Line", new AlMember("PostLine", "procedure", null, null));
 
         const string src = """
@@ -2081,7 +2081,7 @@ public sealed class AlReferenceExtractorTests
         // Outcome: only the RHS Rec."No." emits a reference; the LHS
         // `"No."` does not.
         var resolver = MakeResolver();
-        resolver.AddMember("Sales Header", new AlMember("No.", "field", null, null));
+        resolver.AddMember("Sales Header", new AlMember("No.", "table_field",null, null));
 
         const string src = """
             page 50000 "Sales Order"
@@ -2217,7 +2217,7 @@ public sealed class AlReferenceExtractorTests
         // extended page's source table or the chain step bumps the
         // unresolved counter. Add it so we can assert the dispatch
         // ITSELF doesn't bump.
-        resolver.AddMember("Sales Header", new AlMember("MyNewField", "field", null, null));
+        resolver.AddMember("Sales Header", new AlMember("MyNewField", "table_field",null, null));
         var result = AlReferenceExtractor.Extract(src,
             OwnerPageExtension(resolver, "Sales Order Ext", "Sales Header"));
 
@@ -2270,7 +2270,7 @@ public sealed class AlReferenceExtractorTests
 
         // No DSL keyword should land in the unresolved samples.
         result.Stats.UnresolvedSamples.Should().NotContain(s =>
-            new[] { "area", "group", "field", "action" }.Contains(s.Token));
+            new[] { "area", "group", "table_field","action" }.Contains(s.Token));
     }
 
     [Fact]
@@ -2366,6 +2366,93 @@ public sealed class AlReferenceExtractorTests
 
         result.Stats.UnresolvedReceivers.Should().Be(0,
             because: "CODEUNIT/NavApp are built-in static receivers; AppInfo's ModuleInfo type is a known system type");
+    }
+
+    [Fact]
+    public void ProductName_and_SYSTEM_are_builtin_static_receivers()
+    {
+        // `PRODUCTNAME.Full()` / `ProductName.Short()` retrieves the
+        // configured app name (BC navsettings.json); `SYSTEM.Clear(X)`
+        // is the disambiguating prefix for the bare-callable `Clear`
+        // when a user procedure of the same name is in scope. Both
+        // heads are AL runtime, not user variables.
+        const string src = """
+            procedure Foo(var Key: Variant)
+            var
+                FullName: Text;
+            begin
+                FullName := PRODUCTNAME.Full();
+                FullName := ProductName.Short();
+                SYSTEM.Clear(Key);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0,
+            because: "PRODUCTNAME and SYSTEM are built-in static receivers");
+    }
+
+    [Fact]
+    public void Enum_typed_variable_chains_through_builtin_methods_silently()
+    {
+        // `FeatureToUpdate.Names` / `.Ordinals` / `.AsInteger()` /
+        // `.FromInteger(N)` are runtime methods on every enum value;
+        // they don't appear in the catalog. The List returned by
+        // Names/Ordinals threads into `.Contains`, `.IndexOf`, `.Get`
+        // — collection built-ins that terminate the chain quietly.
+        var resolver = MakeResolver();
+        resolver.AddType("Feature To Update", new AlTypeRef(BaseAppId, "enum", 50100, "Feature To Update"));
+        const string src = """
+            procedure FeatureKeyMatches(FeatureToUpdate: Enum "Feature To Update"; FeatureKey: Text): Boolean
+            begin
+                if FeatureToUpdate.Names.Contains(FeatureKey) then
+                    exit(FeatureToUpdate.AsInteger() =
+                        FeatureToUpdate.Ordinals.Get(FeatureToUpdate.Names.IndexOf(FeatureKey)));
+                exit(false);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0,
+            because: "Names / Ordinals / AsInteger are enum built-ins");
+    }
+
+    [Fact]
+    public void Query_column_access_resolves_when_the_column_is_a_catalog_member()
+    {
+        // `MyQuery.Sum_Remaining_Amt_LCY` on a query-typed receiver
+        // resolves once query_column rows are catalogued — they're
+        // declared inside the query's `column(Name; Source)` shape
+        // and persisted by the source extractor.
+        var resolver = MakeResolver();
+        var queryRef = new AlTypeRef(BaseAppId, "query", 21, "Cust. Ledg. Entry Remain. Amt.");
+        resolver.AddType("Cust. Ledg. Entry Remain. Amt.", queryRef);
+        resolver.AddMember(queryRef.Name, new AlMember(
+            Name: "Sum_Remaining_Amt_LCY",
+            Kind: "query_column",
+            ReturnTypeKeyword: null,
+            ReturnTypeName: null));
+        const string src = """
+            procedure ReadTotal(): Decimal
+            var
+                CustLedgEntryRemainAmt: Query "Cust. Ledg. Entry Remain. Amt.";
+                TotalAmount: Decimal;
+            begin
+                CustLedgEntryRemainAmt.Open();
+                if CustLedgEntryRemainAmt.Read() then
+                    TotalAmount := CustLedgEntryRemainAmt.Sum_Remaining_Amt_LCY;
+                exit(TotalAmount);
+            end;
+            """;
+
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0,
+            because: "Open / Read are query built-ins; Sum_Remaining_Amt_LCY is a catalogued query_column");
+        result.References.Should().Contain(r =>
+            r.TargetObjectKind == "query"
+            && r.TargetObjectName == "Cust. Ledg. Entry Remain. Amt."
+            && r.TargetMemberName == "Sum_Remaining_Amt_LCY");
     }
 
     [Fact]

@@ -1,0 +1,25 @@
+{
+  "References": [
+    {
+      "Line": 3,
+      "Column": 51,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer"
+    },
+    {
+      "Line": 5,
+      "Column": 49,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 36,
+      "TargetObjectName": "Sales Header"
+    }
+  ],
+  "Stats": {
+    "ResolvedReferences": 2,
+    "UnresolvedReceivers": 0,
+    "UnresolvedSamples": []
+  }
+}

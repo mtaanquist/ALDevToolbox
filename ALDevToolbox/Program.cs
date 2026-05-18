@@ -105,6 +105,7 @@ builder.Services.AddScoped<ApplicationVersionService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseImportService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseManagementService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReferenceResolver>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReferenceSessionService>();
 builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks>();
 builder.Services.AddSingleton<ALDevToolbox.Services.CacheBust>();

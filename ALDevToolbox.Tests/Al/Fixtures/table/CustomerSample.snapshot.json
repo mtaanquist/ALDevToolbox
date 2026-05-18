@@ -1,0 +1,25 @@
+{
+  "References": [
+    {
+      "Line": 24,
+      "Column": 29,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer"
+    },
+    {
+      "Line": 26,
+      "Column": 46,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "enum",
+      "TargetObjectId": 50000,
+      "TargetObjectName": "Sales Document Type"
+    }
+  ],
+  "Stats": {
+    "ResolvedReferences": 2,
+    "UnresolvedReceivers": 0,
+    "UnresolvedSamples": []
+  }
+}

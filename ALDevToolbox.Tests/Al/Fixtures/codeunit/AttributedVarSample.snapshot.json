@@ -1,0 +1,47 @@
+{
+  "References": [
+    {
+      "Line": 6,
+      "Column": 26,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer"
+    },
+    {
+      "Line": 8,
+      "Column": 18,
+      "ReferenceKind": "method_call",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "procedure",
+      "TargetMemberName": "Get"
+    },
+    {
+      "Line": 9,
+      "Column": 18,
+      "ReferenceKind": "method_call",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "procedure",
+      "TargetMemberName": "Validate"
+    },
+    {
+      "Line": 9,
+      "Column": 27,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Name"
+    }
+  ],
+  "Stats": {
+    "ResolvedReferences": 4,
+    "UnresolvedReceivers": 0,
+    "UnresolvedSamples": []
+  }
+}

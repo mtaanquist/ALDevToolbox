@@ -42,6 +42,9 @@ namespace ALDevToolbox.Services.Al;
 ///   <item><b>New method on Text / List / Dictionary / Json</b>
 ///     → add to <see cref="TextMethods"/> / <see cref="CollectionMethods"/>
 ///     / <see cref="JsonMethods"/>.</item>
+///   <item><b>New method on an Enum receiver</b>
+///     (`MyEnum.Names`, `MyEnum.FromInteger(...)`) → add to
+///     <see cref="EnumMethods"/>.</item>
 ///   <item><b>Method exposed on multiple receivers</b>
 ///     (`.AsInteger()`, `.HasValue()`, `.Trim()`) → add to
 ///     <see cref="CommonMethods"/>; checked regardless of receiver.</item>
@@ -134,6 +137,39 @@ public static class AlBuiltinMethods
     /// in <c>oe_module_symbols</c> but a <c>Cust."SystemId"</c> access
     /// shouldn't count as unresolved.
     /// </summary>
+    /// <summary>
+    /// Subset of <see cref="RecordMethods"/> that takes one or more
+    /// field-name arguments (as bare or quoted identifiers, e.g.
+    /// <c>Rec.SetRange("No.", '...')</c> or
+    /// <c>Item.FieldNo("Qty. on Assembly Order")</c>). When the chain
+    /// walker sees one of these called on a record receiver, it sets
+    /// <see cref="AlExtractionState.CurrentFieldReceiver"/> for the
+    /// duration of the parens so bare identifiers inside resolve as
+    /// field accesses on that receiver — otherwise they'd fall
+    /// through to no-emit (no chain head, no Rec in scope for a
+    /// codeunit, etc.) and Find references on a tableextension-
+    /// declared field wouldn't pick them up.
+    ///
+    /// Some entries here (<c>CalcFields</c>) take MULTIPLE field
+    /// names; the field-receiver context applies to the whole arg
+    /// list, not just the first arg. False positives only fire if a
+    /// non-field arg happens to lex as an identifier matching a
+    /// field name on the receiver — vanishingly rare in practice and
+    /// always silenced by the catalog lookup miss when it doesn't.
+    /// </summary>
+    public static readonly HashSet<string> FieldNameTakingMethods = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Validate", "ValidateAll",
+        "SetRange", "SetFilter",
+        "FieldNo", "FieldName", "FieldCaption",
+        "FieldExists", "FieldActive", "FieldError",
+        "TestField",
+        "CalcFields", "CalcSums",
+        "SetCurrentKey", "SetAscending",
+        "GetFilter", "GetFilters", "GetRangeMin", "GetRangeMax",
+        "AddLoadFields", "SetLoadFields",
+    };
+
     public static readonly HashSet<string> RecordSystemFields = new(StringComparer.OrdinalIgnoreCase)
     {
         "SystemId",
@@ -264,6 +300,31 @@ public static class AlBuiltinMethods
     };
 
     /// <summary>
+    /// Methods exposed on an Enum / EnumExtension receiver — variables
+    /// typed as <c>Enum "Feature To Update"</c> get these in addition
+    /// to the per-enum values. They're not declared on the enum object
+    /// itself, so the catalog can't resolve them; the chain walker
+    /// consults this list when the receiver kind is <c>enum</c> /
+    /// <c>enumextension</c>.
+    ///
+    /// <para>Canonical reference: the BC "Enum Methods" / "Enum Data
+    /// Type" docs (Names, Ordinals, GetValueAt, FromInteger). The
+    /// <c>AsInteger</c> overload lives in <see cref="CommonMethods"/>
+    /// because Option / Variant / record-bound enum fields share it.</para>
+    /// </summary>
+    public static readonly HashSet<string> EnumMethods = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Reflection over the enum's value set. Names / Ordinals return
+        // List of [Text] / List of [Integer] respectively; downstream
+        // .IndexOf / .Get / .Contains land in CollectionMethods.
+        "Names", "Ordinals",
+        // Lookup by ordinal — returns the enum value.
+        "GetValueAt", "FromInteger",
+        // Per-value caption (BC 23+).
+        "Caption",
+    };
+
+    /// <summary>
     /// Catch-all: a name we treat as built-in regardless of receiver
     /// kind. Add sparingly — these get filtered everywhere they
     /// appear in a chain.
@@ -312,6 +373,15 @@ public static class AlBuiltinMethods
         "Message", "Error", "Confirm", "Exit", "Quit", "Sleep",
         "GetLastErrorText", "GetLastErrorCode", "GetLastErrorObject",
         "GetLastErrorCallStack", "ClearLastError", "AssertError",
+        // Collected-errors API (BC 22+ try-collect pattern). Added
+        // alongside the existing error helpers so a bare
+        // `HasCollectedErrors()` / `GetCollectedErrors()` etc. doesn't
+        // fire as a self-method.
+        "ClearCollectedErrors", "GetCollectedErrors",
+        "HasCollectedErrors", "IsCollectingErrors",
+        // Dialog system functions surfaced as bare. StrMenu is the
+        // common one — pops a Choose-an-option modal.
+        "StrMenu", "HideSubsequentDialogs", "LogInternalError",
         // Strings.
         "Format", "Evaluate", "StrLen", "StrSubstNo", "StrPos", "StrCheckSum",
         "CopyStr", "DelChr", "DelStr", "InsStr", "MaxStrLen", "IncStr",
@@ -319,16 +389,67 @@ public static class AlBuiltinMethods
         "PadStr",
         // Secret-text variant of StrSubstNo (BC 22+).
         "SecretStrSubstNo",
+        // SecretText instance methods (Unwrap is also in CommonMethods).
+        "IsEmpty",
         // Numerics.
-        "Abs", "Power", "Sqrt", "Round", "Random", "RandomRange",
+        "Abs", "Power", "Sqrt", "Round", "Random", "RandomRange", "Randomize",
         // Date / time.
         "Today", "Time", "CurrentDateTime", "WorkDate", "CreateDateTime",
         "Date2DMY", "Date2DWY", "DMY2Date", "DWY2Date", "CalcDate",
         "ClosingDate", "NormalDate",
+        "DT2Date", "DT2Time", "DaTi2Variant", "Variant2Date",
         // Identity / environment.
         "CreateGuid", "CompanyName", "UserId", "UserSecurityId",
         "GuiAllowed", "IsServiceTier", "ApplicationLanguage",
         "GlobalLanguage", "WindowsLanguage",
+        "TenantId", "SID", "ServiceInstanceId", "SessionId",
+        "ApplicationIdentifier", "ApplicationPath", "TemporaryPath",
+        "SerialNumber",
+        // Encryption.
+        "Encrypt", "Decrypt", "EncryptionEnabled", "EncryptionKeyExists",
+        "CreateEncryptionKey", "DeleteEncryptionKey",
+        "ExportEncryptionKey", "ImportEncryptionKey",
+        // Database admin / connections.
+        "AlterKey", "ChangeUserPassword", "CheckLicenseFile",
+        "CopyCompany", "CurrentTransactionType",
+        "DataFileInformation", "ExportData", "ImportData",
+        "GetDefaultTableConnection", "HasTableConnection",
+        "RegisterTableConnection", "SetDefaultTableConnection",
+        "UnregisterTableConnection",
+        "IsInWriteTransaction", "LastUsedRowVersion", "MinimumActiveRowVersion",
+        "LockTimeout", "LockTimeoutDuration",
+        "SelectLatestVersion", "SetUserPassword",
+        // Session control / telemetry.
+        "ApplicationArea", "CurrentClientType", "CurrentExecutionMode",
+        "DefaultClientType", "EnableVerboseTelemetry",
+        "GetCurrentModuleExecutionContext", "GetExecutionContext",
+        "GetModuleExecutionContext", "IsSessionActive",
+        "LogAuditMessage", "LogMessage", "LogSecurityAudit",
+        "SendTraceTag", "SetDocumentServiceToken",
+        // Array / arg helpers.
+        "ArrayLen", "CompressArray", "CopyArray", "CopyStream",
+        "CanLoadType", "CaptionClassTranslate",
+        // Code-coverage runtime API.
+        "CodeCoverageInclude", "CodeCoverageLoad", "CodeCoverageLog",
+        "CodeCoverageRefresh",
+        // Object import / export.
+        "ExportObjects", "ImportObjects",
+        // URL helpers.
+        "GetDocumentUrl", "GetDotNetType", "GetUrl",
+        "ImportStreamWithUrlAccess",
+        // File system functions with distinctive names. Common-name
+        // File methods (Open / Close / Read / Write / Erase / Copy /
+        // Create / Rename / Exists / Len / Name / Pos / Seek / Trunc /
+        // TextMode / WriteMode / View) are intentionally NOT here —
+        // they're already covered by the receiver-method fallback via
+        // CommonMethods / QueryMethods / PageMethods, and adding them
+        // here would suppress real user procedures of the same name
+        // (any `Update()` / `Open()` / `Read()` on a user codeunit
+        // would lose its method_call reference).
+        "CreateTempFile", "Download", "DownloadFromStream",
+        "Upload", "UploadIntoStream",
+        "GetStamp", "SetStamp", "IsPathTemporary",
+        "ViewFromStream",
         // Misc.
         "TypeNameOf", "Database",
         // Variable lifecycle.
@@ -345,8 +466,6 @@ public static class AlBuiltinMethods
         "Hyperlink",
         // Date / time helpers also exposed as bare functions.
         "RoundDateTime", "Time2Variant", "Variant2Time",
-        // File / stream system functions occasionally surfaced as bare.
-        "DownloadFromStream", "UploadIntoStream",
         // Background session control.
         "StartSession", "StopSession",
         // AL property-value constructors. Appear inside property values
@@ -356,8 +475,6 @@ public static class AlBuiltinMethods
         // They look like calls but introduce filter / constant / sort /
         // field-binding expressions.
         "const", "filter", "where", "upperlimit", "sorting", "order",
-        // Session / instance identifiers — AL system functions returning ints.
-        "ServiceInstanceId", "SessionId",
         // Compiler attributes that lex as `[Identifier(...)]` and
         // surface as bare-call shapes inside square brackets. Treat
         // as no-op bare callables so they don't pollute the diagnostic.
@@ -447,6 +564,13 @@ public static class AlBuiltinMethods
         // Static kind dispatchers. `CODEUNIT.Run(...)`, `PAGE.RunModal(...)`,
         // `REPORT.RunModal(...)`, `XMLPORT.Import(...)`, `QUERY.Open(...)`.
         "CODEUNIT", "PAGE", "REPORT", "XMLPORT", "QUERY", "ENUM",
+        // Explicit system-namespace prefix. `SYSTEM.Clear(X)` is the AL
+        // disambiguator for system functions when a user procedure of
+        // the same name is in scope; same surface as the bare call.
+        "SYSTEM",
+        // BC application-name accessor. `ProductName.Full()` /
+        // `.Marketing()` / `.Short()` return the configured app names.
+        "ProductName",
         // App metadata / lifecycle.
         "NavApp",
         // Session-scoped runtime APIs.
@@ -656,6 +780,8 @@ public static class AlBuiltinMethods
                 XmlportMethods.Contains(memberName),
             "query" =>
                 QueryMethods.Contains(memberName),
+            "enum" or "enumextension" =>
+                EnumMethods.Contains(memberName),
             _ => false,
         };
     }

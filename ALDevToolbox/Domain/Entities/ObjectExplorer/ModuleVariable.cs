@@ -48,4 +48,28 @@ public class ModuleVariable
 
     /// <summary>Unquoted name of the target object; mirrors <see cref="TypeName"/> for AL-keyworded vars.</summary>
     public string? TargetObjectName { get; set; }
+
+    /// <summary>
+    /// 1-based source line of the variable's declaration on
+    /// <see cref="Object"/>. Populated from <c>AlSymbolExtractor</c>'s
+    /// <c>var_declaration</c> rows during import; <c>0</c> when the
+    /// extractor didn't see a matching declaration (multi-name
+    /// declarations, generated source, etc.). Used by the source
+    /// viewer's right-click resolver to land Go-to-definition on the
+    /// declaration line. See
+    /// <c>.design/al-reference-extractor-refactor.md</c> step 2.
+    /// </summary>
+    public int LineNumber { get; set; }
+
+    /// <summary>
+    /// 1-based start column of the variable's name token, paired with
+    /// <see cref="LineNumber"/>.
+    /// </summary>
+    public int ColumnStart { get; set; }
+
+    /// <summary>
+    /// 1-based end column (exclusive) of the variable's name token,
+    /// paired with <see cref="LineNumber"/>.
+    /// </summary>
+    public int ColumnEnd { get; set; }
 }

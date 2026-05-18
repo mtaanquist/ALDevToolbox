@@ -49,6 +49,22 @@ public static class AlSymbolExtractor
         @"^\s*action\s*\(\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*\)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // Query column / filter declaration: `column(Sum_Remaining_Amt_LCY;
+    // "Remaining Amt. (LCY)")` and `filter(Document_Type; "Document Type")`
+    // inside a `query`'s `dataitem` block. Surfaces as a member of the
+    // query type so `MyQuery.Sum_Remaining_Amt_LCY` chains through the
+    // resolver instead of stranding as a chain-step unresolved. The
+    // source is always a single bare or quoted field name on the
+    // surrounding dataitem's record — the simpler quoted-or-bare shape
+    // for `expr` lets quoted identifiers carrying parens (like
+    // <c>"Remaining Amt. (LCY)"</c>) round-trip correctly. Reports also
+    // use `column(...)` with similar shape; we deliberately skip those
+    // for now because nothing in the imported corpus accesses report
+    // columns as chain members.
+    private static readonly Regex QueryColumnDeclarationRegex = new(
+        @"^\s*(?:column|filter)\s*\(\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*;\s*(?<expr>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*\)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     // The object-header declaration line: `table 36 "Sales Header"`,
     // `codeunit 80 "Sales-Post"`, `tableextension 7300 "ItemExt" extends "Item"`
     // etc. We only care about the *primary* object name (not the `extends`
@@ -87,6 +103,23 @@ public static class AlSymbolExtractor
         @"^\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*:\s*Label\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // Generic variable declaration: `Name: Type;` at start of line.
+    // Captures the name token so ReleaseImportService can stamp source
+    // line/column onto the matching ModuleVariable row (positions
+    // unblock Go-to-definition on object-scope globals — see
+    // .design/al-reference-extractor-refactor.md step 2). The trailing
+    // `;` distinguishes a declaration from random `name: expr` shapes
+    // that don't exist as standalone statements in AL grammar. Lines
+    // that match LabelDeclarationRegex (the more specific Label form)
+    // are filtered out by ordering — labels match first.
+    //
+    // Multi-name declarations (`A, B: Integer;`) emit nothing — the
+    // name token doesn't permit commas. Rare for object-scope globals
+    // in practice; if it ever shows up we'd extend the parser.
+    private static readonly Regex VarDeclarationRegex = new(
+        @"^\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*:\s*[^;]+;",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     /// <summary>
     /// Returns the declarations found in <paramref name="source"/>. The line
     /// number is 1-based and refers to the original (un-stripped) source so
@@ -105,6 +138,7 @@ public static class AlSymbolExtractor
         var inBlockComment = false;
         var pendingEventKind = (string?)null; // "publisher" / "subscriber" / null
         var objectDeclEmitted = false;
+        var ownerKind = (string?)null; // populated from the object header so per-kind regexes can scope themselves
 
         for (var i = 0; i < lines.Length; i++)
         {
@@ -140,6 +174,7 @@ public static class AlSymbolExtractor
                         ColumnStart: objColStart,
                         ColumnEnd: objColEnd));
                     objectDeclEmitted = true;
+                    ownerKind = objMatch.Groups["type"].Value.ToLowerInvariant();
                     continue;
                 }
             }
@@ -180,7 +215,14 @@ public static class AlSymbolExtractor
                 }
                 var (fColStart, fColEnd) = FindNameColumns(rawLine, fieldRawName);
                 results.Add(new AlSymbol(
-                    Kind: "field",
+                    // table-side field declaration. The regex shape
+                    // (id; name; type) is unique to tables /
+                    // tableextensions; pages use the name+expr form
+                    // matched below. Disambiguated kinds let every
+                    // downstream consumer read a context-free value
+                    // (see .design/al-reference-extractor-refactor.md
+                    // step 1).
+                    Kind: "table_field",
                     Name: fieldName,
                     Signature: string.IsNullOrEmpty(fieldType) ? null : fieldType,
                     FieldId: fieldId,
@@ -191,6 +233,34 @@ public static class AlSymbolExtractor
                 continue;
             }
 
+            // Query column / filter declarations. Owner-kind gated so a
+            // hypothetical `column(...)` outside a query body doesn't
+            // accidentally consume the line. Emitted as `query_column`
+            // so the chain walker resolves `MyQuery.ColumnName` against
+            // these rows. (See .design/al-reference-extractor-refactor.md
+            // step 1.)
+            if (string.Equals(ownerKind, "query", StringComparison.OrdinalIgnoreCase))
+            {
+                var queryColMatch = QueryColumnDeclarationRegex.Match(stripped);
+                if (queryColMatch.Success)
+                {
+                    var colRawName = queryColMatch.Groups["name"].Value;
+                    var colName = Unquote(colRawName);
+                    var colExpr = queryColMatch.Groups["expr"].Value.Trim();
+                    var (qColStart, qColEnd) = FindNameColumns(rawLine, colRawName);
+                    results.Add(new AlSymbol(
+                        Kind: "query_column",
+                        Name: colName,
+                        Signature: string.IsNullOrEmpty(colExpr) ? null : colExpr,
+                        FieldId: null,
+                        LineNumber: i + 1,
+                        ColumnStart: qColStart,
+                        ColumnEnd: qColEnd));
+                    pendingEventKind = null;
+                    continue;
+                }
+            }
+
             var pageFieldMatch = PageFieldDeclarationRegex.Match(stripped);
             if (pageFieldMatch.Success)
             {
@@ -199,7 +269,14 @@ public static class AlSymbolExtractor
                 var expr = pageFieldMatch.Groups["expr"].Value.Trim();
                 var (fColStart, fColEnd) = FindNameColumns(rawLine, fieldRawName);
                 results.Add(new AlSymbol(
-                    Kind: "field",
+                    // page-side field declaration (name; expr). Page
+                    // fields are local control names — not navigation
+                    // targets — so the navigability filter in
+                    // SourceFileViewer treats them differently from
+                    // table_field. The shape disambiguates the owner
+                    // kind without the consumer needing to join back
+                    // to the object row.
+                    Kind: "page_field",
                     Name: fieldName,
                     // Stash the source expression in Signature so the
                     // outline tooltip can show what the page field is
@@ -243,6 +320,33 @@ public static class AlSymbolExtractor
                 continue;
             }
 
+            // Variable declarations inside object-scope or procedure-
+            // local var blocks: `Name: Type;`. Used by
+            // ReleaseImportService to stamp source line/column onto the
+            // matching ModuleVariable row (procedure-local vars over-
+            // emit here and are silently discarded by the name match).
+            // Comes before the procedure/trigger declaration regex so a
+            // line shaped like `Foo: Bar;` doesn't accidentally compete
+            // with anything more specific upstream. Labels are picked
+            // off above by the more specific LabelDeclarationRegex.
+            var varMatch = VarDeclarationRegex.Match(stripped);
+            if (varMatch.Success)
+            {
+                var varRawName = varMatch.Groups["name"].Value;
+                var varName = Unquote(varRawName);
+                var (vColStart, vColEnd) = FindNameColumns(rawLine, varRawName);
+                results.Add(new AlSymbol(
+                    Kind: "var_declaration",
+                    Name: varName,
+                    Signature: null,
+                    FieldId: null,
+                    LineNumber: i + 1,
+                    ColumnStart: vColStart,
+                    ColumnEnd: vColEnd));
+                pendingEventKind = null;
+                continue;
+            }
+
             // Page action declaration. Gives field-style triggers
             // (OnAction in particular) an outline anchor to nest under,
             // mirroring how field-bound triggers nest under their field.
@@ -253,7 +357,12 @@ public static class AlSymbolExtractor
                 var actionName = Unquote(actionRawName);
                 var (aColStart, aColEnd) = FindNameColumns(rawLine, actionRawName);
                 results.Add(new AlSymbol(
-                    Kind: "action",
+                    // Page actions — page-local control names, not
+                    // navigation targets. page_action carries the owner
+                    // context directly so the navigability filter in
+                    // SourceFileViewer doesn't need to join back to
+                    // the object row.
+                    Kind: "page_action",
                     Name: actionName,
                     Signature: null,
                     FieldId: null,

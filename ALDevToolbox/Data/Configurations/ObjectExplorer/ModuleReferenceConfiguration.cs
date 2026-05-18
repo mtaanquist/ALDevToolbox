@@ -24,6 +24,7 @@ internal sealed class ModuleReferenceConfiguration : IEntityTypeConfiguration<Mo
         entity.Property(e => e.TargetMemberName).HasColumnName("target_member_name");
         entity.Property(e => e.TargetMemberKind).HasColumnName("target_member_kind");
         entity.Property(e => e.TargetSymbolId).HasColumnName("target_symbol_id");
+        entity.Property(e => e.TargetVariableId).HasColumnName("target_variable_id");
 
         entity.HasOne(e => e.Organization)
             .WithMany()
@@ -43,6 +44,11 @@ internal sealed class ModuleReferenceConfiguration : IEntityTypeConfiguration<Mo
         entity.HasOne(e => e.TargetSymbol)
             .WithMany()
             .HasForeignKey(e => e.TargetSymbolId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        entity.HasOne(e => e.TargetVariable)
+            .WithMany()
+            .HasForeignKey(e => e.TargetVariableId)
             .OnDelete(DeleteBehavior.SetNull);
 
         // Primary find-references query: target triplet → matching rows. Used by the
@@ -74,5 +80,15 @@ internal sealed class ModuleReferenceConfiguration : IEntityTypeConfiguration<Mo
         // used when displaying outbound references from the inspector panel.
         entity.HasIndex(e => e.SourceObjectId)
             .HasDatabaseName("ix_oe_module_references_source_object");
+
+        // Right-click "Find references" on a global variable: returns
+        // every variable_use row pointing at the variable's DB id.
+        // Partial-filtered on non-null so it stays small relative to
+        // the millions of object-level / member-level rows that don't
+        // carry a variable id. See .design/al-reference-extractor-
+        // refactor.md step 6.
+        entity.HasIndex(e => e.TargetVariableId)
+            .HasDatabaseName("ix_oe_module_references_target_variable")
+            .HasFilter("\"target_variable_id\" IS NOT NULL");
     }
 }
