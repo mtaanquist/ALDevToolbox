@@ -61,18 +61,48 @@
                     <option value="@SearchScope.Objects">Objects</option>
                     <option value="@SearchScope.Procedures">Procedures</option>
                     <option value="@SearchScope.Content">File content</option>
+                    <option value="@SearchScope.Compare">Compare with release</option>
                 </select>
             </label>
 
-            <label class="field">
-                <span class="field__label">Search</span>
-                <input type="search"
-                       class="admin-search-input"
-                       placeholder="@SearchPlaceholder"
-                       value="@_search"
-                       @oninput="OnSearchChanged"
-                       aria-label="@SearchPlaceholder" />
-            </label>
+            @if (_scope == SearchScope.Compare)
+            {
+                <label class="field">
+                    <span class="field__label">Other release</span>
+                    <select class="field__input" @bind="_compareRight" @bind:after="ReloadAsync"
+                            aria-label="Release to compare with">
+                        <option value="">Pick a release…</option>
+                        @if (_otherReleases is not null)
+                        {
+                            @foreach (var r in _otherReleases)
+                            {
+                                <option value="@r.Id">@r.Label</option>
+                            }
+                        }
+                    </select>
+                </label>
+
+                <label class="field">
+                    <span class="field__label">Direction</span>
+                    <select class="field__input" @bind="_compareDirection" @bind:after="ReloadAsync"
+                            aria-label="Compare direction">
+                        <option value="ab">A → B</option>
+                        <option value="ba">B → A</option>
+                    </select>
+                </label>
+            }
+            else
+            {
+                <label class="field">
+                    <span class="field__label">Search</span>
+                    <input type="search"
+                           class="admin-search-input"
+                           placeholder="@SearchPlaceholder"
+                           value="@_search"
+                           @oninput="OnSearchChanged"
+                           aria-label="@SearchPlaceholder" />
+                </label>
+            }
 
             @if (_scope == SearchScope.Objects)
             {
@@ -91,19 +121,22 @@
                 </label>
             }
 
-            <label class="field">
-                <span class="field__label">Extension</span>
-                <select class="field__input" @bind="_moduleFilter" @bind:after="ReloadAsync">
-                    <option value="">All</option>
-                    @if (_modules is not null)
-                    {
-                        @foreach (var m in _modules)
+            @if (_scope != SearchScope.Compare)
+            {
+                <label class="field">
+                    <span class="field__label">Extension</span>
+                    <select class="field__input" @bind="_moduleFilter" @bind:after="ReloadAsync">
+                        <option value="">All</option>
+                        @if (_modules is not null)
                         {
-                            <option value="@m.Id">@m.Name</option>
+                            @foreach (var m in _modules)
+                            {
+                                <option value="@m.Id">@m.Name</option>
+                            }
                         }
-                    }
-                </select>
-            </label>
+                    </select>
+                </label>
+            }
 
             @if (_scope == SearchScope.Objects)
             {
@@ -154,6 +187,9 @@
             case SearchScope.Content:
                 @RenderContentResults()
                 break;
+            case SearchScope.Compare:
+                @RenderCompareResults()
+                break;
         }
     }
 </div>
@@ -161,13 +197,14 @@
 @code {
     [Parameter] public int ReleaseId { get; set; }
 
-    private enum SearchScope { Objects, Procedures, Content }
+    private enum SearchScope { Objects, Procedures, Content, Compare }
 
     private ReleaseDetail? _release;
     private List<ReleaseModuleSummary>? _modules;
     private List<string>? _kinds;
     private List<string>? _moduleSegments;
     private List<string>? _namespaces;
+    private List<ReleaseListItem>? _otherReleases;
 
     private SearchScope _scope = SearchScope.Objects;
     private string _search = string.Empty;
@@ -175,10 +212,13 @@
     private string _moduleFilter = string.Empty;
     private string _moduleSegment = string.Empty;
     private string _namespace = string.Empty;
+    private string _compareRight = string.Empty;
+    private string _compareDirection = "ab";
 
     private List<ReleaseObjectMatch>? _objectResults;
     private List<ReleaseProcedureMatch>? _procedureResults;
     private List<ReleaseContentMatch>? _contentResults;
+    private List<ReleaseCompareFileRow>? _compareResults;
 
     private string SearchPlaceholder => _scope switch
     {
@@ -195,6 +235,10 @@
         _modules = await ObjectExplorer.ListModuleSummariesAsync(ReleaseId);
         _kinds = await ObjectExplorer.ListObjectKindsInReleaseAsync(ReleaseId);
         _namespaces = await ObjectExplorer.ListNamespacesInReleaseAsync(ReleaseId);
+        var allReleases = await ObjectExplorer.ListReleasesAsync();
+        _otherReleases = allReleases
+            .Where(r => r.Id != ReleaseId && r.Status == "ready" && r.DeletedAt is null)
+            .ToList();
         // Module = second namespace segment (e.g. Microsoft.Warehouse.ADCS →
         // "Warehouse"). Derive client-side from the namespace list so a single
         // query feeds both filters.
@@ -233,6 +277,9 @@
         _moduleFilter = query["module"] ?? string.Empty;
         _moduleSegment = query["segment"] ?? string.Empty;
         _namespace = query["namespace"] ?? string.Empty;
+        _compareRight = query["right"] ?? string.Empty;
+        var dir = query["dir"];
+        _compareDirection = dir == "ba" ? "ba" : "ab";
     }
 
     /// <summary>
@@ -255,13 +302,15 @@
         // safe.
         if (!_isInteractive) return;
 
-        var parts = new List<string>(6);
+        var parts = new List<string>(8);
         if (_scope != SearchScope.Objects) parts.Add("scope=" + Uri.EscapeDataString(_scope.ToString()));
         if (!string.IsNullOrWhiteSpace(_search)) parts.Add("search=" + Uri.EscapeDataString(_search));
         if (!string.IsNullOrWhiteSpace(_kind)) parts.Add("kind=" + Uri.EscapeDataString(_kind));
         if (!string.IsNullOrWhiteSpace(_moduleFilter)) parts.Add("module=" + Uri.EscapeDataString(_moduleFilter));
         if (!string.IsNullOrWhiteSpace(_moduleSegment)) parts.Add("segment=" + Uri.EscapeDataString(_moduleSegment));
         if (!string.IsNullOrWhiteSpace(_namespace)) parts.Add("namespace=" + Uri.EscapeDataString(_namespace));
+        if (_scope == SearchScope.Compare && !string.IsNullOrWhiteSpace(_compareRight)) parts.Add("right=" + Uri.EscapeDataString(_compareRight));
+        if (_scope == SearchScope.Compare && _compareDirection == "ba") parts.Add("dir=ba");
 
         var url = $"/object-explorer/release/{ReleaseId}";
         if (parts.Count > 0) url += "?" + string.Join("&", parts);
@@ -372,6 +421,20 @@
                     ? new()
                     : await ObjectExplorer.SearchContentInReleaseAsync(
                         ReleaseId, trimmedSearch, moduleId, take: 200);
+                break;
+
+            case SearchScope.Compare:
+                if (!int.TryParse(_compareRight, out var otherId) || otherId == ReleaseId)
+                {
+                    _compareResults = null;
+                }
+                else
+                {
+                    var (leftId, rightId) = _compareDirection == "ba"
+                        ? (otherId, ReleaseId)
+                        : (ReleaseId, otherId);
+                    _compareResults = await ObjectExplorer.CompareReleaseFilesFlatAsync(leftId, rightId);
+                }
                 break;
         }
         }
@@ -523,6 +586,68 @@
                 }
             </tbody>
         </table>
+    };
+
+    private RenderFragment RenderCompareResults() => __builder =>
+    {
+        if (string.IsNullOrWhiteSpace(_compareRight))
+        {
+            <p class="muted">Pick a release to compare against.</p>
+            return;
+        }
+        if (_compareResults is null)
+        {
+            <p class="muted">Comparing…</p>
+            return;
+        }
+        if (_compareResults.Count == 0)
+        {
+            <p class="muted">No file differences between these two releases.</p>
+            return;
+        }
+        <p class="muted">Showing @_compareResults.Count.ToString("N0") file diff(s).</p>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th scope="col">Module</th>
+                    <th scope="col">File</th>
+                    <th scope="col">Status</th>
+                    <th scope="col"><span class="visually-hidden">Actions</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _compareResults)
+                {
+                    <tr>
+                        <td>@r.ModuleName</td>
+                        <td><code>@r.Path</code></td>
+                        <td><span class="badge @CompareBadgeClass(r.Status)">@r.Status</span></td>
+                        <td class="row-actions">
+                            @if (r.Status == "modified" && r.LeftFileId is { } lf && r.RightFileId is { } rf)
+                            {
+                                <a class="btn btn--sm" href="@Links.CompareFile(lf, rf)">Open diff</a>
+                            }
+                            else if (r.Status == "added" && r.RightFileId is { } addedId)
+                            {
+                                <a class="btn btn--sm" href="@Links.SourceFile(addedId)">Open</a>
+                            }
+                            else if (r.Status == "removed" && r.LeftFileId is { } removedId)
+                            {
+                                <a class="btn btn--sm" href="@Links.SourceFile(removedId)">Open</a>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+
+    private static string CompareBadgeClass(string status) => status switch
+    {
+        "added" => "badge--success",
+        "removed" => "badge--danger",
+        "modified" => "badge--warning",
+        _ => "muted",
     };
 
     private RenderFragment RenderContentResults() => __builder =>

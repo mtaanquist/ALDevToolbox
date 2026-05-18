@@ -530,6 +530,516 @@ public class ObjectExplorerService
             .Select(m => new ReleaseModuleSummary(m.Id, m.Name, m.Publisher))
             .ToListAsync(ct);
 
+    // ── Release comparison ────────────────────────────────────────────
+
+    /// <summary>
+    /// Module-and-file-level diff between two Releases, keyed by
+    /// <c>AppId</c> for modules and canonical <c>Path</c> for files inside the
+    /// Changed bucket. Read-only — see <c>.design/object-explorer.md</c> for
+    /// why <c>ModuleFile.Path</c> is canonicalised at ingest, which is what
+    /// makes the path-based file join trustworthy across releases.
+    ///
+    /// Returns null when either release id doesn't exist (or is soft-deleted).
+    /// </summary>
+    public async Task<ReleaseCompareSummary?> CompareReleasesAsync(
+        int leftReleaseId, int rightReleaseId, CancellationToken ct = default)
+    {
+        var releases = await _db.OeReleases.AsNoTracking()
+            .Where(r => r.Id == leftReleaseId || r.Id == rightReleaseId)
+            .Where(r => r.DeletedAt == null)
+            .Select(r => new { r.Id, r.Label })
+            .ToListAsync(ct);
+
+        var left = releases.FirstOrDefault(r => r.Id == leftReleaseId);
+        var right = releases.FirstOrDefault(r => r.Id == rightReleaseId);
+        if (left is null || right is null) return null;
+
+        var leftModules = await LoadModuleCompareRowsAsync(leftReleaseId, ct);
+        var rightModules = await LoadModuleCompareRowsAsync(rightReleaseId, ct);
+
+        var leftByApp = leftModules.ToDictionary(m => m.AppId);
+        var rightByApp = rightModules.ToDictionary(m => m.AppId);
+
+        var added = new List<ModuleCompareEntry>();
+        var removed = new List<ModuleCompareEntry>();
+        var changed = new List<ModuleCompareEntry>();
+
+        foreach (var appId in rightByApp.Keys.Except(leftByApp.Keys))
+        {
+            var m = rightByApp[appId];
+            added.Add(new ModuleCompareEntry(
+                appId, m.Name, m.Publisher,
+                LeftModuleId: null, LeftVersion: null,
+                RightModuleId: m.ModuleId, RightVersion: m.Version,
+                AddedFileCount: 0, RemovedFileCount: 0, ChangedFileCount: 0));
+        }
+        foreach (var appId in leftByApp.Keys.Except(rightByApp.Keys))
+        {
+            var m = leftByApp[appId];
+            removed.Add(new ModuleCompareEntry(
+                appId, m.Name, m.Publisher,
+                LeftModuleId: m.ModuleId, LeftVersion: m.Version,
+                RightModuleId: null, RightVersion: null,
+                AddedFileCount: 0, RemovedFileCount: 0, ChangedFileCount: 0));
+        }
+
+        var intersection = leftByApp.Keys.Intersect(rightByApp.Keys).ToList();
+
+        // For the Changed bucket compute per-module file diff counts in one
+        // pass — load (ModuleId, Path, ContentHash) for both sides of every
+        // intersection module, key into a dictionary by (ModuleId, Path),
+        // walk per AppId.
+        if (intersection.Count > 0)
+        {
+            var leftModIds = intersection.Select(a => leftByApp[a].ModuleId).ToList();
+            var rightModIds = intersection.Select(a => rightByApp[a].ModuleId).ToList();
+
+            var leftFiles = await _db.OeModuleFiles.AsNoTracking()
+                .Where(f => leftModIds.Contains(f.ModuleId))
+                .Select(f => new { f.ModuleId, f.Path, f.ContentHash })
+                .ToListAsync(ct);
+            var rightFiles = await _db.OeModuleFiles.AsNoTracking()
+                .Where(f => rightModIds.Contains(f.ModuleId))
+                .Select(f => new { f.ModuleId, f.Path, f.ContentHash })
+                .ToListAsync(ct);
+
+            var leftByModule = leftFiles.GroupBy(f => f.ModuleId)
+                .ToDictionary(g => g.Key, g => g.ToDictionary(x => x.Path, x => x.ContentHash));
+            var rightByModule = rightFiles.GroupBy(f => f.ModuleId)
+                .ToDictionary(g => g.Key, g => g.ToDictionary(x => x.Path, x => x.ContentHash));
+
+            foreach (var appId in intersection)
+            {
+                var lm = leftByApp[appId];
+                var rm = rightByApp[appId];
+                var lf = leftByModule.GetValueOrDefault(lm.ModuleId, new Dictionary<string, string>());
+                var rf = rightByModule.GetValueOrDefault(rm.ModuleId, new Dictionary<string, string>());
+
+                var addedCount = rf.Keys.Count(p => !lf.ContainsKey(p));
+                var removedCount = lf.Keys.Count(p => !rf.ContainsKey(p));
+                var changedCount = lf.Count(kv => rf.TryGetValue(kv.Key, out var rh) && rh != kv.Value);
+
+                if (addedCount == 0 && removedCount == 0 && changedCount == 0)
+                {
+                    continue; // module unchanged — drop from Changed bucket
+                }
+                changed.Add(new ModuleCompareEntry(
+                    appId, lm.Name, lm.Publisher,
+                    LeftModuleId: lm.ModuleId, LeftVersion: lm.Version,
+                    RightModuleId: rm.ModuleId, RightVersion: rm.Version,
+                    AddedFileCount: addedCount,
+                    RemovedFileCount: removedCount,
+                    ChangedFileCount: changedCount));
+            }
+        }
+
+        added = added.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        removed = removed.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        changed = changed.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase).ToList();
+
+        _logger.LogInformation(
+            "CompareReleases Left={Left} Right={Right} Added={Added} Removed={Removed} Changed={Changed}",
+            leftReleaseId, rightReleaseId, added.Count, removed.Count, changed.Count);
+
+        return new ReleaseCompareSummary(
+            left.Id, left.Label, right.Id, right.Label, added, removed, changed);
+    }
+
+    private record ModuleCompareRow(long ModuleId, Guid AppId, string Name, string Publisher, string Version);
+
+    private Task<List<ModuleCompareRow>> LoadModuleCompareRowsAsync(int releaseId, CancellationToken ct)
+        => _db.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == releaseId)
+            .Select(m => new ModuleCompareRow(m.Id, m.AppId, m.Name, m.Publisher, m.Version))
+            .ToListAsync(ct);
+
+    /// <summary>
+    /// File-pair diff for one Changed module. Files are joined on canonical
+    /// <c>Path</c>. Returns null when either module id is missing.
+    /// </summary>
+    public async Task<ModuleFileCompareResult?> CompareModuleFilesAsync(
+        long leftModuleId, long rightModuleId, CancellationToken ct = default)
+    {
+        var modules = await _db.OeModules.AsNoTracking()
+            .Where(m => m.Id == leftModuleId || m.Id == rightModuleId)
+            .Select(m => new { m.Id, m.Name })
+            .ToListAsync(ct);
+
+        if (modules.Count < 2) return null;
+
+        var leftFiles = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.ModuleId == leftModuleId)
+            .Select(f => new { f.Id, f.Path, f.LineCount, f.ContentHash })
+            .ToListAsync(ct);
+        var rightFiles = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.ModuleId == rightModuleId)
+            .Select(f => new { f.Id, f.Path, f.LineCount, f.ContentHash })
+            .ToListAsync(ct);
+
+        var leftByPath = leftFiles.ToDictionary(f => f.Path);
+        var rightByPath = rightFiles.ToDictionary(f => f.Path);
+
+        var added = new List<FileCompareEntry>();
+        var removed = new List<FileCompareEntry>();
+        var changed = new List<FileCompareEntry>();
+
+        foreach (var path in rightByPath.Keys.Except(leftByPath.Keys).OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+        {
+            var r = rightByPath[path];
+            added.Add(new FileCompareEntry(path, null, r.Id, 0, r.LineCount));
+        }
+        foreach (var path in leftByPath.Keys.Except(rightByPath.Keys).OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+        {
+            var l = leftByPath[path];
+            removed.Add(new FileCompareEntry(path, l.Id, null, l.LineCount, 0));
+        }
+        foreach (var kv in leftByPath.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!rightByPath.TryGetValue(kv.Key, out var r)) continue;
+            if (string.Equals(kv.Value.ContentHash, r.ContentHash, StringComparison.Ordinal)) continue;
+            changed.Add(new FileCompareEntry(kv.Key, kv.Value.Id, r.Id, kv.Value.LineCount, r.LineCount));
+        }
+
+        var moduleName = modules.FirstOrDefault(m => m.Id == leftModuleId)?.Name
+                         ?? modules.First().Name;
+
+        return new ModuleFileCompareResult(
+            leftModuleId, rightModuleId, moduleName, added, removed, changed);
+    }
+
+    /// <summary>
+    /// Flat per-file rows for every Added / Removed / Modified pair across all
+    /// modules in the two releases — the shape the Release-page Compare scope
+    /// renders directly into its result table. Empty list when either release
+    /// is missing.
+    /// </summary>
+    public async Task<List<ReleaseCompareFileRow>> CompareReleaseFilesFlatAsync(
+        int leftReleaseId, int rightReleaseId, CancellationToken ct = default)
+    {
+        var summary = await CompareReleasesAsync(leftReleaseId, rightReleaseId, ct);
+        if (summary is null) return new();
+
+        var rows = new List<ReleaseCompareFileRow>();
+
+        // Added / Removed modules: every file in that module is added/removed.
+        var addedRightModuleIds = summary.Added.Where(m => m.RightModuleId.HasValue)
+            .Select(m => m.RightModuleId!.Value).ToList();
+        var removedLeftModuleIds = summary.Removed.Where(m => m.LeftModuleId.HasValue)
+            .Select(m => m.LeftModuleId!.Value).ToList();
+
+        if (addedRightModuleIds.Count > 0)
+        {
+            var addedFiles = await _db.OeModuleFiles.AsNoTracking()
+                .Where(f => addedRightModuleIds.Contains(f.ModuleId))
+                .Select(f => new { f.Id, f.Path, f.ModuleId, ModuleAppId = f.Module!.AppId, ModuleName = f.Module!.Name })
+                .ToListAsync(ct);
+            rows.AddRange(addedFiles.Select(f => new ReleaseCompareFileRow(
+                f.ModuleAppId, f.ModuleName, f.Path, "added",
+                LeftFileId: null, RightFileId: f.Id)));
+        }
+        if (removedLeftModuleIds.Count > 0)
+        {
+            var removedFiles = await _db.OeModuleFiles.AsNoTracking()
+                .Where(f => removedLeftModuleIds.Contains(f.ModuleId))
+                .Select(f => new { f.Id, f.Path, f.ModuleId, ModuleAppId = f.Module!.AppId, ModuleName = f.Module!.Name })
+                .ToListAsync(ct);
+            rows.AddRange(removedFiles.Select(f => new ReleaseCompareFileRow(
+                f.ModuleAppId, f.ModuleName, f.Path, "removed",
+                LeftFileId: f.Id, RightFileId: null)));
+        }
+
+        // Changed modules: pair files by path.
+        foreach (var m in summary.Changed)
+        {
+            if (m.LeftModuleId is not { } lm || m.RightModuleId is not { } rm) continue;
+            var pairs = await CompareModuleFilesAsync(lm, rm, ct);
+            if (pairs is null) continue;
+
+            foreach (var f in pairs.Added)
+            {
+                rows.Add(new ReleaseCompareFileRow(m.AppId, m.Name, f.Path, "added",
+                    LeftFileId: null, RightFileId: f.RightFileId));
+            }
+            foreach (var f in pairs.Removed)
+            {
+                rows.Add(new ReleaseCompareFileRow(m.AppId, m.Name, f.Path, "removed",
+                    LeftFileId: f.LeftFileId, RightFileId: null));
+            }
+            foreach (var f in pairs.Changed)
+            {
+                rows.Add(new ReleaseCompareFileRow(m.AppId, m.Name, f.Path, "modified",
+                    LeftFileId: f.LeftFileId, RightFileId: f.RightFileId));
+            }
+        }
+
+        return rows
+            .OrderBy(r => r.ModuleName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.Path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Releases other than the file's own that contain a file at the same
+    /// <c>(AppId, Path)</c> — populates the "Compare with release" picker on
+    /// the source-file viewer. Only ready Releases that actually carry a
+    /// matching file are returned, keeping the dropdown dead-link-free.
+    /// </summary>
+    public async Task<List<CompareTargetOption>> GetCompareTargetsAsync(
+        long fileId, CancellationToken ct = default)
+    {
+        var anchor = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == fileId)
+            .Select(f => new
+            {
+                f.Path,
+                AppId = f.Module!.AppId,
+                ReleaseId = f.Module!.ReleaseId,
+            })
+            .SingleOrDefaultAsync(ct);
+        if (anchor is null) return new();
+
+        return await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Path == anchor.Path
+                && f.Module!.AppId == anchor.AppId
+                && f.Module!.ReleaseId != anchor.ReleaseId
+                && f.Module!.Release!.Status == "ready"
+                && f.Module!.Release!.DeletedAt == null)
+            .OrderBy(f => f.Module!.Release!.Label)
+            .Select(f => new CompareTargetOption(
+                f.Module!.ReleaseId,
+                f.Module!.Release!.Label,
+                f.Id))
+            .ToListAsync(ct);
+    }
+
+    // ── Outline dependencies (#148: Using / Used-by) ──────────────────
+
+    /// <summary>
+    /// Returns the file's outgoing dependencies (objects this file references)
+    /// and incoming dependencies (objects elsewhere that reference this file).
+    /// Self-references via <c>Rec</c> / <c>xRec</c> are filtered out on both
+    /// sides; "no source" targets land with a null <c>TargetFileId</c> so the
+    /// UI can render a non-clickable badge with the standard tooltip.
+    ///
+    /// Resolution walks the parent-release chain (ancestors only for Using,
+    /// full visible chain for Used-by) via the same recursive CTE as
+    /// <see cref="FindReferencesAsync"/>. Returns null when the file id
+    /// doesn't exist.
+    /// </summary>
+    public async Task<FileDependencies?> GetFileDependenciesAsync(
+        long fileId, CancellationToken ct = default)
+    {
+        var anchor = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == fileId)
+            .Select(f => new
+            {
+                f.ModuleId,
+                AppId = f.Module!.AppId,
+                ReleaseId = f.Module!.ReleaseId,
+            })
+            .SingleOrDefaultAsync(ct);
+        if (anchor is null) return null;
+
+        // The file's "primary objects" — usually one, occasionally a
+        // pageextension shipping multiple objects per .al file.
+        var ownObjects = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.SourceFileId == fileId)
+            .Select(o => new { o.Id, o.Kind, o.ObjectId, o.Name })
+            .ToListAsync(ct);
+
+        if (ownObjects.Count == 0)
+        {
+            return new FileDependencies(Array.Empty<DependencyEntry>(), Array.Empty<DependencyEntry>());
+        }
+
+        var ownObjectIds = ownObjects.Select(o => o.Id).ToList();
+
+        // Build the self-reference exclusion predicate components: any
+        // (appId, kind, objectId|name) matching one of this file's objects.
+        var selfKeys = ownObjects
+            .Select(o => (Kind: o.Kind, ObjectId: o.ObjectId, Name: o.Name))
+            .ToHashSet();
+
+        bool IsSelfReference(string targetKind, int? targetId, string targetName) =>
+            selfKeys.Contains((targetKind, targetId, targetName))
+            || (targetId.HasValue && selfKeys.Any(k => k.Kind == targetKind && k.ObjectId == targetId))
+            || selfKeys.Any(k => k.Kind == targetKind && k.Name == targetName);
+
+        var usingList = await BuildUsingAsync(anchor.ReleaseId, anchor.AppId, ownObjectIds, IsSelfReference, ct);
+        var usedByList = await BuildUsedByAsync(anchor.ReleaseId, ownObjects.Select(o => new ObjectSelfKey(o.Kind, o.ObjectId, o.Name)).ToList(), anchor.AppId, IsSelfReference, ct);
+
+        _logger.LogInformation(
+            "GetFileDependencies FileId={FileId} UsingCount={UsingCount} UsedByCount={UsedByCount}",
+            fileId, usingList.Count, usedByList.Count);
+
+        return new FileDependencies(usingList, usedByList);
+    }
+
+    private record ObjectSelfKey(string Kind, int? ObjectId, string Name);
+
+    /// <summary>
+    /// Outgoing dependencies. UNION of typed globals and explicit references,
+    /// resolved through the parent-release ancestor chain to land in the
+    /// "winning" target module.
+    /// </summary>
+    private async Task<List<DependencyEntry>> BuildUsingAsync(
+        int releaseId,
+        Guid ownAppId,
+        IReadOnlyList<long> ownObjectIds,
+        Func<string, int?, string, bool> isSelfReference,
+        CancellationToken ct)
+    {
+        if (ownObjectIds.Count == 0) return new();
+
+        const string sql = """
+            WITH RECURSIVE chain AS (
+                SELECT id, parent_release_id, 0 AS depth
+                FROM oe_releases
+                WHERE id = {0}
+                UNION ALL
+                SELECT r.id, r.parent_release_id, c.depth + 1
+                FROM oe_releases r
+                JOIN chain c ON r.id = c.parent_release_id
+            ),
+            winning AS (
+                SELECT DISTINCT ON (m.app_id) m.id, m.app_id, m.name
+                FROM oe_modules m
+                JOIN chain c ON c.id = m.release_id
+                ORDER BY m.app_id, c.depth ASC
+            ),
+            outgoing AS (
+                SELECT mv.target_app_id, mv.target_object_kind,
+                       mv.target_object_id, mv.target_object_name,
+                       'variable_type'::text AS reference_kind
+                FROM oe_module_variables mv
+                WHERE mv.object_id = ANY({1})
+                  AND mv.target_app_id IS NOT NULL
+                  AND mv.target_object_kind IS NOT NULL
+                  AND mv.target_object_name IS NOT NULL
+                UNION ALL
+                SELECT mr.target_app_id, mr.target_object_kind,
+                       mr.target_object_id, mr.target_object_name,
+                       mr.reference_kind
+                FROM oe_module_references mr
+                WHERE mr.source_object_id = ANY({1})
+            )
+            SELECT DISTINCT ON (o.target_app_id, o.target_object_kind, COALESCE(o.target_object_id, -1), o.target_object_name)
+                o.target_app_id        AS "TargetAppId",
+                COALESCE(w.name, '')   AS "TargetModuleName",
+                o.target_object_kind   AS "TargetObjectKind",
+                o.target_object_id     AS "TargetObjectId",
+                o.target_object_name   AS "TargetObjectName",
+                tgt.source_file_id     AS "TargetFileId",
+                tgt.line_number        AS "TargetLineNumber",
+                o.reference_kind       AS "ReferenceKind"
+            FROM outgoing o
+            LEFT JOIN winning w ON w.app_id = o.target_app_id
+            LEFT JOIN oe_module_objects tgt
+                ON tgt.module_id = w.id
+                AND tgt.kind = o.target_object_kind
+                AND (
+                    (o.target_object_id IS NOT NULL AND tgt.object_id = o.target_object_id)
+                    OR (o.target_object_id IS NULL AND tgt.name = o.target_object_name)
+                )
+            ORDER BY o.target_app_id, o.target_object_kind, COALESCE(o.target_object_id, -1), o.target_object_name, o.reference_kind
+            """;
+
+        var rows = await _db.Database
+            .SqlQueryRaw<DependencyEntry>(sql, releaseId, ownObjectIds.ToArray())
+            .ToListAsync(ct);
+
+        return rows
+            .Where(r => !isSelfReference(r.TargetObjectKind, r.TargetObjectId, r.TargetObjectName))
+            .OrderBy(r => r.TargetModuleName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.TargetObjectKind, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.TargetObjectName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Incoming dependencies. For each of the file's primary objects, find
+    /// every <c>oe_module_references</c> row across the visible release chain
+    /// whose target matches. Mirrors <see cref="FindReferencesAsync"/>'s
+    /// recursive-CTE + shadowing logic but accepts an <c>IN</c> list of target
+    /// objects so we can dispatch all the file's objects in one SQL round-trip.
+    /// </summary>
+    private async Task<List<DependencyEntry>> BuildUsedByAsync(
+        int releaseId,
+        IReadOnlyList<ObjectSelfKey> ownTargets,
+        Guid ownAppId,
+        Func<string, int?, string, bool> isSelfReference,
+        CancellationToken ct)
+    {
+        if (ownTargets.Count == 0) return new();
+
+        // The kind list narrows the cross-module reference fan-out cheaply.
+        var kinds = ownTargets.Select(t => t.Kind).Distinct().ToArray();
+        var ids = ownTargets.Where(t => t.ObjectId.HasValue).Select(t => t.ObjectId!.Value).Distinct().ToArray();
+        var names = ownTargets.Select(t => t.Name).Distinct().ToArray();
+
+        // Project the *caller* side as the dependency entry — Used-by surfaces
+        // who points at this file, not the file's own objects. Walks the
+        // parent-release ancestor chain only — same shape as
+        // FindReferencesAsync. A child release sees its parent's callers; a
+        // parent release doesn't see hits from un-attached children (matches
+        // the existing find-references contract).
+        const string callerSql = """
+            WITH RECURSIVE chain AS (
+                SELECT id, parent_release_id, 0 AS depth
+                FROM oe_releases
+                WHERE id = {0}
+                UNION ALL
+                SELECT r.id, r.parent_release_id, c.depth + 1
+                FROM oe_releases r
+                JOIN chain c ON r.id = c.parent_release_id
+            ),
+            winning AS (
+                SELECT DISTINCT ON (m.app_id) m.id, m.app_id, m.name
+                FROM oe_modules m
+                JOIN chain c ON c.id = m.release_id
+                ORDER BY m.app_id, c.depth ASC
+            )
+            SELECT DISTINCT ON (m.app_id, so.kind, COALESCE(so.object_id, -1), so.name)
+                m.app_id              AS "TargetAppId",
+                m.name                AS "TargetModuleName",
+                so.kind               AS "TargetObjectKind",
+                so.object_id          AS "TargetObjectId",
+                so.name               AS "TargetObjectName",
+                so.source_file_id     AS "TargetFileId",
+                so.line_number        AS "TargetLineNumber",
+                mr.reference_kind     AS "ReferenceKind"
+            FROM oe_module_references mr
+            JOIN oe_module_objects so ON so.id = mr.source_object_id
+            JOIN oe_modules        m  ON m.id  = mr.module_id
+            JOIN winning           w  ON w.id  = mr.module_id
+            WHERE mr.target_app_id = {1}::uuid
+              AND mr.target_object_kind = ANY({2})
+              AND (
+                  (mr.target_object_id IS NOT NULL AND mr.target_object_id = ANY({3}))
+               OR (mr.target_object_id IS NULL AND mr.target_object_name = ANY({4}))
+              )
+            ORDER BY m.app_id, so.kind, COALESCE(so.object_id, -1), so.name, mr.line_number
+            """;
+
+        var callers = await _db.Database
+            .SqlQueryRaw<DependencyEntry>(
+                callerSql,
+                releaseId,
+                ownAppId,
+                kinds,
+                ids.Length == 0 ? new[] { -1 } : ids,
+                names)
+            .ToListAsync(ct);
+
+        return callers
+            .Where(r => !(r.TargetAppId == ownAppId
+                && isSelfReference(r.TargetObjectKind, r.TargetObjectId, r.TargetObjectName)))
+            .OrderBy(r => r.TargetModuleName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.TargetObjectKind, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.TargetObjectName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     // ── Source-viewer navigation ──────────────────────────────────────
 
     /// <summary>

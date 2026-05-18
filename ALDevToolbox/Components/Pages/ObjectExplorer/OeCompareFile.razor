@@ -1,0 +1,129 @@
+@page "/object-explorer/compare/file"
+@attribute [Authorize]
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
+@inject IHttpContextAccessor Http
+@using ALDevToolbox.Services.ObjectExplorer
+@using System.Text.Json
+@using DiffPlex.DiffBuilder
+@using DiffPlex.DiffBuilder.Model
+
+@*
+    Side-by-side file diff for two oe_module_files rows. Loads both file
+    contents, runs DiffPlex's SideBySideDiffBuilder once, serialises a
+    per-side `[{line, kind}, …]` array as a data-diff attribute on each
+    .source-viewer root. The shared wwwroot/source-viewer.js script mounts
+    each root as an independent CodeMirror instance and applies the diff
+    decorations; a small scroll-sync wires the two together.
+*@
+
+<PageTitle>Compare files · AL Dev Toolbox</PageTitle>
+
+<div class="oe-compare-file">
+    @if (_left is null || _right is null || _leftHeader is null || _rightHeader is null)
+    {
+        <p class="muted">One or both files were not found.</p>
+    }
+    else
+    {
+        <header class="admin-page__header oe-compare-file__header">
+            <div class="oe-compare-file__breadcrumbs">
+                <p class="muted">
+                    <strong>Left:</strong>
+                    <a href="@Links.SourceFile(_leftHeader.Id)">@_leftHeader.ReleaseLabel · @_leftHeader.ModuleName · @_leftHeader.Path</a>
+                </p>
+                <p class="muted">
+                    <strong>Right:</strong>
+                    <a href="@Links.SourceFile(_rightHeader.Id)">@_rightHeader.ReleaseLabel · @_rightHeader.ModuleName · @_rightHeader.Path</a>
+                </p>
+            </div>
+            <a class="btn btn--outline"
+               href="@Links.CompareFile(_rightHeader.Id, _leftHeader.Id)"
+               title="Swap left and right">
+                <span>← Swap →</span>
+            </a>
+        </header>
+
+        <div class="oe-compare-file__panes">
+            <div class="source-viewer source-viewer--compare"
+                 data-pane="left"
+                 data-file-id="@_left.Id">
+                <div class="source-viewer__code"
+                     data-language="al"
+                     data-content="@_left.Content"
+                     data-diff="@_leftDiffJson"
+                     spellcheck="false"></div>
+            </div>
+            <div class="source-viewer source-viewer--compare"
+                 data-pane="right"
+                 data-file-id="@_right.Id">
+                <div class="source-viewer__code"
+                     data-language="al"
+                     data-content="@_right.Content"
+                     data-diff="@_rightDiffJson"
+                     spellcheck="false"></div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private SourceFileDetail? _left;
+    private SourceFileDetail? _right;
+    private SourceFileHeader? _leftHeader;
+    private SourceFileHeader? _rightHeader;
+    private string _leftDiffJson = "[]";
+    private string _rightDiffJson = "[]";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var ctx = Http.HttpContext;
+        if (ctx is null) return;
+        if (!long.TryParse(ctx.Request.Query["left"], out var leftId)) return;
+        if (!long.TryParse(ctx.Request.Query["right"], out var rightId)) return;
+
+        _leftHeader = await ObjectExplorer.GetFileHeaderAsync(leftId);
+        _rightHeader = await ObjectExplorer.GetFileHeaderAsync(rightId);
+        if (_leftHeader is null || _rightHeader is null) return;
+
+        _left = await ObjectExplorer.GetFileAsync(leftId);
+        _right = await ObjectExplorer.GetFileAsync(rightId);
+        if (_left is null || _right is null) return;
+
+        var model = SideBySideDiffBuilder.Diff(_left.Content, _right.Content);
+        _leftDiffJson = SerializeDiffSide(model.OldText);
+        _rightDiffJson = SerializeDiffSide(model.NewText);
+    }
+
+    /// <summary>
+    /// Serialises one side of DiffPlex's <see cref="SideBySideDiffModel"/>
+    /// into a compact <c>[{line, kind}, …]</c> JSON array. Lines emit a row
+    /// only when the kind is non-unchanged — keeps the payload small for
+    /// large files. <c>kind</c> values mirror DiffPlex's
+    /// <see cref="ChangeType"/> in lower-case.
+    /// </summary>
+    private static string SerializeDiffSide(DiffPaneModel pane)
+    {
+        var rows = new List<object>();
+        for (var i = 0; i < pane.Lines.Count; i++)
+        {
+            var line = pane.Lines[i];
+            if (line.Type == ChangeType.Unchanged) continue;
+            rows.Add(new
+            {
+                line = i + 1,
+                kind = MapKind(line.Type),
+            });
+        }
+        return JsonSerializer.Serialize(rows);
+    }
+
+    private static string MapKind(ChangeType type) => type switch
+    {
+        ChangeType.Inserted => "inserted",
+        ChangeType.Deleted => "deleted",
+        ChangeType.Modified => "modified",
+        ChangeType.Imaginary => "imaginary",
+        _ => "unchanged",
+    };
+}

@@ -16,17 +16,55 @@ const { mountReadOnly, scrollToLine, openSearch } = await import(codeEditorUrl);
 const FILE_URL_PREFIX = "/object-explorer/file/";
 
 function init() {
-    const root = document.querySelector(".source-viewer");
-    if (!root) return;
+    const roots = document.querySelectorAll(".source-viewer");
+    if (roots.length === 0) return;
+    const editorsByPane = [];
+    roots.forEach(root => {
+        const eid = initOne(root);
+        if (eid !== null) {
+            editorsByPane.push({ root, editorId: eid });
+        }
+    });
 
+    // Compare-page scroll-sync: two .source-viewer--compare roots side-by-side.
+    // Each pane's CodeMirror scroller gets a scroll listener that mirrors its
+    // scrollTop onto the other pane, with a re-entrancy flag so the
+    // mirror-back doesn't bounce.
+    if (editorsByPane.length === 2
+        && editorsByPane[0].root.classList.contains("source-viewer--compare")
+        && editorsByPane[1].root.classList.contains("source-viewer--compare")) {
+        wireCompareScrollSync(editorsByPane[0].root, editorsByPane[1].root);
+    }
+}
+
+function wireCompareScrollSync(leftRoot, rightRoot) {
+    const leftScroller = leftRoot.querySelector(".cm-scroller");
+    const rightScroller = rightRoot.querySelector(".cm-scroller");
+    if (!leftScroller || !rightScroller) return;
+    let syncing = false;
+    const link = (src, dst) => src.addEventListener("scroll", () => {
+        if (syncing) return;
+        syncing = true;
+        dst.scrollTop = src.scrollTop;
+        dst.scrollLeft = src.scrollLeft;
+        requestAnimationFrame(() => { syncing = false; });
+    });
+    link(leftScroller, rightScroller);
+    link(rightScroller, leftScroller);
+}
+
+function initOne(root) {
     const codeHost = root.querySelector(".source-viewer__code");
-    if (!codeHost) return;
+    if (!codeHost) return null;
 
     // Guard against double-mount via Blazor enhanced navigation.
-    if (codeHost.querySelector(".cm-editor")) return;
+    if (codeHost.querySelector(".cm-editor")) return null;
 
     const fileId = Number(root.dataset.fileId);
-    if (!Number.isFinite(fileId)) return;
+    // fileId is optional on the side-by-side compare page (each pane carries
+    // a data-file-id but the cross-pane handlers don't use it). The rest of
+    // the wiring only runs when this is a navigable single-file viewer.
+    const isCompare = root.classList.contains("source-viewer--compare");
 
     const initialLineAttr = root.dataset.initialLine;
     const initialLine = initialLineAttr
@@ -65,9 +103,24 @@ function init() {
         },
     };
 
+    // Diff overlay (compare page only). data-diff carries a JSON array
+    // `[{line, kind}, …]` where kind ∈ inserted | deleted | modified
+    // | imaginary. Convert to the {lineNumber: cssClass} shape mountReadOnly
+    // already understands and pass through as lineDecorations.
+    const diffData = parseJsonAttr(codeHost.dataset.diff);
+    const lineDecorations = {};
+    if (Array.isArray(diffData)) {
+        for (const row of diffData) {
+            if (!row || !Number.isFinite(row.line)) continue;
+            lineDecorations[row.line] = `cm-diff-${row.kind}`;
+        }
+    }
+    codeHost.removeAttribute("data-diff");
+
     const editorId = mountReadOnly(codeHost, content, language, {
         declarations,
         resolvables,
+        lineDecorations,
         dotNetRef: jsBridge,
         // VS Code-style status bar at the bottom of the editor. Shows
         // cursor line/col, total lines, and selection size when a range
@@ -75,6 +128,14 @@ function init() {
         // heading moves into this live readout.
         statusBar: true,
     });
+
+    // Compare-page panes don't carry the outline / refs / tabs DOM so the
+    // wiring below would no-op anyway, but skipping it makes the flow
+    // explicit. Likewise initial line isn't useful when both panes start
+    // pinned to line 1.
+    if (isCompare) {
+        return editorId;
+    }
 
     if (Number.isFinite(initialLine) && initialLine >= 1) {
         requestAnimationFrame(() => scrollToLine(editorId, initialLine, true));
@@ -88,6 +149,9 @@ function init() {
     wireSearchShortcut(root, editorId);
     wirePopstate(root, editorId);
     wireOutlineResizer(root);
+    if (Number.isFinite(fileId)) {
+        wireFileDependencies(root, fileId);
+    }
 
     // If the server already rendered a session into the references panel's
     // data-session attribute (page loaded with ?refSet=token), parse it
@@ -390,6 +454,8 @@ function init() {
         notice.textContent = "";
         notice.hidden = true;
     }
+
+    return editorId;
 }
 
 // ── Tab controller ───────────────────────────────────────────────
@@ -812,6 +878,97 @@ function kindBadgeClass(kind) {
     }
 }
 
+/// Lazy-loads the outline's "Using" and "Used by" sections via one fetch
+/// to /api/object-explorer/files/{id}/dependencies. Empty sections
+/// collapse and show "(none)". Targets without ingested source render with
+/// the kind badge but no clickable link; the tooltip explains why.
+function wireFileDependencies(root, fileId) {
+    const usingList = root.querySelector('[data-deps-list="using"]');
+    const usedByList = root.querySelector('[data-deps-list="used-by"]');
+    if (!usingList && !usedByList) return;
+    fetch(`/api/object-explorer/files/${fileId}/dependencies`, {
+        credentials: "same-origin",
+    }).then(r => r.ok ? r.json() : Promise.reject(r.statusText))
+      .then(data => {
+          renderDepsSection(root, "using", usingList, data.using ?? []);
+          renderDepsSection(root, "used-by", usedByList, data.usedBy ?? []);
+      })
+      .catch(() => {
+          renderDepsSection(root, "using", usingList, []);
+          renderDepsSection(root, "used-by", usedByList, []);
+      });
+}
+
+function renderDepsSection(root, key, list, rows) {
+    if (!list) return;
+    const section = root.querySelector(`[data-deps-section="${key}"]`);
+    const countChip = section?.querySelector("[data-deps-count]");
+    list.innerHTML = "";
+    if (rows.length === 0) {
+        const li = document.createElement("li");
+        li.className = "muted";
+        li.textContent = "(none)";
+        list.appendChild(li);
+        if (countChip) countChip.textContent = "(0)";
+        // Collapse the empty section so it doesn't take vertical space.
+        if (section) {
+            section.classList.remove("is-open");
+            const toggle = section.querySelector(".source-viewer__outline-section-toggle");
+            toggle?.setAttribute("aria-expanded", "false");
+            const chevron = section.querySelector(".source-viewer__outline-section-chevron");
+            chevron?.classList.remove("is-open");
+            list.hidden = true;
+        }
+        return;
+    }
+    if (countChip) countChip.textContent = `(${rows.length})`;
+    for (const row of rows) {
+        const li = document.createElement("li");
+        li.className = "source-viewer__outline-item";
+        const inner = row.targetFileId
+            ? buildDepsLink(row)
+            : buildDepsPlaceholder(row);
+        li.appendChild(inner);
+        list.appendChild(li);
+    }
+}
+
+function buildDepsLink(row) {
+    const a = document.createElement("a");
+    const line = row.targetLineNumber ?? 1;
+    a.href = `/object-explorer/file/${row.targetFileId}?line=${line}`;
+    a.title = `${row.targetModuleName || ""} · ${row.referenceKind || ""}`.trim();
+    a.appendChild(buildKindBadge(row.targetObjectKind));
+    const name = document.createElement("span");
+    name.className = "source-viewer__outline-name";
+    name.textContent = row.targetObjectName ?? "";
+    a.appendChild(name);
+    if (row.targetModuleName) {
+        const mod = document.createElement("span");
+        mod.className = "source-viewer__outline-sig muted";
+        mod.textContent = row.targetModuleName;
+        a.appendChild(mod);
+    }
+    return a;
+}
+
+function buildDepsPlaceholder(row) {
+    const span = document.createElement("span");
+    span.title = "no source available";
+    span.appendChild(buildKindBadge(row.targetObjectKind));
+    const name = document.createElement("span");
+    name.className = "source-viewer__outline-name muted";
+    name.textContent = row.targetObjectName ?? "";
+    span.appendChild(name);
+    if (row.targetModuleName) {
+        const mod = document.createElement("span");
+        mod.className = "source-viewer__outline-sig muted";
+        mod.textContent = row.targetModuleName;
+        span.appendChild(mod);
+    }
+    return span;
+}
+
 function wireRefsCloseButton(root) {
     root.addEventListener("click", e => {
         const target = e.target instanceof Element ? e.target.closest('[data-action="close-refs"]') : null;
@@ -1070,10 +1227,10 @@ if (typeof globalThis.Blazor !== "undefined" && globalThis.Blazor.addEventListen
 // re-call init when the editor isn't already mounted.
 if (typeof MutationObserver !== "undefined") {
     const observer = new MutationObserver(() => {
-        const root = document.querySelector(".source-viewer");
-        if (root && !root.querySelector(".cm-editor")) {
-            init();
-        }
+        // Any unmounted .source-viewer on the page triggers init.
+        const hasUnmounted = Array.from(document.querySelectorAll(".source-viewer"))
+            .some(r => !r.querySelector(".cm-editor"));
+        if (hasUnmounted) init();
     });
     if (document.body) {
         observer.observe(document.body, { childList: true, subtree: true });

@@ -250,6 +250,29 @@ The current `base_app_*` tables and the `BaseAppImportService` source-ZIP path a
 
 Forward-only migration. No data preservation — re-ingest your DVDs. There's no production traffic on this surface large enough to justify the migration work.
 
+## Comparison
+
+The Release page hosts a fourth search scope, `Compare with release`. Picking a release on the right and a direction (`A → B` or `B → A`) flattens module-and-file-level differences into a single table of `(Module, Path, Status, Action)` rows. The Status column carries `added` / `removed` / `modified`; the Action column opens the diff viewer for `modified` rows or the underlying file viewer for the others. Service entry: `ObjectExplorerService.CompareReleaseFilesFlatAsync(leftReleaseId, rightReleaseId)`, which composes `CompareReleasesAsync` (module-level bucketing by `AppId`) with `CompareModuleFilesAsync` (file-level bucketing by canonical `Path`). Files match by `ModuleFile.ContentHash`; the canonical path comes from `AppPackageReader.CanonicalizeSourcePath`.
+
+The single-file viewer also carries a `Compare with release` `<select>` in its top-right corner. The dropdown is populated server-side from `GetCompareTargetsAsync(currentFileId)`, which joins `oe_module_files → oe_modules → oe_releases` on `(AppId, Path)` and only surfaces releases that actually hold a matching file — the picker is dead-link-free.
+
+The side-by-side diff viewer lives at `/object-explorer/compare/file?left={id}&right={id}` and renders two `.source-viewer.source-viewer--compare` roots inside a grid. DiffPlex's `SideBySideDiffBuilder` produces the line-aligned model server-side; the page serialises a compact `[{line, kind}, …]` array onto each pane's `data-diff` attribute. `wwwroot/source-viewer.js` reads it on mount, converts to `{line: cssClass}` and forwards it to the existing `mountReadOnly({ lineDecorations })` extension point — no new CodeMirror surface, the existing line-decoration path already implemented for full-line backgrounds in diff scenarios.
+
+Scroll-sync between the two panes is gated on `roots.length === 2 && first root has source-viewer--compare`. A single `scroll` listener per direction with a `syncing` flag (released via `requestAnimationFrame`) prevents the mirror-back from bouncing.
+
+Out of scope for v1: object-level diff (added/removed/renamed objects), symbol-level diff (procedure signature changes), reference-impact rollups. The underlying schema supports these — the `ObjectExplorerService.Compare*` surface is the staging point — but the UI deliberately doesn't surface them until someone needs them.
+
+## Outline dependencies
+
+The source-viewer outline carries two extra collapsible sections at the bottom (Issue #148):
+
+- **Using** — outgoing dependencies of the file's primary objects. UNION of `oe_module_variables.target_*` (typed globals) and `oe_module_references` rows, resolved through the parent-release ancestor chain via the same recursive CTE pattern `FindReferencesAsync` uses. Targets without ingested source render with the kind badge but no link; tooltip says `"no source available"`.
+- **Used by** — incoming references. For each of the file's primary objects, walk `oe_module_references` across the visible release chain and surface the caller's identity (module + object). Same shadowing rules as find-references.
+
+Self-references (`Rec` / `xRec` on tables; same-object internal calls) are filtered on both sides by matching `(TargetAppId, TargetObjectKind, TargetObjectId|Name)` against the file's own objects.
+
+The shell is rendered SSR; the data is lazy-loaded via one `GET /api/object-explorer/files/{id}/dependencies` after `mountReadOnly` returns, so first paint is unaffected. Empty sections collapse and show `(none)`.
+
 ## Open questions
 
 1. **Dependency graph in the UI.** Each `Module` carries `dependencies_json` from its manifest. Worth surfacing a "what does this module depend on / what depends on this module" view, or defer? Leaning defer until someone asks.
