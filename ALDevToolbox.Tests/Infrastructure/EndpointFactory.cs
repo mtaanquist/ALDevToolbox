@@ -4,6 +4,22 @@ using Microsoft.AspNetCore.Mvc.Testing;
 namespace ALDevToolbox.Tests.Infrastructure;
 
 /// <summary>
+/// xUnit collection that serialises every test class which uses
+/// <see cref="EndpointFactory"/>. The factory swaps the process-wide
+/// <c>ConnectionStrings__DefaultConnection</c> env var so the booted
+/// <c>Program.cs</c> binds to the per-fixture Postgres database. xUnit
+/// runs test classes in parallel by default, so two factory-using classes
+/// racing on that env var can pick up the wrong connection string and
+/// blow up with a stream error when the other fixture disposes its
+/// database. Sharing one collection makes their execution sequential.
+/// </summary>
+[CollectionDefinition(Name)]
+public sealed class EndpointFactoryCollection
+{
+    public const string Name = "EndpointFactory";
+}
+
+/// <summary>
 /// Boots <c>Program.cs</c> end-to-end against a per-fixture Postgres database
 /// supplied by <see cref="TestDb"/>. Used by endpoint behaviour tests that
 /// need the real auth + antiforgery + routing stack — the service-layer

@@ -13,6 +13,7 @@ namespace ALDevToolbox.Tests.Endpoints;
 /// <c>.RequireAuthorization()</c> from a Map call would otherwise ship —
 /// service-layer tests can't see it.
 /// </summary>
+[Collection(EndpointFactoryCollection.Name)]
 public sealed class AuthenticationRequiredTests : IDisposable
 {
     private readonly TestDb _db = new();
