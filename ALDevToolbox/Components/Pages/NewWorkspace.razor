@@ -73,6 +73,27 @@
                               @bind="_description" @bind:event="oninput"></textarea>
                 </section>
 
+                <section class="form-section">
+                    <label class="section-label" for="ws-tenant">Tenant ID</label>
+                    <div class="tenant-id-row">
+                        <input id="ws-tenant" type="text" name="TenantId" required
+                               pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                               title="Lowercase or uppercase hexadecimal GUID, e.g. 8a4f1c3e-1b2d-4e6f-9c1a-3d5b7e9f2a4c"
+                               @bind="_tenantId" @bind:event="oninput" />
+                        <button type="button" class="btn btn--sm"
+                                title="Generate a new GUID"
+                                @onclick="RegenerateTenantId">
+                            <Icon Name="refresh-cw" Width="14" Height="14" />
+                            <span>New GUID</span>
+                        </button>
+                    </div>
+                    <small class="muted">
+                        Pre-filled with a fresh GUID. Paste an existing tenant ID
+                        to recover it. Available in templates and always-included
+                        files as <code>&#123;&#123;tenant_id&#125;&#125;</code>.
+                    </small>
+                </section>
+
                 <IdRangeEditor IdPrefix="ws-core"
                                FromName="CoreIdRangeFrom" ToName="CoreIdRangeTo"
                                FromLabel="Core ID range — from" ToLabel="Core ID range — to"
@@ -244,6 +265,12 @@
     /// <summary>Cache of the picked template's optional extensions for rendering checkboxes.</summary>
     private List<WorkspaceExtension> _optionalExtensions = new();
     private bool _includeExamples = true;
+    /// <summary>
+    /// Tenant GUID surfaced via <c>{{tenant_id}}</c> mustache substitution.
+    /// Pre-filled with a fresh GUID; the user can paste an existing tenant
+    /// ID or hit the regenerate button.
+    /// </summary>
+    private string _tenantId = Guid.NewGuid().ToString("D");
 
     private OrganizationConfig? _orgConfig;
 
@@ -350,6 +377,8 @@
         if (isChecked) _selectedExtensionPaths.Add(path);
         else _selectedExtensionPaths.Remove(path);
     }
+
+    private void RegenerateTenantId() => _tenantId = Guid.NewGuid().ToString("D");
 
     private int CountExtensions()
     {

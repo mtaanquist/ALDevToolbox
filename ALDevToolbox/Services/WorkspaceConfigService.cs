@@ -78,6 +78,7 @@ public class WorkspaceConfigService
                 ExtensionPrefix = plan.ExtensionPrefix,
                 SelectedExtensions = plan.SelectedExtensionPaths.ToList(),
                 Modules = plan.SelectedModuleKeys.ToList(),
+                TenantId = plan.TenantId,
                 Extensions = extensions
                     .Select(e => new ExtensionIdentitySection
                     {
@@ -287,7 +288,8 @@ public class WorkspaceConfigService
             CoreIdRangeTo: section.CoreIdRangeTo,
             IncludeExamples: section.IncludeExamples,
             SelectedExtensionPaths: section.SelectedExtensions.ToList(),
-            SelectedModuleKeys: section.Modules.ToList());
+            SelectedModuleKeys: section.Modules.ToList(),
+            TenantId: section.TenantId);
     }
 
     private async Task<StandaloneExtensionPlan> BuildExtensionImportAsync(UnionDoc doc, CancellationToken ct)
@@ -393,6 +395,13 @@ public class WorkspaceConfigService
         // falls back to template defaults.
         public List<ExtensionIdentitySection> Extensions { get; set; } = new();
         public List<string> Modules { get; set; } = new();
+        /// <summary>
+        /// Tenant GUID captured on the New Workspace form. Persisted so
+        /// re-importing the file regenerates the workspace with the same
+        /// <c>{{tenant_id}}</c> substitution. Empty on older configs;
+        /// the reader falls back to the empty string.
+        /// </summary>
+        public string TenantId { get; set; } = string.Empty;
     }
 
     private class ExtensionSection
