@@ -141,6 +141,13 @@ public class OrganizationConfigService
         row.DefaultIdRangeTo = input.DefaultIdRangeTo;
         row.DefaultBrief = input.DefaultBrief?.Trim() ?? string.Empty;
         row.DefaultCoreDescription = input.DefaultCoreDescription?.Trim() ?? string.Empty;
+        row.DefaultUrl = string.IsNullOrWhiteSpace(input.DefaultUrl) ? null : input.DefaultUrl.Trim();
+        row.DefaultLogo = string.IsNullOrWhiteSpace(input.DefaultLogo) ? null : input.DefaultLogo.Trim();
+        row.DefaultSupportedCountries = input.DefaultSupportedCountries?
+            .Select(c => c?.Trim() ?? string.Empty)
+            .Where(c => !string.IsNullOrEmpty(c))
+            .ToList()
+            ?? new List<string>();
         row.UpdatedAt = now;
 
         await _db.SaveChangesAsync(ct);
@@ -416,6 +423,13 @@ public class OrganizationConfigService
         settings.DefaultIdRangeTo = settingsInput.DefaultIdRangeTo;
         settings.DefaultBrief = settingsInput.DefaultBrief?.Trim() ?? string.Empty;
         settings.DefaultCoreDescription = settingsInput.DefaultCoreDescription?.Trim() ?? string.Empty;
+        settings.DefaultUrl = string.IsNullOrWhiteSpace(settingsInput.DefaultUrl) ? null : settingsInput.DefaultUrl.Trim();
+        settings.DefaultLogo = string.IsNullOrWhiteSpace(settingsInput.DefaultLogo) ? null : settingsInput.DefaultLogo.Trim();
+        settings.DefaultSupportedCountries = settingsInput.DefaultSupportedCountries?
+            .Select(c => c?.Trim() ?? string.Empty)
+            .Where(c => !string.IsNullOrEmpty(c))
+            .ToList()
+            ?? new List<string>();
         settings.CodeWorkspaceJson = codeWorkspaceJson;
         settings.UpdatedAt = now;
 
@@ -584,7 +598,10 @@ public record OrganizationSettingsInput(
     int DefaultIdRangeFrom,
     int DefaultIdRangeTo,
     string DefaultBrief,
-    string DefaultCoreDescription);
+    string DefaultCoreDescription,
+    string? DefaultUrl = null,
+    string? DefaultLogo = null,
+    IReadOnlyList<string>? DefaultSupportedCountries = null);
 
 /// <summary>One row submitted by the always-included files editor.</summary>
 public record OrganizationFileInput(

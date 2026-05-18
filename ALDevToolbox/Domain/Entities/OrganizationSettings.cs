@@ -17,6 +17,20 @@ public class OrganizationSettings
     /// <summary>Default <c>app.json</c> publisher for new templates and extensions.</summary>
     public string DefaultPublisher { get; set; } = string.Empty;
 
+    /// <summary>Default <c>app.json</c> <c>url</c> for every generated extension.</summary>
+    public string? DefaultUrl { get; set; }
+
+    /// <summary>Default <c>app.json</c> <c>logo</c> path for every generated extension.</summary>
+    public string? DefaultLogo { get; set; }
+
+    /// <summary>
+    /// Org-wide list of country codes that get spliced into every generated
+    /// <c>AppSourceCop.json</c>'s <c>supportedCountries</c> array. Org-wide
+    /// because the supported markets are an organisation policy, not a
+    /// per-template choice.
+    /// </summary>
+    public List<string> DefaultSupportedCountries { get; set; } = new();
+
     /// <summary>Lower bound of the default Core / standalone id range.</summary>
     public int DefaultIdRangeFrom { get; set; }
 

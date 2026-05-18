@@ -14,6 +14,15 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
         entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
         entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
         entity.Property(e => e.DefaultPublisher).HasColumnName("default_publisher").IsRequired();
+        entity.Property(e => e.DefaultUrl).HasColumnName("default_url");
+        entity.Property(e => e.DefaultLogo).HasColumnName("default_logo");
+        // text[] gives us native Postgres array semantics; the value comparer
+        // round-trips through a List<string> on the C# side without needing a
+        // JSON value converter.
+        entity.Property(e => e.DefaultSupportedCountries)
+            .HasColumnName("default_supported_countries")
+            .HasColumnType("text[]")
+            .IsRequired();
         entity.Property(e => e.DefaultIdRangeFrom).HasColumnName("default_id_range_from").IsRequired();
         entity.Property(e => e.DefaultIdRangeTo).HasColumnName("default_id_range_to").IsRequired();
         entity.Property(e => e.DefaultBrief).HasColumnName("default_brief").IsRequired();
