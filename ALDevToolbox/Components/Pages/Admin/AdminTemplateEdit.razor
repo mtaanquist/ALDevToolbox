@@ -178,7 +178,7 @@
                 <label class="section-label" for="tpl-key">Key</label>
                 <input id="tpl-key" type="text" @bind="_form.Key" @bind:event="oninput"
                        readonly="@IsEdit" pattern="[a-z0-9-]+" required
-                       placeholder="e.g. runtime-15" />
+                       placeholder="e.g. new-workspace-template" />
                 <small class="muted">
                     @(IsEdit ? "The key is fixed once a template is created." : "Lowercase letters, digits, hyphens. Used in admin URLs.")
                 </small>
