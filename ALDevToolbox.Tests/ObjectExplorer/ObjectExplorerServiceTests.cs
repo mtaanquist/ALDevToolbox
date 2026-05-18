@@ -853,6 +853,46 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CompareReleases_marks_module_changed_when_file_content_hash_differs()
+    {
+        // Same .app on both sides → identical (AppId, Version, ContentHash) →
+        // compare reports zero diffs. Mutating one file's Content+ContentHash
+        // simulates a vendor patch on the right release without re-importing
+        // a different fixture, so we can exercise the Changed bucket
+        // deterministically.
+        var (leftId, rightId) = await SeedTwoIdenticalReleasesAsync();
+
+        await using (var write = _db.NewContext())
+        {
+            var anyRightFile = await write.OeModuleFiles
+                .Where(f => f.Module!.ReleaseId == rightId)
+                .OrderBy(f => f.Path)
+                .FirstAsync();
+            anyRightFile.Content += "\n// patched by test\n";
+            anyRightFile.ContentHash = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+            await write.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var summary = await NewQuery(read).CompareReleasesAsync(leftId, rightId);
+
+        summary.Should().NotBeNull();
+        summary!.Added.Should().BeEmpty();
+        summary.Removed.Should().BeEmpty();
+        summary.Changed.Should().ContainSingle()
+            .Which.ChangedFileCount.Should().Be(1,
+                "one ContentHash was mutated; everything else still matches");
+
+        var leftMod = await read.OeModules.AsNoTracking().Where(m => m.ReleaseId == leftId).SingleAsync();
+        var rightMod = await read.OeModules.AsNoTracking().Where(m => m.ReleaseId == rightId).SingleAsync();
+        var pairs = await NewQuery(read).CompareModuleFilesAsync(leftMod.Id, rightMod.Id);
+        pairs.Should().NotBeNull();
+        pairs!.Changed.Should().ContainSingle();
+        pairs.Added.Should().BeEmpty();
+        pairs.Removed.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task GetCompareTargets_returns_only_releases_with_matching_app_id_and_path()
     {
         // Two Releases of DK Core: the same file path exists on both sides.

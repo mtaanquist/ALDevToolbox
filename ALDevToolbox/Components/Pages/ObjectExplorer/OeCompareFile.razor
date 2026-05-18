@@ -4,9 +4,7 @@
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Services.ObjectExplorer
-@using System.Text.Json
 @using DiffPlex.DiffBuilder
-@using DiffPlex.DiffBuilder.Model
 
 @*
     Side-by-side file diff for two oe_module_files rows. Loads both file
@@ -91,39 +89,7 @@
         if (_left is null || _right is null) return;
 
         var model = SideBySideDiffBuilder.Diff(_left.Content, _right.Content);
-        _leftDiffJson = SerializeDiffSide(model.OldText);
-        _rightDiffJson = SerializeDiffSide(model.NewText);
+        _leftDiffJson = CompareFileDiffSerializer.SerializeSide(model.OldText);
+        _rightDiffJson = CompareFileDiffSerializer.SerializeSide(model.NewText);
     }
-
-    /// <summary>
-    /// Serialises one side of DiffPlex's <see cref="SideBySideDiffModel"/>
-    /// into a compact <c>[{line, kind}, …]</c> JSON array. Lines emit a row
-    /// only when the kind is non-unchanged — keeps the payload small for
-    /// large files. <c>kind</c> values mirror DiffPlex's
-    /// <see cref="ChangeType"/> in lower-case.
-    /// </summary>
-    private static string SerializeDiffSide(DiffPaneModel pane)
-    {
-        var rows = new List<object>();
-        for (var i = 0; i < pane.Lines.Count; i++)
-        {
-            var line = pane.Lines[i];
-            if (line.Type == ChangeType.Unchanged) continue;
-            rows.Add(new
-            {
-                line = i + 1,
-                kind = MapKind(line.Type),
-            });
-        }
-        return JsonSerializer.Serialize(rows);
-    }
-
-    private static string MapKind(ChangeType type) => type switch
-    {
-        ChangeType.Inserted => "inserted",
-        ChangeType.Deleted => "deleted",
-        ChangeType.Modified => "modified",
-        ChangeType.Imaginary => "imaginary",
-        _ => "unchanged",
-    };
 }
