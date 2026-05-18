@@ -37,6 +37,10 @@
     <!-- 4.* floats over CVE-patched releases (GHSA-9j88-vvj5-vhgr, GHSA-g7hc-96xr-gvvx). -->
     <PackageReference Include="MailKit" Version="4.*" />
     <PackageReference Include="MimeKit" Version="4.*" />
+    <!-- Model Context Protocol — bearer-token HTTP server mounted at /mcp,
+         consumed by AI clients (Claude Desktop, Cursor, VS Code Copilot
+         agent mode, Claude Code). See .design/mcp.md / docs/mcp-clients.md. -->
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.*">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>

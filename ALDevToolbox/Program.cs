@@ -141,6 +141,20 @@ builder.Services.AddScoped<ALDevToolbox.Services.Account.TotpService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.EmailMfaService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.PasskeyService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.PersonalAccessTokenService>();
+
+// MCP server (Model Context Protocol). Mounted at /mcp by McpEndpoints; the
+// PAT auth handler above turns Bearer tokens into the same claim set the
+// cookie handler does, so the tool classes can rely on IOrganizationContext
+// resolving exactly like a browser sign-in. Tool classes live under
+// Services/Mcp/Tools/ and are picked up by WithToolsFromAssembly().
+builder.Services.Configure<ALDevToolbox.Services.Mcp.McpOptions>(builder.Configuration.GetSection("Mcp"));
+builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.WorkspaceTools>();
+builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.SnippetTools>();
+builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.ObjectExplorerTools>();
+builder.Services
+    .AddMcpServer()
+    .WithHttpTransport()
+    .WithToolsFromAssembly();
 // WebAuthn (passkeys). RP id / origins live in configuration; if RpId isn't
 // set the passkey routes refuse with a clear error and the /account UI hides
 // the section. See .design/auth-and-audit.md for the deployment requirement.
@@ -292,6 +306,7 @@ app.MapAccountEndpoints();
 app.MapAdminUserEndpoints();
 app.MapObjectExplorerEndpoints();
 app.MapSiteAdminEndpoints();
+app.MapMcpEndpoints();
 
 // Run migrations + bootstrap, then flip /readyz to green.
 await StartupTasks.RunAsync(app);
