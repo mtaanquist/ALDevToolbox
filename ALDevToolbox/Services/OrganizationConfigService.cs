@@ -285,6 +285,7 @@ public class OrganizationConfigService
                 row.Path = path;
                 row.Content = input.Content ?? string.Empty;
                 row.MustacheEnabled = input.MustacheEnabled;
+                row.Scope = input.Scope;
                 row.Ordering = i;
                 row.UpdatedAt = now;
             }
@@ -295,6 +296,7 @@ public class OrganizationConfigService
                     OrganizationId = orgId,
                     Path = path,
                     Content = input.Content ?? string.Empty,
+                    Scope = input.Scope,
                     MustacheEnabled = input.MustacheEnabled,
                     Ordering = i,
                     UpdatedAt = now,
@@ -369,7 +371,10 @@ public class OrganizationConfigService
                 Id: null,
                 Path: f.Path,
                 Content: f.Content,
-                MustacheEnabled: f.MustacheEnabled))
+                MustacheEnabled: f.MustacheEnabled,
+                Scope: Enum.TryParse<ALDevToolbox.Domain.ValueObjects.OrganizationFileScope>(f.Scope, out var s)
+                    ? s
+                    : ALDevToolbox.Domain.ValueObjects.OrganizationFileScope.WorkspaceRoot))
             .ToList();
         ValidateFiles(fileInputs);
 
@@ -448,6 +453,7 @@ public class OrganizationConfigService
                 Path = input.Path.Trim(),
                 Content = input.Content ?? string.Empty,
                 MustacheEnabled = input.MustacheEnabled,
+                Scope = input.Scope,
                 Ordering = i,
                 UpdatedAt = now,
             });
@@ -608,4 +614,5 @@ public record OrganizationFileInput(
     int? Id,
     string Path,
     string Content,
-    bool MustacheEnabled);
+    bool MustacheEnabled,
+    ALDevToolbox.Domain.ValueObjects.OrganizationFileScope Scope = ALDevToolbox.Domain.ValueObjects.OrganizationFileScope.WorkspaceRoot);

@@ -1,3 +1,5 @@
+using ALDevToolbox.Domain.ValueObjects;
+
 namespace ALDevToolbox.Services;
 
 /// <summary>
@@ -18,7 +20,12 @@ namespace ALDevToolbox.Services;
 /// </remarks>
 public static class PlatformOrganizationFiles
 {
-    public sealed record Definition(string Path, string Content, bool MustacheEnabled, int Ordering);
+    public sealed record Definition(
+        string Path,
+        string Content,
+        bool MustacheEnabled,
+        int Ordering,
+        OrganizationFileScope Scope = OrganizationFileScope.WorkspaceRoot);
 
     public const string GitignorePath = ".gitignore";
     public const string RulesetPath = ".assets/rulesets/Company.ruleset.json";

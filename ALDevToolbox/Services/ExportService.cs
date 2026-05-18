@@ -239,6 +239,7 @@ public class ExportService
                     Path = f.Path,
                     Content = f.Content,
                     MustacheEnabled = f.MustacheEnabled,
+                    Scope = f.Scope.ToString(),
                 })
                 .ToList(),
         };

@@ -123,9 +123,11 @@ public class GenerationService
             ? new List<FolderNode>()
             : BuildFolderTree(scaffold.Folders);
 
-        // The sibling rewrite path needs the org's workspace JSON template;
-        // the standalone-only path doesn't — skip the DB hit when not needed.
-        var orgConfig = sibling is null ? null : await GetOrgConfigAsync(ct);
+        // OrgConfig is needed both for the sibling-rewrite path (which
+        // needs the org's workspace JSON template) and for the per-extension
+        // org files the standalone extension might opt into via
+        // RuntimeTemplateIncludedFile. Always load it now.
+        var orgConfig = await GetOrgConfigAsync(ct);
 
         var (stream, fileCount, folderName) = await _zipBuilder.BuildStandaloneAsync(
             plan, template, folderRoots, sibling, orgConfig, ct);

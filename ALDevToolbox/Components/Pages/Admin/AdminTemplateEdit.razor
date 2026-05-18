@@ -372,7 +372,8 @@
                                 <span class="module-card__body">
                                     <span class="module-card__name"><code>@f.Path</code></span>
                                     <span class="module-card__caption muted">
-                                        @(f.MustacheEnabled ? "mustache enabled" : "literal")
+                                        @(f.Scope == ALDevToolbox.Domain.ValueObjects.OrganizationFileScope.EveryExtension ? "per extension" : "workspace root")
+                                        · @(f.MustacheEnabled ? "mustache enabled" : "literal")
                                     </span>
                                 </span>
                             </label>

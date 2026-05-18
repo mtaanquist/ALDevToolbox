@@ -28,13 +28,29 @@ public sealed class WorkspaceGenerationTests : IDisposable
     [Fact]
     public async Task Required_extension_emits_its_folder_with_app_json_and_appsourcecop()
     {
+        // AppSourceCop.json now ships only when the org has an
+        // OrganizationFile at that path with Scope = EveryExtension and the
+        // template opts in. Seed one before generation to keep the per-
+        // extension emission covered by this test.
+        await using (var ctx = _db.NewContext())
+        {
+            ctx.OrganizationFiles.Add(new OrganizationFile
+            {
+                OrganizationId = ALDevToolbox.Tests.Builders.TemplateBuilder.DefaultOrganizationId,
+                Path = "AppSourceCop.json",
+                Content = "{ \"mandatoryPrefix\": \"ACME\" }",
+                MustacheEnabled = false,
+                Scope = ALDevToolbox.Domain.ValueObjects.OrganizationFileScope.EveryExtension,
+                Ordering = 2000,
+                UpdatedAt = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+        }
         await SeedTemplateAsync(TemplateBuilder.Default());
 
         using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
 
         zip.GetEntry("AcmeCustomer/Core/app.json").Should().NotBeNull();
-        // AppSourceCop.json ships per-extension when the template has
-        // AppSourceCop.Include = true (the default).
         zip.GetEntry("AcmeCustomer/Core/AppSourceCop.json").Should().NotBeNull();
         // No fallback folder injection — what the template declares is what
         // ships, per issue #60.
@@ -48,15 +64,14 @@ public sealed class WorkspaceGenerationTests : IDisposable
     }
 
     [Fact]
-    public async Task AppSourceCop_omitted_when_include_is_false()
+    public async Task AppSourceCop_omitted_when_no_per_extension_org_file_is_opted_in()
     {
-        var template = TemplateBuilder.Default();
-        template.AppSourceCop = new AppSourceCopSettings
-        {
-            Include = false,
-            MandatoryPrefix = "IGNORED",
-        };
-        await SeedTemplateAsync(template);
+        // No OrganizationFile at path AppSourceCop.json — the template
+        // doesn't opt into anything per-extension, so the file shouldn't
+        // land. The template-level AppSourceCop.Include flag is no longer
+        // consulted by the generator (it's kept on the entity for the TOML
+        // round-trip until the column gets dropped).
+        await SeedTemplateAsync(TemplateBuilder.Default());
 
         using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
 
@@ -64,26 +79,39 @@ public sealed class WorkspaceGenerationTests : IDisposable
     }
 
     [Fact]
-    public async Task AppSourceCop_json_strips_include_flag()
+    public async Task AppSourceCop_content_is_admin_authored_verbatim_per_extension()
     {
-        var template = TemplateBuilder.Default();
-        template.AppSourceCop = new AppSourceCopSettings
+        // Admin-authored content lands as-is into every extension folder
+        // (mustache disabled here for the simple shape; templating still
+        // works for adminstrators that need {{affix}} or {{name}}).
+        const string adminAuthored = """
+            {
+              "mandatoryPrefix": "ACME",
+              "supportedCountries": ["US", "DK"]
+            }
+            """;
+        await using (var ctx = _db.NewContext())
         {
-            Include = true,
-            MandatoryPrefix = "ACME",
-            SupportedCountries = new() { "US", "DK" },
-        };
-        await SeedTemplateAsync(template);
+            ctx.OrganizationFiles.Add(new OrganizationFile
+            {
+                OrganizationId = ALDevToolbox.Tests.Builders.TemplateBuilder.DefaultOrganizationId,
+                Path = "AppSourceCop.json",
+                Content = adminAuthored,
+                MustacheEnabled = false,
+                Scope = ALDevToolbox.Domain.ValueObjects.OrganizationFileScope.EveryExtension,
+                Ordering = 2000,
+                UpdatedAt = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+        }
+        await SeedTemplateAsync(TemplateBuilder.Default());
 
         using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
 
         var content = ReadEntry(zip.GetEntry("AcmeCustomer/Core/AppSourceCop.json")!);
-        var doc = JsonDocument.Parse(content);
-        doc.RootElement.GetProperty("mandatoryPrefix").GetString().Should().Be("ACME");
-        doc.RootElement.GetProperty("supportedCountries").EnumerateArray()
-            .Select(c => c.GetString()).Should().BeEquivalentTo("US", "DK");
-        // The include flag is our authoring concept; AL would reject an unknown field.
-        doc.RootElement.TryGetProperty("include", out _).Should().BeFalse();
+        content.Should().Be(adminAuthored,
+            "with the OrganizationFile concept the generator no longer synthesises "
+            + "AppSourceCop content from a structured column — the admin owns the JSON.");
     }
 
     [Fact]

@@ -41,6 +41,7 @@ public static class PlatformOrganizationFileSeeder
                 Path = def.Path,
                 Content = def.Content,
                 MustacheEnabled = def.MustacheEnabled,
+                Scope = def.Scope,
                 Ordering = def.Ordering,
                 UpdatedAt = now,
             });
