@@ -406,7 +406,8 @@ public class GenerationService
             Publisher: template.Defaults.Publisher,
             ExtensionPrefix: plan.ExtensionPrefix,
             Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
-            FolderPath: string.Empty);
+            FolderPath: string.Empty,
+            TenantId: plan.TenantId);
         return _mustache.Render(source, ctx);
     }
 

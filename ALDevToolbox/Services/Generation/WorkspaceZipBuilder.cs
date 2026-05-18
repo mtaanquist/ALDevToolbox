@@ -77,7 +77,8 @@ public sealed class WorkspaceZipBuilder
                 Publisher: template.Defaults.Publisher,
                 ExtensionPrefix: plan.ExtensionPrefix,
                 Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
-                FolderPath: string.Empty);
+                FolderPath: string.Empty,
+                TenantId: plan.TenantId);
             WriteString(archive, $"{rootFolder}/{shortName}.code-workspace",
                 BuildCodeWorkspace(
                     orgConfig.Settings.CodeWorkspaceJson,
@@ -210,7 +211,8 @@ public sealed class WorkspaceZipBuilder
             Publisher: ext.Publisher,
             ExtensionPrefix: plan.ExtensionPrefix,
             Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
-            FolderPath: string.Empty);
+            FolderPath: string.Empty,
+            TenantId: plan.TenantId);
 
         fileCount += EmitFolderTree(archive, extPath, ext.FolderRoots, plan.IncludeExamples, substitutionCtx);
         return fileCount;
@@ -468,7 +470,8 @@ public sealed class WorkspaceZipBuilder
             Publisher: template.Defaults.Publisher,
             ExtensionPrefix: plan.ExtensionPrefix,
             Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
-            FolderPath: string.Empty);
+            FolderPath: string.Empty,
+            TenantId: plan.TenantId);
         foreach (var file in files)
         {
             var content = file.MustacheEnabled

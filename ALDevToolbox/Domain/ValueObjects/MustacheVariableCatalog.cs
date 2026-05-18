@@ -8,23 +8,31 @@ namespace ALDevToolbox.Domain.ValueObjects;
 /// one place stops the doc-strings and the UI hint from drifting away from the
 /// generator's actual switch.
 /// </summary>
+/// <remarks>
+/// All canonical names are snake_case to match the TOML schema. The renderer
+/// keeps a separate map of legacy camelCase aliases
+/// (<c>workspaceName</c>, <c>shortName</c>, <c>moduleName</c>) for
+/// backwards-compatibility but they are intentionally absent from this
+/// catalogue — the admin hint should advertise only the current names.
+/// </remarks>
 public static class MustacheVariableCatalog
 {
     /// <summary>
     /// The full table of variables recognised by
-    /// <see cref="Services.GenerationService"/>'s mustache substituter. Order is
-    /// the order admins see in the hint — most-useful first, scoped/contextual
+    /// <see cref="Services.Generation.MustacheRenderer"/>'s substituter. Order
+    /// is the order admins see in the hint — most-useful first, scoped/contextual
     /// last.
     /// </summary>
     public static readonly IReadOnlyList<MustacheVariable> All = new MustacheVariable[]
     {
-        new("workspaceName", "Workspace display name as the user typed it (e.g. \"Acme Customer\").", AvailableInAdminContent: true),
-        new("shortName", "Workspace name with whitespace stripped (e.g. \"AcmeCustomer\"). Used in filenames.", AvailableInAdminContent: true),
+        new("workspace_name", "Workspace display name as the user typed it (e.g. \"Acme Customer\").", AvailableInAdminContent: true),
+        new("short_name", "Workspace name with whitespace stripped (e.g. \"AcmeCustomer\"). Used in filenames.", AvailableInAdminContent: true),
         new("publisher", "Organisation publisher from the configuration defaults.", AvailableInAdminContent: true),
         new("extension_prefix", "Extension prefix from the New Workspace form.", AvailableInAdminContent: true),
         new("affix", "Template affix when the template's affix type is not 'None'; empty otherwise.", AvailableInAdminContent: true),
+        new("tenant_id", "Tenant GUID captured on the New Workspace form (empty for standalone extensions).", AvailableInAdminContent: true),
         new("name", "Resolved name of the current extension (per-file context only).", AvailableInAdminContent: false),
-        new("moduleName", "Module name when generating from a catalogue module clone.", AvailableInAdminContent: false),
+        new("module_name", "Module name when generating from a catalogue module clone.", AvailableInAdminContent: false),
         new("namespace", "Folder path of the current AL file, dots-separated (per-file context only).", AvailableInAdminContent: false),
         new("guid", "Fresh GUID generated on every substitution — avoid in admin-edited files; the file would change on every generation.", AvailableInAdminContent: false),
     };

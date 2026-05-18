@@ -41,14 +41,15 @@ public sealed class MustacheVariableCatalogTests : IDisposable
         adminNames.Should().NotContain("guid");
         adminNames.Should().NotContain("namespace");
         adminNames.Should().NotContain("name");
-        adminNames.Should().NotContain("moduleName");
+        adminNames.Should().NotContain("module_name");
 
         // The placeholders that do make sense in org-wide content stay in.
-        adminNames.Should().Contain("workspaceName");
-        adminNames.Should().Contain("shortName");
+        adminNames.Should().Contain("workspace_name");
+        adminNames.Should().Contain("short_name");
         adminNames.Should().Contain("publisher");
         adminNames.Should().Contain("extension_prefix");
         adminNames.Should().Contain("affix");
+        adminNames.Should().Contain("tenant_id");
     }
 
     [Fact]
