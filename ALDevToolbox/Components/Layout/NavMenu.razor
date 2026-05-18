@@ -1,5 +1,7 @@
 @using ALDevToolbox.Services
+@using ALDevToolbox.Services.Mcp
 @inject IOrganizationContext OrgContext
+@inject IMcpAvailability McpAvailability
 
 @*
     Sidebar navigation. The Admin section is a single merged list — when the
@@ -57,6 +59,21 @@
                     <span>Piper</span>
                 </NavLink>
             </li>
+            @* MCP link only shows when the user is signed in *and* the
+               SiteAdmin has enabled MCP under /site-admin/settings. *@
+            @if (_mcpEnabled)
+            {
+                <AuthorizeView>
+                    <Authorized>
+                        <li>
+                            <NavLink class="nav-link" href="/tools/mcp" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                <Icon Name="bot" Width="18" Height="18" Css="nav-link__icon" />
+                                <span>MCP</span>
+                            </NavLink>
+                        </li>
+                    </Authorized>
+                </AuthorizeView>
+            }
         </ul>
     </div>
 
@@ -242,3 +259,16 @@
         </Authorized>
     </AuthorizeView>
 </nav>
+
+@code {
+    // Cached for the lifetime of this NavMenu instance. The sidebar
+    // re-renders on each circuit / interactive nav, which re-runs
+    // OnInitializedAsync — fresh enough that a SiteAdmin toggling MCP off
+    // takes effect on the next page load without an explicit invalidation.
+    private bool _mcpEnabled;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _mcpEnabled = await McpAvailability.IsEnabledAsync();
+    }
+}

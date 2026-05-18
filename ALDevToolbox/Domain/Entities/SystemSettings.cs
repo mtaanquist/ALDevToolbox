@@ -123,5 +123,15 @@ public class SystemSettings
     /// <summary>Objects older than this many days are pruned from the bucket. Default 90.</summary>
     public int OffsiteRetentionDays { get; set; } = 90;
 
+    /// <summary>
+    /// SiteAdmin runtime toggle for the MCP server. The deployment-level
+    /// <c>Mcp:Enabled</c> setting in appsettings still controls whether
+    /// the route is mapped at startup; this flag lets SiteAdmins flip
+    /// MCP off without redeploying when an incident makes it useful.
+    /// Defaults to <see langword="false"/> — a fresh install opts in
+    /// explicitly via <c>/site-admin/settings</c>.
+    /// </summary>
+    public bool McpEnabled { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }

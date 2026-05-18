@@ -88,7 +88,8 @@ internal static class SiteAdminEndpoints
                     : int.TryParse(form["DefaultStorageQuotaMb"], out var dsq) ? dsq : null,
                 IndexSizeMultiplier: decimal.TryParse(form["IndexSizeMultiplier"], System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var ism)
                     ? ism
-                    : 0.5m);
+                    : 0.5m,
+                McpEnabled: form["McpEnabled"] == "true" || form["McpEnabled"] == "on");
 
             try
             {

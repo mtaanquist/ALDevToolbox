@@ -1,5 +1,6 @@
 using ALDevToolbox.Components.Layout;
 using ALDevToolbox.Services;
+using ALDevToolbox.Services.Mcp;
 using Bunit;
 using Bunit.TestDoubles;
 using FluentAssertions;
@@ -21,12 +22,20 @@ public sealed class NavMenuTests : IDisposable
     private readonly TestContext _ctx = new();
     private readonly AmbientOrganizationContext _orgCtx = new();
     private readonly TestAuthorizationContext _auth;
+    private readonly FakeMcpAvailability _mcpAvailability = new();
 
     public NavMenuTests()
     {
         _auth = _ctx.AddTestAuthorization();
         _ctx.Services.AddSingleton<IOrganizationContext>(_orgCtx);
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
+        _ctx.Services.AddSingleton<IMcpAvailability>(_mcpAvailability);
+    }
+
+    private sealed class FakeMcpAvailability : IMcpAvailability
+    {
+        public bool Enabled { get; set; }
+        public Task<bool> IsEnabledAsync(CancellationToken ct = default) => Task.FromResult(Enabled);
     }
 
     public void Dispose() => _ctx.Dispose();
@@ -43,6 +52,37 @@ public sealed class NavMenuTests : IDisposable
         cut.FindAll("a[href='/admin']").Should().BeEmpty(
             "the Admin section is gated by AuthorizeView Roles=\"Admin\"");
         cut.FindAll("a[href^='/site-admin/']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Mcp_link_hidden_when_availability_says_off()
+    {
+        _auth.SetAuthorized("user@example.com");
+        _mcpAvailability.Enabled = false;
+
+        var cut = _ctx.RenderComponent<NavMenu>();
+        cut.FindAll("a[href='/tools/mcp']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Mcp_link_hidden_for_anonymous_even_when_availability_is_on()
+    {
+        _auth.SetNotAuthorized();
+        _mcpAvailability.Enabled = true;
+
+        var cut = _ctx.RenderComponent<NavMenu>();
+        cut.FindAll("a[href='/tools/mcp']").Should().BeEmpty(
+            "the link sits inside AuthorizeView — anonymous visitors never see it");
+    }
+
+    [Fact]
+    public void Mcp_link_shows_for_signed_in_user_when_availability_is_on()
+    {
+        _auth.SetAuthorized("user@example.com");
+        _mcpAvailability.Enabled = true;
+
+        var cut = _ctx.RenderComponent<NavMenu>();
+        cut.FindAll("a[href='/tools/mcp']").Should().ContainSingle();
     }
 
     [Fact]

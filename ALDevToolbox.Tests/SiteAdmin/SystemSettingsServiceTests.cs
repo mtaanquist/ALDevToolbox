@@ -197,5 +197,6 @@ public sealed class SystemSettingsServiceTests : IDisposable
             BackupRetentionCount: 14,
             PerTenantBackupRetentionCount: 30,
             DefaultStorageQuotaMb: null,
-            IndexSizeMultiplier: 0.5m);
+            IndexSizeMultiplier: 0.5m,
+            McpEnabled: false);
 }

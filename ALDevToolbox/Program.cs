@@ -148,6 +148,7 @@ builder.Services.AddScoped<ALDevToolbox.Services.Account.PersonalAccessTokenServ
 // resolving exactly like a browser sign-in. Tool classes live under
 // Services/Mcp/Tools/ and are picked up by WithToolsFromAssembly().
 builder.Services.Configure<ALDevToolbox.Services.Mcp.McpOptions>(builder.Configuration.GetSection("Mcp"));
+builder.Services.AddScoped<ALDevToolbox.Services.Mcp.IMcpAvailability, ALDevToolbox.Services.Mcp.SystemSettingsMcpAvailability>();
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.WorkspaceTools>();
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.SnippetTools>();
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.ObjectExplorerTools>();
@@ -240,6 +241,12 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+
+// MCP runtime kill-switch: short-circuits /mcp requests to 404 when the
+// SiteAdmin has the toggle off. Runs ahead of authentication/authorization
+// and the antiforgery middleware so off-state isn't masked by an earlier
+// 400/401. See Endpoints/McpEndpoints.cs.
+app.UseMcpKillSwitch();
 
 app.UseAuthentication();
 app.UseAuthorization();
