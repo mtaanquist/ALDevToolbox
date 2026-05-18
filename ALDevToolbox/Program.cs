@@ -2,6 +2,7 @@ using ALDevToolbox.Components;
 using ALDevToolbox.Data;
 using ALDevToolbox.Endpoints;
 using ALDevToolbox.Services;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -63,8 +64,22 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
             ctx.Response.Redirect(ctx.RedirectUri);
             return Task.CompletedTask;
         }
+    })
+    // Bearer-token scheme for Personal Access Tokens. Sits alongside the
+    // cookie scheme; only routes that opt in (currently /mcp) declare the
+    // "PAT" authorisation policy. The handler mounts the same claim set as
+    // the cookie path so IOrganizationContext resolves identically.
+    .AddScheme<AuthenticationSchemeOptions, ALDevToolbox.Services.Account.PatAuthenticationHandler>(
+        ALDevToolbox.Services.Account.PatAuthenticationHandler.AuthenticationScheme,
+        _ => { });
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(ALDevToolbox.Services.Account.PatAuthenticationHandler.AuthenticationScheme, policy =>
+    {
+        policy.AuthenticationSchemes = new[] { ALDevToolbox.Services.Account.PatAuthenticationHandler.AuthenticationScheme };
+        policy.RequireAuthenticatedUser();
     });
-builder.Services.AddAuthorization();
+});
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton(TimeProvider.System);
@@ -125,6 +140,7 @@ builder.Services.AddScoped<ALDevToolbox.Services.Account.RecoveryCodeService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.TotpService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.EmailMfaService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.PasskeyService>();
+builder.Services.AddScoped<ALDevToolbox.Services.Account.PersonalAccessTokenService>();
 // WebAuthn (passkeys). RP id / origins live in configuration; if RpId isn't
 // set the passkey routes refuse with a clear error and the /account UI hides
 // the section. See .design/auth-and-audit.md for the deployment requirement.

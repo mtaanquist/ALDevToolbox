@@ -1,0 +1,222 @@
+@page "/account/access-tokens/created"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@using ALDevToolbox.Endpoints
+@using ALDevToolbox.Components.Shared
+@using Microsoft.AspNetCore.DataProtection
+@inject IHttpContextAccessor Http
+@inject IDataProtectionProvider Protection
+@inject IJSRuntime JS
+
+<PageTitle>Token created · AL Dev Toolbox</PageTitle>
+
+<div class="account-page">
+    <header class="page-header">
+        <h1>Save your token</h1>
+        <p class="muted">
+            This is the only time the full token will be shown. Copy it now into your AI client's
+            configuration. If you lose it, revoke it and create a new one.
+        </p>
+    </header>
+
+    @if (_token is null)
+    {
+        <p class="form-error" role="alert">
+            Tokens can only be shown immediately after creation. <a href="/account/access-tokens">Go back</a>
+            and create a new one if you missed it.
+        </p>
+    }
+    else
+    {
+        <section class="account-section">
+            <h2>@_token.Name</h2>
+            <p class="muted">
+                Created @_token.CreatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'") ·
+                @(_token.ExpiresAt is null ? "no expiry" : "expires " + _token.ExpiresAt.Value.ToString("yyyy-MM-dd"))
+            </p>
+            <div class="pat-token">
+                <pre>@_token.Plaintext</pre>
+                <button type="button" class="btn btn--sm" @onclick="CopyTokenAsync">
+                    <Icon Name="copy" Width="14" Height="14" />
+                    <span>@(_copiedToken ? "Copied" : "Copy token")</span>
+                </button>
+            </div>
+        </section>
+
+        <section class="account-section">
+            <h2>Add to your AI client</h2>
+            <p class="muted">
+                The snippets below have your token and this server's URL pre-filled. Choose the client you use:
+            </p>
+            <div class="pat-tabs" role="tablist">
+                @foreach (var tab in Tabs)
+                {
+                    <button type="button" role="tab"
+                            class="pat-tab @(tab == _selectedTab ? "pat-tab--active" : "")"
+                            @onclick="() => _selectedTab = tab">
+                        @tab
+                    </button>
+                }
+            </div>
+            <div class="pat-snippet">
+                <pre>@CurrentSnippet</pre>
+                <button type="button" class="btn btn--sm" @onclick="CopySnippetAsync">
+                    <Icon Name="copy" Width="14" Height="14" />
+                    <span>@(_copiedSnippet ? "Copied" : "Copy snippet")</span>
+                </button>
+            </div>
+            <p class="muted">
+                @CurrentHint
+                <a href="/docs/mcp-clients">More options</a>.
+            </p>
+        </section>
+
+        <div class="account-actions">
+            <a class="btn btn--primary" href="/account/access-tokens">I've saved it</a>
+        </div>
+    }
+</div>
+
+<style>
+    .pat-token pre,
+    .pat-snippet pre {
+        background: var(--color-bg);
+        border: 1px solid var(--color-border);
+        padding: 12px 16px;
+        font-family: var(--font-mono);
+        font-size: 13px;
+        line-height: 1.55;
+        overflow-x: auto;
+        white-space: pre;
+        margin: 0 0 8px;
+    }
+
+    .pat-token {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .pat-token pre {
+        flex: 1 1 auto;
+        min-width: 0;
+        letter-spacing: 0.04em;
+    }
+
+    .pat-tabs {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 8px;
+        border-bottom: 1px solid var(--color-border);
+    }
+
+    .pat-tab {
+        background: none;
+        border: none;
+        padding: 8px 14px;
+        font-size: 14px;
+        cursor: pointer;
+        color: var(--color-muted, #666);
+        border-bottom: 2px solid transparent;
+    }
+
+    .pat-tab--active {
+        color: var(--color-text);
+        border-bottom-color: var(--color-accent, #4a6fa5);
+    }
+</style>
+
+@code {
+    private static readonly string[] Tabs = new[] { "VS Code", "Claude Desktop", "Cursor", "Claude Code" };
+
+    private EndpointHelpers.OneShotPat? _token;
+    private string _serverUrl = string.Empty;
+    private string _selectedTab = "VS Code";
+    private bool _copiedToken;
+    private bool _copiedSnippet;
+
+    protected override void OnInitialized()
+    {
+        var ctx = Http.HttpContext;
+        if (ctx is null) return;
+        _token = EndpointHelpers.ReadAndClearOneShotPatCookie(ctx, Protection);
+        _serverUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}/mcp";
+    }
+
+    private string CurrentSnippet => _token is null
+        ? string.Empty
+        : _selectedTab switch
+        {
+            "Claude Desktop" => ClaudeDesktopSnippet(_serverUrl, _token.Plaintext),
+            "Cursor" => CursorSnippet(_serverUrl, _token.Plaintext),
+            "Claude Code" => ClaudeCodeSnippet(_serverUrl, _token.Plaintext),
+            _ => VsCodeSnippet(_serverUrl, _token.Plaintext),
+        };
+
+    private string CurrentHint => _selectedTab switch
+    {
+        "VS Code" => "Save this to your workspace's .vscode/mcp.json and reload. Requires GitHub Copilot agent mode.",
+        "Claude Desktop" => "Add to claude_desktop_config.json (Settings → Developer → Edit Config) and restart the app.",
+        "Cursor" => "Add to ~/.cursor/mcp.json (or Cursor Settings → MCP). Cursor will reload the server automatically.",
+        "Claude Code" => "Run the command in any project directory; Claude Code stores the config in .claude/.",
+        _ => string.Empty,
+    };
+
+    private async Task CopyTokenAsync()
+    {
+        if (_token is null) return;
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", _token.Plaintext);
+        _copiedToken = true;
+    }
+
+    private async Task CopySnippetAsync()
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", CurrentSnippet);
+        _copiedSnippet = true;
+    }
+
+    private static string VsCodeSnippet(string url, string token) => $$"""
+        {
+          "servers": {
+            "aldevtoolbox": {
+              "type": "http",
+              "url": "{{url}}",
+              "headers": {
+                "Authorization": "Bearer {{token}}"
+              }
+            }
+          }
+        }
+        """;
+
+    private static string ClaudeDesktopSnippet(string url, string token) => $$"""
+        {
+          "mcpServers": {
+            "aldevtoolbox": {
+              "type": "http",
+              "url": "{{url}}",
+              "headers": {
+                "Authorization": "Bearer {{token}}"
+              }
+            }
+          }
+        }
+        """;
+
+    private static string CursorSnippet(string url, string token) => $$"""
+        {
+          "mcpServers": {
+            "aldevtoolbox": {
+              "url": "{{url}}",
+              "headers": {
+                "Authorization": "Bearer {{token}}"
+              }
+            }
+          }
+        }
+        """;
+
+    private static string ClaudeCodeSnippet(string url, string token) =>
+        $"claude mcp add aldevtoolbox \\\n  --transport http \\\n  --url {url} \\\n  --header \"Authorization: Bearer {token}\"";
+}

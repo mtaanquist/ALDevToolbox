@@ -18,6 +18,18 @@ internal static class SiteAdminEndpoints
 {
     public static IEndpointRouteBuilder MapSiteAdminEndpoints(this IEndpointRouteBuilder app)
     {
+        // Revoke any Personal Access Token, regardless of organisation. Used
+        // when a token has leaked or its owner has left the org. Calls into
+        // PersonalAccessTokenService with ignoreOrgScope so the token row is
+        // visible through the org query filter that would otherwise hide it.
+        app.MapPost("/site-admin/access-tokens/{id:int}/revoke", async (
+            int id, HttpContext ctx, PersonalAccessTokenService tokens, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            await tokens.RevokeAsync(id, ignoreOrgScope: true, ct);
+            ctx.Response.Redirect("/site-admin/access-tokens?ok=revoked");
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
         app.MapPost("/site-admin/users/{id:int}/promote", async (
             int id, HttpContext ctx, SiteAdminService siteAdmin, IAntiforgery antiforgery, CancellationToken ct) =>
         {
