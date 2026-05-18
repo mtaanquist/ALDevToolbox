@@ -42,6 +42,7 @@ public enum AuditEntityType
     SnippetFile,
     SnippetSuggestion,
     SnippetSuggestionFile,
+    PersonalAccessToken,
 }
 
 /// <summary>The kind of change captured by an audit row.</summary>

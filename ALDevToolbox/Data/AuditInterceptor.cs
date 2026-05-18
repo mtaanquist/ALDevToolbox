@@ -59,6 +59,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             [typeof(SnippetFile)] = AuditEntityType.SnippetFile,
             [typeof(SnippetSuggestion)] = AuditEntityType.SnippetSuggestion,
             [typeof(SnippetSuggestionFile)] = AuditEntityType.SnippetSuggestionFile,
+            [typeof(PersonalAccessToken)] = AuditEntityType.PersonalAccessToken,
         };
 
     private readonly IHttpContextAccessor _http;
