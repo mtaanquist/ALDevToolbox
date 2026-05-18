@@ -160,6 +160,20 @@
                 Auto-approve signups into existing organisations (skip admin review)
             </label>
 
+            <h2>MCP integration</h2>
+            <p class="muted">
+                Lets users connect AI agents (Claude Desktop, Cursor, VS Code Copilot agent mode,
+                Claude Code) to the toolbox via Personal Access Tokens. When off, the
+                <code>/mcp</code> endpoint returns 404 and the MCP page under <em>Tools</em>
+                is hidden — but existing PATs stay in the database. See
+                <a href="/tools/mcp">the user-facing MCP page</a> for the setup users see.
+            </p>
+            <label class="checkbox-label">
+                <input type="checkbox" name="McpEnabled" value="true"
+                       checked="@_view.McpEnabled" />
+                Enable the MCP server on this deployment
+            </label>
+
         </form>
 
         @if (_offsite is not null)

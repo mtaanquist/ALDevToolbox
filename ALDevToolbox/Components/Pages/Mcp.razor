@@ -1,0 +1,265 @@
+@page "/tools/mcp"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@using ALDevToolbox.Services
+@using ALDevToolbox.Services.Mcp
+@using ALDevToolbox.Components.Shared
+@inject IMcpAvailability McpAvailability
+@inject IHttpContextAccessor Http
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+<PageTitle>MCP · AL Dev Toolbox</PageTitle>
+
+<div class="account-page">
+    <header class="page-header">
+        <h1>Model Context Protocol</h1>
+        <p class="muted">
+            Connect an AI agent — Claude Desktop, Cursor, VS Code's Copilot agent mode, Claude Code —
+            to AL Dev Toolbox so it can list templates, generate workspaces, query the Object
+            Explorer, and search the snippet library on your behalf.
+        </p>
+    </header>
+
+    @if (_loading)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (!_mcpEnabled)
+    {
+        <p class="form-info" role="status">
+            MCP isn't enabled on this deployment. Ask a site administrator to turn it on under
+            <code>/site-admin/settings</code>.
+        </p>
+    }
+    else
+    {
+        <section class="account-section">
+            <h2>1. Create a personal access token</h2>
+            <p class="muted">
+                Tokens authenticate the agent as you — same organisation, same role.
+                Treat them like passwords: each is shown once at creation, then hashed in
+                the database. Revoke any time at <a href="/account/access-tokens">Manage access tokens</a>.
+            </p>
+            <a class="btn btn--primary" href="/account/access-tokens">
+                <Icon Name="key-round" Width="16" Height="16" />
+                <span>Manage access tokens</span>
+            </a>
+        </section>
+
+        <section class="account-section">
+            <h2>2. Add the server to your AI client</h2>
+            <p class="muted">
+                Your server URL is <code>@_serverUrl</code>. Replace <code>${PAT}</code> in the
+                snippet below with the token you copied in step 1.
+            </p>
+            <div class="pat-tabs" role="tablist">
+                @foreach (var tab in Tabs)
+                {
+                    <button type="button" role="tab"
+                            class="pat-tab @(tab == _selectedTab ? "pat-tab--active" : "")"
+                            @onclick="() => Select(tab)">
+                        @tab
+                    </button>
+                }
+            </div>
+            <div class="pat-snippet">
+                <pre>@CurrentSnippet</pre>
+                <button type="button" class="btn btn--sm" @onclick="CopySnippetAsync">
+                    <Icon Name="copy" Width="14" Height="14" />
+                    <span>@(_copied ? "Copied" : "Copy snippet")</span>
+                </button>
+            </div>
+            <p class="muted">
+                @CurrentHint
+                <a href="/docs/mcp-clients">More options</a>.
+            </p>
+        </section>
+
+        <section class="account-section">
+            <h2>3. Try it</h2>
+            <p class="muted">
+                Once the agent is connected it has the following tools available. Try one
+                of these prompts to see them in action:
+            </p>
+            <ul class="muted">
+                <li>"Make a new workspace for Acme using the default template."</li>
+                <li>"Which procedures touch the No. field on Sales Line in BC 28.1?"</li>
+                <li>"Find me a snippet for posting validation overrides."</li>
+            </ul>
+
+            <h3>Tools the agent has</h3>
+            <table class="data-table">
+                <thead>
+                    <tr><th>Tool</th><th>What it does</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>list_templates</code></td><td>Lists workspace templates for your organisation.</td></tr>
+                    <tr><td><code>list_modules</code></td><td>Lists optional modules available to add to a workspace.</td></tr>
+                    <tr><td><code>list_well_known_dependencies</code></td><td>Lists the BC dependency catalogue.</td></tr>
+                    <tr><td><code>generate_workspace</code></td><td>Generates a new workspace ZIP (returned inline as base64).</td></tr>
+                    <tr><td><code>generate_extension</code></td><td>Generates a standalone extension ZIP.</td></tr>
+                    <tr><td><code>list_releases</code></td><td>Lists BC releases ingested in Object Explorer.</td></tr>
+                    <tr><td><code>search_objects</code></td><td>Searches a release for AL objects (tables, pages, codeunits, …).</td></tr>
+                    <tr><td><code>search_procedures</code></td><td>Searches a release for procedures by name.</td></tr>
+                    <tr><td><code>search_content</code></td><td>Searches AL source content across a release.</td></tr>
+                    <tr><td><code>find_references</code></td><td>Finds every place that touches a specific table, field, or procedure.</td></tr>
+                    <tr><td><code>search_snippets</code></td><td>Searches your organisation's snippet library.</td></tr>
+                    <tr><td><code>get_snippet</code></td><td>Returns the full file content of one snippet.</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="account-section">
+            <h2>Troubleshooting</h2>
+            <dl class="muted">
+                <dt><strong>The server doesn't show up in my client.</strong></dt>
+                <dd>Confirm the URL is reachable from your machine and that you saved your
+                client's config file in the right place. VS Code needs Copilot agent mode
+                enabled; Claude Desktop needs a restart after editing the config.</dd>
+
+                <dt><strong>401 Unauthorized.</strong></dt>
+                <dd>The token is missing, expired, or revoked. Issue a fresh one and
+                update your client's config.</dd>
+
+                <dt><strong>404 Not Found.</strong></dt>
+                <dd>MCP has been switched off by a site administrator, or the URL is wrong.
+                Refresh this page; if you see the warning at the top, MCP is off.</dd>
+            </dl>
+        </section>
+    }
+</div>
+
+<style>
+    .pat-snippet pre {
+        background: var(--color-bg);
+        border: 1px solid var(--color-border);
+        padding: 12px 16px;
+        font-family: var(--font-mono);
+        font-size: 13px;
+        line-height: 1.55;
+        overflow-x: auto;
+        white-space: pre;
+        margin: 0 0 8px;
+    }
+    .pat-tabs {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 8px;
+        border-bottom: 1px solid var(--color-border);
+    }
+    .pat-tab {
+        background: none;
+        border: none;
+        padding: 8px 14px;
+        font-size: 14px;
+        cursor: pointer;
+        color: var(--color-muted, #666);
+        border-bottom: 2px solid transparent;
+    }
+    .pat-tab--active {
+        color: var(--color-text);
+        border-bottom-color: var(--color-accent, #4a6fa5);
+    }
+</style>
+
+@code {
+    private static readonly string[] Tabs = new[] { "VS Code", "Claude Desktop", "Cursor", "Claude Code" };
+
+    private bool _loading = true;
+    private bool _mcpEnabled;
+    private string _serverUrl = string.Empty;
+    private string _selectedTab = "VS Code";
+    private bool _copied;
+
+    protected override void OnInitialized()
+    {
+        _mcpEnabled = McpAvailability.IsEnabled;
+        var ctx = Http.HttpContext;
+        if (ctx is not null)
+        {
+            _serverUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}/mcp";
+        }
+        else
+        {
+            // OnInitialized after the SSR pass — fall back to the URL the
+            // page itself is on so the snippet still has a sensible default.
+            var uri = new Uri(Nav.Uri);
+            _serverUrl = $"{uri.Scheme}://{uri.Authority}/mcp";
+        }
+        _loading = false;
+    }
+
+    private void Select(string tab)
+    {
+        _selectedTab = tab;
+        _copied = false;
+    }
+
+    private async Task CopySnippetAsync()
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", CurrentSnippet);
+        _copied = true;
+    }
+
+    private string CurrentSnippet => _selectedTab switch
+    {
+        "Claude Desktop" => ClaudeDesktopSnippet(_serverUrl),
+        "Cursor" => CursorSnippet(_serverUrl),
+        "Claude Code" => ClaudeCodeSnippet(_serverUrl),
+        _ => VsCodeSnippet(_serverUrl),
+    };
+
+    private string CurrentHint => _selectedTab switch
+    {
+        "VS Code" => "Save this to your workspace's .vscode/mcp.json and reload. Requires GitHub Copilot agent mode.",
+        "Claude Desktop" => "Add to claude_desktop_config.json (Settings → Developer → Edit Config) and restart the app.",
+        "Cursor" => "Add to ~/.cursor/mcp.json (or Cursor Settings → MCP). Cursor will reload the server automatically.",
+        "Claude Code" => "Run the command in any project directory; Claude Code stores the config in .claude/.",
+        _ => string.Empty,
+    };
+
+    private static string VsCodeSnippet(string url) => $$"""
+        {
+          "servers": {
+            "aldevtoolbox": {
+              "type": "http",
+              "url": "{{url}}",
+              "headers": {
+                "Authorization": "Bearer ${PAT}"
+              }
+            }
+          }
+        }
+        """;
+
+    private static string ClaudeDesktopSnippet(string url) => $$"""
+        {
+          "mcpServers": {
+            "aldevtoolbox": {
+              "type": "http",
+              "url": "{{url}}",
+              "headers": {
+                "Authorization": "Bearer ${PAT}"
+              }
+            }
+          }
+        }
+        """;
+
+    private static string CursorSnippet(string url) => $$"""
+        {
+          "mcpServers": {
+            "aldevtoolbox": {
+              "url": "{{url}}",
+              "headers": {
+                "Authorization": "Bearer ${PAT}"
+              }
+            }
+          }
+        }
+        """;
+
+    private static string ClaudeCodeSnippet(string url) =>
+        $"claude mcp add aldevtoolbox \\\n  --transport http \\\n  --url {url} \\\n  --header \"Authorization: Bearer ${{PAT}}\"";
+}

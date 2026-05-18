@@ -761,6 +761,67 @@ internal static class AccountEndpoints
             }
         });
 
+        // --- Personal access tokens (MCP / non-interactive callers) --------
+
+        // Create: validates input, mints a token, stashes the plaintext in a
+        // Data-Protected one-shot cookie, then redirects to the reveal screen.
+        // The plaintext is shown exactly once — subsequent visits to the list
+        // page show only the prefix.
+        app.MapPost("/auth/account/access-tokens/create", async (
+            HttpContext ctx,
+            PersonalAccessTokenService tokens,
+            IOrganizationContext org,
+            IDataProtectionProvider protection,
+            IAntiforgery antiforgery,
+            CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var userId = org.CurrentUserId;
+            var orgId = org.CurrentOrganizationId;
+            if (userId is null || orgId is null)
+            {
+                ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return;
+            }
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var name = form["Name"].ToString();
+            DateTime? expiresAt = null;
+            var ttlDaysRaw = form["TtlDays"].ToString();
+            if (int.TryParse(ttlDaysRaw, out var ttlDays) && ttlDays > 0)
+            {
+                expiresAt = DateTime.UtcNow.AddDays(ttlDays);
+            }
+
+            try
+            {
+                var issued = await tokens.IssueAsync(userId.Value, orgId.Value, name, expiresAt, ct);
+                SetOneShotPatCookie(ctx, protection, new OneShotPat(
+                    issued.Id, issued.Plaintext, name.Trim(), issued.CreatedAt, issued.ExpiresAt));
+                ctx.Response.Redirect("/account/access-tokens/created");
+            }
+            catch (PlanValidationException ex)
+            {
+                var first = ex.Errors.FirstOrDefault();
+                var msg = string.IsNullOrEmpty(first.Value) ? "Invalid token request." : first.Value;
+                ctx.Response.Redirect($"/account/access-tokens?err={Uri.EscapeDataString(msg)}");
+            }
+        }).RequireAuthorization();
+
+        // Revoke: stamps RevokedAt. No-op when the token doesn't belong to
+        // the caller's org (the query filter hides it). Redirects back to
+        // the list page either way.
+        app.MapPost("/auth/account/access-tokens/{id:int}/revoke", async (
+            int id,
+            HttpContext ctx,
+            PersonalAccessTokenService tokens,
+            IAntiforgery antiforgery,
+            CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            await tokens.RevokeAsync(id, ignoreOrgScope: false, ct);
+            ctx.Response.Redirect("/account/access-tokens?ok=revoked");
+        }).RequireAuthorization();
+
         // --- Admin-initiated email change: user-side confirmation -----------
 
         app.MapGet("/auth/account/email-change/confirm", async (

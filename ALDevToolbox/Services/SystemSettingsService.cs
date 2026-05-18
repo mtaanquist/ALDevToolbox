@@ -27,6 +27,7 @@ public sealed record SystemSettingsView(
     int PerTenantBackupRetentionCount,
     int? DefaultStorageQuotaMb,
     decimal IndexSizeMultiplier,
+    bool McpEnabled,
     DateTime UpdatedAt);
 
 /// <summary>
@@ -51,7 +52,8 @@ public sealed record SystemSettingsInput(
     int BackupRetentionCount,
     int PerTenantBackupRetentionCount,
     int? DefaultStorageQuotaMb,
-    decimal IndexSizeMultiplier);
+    decimal IndexSizeMultiplier,
+    bool McpEnabled);
 
 /// <summary>
 /// SiteAdmin-facing view of the off-site backup settings. Carries flags
@@ -158,12 +160,14 @@ public sealed class SystemSettingsService
     private readonly IDataProtector _offsiteSecretProtector;
     private readonly ILogger<SystemSettingsService> _logger;
     private readonly TimeProvider _clock;
+    private readonly ALDevToolbox.Services.Mcp.McpAvailabilityState? _mcpAvailability;
 
     public SystemSettingsService(
         AppDbContext db,
         IDataProtectionProvider protectionProvider,
         ILogger<SystemSettingsService> logger,
-        TimeProvider clock)
+        TimeProvider clock,
+        ALDevToolbox.Services.Mcp.McpAvailabilityState? mcpAvailability = null)
     {
         _db = db;
         _protector = protectionProvider.CreateProtector(SmtpPasswordProtectionPurpose);
@@ -171,6 +175,9 @@ public sealed class SystemSettingsService
         _offsiteSecretProtector = protectionProvider.CreateProtector(OffsiteSecretKeyProtectionPurpose);
         _logger = logger;
         _clock = clock;
+        // Optional so existing tests that build the service by hand without
+        // the MCP toggle keep compiling. In production DI it's always set.
+        _mcpAvailability = mcpAvailability;
     }
 
     /// <summary>Loads the singleton row, populating the audit-friendly view.</summary>
@@ -192,6 +199,7 @@ public sealed class SystemSettingsService
             PerTenantBackupRetentionCount: row.PerTenantBackupRetentionCount,
             DefaultStorageQuotaMb: row.DefaultStorageQuotaMb,
             IndexSizeMultiplier: row.IndexSizeMultiplier,
+            McpEnabled: row.McpEnabled,
             UpdatedAt: row.UpdatedAt);
     }
 
@@ -251,6 +259,7 @@ public sealed class SystemSettingsService
         row.PerTenantBackupRetentionCount = input.PerTenantBackupRetentionCount;
         row.DefaultStorageQuotaMb = input.DefaultStorageQuotaMb;
         row.IndexSizeMultiplier = input.IndexSizeMultiplier;
+        row.McpEnabled = input.McpEnabled;
         row.UpdatedAt = _clock.GetUtcNow().UtcDateTime;
 
         if (input.ClearSmtpPassword)
@@ -263,11 +272,17 @@ public sealed class SystemSettingsService
         }
 
         await _db.SaveChangesAsync(ct);
+        // Push the (possibly new) MCP toggle into the singleton so the
+        // NavMenu link and the /mcp endpoint pick it up on the next render
+        // without waiting for a process restart and without a per-render
+        // DB hit. Synchronous, no awaiting needed.
+        _mcpAvailability?.Set(row.McpEnabled);
         _logger.LogInformation(
-            "System settings updated (smtp_host={SmtpHost}, banner={HasBanner}, auto_approve={AutoApprove}).",
+            "System settings updated (smtp_host={SmtpHost}, banner={HasBanner}, auto_approve={AutoApprove}, mcp={Mcp}).",
             row.SmtpHost ?? "<unset>",
             !string.IsNullOrEmpty(row.BannerText),
-            row.DefaultSignupAutoApprove);
+            row.DefaultSignupAutoApprove,
+            row.McpEnabled);
     }
 
     /// <summary>
@@ -437,6 +452,20 @@ public sealed class SystemSettingsService
         var row = await _db.SystemSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == 1, ct);
         return row?.DefaultSignupAutoApprove ?? false;
+    }
+
+    /// <summary>
+    /// True when the SiteAdmin has enabled the MCP server on this
+    /// deployment. The MCP endpoint and the Tools menu's "MCP" link both
+    /// hide themselves when this returns <c>false</c>, regardless of the
+    /// deployment-level <c>Mcp:Enabled</c> in appsettings.
+    /// </summary>
+    public async Task<bool> IsMcpEnabledAsync(CancellationToken ct = default)
+    {
+        return await _db.SystemSettings.AsNoTracking()
+            .Where(s => s.Id == 1)
+            .Select(s => s.McpEnabled)
+            .FirstOrDefaultAsync(ct);
     }
 
     private async Task<SystemSettings> LoadAsync(CancellationToken ct)

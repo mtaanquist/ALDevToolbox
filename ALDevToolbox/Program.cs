@@ -2,6 +2,7 @@ using ALDevToolbox.Components;
 using ALDevToolbox.Data;
 using ALDevToolbox.Endpoints;
 using ALDevToolbox.Services;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -63,8 +64,22 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
             ctx.Response.Redirect(ctx.RedirectUri);
             return Task.CompletedTask;
         }
+    })
+    // Bearer-token scheme for Personal Access Tokens. Sits alongside the
+    // cookie scheme; only routes that opt in (currently /mcp) declare the
+    // "PAT" authorisation policy. The handler mounts the same claim set as
+    // the cookie path so IOrganizationContext resolves identically.
+    .AddScheme<AuthenticationSchemeOptions, ALDevToolbox.Services.Account.PatAuthenticationHandler>(
+        ALDevToolbox.Services.Account.PatAuthenticationHandler.AuthenticationScheme,
+        _ => { });
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(ALDevToolbox.Services.Account.PatAuthenticationHandler.AuthenticationScheme, policy =>
+    {
+        policy.AuthenticationSchemes = new[] { ALDevToolbox.Services.Account.PatAuthenticationHandler.AuthenticationScheme };
+        policy.RequireAuthenticatedUser();
     });
-builder.Services.AddAuthorization();
+});
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton(TimeProvider.System);
@@ -125,6 +140,28 @@ builder.Services.AddScoped<ALDevToolbox.Services.Account.RecoveryCodeService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.TotpService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.EmailMfaService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.PasskeyService>();
+builder.Services.AddScoped<ALDevToolbox.Services.Account.PersonalAccessTokenService>();
+
+// MCP server (Model Context Protocol). Mounted at /mcp by McpEndpoints; the
+// PAT auth handler above turns Bearer tokens into the same claim set the
+// cookie handler does, so the tool classes can rely on IOrganizationContext
+// resolving exactly like a browser sign-in. Tool classes live under
+// Services/Mcp/Tools/ and are picked up by WithToolsFromAssembly().
+builder.Services.Configure<ALDevToolbox.Services.Mcp.McpOptions>(builder.Configuration.GetSection("Mcp"));
+// In-memory MCP toggle cache. Singleton so NavMenu's per-render lookup
+// doesn't hit the DB and race with status-code-pages scope teardown. Primed
+// at startup and updated by SystemSettingsService.SaveAsync — see
+// Services/Mcp/IMcpAvailability.cs.
+builder.Services.AddSingleton<ALDevToolbox.Services.Mcp.McpAvailabilityState>();
+builder.Services.AddSingleton<ALDevToolbox.Services.Mcp.IMcpAvailability>(
+    sp => sp.GetRequiredService<ALDevToolbox.Services.Mcp.McpAvailabilityState>());
+builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.WorkspaceTools>();
+builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.SnippetTools>();
+builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.ObjectExplorerTools>();
+builder.Services
+    .AddMcpServer()
+    .WithHttpTransport()
+    .WithToolsFromAssembly();
 // WebAuthn (passkeys). RP id / origins live in configuration; if RpId isn't
 // set the passkey routes refuse with a clear error and the /account UI hides
 // the section. See .design/auth-and-audit.md for the deployment requirement.
@@ -211,6 +248,12 @@ if (!app.Environment.IsDevelopment())
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 
+// MCP runtime kill-switch: short-circuits /mcp requests to 404 when the
+// SiteAdmin has the toggle off. Runs ahead of authentication/authorization
+// and the antiforgery middleware so off-state isn't masked by an earlier
+// 400/401. See Endpoints/McpEndpoints.cs.
+app.UseMcpKillSwitch();
+
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
@@ -276,6 +319,7 @@ app.MapAccountEndpoints();
 app.MapAdminUserEndpoints();
 app.MapObjectExplorerEndpoints();
 app.MapSiteAdminEndpoints();
+app.MapMcpEndpoints();
 
 // Run migrations + bootstrap, then flip /readyz to green.
 await StartupTasks.RunAsync(app);

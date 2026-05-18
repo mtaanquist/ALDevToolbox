@@ -1,0 +1,104 @@
+@page "/site-admin/access-tokens"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Services
+@using ALDevToolbox.Services.Account
+@using ALDevToolbox.Components.Shared
+@inject PersonalAccessTokenService Tokens
+
+<PageTitle>Site Admin · Access tokens · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Site Admin · Personal access tokens</h1>
+            <p class="muted">
+                Every Personal Access Token across every organisation. Use the
+                revoke action when a token has leaked or its owner has left.
+            </p>
+        </div>
+        <a class="btn btn--sm" href="/site-admin/users">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to users</span>
+        </a>
+    </header>
+
+    @if (Ok == "revoked")
+    {
+        <p class="form-info" role="status">Token revoked.</p>
+    }
+
+    @if (_rows is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_rows.Count == 0)
+    {
+        <p class="muted">No personal access tokens have been issued.</p>
+    }
+    else
+    {
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Prefix</th>
+                    <th>User</th>
+                    <th>Organisation</th>
+                    <th>Created</th>
+                    <th>Last used</th>
+                    <th>Expires</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var t in _rows)
+            {
+                <tr>
+                    <td>@t.Name</td>
+                    <td class="muted"><code>@t.TokenPrefix…</code></td>
+                    <td>@(t.User?.Email ?? "—")</td>
+                    <td>@(t.Organization?.Name ?? "—") <span class="muted">(@(t.Organization?.Slug ?? "—"))</span></td>
+                    <td class="muted">@t.CreatedAt.ToString("yyyy-MM-dd")</td>
+                    <td class="muted">@(t.LastUsedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
+                    <td class="muted">@(t.ExpiresAt?.ToString("yyyy-MM-dd") ?? "Never")</td>
+                    <td>
+                        @{
+                            var status = StatusFor(t);
+                        }
+                        <span class="status-pill @(status.Css)">@status.Label</span>
+                    </td>
+                    <td class="row-actions">
+                        @if (t.RevokedAt is null)
+                        {
+                            <form method="post" action="/site-admin/access-tokens/@t.Id/revoke" style="display:inline">
+                                <AntiforgeryToken />
+                                <button type="submit" class="btn btn--sm btn--danger">Revoke</button>
+                            </form>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+
+    private IReadOnlyList<PersonalAccessToken>? _rows;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _rows = await Tokens.ListAllAsync();
+    }
+
+    private static (string Label, string Css) StatusFor(PersonalAccessToken t)
+    {
+        if (t.RevokedAt is not null) return ("Revoked", "status-pill--muted");
+        if (t.ExpiresAt is { } exp && exp <= DateTime.UtcNow) return ("Expired", "status-pill--muted");
+        return ("Active", "");
+    }
+}

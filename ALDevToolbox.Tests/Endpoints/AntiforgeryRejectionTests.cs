@@ -11,6 +11,7 @@ namespace ALDevToolbox.Tests.Endpoints;
 /// these tests pin that we wire the validation up — a POST with no token
 /// must reject before the handler runs.
 /// </summary>
+[Collection(EndpointFactoryCollection.Name)]
 public sealed class AntiforgeryRejectionTests : IDisposable
 {
     private readonly TestDb _db = new();

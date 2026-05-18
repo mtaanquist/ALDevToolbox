@@ -116,6 +116,8 @@ internal static class EndpointHelpers
     public const string OneShotInviteProtectionPurpose = "ALDevToolbox.OneShotInviteUrl";
     public const string OneShotRecoveryCodesCookieName = "alwb_recovery_codes";
     public const string OneShotRecoveryCodesProtectionPurpose = "ALDevToolbox.OneShotRecoveryCodes";
+    public const string OneShotPatCookieName = "alwb_pat_created";
+    public const string OneShotPatProtectionPurpose = "ALDevToolbox.OneShotPat";
     public static readonly TimeSpan MfaCookieLifetime = TimeSpan.FromMinutes(10);
     public static readonly TimeSpan OneShotCookieLifetime = TimeSpan.FromSeconds(60);
 
@@ -223,6 +225,45 @@ internal static class EndpointHelpers
         {
             var protector = protection.CreateProtector(OneShotRecoveryCodesProtectionPurpose);
             return protector.Unprotect(raw).Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Stash for the one-shot Personal Access Token reveal screen. The
+    /// plaintext appears only here — once the cookie is consumed, the user
+    /// can't see it again. Lifetime matches the other one-shot cookies.
+    /// </summary>
+    public sealed record OneShotPat(int TokenId, string Plaintext, string Name, DateTime CreatedAt, DateTime? ExpiresAt);
+
+    public static void SetOneShotPatCookie(HttpContext ctx, IDataProtectionProvider protection, OneShotPat value)
+    {
+        var protector = protection.CreateProtector(OneShotPatProtectionPurpose);
+        var payload = protector.Protect(JsonSerializer.Serialize(value));
+        ctx.Response.Cookies.Append(OneShotPatCookieName, payload, new CookieOptions
+        {
+            HttpOnly = true,
+            SameSite = SameSiteMode.Lax,
+            Secure = ctx.Request.IsHttps,
+            Path = "/",
+            MaxAge = OneShotCookieLifetime,
+        });
+    }
+
+    public static OneShotPat? ReadAndClearOneShotPatCookie(HttpContext ctx, IDataProtectionProvider protection)
+    {
+        if (!ctx.Request.Cookies.TryGetValue(OneShotPatCookieName, out var raw) || string.IsNullOrEmpty(raw)) return null;
+        if (!ctx.Response.HasStarted)
+        {
+            ctx.Response.Cookies.Delete(OneShotPatCookieName);
+        }
+        try
+        {
+            var protector = protection.CreateProtector(OneShotPatProtectionPurpose);
+            return JsonSerializer.Deserialize<OneShotPat>(protector.Unprotect(raw));
         }
         catch
         {

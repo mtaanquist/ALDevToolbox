@@ -123,6 +123,7 @@ public class AppDbContext : DbContext
     public DbSet<UserTotpSecret> UserTotpSecrets => Set<UserTotpSecret>();
     public DbSet<UserRecoveryCode> UserRecoveryCodes => Set<UserRecoveryCode>();
     public DbSet<UserPasskey> UserPasskeys => Set<UserPasskey>();
+    public DbSet<PersonalAccessToken> PersonalAccessTokens => Set<PersonalAccessToken>();
 
     public DbSet<RuntimeTemplate> RuntimeTemplates => Set<RuntimeTemplate>();
     public DbSet<WorkspaceExtension> WorkspaceExtensions => Set<WorkspaceExtension>();
@@ -201,6 +202,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<SnippetFile>(modelBuilder);
         ScopeToOrganization<SnippetSuggestion>(modelBuilder);
         ScopeToOrganization<SnippetSuggestionFile>(modelBuilder);
+        ScopeToOrganization<PersonalAccessToken>(modelBuilder);
 
         // PasswordResetToken scopes via its required User principal: tokens
         // don't carry organization_id themselves, so the filter walks the nav.
