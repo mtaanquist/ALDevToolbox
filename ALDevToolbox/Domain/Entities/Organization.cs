@@ -44,5 +44,13 @@ public class Organization
     /// </summary>
     public int? StorageQuotaMb { get; set; }
 
+    /// <summary>
+    /// Per-organisation opt-out for the MCP server. Defaults to true so an org
+    /// in a deployment with MCP enabled site-wide gets MCP automatically; admins
+    /// can flip it off from <c>/admin/configuration/mcp</c>. Has no effect when
+    /// the site-wide <see cref="SystemSettings.McpEnabled"/> is false.
+    /// </summary>
+    public bool McpEnabled { get; set; } = true;
+
     public DateTime CreatedAt { get; set; }
 }

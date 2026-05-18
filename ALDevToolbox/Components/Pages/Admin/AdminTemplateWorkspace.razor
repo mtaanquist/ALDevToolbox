@@ -1,11 +1,11 @@
-@page "/admin/configuration/workspace"
+@page "/admin/templates/workspace"
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @implements IAsyncDisposable
 @inject OrganizationConfigService Config
 @inject NavigationManager Nav
 @inject IJSRuntime JS
-@inject ILogger<AdminConfigurationWorkspace> Log
+@inject ILogger<AdminTemplateWorkspace> Log
 @using ALDevToolbox.Domain.ValueObjects
 @using Microsoft.JSInterop
 
@@ -155,7 +155,7 @@
             // Force-reload so the redirect picks up the new value via
             // OrganizationConfigService's cache invalidation. Matches the
             // pattern used by the other configuration sub-pages.
-            Nav.NavigateTo("/admin/configuration/workspace?ok=saved", forceLoad: true);
+            Nav.NavigateTo("/admin/templates/workspace?ok=saved", forceLoad: true);
         }
         catch (PlanValidationException ex)
         {

@@ -1,0 +1,12 @@
+@page "/admin/configuration/defaults"
+@attribute [Authorize(Roles = "Admin")]
+@inject NavigationManager Nav
+
+@*
+    The Defaults page moved to /admin/templates/defaults along with the rest of
+    the template-shaping pages. This stub keeps the legacy bookmark working.
+*@
+
+@code {
+    protected override void OnInitialized() => Nav.NavigateTo("/admin/templates/defaults", replace: true);
+}

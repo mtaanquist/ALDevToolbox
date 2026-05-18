@@ -1,0 +1,12 @@
+@page "/admin/configuration/workspace"
+@attribute [Authorize(Roles = "Admin")]
+@inject NavigationManager Nav
+
+@*
+    The Workspace settings page moved to /admin/templates/workspace. This stub
+    keeps the legacy bookmark working.
+*@
+
+@code {
+    protected override void OnInitialized() => Nav.NavigateTo("/admin/templates/workspace", replace: true);
+}

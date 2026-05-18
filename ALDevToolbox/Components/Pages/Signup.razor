@@ -5,10 +5,12 @@
 <div class="login-page">
     <h1>Sign up</h1>
     <p class="caption muted">
-        Pick an organisation to join (its admin will approve you), or leave the
-        slug blank to provision a brand-new one. Brand-new organisations are
-        auto-approved — you'll be signed in as the new org's admin and the
-        seed content gets installed in the same step.
+        If your email matches an organisation that's claimed your domain,
+        we'll route you there automatically. Otherwise type the slug of the
+        organisation you want to join (its admin will approve you), or leave
+        slug blank and supply an organisation name to provision a brand-new
+        one. Brand-new organisations are auto-approved — you'll be signed in
+        as the new org's admin.
     </p>
 
     @if (Error == "email-taken")
@@ -44,9 +46,15 @@
         </section>
 
         <section class="form-section">
+            <label class="section-label" for="su-org-name">Organisation name</label>
+            <input id="su-org-name" type="text" name="OrganizationName" minlength="2" maxlength="80" placeholder="e.g. Acme" />
+            <small class="muted">Required when you're creating a brand-new organisation. Ignored if you supply a slug that matches an existing one, or if your email matches an organisation's claimed domain.</small>
+        </section>
+
+        <section class="form-section">
             <label class="section-label" for="su-org">Organisation slug (optional)</label>
             <input id="su-org" type="text" name="OrganizationSlug" pattern="[a-z0-9-]*" maxlength="64" placeholder="e.g. acme" />
-            <small class="muted">Leave blank to create a new organisation.</small>
+            <small class="muted">Leave blank to create a new organisation from the name above.</small>
         </section>
 
         <button type="submit" class="btn">

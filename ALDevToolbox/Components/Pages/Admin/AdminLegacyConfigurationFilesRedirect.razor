@@ -1,0 +1,12 @@
+@page "/admin/configuration/files"
+@attribute [Authorize(Roles = "Admin")]
+@inject NavigationManager Nav
+
+@*
+    The Always-included files page moved to /admin/templates/files. This stub
+    keeps the legacy bookmark working.
+*@
+
+@code {
+    protected override void OnInitialized() => Nav.NavigateTo("/admin/templates/files", replace: true);
+}

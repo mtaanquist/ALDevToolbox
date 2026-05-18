@@ -110,7 +110,10 @@ public sealed class NavMenuTests : IDisposable
         cut.FindAll("a[href='/admin']").Should().NotBeEmpty();
         cut.FindAll("a[href='/admin/users']").Should().NotBeEmpty(
             "per-org Users link is only hidden in the system org");
-        cut.FindAll("a[href='/admin/configuration/defaults']").Should().NotBeEmpty();
+        cut.FindAll("a[href='/admin/configuration/identity']").Should().NotBeEmpty(
+            "the Configuration group hosts the org-identity page; template-shaping pages moved under /admin/templates/*");
+        cut.FindAll("a[href='/admin/templates/defaults']").Should().NotBeEmpty(
+            "Defaults now lives under the Templates group rather than under Configuration");
         cut.FindAll("a[href='/admin/audit']").Should().NotBeEmpty(
             "non-SiteAdmin admins get the per-org audit log, not the cross-org one");
         cut.FindAll("a[href='/admin/export']").Should().NotBeEmpty();

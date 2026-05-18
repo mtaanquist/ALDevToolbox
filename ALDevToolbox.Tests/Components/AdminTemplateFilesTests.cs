@@ -20,12 +20,12 @@ namespace ALDevToolbox.Tests.Components;
 /// the client without round-tripping to the server, so service-layer
 /// tests can't see them.
 /// </summary>
-public sealed class AdminConfigurationFilesTests : IDisposable
+public sealed class AdminTemplateFilesTests : IDisposable
 {
     private readonly TestDb _db = new();
     private readonly TestContext _ctx = new();
 
-    public AdminConfigurationFilesTests()
+    public AdminTemplateFilesTests()
     {
         var auth = _ctx.AddTestAuthorization();
         auth.SetAuthorized("admin@example.com");
@@ -65,7 +65,7 @@ public sealed class AdminConfigurationFilesTests : IDisposable
     [Fact]
     public void Empty_org_renders_a_useful_empty_state_naming_typical_files()
     {
-        var cut = _ctx.RenderComponent<AdminConfigurationFiles>();
+        var cut = _ctx.RenderComponent<AdminTemplateFiles>();
 
         cut.WaitForAssertion(() =>
         {
@@ -100,7 +100,7 @@ public sealed class AdminConfigurationFilesTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminConfigurationFiles>();
+        var cut = _ctx.RenderComponent<AdminTemplateFiles>();
 
         cut.WaitForAssertion(() =>
         {
@@ -115,7 +115,7 @@ public sealed class AdminConfigurationFilesTests : IDisposable
     [Fact]
     public void Apply_with_blank_path_renders_an_inline_error_and_keeps_the_list_unchanged()
     {
-        var cut = _ctx.RenderComponent<AdminConfigurationFiles>();
+        var cut = _ctx.RenderComponent<AdminTemplateFiles>();
 
         cut.WaitForAssertion(() => cut.Find("h3"));
 
@@ -139,7 +139,7 @@ public sealed class AdminConfigurationFilesTests : IDisposable
     [Fact]
     public void Apply_with_traversal_segments_in_path_is_rejected_inline()
     {
-        var cut = _ctx.RenderComponent<AdminConfigurationFiles>();
+        var cut = _ctx.RenderComponent<AdminTemplateFiles>();
         cut.WaitForAssertion(() => cut.Find("#cfg-file-path"));
 
         // Path input binds on `oninput`, not `change` — Input() triggers the

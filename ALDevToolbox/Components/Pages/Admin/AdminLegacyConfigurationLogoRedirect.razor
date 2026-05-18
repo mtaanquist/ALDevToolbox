@@ -1,0 +1,12 @@
+@page "/admin/configuration/logo"
+@attribute [Authorize(Roles = "Admin")]
+@inject NavigationManager Nav
+
+@*
+    The Logo page moved to /admin/templates/logo. This stub keeps the legacy
+    bookmark working.
+*@
+
+@code {
+    protected override void OnInitialized() => Nav.NavigateTo("/admin/templates/logo", replace: true);
+}
