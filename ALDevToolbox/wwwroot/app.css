@@ -2782,7 +2782,8 @@ ul.form-field-error {
    dark UI. The .admin-search-input on the filter row already brings
    its own block. */
 .object-explorer__filters .field__input,
-.object-explorer__compare .field__input {
+.object-explorer__compare .field__input,
+.source-viewer__compare-picker .field__input {
     width: 100%;
     box-sizing: border-box;
     padding: 8px 10px;
@@ -2795,10 +2796,40 @@ ul.form-field-error {
 }
 
 .object-explorer__filters .field__input:focus,
-.object-explorer__compare .field__input:focus {
+.object-explorer__compare .field__input:focus,
+.source-viewer__compare-picker .field__input:focus {
     outline: 2px solid var(--color-accent);
     outline-offset: -1px;
     border-color: var(--color-accent);
+}
+
+/* Custom chevron on the <select> variants so they read as intentional
+   dropdowns rather than carrying the browser-default arrow (which
+   ignores our dark/light tokens and looks bolted on). Kept slim: the
+   padding-right just makes room for the chevron, the rest of the
+   sizing matches the inputs alongside. */
+.object-explorer__filters select.field__input,
+.object-explorer__compare select.field__input,
+.source-viewer__compare-picker select.field__input {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 28px;
+    background-image:
+        linear-gradient(45deg, transparent 50%, var(--color-text-muted) 50%),
+        linear-gradient(135deg, var(--color-text-muted) 50%, transparent 50%);
+    background-position:
+        calc(100% - 14px) 50%,
+        calc(100% - 9px) 50%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    cursor: pointer;
+}
+.object-explorer__filters select.field__input:focus,
+.object-explorer__compare select.field__input:focus,
+.source-viewer__compare-picker select.field__input:focus {
+    background-image:
+        linear-gradient(45deg, transparent 50%, var(--color-accent) 50%),
+        linear-gradient(135deg, var(--color-accent) 50%, transparent 50%);
 }
 
 .object-explorer__filters .admin-search-input {
@@ -4563,10 +4594,19 @@ ul.form-field-error {
    Colours pulled from the existing theme palette to stay dark-mode safe.
 */
 
+/* Page shell: mirror the normal source-viewer's pattern — flex column
+   that fills .content's grid-row height, so the panes can take the
+   remaining space below the header without a hard-coded calc(). */
 .oe-compare-file {
     padding: 16px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
 }
 .oe-compare-file__header {
+    flex: 0 0 auto;
     align-items: flex-start;
     gap: 16px;
 }
@@ -4574,15 +4614,15 @@ ul.form-field-error {
     margin: 0 0 4px;
 }
 .oe-compare-file__panes {
+    /* Fills the rest of .oe-compare-file. grid-template-rows: 1fr is what
+       lets the inner .source-viewer { height: 100% } resolve correctly —
+       without it, the row would be auto-sized and the cm-editor would
+       collapse to zero height. */
+    flex: 1 1 0;
+    min-height: 0;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    /* The panes contain .source-viewer roots whose own rule is height: 100%
-       (so their inner cm-editor can fill the column). A grid row's height
-       is auto by default, which collapses height:100% descendants to zero
-       — exactly what we saw when this page rendered with only the pane
-       borders visible. Pin the row to the viewport so cm-editor has a real
-       height to fill, with a generous floor for short screens. */
-    grid-template-rows: minmax(420px, calc(100vh - var(--top-bar-height, 52px) - 180px));
+    grid-template-rows: 1fr;
     gap: 12px;
     margin-top: 12px;
 }
@@ -4591,12 +4631,17 @@ ul.form-field-error {
     border-radius: 6px;
     overflow: hidden;
     background: var(--color-surface);
+    /* min-height: 0 keeps the grid item from forcing the cm-scroller's
+       intrinsic content height up the cascade — without it, long files
+       blow the viewport on browsers that compute grid items' min size
+       as min-content. */
+    min-height: 0;
 }
 @media (max-width: 1100px) {
     .oe-compare-file__panes {
         grid-template-columns: 1fr;
-        /* Stacked layout: two rows of viewer-height each. */
-        grid-template-rows: repeat(2, minmax(420px, calc(50vh - 80px)));
+        /* Stack vertically and give each pane half the available space. */
+        grid-template-rows: 1fr 1fr;
     }
 }
 
