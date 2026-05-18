@@ -48,10 +48,29 @@
                 }
             </p>
         </div>
-        <a class="btn btn--sm" href="/admin/templates">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to list</span>
-        </a>
+        <div class="admin-page__header-actions">
+            <a class="btn btn--sm" href="/admin/templates">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to list</span>
+            </a>
+            @if (_form is not null && _mode == EditorMode.Form)
+            {
+                @* `form="tpl-form"` submits the structured form below from
+                   outside its DOM, so the primary action stays visible at the
+                   top of long pages without scrolling. *@
+                <button type="submit" class="btn btn--sm btn--primary" form="tpl-form" disabled="@_saving">
+                    <Icon Name="save" Width="14" Height="14" />
+                    <span>@(_saving ? "Saving…" : (IsEdit ? "Save changes" : "Create template"))</span>
+                </button>
+            }
+            else if (_form is not null && _mode == EditorMode.Toml)
+            {
+                <button type="submit" class="btn btn--sm btn--primary" form="tpl-toml-form" disabled="@_saving">
+                    <Icon Name="save" Width="14" Height="14" />
+                    <span>@(_saving ? "Saving…" : (IsEdit ? "Save TOML" : "Create from TOML"))</span>
+                </button>
+            }
+        </div>
     </header>
 
     @if (IsEdit && _loadFailed)
@@ -113,7 +132,7 @@
             <div class="admin-template-edit__editor">
                 @if (_mode == EditorMode.Toml)
                 {
-        <form class="form-grid admin-template-edit__form admin-template-edit__toml-form"
+        <form id="tpl-toml-form" class="form-grid admin-template-edit__form admin-template-edit__toml-form"
               @onsubmit="SaveTomlAsync" @onsubmit:preventDefault>
             <section class="form-section">
                 <span class="section-label">template.toml</span>
@@ -152,7 +171,9 @@
                 }
                 else
                 {
-        <form class="form-grid admin-template-edit__form" @onsubmit="SaveAsync" @onsubmit:preventDefault>
+        <form id="tpl-form" class="form-grid admin-template-edit__form" @onsubmit="SaveAsync" @onsubmit:preventDefault>
+            <h2 class="admin-template-edit__group-heading">Identity</h2>
+
             <section class="form-section">
                 <label class="section-label" for="tpl-key">Key</label>
                 <input id="tpl-key" type="text" @bind="_form.Key" @bind:event="oninput"
@@ -178,6 +199,8 @@
                           @bind="_form.Description" @bind:event="oninput"></textarea>
                 <small class="muted">Caption shown under the template dropdown on the New Workspace page.</small>
             </section>
+
+            <h2 class="admin-template-edit__group-heading">Versioning &amp; ID ranges</h2>
 
             <section class="form-section">
                 <label class="section-label" for="tpl-app-version">Application version</label>
@@ -244,9 +267,13 @@
                /admin/configuration/defaults (url, logo, supported countries,
                publisher) and the rest stays on the entity for the TOML editor
                to round-trip. Only the optional workspace-settings overlay
-               survives here since it's per-template by design. *@
+               survives here since it's per-template by design.
+               The Deprecated flag also lives on the templates list as a bulk
+               action / per-row toggle; it's not part of authoring. *@
+            <h2 class="admin-template-edit__group-heading">Workspace settings overlay</h2>
+
             <section class="form-section">
-                <label class="section-label" for="tpl-workspace">Workspace settings overlay (optional)</label>
+                <label class="section-label" for="tpl-workspace">Per-template addition (optional)</label>
                 <MustacheVarsHint />
                 <textarea id="tpl-workspace" class="json-editor" rows="6" spellcheck="false"
                           placeholder='{ "settings": { "al.newSetting": "..." } }'
@@ -262,12 +289,7 @@
                 <FieldError Field="CodeWorkspaceJson" Errors="_fieldErrors" />
             </section>
 
-            <section class="form-section">
-                <label class="check-row">
-                    <input type="checkbox" @bind="_form.Deprecated" />
-                    <span>Deprecated — hide from the user-facing dropdown but keep available for admin regeneration.</span>
-                </label>
-            </section>
+            <h2 class="admin-template-edit__group-heading">Modules</h2>
 
             <section class="form-section">
                 <label class="section-label">Default modules</label>
@@ -309,8 +331,10 @@
                 }
             </section>
 
+            <h2 class="admin-template-edit__group-heading">Always-included files</h2>
+
             <section class="form-section">
-                <label class="section-label">Always-included files</label>
+                <label class="section-label">Files emitted at the workspace root</label>
                 <small class="muted">
                     Org-wide text files emitted at the workspace root when this
                     template is picked. New entries default to off — tick the
@@ -344,9 +368,13 @@
                 }
             </section>
 
+            <h2 class="admin-template-edit__group-heading">Extensions</h2>
+
             <TemplateExtensionsEditor Form="_form" Errors="_fieldErrors" />
 
             <div class="admin-template-edit__actions">
+                @* Mirror of the header save button so admins who scroll all
+                   the way down don't have to scroll back up to commit. *@
                 <button type="submit" class="btn btn--primary" disabled="@_saving">
                     <Icon Name="save" Width="16" Height="16" />
                     <span>@(_saving ? "Saving…" : (IsEdit ? "Save changes" : "Create template"))</span>
@@ -381,25 +409,18 @@
                             Substituted into file contents at generation time.
                             Unknown placeholders are left as-is and logged.
                         </p>
+                        @* Reads from MustacheVariableCatalog so this hint
+                           never drifts from the generator's actual switch
+                           (the same source of truth MustacheVarsHint reads).
+                           Lists All — including per-file vars like {{name}}
+                           and {{namespace}} — because admins authoring AL
+                           file content here legitimately use them. *@
                         <dl class="mustache-vars">
-                            <dt><code>@("{{name}}")</code></dt>
-                            <dd>Full extension name (e.g. "Acme Customer Core").</dd>
-                            <dt><code>@("{{workspaceName}}")</code></dt>
-                            <dd>Workspace name as entered on New Workspace.</dd>
-                            <dt><code>@("{{shortName}}")</code></dt>
-                            <dd>Workspace name with spaces removed.</dd>
-                            <dt><code>@("{{moduleName}}")</code></dt>
-                            <dd>Module name; equals the workspace name in the Core extension.</dd>
-                            <dt><code>@("{{publisher}}")</code></dt>
-                            <dd>From <code>[defaults] publisher</code>.</dd>
-                            <dt><code>@("{{extension_prefix}}")</code></dt>
-                            <dd>From the New Workspace form; defaults to <code>defaults.extension_prefix</code>.</dd>
-                            <dt><code>@("{{affix}}")</code></dt>
-                            <dd>From <code>defaults.affix</code>; expands to empty when <code>affix_type = "None"</code>.</dd>
-                            <dt><code>@("{{namespace}}")</code></dt>
-                            <dd>Current folder path with <code>/</code> replaced by <code>.</code>.</dd>
-                            <dt><code>@("{{guid}}")</code></dt>
-                            <dd>Freshly generated GUID per occurrence.</dd>
+                            @foreach (var v in MustacheVariableCatalog.All)
+                            {
+                                <dt><code>@($"{{{{{v.Name}}}}}")</code></dt>
+                                <dd>@v.Caption</dd>
+                            }
                         </dl>
                     </div>
                 </details>
@@ -434,7 +455,7 @@
 
 <ConfirmDialog @ref="_leaveConfirm"
                Title="Leave with unsaved changes?"
-               Message="Your edits to template.toml haven't been saved. Leaving now will discard them."
+               Message="You have unsaved edits on this template. Leaving now will discard them."
                ConfirmLabel="Discard changes"
                CancelLabel="Stay on page"
                ConfirmIcon="log-out" />
@@ -481,6 +502,13 @@
     private ConfirmDialog? _deleteConfirm;
     private ConfirmDialog? _leaveConfirm;
     private IDisposable? _locationChangingRegistration;
+
+    /// <summary>
+    /// JSON snapshot of <see cref="_form"/> captured after each successful
+    /// load / save, used by the structured-form dirty check. <c>null</c>
+    /// means "no baseline yet — don't gate navigation".
+    /// </summary>
+    private string? _formBaselineJson;
     private string? _saveError;
     private string? _saveSuccess;
     private IReadOnlyDictionary<string, string> _fieldErrors = new Dictionary<string, string>();
@@ -519,19 +547,33 @@
 
     private async ValueTask OnLocationChangingAsync(LocationChangingContext context)
     {
-        if (_editorId == 0 || _editorModule is null || _leaveConfirm is null) return;
+        if (_leaveConfirm is null) return;
 
-        bool dirty;
-        try
+        var dirty = false;
+
+        // TOML pane: ask the CodeMirror module whether its contents differ
+        // from the pristine baseline captured on mount.
+        if (_editorId != 0 && _editorModule is not null)
         {
-            dirty = await _editorModule.InvokeAsync<bool>("isDirty", _editorId);
+            try
+            {
+                dirty = await _editorModule.InvokeAsync<bool>("isDirty", _editorId);
+            }
+            catch (Exception ex)
+            {
+                // Fail open — blocking nav on a transient JS hiccup would be
+                // worse than the rare lost edit.
+                Log.LogWarning(ex, "Failed to read dirty state from editor; allowing navigation.");
+                return;
+            }
         }
-        catch (Exception ex)
+
+        // Structured form: compare the live form-state's JSON serialisation
+        // to the baseline captured on load. Cheap (one round-trip + string
+        // compare) and stays correct as new form fields are added.
+        if (!dirty && _form is not null && _formBaselineJson is not null)
         {
-            // If we can't check, fail open — blocking nav on a transient JS
-            // hiccup would be worse than the rare lost edit.
-            Log.LogWarning(ex, "Failed to read dirty state from editor; allowing navigation.");
-            return;
+            dirty = !string.Equals(_formBaselineJson, SerializeFormForDirtyCheck(_form), StringComparison.Ordinal);
         }
 
         if (!dirty) return;
@@ -542,6 +584,14 @@
             context.PreventNavigation();
         }
     }
+
+    private static string SerializeFormForDirtyCheck(TemplateFormState form) =>
+        System.Text.Json.JsonSerializer.Serialize(form.ToAuthoring(), DirtyCheckJsonOptions);
+
+    private static readonly System.Text.Json.JsonSerializerOptions DirtyCheckJsonOptions = new()
+    {
+        WriteIndented = false,
+    };
 
     protected override async Task OnParametersSetAsync()
     {
@@ -597,6 +647,10 @@
                         : $"{source.Name} (copy)";
                     // Don't carry the deprecated flag onto a brand-new copy.
                     _form.Deprecated = false;
+                    // Treat the duplicated form as "dirty" from the start —
+                    // capture the source baseline so editing further still
+                    // triggers the confirm, but the copy itself is unsaved.
+                    _formBaselineJson = SerializeFormForDirtyCheck(_form);
                     _mode = EditorMode.Form;
                     _saveSuccess = $"Duplicated from \"{source.Key}\". Pick a new key, then click Create template.";
                     return;
@@ -605,6 +659,7 @@
             }
 
             _form = TemplateFormState.Blank();
+            _formBaselineJson = SerializeFormForDirtyCheck(_form);
             // New-template flow opens in TOML — pasting a template.toml is the
             // common path. Pre-render the blank scaffold once so the textarea
             // has something useful to start from.
@@ -628,6 +683,7 @@
         _existingId = entity?.Id;
         _isDeleted = entity?.DeletedAt is not null;
         _form = TemplateFormState.From(existing);
+        _formBaselineJson = SerializeFormForDirtyCheck(_form);
         _mode = EditorMode.Form;
     }
 
@@ -703,6 +759,9 @@
             else
             {
                 await Templates.CreateAsync(payload);
+                // Reset the baseline so post-save navigation away doesn't
+                // trip the leave-confirm dialog.
+                _formBaselineJson = _form is null ? null : SerializeFormForDirtyCheck(_form);
                 // Land back on the list so admins can immediately see the new
                 // row in context. Editing it further is one click away.
                 Nav.NavigateTo("/admin/templates");
@@ -733,6 +792,9 @@
         try
         {
             await Templates.SoftDeleteAsync(_existingId.Value);
+            // The form's contents are now moot — clear the baseline so the
+            // post-delete navigation away doesn't trip the leave-confirm.
+            _formBaselineJson = null;
             Nav.NavigateTo("/admin/templates");
         }
         catch (Exception ex)
@@ -836,6 +898,9 @@
         {
             var parsed = TemplateTomlMapper.FromToml(_toml, deprecated: _form.Deprecated);
             _form = TemplateFormState.From(parsed);
+            // Switching from TOML → form leaves the parsed payload as the
+            // structured baseline; any further form edits become dirty.
+            _formBaselineJson = SerializeFormForDirtyCheck(_form);
             _tomlIssues = new();
             _saveError = null;
             return true;
@@ -1106,6 +1171,7 @@
                 if (refreshed is not null)
                 {
                     _form = TemplateFormState.From(refreshed);
+                    _formBaselineJson = SerializeFormForDirtyCheck(_form);
                     _toml = TemplateTomlMapper.ToToml(refreshed);
                     _editorMountedToml = _toml;
                     if (_editorId != 0 && _editorModule is not null)
@@ -1123,6 +1189,9 @@
                 {
                     await _editorModule.InvokeVoidAsync("markPristine", _editorId);
                 }
+                // Reset the structured-form baseline so the post-save
+                // navigation doesn't trip the leave-confirm dialog.
+                _formBaselineJson = _form is null ? null : SerializeFormForDirtyCheck(_form);
                 Nav.NavigateTo("/admin/templates");
                 return;
             }

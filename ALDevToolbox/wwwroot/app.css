@@ -681,6 +681,29 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     border-color: var(--color-accent);
 }
 
+/* Pin <option> colours to the dark surface so the browser doesn't paint the
+   open dropdown list in its own platform default (typically a near-white
+   panel that's unreadable against our dark text). Chromium honours these
+   on Linux; Safari and Windows still defer to the OS theme, which is a
+   long-standing browser quirk we accept rather than re-implement the
+   <select> in JS. */
+.form-section select option,
+.form-grid > select option,
+.admin-form select option,
+.admin-filter-form select option {
+    background: var(--color-surface);
+    color: var(--color-text);
+}
+
+.form-section select optgroup,
+.form-grid > select optgroup,
+.admin-form select optgroup,
+.admin-filter-form select optgroup {
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    font-style: italic;
+}
+
 /* Browsers (Chrome / Safari) repaint autofilled fields with their own
    light-yellow background, which clashes badly with dark mode. Pin the
    colour and use the inset-shadow trick to mask the agent default. */
@@ -1915,6 +1938,28 @@ ul.form-field-error {
 
 .admin-template-edit__form { max-width: 880px; }
 
+/* Section heading inside the structured form. Gives long pages a scannable
+   outline so admins can find Identity / Versioning & ID ranges / Modules /
+   Always-included files / Workspace settings overlay / Extensions without
+   reading every label. Sits between sections; a thin separator above the
+   text echoes the panel rhythm of the surrounding cards. */
+.admin-template-edit__group-heading {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    margin: 24px 0 4px;
+    padding-top: 16px;
+    border-top: 1px solid var(--color-border);
+}
+
+.admin-template-edit__group-heading:first-of-type {
+    margin-top: 8px;
+    padding-top: 0;
+    border-top: 0;
+}
+
 .admin-template-edit__mode {
     display: inline-flex;
     gap: 0;
@@ -2007,9 +2052,18 @@ ul.form-field-error {
 
 .folder-editor__row-head {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 8px;
     padding: 8px;
+}
+
+/* Match the up/down/remove buttons to the height of the path input so the
+   row reads as one line rather than three slightly-different mini-controls.
+   The .folder-editor__path input is 6px+13px+6px+2px ≈ 33px tall — pin the
+   neighbouring buttons to the same min-height. */
+.folder-editor__row-head > .btn--sm,
+.folder-editor__order .btn--sm {
+    min-height: 30px;
 }
 
 .folder-editor__path {
