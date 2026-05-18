@@ -30,6 +30,25 @@ public sealed class OrganizationIdentityTests : IDisposable
     }
 
     [Fact]
+    public async Task Rename_invalidates_the_cached_name_so_the_top_bar_picks_it_up()
+    {
+        var ctx = _db.NewContext();
+        var svc = _db.NewOrganizationConfigService(ctx);
+
+        // Prime the cache with the seeded "Default" name.
+        var before = await svc.GetOrganizationNameAsync(TestDb.DefaultOrgId);
+        before.Should().Be("Default");
+
+        await svc.RenameOrganizationAsync("Renamed Co");
+
+        // Next read should see the new name — without re-querying the DB
+        // for "before" but after rename the cache must have been busted.
+        var after = await svc.GetOrganizationNameAsync(TestDb.DefaultOrgId);
+        after.Should().Be("Renamed Co",
+            "the top-bar lookup is cached per-org and rename must invalidate it");
+    }
+
+    [Fact]
     public async Task Rename_persists_trimmed_name_and_keeps_slug()
     {
         var ctx = _db.NewContext();
