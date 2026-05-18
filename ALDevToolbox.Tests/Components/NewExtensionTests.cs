@@ -95,7 +95,7 @@ public sealed class NewExtensionTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("No active runtime templates are available");
+            cut.Markup.Should().Contain("No active workspace templates are available");
             cut.FindAll("form").Should().BeEmpty();
         });
     }

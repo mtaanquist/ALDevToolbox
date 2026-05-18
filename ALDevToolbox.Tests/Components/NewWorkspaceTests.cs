@@ -110,7 +110,7 @@ public sealed class NewWorkspaceTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("No active runtime templates are available",
+            cut.Markup.Should().Contain("No active workspace templates are available",
                 "CLAUDE.md §\"three states\" rule — the empty-state copy must tell "
                 + "the user how to recover");
             cut.FindAll("form").Should().BeEmpty(
