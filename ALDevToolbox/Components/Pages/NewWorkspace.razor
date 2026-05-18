@@ -462,10 +462,64 @@
         children.Add(PreviewNode.File(".gitignore"));
         children.Add(PreviewNode.File("README.md"));
 
+        // Always-included org files the picked template has opted into.
+        // Mirrors WorkspaceZipBuilder.WriteOrgFiles so the preview matches the
+        // ZIP. Files with nested paths (e.g. docs/onboarding.md) materialise as
+        // intermediate folders here just like they will inside the archive.
+        if (_selected is not null && _orgConfig is not null)
+        {
+            var byId = _orgConfig.Files.ToDictionary(f => f.Id);
+            foreach (var joined in _selected.IncludedFiles.OrderBy(j => j.Ordering))
+            {
+                if (!byId.TryGetValue(joined.OrganizationFileId, out var file)) continue;
+                AddOrgFileNode(children, file.Path);
+            }
+        }
+
         return PreviewTreeBuilder.SortForDisplay(
             new PreviewNode(rootName, PreviewNodeKind.Workspace, children));
     }
 
     private static string StripWhitespace(string value) =>
         new(value.Where(c => !char.IsWhiteSpace(c)).ToArray());
+
+    /// <summary>
+    /// Walks a forward-slash-separated <paramref name="path"/> and grafts it
+    /// into the preview tree under <paramref name="siblings"/>, materialising
+    /// intermediate folders as needed. Duplicates fold into the existing
+    /// node so two org files in the same subdirectory share one parent.
+    /// </summary>
+    private static void AddOrgFileNode(IList<PreviewNode> siblings, string path)
+    {
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0) return;
+        AddRecursive(siblings, segments, 0);
+    }
+
+    private static void AddRecursive(IList<PreviewNode> siblings, string[] segments, int idx)
+    {
+        var name = segments[idx];
+        if (idx == segments.Length - 1)
+        {
+            if (!siblings.Any(n => n.Kind == PreviewNodeKind.File && n.Name == name))
+            {
+                siblings.Add(PreviewNode.File(name));
+            }
+            return;
+        }
+        var existing = siblings.FirstOrDefault(n => n.Kind == PreviewNodeKind.Folder && n.Name == name);
+        if (existing is null)
+        {
+            var children = new List<PreviewNode>();
+            siblings.Add(new PreviewNode(name, PreviewNodeKind.Folder, children));
+            AddRecursive(children, segments, idx + 1);
+        }
+        else if (existing.Children is IList<PreviewNode> nestedList)
+        {
+            // The factory always allocates a mutable List<> here, so the cast
+            // is safe for nodes we built ourselves. External nodes (none
+            // currently) would be silently skipped which is a fine fallback.
+            AddRecursive(nestedList, segments, idx + 1);
+        }
+    }
 }

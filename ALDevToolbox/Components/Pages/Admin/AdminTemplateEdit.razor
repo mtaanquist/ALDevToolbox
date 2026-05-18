@@ -4,6 +4,7 @@
 @rendermode InteractiveServer
 @inject TemplateService Templates
 @inject ApplicationVersionService Versions
+@inject OrganizationConfigService OrgConfig
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject ILogger<AdminTemplateEdit> Log
@@ -305,6 +306,41 @@
                 }
             </section>
 
+            <section class="form-section">
+                <label class="section-label">Always-included files</label>
+                <small class="muted">
+                    Org-wide text files emitted at the workspace root when this
+                    template is picked. New entries default to off — tick the
+                    ones that belong with this template. Curate the library at
+                    <a href="/admin/configuration/files">Configuration · Files</a>.
+                </small>
+                @if (_availableOrgFiles.Count == 0)
+                {
+                    <p class="muted">No always-included files configured yet. Add one under <a href="/admin/configuration/files">Configuration · Files</a>.</p>
+                }
+                else
+                {
+                    <div class="module-list">
+                        @foreach (var f in _availableOrgFiles)
+                        {
+                            var isChecked = _form.IncludedFilePaths.Contains(f.Path);
+                            <label class="module-card">
+                                <input type="checkbox"
+                                       checked="@isChecked"
+                                       @onchange="e => OnIncludedFileToggled(f.Path, (bool)(e.Value ?? false))" />
+                                <span class="module-card__body">
+                                    <span class="module-card__name"><code>@f.Path</code></span>
+                                    <span class="module-card__caption muted">
+                                        @(f.MustacheEnabled ? "mustache enabled" : "literal")
+                                    </span>
+                                </span>
+                            </label>
+                        }
+                    </div>
+                    <FieldError Field="IncludedFilePaths" Errors="_fieldErrors" />
+                }
+            </section>
+
             <TemplateExtensionsEditor Form="_form" Errors="_fieldErrors" />
 
             <div class="admin-template-edit__actions">
@@ -427,6 +463,7 @@
     private string? _lastHydratedKey;
     private List<ALDevToolbox.Domain.Entities.Module> _availableModules = new();
     private List<ApplicationVersion> _availableApplicationVersions = new();
+    private List<ALDevToolbox.Domain.Entities.OrganizationFile> _availableOrgFiles = new();
     private ConfirmDialog? _deleteConfirm;
     private ConfirmDialog? _leaveConfirm;
     private IDisposable? _locationChangingRegistration;
@@ -521,6 +558,8 @@
         // dropdown filters them out separately.
         _availableModules = await Templates.GetModulesAsync(includeDeprecated: true);
         _availableApplicationVersions = await Versions.GetActiveAsync(includeDeprecated: true);
+        var orgConfig = await OrgConfig.GetCurrentAsync();
+        _availableOrgFiles = orgConfig.Files.OrderBy(f => f.Ordering).ToList();
 
         if (!IsEdit)
         {
@@ -591,6 +630,22 @@
         else
         {
             _form.DefaultModuleKeys.Remove(key);
+        }
+    }
+
+    private void OnIncludedFileToggled(string path, bool isChecked)
+    {
+        if (_form is null) return;
+        if (isChecked)
+        {
+            if (!_form.IncludedFilePaths.Contains(path))
+            {
+                _form.IncludedFilePaths.Add(path);
+            }
+        }
+        else
+        {
+            _form.IncludedFilePaths.Remove(path);
         }
     }
 

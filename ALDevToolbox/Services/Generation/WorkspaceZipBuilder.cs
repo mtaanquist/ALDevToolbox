@@ -55,7 +55,7 @@ public sealed class WorkspaceZipBuilder
             fileCount += WriteOrgLogo(archive, $"{rootFolder}/.assets/images", orgConfig.Logo);
             await WriteEmbeddedAsync(archive, $"{rootFolder}/.assets/rulesets/Company.ruleset.json", "ALDevToolbox.Resources.Company.ruleset.json", ct);
             fileCount += 1;
-            fileCount += WriteOrgFiles(archive, rootFolder, orgConfig.Files, plan, template);
+            fileCount += WriteOrgFiles(archive, rootFolder, FilterIncluded(orgConfig.Files, template), plan, template);
 
             // Per-extension folders.
             foreach (var ext in extensions)
@@ -451,6 +451,26 @@ public sealed class WorkspaceZipBuilder
         using var stream = entry.Open();
         stream.Write(logo.Content, 0, logo.Content.Length);
         return 1;
+    }
+
+    /// <summary>
+    /// Narrows <paramref name="files"/> to the ones the template has opted
+    /// into via <see cref="RuntimeTemplate.IncludedFiles"/>. Ordering follows
+    /// the join's <c>Ordering</c> column so admins control the emit sequence
+    /// per template.
+    /// </summary>
+    private static IReadOnlyList<OrganizationFile> FilterIncluded(
+        IReadOnlyList<OrganizationFile> files,
+        RuntimeTemplate template)
+    {
+        if (template.IncludedFiles.Count == 0) return Array.Empty<OrganizationFile>();
+        var byId = files.ToDictionary(f => f.Id);
+        return template.IncludedFiles
+            .OrderBy(j => j.Ordering)
+            .Select(j => byId.TryGetValue(j.OrganizationFileId, out var f) ? f : null)
+            .Where(f => f is not null)
+            .Cast<OrganizationFile>()
+            .ToList();
     }
 
     private int WriteOrgFiles(

@@ -132,6 +132,7 @@ public class AppDbContext : DbContext
     public DbSet<ModuleExtensionFolder> ModuleExtensionFolders => Set<ModuleExtensionFolder>();
     public DbSet<ModuleExtensionFile> ModuleExtensionFiles => Set<ModuleExtensionFile>();
     public DbSet<RuntimeTemplateDefaultModule> RuntimeTemplateDefaultModules => Set<RuntimeTemplateDefaultModule>();
+    public DbSet<RuntimeTemplateIncludedFile> RuntimeTemplateIncludedFiles => Set<RuntimeTemplateIncludedFile>();
     public DbSet<Module> Modules => Set<Module>();
     public DbSet<ModuleDependency> ModuleDependencies => Set<ModuleDependency>();
     public DbSet<WellKnownDependency> WellKnownDependencies => Set<WellKnownDependency>();
@@ -176,6 +177,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<RuntimeTemplate>(modelBuilder);
         ScopeToOrganization<ApplicationVersion>(modelBuilder);
         ScopeToOrganization<RuntimeTemplateDefaultModule>(modelBuilder);
+        ScopeToOrganization<RuntimeTemplateIncludedFile>(modelBuilder);
         ScopeToOrganization<WorkspaceExtension>(modelBuilder);
         ScopeToOrganization<WorkspaceExtensionFolder>(modelBuilder);
         ScopeToOrganization<WorkspaceExtensionFile>(modelBuilder);

@@ -156,6 +156,7 @@ public class GenerationService
             .Where(t => t.DeletedAt == null && t.Key == key)
             .Include(t => t.WorkspaceExtensions.OrderBy(e => e.Ordering))
                 .ThenInclude(e => e.Dependencies.OrderBy(d => d.Ordering))
+            .Include(t => t.IncludedFiles.OrderBy(j => j.Ordering))
             .FirstOrDefaultAsync(ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
             {

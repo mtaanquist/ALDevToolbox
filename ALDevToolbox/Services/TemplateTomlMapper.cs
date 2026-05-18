@@ -127,6 +127,7 @@ public static class TemplateTomlMapper
             DefaultModules = authoring.DefaultModuleKeys
                 .Select(k => new TemplateDefaultModuleSeed { Key = k })
                 .ToList(),
+            IncludedFiles = authoring.IncludedFilePaths?.ToList() ?? new List<string>(),
         },
         Defaults = BuildDefaultsSeed(defaults),
         AppSourceCop = new AppSourceCopSeed
@@ -160,6 +161,11 @@ public static class TemplateTomlMapper
                     .OrderBy(d => d.Ordering)
                     .Where(d => d.Module is not null)
                     .Select(d => new TemplateDefaultModuleSeed { Key = d.Module!.Key })
+                    .ToList(),
+                IncludedFiles = template.IncludedFiles
+                    .OrderBy(j => j.Ordering)
+                    .Where(j => j.OrganizationFile is not null)
+                    .Select(j => j.OrganizationFile!.Path)
                     .ToList(),
             },
             Defaults = BuildDefaultsSeed(defaults),
@@ -414,7 +420,8 @@ public static class TemplateTomlMapper
             Extensions: extensions,
             CodeWorkspaceJson: string.IsNullOrWhiteSpace(seed.WorkspaceSettings?.Json)
                 ? null
-                : seed.WorkspaceSettings.Json);
+                : seed.WorkspaceSettings.Json,
+            IncludedFilePaths: seed.Template.IncludedFiles.ToList());
     }
 
     private static ExtensionAuthoring MapExtension(ExtensionSeed seed) => new(
