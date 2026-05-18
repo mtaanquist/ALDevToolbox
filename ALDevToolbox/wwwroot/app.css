@@ -1960,6 +1960,45 @@ ul.form-field-error {
     border-top: 0;
 }
 
+/* Read-only reference panel showing the org-wide workspace settings
+   above the per-template overlay textarea. <details> so it collapses
+   by default and doesn't dominate the section. */
+.admin-template-edit__org-base {
+    margin-bottom: 8px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-bg);
+}
+
+.admin-template-edit__org-base > summary {
+    cursor: pointer;
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--color-text-secondary);
+    list-style: none;
+}
+
+.admin-template-edit__org-base > summary::-webkit-details-marker { display: none; }
+.admin-template-edit__org-base > summary::marker { content: ""; }
+
+.admin-template-edit__org-base[open] > summary {
+    border-bottom: 1px solid var(--color-border);
+}
+
+.admin-template-edit__org-base-body {
+    margin: 0;
+    padding: 10px 12px;
+    font-family: var(--font-mono, monospace);
+    font-size: 12.5px;
+    color: var(--color-text);
+    white-space: pre;
+    overflow-x: auto;
+    max-height: 220px;
+}
+
 .admin-template-edit__mode {
     display: inline-flex;
     gap: 0;

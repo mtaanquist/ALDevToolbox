@@ -481,7 +481,7 @@ public static class TemplateTomlMapper
     /// <see cref="ToToml"/> which re-emits without them.
     /// </summary>
     public static string BlankToml() => """"
-# AL Dev Toolbox runtime template — TOML reference.
+# AL Dev Toolbox workspace template — TOML reference.
 # Edit the fields below, then click "Create template". Comments are
 # stripped on save and won't reappear after the next round-trip.
 # Anything you leave at its default stays empty in the generated
@@ -491,7 +491,7 @@ public static class TemplateTomlMapper
 # Stable identifier shown in URLs and used for cross-org imports. Pick
 # once — renaming breaks references from imported templates. Lowercase
 # letters, digits, and hyphens only.
-key = "runtime-new"
+key = ""
 
 # Business Central runtime version. "26" (major) or "26.1" (Major.Minor).
 runtime = "26"
