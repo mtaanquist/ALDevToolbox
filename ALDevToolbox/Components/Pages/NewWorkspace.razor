@@ -64,10 +64,9 @@
                     <input type="text" name="ExtensionPrefix" placeholder="e.g. ACME"
                            @bind="_extensionPrefix" @bind:event="oninput" />
                     <small class="muted">
-                        Per-workspace extension-name prefix — substitutes into
-                        <code>&#123;&#123;extension_prefix&#125;&#125;</code> in the template's
-                        extension names (e.g. <code>ACME Core</code>). Distinct from the
-                        AL object-name affix configured on the template.
+                        A short prefix added to the names of generated extensions
+                        (e.g. <code>ACME Core</code>). Different from the AL object-name
+                        affix set on the template itself.
                     </small>
                     <input type="text" name="Brief" placeholder="One-line description (optional)"
                            @bind="_brief" @bind:event="oninput" />
@@ -108,9 +107,9 @@
                                @bind="_applicationVersion" @bind:event="oninput" />
                         <input type="hidden" name="RuntimeVersion" value="@_runtimeVersion" />
                         <small class="muted">
-                            No application-version catalogue has been seeded.
-                            Add entries under <a href="/admin/application-versions">Application versions</a>
-                            to switch this to a curated select.
+                            No application versions have been added for your organisation yet.
+                            An admin can curate them under
+                            <a href="/admin/application-versions">Application versions</a>.
                         </small>
                     }
                     else

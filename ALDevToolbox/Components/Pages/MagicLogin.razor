@@ -6,8 +6,8 @@
     <h1>Sign in</h1>
     <p class="caption muted">
         We'll email you a single-use sign-in link, valid for 15 minutes. No
-        password needed. We always show the same confirmation regardless of
-        whether the email is in our database.
+        password needed. We always show the same confirmation, whether or not
+        the email matches an account.
     </p>
 
     <nav class="tab-bar tab-bar--auth" aria-label="Sign-in method">
@@ -18,14 +18,13 @@
     @if (Error == "not-configured")
     {
         <p class="form-error" role="alert">
-            Email is not configured on this server, so magic-link sign-in
-            isn't currently working. Use your password instead, or ask an
-            admin to set up SMTP.
+            Magic-link sign-in isn't available on this site. Use your password
+            to sign in instead.
         </p>
     }
     @if (Ok == "1")
     {
-        <p class="form-success" role="status">If that email exists in our database, you'll receive a sign-in link shortly.</p>
+        <p class="form-success" role="status">If that email matches an account, you'll receive a sign-in link shortly.</p>
     }
 
     <form method="post" action="/auth/login/magic" class="form-grid login-form">

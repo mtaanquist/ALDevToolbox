@@ -28,8 +28,7 @@
     else if (!_mcpEnabled)
     {
         <p class="form-info" role="status">
-            MCP isn't enabled on this deployment. Ask a site administrator to turn it on under
-            <code>/site-admin/settings</code>.
+            MCP isn't switched on for this site. Ask a site administrator to enable it.
         </p>
     }
     else
@@ -37,14 +36,16 @@
         <section class="account-section">
             <h2>1. Create a personal access token</h2>
             <p class="muted">
-                Tokens authenticate the agent as you — same organisation, same role.
-                Treat them like passwords: each is shown once at creation, then hashed in
-                the database. Revoke any time at <a href="/account/access-tokens">Manage access tokens</a>.
+                Tokens let the agent act as you — same organisation, same role.
+                Treat them like passwords: the full token is shown only once when you
+                create it. You can revoke a token any time.
             </p>
-            <a class="btn btn--primary" href="/account/access-tokens">
-                <Icon Name="key-round" Width="16" Height="16" />
-                <span>Manage access tokens</span>
-            </a>
+            <div class="account-actions">
+                <a class="btn btn--primary" href="/account/access-tokens">
+                    <Icon Name="key-round" Width="16" Height="16" />
+                    <span>Manage access tokens</span>
+                </a>
+            </div>
         </section>
 
         <section class="account-section">
@@ -65,10 +66,12 @@
             </div>
             <div class="pat-snippet">
                 <pre>@CurrentSnippet</pre>
-                <button type="button" class="btn btn--sm" @onclick="CopySnippetAsync">
-                    <Icon Name="copy" Width="14" Height="14" />
-                    <span>@(_copied ? "Copied" : "Copy snippet")</span>
-                </button>
+                <div class="account-actions">
+                    <button type="button" class="btn btn--sm" @onclick="CopySnippetAsync">
+                        <Icon Name="copy" Width="14" Height="14" />
+                        <span>@(_copied ? "Copied" : "Copy snippet")</span>
+                    </button>
+                </div>
             </div>
             <p class="muted">
                 @CurrentHint
@@ -123,8 +126,8 @@
                 update your client's config.</dd>
 
                 <dt><strong>404 Not Found.</strong></dt>
-                <dd>MCP has been switched off by a site administrator, or the URL is wrong.
-                Refresh this page; if you see the warning at the top, MCP is off.</dd>
+                <dd>A site administrator has turned MCP off, or the URL is wrong.
+                Refresh this page — if you see the warning at the top, MCP is off.</dd>
             </dl>
         </section>
     }

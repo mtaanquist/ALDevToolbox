@@ -51,7 +51,14 @@
             <h2>Identity</h2>
             <p class="muted">
                 Signed in as <strong>@_user.DisplayName</strong> (@_user.Email) — @_user.Role in <strong>@_organization?.Name</strong>.
-                To change your email, ask another admin to do it via the admin users page.
+                @if (_user.Role == UserRole.Admin)
+                {
+                    <span>To change your email address, edit your user under <a href="/admin/users">Users</a>.</span>
+                }
+                else
+                {
+                    <span>To change your email address, ask one of your organisation's admins.</span>
+                }
             </p>
 
             <form method="post" action="/auth/account/display-name" class="form-grid form-grid--narrow">
@@ -137,10 +144,16 @@
                         <span class="status-pill status-pill--muted">Off</span>
                     }
                 </div>
-                <p class="muted">Sent to <strong>@_user.Email</strong>. Requires SMTP to be configured.</p>
-                @if (!_smtpConfigured)
+                @if (_smtpConfigured)
                 {
-                    <p class="muted"><em>SMTP is not configured on this deployment, so email codes can't be used.</em></p>
+                    <p class="muted">Sent to <strong>@_user.Email</strong>.</p>
+                }
+                else
+                {
+                    <p class="muted">
+                        Email codes aren't available on this site yet. Your site administrator
+                        needs to set up email before you can use them.
+                    </p>
                 }
                 @if (_user.EmailMfaEnabled)
                 {
