@@ -126,13 +126,15 @@ public sealed class WorkspaceGenerationTests : IDisposable
         using var zip = await GenerateAsync(
             PlanBuilder.WorkspacePlan(selectedModules: new[] { "document-capture" }));
 
-        // Module key becomes the folder name; its declared file ships under it.
-        var entry = zip.GetEntry("AcmeCustomer/document-capture/src/IDocumentSink.al");
+        // Module's PascalCase ExtensionName ("DocumentCapture") is the folder
+        // name (the admin slug `document-capture` is only used in URLs and as
+        // a dep-ref target). Its declared file ships under that folder.
+        var entry = zip.GetEntry("AcmeCustomer/DocumentCapture/src/IDocumentSink.al");
         entry.Should().NotBeNull();
         ReadEntry(entry!).Should().Contain("interface \"ACME IDocumentSink\"");
 
         // Module clone gets an implicit dependency on the required Core extension.
-        var moduleAppJson = JsonDocument.Parse(ReadEntry(zip.GetEntry("AcmeCustomer/document-capture/app.json")!));
+        var moduleAppJson = JsonDocument.Parse(ReadEntry(zip.GetEntry("AcmeCustomer/DocumentCapture/app.json")!));
         var deps = moduleAppJson.RootElement.GetProperty("dependencies").EnumerateArray().ToList();
         deps.Should().Contain(d => d.GetProperty("name").GetString() == "ACME Core");
     }
@@ -296,8 +298,9 @@ public sealed class WorkspaceGenerationTests : IDisposable
             PlanBuilder.WorkspacePlan(selectedModules: new[] { "wide", "follow" }));
 
         // wide gets 91000..91499 (500 wide), follow gets 91500..91699 (default 200).
-        ReadIdRange(zip, "AcmeCustomer/wide/app.json").Should().Be((91000, 91499));
-        ReadIdRange(zip, "AcmeCustomer/follow/app.json").Should().Be((91500, 91699));
+        // ModuleBuilder backfills ExtensionName from name ("Wide" / "Follow").
+        ReadIdRange(zip, "AcmeCustomer/Wide/app.json").Should().Be((91000, 91499));
+        ReadIdRange(zip, "AcmeCustomer/Follow/app.json").Should().Be((91500, 91699));
     }
 
     [Fact]
