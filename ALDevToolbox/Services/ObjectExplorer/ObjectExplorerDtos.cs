@@ -311,3 +311,28 @@ public sealed record ReferenceSession(
     string TargetLabel,
     int ReleaseId,
     IReadOnlyList<ReferenceMatch> Results);
+
+/// <summary>
+/// One row in the source-viewer outline's "Using" or "Used by" sections (#148).
+/// Targets without ingested source come through with <see cref="TargetFileId"/>
+/// null and the UI renders a non-clickable badge with a "no source available"
+/// tooltip.
+/// </summary>
+public sealed record DependencyEntry(
+    Guid TargetAppId,
+    string TargetModuleName,
+    string TargetObjectKind,
+    int? TargetObjectId,
+    string TargetObjectName,
+    long? TargetFileId,
+    int? TargetLineNumber,
+    string ReferenceKind);
+
+/// <summary>
+/// Aggregated dependency view for a single source file. Returned in one
+/// round-trip by the lazy-loaded outline endpoint so the viewer wires both
+/// sections from one fetch.
+/// </summary>
+public sealed record FileDependencies(
+    IReadOnlyList<DependencyEntry> Using,
+    IReadOnlyList<DependencyEntry> UsedBy);

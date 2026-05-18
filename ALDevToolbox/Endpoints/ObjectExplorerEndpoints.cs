@@ -153,6 +153,18 @@ internal static class ObjectExplorerEndpoints
             return result is null ? Results.NoContent() : Results.Ok(result);
         }).RequireAuthorization();
 
+        // Outline dependencies (#148): the file viewer's outline lazy-loads
+        // "Using" and "Used by" sections after the static-SSR paint. One
+        // round-trip per page load.
+        app.MapGet("/api/object-explorer/files/{fileId:long}/dependencies", async (
+            long fileId,
+            ObjectExplorerService oe,
+            CancellationToken ct) =>
+        {
+            var result = await oe.GetFileDependenciesAsync(fileId, ct);
+            return result is null ? Results.NotFound() : Results.Ok(result);
+        }).RequireAuthorization();
+
         // ── References-session endpoints ──────────────────────────────
         // Persist a Find-references search across file navigations.
         // The token returned here travels in the URL as ?refSet=…, and

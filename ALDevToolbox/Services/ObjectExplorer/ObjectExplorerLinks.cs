@@ -33,4 +33,8 @@ public sealed class ObjectExplorerLinks
     /// <summary>Source-file viewer URL with an initial line anchor.</summary>
     public string SourceFile(long fileId, int line) =>
         SourceFile(fileId) + $"?line={line}";
+
+    /// <summary>Side-by-side file diff for a pair of <c>oe_module_files</c> ids.</summary>
+    public string CompareFile(long leftFileId, long rightFileId) =>
+        $"/object-explorer/compare/file?left={leftFileId}&right={rightFileId}";
 }

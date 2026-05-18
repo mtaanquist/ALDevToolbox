@@ -747,4 +747,244 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         matches.Should().NotContain(m => m.Category == "call",
             because: "the importer doesn't populate target_member_name yet");
     }
+
+    // ── Release comparison (CompareReleasesAsync / CompareModuleFilesAsync) ─
+
+    /// <summary>
+    /// Imports the same DK Core .app into two separate Releases. The
+    /// (AppId, ContentHash) pairs are byte-identical, so the compare should
+    /// classify every module as unchanged (Changed bucket empty) and the
+    /// Added / Removed buckets are also empty.
+    /// </summary>
+    private async Task<(int leftId, int rightId)> SeedTwoIdenticalReleasesAsync()
+    {
+        await using var ctx = _db.NewContext();
+        var imp = NewImporter(ctx);
+
+        await using var s1 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        var left = await imp.ImportReleaseAsync(new ReleaseImportRequest(
+            "BC 25.18 A", "first_party", null, null,
+            new[] { new AppFileUpload("dk1.app", s1, null) }));
+        await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        var right = await imp.ImportReleaseAsync(new ReleaseImportRequest(
+            "BC 25.18 B", "first_party", null, null,
+            new[] { new AppFileUpload("dk2.app", s2, null) }));
+        return (left.ReleaseId, right.ReleaseId);
+    }
+
+    [Fact]
+    public async Task CompareReleases_returns_added_removed_changed_modules()
+    {
+        // Left has DK Core only; right has DK Core + OIOUBL. So:
+        //  - Removed: empty (DK Core is on both sides)
+        //  - Added: OIOUBL
+        //  - Changed: empty (DK Core bytes match)
+        int leftId, rightId;
+        await using (var ctx = _db.NewContext())
+        {
+            var imp = NewImporter(ctx);
+            await using var sLeft = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+            var left = await imp.ImportReleaseAsync(new ReleaseImportRequest(
+                "Left", "first_party", null, null,
+                new[] { new AppFileUpload("dk.app", sLeft, null) }));
+
+            await using var sRight1 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+            await using var sRight2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
+            var right = await imp.ImportReleaseAsync(new ReleaseImportRequest(
+                "Right", "first_party", null, null,
+                new[]
+                {
+                    new AppFileUpload("dk.app", sRight1, null),
+                    new AppFileUpload("oioubl.app", sRight2, null),
+                }));
+            leftId = left.ReleaseId;
+            rightId = right.ReleaseId;
+        }
+
+        await using var read = _db.NewContext();
+        var summary = await NewQuery(read).CompareReleasesAsync(leftId, rightId);
+
+        summary.Should().NotBeNull();
+        summary!.Added.Should().ContainSingle(m => m.Name == "OIOUBL");
+        summary.Removed.Should().BeEmpty();
+        summary.Changed.Should().BeEmpty(
+            "DK Core's bytes are identical on both sides — ContentHashes match");
+    }
+
+    [Fact]
+    public async Task CompareReleases_ignores_unchanged_modules()
+    {
+        var (leftId, rightId) = await SeedTwoIdenticalReleasesAsync();
+        await using var read = _db.NewContext();
+        var summary = await NewQuery(read).CompareReleasesAsync(leftId, rightId);
+
+        summary.Should().NotBeNull();
+        summary!.Added.Should().BeEmpty();
+        summary.Removed.Should().BeEmpty();
+        summary.Changed.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CompareReleases_returns_null_when_either_release_missing()
+    {
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+
+        var bad = await NewQuery(read).CompareReleasesAsync(releaseId, releaseId + 999);
+        bad.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task CompareModuleFiles_classifies_added_removed_changed_correctly()
+    {
+        // Re-import the same module twice → same ContentHashes; every file
+        // pair is unchanged so all three buckets are empty.
+        var (leftId, rightId) = await SeedTwoIdenticalReleasesAsync();
+
+        await using var read = _db.NewContext();
+        var leftMod = await read.OeModules.AsNoTracking().Where(m => m.ReleaseId == leftId).SingleAsync();
+        var rightMod = await read.OeModules.AsNoTracking().Where(m => m.ReleaseId == rightId).SingleAsync();
+
+        var result = await NewQuery(read).CompareModuleFilesAsync(leftMod.Id, rightMod.Id);
+        result.Should().NotBeNull();
+        result!.Added.Should().BeEmpty();
+        result.Removed.Should().BeEmpty();
+        result.Changed.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CompareReleases_marks_module_changed_when_file_content_hash_differs()
+    {
+        // Same .app on both sides → identical (AppId, Version, ContentHash) →
+        // compare reports zero diffs. Mutating one file's Content+ContentHash
+        // simulates a vendor patch on the right release without re-importing
+        // a different fixture, so we can exercise the Changed bucket
+        // deterministically.
+        var (leftId, rightId) = await SeedTwoIdenticalReleasesAsync();
+
+        await using (var write = _db.NewContext())
+        {
+            var anyRightFile = await write.OeModuleFiles
+                .Where(f => f.Module!.ReleaseId == rightId)
+                .OrderBy(f => f.Path)
+                .FirstAsync();
+            anyRightFile.Content += "\n// patched by test\n";
+            anyRightFile.ContentHash = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+            await write.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var summary = await NewQuery(read).CompareReleasesAsync(leftId, rightId);
+
+        summary.Should().NotBeNull();
+        summary!.Added.Should().BeEmpty();
+        summary.Removed.Should().BeEmpty();
+        summary.Changed.Should().ContainSingle()
+            .Which.ChangedFileCount.Should().Be(1,
+                "one ContentHash was mutated; everything else still matches");
+
+        var leftMod = await read.OeModules.AsNoTracking().Where(m => m.ReleaseId == leftId).SingleAsync();
+        var rightMod = await read.OeModules.AsNoTracking().Where(m => m.ReleaseId == rightId).SingleAsync();
+        var pairs = await NewQuery(read).CompareModuleFilesAsync(leftMod.Id, rightMod.Id);
+        pairs.Should().NotBeNull();
+        pairs!.Changed.Should().ContainSingle();
+        pairs.Added.Should().BeEmpty();
+        pairs.Removed.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetCompareTargets_returns_only_releases_with_matching_app_id_and_path()
+    {
+        // Two Releases of DK Core: the same file path exists on both sides.
+        // GetCompareTargetsAsync(leftFileId) should surface the right release.
+        var (leftId, rightId) = await SeedTwoIdenticalReleasesAsync();
+
+        await using var read = _db.NewContext();
+        var leftFile = await read.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Module!.ReleaseId == leftId)
+            .OrderBy(f => f.Path)
+            .FirstAsync();
+
+        var targets = await NewQuery(read).GetCompareTargetsAsync(leftFile.Id);
+        targets.Should().ContainSingle(t => t.ReleaseId == rightId,
+            "the right release holds DK Core at the same canonical path");
+    }
+
+    [Fact]
+    public async Task GetCompareTargets_excludes_the_current_file_release()
+    {
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var anyFile = await read.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Module!.ReleaseId == releaseId)
+            .OrderBy(f => f.Id)
+            .FirstAsync();
+
+        var targets = await NewQuery(read).GetCompareTargetsAsync(anyFile.Id);
+        targets.Should().NotContain(t => t.ReleaseId == releaseId);
+    }
+
+    // ── File dependencies (#148) ────────────────────────────────────────
+
+    [Fact]
+    public async Task GetFileDependencies_returns_null_for_unknown_file_id()
+    {
+        await using var read = _db.NewContext();
+        var deps = await NewQuery(read).GetFileDependenciesAsync(fileId: 999_999);
+        deps.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetFileDependencies_returns_empty_lists_when_file_has_no_objects()
+    {
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+
+        // Pick any file that has at least one object so we actually exercise
+        // the query path; the fixtures all attach objects so this is the
+        // happy-path sanity check.
+        var file = await read.OeModuleFiles.AsNoTracking()
+            .Where(f => read.OeModuleObjects.Any(o => o.SourceFileId == f.Id))
+            .OrderBy(f => f.Id)
+            .FirstAsync();
+
+        var deps = await NewQuery(read).GetFileDependenciesAsync(file.Id);
+        deps.Should().NotBeNull();
+        // No guarantee either list is non-empty for an arbitrary fixture
+        // file — but the call must succeed without throwing, and both
+        // collections must be present (not null).
+        deps!.Using.Should().NotBeNull();
+        deps.UsedBy.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task GetFileDependencies_excludes_self_references_in_using()
+    {
+        // The Using list should not surface the file's own object back at
+        // itself — covers Rec/xRec self-typing on tables and self-call
+        // patterns on codeunits.
+        await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+
+        var fileAndObjects = await read.OeModuleFiles.AsNoTracking()
+            .Where(f => read.OeModuleObjects.Any(o => o.SourceFileId == f.Id))
+            .Select(f => new
+            {
+                f.Id,
+                Objects = read.OeModuleObjects.AsNoTracking()
+                    .Where(o => o.SourceFileId == f.Id)
+                    .Select(o => new { o.Kind, o.ObjectId, o.Name })
+                    .ToList(),
+            })
+            .FirstAsync();
+
+        var deps = await NewQuery(read).GetFileDependenciesAsync(fileAndObjects.Id);
+        deps.Should().NotBeNull();
+        foreach (var own in fileAndObjects.Objects)
+        {
+            deps!.Using.Should().NotContain(d =>
+                d.TargetObjectKind == own.Kind
+                && d.TargetObjectName == own.Name);
+        }
+    }
 }

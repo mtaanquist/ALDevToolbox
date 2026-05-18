@@ -4449,3 +4449,74 @@ ul.form-field-error {
     text-align: center;
 }
 .login-passkey p { margin: 0 0 8px; }
+
+/* ── Object Explorer release & file compare ──────────────────────────
+   Side-by-side diff viewer (/object-explorer/compare/file): two CodeMirror
+   panes laid out as a 2-column grid. Each pane is a full `.source-viewer`
+   shell minus the outline DOM, so the existing CodeMirror styling carries
+   through unchanged. Below 1100px we stack vertically.
+
+   Line-level diff colouring uses CodeMirror's line decoration mechanism
+   (see code-editor.js → buildLineDecorationExtensions). Lines flagged
+   inserted/deleted/modified get a full-row tint; imaginary rows pad the
+   shorter side so both panes line up visually.
+
+   Colours pulled from the existing theme palette to stay dark-mode safe.
+*/
+
+.oe-compare-file {
+    padding: 16px;
+}
+.oe-compare-file__header {
+    align-items: flex-start;
+    gap: 16px;
+}
+.oe-compare-file__breadcrumbs p {
+    margin: 0 0 4px;
+}
+.oe-compare-file__panes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 12px;
+}
+.oe-compare-file__panes > .source-viewer--compare {
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--color-surface);
+}
+@media (max-width: 1100px) {
+    .oe-compare-file__panes {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Diff line tints — applied to <div class="cm-line"> rows. The colour
+   variables fall back to the named lights so each pane reads the same in
+   light and dark themes. */
+.cm-line.cm-diff-inserted   { background-color: rgba(38, 176, 80, 0.16); }
+.cm-line.cm-diff-deleted    { background-color: rgba(179, 33, 33, 0.18); }
+.cm-line.cm-diff-modified   { background-color: rgba(234, 179, 8, 0.20); }
+.cm-line.cm-diff-imaginary  { background-color: var(--color-surface-strong); color: var(--color-text-muted); }
+
+/* Compare-with-release picker on the single-file viewer header.
+   Sits to the right of the breadcrumb; collapses below the heading on
+   narrow widths. */
+.source-viewer__compare-picker {
+    display: flex;
+    align-items: flex-end;
+    margin-left: auto;
+}
+.source-viewer__compare-picker .field {
+    min-width: 220px;
+}
+
+/* Status-row badges in the Compare-with-release results table. Reuse the
+   same flat-pill shape as the existing kind badges but with semantic colour. */
+.badge--success { background-color: rgba(38, 176, 80, 0.18); color: var(--color-valid); padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+.badge--danger  { background-color: rgba(179, 33, 33, 0.18); color: var(--color-danger); padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+.badge--warning { background-color: rgba(234, 179, 8, 0.20); color: #8a6d00; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+@media (prefers-color-scheme: dark) {
+    .badge--warning { color: #ffd05a; }
+}
