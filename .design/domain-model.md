@@ -213,14 +213,33 @@ The relation is purely cosmetic for end-users — generation does not consult it
 
 The write-path reconciler in `TemplateService.UpdateAsync` matches existing rows by `module_id` (the natural identity), **not** by list position — position-based mutation would trip the `(runtime_template_id, module_id)` unique index when two rows swap places, and EF would refuse with a circular-dependency error. Reorders rewrite `ordering`; `module_id` stays put on each row.
 
+### `runtime_template_included_files`
+
+Per-template opt-in for the organisation's always-included file library. A new `OrganizationFile` row is **off-by-default** for every template until the admin explicitly ticks it on the template editor.
+
+| Column                | Type             | Notes                                            |
+|-----------------------|------------------|--------------------------------------------------|
+| `id`                  | INTEGER PK       |                                                  |
+| `organization_id`     | INTEGER NOT NULL |                                                  |
+| `runtime_template_id` | INTEGER FK NOT NULL | → `runtime_templates.id`, cascade delete      |
+| `organization_file_id`| INTEGER FK NOT NULL | → `organization_files.id`, cascade delete     |
+| `ordering`            | INTEGER NOT NULL | Admin-chosen emit sequence inside the template   |
+
+Indexes:
+- `(runtime_template_id, ordering)` for ordered enumeration.
+- `(runtime_template_id, organization_file_id)` UNIQUE — a file can't be listed twice on the same template.
+
+Same reconciler shape as `runtime_template_default_modules`: matches existing rows by `organization_file_id`. The `WorkspaceZipBuilder` filters `OrganizationConfig.Files` through this join at generation time; the New Workspace live preview folds the included files into the workspace-root tree so what the user sees is what they get.
+
 ### `modules`
 
 | Column                   | Type             | Notes                                          |
 |--------------------------|------------------|------------------------------------------------|
 | `id`                     | INTEGER PK       |                                                |
 | `organization_id`        | INTEGER NOT NULL |                                                |
-| `key`                    | TEXT NOT NULL    | Unique per org. URL-safe, e.g. "document-capture" |
+| `key`                    | TEXT NOT NULL    | Unique per org. Admin/URL slug, e.g. "document-capture". Also the dependency-reference target. |
 | `name`                   | TEXT NOT NULL    | Display name e.g. "Document Capture"           |
+| `extension_name`         | TEXT NOT NULL    | PascalCase. ZIP folder name AND rendered AL extension name (after `{{extension_prefix}}` substitution). Distinct from `key` so admins can pick a URL slug that differs from the folder layout. |
 | `id_range_size`          | INTEGER          | Optional override; null = use the template's `module_id_range_size` |
 | `deprecated`             | BOOLEAN NOT NULL |                                                |
 | `created_at`             | TIMESTAMPTZ NOT NULL |                                            |

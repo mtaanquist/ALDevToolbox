@@ -128,8 +128,10 @@ path = "codeunits"
             selectedModules: new[] { "continia-doc-capture" }));
 
         // 4) Three declared extensions emit at the customer-declared paths;
-        //    the selected module clones in as a fourth.
-        foreach (var path in new[] { "Core", "Hotfix", "DocumentCapture", "continia-doc-capture" })
+        //    the selected module clones in as a fourth under its PascalCase
+        //    ExtensionName (the admin slug `continia-doc-capture` is the
+        //    URL/dep-ref target, not the folder name).
+        foreach (var path in new[] { "Core", "Hotfix", "DocumentCapture", "ContiniaDocumentCapture" })
         {
             zip.GetEntry($"AcmeCustomer/{path}/app.json").Should().NotBeNull(
                 $"the {path} extension folder should ship an app.json");
@@ -138,7 +140,7 @@ path = "codeunits"
         var coreJson = ParseAppJson(zip, "AcmeCustomer/Core/app.json");
         var hotfixJson = ParseAppJson(zip, "AcmeCustomer/Hotfix/app.json");
         var docCaptureJson = ParseAppJson(zip, "AcmeCustomer/DocumentCapture/app.json");
-        var moduleJson = ParseAppJson(zip, "AcmeCustomer/continia-doc-capture/app.json");
+        var moduleJson = ParseAppJson(zip, "AcmeCustomer/ContiniaDocumentCapture/app.json");
 
         // 5) Names render through {{extension_prefix}} from the plan, not the
         //    template default — proves the plan override threads into the

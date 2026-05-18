@@ -681,6 +681,29 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     border-color: var(--color-accent);
 }
 
+/* Pin <option> colours to the dark surface so the browser doesn't paint the
+   open dropdown list in its own platform default (typically a near-white
+   panel that's unreadable against our dark text). Chromium honours these
+   on Linux; Safari and Windows still defer to the OS theme, which is a
+   long-standing browser quirk we accept rather than re-implement the
+   <select> in JS. */
+.form-section select option,
+.form-grid > select option,
+.admin-form select option,
+.admin-filter-form select option {
+    background: var(--color-surface);
+    color: var(--color-text);
+}
+
+.form-section select optgroup,
+.form-grid > select optgroup,
+.admin-form select optgroup,
+.admin-filter-form select optgroup {
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    font-style: italic;
+}
+
 /* Browsers (Chrome / Safari) repaint autofilled fields with their own
    light-yellow background, which clashes badly with dark mode. Pin the
    colour and use the inset-shadow trick to mask the agent default. */
@@ -1915,6 +1938,67 @@ ul.form-field-error {
 
 .admin-template-edit__form { max-width: 880px; }
 
+/* Section heading inside the structured form. Gives long pages a scannable
+   outline so admins can find Identity / Versioning & ID ranges / Modules /
+   Always-included files / Workspace settings overlay / Extensions without
+   reading every label. Sits between sections; a thin separator above the
+   text echoes the panel rhythm of the surrounding cards. */
+.admin-template-edit__group-heading {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    margin: 24px 0 4px;
+    padding-top: 16px;
+    border-top: 1px solid var(--color-border);
+}
+
+.admin-template-edit__group-heading:first-of-type {
+    margin-top: 8px;
+    padding-top: 0;
+    border-top: 0;
+}
+
+/* Read-only reference panel showing the org-wide workspace settings
+   above the per-template overlay textarea. <details> so it collapses
+   by default and doesn't dominate the section. */
+.admin-template-edit__org-base {
+    margin-bottom: 8px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-bg);
+}
+
+.admin-template-edit__org-base > summary {
+    cursor: pointer;
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--color-text-secondary);
+    list-style: none;
+}
+
+.admin-template-edit__org-base > summary::-webkit-details-marker { display: none; }
+.admin-template-edit__org-base > summary::marker { content: ""; }
+
+.admin-template-edit__org-base[open] > summary {
+    border-bottom: 1px solid var(--color-border);
+}
+
+.admin-template-edit__org-base-body {
+    margin: 0;
+    padding: 10px 12px;
+    font-family: var(--font-mono, monospace);
+    font-size: 12.5px;
+    color: var(--color-text);
+    white-space: pre;
+    overflow-x: auto;
+    max-height: 220px;
+}
+
 .admin-template-edit__mode {
     display: inline-flex;
     gap: 0;
@@ -2010,6 +2094,20 @@ ul.form-field-error {
     align-items: flex-start;
     gap: 8px;
     padding: 8px;
+}
+
+/* Match the up/down/remove buttons to the height of the path input so the
+   row reads as one line rather than three slightly-different mini-controls.
+   Scoped to the template editor's extension/folder list — other pages (e.g.
+   AdminApplicationVersions) reuse `.folder-editor__*` classes with their own
+   button sizing that mustn't be bumped to 30px. */
+.extension-editor__list .folder-editor__row-head {
+    align-items: center;
+}
+
+.extension-editor__list .folder-editor__row-head > .btn--sm,
+.extension-editor__list .folder-editor__order .btn--sm {
+    min-height: 30px;
 }
 
 .folder-editor__path {
@@ -2183,6 +2281,7 @@ ul.form-field-error {
     gap: 8px;
     margin-bottom: 8px;
 }
+
 
 .mod-dep-add select {
     flex: 1;

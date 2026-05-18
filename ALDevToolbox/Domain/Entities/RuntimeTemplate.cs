@@ -124,4 +124,12 @@ public class RuntimeTemplate
     /// entry; this only seeds the initial selection.
     /// </summary>
     public List<RuntimeTemplateDefaultModule> DefaultModules { get; set; } = new();
+
+    /// <summary>
+    /// The organisation-level always-included files this template opts into.
+    /// A new <see cref="OrganizationFile"/> is not emitted by any template
+    /// until at least one template lists it here — admins explicitly tick
+    /// the files that belong with each template.
+    /// </summary>
+    public List<RuntimeTemplateIncludedFile> IncludedFiles { get; set; } = new();
 }

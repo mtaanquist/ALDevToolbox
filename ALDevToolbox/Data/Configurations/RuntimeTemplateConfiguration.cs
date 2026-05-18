@@ -81,6 +81,11 @@ internal sealed class RuntimeTemplateConfiguration : IEntityTypeConfiguration<Ru
             .HasForeignKey(d => d.RuntimeTemplateId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        entity.HasMany(e => e.IncludedFiles)
+            .WithOne(f => f.RuntimeTemplate!)
+            .HasForeignKey(f => f.RuntimeTemplateId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         entity.HasOne(e => e.DefaultApplicationVersion)
             .WithMany()
             .HasForeignKey(e => e.DefaultApplicationVersionId)

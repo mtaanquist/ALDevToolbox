@@ -28,7 +28,14 @@ public record ProjectPlan(
     /// are always emitted regardless of this list.
     /// </summary>
     IReadOnlyList<string> SelectedExtensionPaths,
-    IReadOnlyList<string> SelectedModuleKeys
+    IReadOnlyList<string> SelectedModuleKeys,
+    /// <summary>
+    /// Tenant GUID captured on the New Workspace form. Pre-filled with a
+    /// fresh GUID; user can paste an existing one. Surfaced through
+    /// mustache substitution as <c>{{tenant_id}}</c> so always-included
+    /// files and the workspace JSON can embed it.
+    /// </summary>
+    string TenantId = ""
 );
 
 /// <summary>

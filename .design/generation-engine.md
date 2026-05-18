@@ -53,7 +53,7 @@ AcmeCustomer/
 │   ├── app.json                         # carries a dependencies[] entry referencing Core's freshly-allocated GUID
 │   ├── AppSourceCop.json
 │   ├── ...
-├── DocumentCapture/                     # path = module.key for the cloned-from-catalogue module
+├── DocumentCapture/                     # path = module.extension_name for the cloned-from-catalogue module
 │   ├── app.json                         # implicit deps on Core and Hotfix; module's own deps follow
 │   ├── AppSourceCop.json
 │   ├── src/                             # folder from module_extension_folders
@@ -79,9 +79,10 @@ What the template declares is what the ZIP contains — there are no static fall
      a. For each template extension (ordered by ordering): include if Required, OR
         if its Path is in plan.SelectedExtensionPaths.
      b. Append one EmittableExtension per selected module (using the module's
-        recursive folder tree as its content; the module's `key` becomes the
-        ZIP folder name; the rendered name defaults to
-        "{{extension_prefix}} {module.name}").
+        recursive folder tree as its content; the module's `extension_name`
+        (PascalCase) becomes the ZIP folder name; the rendered name defaults
+        to "{{extension_prefix}} {module.extension_name}"). The module's
+        `key` is the admin / URL slug and the dep-ref target, not the folder.
      c. Allocate id ranges in walk order. See "ID range allocation" below.
      d. Resolve each extension's dependencies into freshly-substituted name +
         freshly-allocated GUID. See "Dependency resolution" below.
@@ -98,10 +99,13 @@ What the template declares is what the ZIP contains — there are no static fall
      a. {ShortName}.code-workspace (see below).
      b. README.md (minimal — workspace name + description).
      c. .gitignore (embedded resource shipped with the app; per-deployment policy).
-     d. Per-org always-included files from organization_files (M14). Each row's
-        `path` is workspace-root-relative; mustache substitution runs when
+     d. Per-template-included files from `organization_files`, filtered by
+        the `runtime_template_included_files` join — admins opt each template
+        into the files that belong with it. Each row's `path` is
+        workspace-root-relative; mustache substitution runs when
         `mustache_enabled` is true, using the same context as per-extension
-        files.
+        files. The New Workspace live preview folds the same set into the
+        workspace-root tree so what the user sees matches the ZIP.
 6. Generate .assets:
      a. images/logo.{png|svg|jpg} — bytes from organization_assets for the
         acting org (M14). The file extension matches the asset's `content_type`.
@@ -167,19 +171,22 @@ The `settings` block is a static C# string constant in `WorkspaceConfigService`.
 
 Substitution runs on every `.al` file's content, on the rendered extension `name`, on `AppSourceCop.json` strings, and on every workspace-root file from `organization_files` that has `mustache_enabled = true`. Non-AL extension files are written verbatim by default; admins can opt a particular folder/file into substitution explicitly via the authoring surface when they need it.
 
-Available variables:
+Available variables (canonical names are snake_case to match the TOML schema):
 
 | Variable                | Source                                                                   |
 |-------------------------|--------------------------------------------------------------------------|
 | `{{name}}`              | The full extension name, e.g. "Acme Customer Core"                        |
-| `{{workspaceName}}`     | The workspace name from the plan, e.g. "Acme Customer"                    |
-| `{{shortName}}`         | The workspace name with whitespace removed, e.g. "AcmeCustomer"           |
-| `{{moduleName}}`        | For module-cloned extensions, the module's `name`. For template-declared extensions, equals `{{name}}`. |
-| `{{publisher}}`         | The publisher field from `defaults_json`.                                 |
+| `{{workspace_name}}`    | The workspace name from the plan, e.g. "Acme Customer"                    |
+| `{{short_name}}`        | The workspace name with whitespace removed, e.g. "AcmeCustomer"           |
+| `{{module_name}}`       | For module-cloned extensions, the module's `extension_name` (PascalCase). For template-declared extensions, equals `{{name}}`. |
+| `{{publisher}}`         | `OrganizationSettings.DefaultPublisher`. |
 | `{{extension_prefix}}`  | The plan's `ExtensionPrefix` — the per-workspace short identifier (e.g. "CRO"). |
 | `{{affix}}`             | `defaults.affix` when `defaults.affixType` is `Prefix` or `Suffix`; empty string when `AffixType.None`. Replaces the pre-unified `{{prefix}}` / `{{suffix}}`. |
 | `{{namespace}}`         | The current folder's path, dot-separated, e.g. `src/codeunits` → `src.codeunits`. Used for AL `namespace` declarations. |
 | `{{guid}}`              | A freshly generated GUID per substitution call. Use sparingly — prefer hand-authored GUIDs in example files. |
+| `{{tenant_id}}`         | Tenant GUID captured on the New Workspace form (empty for standalone extensions). Persisted in `workspace.aldt.toml` so regeneration is reproducible. |
+
+Legacy camelCase names `{{workspaceName}}`, `{{shortName}}`, `{{moduleName}}` still resolve as aliases — `MustacheRenderer` logs a single warning per render listing any encountered so admins can rename their org files at leisure.
 
 If a variable in the content isn't recognised, leave it as-is (don't crash). Log a warning.
 

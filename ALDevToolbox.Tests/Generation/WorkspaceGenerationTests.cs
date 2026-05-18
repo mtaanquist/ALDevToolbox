@@ -28,13 +28,29 @@ public sealed class WorkspaceGenerationTests : IDisposable
     [Fact]
     public async Task Required_extension_emits_its_folder_with_app_json_and_appsourcecop()
     {
+        // AppSourceCop.json now ships only when the org has an
+        // OrganizationFile at that path with Scope = EveryExtension and the
+        // template opts in. Seed one before generation to keep the per-
+        // extension emission covered by this test.
+        await using (var ctx = _db.NewContext())
+        {
+            ctx.OrganizationFiles.Add(new OrganizationFile
+            {
+                OrganizationId = ALDevToolbox.Tests.Builders.TemplateBuilder.DefaultOrganizationId,
+                Path = "AppSourceCop.json",
+                Content = "{ \"mandatoryPrefix\": \"ACME\" }",
+                MustacheEnabled = false,
+                Scope = ALDevToolbox.Domain.ValueObjects.OrganizationFileScope.EveryExtension,
+                Ordering = 2000,
+                UpdatedAt = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+        }
         await SeedTemplateAsync(TemplateBuilder.Default());
 
         using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
 
         zip.GetEntry("AcmeCustomer/Core/app.json").Should().NotBeNull();
-        // AppSourceCop.json ships per-extension when the template has
-        // AppSourceCop.Include = true (the default).
         zip.GetEntry("AcmeCustomer/Core/AppSourceCop.json").Should().NotBeNull();
         // No fallback folder injection — what the template declares is what
         // ships, per issue #60.
@@ -48,15 +64,14 @@ public sealed class WorkspaceGenerationTests : IDisposable
     }
 
     [Fact]
-    public async Task AppSourceCop_omitted_when_include_is_false()
+    public async Task AppSourceCop_omitted_when_no_per_extension_org_file_is_opted_in()
     {
-        var template = TemplateBuilder.Default();
-        template.AppSourceCop = new AppSourceCopSettings
-        {
-            Include = false,
-            MandatoryPrefix = "IGNORED",
-        };
-        await SeedTemplateAsync(template);
+        // No OrganizationFile at path AppSourceCop.json — the template
+        // doesn't opt into anything per-extension, so the file shouldn't
+        // land. The template-level AppSourceCop.Include flag is no longer
+        // consulted by the generator (it's kept on the entity for the TOML
+        // round-trip until the column gets dropped).
+        await SeedTemplateAsync(TemplateBuilder.Default());
 
         using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
 
@@ -64,26 +79,39 @@ public sealed class WorkspaceGenerationTests : IDisposable
     }
 
     [Fact]
-    public async Task AppSourceCop_json_strips_include_flag()
+    public async Task AppSourceCop_content_is_admin_authored_verbatim_per_extension()
     {
-        var template = TemplateBuilder.Default();
-        template.AppSourceCop = new AppSourceCopSettings
+        // Admin-authored content lands as-is into every extension folder
+        // (mustache disabled here for the simple shape; templating still
+        // works for adminstrators that need {{affix}} or {{name}}).
+        const string adminAuthored = """
+            {
+              "mandatoryPrefix": "ACME",
+              "supportedCountries": ["US", "DK"]
+            }
+            """;
+        await using (var ctx = _db.NewContext())
         {
-            Include = true,
-            MandatoryPrefix = "ACME",
-            SupportedCountries = new() { "US", "DK" },
-        };
-        await SeedTemplateAsync(template);
+            ctx.OrganizationFiles.Add(new OrganizationFile
+            {
+                OrganizationId = ALDevToolbox.Tests.Builders.TemplateBuilder.DefaultOrganizationId,
+                Path = "AppSourceCop.json",
+                Content = adminAuthored,
+                MustacheEnabled = false,
+                Scope = ALDevToolbox.Domain.ValueObjects.OrganizationFileScope.EveryExtension,
+                Ordering = 2000,
+                UpdatedAt = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+        }
+        await SeedTemplateAsync(TemplateBuilder.Default());
 
         using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
 
         var content = ReadEntry(zip.GetEntry("AcmeCustomer/Core/AppSourceCop.json")!);
-        var doc = JsonDocument.Parse(content);
-        doc.RootElement.GetProperty("mandatoryPrefix").GetString().Should().Be("ACME");
-        doc.RootElement.GetProperty("supportedCountries").EnumerateArray()
-            .Select(c => c.GetString()).Should().BeEquivalentTo("US", "DK");
-        // The include flag is our authoring concept; AL would reject an unknown field.
-        doc.RootElement.TryGetProperty("include", out _).Should().BeFalse();
+        content.Should().Be(adminAuthored,
+            "with the OrganizationFile concept the generator no longer synthesises "
+            + "AppSourceCop content from a structured column — the admin owns the JSON.");
     }
 
     [Fact]
@@ -126,13 +154,15 @@ public sealed class WorkspaceGenerationTests : IDisposable
         using var zip = await GenerateAsync(
             PlanBuilder.WorkspacePlan(selectedModules: new[] { "document-capture" }));
 
-        // Module key becomes the folder name; its declared file ships under it.
-        var entry = zip.GetEntry("AcmeCustomer/document-capture/src/IDocumentSink.al");
+        // Module's PascalCase ExtensionName ("DocumentCapture") is the folder
+        // name (the admin slug `document-capture` is only used in URLs and as
+        // a dep-ref target). Its declared file ships under that folder.
+        var entry = zip.GetEntry("AcmeCustomer/DocumentCapture/src/IDocumentSink.al");
         entry.Should().NotBeNull();
         ReadEntry(entry!).Should().Contain("interface \"ACME IDocumentSink\"");
 
         // Module clone gets an implicit dependency on the required Core extension.
-        var moduleAppJson = JsonDocument.Parse(ReadEntry(zip.GetEntry("AcmeCustomer/document-capture/app.json")!));
+        var moduleAppJson = JsonDocument.Parse(ReadEntry(zip.GetEntry("AcmeCustomer/DocumentCapture/app.json")!));
         var deps = moduleAppJson.RootElement.GetProperty("dependencies").EnumerateArray().ToList();
         deps.Should().Contain(d => d.GetProperty("name").GetString() == "ACME Core");
     }
@@ -296,8 +326,9 @@ public sealed class WorkspaceGenerationTests : IDisposable
             PlanBuilder.WorkspacePlan(selectedModules: new[] { "wide", "follow" }));
 
         // wide gets 91000..91499 (500 wide), follow gets 91500..91699 (default 200).
-        ReadIdRange(zip, "AcmeCustomer/wide/app.json").Should().Be((91000, 91499));
-        ReadIdRange(zip, "AcmeCustomer/follow/app.json").Should().Be((91500, 91699));
+        // ModuleBuilder backfills ExtensionName from name ("Wide" / "Follow").
+        ReadIdRange(zip, "AcmeCustomer/Wide/app.json").Should().Be((91000, 91499));
+        ReadIdRange(zip, "AcmeCustomer/Follow/app.json").Should().Be((91500, 91699));
     }
 
     [Fact]
@@ -372,6 +403,33 @@ public sealed class WorkspaceGenerationTests : IDisposable
         ctx.RuntimeTemplates.Add(template);
         if (modules.Length > 0) ctx.Modules.AddRange(modules);
         await ctx.SaveChangesAsync();
+
+        // The MovePlatformFilesToOrgFiles migration backfills the join only
+        // for templates that existed at migration time. Tests create their
+        // template here, after the migration ran — preserve the legacy
+        // expectation that `.gitignore`, the shared ruleset, and README.md
+        // land at the workspace root by joining the new template to every
+        // org file the fixture's Default org has.
+        var orgFileIds = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
+            ctx.OrganizationFiles
+                .Where(f => f.OrganizationId == template.OrganizationId)
+                .OrderBy(f => f.Ordering)
+                .Select(f => f.Id));
+        for (var i = 0; i < orgFileIds.Count; i++)
+        {
+            ctx.Set<ALDevToolbox.Domain.Entities.RuntimeTemplateIncludedFile>().Add(
+                new ALDevToolbox.Domain.Entities.RuntimeTemplateIncludedFile
+                {
+                    OrganizationId = template.OrganizationId,
+                    RuntimeTemplateId = template.Id,
+                    OrganizationFileId = orgFileIds[i],
+                    Ordering = i,
+                });
+        }
+        if (orgFileIds.Count > 0)
+        {
+            await ctx.SaveChangesAsync();
+        }
     }
 
     private async Task<ZipArchive> GenerateAsync(ProjectPlan plan)

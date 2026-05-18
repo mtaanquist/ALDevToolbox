@@ -1,4 +1,5 @@
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -16,6 +17,16 @@ internal sealed class OrganizationFileConfiguration : IEntityTypeConfiguration<O
         entity.Property(e => e.Path).HasColumnName("path").IsRequired();
         entity.Property(e => e.Content).HasColumnName("content").IsRequired();
         entity.Property(e => e.MustacheEnabled).HasColumnName("mustache_enabled").IsRequired();
+        // Stored as the enum name (text) rather than an int so old SQL dumps
+        // and `psql` inspection stay readable. Matches the AffixType pattern
+        // elsewhere on the schema.
+        entity.Property(e => e.Scope)
+            .HasColumnName("scope")
+            .HasConversion(
+                v => v.ToString(),
+                v => Enum.Parse<OrganizationFileScope>(v))
+            .HasDefaultValue(OrganizationFileScope.WorkspaceRoot)
+            .IsRequired();
         entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.HasIndex(e => new { e.OrganizationId, e.Ordering });

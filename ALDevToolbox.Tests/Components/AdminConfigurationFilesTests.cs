@@ -41,6 +41,19 @@ public sealed class AdminConfigurationFilesTests : IDisposable
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),
             typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
+
+        // The MovePlatformFilesToOrgFiles migration seeds .gitignore, the
+        // shared ruleset, and README.md as OrganizationFile rows for every
+        // existing org — including the fixture's Default org. These tests
+        // pre-date that seeding and want a clean slate so the empty-state
+        // and "exactly two rows" assertions stay meaningful. Wipe the table
+        // for the Default org; cascade FKs handle any joins.
+        using (var ctx = _db.NewContext())
+        {
+            ctx.Database.ExecuteSqlRaw(
+                "DELETE FROM organization_files WHERE organization_id = {0}",
+                TestDb.DefaultOrgId);
+        }
     }
 
     public void Dispose()

@@ -302,6 +302,13 @@ public sealed class AccountService
         };
         _db.Organizations.Add(org);
         await _db.SaveChangesAsync(ct);
+
+        // Seed the platform-default workspace files (.gitignore, the shared
+        // ruleset, the README stub) so the new org has a starter library in
+        // place when its admins create their first template. Idempotent: the
+        // helper skips any row whose path already exists for the org.
+        await PlatformOrganizationFileSeeder.EnsureForOrganizationAsync(_db, org.Id, now, ct);
+        await _db.SaveChangesAsync(ct);
         return org;
     }
 

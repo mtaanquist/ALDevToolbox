@@ -76,7 +76,23 @@
                 <input id="mod-name" type="text" required
                        @bind="_form.Name" @bind:event="oninput"
                        placeholder="e.g. Document Capture" />
+                <small class="muted">Display name shown to users in the module picker.</small>
                 <FieldError Field="Name" Errors="_fieldErrors" />
+            </section>
+
+            <section class="form-section">
+                <label class="section-label" for="mod-ext-name">Extension name</label>
+                <input id="mod-ext-name" type="text" required
+                       pattern="[A-Z][A-Za-z0-9]*"
+                       @bind="_form.ExtensionName" @bind:event="oninput"
+                       placeholder="e.g. DocumentCapture" />
+                <small class="muted">
+                    PascalCase. Used as the folder name in the generated
+                    workspace and as the rendered AL extension name (after
+                    <code>{{extension_prefix}}</code> substitution). Letters
+                    and digits only; start with an uppercase letter.
+                </small>
+                <FieldError Field="ExtensionName" Errors="_fieldErrors" />
             </section>
 
             <section class="form-section">
@@ -431,6 +447,7 @@
     {
         public string Key { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
+        public string ExtensionName { get; set; } = string.Empty;
         public int? IdRangeSize { get; set; }
         public bool Deprecated { get; set; }
         public List<DependencyRow> Dependencies { get; } = new();
@@ -443,6 +460,7 @@
             {
                 Key = module.Key,
                 Name = module.Name,
+                ExtensionName = module.ExtensionName,
                 IdRangeSize = module.IdRangeSize,
                 Deprecated = module.Deprecated,
             };
@@ -462,6 +480,7 @@
         public ModuleInput ToInput() => new(
             Key: Key,
             Name: Name,
+            ExtensionName: ExtensionName,
             IdRangeSize: IdRangeSize,
             Deprecated: Deprecated,
             Dependencies: Dependencies

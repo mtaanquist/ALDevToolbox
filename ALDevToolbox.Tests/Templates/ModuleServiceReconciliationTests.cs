@@ -171,6 +171,7 @@ public sealed class ModuleServiceReconciliationTests : IDisposable
         new(
             Key: key,
             Name: "Test Module",
+            ExtensionName: "TestModule",
             IdRangeSize: null,
             Deprecated: false,
             Dependencies: deps);

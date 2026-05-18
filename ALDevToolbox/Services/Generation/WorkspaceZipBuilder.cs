@@ -51,20 +51,25 @@ public sealed class WorkspaceZipBuilder
 
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
-            // Workspace-level assets: org logo, ruleset, always-included files.
+            // Workspace-level assets: org logo + the always-included files the
+            // template opts into. The .gitignore, the company ruleset, and
+            // the README stub used to ship from embedded resources but moved
+            // onto OrganizationFile rows so admins can curate them per
+            // template — they come through WriteOrgFiles below.
             fileCount += WriteOrgLogo(archive, $"{rootFolder}/.assets/images", orgConfig.Logo);
-            await WriteEmbeddedAsync(archive, $"{rootFolder}/.assets/rulesets/Company.ruleset.json", "ALDevToolbox.Resources.Company.ruleset.json", ct);
-            fileCount += 1;
-            fileCount += WriteOrgFiles(archive, rootFolder, orgConfig.Files, plan, template);
+            // Filter the org's file library against the template's opt-in
+            // join once. WriteOrgFiles writes the workspace-root subset; the
+            // per-extension subset gets written inside each extension folder
+            // by WriteExtension below.
+            var includedFiles = FilterIncluded(orgConfig.Files, template);
+            fileCount += WriteOrgFiles(archive, rootFolder, includedFiles, plan, template);
 
             // Per-extension folders.
             foreach (var ext in extensions)
             {
-                fileCount += WriteExtension(archive, rootFolder, ext, extensions, template, plan);
+                fileCount += WriteExtension(archive, rootFolder, ext, extensions, template, plan, includedFiles);
             }
 
-            // Workspace-root metadata.
-            await WriteEmbeddedAsync(archive, $"{rootFolder}/.gitignore", "ALDevToolbox.Resources.al.gitignore", ct);
             var folderNames = extensions.Select(e => e.Path).ToList();
             var workspaceJsonCtx = new MustacheContext(
                 Name: plan.WorkspaceName,
@@ -77,14 +82,14 @@ public sealed class WorkspaceZipBuilder
                 Publisher: template.Defaults.Publisher,
                 ExtensionPrefix: plan.ExtensionPrefix,
                 Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
-                FolderPath: string.Empty);
+                FolderPath: string.Empty,
+                TenantId: plan.TenantId);
             WriteString(archive, $"{rootFolder}/{shortName}.code-workspace",
                 BuildCodeWorkspace(
                     orgConfig.Settings.CodeWorkspaceJson,
                     template.CodeWorkspaceJson,
                     folderNames,
                     workspaceJsonCtx));
-            WriteString(archive, $"{rootFolder}/README.md", BuildReadme(plan));
             var identities = extensions.Select(e => new WorkspaceExtensionIdentity(
                 Kind: e.IsModuleClone ? WorkspaceExtensionIdentity.ModuleKind : WorkspaceExtensionIdentity.CoreKind,
                 Key: e.ModuleKey,
@@ -95,7 +100,10 @@ public sealed class WorkspaceZipBuilder
                 IdRangeFrom: e.IdRangeFrom,
                 IdRangeTo: e.IdRangeTo)).ToList();
             WriteString(archive, $"{rootFolder}/{WorkspaceConfigService.FileName}", _config.BuildWorkspace(plan, identities));
-            fileCount += 4;
+            // Two emissions in this tail block: the .code-workspace file and
+            // the workspace.aldt.toml side-car. The ruleset, .gitignore, and
+            // README that used to sit here moved onto OrganizationFile rows.
+            fileCount += 2;
         }
 
         stream.Position = 0;
@@ -113,7 +121,7 @@ public sealed class WorkspaceZipBuilder
         RuntimeTemplate template,
         IReadOnlyList<FolderNode> scaffoldFolderRoots,
         SiblingWorkspaceContext? sibling,
-        OrganizationConfig? siblingOrgConfig,
+        OrganizationConfig orgConfig,
         CancellationToken ct)
     {
         var folderName = StripWhitespace(plan.ExtensionName);
@@ -126,11 +134,43 @@ public sealed class WorkspaceZipBuilder
             WriteString(archive, $"{folderName}/app.json", appJson);
             fileCount++;
 
-            if (template.AppSourceCop.Include)
-            {
-                WriteString(archive, $"{folderName}/AppSourceCop.json", BuildAppSourceCopJson(template.AppSourceCop));
-                fileCount++;
-            }
+            // Per-extension org files (AppSourceCop.json, .editorconfig
+            // overrides, etc.) opt-in via the template's IncludedFiles join.
+            // The standalone flow synthesises a one-extension Emittable so it
+            // can reuse the same mustache context builder as the workspace
+            // flow.
+            var standaloneExt = new EmittableExtension(
+                Path: folderName,
+                Name: plan.ExtensionName,
+                Id: Guid.NewGuid(),
+                IdRangeFrom: plan.IdRangeFrom,
+                IdRangeTo: plan.IdRangeTo,
+                Application: plan.ApplicationVersion,
+                Runtime: plan.RuntimeVersion,
+                Publisher: plan.Publisher,
+                IsModuleClone: false,
+                ModuleKey: null,
+                ModuleName: plan.ExtensionName,
+                FolderRoots: scaffoldFolderRoots,
+                Dependencies: Array.Empty<EmittableDependency>());
+            var standaloneAsWorkspacePlan = new ProjectPlan(
+                TemplateKey: plan.TemplateKey,
+                WorkspaceName: plan.ExtensionName,
+                ExtensionPrefix: string.Empty,
+                Brief: plan.Brief,
+                Description: plan.Description,
+                ApplicationVersion: plan.ApplicationVersion,
+                RuntimeVersion: plan.RuntimeVersion,
+                CoreIdRangeFrom: plan.IdRangeFrom,
+                CoreIdRangeTo: plan.IdRangeTo,
+                IncludeExamples: plan.IncludeExamples,
+                SelectedExtensionPaths: Array.Empty<string>(),
+                SelectedModuleKeys: Array.Empty<string>(),
+                TenantId: string.Empty);
+            fileCount += WritePerExtensionOrgFiles(
+                archive, folderName,
+                FilterIncluded(orgConfig.Files, template),
+                standaloneExt, template, standaloneAsWorkspacePlan);
 
             var substitutionCtx = new MustacheContext(
                 Name: plan.ExtensionName,
@@ -146,7 +186,7 @@ public sealed class WorkspaceZipBuilder
             WriteString(archive, $"{folderName}/{WorkspaceConfigService.FileName}", _config.BuildExtension(plan));
             fileCount++;
 
-            if (sibling is not null && siblingOrgConfig is not null)
+            if (sibling is not null && orgConfig is not null)
             {
                 var workspaceFile = $"{StripWhitespace(sibling.WorkspaceName)}.code-workspace";
                 var existing = sibling.ExistingFolders.Count > 0
@@ -169,7 +209,7 @@ public sealed class WorkspaceZipBuilder
                     FolderPath: string.Empty);
                 WriteString(archive, workspaceFile,
                     BuildCodeWorkspace(
-                        siblingOrgConfig.Settings.CodeWorkspaceJson,
+                        orgConfig.Settings.CodeWorkspaceJson,
                         template.CodeWorkspaceJson,
                         existing,
                         siblingCtx));
@@ -189,18 +229,19 @@ public sealed class WorkspaceZipBuilder
         EmittableExtension ext,
         IReadOnlyList<EmittableExtension> allExtensions,
         RuntimeTemplate template,
-        ProjectPlan plan)
+        ProjectPlan plan,
+        IReadOnlyList<OrganizationFile> includedFiles)
     {
         var extPath = $"{rootFolder}/{ext.Path}";
         var appJson = BuildAppJson(ext, allExtensions, template, plan);
         WriteString(archive, $"{extPath}/app.json", appJson);
         var fileCount = 1;
 
-        if (template.AppSourceCop.Include)
-        {
-            WriteString(archive, $"{extPath}/AppSourceCop.json", BuildAppSourceCopJson(template.AppSourceCop));
-            fileCount++;
-        }
+        // Per-extension org files (formerly: the hard-coded AppSourceCop.json
+        // emission driven by template.AppSourceCop.Include). Admins author
+        // the file as an OrganizationFile with Scope = EveryExtension and tick
+        // it on the template; the emission is one duplicate per extension.
+        fileCount += WritePerExtensionOrgFiles(archive, extPath, includedFiles, ext, template, plan);
 
         var substitutionCtx = new MustacheContext(
             Name: ext.Name,
@@ -210,7 +251,8 @@ public sealed class WorkspaceZipBuilder
             Publisher: ext.Publisher,
             ExtensionPrefix: plan.ExtensionPrefix,
             Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
-            FolderPath: string.Empty);
+            FolderPath: string.Empty,
+            TenantId: plan.TenantId);
 
         fileCount += EmitFolderTree(archive, extPath, ext.FolderRoots, plan.IncludeExamples, substitutionCtx);
         return fileCount;
@@ -270,16 +312,6 @@ public sealed class WorkspaceZipBuilder
     /// <see cref="AppSourceCopSettings.Include"/> flag is stripped — it's our
     /// authoring toggle, not an AL concept; AL would reject an unknown field.
     /// </summary>
-    private static string BuildAppSourceCopJson(AppSourceCopSettings settings)
-    {
-        var node = new JsonObject
-        {
-            ["mandatoryPrefix"] = settings.MandatoryPrefix,
-            ["supportedCountries"] = new JsonArray(settings.SupportedCountries.Select(c => (JsonNode)c).ToArray()),
-        };
-        return SerializeIndented(node);
-    }
-
     private string BuildAppJson(
         EmittableExtension ext,
         IReadOnlyList<EmittableExtension> allExtensions,
@@ -451,6 +483,35 @@ public sealed class WorkspaceZipBuilder
         return 1;
     }
 
+    /// <summary>
+    /// Narrows <paramref name="files"/> to the ones the template has opted
+    /// into via <see cref="RuntimeTemplate.IncludedFiles"/>. Ordering follows
+    /// the join's <c>Ordering</c> column so admins control the emit sequence
+    /// per template.
+    /// </summary>
+    private static IReadOnlyList<OrganizationFile> FilterIncluded(
+        IReadOnlyList<OrganizationFile> files,
+        RuntimeTemplate template)
+    {
+        if (template.IncludedFiles.Count == 0) return Array.Empty<OrganizationFile>();
+        var byId = files.ToDictionary(f => f.Id);
+        return template.IncludedFiles
+            .OrderBy(j => j.Ordering)
+            .Select(j => byId.TryGetValue(j.OrganizationFileId, out var f) ? f : null)
+            .Where(f => f is not null)
+            .Cast<OrganizationFile>()
+            .ToList();
+    }
+
+    /// <summary>
+    /// Emits the workspace-root-scoped files from <paramref name="files"/>.
+    /// Per-extension-scoped rows are skipped here — see
+    /// <see cref="WritePerExtensionOrgFiles"/> for the inside-each-extension
+    /// counterpart. Splitting on scope keeps the mustache context coherent:
+    /// workspace-root files build one context per workspace; per-extension
+    /// files build one per extension so <c>{{name}}</c> /
+    /// <c>{{extension_prefix}}</c> resolve to that extension's identity.
+    /// </summary>
     private int WriteOrgFiles(
         ZipArchive archive,
         string rootFolder,
@@ -468,13 +529,56 @@ public sealed class WorkspaceZipBuilder
             Publisher: template.Defaults.Publisher,
             ExtensionPrefix: plan.ExtensionPrefix,
             Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
-            FolderPath: string.Empty);
+            FolderPath: string.Empty,
+            TenantId: plan.TenantId);
         foreach (var file in files)
         {
+            if (file.Scope != Domain.ValueObjects.OrganizationFileScope.WorkspaceRoot) continue;
             var content = file.MustacheEnabled
                 ? _mustache.Render(file.Content, ctx with { FolderPath = file.Path })
                 : file.Content;
             WriteString(archive, $"{rootFolder}/{file.Path}", content);
+            written++;
+        }
+        return written;
+    }
+
+    /// <summary>
+    /// Emits every per-extension-scoped row from <paramref name="files"/>
+    /// into the supplied extension's folder. Mustache context is built off
+    /// the extension's identity so <c>{{name}}</c> resolves to the
+    /// per-extension rendered name (Core, Hotfix, the cloned module's
+    /// extension_name). Replaces the old hard-coded AppSourceCop.json
+    /// emission: admins author AppSourceCop.json as a normal
+    /// OrganizationFile with scope = EveryExtension.
+    /// </summary>
+    private int WritePerExtensionOrgFiles(
+        ZipArchive archive,
+        string extensionFolderPath,
+        IReadOnlyList<OrganizationFile> files,
+        EmittableExtension ext,
+        RuntimeTemplate template,
+        ProjectPlan plan)
+    {
+        if (files.Count == 0) return 0;
+        var written = 0;
+        var ctx = new MustacheContext(
+            Name: ext.Name,
+            WorkspaceName: plan.WorkspaceName,
+            ShortName: StripWhitespace(plan.WorkspaceName),
+            ModuleName: ext.ModuleName,
+            Publisher: ext.Publisher,
+            ExtensionPrefix: plan.ExtensionPrefix,
+            Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
+            FolderPath: string.Empty,
+            TenantId: plan.TenantId);
+        foreach (var file in files)
+        {
+            if (file.Scope != Domain.ValueObjects.OrganizationFileScope.EveryExtension) continue;
+            var content = file.MustacheEnabled
+                ? _mustache.Render(file.Content, ctx with { FolderPath = file.Path })
+                : file.Content;
+            WriteString(archive, $"{extensionFolderPath}/{file.Path}", content);
             written++;
         }
         return written;
@@ -587,15 +691,6 @@ public sealed class WorkspaceZipBuilder
         }
     }
 
-    private static string BuildReadme(ProjectPlan plan) =>
-        $"""
-        # {plan.WorkspaceName}
-
-        {plan.Description}
-
-        Generated by AL Dev Toolbox.
-        """;
-
     // ===== ZIP helpers =====
 
     private static void WriteString(ZipArchive archive, string path, string content)
@@ -608,16 +703,6 @@ public sealed class WorkspaceZipBuilder
     private static void WriteEmptyFile(ZipArchive archive, string path)
     {
         archive.CreateEntry(path, CompressionLevel.NoCompression).Open().Dispose();
-    }
-
-    private static async Task WriteEmbeddedAsync(ZipArchive archive, string path, string resourceName, CancellationToken ct)
-    {
-        var assembly = typeof(WorkspaceZipBuilder).Assembly;
-        await using var resource = assembly.GetManifestResourceStream(resourceName)
-            ?? throw new InvalidOperationException($"Embedded resource '{resourceName}' not found.");
-        var entry = archive.CreateEntry(path, CompressionLevel.Optimal);
-        await using var entryStream = entry.Open();
-        await resource.CopyToAsync(entryStream, ct);
     }
 
     private static string SerializeIndented(JsonNode node) =>

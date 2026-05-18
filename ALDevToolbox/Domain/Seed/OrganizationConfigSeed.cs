@@ -42,4 +42,10 @@ public class OrganizationFileSeed
     public string Path { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public bool MustacheEnabled { get; set; }
+    /// <summary>
+    /// Scope round-trip via TOML. Stored as the enum name so exports stay
+    /// readable. Defaults to <c>WorkspaceRoot</c> so seeds authored before
+    /// the column landed parse cleanly.
+    /// </summary>
+    public string Scope { get; set; } = nameof(ALDevToolbox.Domain.ValueObjects.OrganizationFileScope.WorkspaceRoot);
 }

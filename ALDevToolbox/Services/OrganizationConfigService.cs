@@ -141,6 +141,13 @@ public class OrganizationConfigService
         row.DefaultIdRangeTo = input.DefaultIdRangeTo;
         row.DefaultBrief = input.DefaultBrief?.Trim() ?? string.Empty;
         row.DefaultCoreDescription = input.DefaultCoreDescription?.Trim() ?? string.Empty;
+        row.DefaultUrl = string.IsNullOrWhiteSpace(input.DefaultUrl) ? null : input.DefaultUrl.Trim();
+        row.DefaultLogo = string.IsNullOrWhiteSpace(input.DefaultLogo) ? null : input.DefaultLogo.Trim();
+        row.DefaultSupportedCountries = input.DefaultSupportedCountries?
+            .Select(c => c?.Trim() ?? string.Empty)
+            .Where(c => !string.IsNullOrEmpty(c))
+            .ToList()
+            ?? new List<string>();
         row.UpdatedAt = now;
 
         await _db.SaveChangesAsync(ct);
@@ -278,6 +285,7 @@ public class OrganizationConfigService
                 row.Path = path;
                 row.Content = input.Content ?? string.Empty;
                 row.MustacheEnabled = input.MustacheEnabled;
+                row.Scope = input.Scope;
                 row.Ordering = i;
                 row.UpdatedAt = now;
             }
@@ -288,6 +296,7 @@ public class OrganizationConfigService
                     OrganizationId = orgId,
                     Path = path,
                     Content = input.Content ?? string.Empty,
+                    Scope = input.Scope,
                     MustacheEnabled = input.MustacheEnabled,
                     Ordering = i,
                     UpdatedAt = now,
@@ -362,7 +371,10 @@ public class OrganizationConfigService
                 Id: null,
                 Path: f.Path,
                 Content: f.Content,
-                MustacheEnabled: f.MustacheEnabled))
+                MustacheEnabled: f.MustacheEnabled,
+                Scope: Enum.TryParse<ALDevToolbox.Domain.ValueObjects.OrganizationFileScope>(f.Scope, out var s)
+                    ? s
+                    : ALDevToolbox.Domain.ValueObjects.OrganizationFileScope.WorkspaceRoot))
             .ToList();
         ValidateFiles(fileInputs);
 
@@ -416,6 +428,13 @@ public class OrganizationConfigService
         settings.DefaultIdRangeTo = settingsInput.DefaultIdRangeTo;
         settings.DefaultBrief = settingsInput.DefaultBrief?.Trim() ?? string.Empty;
         settings.DefaultCoreDescription = settingsInput.DefaultCoreDescription?.Trim() ?? string.Empty;
+        settings.DefaultUrl = string.IsNullOrWhiteSpace(settingsInput.DefaultUrl) ? null : settingsInput.DefaultUrl.Trim();
+        settings.DefaultLogo = string.IsNullOrWhiteSpace(settingsInput.DefaultLogo) ? null : settingsInput.DefaultLogo.Trim();
+        settings.DefaultSupportedCountries = settingsInput.DefaultSupportedCountries?
+            .Select(c => c?.Trim() ?? string.Empty)
+            .Where(c => !string.IsNullOrEmpty(c))
+            .ToList()
+            ?? new List<string>();
         settings.CodeWorkspaceJson = codeWorkspaceJson;
         settings.UpdatedAt = now;
 
@@ -434,6 +453,7 @@ public class OrganizationConfigService
                 Path = input.Path.Trim(),
                 Content = input.Content ?? string.Empty,
                 MustacheEnabled = input.MustacheEnabled,
+                Scope = input.Scope,
                 Ordering = i,
                 UpdatedAt = now,
             });
@@ -584,11 +604,15 @@ public record OrganizationSettingsInput(
     int DefaultIdRangeFrom,
     int DefaultIdRangeTo,
     string DefaultBrief,
-    string DefaultCoreDescription);
+    string DefaultCoreDescription,
+    string? DefaultUrl = null,
+    string? DefaultLogo = null,
+    IReadOnlyList<string>? DefaultSupportedCountries = null);
 
 /// <summary>One row submitted by the always-included files editor.</summary>
 public record OrganizationFileInput(
     int? Id,
     string Path,
     string Content,
-    bool MustacheEnabled);
+    bool MustacheEnabled,
+    ALDevToolbox.Domain.ValueObjects.OrganizationFileScope Scope = ALDevToolbox.Domain.ValueObjects.OrganizationFileScope.WorkspaceRoot);

@@ -42,6 +42,12 @@ public sealed class AdminTemplateEditTests : IDisposable
             opts.UseNpgsql(_db.ConnectionString));
         _ctx.Services.AddScoped<TemplateService>();
         _ctx.Services.AddScoped<ApplicationVersionService>();
+        // The page now lists the org's always-included files via a checkbox
+        // section, so it pulls in OrganizationConfigService. Wire the same
+        // storage chain the service depends on so the bunit render doesn't
+        // throw "no registered service" mid-paint.
+        _db.AddStorageServices(_ctx.Services);
+        _ctx.Services.AddScoped<OrganizationConfigService>();
         // AuditHistoryPanel renders only when _existingId is set (edit mode)
         // and injects AuditService. Register it so the page doesn't crash on
         // edit-mode hydration.

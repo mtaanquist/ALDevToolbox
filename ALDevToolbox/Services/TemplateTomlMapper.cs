@@ -127,6 +127,7 @@ public static class TemplateTomlMapper
             DefaultModules = authoring.DefaultModuleKeys
                 .Select(k => new TemplateDefaultModuleSeed { Key = k })
                 .ToList(),
+            IncludedFiles = authoring.IncludedFilePaths?.ToList() ?? new List<string>(),
         },
         Defaults = BuildDefaultsSeed(defaults),
         AppSourceCop = new AppSourceCopSeed
@@ -160,6 +161,11 @@ public static class TemplateTomlMapper
                     .OrderBy(d => d.Ordering)
                     .Where(d => d.Module is not null)
                     .Select(d => new TemplateDefaultModuleSeed { Key = d.Module!.Key })
+                    .ToList(),
+                IncludedFiles = template.IncludedFiles
+                    .OrderBy(j => j.Ordering)
+                    .Where(j => j.OrganizationFile is not null)
+                    .Select(j => j.OrganizationFile!.Path)
                     .ToList(),
             },
             Defaults = BuildDefaultsSeed(defaults),
@@ -414,7 +420,8 @@ public static class TemplateTomlMapper
             Extensions: extensions,
             CodeWorkspaceJson: string.IsNullOrWhiteSpace(seed.WorkspaceSettings?.Json)
                 ? null
-                : seed.WorkspaceSettings.Json);
+                : seed.WorkspaceSettings.Json,
+            IncludedFilePaths: seed.Template.IncludedFiles.ToList());
     }
 
     private static ExtensionAuthoring MapExtension(ExtensionSeed seed) => new(
@@ -474,7 +481,7 @@ public static class TemplateTomlMapper
     /// <see cref="ToToml"/> which re-emits without them.
     /// </summary>
     public static string BlankToml() => """"
-# AL Dev Toolbox runtime template — TOML reference.
+# AL Dev Toolbox workspace template — TOML reference.
 # Edit the fields below, then click "Create template". Comments are
 # stripped on save and won't reappear after the next round-trip.
 # Anything you leave at its default stays empty in the generated
@@ -484,7 +491,7 @@ public static class TemplateTomlMapper
 # Stable identifier shown in URLs and used for cross-org imports. Pick
 # once — renaming breaks references from imported templates. Lowercase
 # letters, digits, and hyphens only.
-key = "runtime-new"
+key = ""
 
 # Business Central runtime version. "26" (major) or "26.1" (Major.Minor).
 runtime = "26"

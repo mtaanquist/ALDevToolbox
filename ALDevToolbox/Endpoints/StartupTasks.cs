@@ -46,6 +46,15 @@ internal static class StartupTasks
             await db.SaveChangesAsync(stopping);
         }
 
+        // Ensure the Default org carries the platform-default workspace
+        // files. The MovePlatformFilesToOrgFiles migration covers existing
+        // orgs at migration time, but a fresh-DB boot creates the Default
+        // org AFTER migrations have run — without this call the org would
+        // have no .gitignore / ruleset / README to opt new templates into.
+        // Idempotent: existing rows at those paths are left alone.
+        await PlatformOrganizationFileSeeder.EnsureForOrganizationAsync(db, defaultOrg.Id, DateTime.UtcNow, stopping);
+        await db.SaveChangesAsync(stopping);
+
         // Bootstrap admin: only runs once, when there are no users in the
         // database. After that the env vars are read but ignored (logged).
         var bootstrapEmail = Environment.GetEnvironmentVariable("BOOTSTRAP_ADMIN_EMAIL");
