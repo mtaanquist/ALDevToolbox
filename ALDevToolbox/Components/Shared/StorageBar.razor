@@ -1,6 +1,6 @@
 @using ALDevToolbox.Services
 @using Microsoft.Extensions.DependencyInjection
-@inject IServiceProvider Services
+@inject IServiceScopeFactory ScopeFactory
 
 @*
     Sidebar capacity indicator. Shows the acting organisation's billable
@@ -38,11 +38,14 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // The service is resolved lazily so this component can be dropped
-        // into layouts (NavMenu) that don't always have the storage stack
-        // wired up — e.g. component tests that exercise navigation only.
-        // Failures here should never break the layout: render nothing.
-        var usage = Services.GetService<DatabaseUsageService>();
+        // The layout's DbContext is scoped to the same request as the page
+        // body's DbContext. Hitting both at once during prerender (page
+        // OnInitializedAsync + this one) triggers EF's concurrency detector.
+        // Resolve through a fresh child scope so the storage query gets its
+        // own AppDbContext instance, isolated from whatever the page is
+        // doing on the request-scoped one.
+        await using var scope = ScopeFactory.CreateAsyncScope();
+        var usage = scope.ServiceProvider.GetService<DatabaseUsageService>();
         if (usage is null) return;
         try
         {

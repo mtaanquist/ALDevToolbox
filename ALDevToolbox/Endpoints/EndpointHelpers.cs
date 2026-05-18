@@ -173,7 +173,16 @@ internal static class EndpointHelpers
     public static string? ReadAndClearOneShotInviteCookie(HttpContext ctx, IDataProtectionProvider protection)
     {
         if (!ctx.Request.Cookies.TryGetValue(OneShotInviteCookieName, out var raw) || string.IsNullOrEmpty(raw)) return null;
-        ctx.Response.Cookies.Delete(OneShotInviteCookieName);
+        // The cookie clear only works when the response is still writable;
+        // once the prerender HTML has been flushed (e.g. when this is called
+        // from a Blazor OnAfterRenderAsync running on the interactive
+        // circuit), touching Response.Cookies throws "Headers are read-only".
+        // The cookie has a short TTL and is consumed on this read either
+        // way, so silently skip the delete in that case.
+        if (!ctx.Response.HasStarted)
+        {
+            ctx.Response.Cookies.Delete(OneShotInviteCookieName);
+        }
         try
         {
             var protector = protection.CreateProtector(OneShotInviteProtectionPurpose);
@@ -202,7 +211,14 @@ internal static class EndpointHelpers
     public static string[]? ReadAndClearOneShotRecoveryCodesCookie(HttpContext ctx, IDataProtectionProvider protection)
     {
         if (!ctx.Request.Cookies.TryGetValue(OneShotRecoveryCodesCookieName, out var raw) || string.IsNullOrEmpty(raw)) return null;
-        ctx.Response.Cookies.Delete(OneShotRecoveryCodesCookieName);
+        // See ReadAndClearOneShotInviteCookie — skip the delete when the
+        // response has already been written, which happens whenever this
+        // helper is called from a Blazor OnAfterRenderAsync running on the
+        // interactive circuit.
+        if (!ctx.Response.HasStarted)
+        {
+            ctx.Response.Cookies.Delete(OneShotRecoveryCodesCookieName);
+        }
         try
         {
             var protector = protection.CreateProtector(OneShotRecoveryCodesProtectionPurpose);
