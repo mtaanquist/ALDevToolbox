@@ -2091,17 +2091,22 @@ ul.form-field-error {
 
 .folder-editor__row-head {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
     padding: 8px;
 }
 
 /* Match the up/down/remove buttons to the height of the path input so the
    row reads as one line rather than three slightly-different mini-controls.
-   The .folder-editor__path input is 6px+13px+6px+2px ≈ 33px tall — pin the
-   neighbouring buttons to the same min-height. */
-.folder-editor__row-head > .btn--sm,
-.folder-editor__order .btn--sm {
+   Scoped to the template editor's extension/folder list — other pages (e.g.
+   AdminApplicationVersions) reuse `.folder-editor__*` classes with their own
+   button sizing that mustn't be bumped to 30px. */
+.extension-editor__list .folder-editor__row-head {
+    align-items: center;
+}
+
+.extension-editor__list .folder-editor__row-head > .btn--sm,
+.extension-editor__list .folder-editor__order .btn--sm {
     min-height: 30px;
 }
 
