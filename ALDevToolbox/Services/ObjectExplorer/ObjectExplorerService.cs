@@ -1084,33 +1084,36 @@ public class ObjectExplorerService
         // branch logic in one place.
         var memberRefs = await FindReferencesAsync(releaseId, query, ct);
 
-        // (3) Owner-type references at the object level. We run the same
-        // query but with the member filter cleared so we get the
-        // object-scoped rows (variable_type, parameter_type, return_type,
-        // extends_target, table_no) — the "indirect callers" answer.
-        var ownerObjectQuery = query with { TargetMemberName = null, TargetMemberKind = null };
-        var ownerRefs = await FindReferencesAsync(releaseId, ownerObjectQuery, ct);
-        // Restamp these as owner_type so the UI groups them under
-        // "indirect references" rather than "calls".
-        ownerRefs = ownerRefs.Select(r => r with { Category = "owner_type" }).ToList();
+        // (3) Owner-type references at the object level. Disabled for
+        // now — on large releases the bucket can run into thousands of
+        // rows that aren't meaningful for most "find references" use
+        // cases and dominate the panel's render time. Kept in source
+        // (commented) until we decide whether to bring it back behind
+        // a toggle or drop it entirely.
+        //
+        // var ownerObjectQuery = query with { TargetMemberName = null, TargetMemberKind = null };
+        // var ownerRefs = await FindReferencesAsync(releaseId, ownerObjectQuery, ct);
+        // // Restamp these as owner_type so the UI groups them under
+        // // "indirect references" rather than "calls".
+        // ownerRefs = ownerRefs.Select(r => r with { Category = "owner_type" }).ToList();
 
         // Concatenate. Declarations first (most direct), then concrete
-        // member calls (phase-2 will fill this), then indirect owner-type
-        // references. EnrichReferencesWithSnippetsAsync already ran inside
-        // FindReferencesAsync for the two bucket-2/3 sets; do it once for
-        // the declarations bucket so every row has a snippet.
+        // member calls (phase-2 will fill this). The owner-type bucket
+        // would have gone here.  EnrichReferencesWithSnippetsAsync
+        // already ran inside FindReferencesAsync for the member-call
+        // set; do it once for the declarations bucket so every row has
+        // a snippet.
         declarations = await EnrichReferencesWithSnippetsAsync(declarations, ct);
 
-        var all = new List<ReferenceMatch>(declarations.Count + memberRefs.Count + ownerRefs.Count);
+        var all = new List<ReferenceMatch>(declarations.Count + memberRefs.Count);
         all.AddRange(declarations);
         all.AddRange(memberRefs);
-        all.AddRange(ownerRefs);
 
         _logger.LogInformation(
-            "FindReferencesForSymbol ReleaseId={ReleaseId} Owner={Kind}/{Id}/{Name} Member={Member}/{MemberKind} Decl={DeclCount} Call={CallCount} Owner={OwnerCount}",
+            "FindReferencesForSymbol ReleaseId={ReleaseId} Owner={Kind}/{Id}/{Name} Member={Member}/{MemberKind} Decl={DeclCount} Call={CallCount}",
             releaseId, query.TargetObjectKind, query.TargetObjectId, query.TargetObjectName,
             query.TargetMemberName, query.TargetMemberKind,
-            declarations.Count, memberRefs.Count, ownerRefs.Count);
+            declarations.Count, memberRefs.Count);
 
         return all;
     }

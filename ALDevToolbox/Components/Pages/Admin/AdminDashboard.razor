@@ -126,13 +126,9 @@
                             <div class="admin-tile__caption">Export this organisation's templates, modules and catalogue as a TOML snapshot, or replay a configuration import.</div>
                         </div>
                     </a>
-                    <div class="admin-tile admin-tile--storage">
-                        <Icon Name="hard-drive" Width="20" Height="20" Css="admin-tile__icon" />
-                        <div class="admin-tile__body">
-                            <div class="admin-tile__title">Storage</div>
-                            <StorageBar />
-                        </div>
-                    </div>
+                    @* Tenant storage indicator lives in the sidebar (StorageBar)
+                       for tenant admins; no dashboard tile needed. SiteAdmins
+                       still get the per-org Storage link below. *@
                 }
 
                 @if (isSiteAdmin)

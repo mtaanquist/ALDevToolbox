@@ -60,15 +60,6 @@
         </ul>
     </div>
 
-    <AuthorizeView>
-        <Authorized Context="signedIn">
-            @if (!OrgContext.IsSystemOrganization && OrgContext.CurrentOrganizationId is not null)
-            {
-                <StorageBar />
-            }
-        </Authorized>
-    </AuthorizeView>
-
     <AuthorizeView Roles="Admin">
         <Authorized Context="adminCtx">
             @{
@@ -230,6 +221,18 @@
                     }
                 </ul>
             </div>
+        </Authorized>
+    </AuthorizeView>
+
+    @* Capacity indicator pinned to the bottom of the sidebar. Visible only
+       to tenant admins (Admin role) in real organisations — the system org
+       isn't quota-checked, so we hide it there too. *@
+    <AuthorizeView Roles="Admin">
+        <Authorized>
+            @if (!OrgContext.IsSystemOrganization)
+            {
+                <StorageBar />
+            }
         </Authorized>
     </AuthorizeView>
 </nav>
