@@ -148,7 +148,13 @@ builder.Services.AddScoped<ALDevToolbox.Services.Account.PersonalAccessTokenServ
 // resolving exactly like a browser sign-in. Tool classes live under
 // Services/Mcp/Tools/ and are picked up by WithToolsFromAssembly().
 builder.Services.Configure<ALDevToolbox.Services.Mcp.McpOptions>(builder.Configuration.GetSection("Mcp"));
-builder.Services.AddScoped<ALDevToolbox.Services.Mcp.IMcpAvailability, ALDevToolbox.Services.Mcp.SystemSettingsMcpAvailability>();
+// In-memory MCP toggle cache. Singleton so NavMenu's per-render lookup
+// doesn't hit the DB and race with status-code-pages scope teardown. Primed
+// at startup and updated by SystemSettingsService.SaveAsync — see
+// Services/Mcp/IMcpAvailability.cs.
+builder.Services.AddSingleton<ALDevToolbox.Services.Mcp.McpAvailabilityState>();
+builder.Services.AddSingleton<ALDevToolbox.Services.Mcp.IMcpAvailability>(
+    sp => sp.GetRequiredService<ALDevToolbox.Services.Mcp.McpAvailabilityState>());
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.WorkspaceTools>();
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.SnippetTools>();
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.ObjectExplorerTools>();

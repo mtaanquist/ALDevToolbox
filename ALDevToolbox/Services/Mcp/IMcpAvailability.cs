@@ -3,25 +3,31 @@ using ALDevToolbox.Services;
 namespace ALDevToolbox.Services.Mcp;
 
 /// <summary>
-/// Resolves whether MCP is currently turned on for this deployment. The
-/// default implementation just delegates to
-/// <see cref="SystemSettingsService.IsMcpEnabledAsync"/>; tests that don't
-/// want to wire up the full settings stack can substitute a fake.
+/// Process-local cached view of the SiteAdmin's MCP toggle. NavMenu and the
+/// MCP page hit this on every render — keeping it in memory avoids issuing
+/// a DB query inside <c>OnInitializedAsync</c>, where a connection in
+/// flight can collide with the request scope being torn down (especially
+/// during <c>UseStatusCodePagesWithReExecute</c>'s /not-found re-execute).
 /// </summary>
 public interface IMcpAvailability
 {
-    Task<bool> IsEnabledAsync(CancellationToken ct = default);
+    /// <summary>True when the SiteAdmin has enabled MCP under /site-admin/settings.</summary>
+    bool IsEnabled { get; }
 }
 
-internal sealed class SystemSettingsMcpAvailability : IMcpAvailability
+/// <summary>
+/// Singleton holder for the MCP toggle. Primed once at startup from
+/// <c>system_settings.mcp_enabled</c>; <see cref="SystemSettingsService.SaveAsync"/>
+/// pushes new values in after each save so the link visibility and
+/// endpoint kill-switch see them on the next render / request without a
+/// restart and without a per-request DB hit.
+/// </summary>
+public sealed class McpAvailabilityState : IMcpAvailability
 {
-    private readonly SystemSettingsService _settings;
+    private volatile bool _isEnabled;
 
-    public SystemSettingsMcpAvailability(SystemSettingsService settings)
-    {
-        _settings = settings;
-    }
+    public bool IsEnabled => _isEnabled;
 
-    public Task<bool> IsEnabledAsync(CancellationToken ct = default) =>
-        _settings.IsMcpEnabledAsync(ct);
+    /// <summary>Replaces the cached value. Called by startup priming and by the SiteAdmin save path.</summary>
+    public void Set(bool value) => _isEnabled = value;
 }

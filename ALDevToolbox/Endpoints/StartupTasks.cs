@@ -77,6 +77,16 @@ internal static class StartupTasks
                 + "These environment variables only take effect on a fresh database; remove them once the bootstrap account is in place.");
         }
 
+        // Prime the in-memory MCP toggle from the singleton system_settings
+        // row before any request can read it. Resolved from the root provider
+        // because McpAvailabilityState is a singleton — see
+        // Services/Mcp/IMcpAvailability.cs for why the cache exists.
+        var mcpEnabled = await db.SystemSettings.AsNoTracking()
+            .Where(s => s.Id == 1)
+            .Select(s => s.McpEnabled)
+            .FirstOrDefaultAsync(stopping);
+        app.Services.GetRequiredService<ALDevToolbox.Services.Mcp.McpAvailabilityState>().Set(mcpEnabled);
+
         // Flip /readyz to green now that migrations, seed and bootstrap have
         // all run. Resolved from the root service provider so the flag
         // survives the scope's disposal.

@@ -160,12 +160,14 @@ public sealed class SystemSettingsService
     private readonly IDataProtector _offsiteSecretProtector;
     private readonly ILogger<SystemSettingsService> _logger;
     private readonly TimeProvider _clock;
+    private readonly ALDevToolbox.Services.Mcp.McpAvailabilityState? _mcpAvailability;
 
     public SystemSettingsService(
         AppDbContext db,
         IDataProtectionProvider protectionProvider,
         ILogger<SystemSettingsService> logger,
-        TimeProvider clock)
+        TimeProvider clock,
+        ALDevToolbox.Services.Mcp.McpAvailabilityState? mcpAvailability = null)
     {
         _db = db;
         _protector = protectionProvider.CreateProtector(SmtpPasswordProtectionPurpose);
@@ -173,6 +175,9 @@ public sealed class SystemSettingsService
         _offsiteSecretProtector = protectionProvider.CreateProtector(OffsiteSecretKeyProtectionPurpose);
         _logger = logger;
         _clock = clock;
+        // Optional so existing tests that build the service by hand without
+        // the MCP toggle keep compiling. In production DI it's always set.
+        _mcpAvailability = mcpAvailability;
     }
 
     /// <summary>Loads the singleton row, populating the audit-friendly view.</summary>
@@ -267,11 +272,17 @@ public sealed class SystemSettingsService
         }
 
         await _db.SaveChangesAsync(ct);
+        // Push the (possibly new) MCP toggle into the singleton so the
+        // NavMenu link and the /mcp endpoint pick it up on the next render
+        // without waiting for a process restart and without a per-render
+        // DB hit. Synchronous, no awaiting needed.
+        _mcpAvailability?.Set(row.McpEnabled);
         _logger.LogInformation(
-            "System settings updated (smtp_host={SmtpHost}, banner={HasBanner}, auto_approve={AutoApprove}).",
+            "System settings updated (smtp_host={SmtpHost}, banner={HasBanner}, auto_approve={AutoApprove}, mcp={Mcp}).",
             row.SmtpHost ?? "<unset>",
             !string.IsNullOrEmpty(row.BannerText),
-            row.DefaultSignupAutoApprove);
+            row.DefaultSignupAutoApprove,
+            row.McpEnabled);
     }
 
     /// <summary>

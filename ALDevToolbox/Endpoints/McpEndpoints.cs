@@ -43,6 +43,8 @@ internal static class McpEndpoints
                 await next();
                 return;
             }
+            // (Below kill-switch is intentionally synchronous now that
+            //  IMcpAvailability is in-memory.)
             // Opt /mcp out of UseStatusCodePagesWithReExecute. The status-pages
             // middleware re-runs the pipeline at GET /not-found whenever a
             // downstream handler returns a bare 4xx; for POST /mcp that
@@ -53,8 +55,10 @@ internal static class McpEndpoints
             var statusCodes = ctx.Features.Get<IStatusCodePagesFeature>();
             if (statusCodes is not null) statusCodes.Enabled = false;
 
-            var settings = ctx.RequestServices.GetRequiredService<SystemSettingsService>();
-            if (!await settings.IsMcpEnabledAsync(ctx.RequestAborted))
+            // Read the in-memory toggle — no DB hit per request. Singleton is
+            // primed at startup and refreshed by SystemSettingsService.SaveAsync.
+            var availability = ctx.RequestServices.GetRequiredService<IMcpAvailability>();
+            if (!availability.IsEnabled)
             {
                 // Plain-text response body keeps UseStatusCodePagesWithReExecute
                 // from re-running the pipeline as a GET /not-found — that

@@ -35,7 +35,7 @@ public sealed class NavMenuTests : IDisposable
     private sealed class FakeMcpAvailability : IMcpAvailability
     {
         public bool Enabled { get; set; }
-        public Task<bool> IsEnabledAsync(CancellationToken ct = default) => Task.FromResult(Enabled);
+        public bool IsEnabled => Enabled;
     }
 
     public void Dispose() => _ctx.Dispose();

@@ -60,8 +60,11 @@
                 </NavLink>
             </li>
             @* MCP link only shows when the user is signed in *and* the
-               SiteAdmin has enabled MCP under /site-admin/settings. *@
-            @if (_mcpEnabled)
+               SiteAdmin has enabled MCP under /site-admin/settings. The
+               availability flag is held in a singleton primed at startup
+               and refreshed on save, so this branch never issues a DB
+               query during render. *@
+            @if (McpAvailability.IsEnabled)
             {
                 <AuthorizeView>
                     <Authorized>
@@ -260,15 +263,3 @@
     </AuthorizeView>
 </nav>
 
-@code {
-    // Cached for the lifetime of this NavMenu instance. The sidebar
-    // re-renders on each circuit / interactive nav, which re-runs
-    // OnInitializedAsync — fresh enough that a SiteAdmin toggling MCP off
-    // takes effect on the next page load without an explicit invalidation.
-    private bool _mcpEnabled;
-
-    protected override async Task OnInitializedAsync()
-    {
-        _mcpEnabled = await McpAvailability.IsEnabledAsync();
-    }
-}

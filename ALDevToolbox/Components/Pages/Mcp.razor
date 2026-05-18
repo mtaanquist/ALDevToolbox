@@ -172,9 +172,9 @@
     private string _selectedTab = "VS Code";
     private bool _copied;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
-        _mcpEnabled = await McpAvailability.IsEnabledAsync();
+        _mcpEnabled = McpAvailability.IsEnabled;
         var ctx = Http.HttpContext;
         if (ctx is not null)
         {
@@ -182,7 +182,7 @@
         }
         else
         {
-            // OnInitializedAsync after the SSR pass — fall back to the URL the
+            // OnInitialized after the SSR pass — fall back to the URL the
             // page itself is on so the snippet still has a sensible default.
             var uri = new Uri(Nav.Uri);
             _serverUrl = $"{uri.Scheme}://{uri.Authority}/mcp";
