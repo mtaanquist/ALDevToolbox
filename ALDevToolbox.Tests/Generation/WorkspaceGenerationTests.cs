@@ -375,6 +375,33 @@ public sealed class WorkspaceGenerationTests : IDisposable
         ctx.RuntimeTemplates.Add(template);
         if (modules.Length > 0) ctx.Modules.AddRange(modules);
         await ctx.SaveChangesAsync();
+
+        // The MovePlatformFilesToOrgFiles migration backfills the join only
+        // for templates that existed at migration time. Tests create their
+        // template here, after the migration ran — preserve the legacy
+        // expectation that `.gitignore`, the shared ruleset, and README.md
+        // land at the workspace root by joining the new template to every
+        // org file the fixture's Default org has.
+        var orgFileIds = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
+            ctx.OrganizationFiles
+                .Where(f => f.OrganizationId == template.OrganizationId)
+                .OrderBy(f => f.Ordering)
+                .Select(f => f.Id));
+        for (var i = 0; i < orgFileIds.Count; i++)
+        {
+            ctx.Set<ALDevToolbox.Domain.Entities.RuntimeTemplateIncludedFile>().Add(
+                new ALDevToolbox.Domain.Entities.RuntimeTemplateIncludedFile
+                {
+                    OrganizationId = template.OrganizationId,
+                    RuntimeTemplateId = template.Id,
+                    OrganizationFileId = orgFileIds[i],
+                    Ordering = i,
+                });
+        }
+        if (orgFileIds.Count > 0)
+        {
+            await ctx.SaveChangesAsync();
+        }
     }
 
     private async Task<ZipArchive> GenerateAsync(ProjectPlan plan)

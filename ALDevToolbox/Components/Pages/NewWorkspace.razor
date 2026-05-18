@@ -416,14 +416,20 @@
             ? "Workspace"
             : StripWhitespace(_workspaceName);
 
-        var children = new List<PreviewNode>
+        var children = new List<PreviewNode>();
+
+        // The org logo is the only inherent workspace-level asset left — the
+        // ruleset, .gitignore, and README stub all moved onto OrganizationFile
+        // rows the admin opts each template into. Show .assets/images/logo.png
+        // only when an org logo has actually been uploaded; for a fresh org
+        // the directory wouldn't exist in the ZIP.
+        if (_orgConfig?.Logo is not null)
         {
-            PreviewNode.Folder(".assets", new[]
+            children.Add(PreviewNode.Folder(".assets", new[]
             {
                 PreviewNode.Folder("images", new[] { PreviewNode.File("logo.png") }),
-                PreviewNode.Folder("rulesets", new[] { PreviewNode.File("Company.ruleset.json") }),
-            }),
-        };
+            }));
+        }
 
         var includeCop = _selected?.AppSourceCop.Include ?? true;
         if (_selected is not null)
@@ -453,8 +459,6 @@
         }
 
         children.Add(PreviewNode.File($"{rootName}.code-workspace"));
-        children.Add(PreviewNode.File(".gitignore"));
-        children.Add(PreviewNode.File("README.md"));
 
         // Always-included org files the picked template has opted into.
         // Mirrors WorkspaceZipBuilder.WriteOrgFiles so the preview matches the
