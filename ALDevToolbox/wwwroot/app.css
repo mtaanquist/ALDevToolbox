@@ -2282,17 +2282,6 @@ ul.form-field-error {
     margin-bottom: 8px;
 }
 
-.tenant-id-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.tenant-id-row input {
-    flex: 1;
-    min-width: 0;
-    font-family: var(--font-mono, monospace);
-}
 
 .mod-dep-add select {
     flex: 1;

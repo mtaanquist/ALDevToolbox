@@ -14,8 +14,9 @@
     <header class="page-header">
         <h1>New workspace</h1>
         <p class="muted">
-            Generate a fresh AL workspace from a runtime template. Pick the
-            template, customise the defaults, then download the ZIP.
+            Spin up a fresh AL workspace from one of your organisation's
+            workspace templates. Pick the template, tweak the defaults that
+            don't fit your project, and download the ZIP.
         </p>
     </header>
 
@@ -26,8 +27,9 @@
     else if (_templates.Count == 0)
     {
         <p class="muted">
-            No active runtime templates are available. Seed the database or add one
-            through the admin section before generating a workspace.
+            No active workspace templates are available. Ask an admin to add
+            one under <a href="/admin/templates">Templates</a> before
+            generating a workspace.
         </p>
     }
     else
@@ -38,7 +40,7 @@
                 <input type="hidden" name="GenToken" value="" />
 
                 <section class="form-section">
-                    <label class="section-label" for="ws-template">Runtime template</label>
+                    <label class="section-label" for="ws-template">Workspace template</label>
                     <select id="ws-template" name="TemplateKey" required
                             @bind="_templateKey" @bind:after="OnTemplateChanged">
                         @foreach (var t in _templates)
@@ -75,22 +77,16 @@
 
                 <section class="form-section">
                     <label class="section-label" for="ws-tenant">Tenant ID</label>
-                    <div class="tenant-id-row">
-                        <input id="ws-tenant" type="text" name="TenantId" required
-                               pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-                               title="Lowercase or uppercase hexadecimal GUID, e.g. 8a4f1c3e-1b2d-4e6f-9c1a-3d5b7e9f2a4c"
-                               @bind="_tenantId" @bind:event="oninput" />
-                        <button type="button" class="btn btn--sm"
-                                title="Generate a new GUID"
-                                @onclick="RegenerateTenantId">
-                            <Icon Name="refresh-cw" Width="14" Height="14" />
-                            <span>New GUID</span>
-                        </button>
-                    </div>
+                    <input id="ws-tenant" type="text" name="TenantId"
+                           pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                           placeholder="e.g. 8a4f1c3e-1b2d-4e6f-9c1a-3d5b7e9f2a4c"
+                           title="GUID in 8-4-4-4-12 hex form."
+                           @bind="_tenantId" @bind:event="oninput" />
                     <small class="muted">
-                        Pre-filled with a fresh GUID. Paste an existing tenant ID
-                        to recover it. Available in templates and always-included
-                        files as <code>&#123;&#123;tenant_id&#125;&#125;</code>.
+                        Your Microsoft Entra (Azure AD) tenant ID — the GUID
+                        found in the Entra admin portal. Optional; leave blank
+                        if you don't need it. Available in templates and
+                        always-included files as <code>&#123;&#123;tenant_id&#125;&#125;</code>.
                     </small>
                 </section>
 
@@ -266,11 +262,11 @@
     private List<WorkspaceExtension> _optionalExtensions = new();
     private bool _includeExamples = true;
     /// <summary>
-    /// Tenant GUID surfaced via <c>{{tenant_id}}</c> mustache substitution.
-    /// Pre-filled with a fresh GUID; the user can paste an existing tenant
-    /// ID or hit the regenerate button.
+    /// Microsoft Entra tenant ID surfaced via <c>{{tenant_id}}</c> mustache
+    /// substitution. Optional — users who don't know it leave it blank;
+    /// downstream substitutions then resolve to the empty string.
     /// </summary>
-    private string _tenantId = Guid.NewGuid().ToString("D");
+    private string _tenantId = string.Empty;
 
     private OrganizationConfig? _orgConfig;
 
@@ -377,8 +373,6 @@
         if (isChecked) _selectedExtensionPaths.Add(path);
         else _selectedExtensionPaths.Remove(path);
     }
-
-    private void RegenerateTenantId() => _tenantId = Guid.NewGuid().ToString("D");
 
     private int CountExtensions()
     {
