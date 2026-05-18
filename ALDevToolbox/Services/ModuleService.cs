@@ -74,6 +74,7 @@ public class ModuleService
             OrganizationId = orgId,
             Key = input.Key.Trim(),
             Name = input.Name.Trim(),
+            ExtensionName = input.ExtensionName.Trim(),
             IdRangeSize = input.IdRangeSize,
             Deprecated = input.Deprecated,
             CreatedAt = now,
@@ -120,6 +121,7 @@ public class ModuleService
         await ValidateAsync(validatableInput, existingId: id, ct);
 
         existing.Name = input.Name.Trim();
+        existing.ExtensionName = input.ExtensionName.Trim();
         existing.IdRangeSize = input.IdRangeSize;
         existing.Deprecated = input.Deprecated;
         existing.UpdatedAt = DateTime.UtcNow;
@@ -319,6 +321,16 @@ public class ModuleService
             errors[nameof(input.Name)] = "Name is required.";
         }
 
+        var extensionName = input.ExtensionName?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(extensionName))
+        {
+            errors[nameof(input.ExtensionName)] = "Extension name is required.";
+        }
+        else if (!ValidationPatterns.PascalCase.IsMatch(extensionName))
+        {
+            errors[nameof(input.ExtensionName)] = "Extension name must be PascalCase (start with an uppercase letter; letters and digits only).";
+        }
+
         if (input.IdRangeSize is int size && size <= 0)
         {
             errors[nameof(input.IdRangeSize)] = "ID range size must be greater than zero (or empty to inherit from the template).";
@@ -373,6 +385,7 @@ public class ModuleService
 public record ModuleInput(
     string Key,
     string Name,
+    string ExtensionName,
     int? IdRangeSize,
     bool Deprecated,
     IReadOnlyList<ModuleDependencyInput> Dependencies);

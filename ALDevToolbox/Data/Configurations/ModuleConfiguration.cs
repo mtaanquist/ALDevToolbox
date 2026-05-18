@@ -16,6 +16,7 @@ internal sealed class ModuleConfiguration : IEntityTypeConfiguration<Module>
         entity.Property(e => e.Key).HasColumnName("key").IsRequired();
         entity.HasIndex(e => new { e.OrganizationId, e.Key }).IsUnique();
         entity.Property(e => e.Name).HasColumnName("name").IsRequired();
+        entity.Property(e => e.ExtensionName).HasColumnName("extension_name").IsRequired();
         entity.Property(e => e.IdRangeSize).HasColumnName("id_range_size");
         entity.Property(e => e.Deprecated).HasColumnName("deprecated").IsRequired();
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();

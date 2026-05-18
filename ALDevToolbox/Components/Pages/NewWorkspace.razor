@@ -421,9 +421,10 @@
                 var module = _modules.FirstOrDefault(m => m.Key == key);
                 if (module is null) continue;
                 // Module-cloned extension folder name mirrors GenerationService:
-                // the module's Key is what lands in the ZIP, not the display name.
+                // the module's ExtensionName (PascalCase) is what lands in the
+                // ZIP. Module.Key stays as the admin slug / dep ref target.
                 children.Add(PreviewNode.Extension(
-                    module.Key,
+                    module.ExtensionName,
                     ExtensionPreviewBuilder.BuildContents(module.ExtensionFolders, _includeExamples, includeCop)));
             }
         }

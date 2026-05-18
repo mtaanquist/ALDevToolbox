@@ -15,11 +15,21 @@ public class Module
     public int OrganizationId { get; set; }
     public Organization? Organization { get; set; }
 
-    /// <summary>URL-safe unique key (e.g. <c>document-capture</c>).</summary>
+    /// <summary>URL-safe unique key (e.g. <c>document-capture</c>). Used for
+    /// admin URLs and the dependency reference target; not the ZIP folder name.</summary>
     public string Key { get; set; } = string.Empty;
 
     /// <summary>Display name (e.g. <c>Document Capture</c>).</summary>
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// PascalCase name used for both the ZIP folder of the cloned extension
+    /// (e.g. <c>DocumentCapture/</c>) and the rendered AL extension name
+    /// (after <c>{{extension_prefix}}</c> substitution: <c>"ACME DocumentCapture"</c>).
+    /// Kept separate from <see cref="Key"/> so admins can pick a URL slug that
+    /// differs from the folder layout AL developers actually see.
+    /// </summary>
+    public string ExtensionName { get; set; } = string.Empty;
 
     /// <summary>
     /// Optional override for how many object ids this module reserves. Falls

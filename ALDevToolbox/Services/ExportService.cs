@@ -110,6 +110,7 @@ public class ExportService
                     {
                         Key = module.Key,
                         Name = module.Name,
+                        ExtensionName = module.ExtensionName,
                         IdRangeSize = module.IdRangeSize,
                         Deprecated = module.Deprecated,
                         Dependencies = module.Dependencies

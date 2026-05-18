@@ -365,6 +365,7 @@ public sealed class TemplateImportService
             OrganizationId = actingOrgId,
             Key = sourceModule.Key,
             Name = sourceModule.Name,
+            ExtensionName = sourceModule.ExtensionName,
             IdRangeSize = sourceModule.IdRangeSize,
             Deprecated = false,
             CreatedAt = now,

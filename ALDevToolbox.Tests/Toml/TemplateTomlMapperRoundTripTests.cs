@@ -197,8 +197,8 @@ public sealed class TemplateTomlMapperRoundTripTests
         var template = TemplateBuilder.Default();
         template.DefaultModules = new List<RuntimeTemplateDefaultModule>
         {
-            new() { Ordering = 0, Module = new Module { Key = "alpha", Name = "Alpha" } },
-            new() { Ordering = 1, Module = new Module { Key = "beta", Name = "Beta" } },
+            new() { Ordering = 0, Module = new Module { Key = "alpha", Name = "Alpha", ExtensionName = "Alpha" } },
+            new() { Ordering = 1, Module = new Module { Key = "beta", Name = "Beta", ExtensionName = "Beta" } },
         };
 
         var toml = TemplateTomlMapper.ToToml(template);

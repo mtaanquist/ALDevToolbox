@@ -277,10 +277,11 @@ public class GenerationService
 
     private EmittableExtension BuildFromModule(Module module, RuntimeTemplate template, ProjectPlan plan, int from, int to)
     {
-        // Module-cloned extension name defaults to "{{extension_prefix}} {module.name}".
-        // The substitution happens up-front so the resolved name is stable for
-        // downstream dep resolution.
-        var nameTemplate = $"{{{{extension_prefix}}}} {module.Name}";
+        // The cloned extension's folder name and rendered AL name both come
+        // from Module.ExtensionName (a PascalCase admin-controlled value).
+        // Module.Key stays as the URL/admin slug and the dep ref target —
+        // not the folder.
+        var nameTemplate = $"{{{{extension_prefix}}}} {module.ExtensionName}";
         var name = SubstituteScalar(nameTemplate, plan, template);
 
         // Module dependencies (from module_dependencies) become literal deps.
@@ -293,7 +294,7 @@ public class GenerationService
             .ToList();
 
         return new EmittableExtension(
-            Path: module.Key,
+            Path: module.ExtensionName,
             Name: name,
             Id: Guid.NewGuid(),
             IdRangeFrom: from,
@@ -303,7 +304,7 @@ public class GenerationService
             Publisher: template.Defaults.Publisher,
             IsModuleClone: true,
             ModuleKey: module.Key,
-            ModuleName: module.Name,
+            ModuleName: module.ExtensionName,
             FolderRoots: BuildModuleFolderTree(module.ExtensionFolders),
             Dependencies: deps);
     }
