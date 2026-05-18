@@ -1,5 +1,7 @@
 @inherits LayoutComponentBase
 @using System.Security.Claims
+@using ALDevToolbox.Services
+@inject OrganizationConfigService Config
 
 <div class="app-shell">
     <header class="top-bar">
@@ -12,7 +14,15 @@
             <AuthorizeView>
                 <Authorized>
                     @{
-                        var orgName = context.User.FindFirst("org_name")?.Value;
+                        // Prefer the live (cached) name so a rename via
+                        // /admin/configuration/identity takes effect for every
+                        // active circuit without forcing a re-login. Fall back
+                        // to the org_name claim if the live lookup hasn't
+                        // completed yet, so the first prerender frame still
+                        // shows something useful.
+                        var orgName = !string.IsNullOrEmpty(_liveOrgName)
+                            ? _liveOrgName
+                            : context.User.FindFirst("org_name")?.Value;
                         var roles = context.User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
                         var role = roles.Contains("SiteAdmin") ? "Site admin"
                             : roles.Contains("Admin") ? "Admin"
@@ -61,3 +71,20 @@
     <a href="." class="reload">Reload</a>
     <span class="dismiss">×</span>
 </div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private string? _liveOrgName;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is null) return;
+        var state = await AuthStateTask;
+        var orgIdClaim = state.User.FindFirst(HttpOrganizationContext.OrganizationIdClaim)?.Value;
+        if (int.TryParse(orgIdClaim, out var orgId))
+        {
+            _liveOrgName = await Config.GetOrganizationNameAsync(orgId);
+        }
+    }
+}

@@ -68,6 +68,29 @@ public class OrganizationConfigService
         ?? throw new InvalidOperationException("No organization in scope; service mutation called outside an authenticated request.");
 
     private static string CacheKey(int organizationId) => $"org-config:{organizationId}";
+    private static string NameCacheKey(int organizationId) => $"org-name:{organizationId}";
+
+    /// <summary>
+    /// Returns the current display name of <paramref name="organizationId"/>.
+    /// Cached per-org so the layout can render the name in the top bar without
+    /// a DB hit on every navigation. The cache is invalidated by
+    /// <see cref="RenameOrganizationAsync"/> so rename takes effect immediately
+    /// for every active circuit — not only after the renaming admin re-logs in.
+    /// Bypasses query filters: layout calls hit this with the claim-derived
+    /// org id and don't run under tenant scope.
+    /// </summary>
+    public async Task<string?> GetOrganizationNameAsync(int organizationId, CancellationToken ct = default)
+    {
+        if (_cache.TryGetValue(NameCacheKey(organizationId), out string? cached)) return cached;
+        var name = await _db.Organizations
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(o => o.Id == organizationId)
+            .Select(o => o.Name)
+            .FirstOrDefaultAsync(ct);
+        _cache.Set(NameCacheKey(organizationId), name);
+        return name;
+    }
 
     /// <summary>
     /// Returns the cached or freshly-loaded <see cref="OrganizationConfig"/>
@@ -217,6 +240,7 @@ public class OrganizationConfigService
         if (string.Equals(org.Name, trimmed, StringComparison.Ordinal)) return;
         org.Name = trimmed;
         await _db.SaveChangesAsync(ct);
+        _cache.Remove(NameCacheKey(orgId));
         _logger.LogInformation("Renamed org {OrgId} to {Name}.", orgId, trimmed);
     }
 
