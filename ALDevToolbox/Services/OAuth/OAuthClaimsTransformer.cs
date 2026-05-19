@@ -4,7 +4,6 @@ using ALDevToolbox.Domain.Entities;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using OpenIddict.Abstractions;
-using OpenIddict.Validation.AspNetCore;
 
 namespace ALDevToolbox.Services.OAuth;
 
@@ -18,9 +17,19 @@ namespace ALDevToolbox.Services.OAuth;
 /// already mounts means MCP tools see exactly the same principal regardless
 /// of which credential authenticated the request.
 ///
-/// Only runs when the principal was authenticated by OpenIddict's validation
-/// scheme — every other auth scheme (cookie, PAT) already mounts the full
-/// claim set itself.
+/// Cookie and PAT principals already carry <c>UserIdClaim</c>, so the
+/// idempotency guard short-circuits them. The substantive entry signal is
+/// the presence of both <c>sub</c> and our custom <c>org</c> claim — that
+/// combination is only ever stamped onto OpenIddict-issued access tokens
+/// (see <c>OAuthEndpoints.MapAuthorizeComplete</c>). Earlier versions of
+/// this class gated on
+/// <see cref="OpenIddict.Validation.AspNetCore.OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme"/>
+/// but the unwrapped JWT principal's <c>AuthenticationType</c> is
+/// <c>TokenValidationParameters.DefaultAuthenticationType</c>
+/// (<c>"AuthenticationTypes.Federation"</c>), not the scheme name — so the
+/// check silently bailed and the bridge claims were never added, which
+/// downstream surfaces as <c>insufficient_access</c> (OpenIddict <c>ID2095</c>)
+/// from the MCP bearer policy.
 /// </summary>
 public sealed class OAuthClaimsTransformer : IClaimsTransformation
 {
@@ -38,11 +47,9 @@ public sealed class OAuthClaimsTransformer : IClaimsTransformation
         {
             return principal;
         }
-        if (identity.AuthenticationType != OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)
-        {
-            return principal;
-        }
         // Idempotent: once we've stamped the bridge claims, re-running is a no-op.
+        // Cookie and PAT principals already carry UserIdClaim from their own
+        // sign-in paths, so this also short-circuits them.
         if (identity.HasClaim(c => c.Type == HttpOrganizationContext.UserIdClaim))
         {
             return principal;
@@ -55,9 +62,11 @@ public sealed class OAuthClaimsTransformer : IClaimsTransformation
         }
 
         // The 'org' claim is stamped on the access token by the consent flow
-        // (Services/OAuth/OAuthAuthorizeService.SignInAsync). It's a hard
-        // requirement — tokens minted without it can't be mapped to a
-        // tenant, and the McpBearer policy will reject them.
+        // (OAuthEndpoints.MapAuthorizeComplete). It's a hard requirement —
+        // tokens minted without it can't be mapped to a tenant, and the
+        // McpBearer policy will reject them. Its presence is also what tells
+        // us this principal came from an OpenIddict access token rather than
+        // a cookie or PAT sign-in.
         var orgClaim = principal.FindFirstValue("org");
         if (string.IsNullOrEmpty(orgClaim) || !int.TryParse(orgClaim, out var orgId))
         {
@@ -100,3 +109,4 @@ public sealed class OAuthClaimsTransformer : IClaimsTransformation
         return principal;
     }
 }
+
