@@ -245,10 +245,15 @@ public class ObjectExplorerService
     }
 
     /// <summary>
-    /// Projects an <see cref="ObjectDetail"/> down to the outline shape
-    /// the <c>get_object_outline</c> MCP tool returns — drops the
+    /// Projects an object's header + symbol rows into the slim outline
+    /// shape the <c>get_object_outline</c> MCP tool returns. Skips the
     /// variables list (not used for trace navigation) and the
-    /// inspector-only namespace / extends-* columns.
+    /// inspector-only namespace / extends-* columns. Reads the rows
+    /// directly rather than going through <see cref="GetObjectAsync"/>
+    /// so the variables query doesn't run and the symbols come back
+    /// already sorted by line number (agent-friendly top-to-bottom
+    /// reading; the inspector's kind+name sort is the wrong grain
+    /// here).
     /// </summary>
     public async Task<ObjectOutline?> GetObjectOutlineAsync(
         int releaseId,
@@ -256,25 +261,41 @@ public class ObjectExplorerService
         string objectName,
         CancellationToken ct = default)
     {
-        var detail = await GetObjectByNameAsync(releaseId, objectKind, objectName, ct).ConfigureAwait(false);
-        if (detail is null) return null;
-        // Symbols are returned in declaration order so the agent can
-        // correlate by line number against the source it fetches from
-        // get_procedure_source. The base GetObjectAsync sorts by kind
-        // then name; re-sort here by LineNumber to give a natural
-        // top-to-bottom reading.
-        var ordered = detail.Symbols.OrderBy(s => s.LineNumber).ThenBy(s => s.Name).ToList();
+        var kind = objectKind.Trim().ToLowerInvariant();
+        var name = objectName.Trim().ToLowerInvariant();
+        var header = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId
+                        && o.Kind == kind
+                        && o.Name.ToLower() == name)
+            .Select(o => new
+            {
+                o.Id, o.Kind, o.ObjectId, o.Name, o.ModuleId,
+                ModuleName = o.Module!.Name,
+                o.SourceFileId,
+                SourceFilePath = o.SourceFile != null ? o.SourceFile.Path : null,
+                o.LineNumber,
+            })
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        if (header is null) return null;
+
+        var symbols = await _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.ObjectId == header.Id)
+            .OrderBy(s => s.LineNumber).ThenBy(s => s.Name)
+            .Select(s => new ObjectSymbolRow(
+                s.Id, s.Kind, s.Name, s.Signature, s.ReturnType, s.FieldId, s.LineNumber))
+            .ToListAsync(ct).ConfigureAwait(false);
+
         return new ObjectOutline(
-            Id: detail.Id,
-            Kind: detail.Kind,
-            ObjectId: detail.ObjectId,
-            Name: detail.Name,
-            ModuleId: detail.ModuleId,
-            ModuleName: detail.ModuleName,
-            SourceFileId: detail.SourceFileId,
-            SourceFilePath: detail.SourceFilePath,
-            LineNumber: detail.LineNumber,
-            Symbols: ordered);
+            Id: header.Id,
+            Kind: header.Kind,
+            ObjectId: header.ObjectId,
+            Name: header.Name,
+            ModuleId: header.ModuleId,
+            ModuleName: header.ModuleName,
+            SourceFileId: header.SourceFileId,
+            SourceFilePath: header.SourceFilePath,
+            LineNumber: header.LineNumber,
+            Symbols: symbols);
     }
 
     /// <summary>

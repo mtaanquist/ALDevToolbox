@@ -321,6 +321,37 @@ public sealed class McpToolTests : IDisposable
         calls.Should().AllSatisfy(c => c.TargetObjectName.Should().NotBeNullOrEmpty());
     }
 
+    [Fact]
+    public async Task ListProcedureCalls_falls_back_to_line_range_when_source_symbol_id_is_null_on_legacy_rows()
+    {
+        // Simulates a release imported before #181 landed: end_line is
+        // set on the symbol (so the bound is known), but every
+        // reference row from that body has source_symbol_id NULL.
+        // The tool should fall back to the (source_object, line range)
+        // scan and still return the calls.
+        var releaseId = await SeedDkCoreReleaseAsync();
+        await using var ctx = _db.NewContext();
+        var tools = NewOeTools(ctx);
+
+        var symbolId = await ctx.OeModuleReferences.AsNoTracking()
+            .Where(r => r.Module!.ReleaseId == releaseId && r.SourceSymbolId != null)
+            .Select(r => r.SourceSymbolId!.Value)
+            .FirstAsync();
+
+        // Strip source_symbol_id on every reference belonging to this
+        // procedure to simulate the pre-#181 ingest. Bulk update via
+        // ExecuteSqlInterpolated so we don't have to load + track each
+        // row individually.
+        var affected = await ctx.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE oe_module_references SET source_symbol_id = NULL WHERE source_symbol_id = {symbolId}");
+        affected.Should().BeGreaterThan(0,
+            because: "this fixture procedure has stamped rows we just nulled");
+
+        var calls = await tools.ListProcedureCallsAsync(releaseId.ToString(), symbolId: symbolId);
+        calls.Should().NotBeEmpty(
+            because: "the line-range fallback should recover the same rows once the FK column is empty");
+    }
+
     // ---- helpers -----------------------------------------------------------
 
     private async Task SeedDefaultTemplateAsync()
