@@ -264,6 +264,17 @@ builder.Services.AddOpenIddict()
                 context.CodeChallengeMethods.Add(OpenIddict.Abstractions.OpenIddictConstants.CodeChallengeMethods.Sha256);
                 return default;
             }));
+
+        // CIMD resolver — Claude's hosted surfaces identify themselves with
+        // an HTTPS URL as their client_id (e.g.
+        // https://claude.ai/oauth/mcp-oauth-client-metadata). Without this
+        // handler OpenIddict's standard ValidateClientId rejects the request
+        // with ID2052 because no oauth_applications row matches. Runs ahead
+        // of every built-in validator so the row exists by the time
+        // OpenIddict's own lookup fires.
+        o.AddEventHandler<OpenIddict.Server.OpenIddictServerEvents.ValidateAuthorizationRequestContext>(b =>
+            b.UseScopedHandler<ALDevToolbox.Services.OAuth.CimdClientResolver>()
+             .SetOrder(int.MinValue + 100_000));
     })
     .AddValidation(o =>
     {
@@ -278,6 +289,11 @@ builder.Services.AddOpenIddict()
 // OAuth access tokens.
 builder.Services.AddScoped<IClaimsTransformation, ALDevToolbox.Services.OAuth.OAuthClaimsTransformer>();
 builder.Services.AddScoped<ALDevToolbox.Services.OAuth.OAuthClientAdminService>();
+// The CIMD resolver fetches a client metadata document over HTTPS. Named
+// HttpClient gives us per-call timeout/UA control without leaking the
+// configuration to every other caller.
+builder.Services.AddHttpClient(nameof(ALDevToolbox.Services.OAuth.CimdClientResolver));
+builder.Services.AddScoped<ALDevToolbox.Services.OAuth.CimdClientResolver>();
 
 // MCP server (Model Context Protocol). Mounted at /mcp by McpEndpoints; the
 // PAT auth handler above turns Bearer tokens into the same claim set the

@@ -143,6 +143,34 @@ Anonymous (Claude registers without a user); rejects non-https
 The discovery metadata customisation in `Program.cs` adds
 `registration_endpoint` to the AS metadata so Claude finds it.
 
+## CIMD resolver
+
+Claude's hosted surfaces (claude.ai, mobile, Cowork) skip DCR entirely and
+identify themselves with an HTTPS URL as their `client_id` — for example
+`https://claude.ai/oauth/mcp-oauth-client-metadata`. The URL is the
+identity; the JSON document at that URL is the client's metadata.
+
+`Services/OAuth/CimdClientResolver.cs` is an
+`IOpenIddictServerHandler<ValidateAuthorizationRequestContext>` registered
+with `int.MinValue + 100_000` so it runs ahead of every built-in
+OpenIddict validator. When `client_id` is an HTTPS URL with no matching
+`oauth_applications` row, the resolver:
+
+1. Fetches the URL with a 5 s timeout and a 64 KB body cap.
+2. Validates the document's `client_id` self-reference, `redirect_uris`,
+   and `token_endpoint_auth_method=none`.
+3. Creates a public PKCE client via `IOpenIddictApplicationManager` with
+   `registration_source: "cimd"` stamped into `properties` JSON.
+
+Subsequent connections from the same URL skip the fetch — the row exists
+and OpenIddict's standard validator finds it directly. Resolver failures
+reject the authorise request with RFC 6749 `invalid_client`, which Claude
+surfaces with the metadata-fetch error rather than a generic timeout.
+
+Without the resolver, OpenIddict rejects every CIMD client with
+`ID2052: The specified 'client_id' is invalid` — see
+<https://documentation.openiddict.com/errors/ID2052>.
+
 ## Consent screen
 
 `Components/Pages/AccountSecurity/OAuthConsent.razor` — static SSR Razor
