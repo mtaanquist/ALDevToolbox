@@ -199,11 +199,30 @@ builder.Services.AddOpenIddict()
         o.RegisterScopes("mcp", OpenIddict.Abstractions.OpenIddictConstants.Scopes.OfflineAccess);
 
         // Reuse the existing Data Protection key ring (mounted on the
-        // app-keys volume). Avoids a second cert/key dance for the OAuth
-        // server — losing the key ring already invalidates auth cookies
-        // and the system_settings SMTP ciphertext, so OAuth tokens
-        // sharing its fate isn't a new failure mode.
+        // app-keys volume) for token format wrapping. Losing the key ring
+        // already invalidates auth cookies and the system_settings SMTP
+        // ciphertext, so OAuth tokens sharing its fate isn't a new failure
+        // mode.
         o.UseDataProtection();
+
+        // OpenIddict additionally requires signing + encryption keys for
+        // the JWKS endpoint and its token-format fallback. UseDataProtection
+        // alone doesn't supply these. Dev uses self-signed certs that
+        // persist in the user X509 store (restart doesn't invalidate
+        // issued tokens); prod uses ephemeral keys — access tokens are
+        // 60 min and refresh tokens rotate, so a restart costs at worst
+        // one extra trip through the consent screen per active user.
+        // Cert-based prod keys are a follow-up; see .design/mcp-oauth.md.
+        if (builder.Environment.IsDevelopment())
+        {
+            o.AddDevelopmentEncryptionCertificate()
+                .AddDevelopmentSigningCertificate();
+        }
+        else
+        {
+            o.AddEphemeralEncryptionKey()
+                .AddEphemeralSigningKey();
+        }
 
         // Lifetimes — proactive refresh kicks in five minutes before
         // expiry, so 60-minute access tokens turn over comfortably.

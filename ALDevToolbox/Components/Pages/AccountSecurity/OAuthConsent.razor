@@ -1,10 +1,9 @@
-@page "/oauth/authorize"
+@page "/oauth/consent"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Data
 @using ALDevToolbox.Endpoints
 @using ALDevToolbox.Services
-@using Microsoft.AspNetCore
 @using Microsoft.EntityFrameworkCore
 @inject IHttpContextAccessor Http
 @inject AppDbContext Db
@@ -95,39 +94,38 @@ else
     {
         var http = Http.HttpContext;
         if (http is null) { _invalid = true; return; }
-        var request = http.GetOpenIddictServerRequest();
-        if (request is null)
+
+        // We're at /oauth/consent — OpenIddict's middleware doesn't run on
+        // this path, so we can't call GetOpenIddictServerRequest(). The
+        // upstream redirect at GET /oauth/authorize forwards every OAuth
+        // query parameter verbatim, so we read them straight off the URL.
+        var query = http.Request.Query;
+        var clientId = query["client_id"].ToString();
+        var redirectUri = query["redirect_uri"].ToString();
+        var scopeRaw = query["scope"].ToString();
+        if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(redirectUri))
         {
-            // Direct hit on /oauth/authorize without going through Claude —
-            // nothing to consent to. Show the friendly "missing info" panel.
             _invalid = true;
             return;
         }
 
-        var clientId = request.ClientId ?? string.Empty;
-        var requestedScopes = (request.Scope ?? string.Empty)
+        var requestedScopes = scopeRaw
             .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(s => Array.Exists(OAuthEndpoints.SupportedScopes, x => x.Equals(s, StringComparison.Ordinal)))
             .OrderBy(s => s, StringComparer.Ordinal)
             .ToArray();
         var canonicalScopes = string.Join(' ', requestedScopes);
 
-        // Reconstruct hidden inputs from the original query string so the
-        // POST handler sees the same OAuth request.
-        foreach (var (k, v) in http.Request.Query)
+        // Mirror every query parameter as a hidden input so the form POST to
+        // /oauth/authorize carries the full OAuth request body — OpenIddict
+        // re-validates it from the form there before our handler runs.
+        foreach (var (k, v) in query)
         {
             foreach (var single in v) _hiddenParams.Add(new(k, single ?? string.Empty));
         }
 
-        _clientName = !string.IsNullOrWhiteSpace(request.ClientId) ? request.ClientId! : "Unknown client";
-        if (Uri.TryCreate(request.RedirectUri, UriKind.Absolute, out var redirectUri))
-        {
-            _redirectHost = redirectUri.Host;
-        }
-        else
-        {
-            _redirectHost = "(unknown)";
-        }
+        _clientName = !string.IsNullOrWhiteSpace(clientId) ? clientId : "Unknown client";
+        _redirectHost = Uri.TryCreate(redirectUri, UriKind.Absolute, out var u) ? u.Host : "(unknown)";
 
         _currentEmail = http.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? "you";
         var orgId = Org.CurrentOrganizationId ?? 0;

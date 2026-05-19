@@ -60,7 +60,10 @@ consent.
    POST /oauth/register (DCR) ──► OAuthEndpoints.MapDynamicClientRegistration
    ← 201 { client_id, redirect_uris, token_endpoint_auth_method: "none", … }
 
-   Browser-redirect GET /oauth/authorize?… ──► OAuthConsent.razor
+   Browser-redirect GET /oauth/authorize?… ──► OAuthEndpoints.MapAuthorizeGet
+                                              ↓ 302 to /oauth/consent?<same params>
+                                              ↓
+   GET /oauth/consent?… ────────────────────► OAuthConsent.razor
                                               [Authorize] forces cookie sign-in
                                               ↓
                                               Consent form
@@ -99,11 +102,23 @@ per-org table.
 
 ## Key ring
 
-OpenIddict signs and encrypts both the data-protection-wrapped tokens and
-the discovery `kid`s with the existing ASP.NET Core Data Protection key
-ring on the `app-keys` volume. Losing `app-keys` already invalidates the
-auth cookie and the system_settings SMTP password; OAuth tokens sharing
-its fate isn't a new failure mode.
+Two layers:
+
+1. **Token format wrapping** uses ASP.NET Core's existing Data Protection
+   key ring on the `app-keys` volume (`o.UseDataProtection()`). Losing
+   `app-keys` already invalidates auth cookies and the
+   `system_settings` SMTP password; OAuth tokens sharing its fate isn't a
+   new failure mode.
+2. **OpenIddict signing + encryption keys** for the JWKS endpoint and the
+   internal token-format fallback. `UseDataProtection()` doesn't supply
+   these. Dev uses `AddDevelopmentEncryptionCertificate()` +
+   `AddDevelopmentSigningCertificate()` — self-signed certs that persist
+   in the user X509 store, so a restart doesn't invalidate every issued
+   token. Prod uses `AddEphemeralEncryptionKey()` +
+   `AddEphemeralSigningKey()` — restart costs at worst one extra trip
+   through the consent screen per active user, given 60-minute access
+   tokens and rotating refresh tokens. Cert-based prod keys derived from
+   the same Data Protection ring are a follow-up; see Risks.
 
 ## Why OpenIddict and not hand-rolled
 
@@ -131,13 +146,21 @@ The discovery metadata customisation in `Program.cs` adds
 ## Consent screen
 
 `Components/Pages/AccountSecurity/OAuthConsent.razor` — static SSR Razor
-page at `GET /oauth/authorize`, gated by `[Authorize]` on the cookie
-scheme. Reads the OAuth request from `HttpContext.GetOpenIddictServerRequest()`,
-re-emits every query parameter as a hidden form input so OpenIddict's
-middleware can reconstruct the request on the POST. The form POSTs to
-the same URL (`/oauth/authorize`); the POST handler in `OAuthEndpoints`
-stamps an `oauth_consents` row and calls `SignIn(...)`, which OpenIddict
-turns into the auth-code redirect.
+page at `GET /oauth/consent`, gated by `[Authorize]` on the cookie
+scheme. The page lives at `/oauth/consent` (not `/oauth/authorize`)
+because Blazor's `@page` directive registers a route with no HTTP-method
+constraint, so co-locating the page and the consent-POST handler at the
+same URL trips `EndpointAmbiguityTests`. Instead, the OpenIddict-validated
+`GET /oauth/authorize` is a thin redirect endpoint (`MapAuthorizeGet`)
+that forwards every query parameter verbatim to `/oauth/consent`.
+
+The consent page reads its OAuth parameters from the query string
+(since OpenIddict middleware doesn't run on `/oauth/consent`) and
+re-emits them as hidden inputs on a form that POSTs to `/oauth/authorize`.
+OpenIddict's middleware runs on the POST, validates the form body as an
+authorization request, and passes through to `MapAuthorizeComplete`,
+which stamps an `oauth_consents` row and calls `SignIn(...)`. OpenIddict
+turns the SignIn into the auth-code redirect.
 
 Auto-skip when a matching consent row already covers the requested
 scopes is recorded but the user still clicks Allow — a security

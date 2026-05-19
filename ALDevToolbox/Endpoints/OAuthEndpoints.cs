@@ -56,9 +56,42 @@ internal static class OAuthEndpoints
     public static IEndpointRouteBuilder MapOAuthEndpoints(this IEndpointRouteBuilder app)
     {
         MapProtectedResourceMetadata(app);
+        MapAuthorizeGet(app);
         MapAuthorizeComplete(app);
         MapDynamicClientRegistration(app);
         return app;
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // GET /oauth/authorize — forward to the Razor consent page
+    // ────────────────────────────────────────────────────────────────────
+
+    private static void MapAuthorizeGet(IEndpointRouteBuilder app)
+    {
+        // OpenIddict's middleware validates the OAuth request on /oauth/authorize
+        // and passes through to this endpoint (EnableAuthorizationEndpointPassthrough).
+        // We immediately redirect the browser to /oauth/consent, carrying every
+        // OAuth query parameter verbatim — the consent Razor page re-emits them
+        // as hidden inputs on a form that POSTs back to /oauth/authorize, which
+        // is where OpenIddict's middleware reconstructs the request and emits
+        // the auth-code redirect via our SignIn.
+        //
+        // The redirect (rather than rendering the consent UI inline on
+        // /oauth/authorize) is what keeps GET /oauth/authorize and POST
+        // /oauth/authorize from sharing a route with the Razor @page — the
+        // EndpointAmbiguityTests safety net trips otherwise.
+        app.MapGet("/oauth/authorize", (HttpContext ctx) =>
+        {
+            var request = ctx.GetOpenIddictServerRequest();
+            if (request is null)
+            {
+                // Reached without an OAuth request in scope (direct hit). Send
+                // the user to the docs hub rather than the consent page —
+                // the consent page can't read its own params.
+                return Results.Redirect("/docs/mcp");
+            }
+            return Results.Redirect("/oauth/consent" + ctx.Request.QueryString.Value);
+        });
     }
 
     // ────────────────────────────────────────────────────────────────────
