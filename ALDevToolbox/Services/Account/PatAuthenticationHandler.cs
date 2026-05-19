@@ -35,6 +35,23 @@ public sealed class PatAuthenticationHandler : AuthenticationHandler<Authenticat
         _tokens = tokens;
     }
 
+    /// <summary>
+    /// On a 401 challenge, emit
+    /// <c>WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource"</c>
+    /// so Claude (and any other spec-compliant OAuth client) can discover the
+    /// authorisation server. The MCP authorization spec requires the header
+    /// on a real <c>401</c> — clients ignore the same header when it's on a
+    /// <c>200</c>. The URL is built from the live request so reverse-proxied
+    /// deployments emit the public origin Claude can reach.
+    /// </summary>
+    protected override Task HandleChallengeAsync(AuthenticationProperties properties)
+    {
+        Response.StatusCode = StatusCodes.Status401Unauthorized;
+        var url = $"{Request.Scheme}://{Request.Host}/.well-known/oauth-protected-resource";
+        Response.Headers.Append("WWW-Authenticate", $"Bearer resource_metadata=\"{url}\"");
+        return Task.CompletedTask;
+    }
+
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         if (!Request.Headers.TryGetValue("Authorization", out var header))
