@@ -171,6 +171,21 @@ builder.Services.AddScoped<ALDevToolbox.Services.Account.PersonalAccessTokenServ
 // so MCP tools see the same principal whichever path authenticated the call.
 // Discovery metadata is customised in OAuthEndpoints to advertise CIMD; the
 // hand-rolled resource-metadata endpoint (RFC 9728) is registered there too.
+//
+// Persistent signing + encryption keys live on the same app-keys volume as
+// the Data Protection ring (separate env var so operators who want to
+// isolate them can). Loaded before AddOpenIddict because OpenIddict's
+// builder needs them at config time, not at first use. Falls back to
+// in-memory keys with a warning when the directory isn't writable —
+// previously the prod default was always-ephemeral, so the fallback path
+// is a strict superset of what shipped before.
+var oauthKeyDir = Environment.GetEnvironmentVariable("OAUTH_KEY_DIR")
+    ?? Environment.GetEnvironmentVariable("DATA_PROTECTION_KEY_DIR")
+    ?? "/var/lib/aldevtoolbox/dp-keys";
+var oauthKeyLogger = LoggerFactory.Create(b => b.AddSimpleConsole(o => { o.SingleLine = true; o.UseUtcTimestamp = true; }))
+    .CreateLogger(typeof(ALDevToolbox.Services.OAuth.OAuthKeyMaterial).FullName!);
+var (oauthSigningKey, oauthEncryptionKey) = ALDevToolbox.Services.OAuth.OAuthKeyMaterial.LoadOrCreate(oauthKeyDir, oauthKeyLogger);
+
 builder.Services.AddOpenIddict()
     .AddCore(o => o.UseEntityFrameworkCore().UseDbContext<AppDbContext>())
     .AddServer(o =>
@@ -207,22 +222,15 @@ builder.Services.AddOpenIddict()
 
         // OpenIddict additionally requires signing + encryption keys for
         // the JWKS endpoint and its token-format fallback. UseDataProtection
-        // alone doesn't supply these. Dev uses self-signed certs that
-        // persist in the user X509 store (restart doesn't invalidate
-        // issued tokens); prod uses ephemeral keys — access tokens are
-        // 60 min and refresh tokens rotate, so a restart costs at worst
-        // one extra trip through the consent screen per active user.
-        // Cert-based prod keys are a follow-up; see .design/mcp-oauth.md.
-        if (builder.Environment.IsDevelopment())
-        {
-            o.AddDevelopmentEncryptionCertificate()
-                .AddDevelopmentSigningCertificate();
-        }
-        else
-        {
-            o.AddEphemeralEncryptionKey()
-                .AddEphemeralSigningKey();
-        }
+        // alone doesn't supply these. Loaded once at startup from the
+        // app-keys volume via OAuthKeyMaterial — same trust boundary as
+        // the Data Protection ring (anyone who can read app-keys can
+        // already steal cookies + the SMTP password). Persisting them
+        // means a container restart no longer invalidates every issued
+        // access + refresh token, so Claude doesn't have to re-consent
+        // on every redeploy.
+        o.AddSigningKey(oauthSigningKey)
+            .AddEncryptionKey(oauthEncryptionKey);
 
         // Lifetimes — proactive refresh kicks in five minutes before
         // expiry, so 60-minute access tokens turn over comfortably.

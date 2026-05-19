@@ -102,23 +102,33 @@ per-org table.
 
 ## Key ring
 
-Two layers:
+Two layers, both pinned to the `app-keys` volume:
 
 1. **Token format wrapping** uses ASP.NET Core's existing Data Protection
-   key ring on the `app-keys` volume (`o.UseDataProtection()`). Losing
-   `app-keys` already invalidates auth cookies and the
-   `system_settings` SMTP password; OAuth tokens sharing its fate isn't a
-   new failure mode.
+   key ring (`o.UseDataProtection()`). Losing `app-keys` already
+   invalidates auth cookies and the `system_settings` SMTP password;
+   OAuth tokens sharing its fate isn't a new failure mode.
 2. **OpenIddict signing + encryption keys** for the JWKS endpoint and the
    internal token-format fallback. `UseDataProtection()` doesn't supply
-   these. Dev uses `AddDevelopmentEncryptionCertificate()` +
-   `AddDevelopmentSigningCertificate()` — self-signed certs that persist
-   in the user X509 store, so a restart doesn't invalidate every issued
-   token. Prod uses `AddEphemeralEncryptionKey()` +
-   `AddEphemeralSigningKey()` — restart costs at worst one extra trip
-   through the consent screen per active user, given 60-minute access
-   tokens and rotating refresh tokens. Cert-based prod keys derived from
-   the same Data Protection ring are a follow-up; see Risks.
+   these — they're a separate piece of key material. Persisted by
+   `Services/OAuth/OAuthKeyMaterial.cs` as two PKCS#1 DER files under
+   the same directory the Data Protection ring uses
+   (`OAUTH_KEY_DIR` overrides; falls back to `DATA_PROTECTION_KEY_DIR`,
+   then `/var/lib/aldevtoolbox/dp-keys`). File mode tightened to 0600
+   on Unix; threat model matches the existing DP keys (anyone who can
+   read the volume can already read the cookie keys and the SMTP
+   password).
+
+   On first start a fresh 2048-bit RSA pair is generated for each
+   purpose and written. Subsequent starts load the same bytes. A
+   container restart no longer invalidates every issued access +
+   refresh token, so Claude doesn't need to re-consent on every
+   redeploy — which was the original "deferred risk" from the first
+   OAuth PR.
+
+   If the directory isn't writable we fall back to in-memory keys with
+   a logged warning. That's a strict superset of the prior behaviour
+   (which was always ephemeral) — the only difference is the warning.
 
 ## Why OpenIddict and not hand-rolled
 

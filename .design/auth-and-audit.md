@@ -93,7 +93,7 @@ Email change for a user is performed by another admin (not by the user themselve
 - 20-byte secret, Base32-encoded, encrypted via `IDataProtector` (purpose `ALDevToolbox.UserTotpSecret`) before persistence. Decryption only happens inside `TotpService.VerifyAsync` to compute the rolling code.
 - Stored in `user_totp_secrets` (one row per user). A row with `confirmed_at = null` is a pending enrollment that hasn't yet been validated by submitting a current code — repeating enrollment overwrites it.
 - Confirmation flips `users.totp_enabled = true` and issues 10 recovery codes.
-- The Data Protection key ring lives on the `app-keys` volume; losing it makes TOTP secrets unrecoverable (same blast radius as the SMTP password). Recovery: email-MFA fallback, recovery codes, or `UserAdministrationService.ResetMfaAsync` (the SiteAdmin break-glass path).
+- The Data Protection key ring lives on the `app-keys` volume; losing it makes TOTP secrets unrecoverable (same blast radius as the SMTP password). Recovery: email-MFA fallback, recovery codes, or `UserAdministrationService.ResetMfaAsync` (the SiteAdmin break-glass path). The OAuth signing + encryption keys (`oauth-signing.key`, `oauth-encryption.key`, written by `Services/OAuth/OAuthKeyMaterial.cs`) sit in the same directory; losing them additionally forces every connected OAuth client to re-consent on its next request, but does not affect cookie sign-ins or PATs.
 
 ### Email codes
 - 6-digit numeric, single-use, 10-minute lifetime. Stored hash is `SHA-256(code + ":" + user_id)`; the user-id binding stops the short numeric space being a global rainbow-table target.
