@@ -42,6 +42,17 @@ services.AddAuthentication("Cookie")
 
 The cookie carries the user's id, organisation id, role, display name and email as claims. `HttpOrganizationContext` reads `org_id` and `user_id` to drive EF query filters; the rest are for the top-bar caption ("Bob (Acme) — Admin") and audit attribution.
 
+## Bearer credentials for /mcp
+
+The MCP endpoint accepts two bearer flavours via the `McpBearer` authorisation policy. Both schemes mount the same downstream claim shape, so MCP tools see identical principals regardless of which credential authenticated the request.
+
+* **Personal access tokens** (`Services/Account/PatAuthenticationHandler.cs`) — `aldt_pat_…` opaque tokens, SHA-256 hashed at rest, scoped to (user, organisation). The desktop/CLI path: Claude Desktop, Claude Code, Cursor, VS Code Copilot agent mode all paste one into a config file. Issued from `/account/access-tokens`, revoked from the same page or from SiteAdmin oversight.
+* **OAuth 2.1 access tokens** (OpenIddict server at `/oauth/*`, validation via `Services/OAuth/OAuthClaimsTransformer.cs`) — for clients that don't accept a pasted credential. Today that's Claude.ai on the web, Claude mobile, and Claude Cowork; their directory and custom-connector flow does Dynamic Client Registration (RFC 7591) on first connect, then the user clicks Allow on a consent screen at `/oauth/authorize`. The flow and table layout are documented in `.design/mcp-oauth.md`.
+
+On a 401 from `/mcp`, the PAT handler emits `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource"` so Claude can discover the OAuth server. The MCP spec only honours this discovery pointer on a real 401 — the per-handler challenge override in `PatAuthenticationHandler.HandleChallengeAsync` is where the contract lives.
+
+The OpenIddict EF Core tables (`oauth_applications`, `oauth_authorizations`, `oauth_scopes`, `oauth_tokens`) are intentionally **outside** the multi-tenant query filter; pre-auth flows (`/oauth/token`, `/oauth/register`) have to read them before any organisation context exists. Org attribution lives in OpenIddict's free-form `properties` JSON column and is stamped during the consent step. `oauth_consents` is ours and is inside the standard filter.
+
 ## Password hashing
 
 BCrypt with a work factor of 12 via `BCrypt.Net-Next`. We picked BCrypt over Argon2id for two reasons: (1) the `BCrypt.Net-Next` package is mature, ships pre-built, and has no native dependencies; (2) at our scale and with cookie-based sessions the BCrypt vs Argon2id practical difference is negligible. If the threat model changes, the swap is local to `AccountService.HashPassword` / `VerifyPassword`.
