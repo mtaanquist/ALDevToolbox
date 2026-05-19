@@ -165,7 +165,7 @@ internal sealed class AlPageStructure : IAlObjectStructureExtractor
                 if (member is not null && AlExtractionState.IsFieldKind(member.Kind))
                 {
                     var targetOwner = member.DeclaringType ?? target;
-                    _state.Refs.Add(new ExtractedReference(
+                    _state.EmitReference(new ExtractedReference(
                         Line: tok.Line,
                         Column: tok.Column,
                         TargetAppId: targetOwner.AppId,
@@ -222,7 +222,7 @@ internal sealed class AlPageStructure : IAlObjectStructureExtractor
         var target = _state.Ctx.Resolver.ResolveTypeByName(nameTok.Value, "Page");
         if (target is not null)
         {
-            _state.Refs.Add(new ExtractedReference(
+            _state.EmitReference(new ExtractedReference(
                 Line: nameTok.Line,
                 Column: nameTok.Column,
                 TargetAppId: target.AppId,

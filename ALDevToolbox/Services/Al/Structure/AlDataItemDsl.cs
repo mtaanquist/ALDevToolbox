@@ -99,7 +99,7 @@ internal static class AlDataItemDsl
         if (resolved is not null
             && string.Equals(resolved.Kind, "table", StringComparison.OrdinalIgnoreCase))
         {
-            state.Refs.Add(new ExtractedReference(
+            state.EmitReference(new ExtractedReference(
                 Line: sourceTok.Line,
                 Column: sourceTok.Column,
                 TargetAppId: resolved.AppId,
@@ -159,7 +159,7 @@ internal static class AlDataItemDsl
         if (!AlExtractionState.IsFieldKind(member.Kind)) return false;
 
         var targetOwner = member.DeclaringType ?? currentSource;
-        state.Refs.Add(new ExtractedReference(
+        state.EmitReference(new ExtractedReference(
             Line: tok.Line,
             Column: tok.Column,
             TargetAppId: targetOwner.AppId,

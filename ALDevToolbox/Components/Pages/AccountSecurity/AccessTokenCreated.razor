@@ -1,12 +1,14 @@
 @page "/account/access-tokens/created"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode InteractiveServer
+@implements IDisposable
 @using ALDevToolbox.Endpoints
 @using ALDevToolbox.Components.Shared
 @using Microsoft.AspNetCore.DataProtection
 @inject IHttpContextAccessor Http
 @inject IDataProtectionProvider Protection
 @inject IJSRuntime JS
+@inject PersistentComponentState PersistentState
 
 <PageTitle>Token created · AL Dev Toolbox</PageTitle>
 
@@ -66,10 +68,7 @@
                     <span>@(_copiedSnippet ? "Copied" : "Copy snippet")</span>
                 </button>
             </div>
-            <p class="muted">
-                @CurrentHint
-                <a href="/docs/mcp-clients">More options</a>.
-            </p>
+            <p class="muted">@CurrentHint</p>
         </section>
 
         <div class="account-actions">
@@ -78,72 +77,52 @@
     }
 </div>
 
-<style>
-    .pat-token pre,
-    .pat-snippet pre {
-        background: var(--color-bg);
-        border: 1px solid var(--color-border);
-        padding: 12px 16px;
-        font-family: var(--font-mono);
-        font-size: 13px;
-        line-height: 1.55;
-        overflow-x: auto;
-        white-space: pre;
-        margin: 0 0 8px;
-    }
-
-    .pat-token {
-        display: flex;
-        align-items: flex-start;
-        gap: 12px;
-        flex-wrap: wrap;
-    }
-
-    .pat-token pre {
-        flex: 1 1 auto;
-        min-width: 0;
-        letter-spacing: 0.04em;
-    }
-
-    .pat-tabs {
-        display: flex;
-        gap: 4px;
-        margin-bottom: 8px;
-        border-bottom: 1px solid var(--color-border);
-    }
-
-    .pat-tab {
-        background: none;
-        border: none;
-        padding: 8px 14px;
-        font-size: 14px;
-        cursor: pointer;
-        color: var(--color-muted, #666);
-        border-bottom: 2px solid transparent;
-    }
-
-    .pat-tab--active {
-        color: var(--color-text);
-        border-bottom-color: var(--color-accent, #4a6fa5);
-    }
-</style>
-
 @code {
     private static readonly string[] Tabs = new[] { "VS Code", "Claude Desktop", "Cursor", "Claude Code" };
+
+    private const string TokenStateKey = "oneShotPat";
+    private const string ServerUrlStateKey = "oneShotPatServerUrl";
 
     private EndpointHelpers.OneShotPat? _token;
     private string _serverUrl = string.Empty;
     private string _selectedTab = "VS Code";
     private bool _copiedToken;
     private bool _copiedSnippet;
+    private PersistingComponentStateSubscription _persistingSubscription;
 
     protected override void OnInitialized()
     {
+        // Bridge the SSR prerender → interactive circuit handoff. The
+        // SSR pass consumes the one-shot cookie; without persistent
+        // state, the interactive pass sees nothing and renders the
+        // "tokens can only be shown immediately" error over the token
+        // the user briefly saw. See issue #177.
+        if (PersistentState.TryTakeFromJson<EndpointHelpers.OneShotPat>(TokenStateKey, out var restoredToken)
+            && restoredToken is not null)
+        {
+            _token = restoredToken;
+            if (PersistentState.TryTakeFromJson<string>(ServerUrlStateKey, out var restoredUrl)
+                && !string.IsNullOrEmpty(restoredUrl))
+            {
+                _serverUrl = restoredUrl;
+            }
+            return;
+        }
+
         var ctx = Http.HttpContext;
         if (ctx is null) return;
         _token = EndpointHelpers.ReadAndClearOneShotPatCookie(ctx, Protection);
         _serverUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}/mcp";
+        if (_token is null) return;
+        _persistingSubscription = PersistentState.RegisterOnPersisting(() =>
+        {
+            PersistentState.PersistAsJson(TokenStateKey, _token);
+            PersistentState.PersistAsJson(ServerUrlStateKey, _serverUrl);
+            return Task.CompletedTask;
+        });
     }
+
+    public void Dispose() => _persistingSubscription.Dispose();
 
     private string CurrentSnippet => _token is null
         ? string.Empty

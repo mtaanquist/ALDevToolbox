@@ -217,6 +217,236 @@ public class ObjectExplorerService
             Variables: variables);
     }
 
+    // ── Forward-edge MCP surface (#180) ───────────────────────────────
+
+    /// <summary>
+    /// Resolves an object by case-insensitive (kind, name) within a
+    /// release, used by the forward-edge MCP tools to translate the
+    /// agent's natural "Sales-Post" form into the row id everything
+    /// downstream keys on. Returns null when no match — tool wrappers
+    /// throw <c>McpException</c> with a "try search_objects" hint.
+    /// </summary>
+    public async Task<ObjectDetail?> GetObjectByNameAsync(
+        int releaseId,
+        string objectKind,
+        string objectName,
+        CancellationToken ct = default)
+    {
+        var kind = objectKind.Trim().ToLowerInvariant();
+        var name = objectName.Trim().ToLowerInvariant();
+        var id = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId
+                        && o.Kind == kind
+                        && o.Name.ToLower() == name)
+            .Select(o => (long?)o.Id)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        if (id is null) return null;
+        return await GetObjectAsync(id.Value, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Projects an object's header + symbol rows into the slim outline
+    /// shape the <c>get_object_outline</c> MCP tool returns. Skips the
+    /// variables list (not used for trace navigation) and the
+    /// inspector-only namespace / extends-* columns. Reads the rows
+    /// directly rather than going through <see cref="GetObjectAsync"/>
+    /// so the variables query doesn't run and the symbols come back
+    /// already sorted by line number (agent-friendly top-to-bottom
+    /// reading; the inspector's kind+name sort is the wrong grain
+    /// here).
+    /// </summary>
+    public async Task<ObjectOutline?> GetObjectOutlineAsync(
+        int releaseId,
+        string objectKind,
+        string objectName,
+        CancellationToken ct = default)
+    {
+        var kind = objectKind.Trim().ToLowerInvariant();
+        var name = objectName.Trim().ToLowerInvariant();
+        var header = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId
+                        && o.Kind == kind
+                        && o.Name.ToLower() == name)
+            .Select(o => new
+            {
+                o.Id, o.Kind, o.ObjectId, o.Name, o.ModuleId,
+                ModuleName = o.Module!.Name,
+                o.SourceFileId,
+                SourceFilePath = o.SourceFile != null ? o.SourceFile.Path : null,
+                o.LineNumber,
+            })
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        if (header is null) return null;
+
+        var symbols = await _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.ObjectId == header.Id)
+            .OrderBy(s => s.LineNumber).ThenBy(s => s.Name)
+            .Select(s => new ObjectSymbolRow(
+                s.Id, s.Kind, s.Name, s.Signature, s.ReturnType, s.FieldId, s.LineNumber))
+            .ToListAsync(ct).ConfigureAwait(false);
+
+        return new ObjectOutline(
+            Id: header.Id,
+            Kind: header.Kind,
+            ObjectId: header.ObjectId,
+            Name: header.Name,
+            ModuleId: header.ModuleId,
+            ModuleName: header.ModuleName,
+            SourceFileId: header.SourceFileId,
+            SourceFilePath: header.SourceFilePath,
+            LineNumber: header.LineNumber,
+            Symbols: symbols);
+    }
+
+    /// <summary>
+    /// Returns the AL source slice for a procedure / trigger / event
+    /// publisher / event subscriber, looked up by <see cref="ModuleSymbol.Id"/>.
+    /// Slices from the declaration line through the body's matching
+    /// <c>end;</c>; when <c>EndLine</c> is null (legacy / pre-#181
+    /// ingest), falls back to the next-sibling-symbol's start line as
+    /// an approximation. Applies <paramref name="maxLines"/> as a cap
+    /// and stamps <see cref="ProcedureSource.Truncated"/> when applied.
+    /// Returns null when the symbol id doesn't exist or doesn't have a
+    /// source file attached to its parent object.
+    /// </summary>
+    public async Task<ProcedureSource?> GetProcedureSourceAsync(
+        long symbolId,
+        int maxLines,
+        CancellationToken ct = default)
+    {
+        var row = await _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Id == symbolId)
+            .Select(s => new
+            {
+                s.Id,
+                s.Kind,
+                s.Name,
+                s.Signature,
+                s.ReturnType,
+                s.LineNumber,
+                s.EndLine,
+                OwnerId = s.Object!.Id,
+                OwnerName = s.Object.Name,
+                OwnerKind = s.Object.Kind,
+                SourceFileId = s.Object.SourceFileId,
+            })
+            .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+        if (row is null || row.SourceFileId is null) return null;
+
+        // Fallback for legacy rows: take the next symbol's line on the
+        // same owner as the close, minus one. The (Owner, LineNumber)
+        // lookup is satisfied by ix_oe_module_symbols_object_line.
+        int endLine;
+        if (row.EndLine is int explicitEnd)
+        {
+            endLine = explicitEnd;
+        }
+        else
+        {
+            var nextLine = await _db.OeModuleSymbols.AsNoTracking()
+                .Where(s => s.ObjectId == row.OwnerId && s.LineNumber > row.LineNumber)
+                .OrderBy(s => s.LineNumber)
+                .Select(s => (int?)s.LineNumber)
+                .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+            endLine = nextLine is int n ? n - 1 : int.MaxValue;
+        }
+
+        var fileContent = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == row.SourceFileId)
+            .Select(f => f.Content)
+            .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+        if (fileContent is null) return null;
+
+        var lines = fileContent.Split('\n');
+        var startIdx = Math.Max(0, row.LineNumber - 1);
+        var endIdx = Math.Min(lines.Length - 1, endLine - 1);
+        if (endIdx < startIdx) endIdx = startIdx;
+        var available = endIdx - startIdx + 1;
+        var truncated = false;
+        if (available > maxLines)
+        {
+            endIdx = startIdx + maxLines - 1;
+            truncated = true;
+        }
+        var sliceLines = new string[endIdx - startIdx + 1];
+        Array.Copy(lines, startIdx, sliceLines, 0, sliceLines.Length);
+        var source = string.Join('\n', sliceLines);
+        if (truncated)
+        {
+            source += $"\n// … (truncated at {maxLines} of {available} lines; call list_procedure_calls or narrow the question)";
+        }
+
+        return new ProcedureSource(
+            SymbolId: row.Id,
+            ObjectName: row.OwnerName,
+            ObjectKind: row.OwnerKind,
+            Kind: row.Kind,
+            Name: row.Name,
+            Signature: row.Signature,
+            ReturnType: row.ReturnType,
+            StartLine: row.LineNumber,
+            EndLine: endLine == int.MaxValue ? lines.Length : endLine,
+            Truncated: truncated,
+            Source: source);
+    }
+
+    /// <summary>
+    /// Returns the outgoing references emitted from inside the body of
+    /// the procedure / trigger identified by <paramref name="symbolId"/>.
+    /// The primary path keys on <c>source_symbol_id</c> (stamped at
+    /// import time on rows from #181-or-later ingests); when the symbol
+    /// has <c>EndLine</c> set but no references carry the FK, falls
+    /// back to <c>(SourceObjectId, LineNumber BETWEEN start AND end)</c>
+    /// so the tool stays useful on releases imported before the
+    /// migration. Capped at <paramref name="maxResults"/>.
+    /// </summary>
+    public async Task<IReadOnlyList<ProcedureCall>?> ListProcedureCallsAsync(
+        long symbolId,
+        int maxResults,
+        CancellationToken ct = default)
+    {
+        var symbol = await _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Id == symbolId)
+            .Select(s => new
+            {
+                OwnerId = s.Object!.Id,
+                s.LineNumber,
+                s.EndLine,
+            })
+            .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+        if (symbol is null) return null;
+
+        // Primary indexed seek via ix_oe_module_references_source_symbol.
+        var direct = await _db.OeModuleReferences.AsNoTracking()
+            .Where(r => r.SourceSymbolId == symbolId)
+            .OrderBy(r => r.LineNumber).ThenBy(r => r.ColumnNumber).ThenBy(r => r.Id)
+            .Take(maxResults)
+            .Select(r => new ProcedureCall(
+                r.Id, r.TargetAppId, r.TargetObjectKind, r.TargetObjectId, r.TargetObjectName,
+                r.TargetMemberName, r.TargetMemberKind, r.ReferenceKind, r.LineNumber, r.ColumnNumber))
+            .ToListAsync(ct).ConfigureAwait(false);
+        if (direct.Count > 0 || symbol.EndLine is null) return direct;
+
+        // Lazy-backfill fallback: rows from pre-#181 ingests don't carry
+        // source_symbol_id. Scope by line range — only safe when EndLine
+        // is set so we know where the body closes. Slower path; the
+        // expectation is to migrate releases off this fallback over time
+        // by re-ingesting.
+        var endLine = symbol.EndLine.Value;
+        var startLine = symbol.LineNumber;
+        return await _db.OeModuleReferences.AsNoTracking()
+            .Where(r => r.SourceObjectId == symbol.OwnerId
+                        && r.SourceSymbolId == null
+                        && r.LineNumber >= startLine
+                        && r.LineNumber <= endLine)
+            .OrderBy(r => r.LineNumber).ThenBy(r => r.ColumnNumber).ThenBy(r => r.Id)
+            .Take(maxResults)
+            .Select(r => new ProcedureCall(
+                r.Id, r.TargetAppId, r.TargetObjectKind, r.TargetObjectId, r.TargetObjectName,
+                r.TargetMemberName, r.TargetMemberKind, r.ReferenceKind, r.LineNumber, r.ColumnNumber))
+            .ToListAsync(ct).ConfigureAwait(false);
+    }
+
     // ── Source file viewer ─────────────────────────────────────────────
 
     public Task<SourceFileDetail?> GetFileAsync(long fileId, CancellationToken ct = default)

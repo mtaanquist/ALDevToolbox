@@ -1,11 +1,13 @@
 @page "/account/2fa/recovery-codes"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode InteractiveServer
+@implements IDisposable
 @using ALDevToolbox.Endpoints
 @using Microsoft.AspNetCore.DataProtection
 @inject IHttpContextAccessor Http
 @inject IDataProtectionProvider Protection
 @inject NavigationManager Nav
+@inject PersistentComponentState PersistentState
 
 <PageTitle>Recovery codes · AL Dev Toolbox</PageTitle>
 
@@ -55,18 +57,46 @@
 @code {
     [Inject] IJSRuntime JS { get; set; } = default!;
 
+    private const string StateKey = "recoveryCodes";
+
     private string[] _codes = Array.Empty<string>();
     private string _codesText = string.Empty;
+    private PersistingComponentStateSubscription _persistingSubscription;
 
     protected override void OnInitialized()
     {
+        // Two render passes happen under InteractiveServer with prerender:
+        // the SSR pass reads + clears the one-shot cookie, then the
+        // interactive circuit re-runs OnInitialized with the cookie
+        // already consumed. Without bridging the gap, the second pass
+        // sees nothing and renders the "can only be shown immediately"
+        // error over the codes the user briefly saw. PersistentComponentState
+        // carries the codes across the boundary. See issue #177.
+        if (PersistentState.TryTakeFromJson<string[]>(StateKey, out var restored) && restored is { Length: > 0 })
+        {
+            ApplyCodes(restored);
+            return;
+        }
+
         var ctx = Http.HttpContext;
         if (ctx is null) return;
         var codes = EndpointHelpers.ReadAndClearOneShotRecoveryCodesCookie(ctx, Protection);
         if (codes is null) return;
+        ApplyCodes(codes);
+        _persistingSubscription = PersistentState.RegisterOnPersisting(() =>
+        {
+            PersistentState.PersistAsJson(StateKey, _codes);
+            return Task.CompletedTask;
+        });
+    }
+
+    private void ApplyCodes(string[] codes)
+    {
         _codes = codes;
         _codesText = string.Join('\n', _codes);
     }
+
+    public void Dispose() => _persistingSubscription.Dispose();
 
     private async Task DownloadAsync()
     {

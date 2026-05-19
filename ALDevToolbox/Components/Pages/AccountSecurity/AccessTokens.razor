@@ -72,46 +72,84 @@
         }
         else
         {
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Prefix</th>
-                        <th>Created</th>
-                        <th>Last used</th>
-                        <th>Expires</th>
-                        <th>Status</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var t in _tokens)
-                    {
+            var now = DateTime.UtcNow;
+            var active = _tokens.Where(t => IsActiveAt(t, now)).ToList();
+            var inactive = _tokens.Where(t => !IsActiveAt(t, now)).ToList();
+
+            @if (active.Count == 0)
+            {
+                <p class="muted">No active tokens.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
                         <tr>
-                            <td>@t.Name</td>
-                            <td class="muted"><code>@t.TokenPrefix…</code></td>
-                            <td class="muted">@t.CreatedAt.ToString("yyyy-MM-dd")</td>
-                            <td class="muted">@(t.LastUsedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
-                            <td class="muted">@(t.ExpiresAt?.ToString("yyyy-MM-dd") ?? "Never")</td>
-                            <td>
-                                @{
-                                    var status = StatusFor(t);
-                                }
-                                <span class="status-pill @(status.Css)">@status.Label</span>
-                            </td>
-                            <td class="row-actions">
-                                @if (t.RevokedAt is null)
-                                {
+                            <th>Name</th>
+                            <th>Prefix</th>
+                            <th>Created</th>
+                            <th>Last used</th>
+                            <th>Expires</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in active)
+                        {
+                            <tr>
+                                <td>@t.Name</td>
+                                <td class="muted"><code>@t.TokenPrefix…</code></td>
+                                <td class="muted">@t.CreatedAt.ToString("yyyy-MM-dd")</td>
+                                <td class="muted">@(t.LastUsedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
+                                <td class="muted">@(t.ExpiresAt?.ToString("yyyy-MM-dd") ?? "Never")</td>
+                                <td class="row-actions">
                                     <form method="post" action="/auth/account/access-tokens/@t.Id/revoke" style="display:inline">
                                         <AntiforgeryToken />
                                         <button type="submit" class="btn btn--sm btn--danger">Revoke</button>
                                     </form>
-                                }
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
+            @if (inactive.Count > 0)
+            {
+                <details class="inactive-tokens">
+                    <summary>Show @inactive.Count revoked or expired @(inactive.Count == 1 ? "token" : "tokens")</summary>
+                    <p class="muted">
+                        Kept around so audit log entries that reference these tokens still resolve.
+                        They can't be used to sign in.
+                    </p>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Prefix</th>
+                                <th>Created</th>
+                                <th>Last used</th>
+                                <th>Expires</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var t in inactive)
+                            {
+                                var status = StatusFor(t, now);
+                                <tr>
+                                    <td>@t.Name</td>
+                                    <td class="muted"><code>@t.TokenPrefix…</code></td>
+                                    <td class="muted">@t.CreatedAt.ToString("yyyy-MM-dd")</td>
+                                    <td class="muted">@(t.LastUsedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
+                                    <td class="muted">@(t.ExpiresAt?.ToString("yyyy-MM-dd") ?? "Never")</td>
+                                    <td><span class="status-pill @(status.Css)">@status.Label</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </details>
+            }
         }
     </section>
 
@@ -135,10 +173,18 @@
             .ToListAsync();
     }
 
-    private static (string Label, string Css) StatusFor(PersonalAccessToken t)
+    /// <summary>
+    /// Active = not revoked and not yet past expiry. Revoked tokens and
+    /// expired-but-not-revoked tokens both fall to the inactive bucket
+    /// the UI folds behind a "Show revoked or expired" toggle.
+    /// </summary>
+    private static bool IsActiveAt(PersonalAccessToken t, DateTime now)
+        => t.RevokedAt is null && (t.ExpiresAt is null || t.ExpiresAt > now);
+
+    private static (string Label, string Css) StatusFor(PersonalAccessToken t, DateTime now)
     {
         if (t.RevokedAt is not null) return ("Revoked", "status-pill--muted");
-        if (t.ExpiresAt is { } exp && exp <= DateTime.UtcNow) return ("Expired", "status-pill--muted");
+        if (t.ExpiresAt is { } exp && exp <= now) return ("Expired", "status-pill--muted");
         return ("Active", "");
     }
 }

@@ -22,6 +22,8 @@ internal sealed class ModuleSymbolConfiguration : IEntityTypeConfiguration<Modul
         entity.Property(e => e.LineNumber).HasColumnName("line_number").IsRequired();
         entity.Property(e => e.ColumnStart).HasColumnName("column_start").IsRequired();
         entity.Property(e => e.ColumnEnd).HasColumnName("column_end").IsRequired();
+        entity.Property(e => e.EndLine).HasColumnName("end_line");
+        entity.Property(e => e.EndColumn).HasColumnName("end_column");
 
         entity.HasOne(e => e.Organization)
             .WithMany()

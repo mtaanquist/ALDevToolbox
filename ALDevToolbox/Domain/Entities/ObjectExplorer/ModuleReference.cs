@@ -109,4 +109,19 @@ public class ModuleReference
     public long? TargetVariableId { get; set; }
 
     public ModuleVariable? TargetVariable { get; set; }
+
+    /// <summary>
+    /// Optional FK to the <see cref="ModuleSymbol"/> whose body emitted
+    /// this reference — the calling procedure / trigger. Stamped at
+    /// import time when the extractor was inside a procedure scope.
+    /// Null for object-scope references (<c>extends_target</c>,
+    /// <c>table_no</c>, top-level property refs) and for legacy rows
+    /// imported before the column existed. Lets the forward-edge MCP
+    /// tools answer "what does this procedure call?" via a single
+    /// indexed seek instead of a line-range scan over every reference
+    /// on the source object. See issue #181.
+    /// </summary>
+    public long? SourceSymbolId { get; set; }
+
+    public ModuleSymbol? SourceSymbol { get; set; }
 }

@@ -1001,6 +1001,163 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .status-pill--inline { margin-left: 6px; }
 
+/* ---------- Settings / account layout ---------- */
+
+/* Single-column "settings" layout shared by /account, /account/access-tokens,
+   /account/2fa/totp/setup, /tools/mcp and the post-create token page. Named
+   `account-*` for history — the same primitives are used wherever a page
+   wants a centred narrow column of stacked sections separated by hairlines.
+   Originally lived in Account.razor.css; promoted to global so the same
+   class names render the same way on every page that adopts them, instead
+   of silently no-op'ing under Blazor CSS isolation. */
+
+.account-page {
+    max-width: 760px;
+    margin-inline: auto;
+}
+
+.account-section {
+    margin-top: 32px;
+    padding-top: 20px;
+    border-top: 1px solid var(--color-border);
+}
+
+.account-section:first-of-type {
+    margin-top: 16px;
+}
+
+.account-section > h2 {
+    margin: 0 0 6px;
+    font-size: 17px;
+}
+
+.account-section > p {
+    margin: 0 0 16px;
+}
+
+.account-section.danger > h2 {
+    color: var(--color-danger);
+}
+
+.account-subsection {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-top: 12px;
+}
+
+.account-subsection__header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.account-subsection__header h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.account-subsection p {
+    margin: 4px 0 12px;
+}
+
+.account-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.inline-form {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 8px 8px 0;
+}
+
+.inline-form input {
+    width: auto;
+    min-width: 160px;
+}
+
+/* Disclosure block used to fold revoked / expired tokens out of the
+   default view on /account/access-tokens. The summary acts as a small
+   secondary affordance — muted by default so it doesn't compete with
+   the active table; padded so the inactive table inside has room. */
+.inactive-tokens {
+    margin-top: 20px;
+}
+
+.inactive-tokens > summary {
+    color: var(--color-muted, #666);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 4px 0;
+}
+
+.inactive-tokens > summary:hover {
+    color: var(--color-text);
+}
+
+.inactive-tokens[open] > summary {
+    margin-bottom: 8px;
+}
+
+/* Client-config snippets and one-shot PAT display shared by /tools/mcp and
+   /account/access-tokens/created. Previously declared inline in each page
+   with slight drift between copies; consolidated here so both pages render
+   identically. */
+
+.pat-token pre,
+.pat-snippet pre {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    padding: 12px 16px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.55;
+    overflow-x: auto;
+    white-space: pre;
+    margin: 0 0 8px;
+}
+
+.pat-token {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.pat-token pre {
+    flex: 1 1 auto;
+    min-width: 0;
+    letter-spacing: 0.04em;
+}
+
+.pat-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.pat-tab {
+    background: none;
+    border: none;
+    padding: 8px 14px;
+    font-size: 14px;
+    cursor: pointer;
+    color: var(--color-muted, #666);
+    border-bottom: 2px solid transparent;
+}
+
+.pat-tab--active {
+    color: var(--color-text);
+    border-bottom-color: var(--color-accent, #4a6fa5);
+}
+
 /* ---------- Dependency picker ---------- */
 
 .dep-picker { display: flex; flex-direction: column; gap: 16px; }
