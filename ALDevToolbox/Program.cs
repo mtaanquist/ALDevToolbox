@@ -212,6 +212,26 @@ builder.Services.AddOpenIddict()
         // advertises it in scopes_supported.
         o.RegisterScopes("mcp", OpenIddict.Abstractions.OpenIddictConstants.Scopes.OfflineAccess);
 
+        // MCP clients (Claude web's custom connector, Claude Code) include
+        // a `resource` parameter on every authorise + token request per the
+        // MCP 2025-11-25 spec (RFC 8707 — Resource Indicators). OpenIddict's
+        // stock ValidateResources handler compares it against
+        // OpenIddictServerOptions.Resources, an in-memory HashSet seeded at
+        // startup via RegisterResources(). We don't know the public host
+        // when the host builds (no PublicUrl config; deployments use the
+        // request's Forwarded-* headers as the source of truth), and
+        // attempts to mutate the set per-request from a pre-validator event
+        // handler didn't take effect — see PR #191 / #192 retrospectives.
+        // The validator is a defence-in-depth check for servers fronting
+        // multiple resources; ALDevToolbox only ever issues tokens for
+        // /mcp, the bearer-token audience is still bound on issue, and
+        // McpBearerPolicy already enforces audience on every /mcp request.
+        // TODO: Revisit once OpenIddict ships native DCR / CIMD support
+        // (tracked in openiddict/openiddict-core#2404, targeted at 7.6.0)
+        // — that release will likely introduce a more idiomatic way to
+        // register resources dynamically from a CIMD application descriptor.
+        o.DisableResourceValidation();
+
         // Reuse the existing Data Protection key ring (mounted on the
         // app-keys volume) for token format wrapping. Losing the key ring
         // already invalidates auth cookies and the system_settings SMTP
@@ -289,16 +309,6 @@ builder.Services.AddOpenIddict()
         o.AddEventHandler<OpenIddict.Server.OpenIddictServerEvents.ValidateAuthorizationRequestContext>(b =>
             b.UseScopedHandler<ALDevToolbox.Services.OAuth.CimdClientResolver>()
              .SetOrder(int.MinValue + 100_000));
-
-        // MCP resource resolver — the MCP 2025-11-25 spec has clients pass
-        // resource=https://<host>/mcp on every authorize request per RFC 8707,
-        // and OpenIddict's stock ValidateResources handler rejects with ID2190
-        // unless that URL is in the mcp scope row's Resources. Public host
-        // isn't known at startup, so the row is seeded lazily from the first
-        // request and cached in-process thereafter.
-        o.AddEventHandler<OpenIddict.Server.OpenIddictServerEvents.ValidateAuthorizationRequestContext>(b =>
-            b.UseScopedHandler<ALDevToolbox.Services.OAuth.McpResourceResolver>()
-             .SetOrder(int.MinValue + 200_000));
     })
     .AddValidation(o =>
     {
@@ -318,7 +328,6 @@ builder.Services.AddScoped<ALDevToolbox.Services.OAuth.OAuthClientAdminService>(
 // configuration to every other caller.
 builder.Services.AddHttpClient(nameof(ALDevToolbox.Services.OAuth.CimdClientResolver));
 builder.Services.AddScoped<ALDevToolbox.Services.OAuth.CimdClientResolver>();
-builder.Services.AddScoped<ALDevToolbox.Services.OAuth.McpResourceResolver>();
 
 // MCP server (Model Context Protocol). Mounted at /mcp by McpEndpoints; the
 // PAT auth handler above turns Bearer tokens into the same claim set the
