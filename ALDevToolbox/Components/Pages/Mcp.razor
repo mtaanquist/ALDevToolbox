@@ -134,39 +134,6 @@
     }
 </div>
 
-<style>
-    .pat-snippet pre {
-        background: var(--color-bg);
-        border: 1px solid var(--color-border);
-        padding: 12px 16px;
-        font-family: var(--font-mono);
-        font-size: 13px;
-        line-height: 1.55;
-        overflow-x: auto;
-        white-space: pre;
-        margin: 0 0 8px;
-    }
-    .pat-tabs {
-        display: flex;
-        gap: 4px;
-        margin-bottom: 8px;
-        border-bottom: 1px solid var(--color-border);
-    }
-    .pat-tab {
-        background: none;
-        border: none;
-        padding: 8px 14px;
-        font-size: 14px;
-        cursor: pointer;
-        color: var(--color-muted, #666);
-        border-bottom: 2px solid transparent;
-    }
-    .pat-tab--active {
-        color: var(--color-text);
-        border-bottom-color: var(--color-accent, #4a6fa5);
-    }
-</style>
-
 @code {
     private static readonly string[] Tabs = new[] { "VS Code", "Claude Desktop", "Cursor", "Claude Code" };
 
