@@ -649,13 +649,18 @@ public sealed class ReleaseImportServiceTests : IDisposable
             p.EndColumn.Should().NotBeNull();
         });
 
-        // Field rows don't have bodies — they keep EndLine null.
-        var fields = await read.OeModuleSymbols.AsNoTracking()
+        // Field rows don't have bodies — they keep EndLine null. The
+        // DK Core fixture is codeunit / pageextension / reportextension
+        // only, so this query can legitimately return an empty list;
+        // assert that no field-kind row carries an end line rather
+        // than using AllSatisfy (which fails on an empty input).
+        var fieldsWithEndLine = await read.OeModuleSymbols.AsNoTracking()
             .Where(s => s.Object!.Module!.ReleaseId == summary.ReleaseId)
             .Where(s => s.Kind == "table_field" || s.Kind == "page_field" || s.Kind == "page_action")
+            .Where(s => s.EndLine != null)
             .ToListAsync();
-        fields.Should().AllSatisfy(f => f.EndLine.Should().BeNull(
-            because: "fields and actions don't have bodies"));
+        fieldsWithEndLine.Should().BeEmpty(
+            because: "fields and actions don't have bodies — EndLine must stay null on those kinds");
     }
 
     [Fact]
