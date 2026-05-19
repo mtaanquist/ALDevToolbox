@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALDevToolbox.Tests.OAuth;
 
@@ -48,6 +50,11 @@ public sealed class OAuthMetadataTests : IDisposable
     [Fact]
     public async Task Mcp_401_emits_resource_metadata_pointer()
     {
+        // /mcp returns 404 when the SiteAdmin toggle is off (kill switch),
+        // so the auth-challenge contract is only observable once MCP is on.
+        // Flip the toggle the same way McpEnabledToggleTests does.
+        await EnableMcpAsync();
+
         using var client = _factory.CreateClient();
 
         // The MCP transport responds to POST. With no bearer, the McpBearer
@@ -127,5 +134,23 @@ public sealed class OAuthMetadataTests : IDisposable
             .Select(e => e.GetString())
             .ToArray();
         pkceMethods.Should().Contain("S256");
+    }
+
+    private async Task EnableMcpAsync()
+    {
+        await using var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor());
+        var svc = new SystemSettingsService(ctx, _db.DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
+        await svc.SaveAsync(new SystemSettingsInput(
+            SmtpHost: null, SmtpPort: null, SmtpUser: null,
+            SmtpPassword: null, ClearSmtpPassword: false,
+            SmtpFrom: null, SmtpUseStartTls: null, BannerText: null,
+            DefaultSignupAutoApprove: false,
+            BackupScheduleEnabled: true,
+            BackupScheduleTimeUtc: new TimeOnly(2, 0),
+            BackupRetentionCount: 14,
+            PerTenantBackupRetentionCount: 30,
+            DefaultStorageQuotaMb: null,
+            IndexSizeMultiplier: 0.5m,
+            McpEnabled: true));
     }
 }
