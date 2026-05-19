@@ -1,0 +1,57 @@
+/* Slightly wider than account-page's default so the code blocks below
+   don't wrap awkwardly. Mirrors what we'd want for any long-form doc. */
+::deep .account-page {
+    max-width: 880px;
+}
+
+::deep .account-section h3 {
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    font-size: 1.05rem;
+}
+
+::deep .account-section ol,
+::deep .account-section ul {
+    line-height: 1.55;
+    padding-left: 1.25rem;
+}
+
+::deep .account-section pre {
+    background: var(--surface-2, #f4f4f4);
+    border: 1px solid var(--border-color, #e0e0e0);
+    border-radius: 6px;
+    padding: 0.65rem 0.9rem;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.45;
+    margin: 0.5rem 0;
+}
+
+::deep .account-section pre code {
+    background: transparent;
+    padding: 0;
+    font-size: inherit;
+}
+
+::deep .account-section details {
+    border: 1px solid var(--border-color, #e0e0e0);
+    border-radius: 6px;
+    padding: 0.6rem 0.9rem;
+    margin: 0.5rem 0;
+    background: var(--surface-1, #fafafa);
+}
+
+::deep .account-section details > summary {
+    cursor: pointer;
+    padding: 0.2rem 0;
+}
+
+::deep .troubleshoot dt {
+    font-weight: 600;
+    margin-top: 0.85rem;
+}
+
+::deep .troubleshoot dd {
+    margin: 0.25rem 0 0 0;
+    color: var(--text-muted, #666);
+}

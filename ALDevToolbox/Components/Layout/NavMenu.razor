@@ -184,6 +184,12 @@
                                 <span>Users</span>
                             </NavLink>
                         </li>
+                        <li>
+                            <NavLink class="nav-link" href="/admin/oauth-clients" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                <Icon Name="plug" Width="18" Height="18" Css="nav-link__icon" />
+                                <span>OAuth clients</span>
+                            </NavLink>
+                        </li>
                     }
                     @if (isSiteAdmin)
                     {
@@ -269,6 +275,12 @@
                             <NavLink class="nav-link" href="/site-admin/access-tokens" Match="NavLinkMatch.Prefix" ActiveClass="active">
                                 <Icon Name="key-round" Width="18" Height="18" Css="nav-link__icon" />
                                 <span>Access tokens</span>
+                            </NavLink>
+                        </li>
+                        <li>
+                            <NavLink class="nav-link" href="/site-admin/oauth-clients" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                <Icon Name="plug" Width="18" Height="18" Css="nav-link__icon" />
+                                <span>OAuth clients</span>
                             </NavLink>
                         </li>
                         <li>

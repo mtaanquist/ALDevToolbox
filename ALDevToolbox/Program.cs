@@ -2,6 +2,7 @@ using ALDevToolbox.Components;
 using ALDevToolbox.Data;
 using ALDevToolbox.Endpoints;
 using ALDevToolbox.Services;
+using ALDevToolbox.Services.OAuth;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
@@ -67,17 +68,39 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     })
     // Bearer-token scheme for Personal Access Tokens. Sits alongside the
     // cookie scheme; only routes that opt in (currently /mcp) declare the
-    // "PAT" authorisation policy. The handler mounts the same claim set as
-    // the cookie path so IOrganizationContext resolves identically.
+    // "McpBearer" authorisation policy. The handler mounts the same claim
+    // set as the cookie path so IOrganizationContext resolves identically.
     .AddScheme<AuthenticationSchemeOptions, ALDevToolbox.Services.Account.PatAuthenticationHandler>(
         ALDevToolbox.Services.Account.PatAuthenticationHandler.AuthenticationScheme,
         _ => { });
 builder.Services.AddAuthorization(options =>
 {
+    // McpBearer accepts EITHER a PAT (aldt_pat_…) OR an OAuth access token
+    // issued by our own OpenIddict server. Same downstream claims, same
+    // tenant scoping — the difference is invisible to the MCP tools.
+    options.AddPolicy(McpBearerPolicy.Name, policy =>
+    {
+        policy.AuthenticationSchemes = new[]
+        {
+            ALDevToolbox.Services.Account.PatAuthenticationHandler.AuthenticationScheme,
+            OpenIddict.Validation.AspNetCore.OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
+        };
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim(HttpOrganizationContext.UserIdClaim);
+        policy.RequireClaim(HttpOrganizationContext.OrganizationIdClaim);
+    });
+    // Kept under the old name for one release so anything that hard-coded
+    // "PAT" as the policy keeps working while it migrates.
     options.AddPolicy(ALDevToolbox.Services.Account.PatAuthenticationHandler.AuthenticationScheme, policy =>
     {
-        policy.AuthenticationSchemes = new[] { ALDevToolbox.Services.Account.PatAuthenticationHandler.AuthenticationScheme };
+        policy.AuthenticationSchemes = new[]
+        {
+            ALDevToolbox.Services.Account.PatAuthenticationHandler.AuthenticationScheme,
+            OpenIddict.Validation.AspNetCore.OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
+        };
         policy.RequireAuthenticatedUser();
+        policy.RequireClaim(HttpOrganizationContext.UserIdClaim);
+        policy.RequireClaim(HttpOrganizationContext.OrganizationIdClaim);
     });
 });
 builder.Services.AddCascadingAuthenticationState();
@@ -141,6 +164,120 @@ builder.Services.AddScoped<ALDevToolbox.Services.Account.TotpService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.EmailMfaService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.PasskeyService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.PersonalAccessTokenService>();
+
+// OAuth 2.1 server (OpenIddict) — adds the second accepted credential for
+// /mcp so Claude.ai's directory and custom-connector flows can connect.
+// Both schemes (PAT + OAuth) feed identical claims via OAuthClaimsTransformer,
+// so MCP tools see the same principal whichever path authenticated the call.
+// Discovery metadata is customised in OAuthEndpoints to advertise CIMD; the
+// hand-rolled resource-metadata endpoint (RFC 9728) is registered there too.
+builder.Services.AddOpenIddict()
+    .AddCore(o => o.UseEntityFrameworkCore().UseDbContext<AppDbContext>())
+    .AddServer(o =>
+    {
+        o.SetAuthorizationEndpointUris("/oauth/authorize")
+            .SetTokenEndpointUris("/oauth/token")
+            .SetRevocationEndpointUris("/oauth/revoke")
+            .SetIntrospectionEndpointUris("/oauth/introspect")
+            .SetEndSessionEndpointUris("/oauth/logout");
+        // DCR (RFC 7591) is hand-rolled at /oauth/register in OAuthEndpoints.cs
+        // — OpenIddict 7.5.0's server builder doesn't expose a first-class
+        // SetClientRegistrationEndpointUris(), so we write through
+        // IOpenIddictApplicationManager from a minimal API instead, and
+        // surface registration_endpoint via the discovery customisation.
+
+        o.AllowAuthorizationCodeFlow()
+            .AllowRefreshTokenFlow();
+        // Claude requires S256 PKCE on every authorisation request; plain
+        // is rejected by OpenIddict automatically once this is set.
+        o.RequireProofKeyForCodeExchange();
+
+        // Single resource scope today. offline_access enables refresh
+        // tokens — Claude appends it when our discovery metadata
+        // advertises it in scopes_supported.
+        o.RegisterScopes(OpenIddict.Abstractions.OpenIddictConstants.Permissions.Scopes.Profile);
+        o.RegisterScopes("mcp", OpenIddict.Abstractions.OpenIddictConstants.Scopes.OfflineAccess);
+
+        // Reuse the existing Data Protection key ring (mounted on the
+        // app-keys volume) for token format wrapping. Losing the key ring
+        // already invalidates auth cookies and the system_settings SMTP
+        // ciphertext, so OAuth tokens sharing its fate isn't a new failure
+        // mode.
+        o.UseDataProtection();
+
+        // OpenIddict additionally requires signing + encryption keys for
+        // the JWKS endpoint and its token-format fallback. UseDataProtection
+        // alone doesn't supply these. Dev uses self-signed certs that
+        // persist in the user X509 store (restart doesn't invalidate
+        // issued tokens); prod uses ephemeral keys — access tokens are
+        // 60 min and refresh tokens rotate, so a restart costs at worst
+        // one extra trip through the consent screen per active user.
+        // Cert-based prod keys are a follow-up; see .design/mcp-oauth.md.
+        if (builder.Environment.IsDevelopment())
+        {
+            o.AddDevelopmentEncryptionCertificate()
+                .AddDevelopmentSigningCertificate();
+        }
+        else
+        {
+            o.AddEphemeralEncryptionKey()
+                .AddEphemeralSigningKey();
+        }
+
+        // Lifetimes — proactive refresh kicks in five minutes before
+        // expiry, so 60-minute access tokens turn over comfortably.
+        o.SetAccessTokenLifetime(TimeSpan.FromMinutes(60))
+            .SetRefreshTokenLifetime(TimeSpan.FromDays(30));
+
+        o.UseAspNetCore()
+            .EnableAuthorizationEndpointPassthrough()
+            .EnableTokenEndpointPassthrough();
+
+        // Dev: HTTPS isn't terminated in front of us, so OpenIddict's
+        // built-in transport-security check would refuse to start. Prod
+        // runs behind a TLS-terminating proxy (UseForwardedHeaders is
+        // installed below), so the check is satisfied by X-Forwarded-Proto.
+        if (builder.Environment.IsDevelopment())
+        {
+            o.UseAspNetCore().DisableTransportSecurityRequirement();
+        }
+
+        // Discovery customisation. Two additions Claude needs:
+        //   (1) Advertise the hand-rolled DCR endpoint (OpenIddict 7.5.0
+        //       doesn't surface registration_endpoint itself).
+        //   (2) Declare CIMD support — Claude only picks the CIMD path
+        //       (URL-as-client_id) when client_id_metadata_document_supported
+        //       is true AND token_endpoint_auth_methods_supported contains
+        //       "none". Both already follow from running public-only PKCE
+        //       clients, but we set them explicitly so the contract is
+        //       readable from the metadata document.
+        o.AddEventHandler<OpenIddict.Server.OpenIddictServerEvents.HandleConfigurationRequestContext>(b =>
+            b.UseInlineHandler(context =>
+            {
+                context.Metadata["client_id_metadata_document_supported"] = true;
+                var issuer = context.Issuer ?? context.BaseUri;
+                if (issuer is not null)
+                {
+                    context.Metadata["registration_endpoint"] = new Uri(issuer, "/oauth/register").AbsoluteUri;
+                }
+                context.TokenEndpointAuthenticationMethods.Add(OpenIddict.Abstractions.OpenIddictConstants.ClientAuthenticationMethods.None);
+                context.CodeChallengeMethods.Add(OpenIddict.Abstractions.OpenIddictConstants.CodeChallengeMethods.Sha256);
+                return default;
+            }));
+    })
+    .AddValidation(o =>
+    {
+        // Local issuer — no remote /introspect round-trip per request.
+        o.UseLocalServer();
+        o.UseAspNetCore();
+        o.UseDataProtection();
+    });
+// Stamps the ALDevToolbox claim names (user_id, org_id, role, site_admin)
+// on principals authenticated by OpenIddict's validation scheme. PAT and
+// cookie principals already carry these claims; this only fires for
+// OAuth access tokens.
+builder.Services.AddScoped<IClaimsTransformation, ALDevToolbox.Services.OAuth.OAuthClaimsTransformer>();
+builder.Services.AddScoped<ALDevToolbox.Services.OAuth.OAuthClientAdminService>();
 
 // MCP server (Model Context Protocol). Mounted at /mcp by McpEndpoints; the
 // PAT auth handler above turns Bearer tokens into the same claim set the
@@ -320,6 +457,7 @@ app.MapAdminUserEndpoints();
 app.MapObjectExplorerEndpoints();
 app.MapSiteAdminEndpoints();
 app.MapMcpEndpoints();
+app.MapOAuthEndpoints();
 
 // Run migrations + bootstrap, then flip /readyz to green.
 await StartupTasks.RunAsync(app);

@@ -1,0 +1,137 @@
+@page "/admin/oauth-clients"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Services
+@using ALDevToolbox.Services.OAuth
+@inject OAuthClientAdminService Clients
+@inject IOrganizationContext Org
+
+<PageTitle>OAuth clients · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>OAuth clients</h1>
+            <p class="muted">
+                Every AI assistant (Claude, Cursor, agent) that someone in your organisation
+                has authorised to use AL Dev Toolbox. Each row is one user's consent — the same
+                assistant can appear multiple times when several users have connected it.
+                Revoking here signs that user's assistant out and forces it to ask for
+                permission again next time.
+            </p>
+        </div>
+        <div class="admin-page__header-actions">
+            <a class="btn btn--sm" href="/admin">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to admin</span>
+            </a>
+        </div>
+    </header>
+
+    @if (Ok == "revoked")
+    {
+        <p class="form-info" role="status">Consent revoked.</p>
+    }
+
+    @if (_rows is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_rows.Count == 0)
+    {
+        <p class="muted">
+            Nobody in your organisation has connected an AI assistant yet. When a user adds
+            AL Dev Toolbox as a connector in Claude (or another supported assistant) and
+            clicks <strong>Allow</strong>, the connection appears here. Personal access tokens
+            (the desktop / CLI path) live on <a href="/site-admin/access-tokens">a separate page</a>.
+        </p>
+    }
+    else
+    {
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Assistant</th>
+                    <th>User</th>
+                    <th>Permissions</th>
+                    <th>Granted</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var c in _rows)
+            {
+                <tr>
+                    <td>
+                        @c.DisplayName
+                        @if (c.RedirectHosts.Count > 0)
+                        {
+                            <div class="muted small">@string.Join(", ", c.RedirectHosts)</div>
+                        }
+                    </td>
+                    <td>@c.UserEmail</td>
+                    <td class="muted">@HumanScopes(c.Scopes)</td>
+                    <td class="muted">@c.GrantedAt.ToString("yyyy-MM-dd")</td>
+                    <td>
+                        @if (c.RevokedAt is null)
+                        {
+                            <span class="status-pill">Active</span>
+                        }
+                        else
+                        {
+                            <span class="status-pill status-pill--muted">Revoked</span>
+                        }
+                    </td>
+                    <td class="row-actions">
+                        @if (c.RevokedAt is null)
+                        {
+                            <button type="button" class="btn btn--sm btn--danger" @onclick="() => RevokeAsync(c.ConsentId)">
+                                Revoke
+                            </button>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+
+    private IReadOnlyList<ConnectedClient>? _rows;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var orgId = Org.CurrentOrganizationId;
+        if (orgId is null) return;
+        _rows = await Clients.ListForOrganizationAsync(orgId.Value);
+    }
+
+    private async Task RevokeAsync(int consentId)
+    {
+        // Org admin revokes consent without owning it; ignoreOrgScope=true so the
+        // ownership check inside the service doesn't bounce us. Authorisation is
+        // already enforced by the [Authorize(Roles="Admin")] attribute on the page.
+        await Clients.RevokeConsentAsync(consentId, actorUserId: 0, ignoreOrgScope: true);
+        await LoadAsync();
+        Ok = "revoked";
+    }
+
+    private static string HumanScopes(string scopes)
+    {
+        var parts = scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var labels = parts.Select(s => s switch
+        {
+            "mcp" => "use AL Dev Toolbox tools",
+            "offline_access" => "stay signed in",
+            _ => s,
+        });
+        return string.Join(", ", labels);
+    }
+}

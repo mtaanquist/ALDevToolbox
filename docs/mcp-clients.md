@@ -2,10 +2,43 @@
 
 AL Dev Toolbox exposes its template browser, workspace generator, Object
 Explorer queries, and snippet library through a Model Context Protocol (MCP)
-endpoint at `/mcp`. AI agents authenticate with a **Personal Access Token
-(PAT)** issued from your account page.
+endpoint at `/mcp`. There are two supported sign-in styles, and which one
+you pick depends on the assistant:
 
-## 1. Create a token
+| Assistant                          | Auth method                  |
+|------------------------------------|------------------------------|
+| Claude on the web (claude.ai)      | OAuth (custom connector)     |
+| Claude mobile                      | OAuth (custom connector)     |
+| Claude Desktop                     | Personal access token        |
+| Claude Code (CLI)                  | Personal access token        |
+| Cursor                             | Personal access token        |
+| VS Code Copilot agent mode         | Personal access token        |
+
+The in-app docs hub at **`/docs/mcp`** is the long-form, layman-friendly
+walkthrough — link signed-in users there. This file is the same content in
+markdown form so it shows up in the repo.
+
+## Connect with AL Dev Toolbox (Claude on the web & mobile)
+
+Claude.ai's **directory** and **custom connector** flow does not accept a
+pasted bearer token — `static_bearer` is not in Anthropic's supported auth
+matrix. Instead, AL Dev Toolbox runs a small OAuth 2.1 server (powered by
+OpenIddict) at `/.well-known/oauth-authorization-server`, and Claude
+registers itself via Dynamic Client Registration (RFC 7591) on first
+connect.
+
+1. Open Claude.ai → **Settings → Connectors → Add custom connector**.
+2. Enter `https://YOUR-SERVER/mcp` as the URL. Leave the OAuth Client
+   Secret field empty — DCR registers Claude as a public PKCE client.
+3. Sign in to AL Dev Toolbox in the popup, click **Allow** on the
+   permission screen, and you're connected.
+
+To take access back, go to **Account → Connected assistants** at
+`/account/oauth-clients`.
+
+## Personal access tokens (desktop & CLI)
+
+### Create a token
 
 1. Sign in at the AL Dev Toolbox web app.
 2. Go to **Account → Manage access tokens** (or directly to
@@ -17,7 +50,7 @@ endpoint at `/mcp`. AI agents authenticate with a **Personal Access Token
 You can revoke a token at any time from the same page. SiteAdmins can revoke
 tokens across the whole deployment at `/site-admin/access-tokens`.
 
-## 2. Configure your AI client
+### Configure your AI client
 
 The reveal screen at `/account/access-tokens/created` shows ready-to-paste
 snippets with your token and the server URL pre-filled. The reference shapes
@@ -100,7 +133,7 @@ claude mcp add aldevtoolbox \
 
 The server is then available in any Claude Code session in that directory.
 
-## 3. What you can ask
+## What you can ask
 
 Once connected, the agent has tools for:
 

@@ -2,6 +2,7 @@ using ALDevToolbox.Data;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.Account;
 using ALDevToolbox.Services.Mcp;
+using ALDevToolbox.Services.OAuth;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -10,7 +11,12 @@ namespace ALDevToolbox.Endpoints;
 
 /// <summary>
 /// Mounts the Model Context Protocol HTTP transport at <c>/mcp</c> and
-/// guards it with the bearer-token <see cref="PatAuthenticationHandler"/>.
+/// guards it with the <see cref="McpBearerPolicy"/> — which accepts either a
+/// Personal Access Token (<see cref="PatAuthenticationHandler"/>, the
+/// desktop/CLI path) or an OAuth access token issued by our OpenIddict
+/// server (the Claude.ai directory / custom-connector path). Both schemes
+/// mount the same downstream claim shape via
+/// <see cref="OAuth.OAuthClaimsTransformer"/>.
 ///
 /// Two layers of off-switch:
 /// <list type="bullet">
@@ -91,7 +97,7 @@ internal static class McpEndpoints
         }
 
         app.MapMcp("/mcp")
-            .RequireAuthorization(PatAuthenticationHandler.AuthenticationScheme)
+            .RequireAuthorization(McpBearerPolicy.Name)
             // Per-org opt-out (Issue: per-org MCP toggle). Authoritative
             // check at request time — the `org_mcp_enabled` claim on the
             // cookie/PAT principal feeds the nav-link visibility but can be

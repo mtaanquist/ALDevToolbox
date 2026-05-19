@@ -1,0 +1,314 @@
+@page "/docs/mcp"
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@using ALDevToolbox.Components.Shared
+
+<PageTitle>Connect an AI assistant · AL Dev Toolbox</PageTitle>
+
+<div class="account-page">
+    <header class="page-header">
+        <h1>Connect an AI assistant</h1>
+        <p class="muted">
+            AL Dev Toolbox can be plugged into AI assistants — Claude, Cursor, VS Code
+            Copilot, and any other tool that speaks the same protocol. Once connected, you
+            can ask the assistant to generate a workspace, look up a procedure on a Business
+            Central release, or fetch one of your saved snippets, and it does the work using
+            your account here. This page walks through how each assistant connects and what
+            it can do once it's in.
+        </p>
+    </header>
+
+    <section class="account-section">
+        <h2>What's happening under the hood</h2>
+        <p>
+            AL Dev Toolbox exposes a small set of tools — generate, search, look up — at a
+            URL ending in <code>/mcp</code>. Assistants talk to that URL on your behalf.
+            "MCP" is just the name of the protocol they use; you don't need to understand
+            the details to use it, but you'll see the abbreviation in some assistant
+            settings.
+        </p>
+        <p>
+            Whatever the assistant does, it does <strong>as you</strong>: it sees the same
+            templates, the same Object Explorer data, the same snippets your browser session
+            would. Your role and organisation are unchanged. Nothing the assistant does
+            escapes the audit log.
+        </p>
+    </section>
+
+    <section class="account-section">
+        <h2>Two ways to connect</h2>
+        <p>
+            AL Dev Toolbox supports two sign-in styles for assistants. Which one you pick
+            depends on which assistant you're using.
+        </p>
+
+        <h3>1. Personal access token (desktop &amp; CLI tools)</h3>
+        <p>
+            A token is a long, random password you create on
+            <a href="/account/access-tokens">your Account &rarr; Personal access tokens</a>
+            page. You paste it into the assistant's config file or settings, and the
+            assistant uses it on every request. Tokens never expire on their own (until you
+            pick an expiry date) and don't ask you to sign in repeatedly. Good for:
+        </p>
+        <ul>
+            <li>Claude Desktop</li>
+            <li>Cursor</li>
+            <li>VS Code Copilot agent mode</li>
+            <li>Claude Code (the command-line tool)</li>
+            <li>Anything else that takes an <em>Authorization: Bearer …</em> header</li>
+        </ul>
+        <p class="muted">
+            If a token leaks, revoke it from the same page — the assistant stops working
+            immediately. Treat tokens like passwords.
+        </p>
+
+        <h3>2. Connect with AL Dev Toolbox (Claude on the web &amp; mobile)</h3>
+        <p>
+            Claude's directory and custom-connector flow on
+            <a href="https://claude.ai/" target="_blank" rel="noopener">claude.ai</a> can
+            connect on its own. There's no token to paste — Claude pops up a permission
+            screen, you click <strong>Allow</strong>, and that's it. You can take the
+            access back any time from
+            <a href="/account/oauth-clients">Account &rarr; Connected assistants</a>.
+        </p>
+        <p class="muted">
+            Under the hood this is OAuth — the same kind of sign-in you'd use to let a
+            third-party site read your Google Calendar. You stay signed in for as long as
+            Claude is connected; when you revoke from the Connected assistants page, the
+            connection is severed for real (not just hidden).
+        </p>
+
+        <h3>Which should I use?</h3>
+        <table class="data-table">
+            <thead>
+                <tr><th>Assistant</th><th>Use</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Claude on the web (claude.ai)</td><td>Connect with AL Dev Toolbox</td></tr>
+                <tr><td>Claude mobile</td><td>Connect with AL Dev Toolbox</td></tr>
+                <tr><td>Claude Desktop</td><td>Personal access token</td></tr>
+                <tr><td>Claude Code (CLI)</td><td>Personal access token</td></tr>
+                <tr><td>Cursor</td><td>Personal access token</td></tr>
+                <tr><td>VS Code Copilot agent mode</td><td>Personal access token</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section class="account-section">
+        <h2>Step-by-step for each assistant</h2>
+
+        <details>
+            <summary><strong>Claude on the web (claude.ai)</strong></summary>
+            <ol>
+                <li>Open Claude in your browser and go to <strong>Settings &rarr; Connectors</strong>.</li>
+                <li>Click <strong>Add custom connector</strong>.</li>
+                <li>
+                    Paste this URL in the <em>Server URL</em> field — replace <code>YOUR-SERVER</code>
+                    with the address of this AL Dev Toolbox deployment:
+                    <pre><code>https://YOUR-SERVER/mcp</code></pre>
+                </li>
+                <li>Leave the OAuth Client Secret field empty.</li>
+                <li>
+                    Claude will pop up a sign-in window. Sign in to AL Dev Toolbox if you
+                    aren't already, then click <strong>Allow</strong> on the permission screen.
+                </li>
+                <li>You're done. Ask Claude to generate a workspace and it'll use the tools.</li>
+            </ol>
+        </details>
+
+        <details>
+            <summary><strong>Claude mobile (iOS / Android)</strong></summary>
+            <ol>
+                <li>Open Claude on your phone and go to <strong>Settings &rarr; Connectors</strong>.</li>
+                <li>Tap <strong>Add custom connector</strong>.</li>
+                <li>Enter <code>https://YOUR-SERVER/mcp</code> as the server URL.</li>
+                <li>Sign in and tap <strong>Allow</strong> on the permission screen.</li>
+            </ol>
+        </details>
+
+        <details>
+            <summary><strong>Claude Desktop</strong></summary>
+            <ol>
+                <li>
+                    Create a token on
+                    <a href="/account/access-tokens">Account &rarr; Personal access tokens</a>.
+                    The reveal screen has the snippet below pre-filled with your token.
+                </li>
+                <li>
+                    Open Claude Desktop &rarr; <strong>Settings &rarr; Developer &rarr; Edit Config</strong>.
+                </li>
+                <li>
+                    Add the toolbox to the <code>mcpServers</code> block:
+<pre><code>{
+  "mcpServers": {
+    "aldevtoolbox": {
+      "type": "http",
+      "url": "https://YOUR-SERVER/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR-TOKEN"
+      }
+    }
+  }
+}</code></pre>
+                </li>
+                <li>Restart Claude Desktop.</li>
+            </ol>
+        </details>
+
+        <details>
+            <summary><strong>Claude Code (command line)</strong></summary>
+            <ol>
+                <li>Create a token on <a href="/account/access-tokens">Account &rarr; Personal access tokens</a>.</li>
+                <li>
+                    From any project directory run:
+<pre><code>claude mcp add aldevtoolbox \
+  --transport http \
+  --url https://YOUR-SERVER/mcp \
+  --header "Authorization: Bearer YOUR-TOKEN"</code></pre>
+                </li>
+                <li>The toolbox is available in every Claude Code session in that directory.</li>
+            </ol>
+        </details>
+
+        <details>
+            <summary><strong>Cursor</strong></summary>
+            <ol>
+                <li>Create a token on <a href="/account/access-tokens">Account &rarr; Personal access tokens</a>.</li>
+                <li>Open <strong>Cursor Settings &rarr; MCP &rarr; Add Server</strong>.</li>
+                <li>
+                    Or edit <code>~/.cursor/mcp.json</code> directly:
+<pre><code>{
+  "mcpServers": {
+    "aldevtoolbox": {
+      "url": "https://YOUR-SERVER/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR-TOKEN"
+      }
+    }
+  }
+}</code></pre>
+                </li>
+                <li>Cursor reloads MCP servers automatically.</li>
+            </ol>
+        </details>
+
+        <details>
+            <summary><strong>VS Code (Copilot agent mode)</strong></summary>
+            <ol>
+                <li>Create a token on <a href="/account/access-tokens">Account &rarr; Personal access tokens</a>.</li>
+                <li>
+                    Add the toolbox to your workspace's <code>.vscode/mcp.json</code>
+                    (or your user <code>settings.json</code> under <code>mcp.servers</code>):
+<pre><code>{
+  "servers": {
+    "aldevtoolbox": {
+      "type": "http",
+      "url": "https://YOUR-SERVER/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR-TOKEN"
+      }
+    }
+  }
+}</code></pre>
+                </li>
+                <li>Reload the window. Copilot agent mode picks it up.</li>
+            </ol>
+        </details>
+    </section>
+
+    <section class="account-section">
+        <h2>What the assistant can do once it's connected</h2>
+        <p>Once connected, you can ask the assistant things like:</p>
+        <ul>
+            <li><strong>Generate a workspace.</strong> "Make me a new workspace from the Acme Customer template, called Acme Pilot v2." The toolbox builds the ZIP and hands it back inline.</li>
+            <li><strong>Generate a standalone extension.</strong> "Spin up an empty extension named Sales Bonus, in the Sales prefix, with App Source Cop on." Same flow as the New Extension page in the browser.</li>
+            <li><strong>Find a procedure across Business Central.</strong> "In release 28.1, what calls <code>OnAfterValidateNo</code> on the Sales Line table?" The assistant searches Object Explorer and follows references.</li>
+            <li><strong>Read part of a codeunit.</strong> "Show me the body of <code>CallPostDocument</code> in <em>Sales-Post</em>." Returns the source, capped at 200 lines.</li>
+            <li><strong>Search your snippets.</strong> "Do we have a snippet for opening a side-by-side number range setup?" Fetches matches from your org's library.</li>
+        </ul>
+        <p class="muted">
+            The assistant acts as you, with your role and organisation. It cannot generate
+            for, search in, or read snippets from another organisation, and it cannot do
+            anything a Site Admin can unless your own account is one.
+        </p>
+    </section>
+
+    <section class="account-section">
+        <h2>Available tools</h2>
+        <p>
+            Each entry below corresponds to a single tool the assistant can call. You
+            don't usually need to name them directly — the assistant picks the right one
+            for what you asked.
+        </p>
+        <table class="data-table">
+            <thead>
+                <tr><th>Tool</th><th>What it does</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><code>list_templates</code></td><td>Lists the project templates available in your organisation.</td></tr>
+                <tr><td><code>list_modules</code></td><td>Lists the reusable modules that can be added to a workspace.</td></tr>
+                <tr><td><code>generate_workspace</code></td><td>Builds and returns the ZIP for a new AL workspace from a template.</td></tr>
+                <tr><td><code>generate_extension</code></td><td>Builds and returns the ZIP for a new standalone extension.</td></tr>
+                <tr><td><code>list_releases</code></td><td>Lists the Business Central releases imported into Object Explorer.</td></tr>
+                <tr><td><code>search_objects</code></td><td>Find objects (tables, pages, codeunits, …) by name or id within a release.</td></tr>
+                <tr><td><code>search_procedures</code></td><td>Find procedures by name across a release.</td></tr>
+                <tr><td><code>find_references</code></td><td>Find every place in a release that touches a specific table or field.</td></tr>
+                <tr><td><code>get_object_outline</code></td><td>Returns the symbol list (procedures, triggers, fields) of one object.</td></tr>
+                <tr><td><code>get_procedure_source</code></td><td>Returns the body of one procedure, capped at 200 lines.</td></tr>
+                <tr><td><code>list_procedure_calls</code></td><td>Returns the outgoing calls + field accesses inside one procedure.</td></tr>
+                <tr><td><code>search_snippets</code></td><td>Search the snippet library by name or keyword.</td></tr>
+                <tr><td><code>get_snippet</code></td><td>Fetch a single snippet with its file contents.</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section class="account-section">
+        <h2>Taking access back</h2>
+        <p>
+            <strong>If you used Connect with AL Dev Toolbox</strong> — go to
+            <a href="/account/oauth-clients">Account &rarr; Connected assistants</a> and
+            click <em>Revoke</em>. The assistant is signed out and forced to ask for
+            permission again next time.
+        </p>
+        <p>
+            <strong>If you used a personal access token</strong> — go to
+            <a href="/account/access-tokens">Account &rarr; Personal access tokens</a> and
+            click <em>Revoke</em> next to the token. The assistant immediately starts
+            getting "401 Unauthorized" on every request.
+        </p>
+    </section>
+
+    <section class="account-section">
+        <h2>Troubleshooting</h2>
+        <dl class="troubleshoot">
+            <dt>"The connector won't add" (Claude.ai)</dt>
+            <dd>
+                Double-check the URL — it must end in <code>/mcp</code> and be reachable
+                over HTTPS from outside your network. If your deployment is behind a VPN,
+                Claude's servers won't reach it.
+            </dd>
+            <dt>"401 Unauthorized"</dt>
+            <dd>
+                The token is missing, malformed, expired, or revoked. Reissue from
+                <a href="/account/access-tokens">Personal access tokens</a>. For the
+                connector flow, revoke and reconnect from
+                <a href="/account/oauth-clients">Connected assistants</a>.
+            </dd>
+            <dt>"The assistant says it doesn't see the toolbox"</dt>
+            <dd>
+                Reload the assistant after adding the connector. Verify the URL by visiting
+                <code>https://YOUR-SERVER/mcp</code> in your browser (you'll see a 401 with
+                <em>WWW-Authenticate</em> — that's the right response, not an error).
+            </dd>
+            <dt>"Tool calls fail with field validation errors"</dt>
+            <dd>
+                The toolbox returns the same field-keyed errors the web UI uses. Re-prompt
+                the assistant with the missing field or a corrected value.
+            </dd>
+        </dl>
+    </section>
+
+    <p class="muted">
+        Still stuck? Ask your Site Admin to check the audit log for OAuth events on your
+        account, or reach out internally.
+    </p>
+</div>

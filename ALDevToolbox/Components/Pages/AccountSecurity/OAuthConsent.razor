@@ -1,0 +1,165 @@
+@page "/oauth/consent"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Data
+@using ALDevToolbox.Endpoints
+@using ALDevToolbox.Services
+@using Microsoft.EntityFrameworkCore
+@inject IHttpContextAccessor Http
+@inject AppDbContext Db
+@inject IOrganizationContext Org
+
+<PageTitle>Authorise · AL Dev Toolbox</PageTitle>
+
+@if (_invalid)
+{
+    <div class="account-page">
+        <header class="page-header">
+            <h1>Authorisation request</h1>
+            <p class="muted">This sign-in link is missing some required information. Close this window and try connecting from the AI assistant again.</p>
+        </header>
+    </div>
+}
+else
+{
+    <div class="account-page">
+        <header class="page-header">
+            <h1>Authorise <strong>@_clientName</strong></h1>
+            <p class="muted">
+                @_clientName wants to sign in to AL Dev Toolbox on your behalf. Approving lets it
+                use the tools below as the user @_currentEmail in your organisation
+                <strong>@_orgName</strong>. You can take this access back at any time from
+                <a href="/account/oauth-clients">your Account &rarr; Connected assistants</a> page.
+            </p>
+        </header>
+
+        <section class="account-section">
+            <h2>What this assistant will be able to do</h2>
+            <ul class="oauth-scope-list">
+                @foreach (var (scope, blurb) in _scopeBlurbs)
+                {
+                    <li><strong>@scope</strong> — @blurb</li>
+                }
+            </ul>
+            <p class="muted">
+                Requests come from <code>@_redirectHost</code>. If that hostname looks wrong,
+                deny the request — only Claude, Cursor, VS Code Copilot or another AI client you
+                trust should be asking.
+            </p>
+        </section>
+
+        @if (_alreadyConsented)
+        {
+            <p class="form-success" role="status">
+                You've previously approved @_clientName for these permissions. Click <strong>Allow</strong>
+                again to continue, or revoke from
+                <a href="/account/oauth-clients">your Account &rarr; Connected assistants</a>.
+            </p>
+        }
+
+        <form method="post" action="/oauth/authorize" class="form-grid form-grid--narrow oauth-consent-form">
+            <AntiforgeryToken />
+            @* All OAuth query params re-emitted as hidden inputs so OpenIddict's
+               middleware can reconstruct the original request body when the
+               form posts back to /oauth/authorize. *@
+            @foreach (var (key, value) in _hiddenParams)
+            {
+                <input type="hidden" name="@key" value="@value" />
+            }
+            <div class="form-actions">
+                <button type="submit" name="decision" value="allow" class="btn btn--primary">
+                    <Icon Name="check" Width="16" Height="16" />
+                    <span>Allow</span>
+                </button>
+                <button type="submit" name="decision" value="deny" class="btn">
+                    <Icon Name="x" Width="16" Height="16" />
+                    <span>Deny</span>
+                </button>
+            </div>
+        </form>
+    </div>
+}
+
+@code {
+    private bool _invalid;
+    private bool _alreadyConsented;
+    private string _clientName = string.Empty;
+    private string _currentEmail = string.Empty;
+    private string _orgName = string.Empty;
+    private string _redirectHost = string.Empty;
+    private List<KeyValuePair<string, string>> _hiddenParams = new();
+    private List<(string Scope, string Blurb)> _scopeBlurbs = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var http = Http.HttpContext;
+        if (http is null) { _invalid = true; return; }
+
+        // We're at /oauth/consent — OpenIddict's middleware doesn't run on
+        // this path, so we can't call GetOpenIddictServerRequest(). The
+        // upstream redirect at GET /oauth/authorize forwards every OAuth
+        // query parameter verbatim, so we read them straight off the URL.
+        var query = http.Request.Query;
+        var clientId = query["client_id"].ToString();
+        var redirectUri = query["redirect_uri"].ToString();
+        var scopeRaw = query["scope"].ToString();
+        if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(redirectUri))
+        {
+            _invalid = true;
+            return;
+        }
+
+        var requestedScopes = scopeRaw
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => Array.Exists(OAuthEndpoints.SupportedScopes, x => x.Equals(s, StringComparison.Ordinal)))
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToArray();
+        var canonicalScopes = string.Join(' ', requestedScopes);
+
+        // Mirror every query parameter as a hidden input so the form POST to
+        // /oauth/authorize carries the full OAuth request body — OpenIddict
+        // re-validates it from the form there before our handler runs.
+        foreach (var (k, v) in query)
+        {
+            foreach (var single in v) _hiddenParams.Add(new(k, single ?? string.Empty));
+        }
+
+        _clientName = !string.IsNullOrWhiteSpace(clientId) ? clientId : "Unknown client";
+        _redirectHost = Uri.TryCreate(redirectUri, UriKind.Absolute, out var u) ? u.Host : "(unknown)";
+
+        _currentEmail = http.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? "you";
+        var orgId = Org.CurrentOrganizationId ?? 0;
+        var userId = Org.CurrentUserId ?? 0;
+        _orgName = await Db.Organizations
+            .IgnoreQueryFilters()
+            .Where(o => o.Id == orgId)
+            .Select(o => o.Name)
+            .FirstOrDefaultAsync() ?? "your organisation";
+
+        _scopeBlurbs = requestedScopes.Select(s => (s, BlurbFor(s))).ToList();
+
+        if (userId > 0 && orgId > 0 && !string.IsNullOrEmpty(clientId))
+        {
+            var existing = await Db.OAuthConsents
+                .IgnoreQueryFilters()
+                .Where(c => c.UserId == userId && c.OrganizationId == orgId && c.ClientId == clientId && c.RevokedAt == null)
+                .Select(c => c.ScopesGranted)
+                .FirstOrDefaultAsync();
+            _alreadyConsented = existing is not null && string.Equals(existing, canonicalScopes, StringComparison.Ordinal);
+        }
+    }
+
+    private static string BlurbFor(string scope) => scope switch
+    {
+        "mcp" => "Use AL Dev Toolbox's tools — list templates, generate workspaces, search Object Explorer, look up snippets.",
+        "offline_access" => "Stay signed in across sessions, so the assistant doesn't ask you to re-authorise every hour.",
+        _ => scope,
+    };
+}
+
+@functions {
+    // Static helper for the iterator in the markup — needed because Razor's
+    // foreach over a dictionary can't deconstruct without this.
+    private static IEnumerable<(string Key, string Value)> AsTuples(IDictionary<string, string> d)
+        => d.Select(kv => (kv.Key, kv.Value));
+}

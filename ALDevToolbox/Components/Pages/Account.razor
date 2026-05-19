@@ -238,13 +238,20 @@
         <section class="account-section">
             <h2>Programmatic access</h2>
             <p class="muted">
-                Issue personal access tokens for AI agents and other non-interactive callers that
-                connect through the MCP server.
+                Connect AI assistants to AL Dev Toolbox. <strong>Personal access tokens</strong>
+                are for desktop and CLI tools that ask for a pasted credential (Claude Desktop,
+                Cursor, Claude Code). <strong>Connected assistants</strong> covers the
+                permission-screen flow Claude on the web and mobile uses — no token to paste.
+                See <a href="/docs/mcp">Connect an AI assistant</a> for the full walkthrough.
             </p>
             <div class="account-actions">
                 <a href="/account/access-tokens" class="btn">
                     <Icon Name="key-round" Width="16" Height="16" />
                     <span>Manage access tokens</span>
+                </a>
+                <a href="/account/oauth-clients" class="btn">
+                    <Icon Name="plug" Width="16" Height="16" />
+                    <span>Connected assistants</span>
                 </a>
             </div>
         </section>
