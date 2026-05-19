@@ -885,6 +885,17 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .module-card__name { font-weight: 500; }
 .module-card__caption { font-size: 12px; }
 
+/* Lock badge on the right of an always-included file row. Signals that the
+   row's path / content / mustache flag live in another editor (Configuration
+   · Files); the checkbox here only opts the current template in or out. */
+.module-card--with-lock .module-card__body { flex: 1; }
+.module-card__lock {
+    display: inline-flex;
+    align-items: center;
+    color: var(--color-text-secondary);
+    margin-left: auto;
+}
+
 .check-row {
     display: flex;
     align-items: center;

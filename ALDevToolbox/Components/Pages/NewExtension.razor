@@ -103,8 +103,10 @@
                            @bind="_brief" @bind:event="oninput" />
                     <textarea name="Description" rows="3" placeholder="Longer description (optional)"
                               @bind="_description" @bind:event="oninput"></textarea>
-                    <input type="text" name="Publisher" placeholder="Publisher" required
-                           title="Required." @bind="_publisher" @bind:event="oninput" />
+                    @* Publisher comes from /admin/configuration/defaults at
+                       generation time. No form input — a standalone extension
+                       inherits whatever the org has configured, same as the
+                       workspace flow. *@
                 </section>
 
                 <IdRangeEditor IdPrefix="ext-id"
@@ -274,7 +276,6 @@
     private string _extensionName = string.Empty;
     private string _brief = string.Empty;
     private string _description = string.Empty;
-    private string _publisher = string.Empty;
     private int _idRangeFrom = 90000;
     private int _idRangeTo = 90999;
     private string _applicationVersion = string.Empty;
@@ -329,16 +330,11 @@
         {
             ApplyTemplateDefaults(_selected);
         }
-        // Pre-fill the org-level defaults block (Milestone P3.14). Brief and
-        // description are admin-curated free-text fields; they don't have
-        // template-level overrides, so we always use the org's value when no
-        // sibling-extension import has set them. The id range stays driven by
-        // the template above (per-template id ranges are a deliberate split).
-        if (_workspaceContext is null && _orgConfig is not null)
-        {
-            _brief = _orgConfig.Settings.DefaultBrief;
-            _description = _orgConfig.Settings.DefaultCoreDescription;
-        }
+        // No brief / description pre-fill on this page. The org-level
+        // defaults at /admin/configuration/defaults are written against the
+        // workspace flow's mustache context — typically referencing
+        // {{workspace_name}} or {{tenant_id}} — which a standalone extension
+        // can't resolve. Admins type a per-extension blurb here instead.
     }
 
     private void OnApplicationVersionChanged()
@@ -362,7 +358,8 @@
     private void ApplyTemplateDefaults(RuntimeTemplate template)
     {
         _templateKey = template.Key;
-        _publisher = template.Defaults.Publisher;
+        // Publisher is resolved at the generation endpoint from
+        // OrganizationSettings.DefaultPublisher — no form-side state needed.
         (_applicationVersion, _runtimeVersion) =
             TemplateDefaultsResolver.ResolveApplicationAndRuntime(template, _applicationVersions);
     }
@@ -382,6 +379,27 @@
     private PreviewNode BuildPreview() =>
         _workspaceContext is null ? BuildExtensionPreview() : BuildSiblingWorkspacePreview(_workspaceContext);
 
+    private (List<string> WorkspaceRoot, List<string> PerExtension) SplitIncludedFiles()
+    {
+        var workspaceRoot = new List<string>();
+        var perExtension = new List<string>();
+        if (_selected is null || _orgConfig is null) return (workspaceRoot, perExtension);
+        var byId = _orgConfig.Files.ToDictionary(f => f.Id);
+        foreach (var joined in _selected.IncludedFiles.OrderBy(j => j.Ordering))
+        {
+            if (!byId.TryGetValue(joined.OrganizationFileId, out var file)) continue;
+            if (file.Scope == OrganizationFileScope.EveryExtension)
+            {
+                perExtension.Add(file.Path);
+            }
+            else
+            {
+                workspaceRoot.Add(file.Path);
+            }
+        }
+        return (workspaceRoot, perExtension);
+    }
+
     private PreviewNode BuildExtensionPreview()
     {
         // The generator scaffolds a standalone extension from the picked
@@ -393,8 +411,8 @@
             .OrderBy(e => e.Ordering)
             .FirstOrDefault();
         var folders = scaffold?.Folders ?? new List<WorkspaceExtensionFolder>();
-        var includeCop = _selected?.AppSourceCop.Include ?? true;
-        var contents = ExtensionPreviewBuilder.BuildContents(folders, _includeExamples, includeCop);
+        var (_, perExtensionPaths) = SplitIncludedFiles();
+        var contents = ExtensionPreviewBuilder.BuildContents(folders, _includeExamples, perExtensionPaths);
         var node = PreviewNode.Extension(FolderName, contents);
         return PreviewTreeBuilder.SortForDisplay(node);
     }
@@ -405,14 +423,24 @@
             ? "Workspace"
             : StripWhitespace(context.WorkspaceName);
 
-        var children = new List<PreviewNode>
+        var children = new List<PreviewNode>();
+
+        // The org logo lands at the path the admin set on
+        // /admin/configuration/defaults' "Default logo path". No logo
+        // uploaded means no .assets folder phantom.
+        if (_orgConfig?.Logo is not null)
         {
-            PreviewNode.Folder(".assets", new[]
+            var logoExt = _orgConfig.Logo.ContentType switch
             {
-                PreviewNode.Folder("images", new[] { PreviewNode.File("logo.png") }),
-                PreviewNode.Folder("rulesets", new[] { PreviewNode.File("Company.ruleset.json") }),
-            }),
-        };
+                "image/svg+xml" => "svg",
+                _ => "png",
+            };
+            var logoPath = ALDevToolbox.Services.Generation.WorkspaceZipBuilder.NormaliseLogoPath(
+                _orgConfig.Settings.DefaultLogo, logoExt);
+            PreviewTreeBuilder.GraftFile(children, logoPath);
+        }
+
+        var (workspaceRootPaths, perExtensionPaths) = SplitIncludedFiles();
 
         // Required template extensions land on every generated workspace. We
         // don't know which optionals the original workspace included, so only
@@ -426,7 +454,7 @@
             {
                 children.Add(PreviewNode.Extension(
                     ext.Path,
-                    ExtensionPreviewBuilder.BuildContents(ext.Folders, _includeExamples, _selected.AppSourceCop.Include)));
+                    ExtensionPreviewBuilder.BuildContents(ext.Folders, _includeExamples, perExtensionPaths)));
             }
         }
 
@@ -435,14 +463,13 @@
         // the workspace builder applies on its own form.
         if (_modules is not null)
         {
-            var includeCop = _selected?.AppSourceCop.Include ?? true;
             foreach (var key in context.ModuleKeys)
             {
                 var module = _modules.FirstOrDefault(m => m.Key == key);
                 if (module is null) continue;
                 children.Add(PreviewNode.Extension(
-                    module.Key,
-                    ExtensionPreviewBuilder.BuildContents(module.ExtensionFolders, _includeExamples, includeCop)));
+                    module.ExtensionName,
+                    ExtensionPreviewBuilder.BuildContents(module.ExtensionFolders, _includeExamples, perExtensionPaths)));
             }
         }
 
@@ -453,8 +480,11 @@
         children.Add(newNode);
 
         children.Add(PreviewNode.File($"{rootName}.code-workspace"));
-        children.Add(PreviewNode.File(".gitignore"));
-        children.Add(PreviewNode.File("README.md"));
+        children.Add(PreviewNode.File(ALDevToolbox.Services.WorkspaceConfigService.FileName));
+        foreach (var path in workspaceRootPaths)
+        {
+            PreviewTreeBuilder.GraftFile(children, path);
+        }
 
         return PreviewTreeBuilder.SortForDisplay(
             new PreviewNode(rootName, PreviewNodeKind.Workspace, children));
@@ -546,7 +576,8 @@
         _extensionName = plan.ExtensionName;
         _brief = plan.Brief;
         _description = plan.Description;
-        _publisher = plan.Publisher;
+        // Publisher is no longer form-side state — the endpoint resolves it
+        // from OrganizationSettings.DefaultPublisher at generation time.
         _applicationVersion = plan.ApplicationVersion;
         _runtimeVersion = plan.RuntimeVersion;
         _idRangeFrom = plan.IdRangeFrom;
@@ -579,10 +610,6 @@
         _applicationVersion = plan.ApplicationVersion;
         _runtimeVersion = plan.RuntimeVersion;
         _includeExamples = plan.IncludeExamples;
-        if (template is not null)
-        {
-            _publisher = template.Defaults.Publisher;
-        }
 
         if (extensions.Count > 0)
         {
