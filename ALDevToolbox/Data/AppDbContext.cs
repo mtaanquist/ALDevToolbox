@@ -159,6 +159,15 @@ public class AppDbContext : DbContext
     public DbSet<SnippetSuggestionFile> SnippetSuggestionFiles => Set<SnippetSuggestionFile>();
     public DbSet<AuditLogEntry> AuditLog => Set<AuditLogEntry>();
 
+    /// <summary>
+    /// Per-user, per-organisation "trust this OAuth client" record. The
+    /// OpenIddict-managed token tables (oauth_applications, _authorizations,
+    /// _scopes, _tokens) are registered via <c>modelBuilder.UseOpenIddict()</c>
+    /// in <see cref="OnModelCreating"/>; this is the ALDevToolbox-specific
+    /// table that drives the consent screen's "already approved" auto-submit.
+    /// </summary>
+    public DbSet<OAuthConsent> OAuthConsents => Set<OAuthConsent>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Per-entity fluent config lives in Data/Configurations/. The
@@ -168,6 +177,17 @@ public class AppDbContext : DbContext
         // DbContext class itself; capturing _orgContext from a configuration
         // class would freeze the value at model-build time and leak data
         // across orgs. So filters live here, where _orgContext is "this._orgContext".
+        // OpenIddict's EF Core entities. Must run BEFORE
+        // ApplyConfigurationsFromAssembly so the snake_case ToTable() / column
+        // overrides in Data/Configurations/OAuth/* win — UseOpenIddict() is a
+        // first-write of the model, our configurations are the overrides.
+        //
+        // These tables are intentionally outside the multi-tenant query
+        // filter: pre-auth flows (/oauth/token, /oauth/register) must read
+        // them before any IOrganizationContext exists. Org attribution lives
+        // in OpenIddict's free-form Properties JSON column on each row.
+        modelBuilder.UseOpenIddict();
+
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
 
         // Standard tenant filter: scope every entity with an OrganizationId
@@ -205,6 +225,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<SnippetSuggestion>(modelBuilder);
         ScopeToOrganization<SnippetSuggestionFile>(modelBuilder);
         ScopeToOrganization<PersonalAccessToken>(modelBuilder);
+        ScopeToOrganization<OAuthConsent>(modelBuilder);
 
         // PasswordResetToken scopes via its required User principal: tokens
         // don't carry organization_id themselves, so the filter walks the nav.

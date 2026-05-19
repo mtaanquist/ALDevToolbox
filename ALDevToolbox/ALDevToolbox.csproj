@@ -34,6 +34,15 @@
          consumed by AI clients (Claude Desktop, Cursor, VS Code Copilot
          agent mode, Claude Code). See .design/mcp.md / docs/mcp-clients.md. -->
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.*" />
+    <!-- OpenIddict — OAuth 2.1 authorization server + resource-server
+         validation for the MCP endpoint. Lets Claude.ai's directory and
+         custom-connector flow add the toolbox via DCR (RFC 7591) and CIMD,
+         neither of which work with a user-pasted static bearer. The PAT
+         bearer path stays in place for desktop/CLI clients. See
+         .design/mcp-oauth.md and docs/mcp. -->
+    <PackageReference Include="OpenIddict.AspNetCore" Version="7.5.0" />
+    <PackageReference Include="OpenIddict.EntityFrameworkCore" Version="7.5.0" />
+    <PackageReference Include="OpenIddict.Validation.AspNetCore" Version="7.5.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.*">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
