@@ -5,7 +5,9 @@
 @inject NavigationManager Nav
 @inject ILogger<AdminTemplateDefaults> Log
 @using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
+@using Microsoft.AspNetCore.Components.Forms
 
 @*
     Defaults sub-page (Issue #61). Pre-fills for the New Workspace and New
@@ -71,23 +73,11 @@
                 </section>
 
                 <section class="form-section">
-                    <label class="section-label" for="cfg-logo">Default logo path</label>
-                    <input id="cfg-logo" type="text"
+                    <label class="section-label" for="cfg-logo-path">Default logo path</label>
+                    <input id="cfg-logo-path" type="text"
                            placeholder="e.g. ../.assets/images/logo.png"
-                           @bind="_logo" @bind:event="oninput" />
+                           @bind="_logoPath" @bind:event="oninput" />
                     <small class="muted">Spliced into every generated <code>app.json</code> as the <code>logo</code> field. Blank = omit.</small>
-                </section>
-
-                <section class="form-section">
-                    <label class="section-label" for="cfg-countries">Default supported countries</label>
-                    <input id="cfg-countries" type="text"
-                           placeholder="e.g. dk, no, se"
-                           @bind="_countries" @bind:event="oninput" />
-                    <small class="muted">
-                        Comma-separated two-letter country codes spliced into every
-                        generated <code>AppSourceCop.json</code>'s
-                        <code>supportedCountries</code> array.
-                    </small>
                 </section>
 
                 <section class="form-section--row">
@@ -119,6 +109,65 @@
                 </section>
             </div>
         </section>
+
+        @* Logo section — folded in from the retired /admin/templates/logo page so
+           admins manage one Defaults form instead of two. The image is bundled
+           into every generated workspace under .assets/images/logo.<ext>.
+           SVG uploads have <script> tags and on* attributes stripped on save. *@
+        <section class="admin-section">
+            <h2>Logo</h2>
+            <p class="muted">
+                Bundled into every generated workspace under
+                <code>.assets/images/logo.&lt;ext&gt;</code>. SVG and PNG only;
+                max @(OrganizationConfigService.MaxLogoBytes / 1024) KB.
+            </p>
+
+            <div class="logo-preview">
+                @if (_pendingLogoBytes is not null)
+                {
+                    <p class="muted">New logo selected (@_pendingLogoFileName). Click <strong>Save changes</strong> to apply.</p>
+                }
+                else if (_removeLogo)
+                {
+                    <p class="muted">Logo will be removed on save.</p>
+                }
+                else if (_logo is not null)
+                {
+                    <img src="/admin/configuration/logo/preview?t=@_logoCacheBust" alt="Current logo" class="logo-preview__img" />
+                }
+                else
+                {
+                    <p class="muted">No logo configured. Generated workspaces will ship without one.</p>
+                }
+            </div>
+
+            <div class="form-grid form-grid--narrow">
+                <section class="form-section">
+                    <label class="section-label" for="cfg-logo-file">Replace logo</label>
+                    <label class="btn btn--sm logo-upload__button">
+                        <Icon Name="upload" Width="14" Height="14" />
+                        <span>Choose file…</span>
+                        <InputFile id="cfg-logo-file" OnChange="OnLogoChosen" accept="image/png,image/svg+xml" class="logo-upload__input" />
+                    </label>
+                </section>
+                @if (_logo is not null || _pendingLogoBytes is not null)
+                {
+                    <div class="form-actions">
+                        <button type="button" class="btn btn--sm" @onclick="MarkLogoForRemoval" disabled="@_removeLogo">
+                            <Icon Name="trash-2" Width="14" Height="14" />
+                            <span>Remove logo</span>
+                        </button>
+                        @if (_pendingLogoBytes is not null || _removeLogo)
+                        {
+                            <button type="button" class="btn btn--sm" @onclick="ResetLogoChanges">
+                                <Icon Name="rotate-ccw" Width="14" Height="14" />
+                                <span>Revert pending logo change</span>
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        </section>
     }
 </div>
 
@@ -136,8 +185,7 @@
     private string _brief = string.Empty;
     private string _description = string.Empty;
     private string _url = string.Empty;
-    private string _logo = string.Empty;
-    private string _countries = string.Empty;
+    private string _logoPath = string.Empty;
 
     private string _basePublisher = string.Empty;
     private int _baseIdFrom;
@@ -145,8 +193,16 @@
     private string _baseBrief = string.Empty;
     private string _baseDescription = string.Empty;
     private string _baseUrl = string.Empty;
-    private string _baseLogo = string.Empty;
-    private string _baseCountries = string.Empty;
+    private string _baseLogoPath = string.Empty;
+
+    // Logo upload state — folded in from the retired /admin/templates/logo
+    // page. Pending bytes live in memory until Save commits via UploadLogoAsync.
+    private OrganizationAsset? _logo;
+    private byte[]? _pendingLogoBytes;
+    private string? _pendingLogoContentType;
+    private string? _pendingLogoFileName;
+    private bool _removeLogo;
+    private long _logoCacheBust = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
     private bool IsDirty =>
         _publisher != _basePublisher
@@ -155,8 +211,9 @@
         || _brief != _baseBrief
         || _description != _baseDescription
         || _url != _baseUrl
-        || _logo != _baseLogo
-        || _countries != _baseCountries;
+        || _logoPath != _baseLogoPath
+        || _pendingLogoBytes is not null
+        || _removeLogo;
 
     protected override async Task OnInitializedAsync()
     {
@@ -173,9 +230,57 @@
         _brief = _baseBrief = config.Settings.DefaultBrief;
         _description = _baseDescription = config.Settings.DefaultCoreDescription;
         _url = _baseUrl = config.Settings.DefaultUrl ?? string.Empty;
-        _logo = _baseLogo = config.Settings.DefaultLogo ?? string.Empty;
-        _countries = _baseCountries = string.Join(", ", config.Settings.DefaultSupportedCountries);
+        _logoPath = _baseLogoPath = config.Settings.DefaultLogo ?? string.Empty;
+        _logo = config.Logo;
+        _pendingLogoBytes = null;
+        _pendingLogoContentType = null;
+        _pendingLogoFileName = null;
+        _removeLogo = false;
+        _logoCacheBust = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         _loading = false;
+    }
+
+    private async Task OnLogoChosen(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+        if (file.Size > OrganizationConfigService.MaxLogoBytes)
+        {
+            _errMessage = $"Logo must be {OrganizationConfigService.MaxLogoBytes / 1024} KB or smaller.";
+            return;
+        }
+        try
+        {
+            await using var stream = file.OpenReadStream(OrganizationConfigService.MaxLogoBytes);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            _pendingLogoBytes = ms.ToArray();
+            _pendingLogoContentType = file.ContentType;
+            _pendingLogoFileName = file.Name;
+            _removeLogo = false;
+            _errMessage = null;
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning(ex, "Failed to read uploaded logo '{Name}'.", file.Name);
+            _errMessage = $"Could not read the file: {ex.Message}";
+        }
+    }
+
+    private void MarkLogoForRemoval()
+    {
+        _removeLogo = true;
+        _pendingLogoBytes = null;
+        _pendingLogoContentType = null;
+        _pendingLogoFileName = null;
+    }
+
+    private void ResetLogoChanges()
+    {
+        _pendingLogoBytes = null;
+        _pendingLogoContentType = null;
+        _pendingLogoFileName = null;
+        _removeLogo = false;
     }
 
     private async Task SaveAsync()
@@ -193,10 +298,19 @@
                 DefaultBrief: _brief,
                 DefaultCoreDescription: _description,
                 DefaultUrl: _url,
-                DefaultLogo: _logo,
-                DefaultSupportedCountries: _countries
-                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                    .ToList()));
+                DefaultLogo: _logoPath));
+            // Settings landed; now apply the logo change (if any). Both calls
+            // touch the same org-config cache, so a partial failure here still
+            // leaves the settings save committed — surface the error so the
+            // admin can retry the logo step.
+            if (_removeLogo)
+            {
+                await Config.RevertLogoAsync();
+            }
+            else if (_pendingLogoBytes is not null)
+            {
+                await Config.UploadLogoAsync(_pendingLogoContentType ?? string.Empty, _pendingLogoBytes);
+            }
             Nav.NavigateTo("/admin/templates/defaults?ok=saved", forceLoad: true);
         }
         catch (PlanValidationException ex)
