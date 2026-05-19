@@ -222,6 +222,29 @@ builder.Services.AddOpenIddict()
         {
             o.UseAspNetCore().DisableTransportSecurityRequirement();
         }
+
+        // Discovery customisation. Two additions Claude needs:
+        //   (1) Advertise the hand-rolled DCR endpoint (OpenIddict 7.5.0
+        //       doesn't surface registration_endpoint itself).
+        //   (2) Declare CIMD support — Claude only picks the CIMD path
+        //       (URL-as-client_id) when client_id_metadata_document_supported
+        //       is true AND token_endpoint_auth_methods_supported contains
+        //       "none". Both already follow from running public-only PKCE
+        //       clients, but we set them explicitly so the contract is
+        //       readable from the metadata document.
+        o.AddEventHandler<OpenIddict.Server.OpenIddictServerEvents.HandleConfigurationRequestContext>(b =>
+            b.UseInlineHandler(context =>
+            {
+                context.Metadata["client_id_metadata_document_supported"] = true;
+                var issuer = context.Issuer ?? context.BaseUri;
+                if (issuer is not null)
+                {
+                    context.Metadata["registration_endpoint"] = new Uri(issuer, "/oauth/register").AbsoluteUri;
+                }
+                context.TokenEndpointAuthenticationMethods.Add(OpenIddict.Abstractions.OpenIddictConstants.ClientAuthenticationMethods.None);
+                context.CodeChallengeMethods.Add(OpenIddict.Abstractions.OpenIddictConstants.CodeChallengeMethods.Sha256);
+                return default;
+            }));
     })
     .AddValidation(o =>
     {
@@ -414,6 +437,7 @@ app.MapAdminUserEndpoints();
 app.MapObjectExplorerEndpoints();
 app.MapSiteAdminEndpoints();
 app.MapMcpEndpoints();
+app.MapOAuthEndpoints();
 
 // Run migrations + bootstrap, then flip /readyz to green.
 await StartupTasks.RunAsync(app);
