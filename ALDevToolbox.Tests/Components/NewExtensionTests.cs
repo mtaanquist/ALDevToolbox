@@ -121,8 +121,13 @@ public sealed class NewExtensionTests : IDisposable
     }
 
     [Fact]
-    public async Task Publisher_field_is_required_so_unauthenticated_posts_are_rejected_client_side()
+    public async Task Publisher_input_is_absent_so_org_defaults_drive_the_value()
     {
+        // The Publisher input was removed from the form: there's exactly one
+        // publisher per org (curated under /admin/configuration/defaults) and
+        // /generate/extension resolves it server-side from
+        // OrganizationSettings.DefaultPublisher. Pinning the absence here so
+        // a future regression doesn't quietly reintroduce the typo surface.
         await using (var seed = _db.NewContext())
         {
             seed.RuntimeTemplates.Add(TemplateBuilder.Default());
@@ -133,10 +138,9 @@ public sealed class NewExtensionTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            var publisher = cut.Find("input[name='Publisher']");
-            publisher.HasAttribute("required").Should().BeTrue(
-                "the server's StandaloneExtensionPlan validation rejects empty Publisher; "
-                + "the form must surface that to the user");
+            cut.FindAll("input[name='Publisher']").Should().BeEmpty(
+                "Publisher is org-level configuration, not a per-extension form field — "
+                + "the endpoint reads OrganizationSettings.DefaultPublisher instead.");
         });
     }
 }
