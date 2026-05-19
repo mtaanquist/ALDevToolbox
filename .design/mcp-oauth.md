@@ -181,6 +181,37 @@ Without the resolver, OpenIddict rejects every CIMD client with
 `ID2052: The specified 'client_id' is invalid` — see
 <https://documentation.openiddict.com/errors/ID2052>.
 
+## Resource indicators (RFC 8707)
+
+The MCP 2025-11-25 spec requires clients to include a `resource=<canonical
+URL>` parameter on every authorise + token request (RFC 8707), and Claude's
+hosted surfaces send `resource=https://<host>/mcp` accordingly. OpenIddict
+7.5's stock `ValidateResources` handler compares that value against the
+in-memory `OpenIddictServerOptions.Resources` set populated at startup via
+`o.RegisterResources(...)`, and rejects unrecognised values with `ID2190
+invalid_target`.
+
+The public host isn't known when the host builds (deployments use the
+request's `X-Forwarded-*` headers as the source of truth and there is no
+`PublicUrl` configuration). Two attempts to mutate the set on the fly from
+a pre-validator event handler — first by upserting the `mcp` scope row's
+`Resources` column (#191), then by adding to `Options.Resources` directly
+(#192) — failed to take effect for reasons we couldn't diagnose without
+deeper instrumentation. Rather than pile on more workarounds, we set
+`o.DisableResourceValidation()` and accept the resource as-is.
+
+This is safe in our threat model: ALDevToolbox only ever issues tokens for
+the `/mcp` resource, the audience is still recorded on the issued token,
+and `Services/OAuth/McpBearerPolicy.cs` enforces the audience on every
+incoming `/mcp` request. The validator was defence-in-depth for servers
+fronting multiple resources, which we are not.
+
+Revisit when OpenIddict adds native DCR / CIMD support
+(openiddict/openiddict-core#2404, targeted at 7.6.0) — that release will
+likely surface a more idiomatic way to register resources from a CIMD
+application descriptor, at which point the dynamic-add approach we
+abandoned should become viable.
+
 ## Consent screen
 
 `Components/Pages/AccountSecurity/OAuthConsent.razor` — static SSR Razor
