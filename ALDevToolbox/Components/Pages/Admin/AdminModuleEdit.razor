@@ -31,10 +31,18 @@
                 }
             </p>
         </div>
-        <a class="btn btn--sm" href="/admin/modules">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to list</span>
-        </a>
+        <div class="admin-page__header-actions">
+            <a class="btn btn--sm" href="/admin/modules">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to list</span>
+            </a>
+            <button type="button" class="btn btn--sm btn--primary"
+                    @onclick="SaveAsync"
+                    disabled="@(_saving || _form is null || _loadFailed)">
+                <Icon Name="save" Width="14" Height="14" />
+                <span>@(_saving ? "Saving…" : (IsEdit ? "Save changes" : "Create module"))</span>
+            </button>
+        </div>
     </header>
 
     @if (IsEdit && _loadFailed)
@@ -50,6 +58,13 @@
     }
     else
     {
+        @if (_isDeleted)
+        {
+            <p class="form-info" role="status">
+                This module is deleted. Restore it from the
+                <a href="/admin/modules">Modules list</a> to bring it back to the picker.
+            </p>
+        }
         @if (_saveError is not null)
         {
             <p class="form-error" role="alert">@_saveError</p>
@@ -229,29 +244,9 @@
                 }
             </section>
 
-            <div class="admin-template-edit__actions">
-                <button type="submit" class="btn btn--primary" disabled="@_saving">
-                    <Icon Name="save" Width="16" Height="16" />
-                    <span>@(_saving ? "Saving…" : (IsEdit ? "Save changes" : "Create module"))</span>
-                </button>
-                @if (IsEdit && _existingId is not null)
-                {
-                    @if (_isDeleted)
-                    {
-                        <button type="button" class="btn" @onclick="RestoreAsync" disabled="@_saving">
-                            <Icon Name="rotate-ccw" Width="16" Height="16" />
-                            <span>Restore</span>
-                        </button>
-                    }
-                    else
-                    {
-                        <button type="button" class="btn" @onclick="ConfirmDeleteAsync" disabled="@_saving">
-                            <Icon Name="trash-2" Width="16" Height="16" />
-                            <span>Soft-delete</span>
-                        </button>
-                    }
-                }
-            </div>
+            @* Hidden submit so pressing Enter inside an input still triggers
+               SaveAsync — the visible Save button moved to the header. *@
+            <button type="submit" class="visually-hidden" aria-hidden="true" tabindex="-1">Save</button>
         </form>
     }
 
@@ -260,12 +255,6 @@
         <AuditHistoryPanel EntityType="AuditEntityType.Module" EntityId="_existingId.Value" Title="Module history" />
     }
 </div>
-
-<ConfirmDialog @ref="_deleteConfirm"
-               Title="Soft-delete this module?"
-               Message="It will disappear from the user-facing module picker. You can restore it from this page; the audit log keeps the change either way."
-               ConfirmLabel="Soft-delete"
-               ConfirmIcon="trash-2" />
 
 @code {
     [Parameter] public string? Key { get; set; }
@@ -278,7 +267,6 @@
     private bool _isDeleted;
     private bool _loadFailed;
     private bool _saving;
-    private ConfirmDialog? _deleteConfirm;
     private string? _saveError;
     private string? _saveSuccess;
     private IReadOnlyDictionary<string, string> _fieldErrors = new Dictionary<string, string>();
@@ -392,45 +380,6 @@
         {
             Log.LogError(ex, "Unexpected error saving module '{Key}'.", payload.Key);
             _saveError = "An unexpected error occurred. The change was not saved.";
-        }
-        finally
-        {
-            _saving = false;
-        }
-    }
-
-    private async Task ConfirmDeleteAsync()
-    {
-        if (_existingId is null || _saving || _deleteConfirm is null) return;
-        if (!await _deleteConfirm.OpenAsync()) return;
-        _saving = true;
-        try
-        {
-            await Modules.SoftDeleteAsync(_existingId.Value);
-            Nav.NavigateTo("/admin/modules");
-        }
-        catch (Exception ex)
-        {
-            Log.LogError(ex, "Failed to soft-delete module id={Id}.", _existingId);
-            _saveError = "Couldn't delete the module. Check the logs.";
-            _saving = false;
-        }
-    }
-
-    private async Task RestoreAsync()
-    {
-        if (_existingId is null || _saving) return;
-        _saving = true;
-        try
-        {
-            await Modules.RestoreAsync(_existingId.Value);
-            _isDeleted = false;
-            _saveSuccess = "Module restored.";
-        }
-        catch (Exception ex)
-        {
-            Log.LogError(ex, "Failed to restore module id={Id}.", _existingId);
-            _saveError = "Couldn't restore the module. Check the logs.";
         }
         finally
         {
