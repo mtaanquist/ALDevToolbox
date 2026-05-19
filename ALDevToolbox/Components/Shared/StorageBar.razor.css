@@ -1,5 +1,4 @@
 .storage-bar {
-    margin-top: auto;
     padding: 0.6rem 0.8rem 0.8rem;
     border-top: 1px solid var(--border-muted, rgba(0, 0, 0, 0.08));
     font-size: 0.78rem;

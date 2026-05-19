@@ -288,16 +288,22 @@
         </Authorized>
     </AuthorizeView>
 
-    @* Capacity indicator pinned to the bottom of the sidebar. Visible only
-       to tenant admins (Admin role) in real organisations — the system org
-       isn't quota-checked, so we hide it there too. *@
-    <AuthorizeView Roles="Admin">
-        <Authorized>
-            @if (!OrgContext.IsSystemOrganization)
-            {
-                <StorageBar />
-            }
-        </Authorized>
-    </AuthorizeView>
+    @* Sidebar footer pinned to the bottom. Holds the capacity indicator
+       (admins outside the system org only — system org isn't quota-checked,
+       and StorageBar itself hides when no quota applies) and the copyright
+       line, which is always visible. *@
+    <div class="sidebar-footer">
+        <AuthorizeView Roles="Admin">
+            <Authorized>
+                @if (!OrgContext.IsSystemOrganization)
+                {
+                    <StorageBar />
+                }
+            </Authorized>
+        </AuthorizeView>
+        <div class="sidebar-copyright">
+            &copy; @DateTime.UtcNow.Year Mads Taanquist
+        </div>
+    </div>
 </nav>
 

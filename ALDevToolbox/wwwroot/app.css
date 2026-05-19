@@ -283,6 +283,23 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     margin: 10px 6px 10px;
 }
 
+/* Pinned to the bottom of the sidebar nav. Holds the storage indicator
+   (when applicable) and the copyright line. Uses margin-top:auto on the
+   wrapper so the copyright stays at the bottom even when the storage bar
+   is hidden (unlimited quota, non-admin, system org). */
+.sidebar-footer {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-copyright {
+    padding: 8px 12px 4px;
+    font-size: 11px;
+    color: var(--color-text-muted, var(--color-text-secondary));
+    text-align: center;
+}
+
 /* ---------- Tab bar (page-level) ---------- */
 
 /* The .tab-bar / .tab classes drive the auth sign-in tabs (password vs magic
