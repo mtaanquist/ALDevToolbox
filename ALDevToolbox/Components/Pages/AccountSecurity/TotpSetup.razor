@@ -78,7 +78,7 @@
         }
         catch (Exception)
         {
-            Nav.NavigateTo($"/account?err=Totp&msg={Uri.EscapeDataString("TOTP is already enabled. Disable it before re-enrolling.")}");
+            Nav.NavigateTo($"/account?err=Totp&msg={Uri.EscapeDataString("Your authenticator app is already set up. Disable it before setting up a new one.")}");
         }
     }
 }

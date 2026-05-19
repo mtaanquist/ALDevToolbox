@@ -4,11 +4,12 @@
 
 @*
     Sidebar capacity indicator. Shows the acting organisation's billable
-    storage as "x MB / y MB" or "x MB / ∞" when no quota is set. Hidden
-    in the system org (which is never quota-checked) and pre-login.
+    storage as "x MB / y MB" against an effective quota. Hidden when no
+    quota applies (unlimited storage), in the system org (which is never
+    quota-checked), and pre-login.
 *@
 
-@if (_row is not null)
+@if (_row is { EffectiveQuotaMb: { } quotaMb })
 {
     var billableMb = _row.BillableBytes / (1024d * 1024d);
     var percent = _row.UsedFraction is { } f ? Math.Clamp(f * 100, 0, 100) : 0;
@@ -20,16 +21,12 @@
         <div class="storage-bar__label">
             <span>Storage</span>
             <span class="storage-bar__value">
-                @FormatMb(billableMb) /
-                @(_row.EffectiveQuotaMb is { } q ? $"{q} MB" : "∞")
+                @FormatMb(billableMb) / @(quotaMb) MB
             </span>
         </div>
-        @if (_row.EffectiveQuotaMb is not null)
-        {
-            <div class="storage-bar__track" aria-hidden="true">
-                <div class="storage-bar__fill" style="@($"width: {percentStr}%")"></div>
-            </div>
-        }
+        <div class="storage-bar__track" aria-hidden="true">
+            <div class="storage-bar__fill" style="@($"width: {percentStr}%")"></div>
+        </div>
     </div>
 }
 

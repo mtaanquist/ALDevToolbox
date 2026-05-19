@@ -15,7 +15,7 @@
             @if (_template is not null)
             {
                 <p class="muted">
-                    Read-only view of the template's seeded layout and defaults.
+                    A read-only look at this template's layout and defaults.
                     @if (_template.Deprecated)
                     {
                         <span> · <strong>Deprecated</strong></span>
@@ -72,7 +72,7 @@
             <h2>Extensions</h2>
             @if (_template.WorkspaceExtensions.Count == 0)
             {
-                <p class="muted">No extensions declared. Generation falls back to the static layout only.</p>
+                <p class="muted">This template doesn't define any extensions yet.</p>
             }
             else
             {
