@@ -236,9 +236,16 @@ builder.Services.AddOpenIddict()
         o.SetAccessTokenLifetime(TimeSpan.FromMinutes(60))
             .SetRefreshTokenLifetime(TimeSpan.FromDays(30));
 
+        // Only /oauth/authorize is passed through — the consent UI lives in
+        // a Razor page and we craft the principal ourselves in
+        // OAuthEndpoints.MapAuthorizeComplete. /oauth/token has no
+        // customisation: OpenIddict already has the principal stored against
+        // the auth code and refresh token, so it can issue the response on
+        // its own. Enabling token-endpoint passthrough without registering a
+        // matching route handler silently drops the response after validation
+        // and Claude surfaces "Authorization with the MCP server failed".
         o.UseAspNetCore()
-            .EnableAuthorizationEndpointPassthrough()
-            .EnableTokenEndpointPassthrough();
+            .EnableAuthorizationEndpointPassthrough();
 
         // Dev: HTTPS isn't terminated in front of us, so OpenIddict's
         // built-in transport-security check would refuse to start. Prod
