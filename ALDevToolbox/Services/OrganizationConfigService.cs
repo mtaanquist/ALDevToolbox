@@ -171,11 +171,9 @@ public class OrganizationConfigService
         row.DefaultCoreDescription = input.DefaultCoreDescription?.Trim() ?? string.Empty;
         row.DefaultUrl = string.IsNullOrWhiteSpace(input.DefaultUrl) ? null : input.DefaultUrl.Trim();
         row.DefaultLogo = string.IsNullOrWhiteSpace(input.DefaultLogo) ? null : input.DefaultLogo.Trim();
-        row.DefaultSupportedCountries = input.DefaultSupportedCountries?
-            .Select(c => c?.Trim() ?? string.Empty)
-            .Where(c => !string.IsNullOrEmpty(c))
-            .ToList()
-            ?? new List<string>();
+        // DefaultSupportedCountries is no longer surfaced in the admin form
+        // (AppSourceCop.json moved into Always-included files or per-template
+        // overrides). The entity column stays so older rows keep their values.
         row.UpdatedAt = now;
 
         await _db.SaveChangesAsync(ct);
@@ -605,11 +603,8 @@ public class OrganizationConfigService
         settings.DefaultCoreDescription = settingsInput.DefaultCoreDescription?.Trim() ?? string.Empty;
         settings.DefaultUrl = string.IsNullOrWhiteSpace(settingsInput.DefaultUrl) ? null : settingsInput.DefaultUrl.Trim();
         settings.DefaultLogo = string.IsNullOrWhiteSpace(settingsInput.DefaultLogo) ? null : settingsInput.DefaultLogo.Trim();
-        settings.DefaultSupportedCountries = settingsInput.DefaultSupportedCountries?
-            .Select(c => c?.Trim() ?? string.Empty)
-            .Where(c => !string.IsNullOrEmpty(c))
-            .ToList()
-            ?? new List<string>();
+        // DefaultSupportedCountries: column preserved, no longer written from
+        // either the admin form or the TOML import — see SaveSettingsAsync.
         settings.CodeWorkspaceJson = codeWorkspaceJson;
         settings.UpdatedAt = now;
 
@@ -781,8 +776,7 @@ public record OrganizationSettingsInput(
     string DefaultBrief,
     string DefaultCoreDescription,
     string? DefaultUrl = null,
-    string? DefaultLogo = null,
-    IReadOnlyList<string>? DefaultSupportedCountries = null);
+    string? DefaultLogo = null);
 
 /// <summary>One row submitted by the always-included files editor.</summary>
 public record OrganizationFileInput(

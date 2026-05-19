@@ -67,9 +67,9 @@
             <div class="bulk-bar" role="region" aria-label="Bulk actions" aria-live="polite">
                 <span class="bulk-bar__summary">@_selected.Count selected</span>
                 <div class="bulk-bar__actions">
-                    <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.SoftDelete)" disabled="@_busy">
+                    <button type="button" class="btn btn--sm btn--danger" @onclick="() => RequestBulkAsync(BulkAction.SoftDelete)" disabled="@_busy">
                         <Icon Name="trash-2" Width="14" Height="14" />
-                        <span>Soft-delete</span>
+                        <span>Delete</span>
                     </button>
                     <button type="button" class="btn btn--sm" @onclick="() => RequestBulkAsync(BulkAction.Restore)" disabled="@_busy">
                         <Icon Name="rotate-ccw" Width="14" Height="14" />
@@ -140,6 +140,22 @@
                                 <Icon Name="pencil" Width="14" Height="14" />
                                 <span>Edit</span>
                             </a>
+                            @if (m.DeletedAt is not null)
+                            {
+                                <button type="button" class="btn btn--sm"
+                                        @onclick="() => RequestRestoreAsync(m)" disabled="@_busy">
+                                    <Icon Name="rotate-ccw" Width="14" Height="14" />
+                                    <span>Restore</span>
+                                </button>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn--sm btn--danger"
+                                        @onclick="() => RequestDeleteAsync(m)" disabled="@_busy">
+                                    <Icon Name="trash-2" Width="14" Height="14" />
+                                    <span>Delete</span>
+                                </button>
+                            }
                         </td>
                     </tr>
                 }
@@ -211,6 +227,47 @@
         _lastFailures = Array.Empty<BulkActionFailure>();
     }
 
+    private async Task RequestDeleteAsync(Module module)
+    {
+        if (_busy || _confirm is null) return;
+        var confirmed = await _confirm.OpenAsync(
+            title: $"Delete {module.Name}?",
+            message: "It will disappear from the New Workspace module picker. You can restore it from this list while \"Show soft-deleted\" is ticked.",
+            confirmLabel: "Delete",
+            confirmButtonClass: "btn--danger");
+        if (!confirmed) return;
+        await RunSingleAsync(module, () => Modules.SoftDeleteAsync(module.Id), $"Deleted {module.Name}.", "delete");
+    }
+
+    private async Task RequestRestoreAsync(Module module)
+    {
+        if (_busy) return;
+        await RunSingleAsync(module, () => Modules.RestoreAsync(module.Id), $"Restored {module.Name}.", "restore");
+    }
+
+    private async Task RunSingleAsync(Module module, Func<Task> action, string successMessage, string verb)
+    {
+        _busy = true;
+        _lastError = null;
+        _lastSuccess = null;
+        _lastFailures = Array.Empty<BulkActionFailure>();
+        try
+        {
+            await action();
+            _lastSuccess = successMessage;
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to {Verb} module id={Id}.", verb, module.Id);
+            _lastError = $"Couldn't {verb} the module. Check the logs.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
     private async Task RequestBulkAsync(BulkAction action)
     {
         if (_selected.Count == 0 || _busy || _rows is null) return;
@@ -218,7 +275,7 @@
         var affected = _rows.Where(r => ids.Contains(r.Id)).ToList();
         var label = action switch
         {
-            BulkAction.SoftDelete => "soft-delete",
+            BulkAction.SoftDelete => "delete",
             BulkAction.Restore => "restore",
             _ => action.ToString(),
         };
