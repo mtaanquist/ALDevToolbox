@@ -289,6 +289,16 @@ builder.Services.AddOpenIddict()
         o.AddEventHandler<OpenIddict.Server.OpenIddictServerEvents.ValidateAuthorizationRequestContext>(b =>
             b.UseScopedHandler<ALDevToolbox.Services.OAuth.CimdClientResolver>()
              .SetOrder(int.MinValue + 100_000));
+
+        // MCP resource resolver — the MCP 2025-11-25 spec has clients pass
+        // resource=https://<host>/mcp on every authorize request per RFC 8707,
+        // and OpenIddict's stock ValidateResources handler rejects with ID2190
+        // unless that URL is in the mcp scope row's Resources. Public host
+        // isn't known at startup, so the row is seeded lazily from the first
+        // request and cached in-process thereafter.
+        o.AddEventHandler<OpenIddict.Server.OpenIddictServerEvents.ValidateAuthorizationRequestContext>(b =>
+            b.UseScopedHandler<ALDevToolbox.Services.OAuth.McpResourceResolver>()
+             .SetOrder(int.MinValue + 200_000));
     })
     .AddValidation(o =>
     {
@@ -308,6 +318,7 @@ builder.Services.AddScoped<ALDevToolbox.Services.OAuth.OAuthClientAdminService>(
 // configuration to every other caller.
 builder.Services.AddHttpClient(nameof(ALDevToolbox.Services.OAuth.CimdClientResolver));
 builder.Services.AddScoped<ALDevToolbox.Services.OAuth.CimdClientResolver>();
+builder.Services.AddScoped<ALDevToolbox.Services.OAuth.McpResourceResolver>();
 
 // MCP server (Model Context Protocol). Mounted at /mcp by McpEndpoints; the
 // PAT auth handler above turns Bearer tokens into the same claim set the
