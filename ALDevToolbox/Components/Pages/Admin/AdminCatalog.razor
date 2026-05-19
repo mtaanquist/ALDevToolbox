@@ -24,10 +24,18 @@
                 bucket sensibly in the picker UI.
             </p>
         </div>
-        <a class="btn btn--sm" href="/admin">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to admin</span>
-        </a>
+        <div class="admin-page__header-actions">
+            <a class="btn btn--sm" href="/admin">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to admin</span>
+            </a>
+            <button type="button" class="btn btn--sm btn--primary"
+                    @onclick="SaveAsync"
+                    disabled="@(_saving || _form is null)">
+                <Icon Name="save" Width="14" Height="14" />
+                <span>@(_saving ? "Saving…" : "Save catalogue")</span>
+            </button>
+        </div>
     </header>
 
     @if (_form is null)
@@ -68,27 +76,44 @@
                         {
                             var index = i;
                             var row = _form.Entries[index];
-                            <div class="folder-editor__row">
-                                <div class="folder-editor__row-head">
-                                    <div class="folder-editor__order">
-                                        <button type="button" class="btn btn--sm" disabled="@(index == 0)"
-                                                @onclick="() => MoveEntry(index, -1)" title="Move up">
-                                            <Icon Name="arrow-up" Width="12" Height="12" />
-                                        </button>
-                                        <button type="button" class="btn btn--sm" disabled="@(index == _form.Entries.Count - 1)"
-                                                @onclick="() => MoveEntry(index, 1)" title="Move down">
-                                            <Icon Name="arrow-down" Width="12" Height="12" />
-                                        </button>
+                            <div class="folder-editor__row app-versions-editor__row">
+                                <div class="folder-editor__row-head app-versions-editor__row-head">
+                                    <div class="folder-editor__order app-versions-editor__order">
+                                        <div class="app-versions-editor__order-row">
+                                            <button type="button" class="btn btn--sm app-versions-editor__order-btn"
+                                                    disabled="@(index == 0)"
+                                                    @onclick="() => MoveEntryToTop(index)" title="Move to top">
+                                                <Icon Name="chevrons-up" Width="12" Height="12" />
+                                            </button>
+                                            <button type="button" class="btn btn--sm app-versions-editor__order-btn"
+                                                    disabled="@(index == 0)"
+                                                    @onclick="() => MoveEntry(index, -1)" title="Move up">
+                                                <Icon Name="chevron-up" Width="12" Height="12" />
+                                            </button>
+                                        </div>
+                                        <div class="app-versions-editor__order-row">
+                                            <button type="button" class="btn btn--sm app-versions-editor__order-btn"
+                                                    disabled="@(index == _form.Entries.Count - 1)"
+                                                    @onclick="() => MoveEntryToBottom(index)" title="Move to bottom">
+                                                <Icon Name="chevrons-down" Width="12" Height="12" />
+                                            </button>
+                                            <button type="button" class="btn btn--sm app-versions-editor__order-btn"
+                                                    disabled="@(index == _form.Entries.Count - 1)"
+                                                    @onclick="() => MoveEntry(index, 1)" title="Move down">
+                                                <Icon Name="chevron-down" Width="12" Height="12" />
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div class="folder-editor__path">
+                                    <div class="folder-editor__path app-versions-editor__path">
                                         <input type="text" required placeholder="GUID (e.g. 12345678-1234-1234-1234-1234567890ab)"
                                                pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
                                                title="Must be a GUID in 8-4-4-4-12 hex form."
                                                @bind="row.DepId" @bind:event="oninput" />
                                         <FieldError Field="@($"Entries[{index}].DepId")" Errors="_fieldErrors" />
                                     </div>
-                                    <button type="button" class="btn btn--sm" @onclick="() => RemoveEntry(index)" title="Remove entry">
-                                        <Icon Name="trash-2" Width="12" Height="12" />
+                                    <button type="button" class="btn btn--sm btn--danger app-versions-editor__remove"
+                                            @onclick="() => RemoveEntry(index)" title="Remove entry">
+                                        <Icon Name="trash-2" Width="14" Height="14" />
                                     </button>
                                 </div>
                                 <div class="dep-editor__fields">
@@ -123,16 +148,9 @@
                 }
             </section>
 
-            <div class="admin-template-edit__actions">
-                <button type="submit" class="btn btn--primary" disabled="@_saving">
-                    <Icon Name="save" Width="16" Height="16" />
-                    <span>@(_saving ? "Saving…" : "Save catalogue")</span>
-                </button>
-                <button type="button" class="btn" @onclick="ReloadAsync" disabled="@_saving">
-                    <Icon Name="rotate-ccw" Width="16" Height="16" />
-                    <span>Discard changes</span>
-                </button>
-            </div>
+            @* Hidden submit so pressing Enter inside an input still triggers
+               SaveAsync — the visible Save button moved to the header. *@
+            <button type="submit" class="visually-hidden" aria-hidden="true" tabindex="-1">Save</button>
         </form>
     }
 </div>
@@ -182,6 +200,24 @@
         }
         (_form.Entries[index], _form.Entries[target]) =
             (_form.Entries[target], _form.Entries[index]);
+    }
+
+    private void MoveEntryToTop(int index)
+    {
+        if (_form is null) return;
+        if (index <= 0 || index >= _form.Entries.Count) return;
+        var row = _form.Entries[index];
+        _form.Entries.RemoveAt(index);
+        _form.Entries.Insert(0, row);
+    }
+
+    private void MoveEntryToBottom(int index)
+    {
+        if (_form is null) return;
+        if (index < 0 || index >= _form.Entries.Count - 1) return;
+        var row = _form.Entries[index];
+        _form.Entries.RemoveAt(index);
+        _form.Entries.Add(row);
     }
 
     private async Task SaveAsync()

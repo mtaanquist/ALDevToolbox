@@ -116,8 +116,8 @@ internal static class AdminUserEndpoints
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
             if (!await email.IsConfiguredAsync(ct))
             {
-                ctx.Response.Redirect($"{RouteConstants.AdminUsers}?{RouteConstants.ErrQuery}="
-                    + Uri.EscapeDataString("Email isn't configured. Set up SMTP via /site-admin/settings before inviting users."));
+                ctx.Response.Redirect($"{RouteConstants.AdminUsersNew}?{RouteConstants.ErrQuery}="
+                    + Uri.EscapeDataString("Email isn't set up on this site. Ask a site administrator to configure it, or use the link-only flow above."));
                 return;
             }
             var form = await ctx.Request.ReadFormAsync(ct);
@@ -141,16 +141,16 @@ internal static class AdminUserEndpoints
                 catch (Exception ex)
                 {
                     logger.LogWarning(ex, "Invite email failed for invite {InviteId} to {Email}.", inviteId, emailAddr);
-                    ctx.Response.Redirect($"{RouteConstants.AdminUsers}?{RouteConstants.ErrQuery}="
+                    ctx.Response.Redirect($"{RouteConstants.AdminUsersNew}?{RouteConstants.ErrQuery}="
                         + Uri.EscapeDataString("Invite created but the email failed to send: " + ex.Message));
                     return;
                 }
-                ctx.Response.Redirect($"{RouteConstants.AdminUsers}?{RouteConstants.OkQuery}=invited");
+                ctx.Response.Redirect($"{RouteConstants.AdminUsersNew}?{RouteConstants.OkQuery}=invited");
             }
             catch (PlanValidationException ex)
             {
                 var first = ex.Errors.First();
-                ctx.Response.Redirect($"{RouteConstants.AdminUsers}?{RouteConstants.ErrQuery}={Uri.EscapeDataString(first.Value)}");
+                ctx.Response.Redirect($"{RouteConstants.AdminUsersNew}?{RouteConstants.ErrQuery}={Uri.EscapeDataString(first.Value)}");
             }
         }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
@@ -212,12 +212,12 @@ internal static class AdminUserEndpoints
                     }
                 }
                 SetOneShotInviteCookie(ctx, protection, url);
-                ctx.Response.Redirect($"{RouteConstants.AdminUsers}?{RouteConstants.OkQuery}=created&inviteId={inviteId}");
+                ctx.Response.Redirect($"{RouteConstants.AdminUsersNew}?{RouteConstants.OkQuery}=created&inviteId={inviteId}");
             }
             catch (PlanValidationException ex)
             {
                 var first = ex.Errors.First();
-                ctx.Response.Redirect($"{RouteConstants.AdminUsers}?{RouteConstants.ErrQuery}={Uri.EscapeDataString(first.Value)}");
+                ctx.Response.Redirect($"{RouteConstants.AdminUsersNew}?{RouteConstants.ErrQuery}={Uri.EscapeDataString(first.Value)}");
             }
         }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 

@@ -10,6 +10,7 @@ internal static class RouteConstants
     public const string Login = "/login";
     public const string Account = "/account";
     public const string AdminUsers = "/admin/users";
+    public const string AdminUsersNew = "/admin/users/new";
     public const string AdminTemplates = "/admin/templates";
     public const string AdminExport = "/admin/export";
     public const string SiteAdminUsers = "/site-admin/users";

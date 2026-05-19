@@ -1,0 +1,162 @@
+@page "/admin/users/new"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Endpoints
+@using ALDevToolbox.Services
+@using Microsoft.AspNetCore.DataProtection
+@inject IHttpContextAccessor Http
+@inject IDataProtectionProvider Protection
+@inject IEmailService EmailSvc
+@inject IJSRuntime JS
+
+@*
+    Create-or-invite sub-page split out of /admin/users (P4.22). The main
+    users page is now read-mostly — pending invites, pending signups, active
+    user management — and this page owns the two add-a-user flows so the
+    forms aren't competing for attention with the tables on every visit.
+*@
+
+<PageTitle>Add a user · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Add a user</h1>
+            <p class="muted">
+                Either generate a single-use invite link to share out-of-band,
+                or send a regular email invite. Both flows hand the new user a
+                link that lets them set their own password.
+            </p>
+        </div>
+        <a class="btn btn--sm" href="/admin/users">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to users</span>
+        </a>
+    </header>
+
+    @if (!string.IsNullOrEmpty(Error))
+    {
+        <p class="form-error" role="alert">@Error</p>
+    }
+
+    @if (Ok == "created" && !string.IsNullOrEmpty(_oneShotLink))
+    {
+        <div class="form-success" role="status">
+            <p><strong>User created.</strong> Share this single-use link (valid 7 days):</p>
+            <div class="invite-link-box">
+                <code>@_oneShotLink</code>
+                <button type="button" class="btn btn--sm" @onclick="CopyLinkAsync">
+                    <Icon Name="copy" Width="14" Height="14" />
+                    <span>Copy</span>
+                </button>
+            </div>
+        </div>
+    }
+    else if (Ok == "invited")
+    {
+        <p class="form-success" role="status">Invite sent. The link is valid for 7 days.</p>
+    }
+
+    <section class="admin-section">
+        <h2>Create a user (link)</h2>
+        <p class="muted">
+            Generates a single-use invite link without requiring email. Share it with the user
+            out-of-band; they click it and choose their own password. If your site has email
+            set up, you can also send the invite by email.
+        </p>
+        <form method="post" action="/admin/users/create" class="form-grid form-grid--narrow">
+            <AntiforgeryToken />
+            <section class="form-section">
+                <label class="section-label" for="cu-email">Email</label>
+                <input id="cu-email" type="email" name="Email" required maxlength="254" placeholder="e.g. alice@example.com" />
+            </section>
+            <section class="form-section">
+                <label class="section-label" for="cu-role">Role</label>
+                <select id="cu-role" name="Role">
+                    <option value="User" selected>User</option>
+                    <option value="Admin">Administrator</option>
+                </select>
+            </section>
+            <section class="form-section">
+                <label class="section-label" for="cu-message">Welcome message (optional)</label>
+                <textarea id="cu-message" name="WelcomeMessage" rows="2" maxlength="2000" placeholder="A short note for the invite email if you send it."></textarea>
+            </section>
+            <label class="inline-checkbox">
+                <input type="checkbox" name="SendEmail" value="true" @bind="_sendEmail" disabled="@(!_smtpConfigured)" />
+                Also send the invite by email @(_smtpConfigured ? "" : "(email isn't set up on this site)")
+            </label>
+            <button type="submit" class="btn btn--primary">
+                <Icon Name="user-plus" Width="16" Height="16" />
+                <span>Create user</span>
+            </button>
+        </form>
+    </section>
+
+    <section class="admin-section">
+        <h2>Invite a user (email)</h2>
+        <p class="muted">
+            Send a single-use invite link by email. The invitee picks a display name and
+            password — no further approval needed.
+        </p>
+        <form method="post" action="/admin/users/invite" class="form-grid form-grid--narrow">
+            <AntiforgeryToken />
+            <section class="form-section">
+                <label class="section-label" for="inv-email">Email</label>
+                <input id="inv-email" type="email" name="Email" required maxlength="254" placeholder="e.g. alice@example.com" />
+            </section>
+            <section class="form-section">
+                <label class="section-label" for="inv-role">Role</label>
+                <select id="inv-role" name="Role">
+                    <option value="User" selected>User</option>
+                    <option value="Admin">Administrator</option>
+                </select>
+            </section>
+            <section class="form-section">
+                <label class="section-label" for="inv-message">Welcome message (optional)</label>
+                <textarea id="inv-message" name="WelcomeMessage" rows="3" maxlength="2000" placeholder="A short note shown in the invite email."></textarea>
+            </section>
+            <button type="submit" class="btn" disabled="@(!_smtpConfigured)">
+                <Icon Name="mail-plus" Width="16" Height="16" />
+                <span>Send invite</span>
+            </button>
+            @if (!_smtpConfigured)
+            {
+                <small class="muted">Email isn't set up on this site. Use the link-only flow above.</small>
+            }
+        </form>
+    </section>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+
+    private string? _oneShotLink;
+    private bool _sendEmail = true;
+    private bool _smtpConfigured;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _smtpConfigured = await EmailSvc.IsConfiguredAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        var ctx = Http.HttpContext;
+        if (ctx is null) return;
+        // The create endpoint stashes the accept URL in a one-shot Data
+        // Protection-encrypted cookie so it can survive the redirect back here
+        // without ending up in the URL or a query string.
+        _oneShotLink = EndpointHelpers.ReadAndClearOneShotInviteCookie(ctx, Protection);
+        if (_oneShotLink is not null) StateHasChanged();
+    }
+
+    private async Task CopyLinkAsync()
+    {
+        if (_oneShotLink is null) return;
+        try { await JS.InvokeVoidAsync("aldtCopy", _oneShotLink); }
+        catch { /* clipboard API blocked — admin can copy the displayed text manually */ }
+    }
+}
