@@ -73,10 +73,7 @@
                     </button>
                 </div>
             </div>
-            <p class="muted">
-                @CurrentHint
-                <a href="/docs/mcp-clients">More options</a>.
-            </p>
+            <p class="muted">@CurrentHint</p>
         </section>
 
         <section class="account-section">
@@ -88,6 +85,7 @@
             <ul class="muted">
                 <li>"Make a new workspace for Acme using the default template."</li>
                 <li>"Which procedures touch the No. field on Sales Line in BC 28.1?"</li>
+                <li>"Walk me through what happens when you post a sales order in BC 28.1."</li>
                 <li>"Find me a snippet for posting validation overrides."</li>
             </ul>
 
@@ -107,6 +105,9 @@
                     <tr><td><code>search_procedures</code></td><td>Searches a release for procedures by name.</td></tr>
                     <tr><td><code>search_content</code></td><td>Searches AL source content across a release.</td></tr>
                     <tr><td><code>find_references</code></td><td>Finds every place that touches a specific table, field, or procedure.</td></tr>
+                    <tr><td><code>get_object_outline</code></td><td>Returns an object's procedures, triggers, and fields with their symbol ids.</td></tr>
+                    <tr><td><code>get_procedure_source</code></td><td>Returns the AL source of one procedure body (capped at 200 lines).</td></tr>
+                    <tr><td><code>list_procedure_calls</code></td><td>Returns the outgoing calls and field accesses from inside one procedure body — for tracing call chains.</td></tr>
                     <tr><td><code>search_snippets</code></td><td>Searches your organisation's snippet library.</td></tr>
                     <tr><td><code>get_snippet</code></td><td>Returns the full file content of one snippet.</td></tr>
                 </tbody>
