@@ -2634,6 +2634,128 @@ public sealed class AlReferenceExtractorTests
         result.Stats.UnresolvedReceivers.Should().Be(1);
     }
 
+    // ── Procedure-body scope tracking (#181) ────────────────────────
+
+    [Fact]
+    public void Extract_emits_symbol_scope_with_start_and_end_lines_for_procedure_body()
+    {
+        // The walker now captures the (start, end) span of each
+        // procedure / trigger body. Verify a simple procedure produces
+        // one scope row pointing at the declaration line and the
+        // matching `end;` line. See issue #181.
+        var resolver = MakeResolver();
+        const string src = """
+            procedure Foo()
+            begin
+                Customer.Insert(true);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.SymbolScopes.Should().ContainSingle();
+        var scope = result.SymbolScopes[0];
+        scope.Name.Should().Be("Foo");
+        scope.Kind.Should().Be("procedure");
+        scope.StartLine.Should().Be(1);
+        scope.EndLine.Should().Be(4, because: "the matching `end;` sits on the fourth line");
+        scope.EndColumn.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void Extract_emits_one_symbol_scope_per_procedure_in_a_codeunit()
+    {
+        var resolver = MakeResolver();
+        const string src = """
+            procedure Foo()
+            begin
+                Customer.Insert(true);
+            end;
+
+            procedure Bar()
+            begin
+                Customer.Validate(true);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.SymbolScopes.Should().HaveCount(2);
+        result.SymbolScopes.Select(s => s.Name).Should().Equal("Foo", "Bar");
+        result.SymbolScopes.Should().AllSatisfy(s => s.EndLine.Should().BeGreaterOrEqualTo(s.StartLine));
+    }
+
+    [Fact]
+    public void Extracted_references_carry_source_member_name_and_line_when_emitted_from_a_procedure_body()
+    {
+        // ExtractedReference now carries SourceMemberName /
+        // SourceMemberKind / SourceMemberLine so ReleaseImportService
+        // can resolve source_symbol_id on the persisted row. See #181.
+        var resolver = MakeResolver();
+        const string src = """
+            procedure Foo()
+            begin
+                Customer.Insert(true);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        var refsFromFoo = result.References.Where(r => r.SourceMemberName == "Foo").ToList();
+        refsFromFoo.Should().NotBeEmpty();
+        refsFromFoo.Should().AllSatisfy(r =>
+        {
+            r.SourceMemberKind.Should().Be("procedure");
+            r.SourceMemberLine.Should().Be(1);
+        });
+    }
+
+    [Fact]
+    public void Two_procedures_get_distinct_source_member_lines_for_their_calls()
+    {
+        // Each procedure body's references must point back at its OWN
+        // declaration line, not at the previous procedure's. Catches
+        // bugs in ScopeFrame's start-line capture or the pop ordering
+        // inside TryHandleBlockDepth.
+        var resolver = MakeResolver();
+        const string src = """
+            procedure Foo()
+            begin
+                Customer.Insert(true);
+            end;
+
+            procedure Bar()
+            begin
+                Customer.Validate(true);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        var fooLine = result.SymbolScopes.Single(s => s.Name == "Foo").StartLine;
+        var barLine = result.SymbolScopes.Single(s => s.Name == "Bar").StartLine;
+        fooLine.Should().BeLessThan(barLine);
+
+        result.References.Where(r => r.SourceMemberName == "Foo")
+            .Should().AllSatisfy(r => r.SourceMemberLine.Should().Be(fooLine));
+        result.References.Where(r => r.SourceMemberName == "Bar")
+            .Should().AllSatisfy(r => r.SourceMemberLine.Should().Be(barLine));
+    }
+
+    [Fact]
+    public void Trigger_scope_emits_a_symbol_scope_with_kind_trigger()
+    {
+        var resolver = MakeResolver();
+        // OnRun on a codeunit is a trigger, not a procedure.
+        const string src = """
+            trigger OnRun()
+            begin
+                Customer.Insert(true);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.SymbolScopes.Should().ContainSingle();
+        result.SymbolScopes[0].Kind.Should().Be("trigger");
+        result.SymbolScopes[0].Name.Should().Be("OnRun");
+    }
+
     // ── Stub resolver ───────────────────────────────────────────────
 
     private sealed class StubResolver : IAlTypeResolver

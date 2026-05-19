@@ -34,6 +34,16 @@ internal sealed class AlExtractionState
     public Stack<ScopeFrame> ScopeStack { get; } = new();
     public List<ExtractedReference> Refs { get; } = new();
     public List<UnresolvedSample> UnresolvedSamples { get; } = new();
+
+    /// <summary>
+    /// Body-bearing symbol scopes captured when their matching <c>end;</c>
+    /// is reached. Populated in <see cref="AlProcedureWalker.TryHandleBlockDepth"/>
+    /// at the moment the frame pops, so each entry has both endpoints
+    /// stamped. Consumed by <c>ReleaseImportService</c> to fill the
+    /// <c>end_line</c> / <c>end_column</c> columns on
+    /// <c>oe_module_symbols</c> via <c>(Kind, Name, StartLine)</c> match.
+    /// </summary>
+    public List<ExtractedSymbolScope> SymbolScopes { get; } = new();
     public int Pos;
     public int Resolved;
     public int Unresolved;
@@ -87,6 +97,34 @@ internal sealed class AlExtractionState
     {
         while (Pos < Tokens.Count && !At(";")) Pos++;
         if (At(";")) Pos++;
+    }
+
+    /// <summary>
+    /// Records an extracted reference, automatically stamping the
+    /// owning procedure / trigger scope onto the row when the walker
+    /// is inside one. Call sites pass the raw <see cref="ExtractedReference"/>
+    /// (without the trailing <c>SourceMember*</c> fields); this helper
+    /// reads the top scope frame and attaches the owning member's
+    /// name + kind + start line so <c>ReleaseImportService</c> can
+    /// resolve <c>source_symbol_id</c> on the persisted row without a
+    /// line-range scan. Object-scope emissions pass through untouched.
+    /// </summary>
+    public void EmitReference(ExtractedReference reference)
+    {
+        if (ScopeStack.Count > 1)
+        {
+            var frame = ScopeStack.Peek();
+            if (frame.SymbolName is not null && frame.SymbolKind is not null)
+            {
+                reference = reference with
+                {
+                    SourceMemberName = frame.SymbolName,
+                    SourceMemberKind = frame.SymbolKind,
+                    SourceMemberLine = frame.SymbolStartLine,
+                };
+            }
+        }
+        Refs.Add(reference);
     }
 
     /// <summary>
@@ -285,6 +323,26 @@ internal sealed class ScopeFrame
     /// to zero (i.e. the matching `end;` of the body).
     /// </summary>
     public int BeginDepth { get; set; }
+
+    /// <summary>
+    /// Procedure / trigger name for the frame, or null on the outermost
+    /// object-scope frame. Used by the reference emitters to stamp the
+    /// owning member onto each <see cref="ExtractedReference"/> so the
+    /// import service can resolve <c>source_symbol_id</c> without a
+    /// line-range scan. Same string the symbol extractor records on
+    /// <c>oe_module_symbols.name</c>.
+    /// </summary>
+    public string? SymbolName { get; set; }
+
+    /// <summary>
+    /// Symbol kind for the frame (<c>procedure</c>, <c>trigger</c>,
+    /// <c>event_publisher</c>, etc.), aligned with the kinds the symbol
+    /// extractor writes. Null on the outermost object-scope frame.
+    /// </summary>
+    public string? SymbolKind { get; set; }
+
+    /// <summary>1-based line where the declaration's name token sits — the same line stamped on the matching <c>oe_module_symbols</c> row.</summary>
+    public int SymbolStartLine { get; set; }
 }
 
 /// <summary>
@@ -423,6 +481,20 @@ internal sealed class AlProcedureWalker
     /// </summary>
     public void StartProcedureScope()
     {
+        // Capture the keyword kind before advancing — `procedure` or
+        // `trigger`. The symbol extractor may later refine `procedure`
+        // to `local_procedure` / `internal_procedure` / etc. via the
+        // visibility prefix that sits BEFORE this keyword; reference-
+        // emission only needs the broad bucket since the import service
+        // matches scopes back to symbol rows by line number, not kind.
+        string symbolKind = "procedure";
+        if (_state.Pos < _state.Tokens.Count
+            && _state.Tokens[_state.Pos].Kind == AlTokenKind.Identifier
+            && string.Equals(_state.Tokens[_state.Pos].Value, "trigger", StringComparison.OrdinalIgnoreCase))
+        {
+            symbolKind = "trigger";
+        }
+
         // Skip past `procedure` / `trigger` keyword.
         _state.Pos++;
 
@@ -434,16 +506,27 @@ internal sealed class AlProcedureWalker
 
         // Procedure / trigger name — for triggers like `OnValidate`
         // this is just an identifier; for procedures it's the
-        // procedure name. We don't need the name here; the scope
-        // frame is positional.
+        // procedure name. Capture name + line for #181 scope tracking
+        // so reference emitters can stamp the owning member onto each
+        // ExtractedReference and the import service can resolve
+        // source_symbol_id without a line-range scan.
+        string? symbolName = null;
+        int symbolStartLine = 0;
         if (_state.Pos < _state.Tokens.Count
             && (_state.Tokens[_state.Pos].Kind == AlTokenKind.Identifier
                 || _state.Tokens[_state.Pos].Kind == AlTokenKind.QuotedIdentifier))
         {
+            symbolName = _state.Tokens[_state.Pos].Value;
+            symbolStartLine = _state.Tokens[_state.Pos].Line;
             _state.Pos++;
         }
 
-        var frame = new ScopeFrame();
+        var frame = new ScopeFrame
+        {
+            SymbolKind = symbolKind,
+            SymbolName = symbolName,
+            SymbolStartLine = symbolStartLine,
+        };
 
         // Optional parameter list: `(name: Type; name: Type)`.
         _state.SkipWhitespaceTokens();
@@ -671,7 +754,7 @@ internal sealed class AlProcedureWalker
             var target = _state.Ctx.Resolver.ResolveTypeByName(typeName, keyword);
             if (target is not null)
             {
-                _state.Refs.Add(new ExtractedReference(
+                _state.EmitReference(new ExtractedReference(
                     Line: typeNameLine,
                     Column: typeNameColumn,
                     TargetAppId: target.AppId,
@@ -743,6 +826,26 @@ internal sealed class AlProcedureWalker
             frame.BeginDepth--;
             if (frame.BeginDepth <= 0)
             {
+                // Body just closed — capture the (start, end) span before
+                // we lose the frame. The end token's line+column become
+                // `end_line` / `end_column` on oe_module_symbols via
+                // ReleaseImportService. SymbolName is only null on the
+                // outermost object-scope frame, which TryHandleBlockDepth
+                // never reaches (guarded by ScopeStack.Count > 1 above).
+                if (frame.SymbolName is not null && frame.SymbolKind is not null)
+                {
+                    // `tok` is the `end` keyword; its Column is the column
+                    // of `e`. EndColumn points PAST the last character so
+                    // it lines up with how oe_module_symbols.column_end is
+                    // recorded for declarations.
+                    var endColumn = tok.Column + tok.Value.Length;
+                    _state.SymbolScopes.Add(new ExtractedSymbolScope(
+                        frame.SymbolKind,
+                        frame.SymbolName,
+                        frame.SymbolStartLine,
+                        tok.Line,
+                        endColumn));
+                }
                 _state.ScopeStack.Pop();
             }
             _state.Pos++;
@@ -930,7 +1033,7 @@ internal sealed class AlProcedureWalker
         // a chain (`Codeunit::"Sales-Post".Run(...)`); the
         // method_call on the chained `.Run` emits separately via
         // WalkMemberChain below.
-        _state.Refs.Add(new ExtractedReference(
+        _state.EmitReference(new ExtractedReference(
             Line: nameTok.Line,
             Column: nameTok.Column,
             TargetAppId: receiverType.AppId,
@@ -1020,7 +1123,7 @@ internal sealed class AlProcedureWalker
             // references on the extension's declaration row picks
             // this call up.
             var targetOwner = member.DeclaringType ?? receiverType;
-            _state.Refs.Add(new ExtractedReference(
+            _state.EmitReference(new ExtractedReference(
                 Line: memberTok.Line,
                 Column: memberTok.Column,
                 TargetAppId: targetOwner.AppId,
@@ -1238,7 +1341,7 @@ internal sealed class AlProcedureWalker
         // Tableextension-declared self-members fall through the
         // resolver's DeclaringType path same as receiver chains.
         var targetOwner = member.DeclaringType ?? ownerType;
-        _state.Refs.Add(new ExtractedReference(
+        _state.EmitReference(new ExtractedReference(
             Line: head.Line,
             Column: head.Column,
             TargetAppId: targetOwner.AppId,
@@ -1395,7 +1498,7 @@ internal sealed class AlProcedureWalker
             }
             var owner = OwnerType();
             if (owner is null) return false;
-            _state.Refs.Add(new ExtractedReference(
+            _state.EmitReference(new ExtractedReference(
                 Line: tok.Line,
                 Column: tok.Column,
                 TargetAppId: owner.AppId,
@@ -1485,7 +1588,7 @@ internal sealed class AlProcedureWalker
         }
 
         var targetOwner = member.DeclaringType ?? rec;
-        _state.Refs.Add(new ExtractedReference(
+        _state.EmitReference(new ExtractedReference(
             Line: head.Line,
             Column: head.Column,
             TargetAppId: targetOwner.AppId,
@@ -1573,7 +1676,7 @@ internal sealed class AlProcedureWalker
         var owner = OwnerType();
         if (owner is null) return false;
 
-        _state.Refs.Add(new ExtractedReference(
+        _state.EmitReference(new ExtractedReference(
             Line: tok.Line,
             Column: tok.Column,
             TargetAppId: owner.AppId,
@@ -1623,7 +1726,7 @@ internal sealed class AlProcedureWalker
         if (!AlExtractionState.IsFieldKind(member.Kind)) return false;
 
         var targetOwner = member.DeclaringType ?? receiver;
-        _state.Refs.Add(new ExtractedReference(
+        _state.EmitReference(new ExtractedReference(
             Line: tok.Line,
             Column: tok.Column,
             TargetAppId: targetOwner.AppId,
@@ -1659,7 +1762,7 @@ internal sealed class AlProcedureWalker
         if (!AlExtractionState.IsFieldKind(member.Kind)) return false;
 
         var targetOwner = member.DeclaringType ?? rec;
-        _state.Refs.Add(new ExtractedReference(
+        _state.EmitReference(new ExtractedReference(
             Line: head.Line,
             Column: head.Column,
             TargetAppId: targetOwner.AppId,
@@ -1759,7 +1862,7 @@ internal sealed class AlProcedureWalker
         if (member is null) return;
         if (!AlExtractionState.IsFieldKind(member.Kind)) return;
         var targetOwner = member.DeclaringType ?? receiver;
-        _state.Refs.Add(new ExtractedReference(
+        _state.EmitReference(new ExtractedReference(
             Line: tok.Line,
             Column: tok.Column,
             TargetAppId: targetOwner.AppId,

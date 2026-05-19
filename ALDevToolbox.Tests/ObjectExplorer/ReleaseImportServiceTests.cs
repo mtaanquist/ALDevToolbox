@@ -611,4 +611,93 @@ public sealed class ReleaseImportServiceTests : IDisposable
                 because: "member-scoped rows always carry the member kind");
         });
     }
+
+    [Fact]
+    public async Task Stamps_end_line_and_end_column_on_procedure_symbols()
+    {
+        // Issue #181: the extractor's procedure walker captures the
+        // matching `end;` token's position and the import service plumbs
+        // it onto oe_module_symbols. Body-bearing kinds (procedure /
+        // trigger / event publisher / event subscriber) must end up with
+        // both columns populated; field rows must not.
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        await using var s1 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        var summary = await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "End-line stamp DK Core",
+            Kind: "first_party",
+            ParentReleaseId: null,
+            ApplicationVersionId: null,
+            Uploads: new[] { new AppFileUpload("dk.app", s1, null) }));
+
+        await using var read = _db.NewContext();
+        var procedures = await read.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Object!.Module!.ReleaseId == summary.ReleaseId)
+            .Where(s => s.Kind == "procedure" || s.Kind == "local_procedure"
+                     || s.Kind == "internal_procedure" || s.Kind == "protected_procedure"
+                     || s.Kind == "trigger" || s.Kind == "event_publisher" || s.Kind == "event_subscriber")
+            .Where(s => s.LineNumber > 0)
+            .ToListAsync();
+        procedures.Should().NotBeEmpty(
+            because: "DK Core ships .al source with at least a handful of procedure bodies");
+        procedures.Where(p => p.EndLine is not null).Should().NotBeEmpty(
+            because: "the walker should now stamp end_line on body-bearing kinds");
+        // Every populated row obeys the start <= end invariant.
+        procedures.Where(p => p.EndLine is not null).Should().AllSatisfy(p =>
+        {
+            p.EndLine!.Value.Should().BeGreaterOrEqualTo(p.LineNumber);
+            p.EndColumn.Should().NotBeNull();
+        });
+
+        // Field rows don't have bodies — they keep EndLine null.
+        var fields = await read.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Object!.Module!.ReleaseId == summary.ReleaseId)
+            .Where(s => s.Kind == "table_field" || s.Kind == "page_field" || s.Kind == "page_action")
+            .ToListAsync();
+        fields.Should().AllSatisfy(f => f.EndLine.Should().BeNull(
+            because: "fields and actions don't have bodies"));
+    }
+
+    [Fact]
+    public async Task Stamps_source_symbol_id_on_method_call_references_emitted_from_procedure_bodies()
+    {
+        // Issue #181: ExtractedReference now carries SourceMemberLine and
+        // the import service resolves it to the symbol's id, stamping
+        // source_symbol_id on the persisted row. The forward-edge MCP
+        // list_procedure_calls keys on this column.
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        await using var s1 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        var summary = await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "Source-symbol-id DK Core",
+            Kind: "first_party",
+            ParentReleaseId: null,
+            ApplicationVersionId: null,
+            Uploads: new[] { new AppFileUpload("dk.app", s1, null) }));
+
+        await using var read = _db.NewContext();
+        var memberRefs = await read.OeModuleReferences.AsNoTracking()
+            .Where(r => r.Module!.ReleaseId == summary.ReleaseId)
+            .Where(r => r.ReferenceKind == "method_call" || r.ReferenceKind == "field_access")
+            .Select(r => new { r.Id, r.SourceSymbolId, r.SourceObjectId, r.LineNumber })
+            .ToListAsync();
+        memberRefs.Should().NotBeEmpty();
+        memberRefs.Where(r => r.SourceSymbolId is not null).Should().NotBeEmpty(
+            because: "method_call / field_access rows emitted from inside a procedure body should carry source_symbol_id");
+
+        // Every stamped row must point at an oe_module_symbols row that
+        // belongs to the same source object — defensive check that the
+        // (Owner, LineNumber) match didn't cross objects.
+        var stampedIds = memberRefs.Where(r => r.SourceSymbolId is not null).Select(r => r.SourceSymbolId!.Value).Distinct().ToList();
+        var symbolOwners = await read.OeModuleSymbols.AsNoTracking()
+            .Where(s => stampedIds.Contains(s.Id))
+            .Select(s => new { s.Id, s.ObjectId })
+            .ToListAsync();
+        var ownerById = symbolOwners.ToDictionary(s => s.Id, s => s.ObjectId);
+        memberRefs.Where(r => r.SourceSymbolId is not null).Should().AllSatisfy(r =>
+        {
+            ownerById[r.SourceSymbolId!.Value].Should().Be(r.SourceObjectId,
+                because: "source_symbol_id must reference a symbol on the same source object");
+        });
+    }
 }

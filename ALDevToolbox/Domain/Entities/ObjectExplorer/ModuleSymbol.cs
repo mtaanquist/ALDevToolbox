@@ -52,4 +52,21 @@ public class ModuleSymbol
 
     /// <summary>1-based column past the last character of the name token.</summary>
     public int ColumnEnd { get; set; }
+
+    /// <summary>
+    /// 1-based line where the body's matching <c>end;</c> sits. Populated
+    /// for body-bearing kinds (<c>procedure</c>, <c>local_procedure</c>,
+    /// <c>internal_procedure</c>, <c>protected_procedure</c>, <c>trigger</c>,
+    /// <c>event_publisher</c>, <c>event_subscriber</c>) when the source
+    /// extractor was able to track the matching close; null for kinds with
+    /// no body (fields, page fields, actions, query columns) and for legacy
+    /// rows imported before the column existed. Lets the forward-edge MCP
+    /// tools slice a procedure body and bound a "calls from this procedure"
+    /// reference query with a single indexed predicate instead of inferring
+    /// the close from the next-symbol line.
+    /// </summary>
+    public int? EndLine { get; set; }
+
+    /// <summary>1-based column past the closing <c>end</c> keyword. Same population rules as <see cref="EndLine"/>.</summary>
+    public int? EndColumn { get; set; }
 }

@@ -85,7 +85,8 @@ public static class AlReferenceExtractor
         {
             return new AlExtractionResult(
                 Array.Empty<ExtractedReference>(),
-                new ExtractionStats(0, 0, Array.Empty<UnresolvedSample>()));
+                new ExtractionStats(0, 0, Array.Empty<UnresolvedSample>()),
+                Array.Empty<ExtractedSymbolScope>());
         }
 
         var tokens = AlLexer.Tokenize(source);
@@ -148,7 +149,8 @@ public static class AlReferenceExtractor
 
             return new AlExtractionResult(
                 _state.Refs,
-                new ExtractionStats(_state.Resolved, _state.Unresolved, _state.UnresolvedSamples));
+                new ExtractionStats(_state.Resolved, _state.Unresolved, _state.UnresolvedSamples),
+                _state.SymbolScopes);
         }
 
         /// <summary>
@@ -478,7 +480,7 @@ public static class AlReferenceExtractor
                 return true;
             }
 
-            _state.Refs.Add(new ExtractedReference(
+            _state.EmitReference(new ExtractedReference(
                 Line: nameTok.Line,
                 Column: nameTok.Column,
                 TargetAppId: target.AppId,
@@ -526,7 +528,7 @@ public static class AlReferenceExtractor
                         && AlExtractionState.IsFieldKind(member.Kind))
                     {
                         var targetOwner = member.DeclaringType ?? ownerTable;
-                        _state.Refs.Add(new ExtractedReference(
+                        _state.EmitReference(new ExtractedReference(
                             Line: tok.Line,
                             Column: tok.Column,
                             TargetAppId: targetOwner.AppId,
@@ -593,7 +595,7 @@ public static class AlReferenceExtractor
                         var key = ((long)tok.Line << 20) | (uint)tok.Column;
                         if (seen.Add(key))
                         {
-                            _state.Refs.Add(new ExtractedReference(
+                            _state.EmitReference(new ExtractedReference(
                                 Line: tok.Line,
                                 Column: tok.Column,
                                 TargetAppId: target.AppId,
@@ -656,7 +658,7 @@ public static class AlReferenceExtractor
                         if (target is not null
                             && string.Equals(target.Kind, "table", StringComparison.OrdinalIgnoreCase))
                         {
-                            _state.Refs.Add(new ExtractedReference(
+                            _state.EmitReference(new ExtractedReference(
                                 Line: nameTok.Line,
                                 Column: nameTok.Column,
                                 TargetAppId: target.AppId,
@@ -732,7 +734,7 @@ public static class AlReferenceExtractor
                     && string.Equals(resolved.Kind, "table", StringComparison.OrdinalIgnoreCase))
                 {
                     queriedTable = resolved;
-                    _state.Refs.Add(new ExtractedReference(
+                    _state.EmitReference(new ExtractedReference(
                         Line: tableTok.Line,
                         Column: tableTok.Column,
                         TargetAppId: resolved.AppId,
@@ -983,7 +985,7 @@ public static class AlReferenceExtractor
                 return;
             }
 
-            _state.Refs.Add(new ExtractedReference(
+            _state.EmitReference(new ExtractedReference(
                 Line: attrLine,
                 Column: attrCol,
                 TargetAppId: target.AppId,
@@ -1246,7 +1248,10 @@ public sealed record ExtractedReference(
     string TargetObjectName,
     string? TargetMemberName,
     string? TargetMemberKind,
-    string ReferenceKind);
+    string ReferenceKind,
+    string? SourceMemberName = null,
+    string? SourceMemberKind = null,
+    int? SourceMemberLine = null);
 
 /// <summary>Per-file extraction statistics — used for diagnostic logging.</summary>
 public sealed record ExtractionStats(
@@ -1289,7 +1294,24 @@ public sealed record UnresolvedSample(
     string? ReceiverName = null,
     Guid? ReceiverAppId = null);
 
+/// <summary>
+/// Body-bearing symbol scope captured during the walk. One entry per
+/// <c>procedure</c> / <c>trigger</c> / event publisher / event subscriber
+/// whose matching <c>end;</c> was reached. The import service resolves
+/// each entry back to the <c>oe_module_symbols</c> row it stamps
+/// <c>end_line</c> / <c>end_column</c> on, via the
+/// <c>(Kind, Name, StartLine)</c> tuple — the same tuple the persistence
+/// layer uses for overload matching.
+/// </summary>
+public sealed record ExtractedSymbolScope(
+    string Kind,
+    string Name,
+    int StartLine,
+    int EndLine,
+    int EndColumn);
+
 /// <summary>Result envelope: extracted rows plus the run's stats.</summary>
 public sealed record AlExtractionResult(
     IReadOnlyList<ExtractedReference> References,
-    ExtractionStats Stats);
+    ExtractionStats Stats,
+    IReadOnlyList<ExtractedSymbolScope> SymbolScopes);

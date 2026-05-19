@@ -1340,9 +1340,16 @@ public class ReleaseImportService
                 s.Name,
                 s.Kind,
                 s.ReturnType,
+                s.LineNumber,
             })
             .ToListAsync(ct);
         var membersByOwner = new Dictionary<long, List<MemberEntry>>();
+        // (Owner, LineNumber) → SymbolId. Used by the reference loop to
+        // resolve source_symbol_id (the calling procedure / trigger) and
+        // by the scope-tracking pass to attach end_line / end_column onto
+        // the right symbol row without a name+kind ambiguity dance —
+        // line is unique within an object. See issues #180 / #181.
+        var symbolIdByOwnerAndLine = new Dictionary<(long OwnerId, int LineNumber), long>();
         foreach (var m in memberRows)
         {
             if (!membersByOwner.TryGetValue(m.OwnerId, out var list))
@@ -1355,6 +1362,10 @@ public class ReleaseImportService
             // so chained access can resolve through return types.
             var (retKw, retName) = ParseReturnType(m.ReturnType);
             list.Add(new MemberEntry(m.SymbolId, m.Name, m.Kind, retKw, retName));
+            if (m.LineNumber > 0)
+            {
+                symbolIdByOwnerAndLine[(m.OwnerId, m.LineNumber)] = m.SymbolId;
+            }
         }
 
         // (3) Per-object globals from oe_module_variables. Keyed by
@@ -1564,10 +1575,51 @@ public class ReleaseImportService
                 }
             }
 
+            // Stamp end_line / end_column onto the body-bearing symbols
+            // the walker just finished tracing through. The extractor
+            // emits one ExtractedSymbolScope per (procedure / trigger /
+            // event publisher / event subscriber) on body close; we
+            // resolve back to the symbol row by (owner, start line)
+            // since line is unique within an object. Attach + mark
+            // modified so EF emits a targeted UPDATE for these two
+            // columns only — no full-row reload. See issue #181.
+            foreach (var scope in result.SymbolScopes)
+            {
+                if (!symbolIdByOwnerAndLine.TryGetValue(
+                        (file.Owner.Id, scope.StartLine),
+                        out var scopeSymbolId))
+                {
+                    continue;
+                }
+                var stub = new OeModuleSymbol
+                {
+                    Id = scopeSymbolId,
+                    EndLine = scope.EndLine,
+                    EndColumn = scope.EndColumn,
+                };
+                _db.OeModuleSymbols.Attach(stub);
+                _db.Entry(stub).Property(s => s.EndLine).IsModified = true;
+                _db.Entry(stub).Property(s => s.EndColumn).IsModified = true;
+                pending++;
+            }
+
             foreach (var r in result.References)
             {
                 long? targetSymbolId = null;
                 long? targetVariableId = null;
+                // Resolve the owning procedure / trigger that emitted this
+                // reference — the (Owner, StartLine) tuple uniquely
+                // identifies the symbol row. Null for object-scope refs
+                // and for legacy / pre-#181 ingests where the extractor
+                // didn't stamp scope onto ExtractedReference.
+                long? sourceSymbolId = null;
+                if (r.SourceMemberLine is int sourceLine
+                    && symbolIdByOwnerAndLine.TryGetValue(
+                        (file.Owner.Id, sourceLine),
+                        out var resolvedSourceSymbolId))
+                {
+                    sourceSymbolId = resolvedSourceSymbolId;
+                }
                 // Identity-keyed lookup so a tableextension named the
                 // same as the table it extends doesn't claim the table's
                 // symbols at TargetSymbolId stamp time. The reference row
@@ -1615,6 +1667,7 @@ public class ReleaseImportService
                     TargetMemberKind = r.TargetMemberKind,
                     TargetSymbolId = targetSymbolId,
                     TargetVariableId = targetVariableId,
+                    SourceSymbolId = sourceSymbolId,
                 });
                 totalEmitted++;
                 pending++;

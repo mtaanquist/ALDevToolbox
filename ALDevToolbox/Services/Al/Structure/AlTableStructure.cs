@@ -134,7 +134,7 @@ internal sealed class AlTableStructure : IAlObjectStructureExtractor
             }
             var target = _state.Ctx.Resolver.ResolveTypeByName(nameTok.Value);
             if (target is null) return;
-            _state.Refs.Add(new ExtractedReference(
+            _state.EmitReference(new ExtractedReference(
                 Line: nameTok.Line,
                 Column: nameTok.Column,
                 TargetAppId: target.AppId,

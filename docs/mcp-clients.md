@@ -111,6 +111,17 @@ Once connected, the agent has tools for:
   content, and find references to a specific table or field across a BC
   release. Useful for *"which procedures touch the No. field on Sales
   Line in version 28.1?"*-style questions.
+- **Forward-edge navigation** — outline an object, read one procedure's
+  source, list its outgoing calls. The three tools chain naturally:
+  `get_object_outline` returns each symbol's id and line number;
+  `get_procedure_source` slices the body (capped at 200 lines with a
+  truncation marker); `list_procedure_calls` returns the outgoing
+  method calls and field accesses so the agent can follow the chain.
+  Useful for *"what happens when you post a sales order in 28.1?"* —
+  trace from the Sales Order page's Post action through
+  `CallPostDocument` into Codeunit `Sales-Post`. Pass `symbolId` from
+  the outline when the procedure name is ambiguous (page-action
+  `OnAction`, table-field `OnValidate`).
 - **Snippets** — search and fetch snippets your organisation has saved.
 
 The agent acts as you: same organisation, same role, same audit trail. PATs

@@ -127,6 +127,122 @@ public sealed class ObjectExplorerTools
         return matches.Count > MaxResults ? matches.Take(MaxResults).ToList() : matches;
     }
 
+    [McpServerTool(Name = "get_object_outline", ReadOnly = true)]
+    [Description("Returns the outline of one AL object (table, page, codeunit, etc.) in a BC release — its declared procedures, triggers, event publishers, and fields with their line numbers and symbol ids. Use this to discover what an object exposes before calling get_procedure_source or list_procedure_calls. The returned symbol ids disambiguate procedure name collisions (page actions and table fields each carry an OnAction / OnValidate trigger with the same name).")]
+    public async Task<ObjectOutline> GetObjectOutlineAsync(
+        [Description("Release Label ('BC 28.1') or numeric id from list_releases.")] string releaseLabelOrId,
+        [Description("Name of the target object — resolved case-insensitively against oe_module_objects.")] string objectName,
+        [Description("AL kind of the target object. Defaults to 'codeunit'.")] string objectKind = "codeunit",
+        CancellationToken ct = default)
+    {
+        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
+        var outline = await _explorer.GetObjectOutlineAsync(releaseId, objectKind, objectName, ct);
+        if (outline is null)
+        {
+            throw new McpException($"Could not find a {objectKind.Trim().ToLowerInvariant()} named '{objectName}' in release {releaseLabelOrId}. Try search_objects to discover the exact name.");
+        }
+        return outline;
+    }
+
+    [McpServerTool(Name = "get_procedure_source", ReadOnly = true)]
+    [Description("Returns the AL source text of one procedure / trigger body on an object — declaration through matching end. Capped at 200 lines with a truncation marker when the body is longer (call list_procedure_calls or narrow the question in that case). Accept either (objectName, objectKind, procedureName) for the unambiguous case, or symbolId from a prior get_object_outline call when the name is ambiguous (page-action OnAction triggers, table-field OnValidate triggers).")]
+    public async Task<ProcedureSource> GetProcedureSourceAsync(
+        [Description("Release Label or numeric id.")] string releaseLabelOrId,
+        [Description("Symbol id from get_object_outline. Preferred when set — disambiguates OnAction / OnValidate collisions and avoids a name resolution round-trip.")] long? symbolId = null,
+        [Description("Name of the owning object. Required when symbolId is null.")] string? objectName = null,
+        [Description("AL kind of the owning object. Required when symbolId is null.")] string? objectKind = null,
+        [Description("Name of the procedure / trigger. Required when symbolId is null.")] string? procedureName = null,
+        CancellationToken ct = default)
+    {
+        var resolvedSymbolId = symbolId ?? await ResolveProcedureSymbolIdAsync(releaseLabelOrId, objectName, objectKind, procedureName, ct);
+        var source = await _explorer.GetProcedureSourceAsync(resolvedSymbolId, MaxProcedureSourceLines, ct);
+        if (source is null)
+        {
+            throw new McpException($"Symbol id {resolvedSymbolId} either doesn't exist or doesn't have a source file attached. Call get_object_outline to see the current ids for an object.");
+        }
+        return source;
+    }
+
+    [McpServerTool(Name = "list_procedure_calls", ReadOnly = true)]
+    [Description("Returns the outgoing references (method calls, field accesses, type references) emitted from inside one procedure / trigger body. Use this to trace what a procedure does without reading the full source: each row carries the target object + member name + line so the agent can follow the call chain. Same disambiguation rules as get_procedure_source — pass symbolId from get_object_outline when the procedure name is shared (OnAction / OnValidate).")]
+    public async Task<IReadOnlyList<ProcedureCall>> ListProcedureCallsAsync(
+        [Description("Release Label or numeric id.")] string releaseLabelOrId,
+        [Description("Symbol id from get_object_outline. Preferred when set.")] long? symbolId = null,
+        [Description("Name of the owning object. Required when symbolId is null.")] string? objectName = null,
+        [Description("AL kind of the owning object. Required when symbolId is null.")] string? objectKind = null,
+        [Description("Name of the procedure / trigger. Required when symbolId is null.")] string? procedureName = null,
+        CancellationToken ct = default)
+    {
+        var resolvedSymbolId = symbolId ?? await ResolveProcedureSymbolIdAsync(releaseLabelOrId, objectName, objectKind, procedureName, ct);
+        var calls = await _explorer.ListProcedureCallsAsync(resolvedSymbolId, MaxResults, ct);
+        if (calls is null)
+        {
+            throw new McpException($"Symbol id {resolvedSymbolId} doesn't exist. Call get_object_outline to see the current ids for an object.");
+        }
+        return calls;
+    }
+
+    private const int MaxProcedureSourceLines = 200;
+
+    /// <summary>
+    /// Body-bearing symbol kinds — what counts as a "procedure" the
+    /// forward-edge tools can read source for. Mirrors the kinds the
+    /// procedure walker pushes a scope frame for.
+    /// </summary>
+    private static readonly HashSet<string> BodyBearingKinds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "procedure", "local_procedure", "internal_procedure", "protected_procedure",
+        "trigger", "event_publisher", "event_subscriber",
+    };
+
+    /// <summary>
+    /// Resolves a procedure / trigger to its <c>oe_module_symbols.id</c>
+    /// by (release, object, kind, procedure name). Throws
+    /// <see cref="McpException"/> with copy steering the agent to the
+    /// outline + symbolId form when the name is ambiguous on the
+    /// object (page-action OnAction triggers, table-field OnValidate
+    /// triggers, multiple overloads of the same procedure).
+    /// </summary>
+    private async Task<long> ResolveProcedureSymbolIdAsync(
+        string releaseLabelOrId,
+        string? objectName,
+        string? objectKind,
+        string? procedureName,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(objectName)
+            || string.IsNullOrWhiteSpace(objectKind)
+            || string.IsNullOrWhiteSpace(procedureName))
+        {
+            throw new McpException("Must supply either symbolId or all of (objectName, objectKind, procedureName).");
+        }
+
+        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
+        var ownerKind = objectKind.Trim().ToLowerInvariant();
+        var ownerName = objectName.Trim().ToLowerInvariant();
+        var procName = procedureName.Trim();
+        var procNameLower = procName.ToLowerInvariant();
+
+        var candidates = await _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Object!.Module!.ReleaseId == releaseId
+                        && s.Object.Kind == ownerKind
+                        && s.Object.Name.ToLower() == ownerName
+                        && s.Name.ToLower() == procNameLower)
+            .Select(s => new { s.Id, s.Kind, s.LineNumber })
+            .ToListAsync(ct);
+
+        var bodied = candidates.Where(c => BodyBearingKinds.Contains(c.Kind)).ToList();
+        if (bodied.Count == 0)
+        {
+            throw new McpException($"No procedure or trigger named '{procName}' on {ownerKind} '{objectName}' in release {releaseLabelOrId}. Call get_object_outline to see what this object exposes.");
+        }
+        if (bodied.Count > 1)
+        {
+            throw new McpException($"Multiple symbols named '{procName}' on {ownerKind} '{objectName}' (typical for page-action OnAction triggers and table-field OnValidate triggers). Call get_object_outline to see their line numbers and ids, then pass symbolId instead of procedureName.");
+        }
+        return bodied[0].Id;
+    }
+
     private async Task<int> ResolveReleaseAsync(string releaseLabelOrId, CancellationToken ct)
     {
         if (int.TryParse(releaseLabelOrId, out var asId))

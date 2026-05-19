@@ -108,6 +108,73 @@ public sealed record ObjectSymbolRow(
     int? FieldId,
     int LineNumber);
 
+/// <summary>
+/// Outline projection of a single AL object — the slim surface the
+/// forward-edge MCP <c>get_object_outline</c> tool returns. Drops
+/// <see cref="ObjectDetail.Variables"/> (not needed for trace
+/// navigation) and the extends-* fields (kept on the heavier
+/// <see cref="ObjectDetail"/> when the inspector panel needs them).
+/// Symbol rows carry the same <see cref="ObjectSymbolRow.Id"/> the
+/// per-procedure tools accept as a disambiguating <c>symbolId</c> when
+/// the simple by-name form is ambiguous (page actions and table fields
+/// both produce multiple <c>OnAction</c> / <c>OnValidate</c> triggers
+/// per object).
+/// </summary>
+public sealed record ObjectOutline(
+    long Id,
+    string Kind,
+    int? ObjectId,
+    string Name,
+    long ModuleId,
+    string ModuleName,
+    long? SourceFileId,
+    string? SourceFilePath,
+    int LineNumber,
+    IReadOnlyList<ObjectSymbolRow> Symbols);
+
+/// <summary>
+/// Slice of an AL procedure / trigger body returned by the
+/// <c>get_procedure_source</c> MCP tool. <see cref="Source"/> is the
+/// raw text from <c>oe_module_files.content</c> sliced inclusive of
+/// the declaration line and the matching <c>end;</c> line, capped at
+/// a maxLines budget so a pathological procedure can't blow the MCP
+/// response. When <see cref="Truncated"/> is true, the source ends with
+/// a comment marker noting the full length so the agent knows to ask
+/// for more focused queries via <c>list_procedure_calls</c> instead.
+/// </summary>
+public sealed record ProcedureSource(
+    long SymbolId,
+    string ObjectName,
+    string ObjectKind,
+    string Kind,
+    string Name,
+    string? Signature,
+    string? ReturnType,
+    int StartLine,
+    int EndLine,
+    bool Truncated,
+    string Source);
+
+/// <summary>
+/// One outgoing call (or field access) from a procedure body, returned
+/// by the <c>list_procedure_calls</c> MCP tool. Lets an agent walking
+/// a trace chain see "what does this procedure touch?" without having
+/// to read the entire body. <see cref="TargetAppId"/> + the target
+/// triplet identify the dependency module across release boundaries
+/// (the same identity tuple <c>find_references</c> uses in reverse).
+/// </summary>
+public sealed record ProcedureCall(
+    long Id,
+    Guid TargetAppId,
+    string TargetObjectKind,
+    int? TargetObjectId,
+    string TargetObjectName,
+    string? TargetMemberName,
+    string? TargetMemberKind,
+    string ReferenceKind,
+    int? LineNumber,
+    int? ColumnNumber);
+
 public sealed record ObjectVariableRow(
     long Id,
     string Name,

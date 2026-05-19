@@ -25,6 +25,7 @@ internal sealed class ModuleReferenceConfiguration : IEntityTypeConfiguration<Mo
         entity.Property(e => e.TargetMemberKind).HasColumnName("target_member_kind");
         entity.Property(e => e.TargetSymbolId).HasColumnName("target_symbol_id");
         entity.Property(e => e.TargetVariableId).HasColumnName("target_variable_id");
+        entity.Property(e => e.SourceSymbolId).HasColumnName("source_symbol_id");
 
         entity.HasOne(e => e.Organization)
             .WithMany()
@@ -49,6 +50,11 @@ internal sealed class ModuleReferenceConfiguration : IEntityTypeConfiguration<Mo
         entity.HasOne(e => e.TargetVariable)
             .WithMany()
             .HasForeignKey(e => e.TargetVariableId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        entity.HasOne(e => e.SourceSymbol)
+            .WithMany()
+            .HasForeignKey(e => e.SourceSymbolId)
             .OnDelete(DeleteBehavior.SetNull);
 
         // Primary find-references query: target triplet → matching rows. Used by the
@@ -90,5 +96,12 @@ internal sealed class ModuleReferenceConfiguration : IEntityTypeConfiguration<Mo
         entity.HasIndex(e => e.TargetVariableId)
             .HasDatabaseName("ix_oe_module_references_target_variable")
             .HasFilter("\"target_variable_id\" IS NOT NULL");
+
+        // Forward-edge "what does this procedure call?" — partial-filtered so
+        // it only carries rows emitted from inside a procedure body, which is
+        // a small minority of all references on a large catalog import.
+        entity.HasIndex(e => e.SourceSymbolId)
+            .HasDatabaseName("ix_oe_module_references_source_symbol")
+            .HasFilter("\"source_symbol_id\" IS NOT NULL");
     }
 }

@@ -8,6 +8,7 @@ using ALDevToolbox.Services.Mcp.Tools;
 using ALDevToolbox.Tests.Builders;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol;
@@ -192,6 +193,132 @@ public sealed class McpToolTests : IDisposable
                 CoreIdRangeTo: 90999)))
             .Should().ThrowAsync<McpException>()
             .Where(ex => ex.Message.Contains("MaxWorkspaceBytes"));
+    }
+
+    // ---- ObjectExplorerTools ----------------------------------------------
+
+    private static readonly string OeFixtureRoot =
+        Path.Combine(AppContext.BaseDirectory, "Fixtures", "ObjectExplorer");
+
+    private async Task<int> SeedDkCoreReleaseAsync()
+    {
+        await using var ctx = _db.NewContext();
+        var importer = new ALDevToolbox.Services.ObjectExplorer.ReleaseImportService(
+            ctx, _db.OrgContext, _db.NewQuotaGuard(ctx),
+            NullLogger<ALDevToolbox.Services.ObjectExplorer.ReleaseImportService>.Instance);
+        await using var s1 = File.OpenRead(Path.Combine(OeFixtureRoot, "Microsoft_DK_Core.app"));
+        var summary = await importer.ImportReleaseAsync(
+            new ALDevToolbox.Services.ObjectExplorer.ReleaseImportRequest(
+                Label: "MCP DK Core",
+                Kind: "first_party",
+                ParentReleaseId: null,
+                ApplicationVersionId: null,
+                Uploads: new[]
+                {
+                    new ALDevToolbox.Services.ObjectExplorer.AppFileUpload("dk.app", s1, SourceZipStream: null),
+                }));
+        return summary.ReleaseId;
+    }
+
+    private ObjectExplorerTools NewOeTools(Data.AppDbContext ctx)
+    {
+        var explorer = new ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService(
+            ctx, NullLogger<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>.Instance);
+        return new ObjectExplorerTools(explorer, ctx);
+    }
+
+    [Fact]
+    public async Task GetObjectOutline_returns_symbol_rows_with_ids_and_line_numbers()
+    {
+        var releaseId = await SeedDkCoreReleaseAsync();
+        await using var ctx = _db.NewContext();
+        var tools = NewOeTools(ctx);
+
+        // Pick any codeunit in DK Core to outline. We discover the name
+        // via the same path the agent would — search_objects.
+        var found = await tools.SearchObjectsAsync(releaseId.ToString(), namePattern: "", kind: "codeunit");
+        found.Should().NotBeEmpty(because: "DK Core ships at least one codeunit");
+        var target = found.First();
+
+        var outline = await tools.GetObjectOutlineAsync(releaseId.ToString(), target.Name, "codeunit");
+        outline.Name.Should().Be(target.Name);
+        outline.Symbols.Should().NotBeEmpty(
+            because: "every imported codeunit has at least one procedure / trigger row");
+        outline.Symbols.Should().AllSatisfy(s => s.Id.Should().BeGreaterThan(0));
+        outline.Symbols.Should().BeInAscendingOrder(s => s.LineNumber);
+    }
+
+    [Fact]
+    public async Task GetObjectOutline_throws_McpException_for_unknown_object()
+    {
+        var releaseId = await SeedDkCoreReleaseAsync();
+        await using var ctx = _db.NewContext();
+        var tools = NewOeTools(ctx);
+
+        await FluentActions.Awaiting(() => tools.GetObjectOutlineAsync(
+                releaseId.ToString(), "Does Not Exist", "codeunit"))
+            .Should().ThrowAsync<McpException>()
+            .Where(ex => ex.Message.Contains("search_objects"));
+    }
+
+    [Fact]
+    public async Task GetProcedureSource_returns_body_slice_by_symbolId()
+    {
+        var releaseId = await SeedDkCoreReleaseAsync();
+        await using var ctx = _db.NewContext();
+        var tools = NewOeTools(ctx);
+
+        // Pick a body-bearing symbol from any codeunit. We resolve it
+        // via the database directly to avoid coupling the test to a
+        // specific DK Core procedure name.
+        var symbolId = await ctx.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Object!.Module!.ReleaseId == releaseId)
+            .Where(s => s.Kind == "procedure" || s.Kind == "trigger"
+                     || s.Kind == "internal_procedure" || s.Kind == "local_procedure")
+            .Where(s => s.EndLine != null)
+            .Select(s => s.Id)
+            .FirstOrDefaultAsync();
+        symbolId.Should().NotBe(0, because: "the importer should have stamped EndLine on at least one procedure");
+
+        var source = await tools.GetProcedureSourceAsync(releaseId.ToString(), symbolId: symbolId);
+        source.SymbolId.Should().Be(symbolId);
+        source.Source.Should().NotBeNullOrEmpty();
+        source.EndLine.Should().BeGreaterOrEqualTo(source.StartLine);
+    }
+
+    [Fact]
+    public async Task GetProcedureSource_throws_McpException_when_neither_symbolId_nor_name_supplied()
+    {
+        var releaseId = await SeedDkCoreReleaseAsync();
+        await using var ctx = _db.NewContext();
+        var tools = NewOeTools(ctx);
+
+        await FluentActions.Awaiting(() => tools.GetProcedureSourceAsync(releaseId.ToString()))
+            .Should().ThrowAsync<McpException>()
+            .Where(ex => ex.Message.Contains("symbolId"));
+    }
+
+    [Fact]
+    public async Task ListProcedureCalls_returns_outgoing_references_for_a_procedure()
+    {
+        var releaseId = await SeedDkCoreReleaseAsync();
+        await using var ctx = _db.NewContext();
+        var tools = NewOeTools(ctx);
+
+        // Find a procedure that has at least one outgoing reference
+        // stamped (source_symbol_id set). Most procedures in DK Core
+        // emit a method_call / field_access into the Base App.
+        var symbolId = await ctx.OeModuleReferences.AsNoTracking()
+            .Where(r => r.Module!.ReleaseId == releaseId)
+            .Where(r => r.SourceSymbolId != null)
+            .Select(r => r.SourceSymbolId!.Value)
+            .FirstOrDefaultAsync();
+        symbolId.Should().NotBe(0,
+            because: "the importer should have stamped source_symbol_id on at least one method_call / field_access row");
+
+        var calls = await tools.ListProcedureCallsAsync(releaseId.ToString(), symbolId: symbolId);
+        calls.Should().NotBeEmpty();
+        calls.Should().AllSatisfy(c => c.TargetObjectName.Should().NotBeNullOrEmpty());
     }
 
     // ---- helpers -----------------------------------------------------------
