@@ -214,23 +214,37 @@ builder.Services.AddOpenIddict()
 
         // MCP clients (Claude web's custom connector, Claude Code) include
         // a `resource` parameter on every authorise + token request per the
-        // MCP 2025-11-25 spec (RFC 8707 — Resource Indicators). OpenIddict's
-        // stock ValidateResources handler compares it against
-        // OpenIddictServerOptions.Resources, an in-memory HashSet seeded at
-        // startup via RegisterResources(). We don't know the public host
-        // when the host builds (no PublicUrl config; deployments use the
-        // request's Forwarded-* headers as the source of truth), and
-        // attempts to mutate the set per-request from a pre-validator event
-        // handler didn't take effect — see PR #191 / #192 retrospectives.
-        // The validator is a defence-in-depth check for servers fronting
-        // multiple resources; ALDevToolbox only ever issues tokens for
-        // /mcp, the bearer-token audience is still bound on issue, and
-        // McpBearerPolicy already enforces audience on every /mcp request.
+        // MCP 2025-11-25 spec (RFC 8707 — Resource Indicators). OpenIddict
+        // gates such requests in two places, both of which we opt out of:
+        //
+        //   * DisableResourceValidation removes the stock ValidateResources
+        //     handler that compares the request value against the in-memory
+        //     OpenIddictServerOptions.Resources allowlist (populated at
+        //     startup via RegisterResources()).
+        //   * IgnoreResourcePermissions removes ValidateResourcePermissions,
+        //     the per-client check that requires the client's Permissions
+        //     collection to carry "rsrc:" + <resource_url>. CIMD- and
+        //     DCR-registered clients are created without that permission
+        //     and we don't know the canonical URL when CimdClientResolver
+        //     runs in a way that survives existing rows.
+        //
+        // We don't know the public host when the host builds (no PublicUrl
+        // config; deployments use the request's Forwarded-* headers as the
+        // source of truth), and attempts to mutate state dynamically from
+        // pre-validator event handlers didn't take effect — see the
+        // PR #191 / #192 retrospectives. Both checks are defence-in-depth
+        // for servers fronting multiple resources; ALDevToolbox only ever
+        // issues tokens for /mcp, the bearer-token audience is still bound
+        // on issue, and McpBearerPolicy already enforces audience on every
+        // incoming /mcp request.
+        //
         // TODO: Revisit once OpenIddict ships native DCR / CIMD support
         // (tracked in openiddict/openiddict-core#2404, targeted at 7.6.0)
         // — that release will likely introduce a more idiomatic way to
-        // register resources dynamically from a CIMD application descriptor.
+        // register resources dynamically from a CIMD application descriptor,
+        // at which point both opt-outs can come back on.
         o.DisableResourceValidation();
+        o.IgnoreResourcePermissions();
 
         // Reuse the existing Data Protection key ring (mounted on the
         // app-keys volume) for token format wrapping. Losing the key ring

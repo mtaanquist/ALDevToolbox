@@ -191,26 +191,37 @@ in-memory `OpenIddictServerOptions.Resources` set populated at startup via
 `o.RegisterResources(...)`, and rejects unrecognised values with `ID2190
 invalid_target`.
 
+OpenIddict actually gates resource use in two places, both of which we
+opt out of:
+
+* `DisableResourceValidation()` removes the global allowlist check
+  described above (`ID2190 invalid_target`).
+* `IgnoreResourcePermissions()` removes the per-client check that
+  requires the application's `Permissions` collection to carry
+  `"rsrc:" + <resource_url>` (`ID2192 invalid_request — client not
+  allowed to use the resource`). CIMD- and DCR-registered clients are
+  created without that permission, and back-filling it would require
+  the same dynamic resource-URL resolution that defeated us above.
+
 The public host isn't known when the host builds (deployments use the
 request's `X-Forwarded-*` headers as the source of truth and there is no
-`PublicUrl` configuration). Two attempts to mutate the set on the fly from
-a pre-validator event handler — first by upserting the `mcp` scope row's
-`Resources` column (#191), then by adding to `Options.Resources` directly
-(#192) — failed to take effect for reasons we couldn't diagnose without
-deeper instrumentation. Rather than pile on more workarounds, we set
-`o.DisableResourceValidation()` and accept the resource as-is.
+`PublicUrl` configuration). Two attempts to mutate the global allowlist
+on the fly from a pre-validator event handler — first by upserting the
+`mcp` scope row's `Resources` column (#191), then by adding to
+`Options.Resources` directly (#192) — failed to take effect for reasons
+we couldn't diagnose without deeper instrumentation. Rather than pile on
+more workarounds, both validators are turned off.
 
-This is safe in our threat model: ALDevToolbox only ever issues tokens for
-the `/mcp` resource, the audience is still recorded on the issued token,
-and `Services/OAuth/McpBearerPolicy.cs` enforces the audience on every
-incoming `/mcp` request. The validator was defence-in-depth for servers
-fronting multiple resources, which we are not.
+This is safe in our threat model: ALDevToolbox only ever issues tokens
+for the `/mcp` resource, the audience is still recorded on the issued
+token, and `Services/OAuth/McpBearerPolicy.cs` enforces the audience on
+every incoming `/mcp` request. Both validators were defence-in-depth for
+servers fronting multiple resources, which we are not.
 
 Revisit when OpenIddict adds native DCR / CIMD support
 (openiddict/openiddict-core#2404, targeted at 7.6.0) — that release will
 likely surface a more idiomatic way to register resources from a CIMD
-application descriptor, at which point the dynamic-add approach we
-abandoned should become viable.
+application descriptor, at which point both opt-outs can come back on.
 
 ## Consent screen
 
