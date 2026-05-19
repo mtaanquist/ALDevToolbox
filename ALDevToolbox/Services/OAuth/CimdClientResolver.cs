@@ -128,7 +128,6 @@ public sealed class CimdClientResolver : IOpenIddictServerHandler<ValidateAuthor
                 OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode,
                 OpenIddictConstants.Permissions.GrantTypes.RefreshToken,
                 OpenIddictConstants.Permissions.ResponseTypes.Code,
-                OpenIddictConstants.Permissions.Scopes.Profile,
                 "scp:mcp",
                 "scp:" + OpenIddictConstants.Scopes.OfflineAccess,
             },

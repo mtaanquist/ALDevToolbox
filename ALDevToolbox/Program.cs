@@ -210,7 +210,6 @@ builder.Services.AddOpenIddict()
         // Single resource scope today. offline_access enables refresh
         // tokens — Claude appends it when our discovery metadata
         // advertises it in scopes_supported.
-        o.RegisterScopes(OpenIddict.Abstractions.OpenIddictConstants.Permissions.Scopes.Profile);
         o.RegisterScopes("mcp", OpenIddict.Abstractions.OpenIddictConstants.Scopes.OfflineAccess);
 
         // Reuse the existing Data Protection key ring (mounted on the
