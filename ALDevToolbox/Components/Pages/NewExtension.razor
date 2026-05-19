@@ -103,8 +103,10 @@
                            @bind="_brief" @bind:event="oninput" />
                     <textarea name="Description" rows="3" placeholder="Longer description (optional)"
                               @bind="_description" @bind:event="oninput"></textarea>
-                    <input type="text" name="Publisher" placeholder="Publisher" required
-                           title="Required." @bind="_publisher" @bind:event="oninput" />
+                    @* Publisher comes from /admin/configuration/defaults at
+                       generation time. No form input — a standalone extension
+                       inherits whatever the org has configured, same as the
+                       workspace flow. *@
                 </section>
 
                 <IdRangeEditor IdPrefix="ext-id"
@@ -274,7 +276,6 @@
     private string _extensionName = string.Empty;
     private string _brief = string.Empty;
     private string _description = string.Empty;
-    private string _publisher = string.Empty;
     private int _idRangeFrom = 90000;
     private int _idRangeTo = 90999;
     private string _applicationVersion = string.Empty;
@@ -329,16 +330,11 @@
         {
             ApplyTemplateDefaults(_selected);
         }
-        // Pre-fill the org-level defaults block (Milestone P3.14). Brief and
-        // description are admin-curated free-text fields; they don't have
-        // template-level overrides, so we always use the org's value when no
-        // sibling-extension import has set them. The id range stays driven by
-        // the template above (per-template id ranges are a deliberate split).
-        if (_workspaceContext is null && _orgConfig is not null)
-        {
-            _brief = _orgConfig.Settings.DefaultBrief;
-            _description = _orgConfig.Settings.DefaultCoreDescription;
-        }
+        // No brief / description pre-fill on this page. The org-level
+        // defaults at /admin/configuration/defaults are written against the
+        // workspace flow's mustache context — typically referencing
+        // {{workspace_name}} or {{tenant_id}} — which a standalone extension
+        // can't resolve. Admins type a per-extension blurb here instead.
     }
 
     private void OnApplicationVersionChanged()
@@ -362,7 +358,8 @@
     private void ApplyTemplateDefaults(RuntimeTemplate template)
     {
         _templateKey = template.Key;
-        _publisher = template.Defaults.Publisher;
+        // Publisher is resolved at the generation endpoint from
+        // OrganizationSettings.DefaultPublisher — no form-side state needed.
         (_applicationVersion, _runtimeVersion) =
             TemplateDefaultsResolver.ResolveApplicationAndRuntime(template, _applicationVersions);
     }
@@ -579,7 +576,8 @@
         _extensionName = plan.ExtensionName;
         _brief = plan.Brief;
         _description = plan.Description;
-        _publisher = plan.Publisher;
+        // Publisher is no longer form-side state — the endpoint resolves it
+        // from OrganizationSettings.DefaultPublisher at generation time.
         _applicationVersion = plan.ApplicationVersion;
         _runtimeVersion = plan.RuntimeVersion;
         _idRangeFrom = plan.IdRangeFrom;
@@ -612,10 +610,6 @@
         _applicationVersion = plan.ApplicationVersion;
         _runtimeVersion = plan.RuntimeVersion;
         _includeExamples = plan.IncludeExamples;
-        if (template is not null)
-        {
-            _publisher = template.Defaults.Publisher;
-        }
 
         if (extensions.Count > 0)
         {

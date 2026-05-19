@@ -55,7 +55,7 @@ internal static class GenerationEndpoints
             }
         }).RequireAuthorization();
 
-        app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen, IAntiforgery antiforgery, CancellationToken ct) =>
+        app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen, OrganizationConfigService orgConfig, IAntiforgery antiforgery, CancellationToken ct) =>
         {
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
             var form = await ctx.Request.ReadFormAsync(ct);
@@ -74,6 +74,13 @@ internal static class GenerationEndpoints
                     DepVersion: i < versions.Count ? versions[i] ?? string.Empty : string.Empty));
             }
 
+            // Publisher is no longer a form input — it always comes from
+            // the org-level default the admin set on
+            // /admin/configuration/defaults. Resolving it here keeps the
+            // form lean and matches the workspace flow's policy: there's
+            // exactly one publisher per org, configured in one place.
+            var orgPublisher = (await orgConfig.GetCurrentAsync(ct)).Settings.DefaultPublisher;
+
             var plan = new StandaloneExtensionPlan(
                 TemplateKey: form["TemplateKey"].ToString(),
                 ExtensionName: form["ExtensionName"].ToString().Trim(),
@@ -84,7 +91,7 @@ internal static class GenerationEndpoints
                 IdRangeFrom: int.TryParse(form["IdRangeFrom"], out var idFrom) ? idFrom : 0,
                 IdRangeTo: int.TryParse(form["IdRangeTo"], out var idTo) ? idTo : 0,
                 IncludeExamples: form["IncludeExamples"] == "true" || form["IncludeExamples"] == "on",
-                Publisher: form["Publisher"].ToString().Trim(),
+                Publisher: orgPublisher,
                 Dependencies: dependencies);
 
             var workspaceName = form["WorkspaceName"].ToString().Trim();
