@@ -293,8 +293,32 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     flex-direction: column;
 }
 
+.sidebar-links {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    padding: 10px 12px 4px;
+}
+
+.sidebar-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius);
+    color: var(--color-text-secondary);
+    transition: color 0.12s ease, background 0.12s ease;
+}
+
+.sidebar-link:hover {
+    color: var(--color-text);
+    background: var(--color-bg);
+    text-decoration: none;
+}
+
 .sidebar-copyright {
-    padding: 8px 12px 4px;
+    padding: 4px 12px 6px;
     font-size: 11px;
     color: var(--color-text-muted, var(--color-text-secondary));
     text-align: center;
