@@ -1,0 +1,17 @@
+.oauth-scope-list {
+    list-style: disc;
+    padding-left: 1.25rem;
+    margin: 0.5rem 0 0.75rem;
+}
+
+.oauth-scope-list li {
+    margin: 0.25rem 0;
+    line-height: 1.45;
+}
+
+.oauth-consent-form .form-actions {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    margin-top: 0.5rem;
+}

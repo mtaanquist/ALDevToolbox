@@ -258,6 +258,7 @@ builder.Services.AddOpenIddict()
 // cookie principals already carry these claims; this only fires for
 // OAuth access tokens.
 builder.Services.AddScoped<IClaimsTransformation, ALDevToolbox.Services.OAuth.OAuthClaimsTransformer>();
+builder.Services.AddScoped<ALDevToolbox.Services.OAuth.OAuthClientAdminService>();
 
 // MCP server (Model Context Protocol). Mounted at /mcp by McpEndpoints; the
 // PAT auth handler above turns Bearer tokens into the same claim set the

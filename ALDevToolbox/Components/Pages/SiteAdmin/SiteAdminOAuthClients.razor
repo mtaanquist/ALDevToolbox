@@ -1,0 +1,130 @@
+@page "/site-admin/oauth-clients"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@rendermode InteractiveServer
+@using ALDevToolbox.Services
+@using ALDevToolbox.Services.OAuth
+@using ALDevToolbox.Components.Shared
+@inject OAuthClientAdminService Clients
+
+<PageTitle>Site Admin · OAuth clients · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Site Admin · OAuth clients</h1>
+            <p class="muted">
+                Every Claude / Cursor / agent connection across every organisation. DCR rows
+                were registered via <code>/oauth/register</code>; CIMD rows identify themselves
+                with a URL-hosted client metadata document. Revoking signs the assistant out
+                of that user's account; deleting the client wipes it for every user.
+            </p>
+        </div>
+        <a class="btn btn--sm" href="/site-admin/access-tokens">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Personal access tokens</span>
+        </a>
+    </header>
+
+    @if (Ok == "revoked")
+    {
+        <p class="form-info" role="status">Consent revoked.</p>
+    }
+    else if (Ok == "deleted")
+    {
+        <p class="form-info" role="status">OAuth client deleted.</p>
+    }
+
+    @if (_rows is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_rows.Count == 0)
+    {
+        <p class="muted">No OAuth clients have been registered.</p>
+    }
+    else
+    {
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Assistant</th>
+                    <th>Client id</th>
+                    <th>Source</th>
+                    <th>User</th>
+                    <th>Organisation</th>
+                    <th>Scopes</th>
+                    <th>Granted</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var c in _rows)
+            {
+                <tr>
+                    <td>
+                        @c.DisplayName
+                        @if (c.RedirectHosts.Count > 0)
+                        {
+                            <div class="muted small">@string.Join(", ", c.RedirectHosts)</div>
+                        }
+                    </td>
+                    <td class="muted"><code>@Truncate(c.ClientId, 24)</code></td>
+                    <td class="muted">@(c.RegistrationSource ?? "—")</td>
+                    <td>@c.UserEmail</td>
+                    <td>@c.OrganizationName</td>
+                    <td class="muted">@c.Scopes</td>
+                    <td class="muted">@c.GrantedAt.ToString("yyyy-MM-dd")</td>
+                    <td>
+                        @if (c.RevokedAt is null)
+                        {
+                            <span class="status-pill">Active</span>
+                        }
+                        else
+                        {
+                            <span class="status-pill status-pill--muted">Revoked</span>
+                        }
+                    </td>
+                    <td class="row-actions">
+                        @if (c.RevokedAt is null)
+                        {
+                            <button type="button" class="btn btn--sm btn--danger" @onclick="() => RevokeAsync(c.ConsentId)">
+                                Revoke
+                            </button>
+                        }
+                        <button type="button" class="btn btn--sm" @onclick="() => DeleteAsync(c.ClientId)">
+                            Delete client
+                        </button>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+
+    private IReadOnlyList<ConnectedClient>? _rows;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync() => _rows = await Clients.ListAllAsync();
+
+    private async Task RevokeAsync(int consentId)
+    {
+        await Clients.RevokeConsentAsync(consentId, actorUserId: 0, ignoreOrgScope: true);
+        await LoadAsync();
+        Ok = "revoked";
+    }
+
+    private async Task DeleteAsync(string clientId)
+    {
+        await Clients.DeleteClientAsync(clientId);
+        await LoadAsync();
+        Ok = "deleted";
+    }
+
+    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";
+}
