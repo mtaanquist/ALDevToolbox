@@ -1,12 +1,14 @@
 @page "/account/access-tokens/created"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode InteractiveServer
+@implements IDisposable
 @using ALDevToolbox.Endpoints
 @using ALDevToolbox.Components.Shared
 @using Microsoft.AspNetCore.DataProtection
 @inject IHttpContextAccessor Http
 @inject IDataProtectionProvider Protection
 @inject IJSRuntime JS
+@inject PersistentComponentState PersistentState
 
 <PageTitle>Token created · AL Dev Toolbox</PageTitle>
 
@@ -78,19 +80,49 @@
 @code {
     private static readonly string[] Tabs = new[] { "VS Code", "Claude Desktop", "Cursor", "Claude Code" };
 
+    private const string TokenStateKey = "oneShotPat";
+    private const string ServerUrlStateKey = "oneShotPatServerUrl";
+
     private EndpointHelpers.OneShotPat? _token;
     private string _serverUrl = string.Empty;
     private string _selectedTab = "VS Code";
     private bool _copiedToken;
     private bool _copiedSnippet;
+    private PersistingComponentStateSubscription _persistingSubscription;
 
     protected override void OnInitialized()
     {
+        // Bridge the SSR prerender → interactive circuit handoff. The
+        // SSR pass consumes the one-shot cookie; without persistent
+        // state, the interactive pass sees nothing and renders the
+        // "tokens can only be shown immediately" error over the token
+        // the user briefly saw. See issue #177.
+        if (PersistentState.TryTakeFromJson<EndpointHelpers.OneShotPat>(TokenStateKey, out var restoredToken)
+            && restoredToken is not null)
+        {
+            _token = restoredToken;
+            if (PersistentState.TryTakeFromJson<string>(ServerUrlStateKey, out var restoredUrl)
+                && !string.IsNullOrEmpty(restoredUrl))
+            {
+                _serverUrl = restoredUrl;
+            }
+            return;
+        }
+
         var ctx = Http.HttpContext;
         if (ctx is null) return;
         _token = EndpointHelpers.ReadAndClearOneShotPatCookie(ctx, Protection);
         _serverUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}/mcp";
+        if (_token is null) return;
+        _persistingSubscription = PersistentState.RegisterOnPersisting(() =>
+        {
+            PersistentState.PersistAsJson(TokenStateKey, _token);
+            PersistentState.PersistAsJson(ServerUrlStateKey, _serverUrl);
+            return Task.CompletedTask;
+        });
     }
+
+    public void Dispose() => _persistingSubscription.Dispose();
 
     private string CurrentSnippet => _token is null
         ? string.Empty
