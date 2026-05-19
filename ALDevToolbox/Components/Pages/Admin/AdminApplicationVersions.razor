@@ -29,10 +29,18 @@
                 log.
             </p>
         </div>
-        <a class="btn btn--sm" href="/admin">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to admin</span>
-        </a>
+        <div class="admin-page__header-actions">
+            <a class="btn btn--sm" href="/admin">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to admin</span>
+            </a>
+            <button type="button" class="btn btn--sm btn--primary"
+                    @onclick="SaveAsync"
+                    disabled="@(_saving || _form is null)">
+                <Icon Name="save" Width="14" Height="14" />
+                <span>@(_saving ? "Saving…" : "Save catalogue")</span>
+            </button>
+        </div>
     </header>
 
     @if (_form is null)
@@ -176,16 +184,9 @@
                 }
             </section>
 
-            <div class="admin-template-edit__actions">
-                <button type="submit" class="btn btn--primary" disabled="@_saving">
-                    <Icon Name="save" Width="16" Height="16" />
-                    <span>@(_saving ? "Saving…" : "Save catalogue")</span>
-                </button>
-                <button type="button" class="btn" @onclick="ReloadAsync" disabled="@_saving">
-                    <Icon Name="rotate-ccw" Width="16" Height="16" />
-                    <span>Discard changes</span>
-                </button>
-            </div>
+            @* Hidden submit so pressing Enter inside an input still triggers
+               SaveAsync — the visible Save button moved to the header. *@
+            <button type="submit" class="visually-hidden" aria-hidden="true" tabindex="-1">Save</button>
         </form>
     }
 </div>
