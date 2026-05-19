@@ -1082,6 +1082,29 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     min-width: 160px;
 }
 
+/* Disclosure block used to fold revoked / expired tokens out of the
+   default view on /account/access-tokens. The summary acts as a small
+   secondary affordance — muted by default so it doesn't compete with
+   the active table; padded so the inactive table inside has room. */
+.inactive-tokens {
+    margin-top: 20px;
+}
+
+.inactive-tokens > summary {
+    color: var(--color-muted, #666);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 4px 0;
+}
+
+.inactive-tokens > summary:hover {
+    color: var(--color-text);
+}
+
+.inactive-tokens[open] > summary {
+    margin-bottom: 8px;
+}
+
 /* Client-config snippets and one-shot PAT display shared by /tools/mcp and
    /account/access-tokens/created. Previously declared inline in each page
    with slight drift between copies; consolidated here so both pages render
