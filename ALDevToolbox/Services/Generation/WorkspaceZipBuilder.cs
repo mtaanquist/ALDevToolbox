@@ -56,7 +56,7 @@ public sealed class WorkspaceZipBuilder
             // the README stub used to ship from embedded resources but moved
             // onto OrganizationFile rows so admins can curate them per
             // template — they come through WriteOrgFiles below.
-            fileCount += WriteOrgLogo(archive, $"{rootFolder}/.assets/images", orgConfig.Logo);
+            fileCount += WriteOrgLogo(archive, rootFolder, orgConfig.Logo, orgConfig.Settings.DefaultLogo);
             // Filter the org's file library against the template's opt-in
             // join once. WriteOrgFiles writes the workspace-root subset; the
             // per-extension subset gets written inside each extension folder
@@ -469,18 +469,45 @@ public sealed class WorkspaceZipBuilder
 
     // ===== Org assets =====
 
-    private static int WriteOrgLogo(ZipArchive archive, string parentPath, OrganizationAsset? logo)
+    private static int WriteOrgLogo(ZipArchive archive, string rootFolder, OrganizationAsset? logo, string? defaultLogoPath)
     {
         if (logo is null) return 0;
+        // app.json's `logo` field stores the path from an extension's
+        // perspective, so it usually begins with `../` to escape Core/ back
+        // to the workspace root. The ZIP entry must be workspace-relative;
+        // strip any leading `../` segments to land at the same physical
+        // location the app.json reference resolves to. If no DefaultLogo
+        // has been set, fall back to the legacy `.assets/images/logo.{ext}`
+        // layout so existing setups keep working.
         var ext = logo.ContentType switch
         {
             "image/svg+xml" => "svg",
             _ => "png",
         };
-        var entry = archive.CreateEntry($"{parentPath}/logo.{ext}", CompressionLevel.Optimal);
+        var pathInsideZip = NormaliseLogoPath(defaultLogoPath, ext);
+        var entry = archive.CreateEntry($"{rootFolder}/{pathInsideZip}", CompressionLevel.Optimal);
         using var stream = entry.Open();
         stream.Write(logo.Content, 0, logo.Content.Length);
         return 1;
+    }
+
+    /// <summary>
+    /// Resolves the workspace-relative emission path for the org logo from
+    /// the admin's <see cref="OrganizationSettings.DefaultLogo"/>. Strips
+    /// leading <c>./</c> and <c>../</c> segments (those are relative to an
+    /// extension folder, not the workspace root). Empty / blank falls back
+    /// to the legacy <c>.assets/images/logo.{ext}</c> path.
+    /// </summary>
+    internal static string NormaliseLogoPath(string? defaultLogoPath, string fileExtension)
+    {
+        if (string.IsNullOrWhiteSpace(defaultLogoPath))
+        {
+            return $".assets/images/logo.{fileExtension}";
+        }
+        var normalised = defaultLogoPath.Trim().Replace('\\', '/');
+        while (normalised.StartsWith("../", StringComparison.Ordinal)) normalised = normalised[3..];
+        while (normalised.StartsWith("./", StringComparison.Ordinal)) normalised = normalised[2..];
+        return normalised.TrimStart('/');
     }
 
     /// <summary>

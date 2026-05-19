@@ -106,6 +106,47 @@ public static class PreviewTreeBuilder
         return node with { Children = sorted };
     }
 
+    /// <summary>
+    /// Walks a forward-slash-separated <paramref name="path"/> and grafts a
+    /// leaf <see cref="PreviewNode.File"/> into the supplied
+    /// <paramref name="siblings"/>, materialising intermediate folders as
+    /// needed. Two grafts that share a prefix end up under one folder so the
+    /// preview matches what an OS file explorer would render. Duplicate
+    /// files at the same path are no-ops. The factory methods always
+    /// allocate mutable <c>List&lt;PreviewNode&gt;</c> for children, so the
+    /// downward walk casts each level back to <see cref="IList{T}"/>.
+    /// </summary>
+    public static void GraftFile(IList<PreviewNode> siblings, string path)
+    {
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0) return;
+        GraftRecursive(siblings, segments, 0);
+    }
+
+    private static void GraftRecursive(IList<PreviewNode> siblings, string[] segments, int idx)
+    {
+        var name = segments[idx];
+        if (idx == segments.Length - 1)
+        {
+            if (!siblings.Any(n => n.Kind == PreviewNodeKind.File && n.Name == name))
+            {
+                siblings.Add(PreviewNode.File(name));
+            }
+            return;
+        }
+        var existing = siblings.FirstOrDefault(n => n.Kind == PreviewNodeKind.Folder && n.Name == name);
+        if (existing is null)
+        {
+            var children = new List<PreviewNode>();
+            siblings.Add(new PreviewNode(name, PreviewNodeKind.Folder, children));
+            GraftRecursive(children, segments, idx + 1);
+        }
+        else if (existing.Children is IList<PreviewNode> nestedList)
+        {
+            GraftRecursive(nestedList, segments, idx + 1);
+        }
+    }
+
     private static PreviewNode ToPreview(MutableNode node)
     {
         var children = new List<PreviewNode>(node.Children.Count + node.Files.Count);

@@ -9,11 +9,14 @@ namespace ALDevToolbox.Tests.Extensions;
 /// Pins <see cref="ExtensionPreviewBuilder"/> so the live preview on
 /// New Workspace / New Extension / Template Detail keeps reflecting what
 /// <c>GenerationService</c> actually emits: recursive folder walk, example
-/// filtering, <c>.gitkeep</c> stand-ins for empty leaves, and the
-/// <see cref="AppSourceCopSettings.Include"/>-gated <c>AppSourceCop.json</c>.
+/// filtering, <c>.gitkeep</c> stand-ins for empty leaves, and any
+/// per-extension <see cref="OrganizationFile"/> rows the caller threads
+/// in.
 /// </summary>
 public sealed class ExtensionPreviewBuilderTests
 {
+    private static readonly IReadOnlyList<string> NoPerExtensionFiles = Array.Empty<string>();
+
     [Fact]
     public void BuildContents_walks_nested_folders_and_files()
     {
@@ -28,7 +31,7 @@ public sealed class ExtensionPreviewBuilderTests
         });
         root.Folders.Add(nested);
 
-        var contents = ExtensionPreviewBuilder.BuildContents(new[] { root }, includeExamples: true, includeAppSourceCop: true);
+        var contents = ExtensionPreviewBuilder.BuildContents(new[] { root }, includeExamples: true, NoPerExtensionFiles);
 
         var source = contents.Single(n => n.Name == "Source");
         var codeunits = source.Children.Single(n => n.Name == "Codeunits");
@@ -48,7 +51,7 @@ public sealed class ExtensionPreviewBuilderTests
             OrganizationId = 1, Path = "Example.al", Content = string.Empty, IsExample = true,
         });
 
-        var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: false, includeAppSourceCop: true);
+        var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: false, NoPerExtensionFiles);
 
         var source = contents.Single(n => n.Name == "Source");
         source.Children.Select(c => c.Name).Should().Contain("Real.al");
@@ -60,7 +63,7 @@ public sealed class ExtensionPreviewBuilderTests
     {
         var folder = new WorkspaceExtensionFolder { OrganizationId = 1, Path = "Empty" };
 
-        var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: true, includeAppSourceCop: true);
+        var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: true, NoPerExtensionFiles);
 
         var emptyFolder = contents.Single(n => n.Name == "Empty");
         emptyFolder.Children.Should().ContainSingle(c => c.Name == ".gitkeep");
@@ -71,21 +74,26 @@ public sealed class ExtensionPreviewBuilderTests
     {
         var declared = new WorkspaceExtensionFolder { OrganizationId = 1, Path = "Source" };
 
-        var contents = ExtensionPreviewBuilder.BuildContents(new[] { declared }, includeExamples: true, includeAppSourceCop: true);
+        var contents = ExtensionPreviewBuilder.BuildContents(new[] { declared }, includeExamples: true, NoPerExtensionFiles);
 
+        // With no per-extension org files threaded in, only app.json and
+        // the declared folder land — no AppSourceCop.json phantom.
         contents.Select(c => c.Name).Should()
-            .BeEquivalentTo(new[] { "app.json", "AppSourceCop.json", "Source" });
+            .BeEquivalentTo(new[] { "app.json", "Source" });
     }
 
     [Fact]
-    public void BuildContents_omits_AppSourceCop_when_disabled()
+    public void BuildContents_includes_per_extension_org_files_threaded_by_caller()
     {
         var folder = new WorkspaceExtensionFolder { OrganizationId = 1, Path = "Source" };
+        var perExtension = new[] { "AppSourceCop.json", ".vscode/settings.json" };
 
-        var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: true, includeAppSourceCop: false);
+        var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: true, perExtension);
 
-        contents.Select(c => c.Name).Should().NotContain("AppSourceCop.json");
-        contents.Select(c => c.Name).Should().Contain("app.json");
+        // Top-level files include AppSourceCop.json and the .vscode parent.
+        contents.Select(c => c.Name).Should().Contain(new[] { "app.json", "AppSourceCop.json", ".vscode", "Source" });
+        var vscode = contents.Single(c => c.Name == ".vscode");
+        vscode.Children.Should().ContainSingle(c => c.Name == "settings.json");
     }
 
     [Fact]
@@ -97,9 +105,9 @@ public sealed class ExtensionPreviewBuilderTests
             OrganizationId = 1, Path = "Helper.al", Content = string.Empty,
         });
 
-        var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: true, includeAppSourceCop: true);
+        var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: true, NoPerExtensionFiles);
 
-        contents.Select(c => c.Name).Should().Contain(new[] { "app.json", "AppSourceCop.json", "Source" });
+        contents.Select(c => c.Name).Should().Contain(new[] { "app.json", "Source" });
         contents.Single(n => n.Name == "Source")
             .Children.Should().ContainSingle(c => c.Name == "Helper.al");
     }

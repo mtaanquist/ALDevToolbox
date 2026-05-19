@@ -167,6 +167,16 @@
     /// </summary>
     private static PreviewNode BuildTree(RuntimeTemplate template)
     {
+        // Per-extension org files the template has opted into come from
+        // RuntimeTemplate.IncludedFiles (joined OrganizationFile rows).
+        // The detail view is read-only, so we just need the path list.
+        var perExtensionPaths = template.IncludedFiles
+            .OrderBy(j => j.Ordering)
+            .Where(j => j.OrganizationFile is not null
+                && j.OrganizationFile.Scope == ALDevToolbox.Domain.ValueObjects.OrganizationFileScope.EveryExtension)
+            .Select(j => j.OrganizationFile!.Path)
+            .ToList();
+
         var children = new List<PreviewNode>();
         foreach (var ext in template.WorkspaceExtensions
             .Where(e => e.Required)
@@ -174,7 +184,7 @@
         {
             children.Add(PreviewNode.Extension(
                 ext.Path,
-                ExtensionPreviewBuilder.BuildContents(ext.Folders, includeExamples: true, includeAppSourceCop: template.AppSourceCop.Include)));
+                ExtensionPreviewBuilder.BuildContents(ext.Folders, includeExamples: true, perExtensionPaths)));
         }
         return PreviewTreeBuilder.SortForDisplay(
             new PreviewNode(template.Key, PreviewNodeKind.Workspace, children));

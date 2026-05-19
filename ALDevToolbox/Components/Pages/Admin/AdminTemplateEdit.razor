@@ -13,6 +13,7 @@
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services
 
 @*
     Combined create/edit page.
@@ -365,7 +366,7 @@
                         @foreach (var f in _availableOrgFiles)
                         {
                             var isChecked = _form.IncludedFilePaths.Contains(f.Path);
-                            <label class="module-card">
+                            <label class="module-card module-card--with-lock">
                                 <input type="checkbox"
                                        checked="@isChecked"
                                        @onchange="e => OnIncludedFileToggled(f.Path, (bool)(e.Value ?? false))" />
@@ -375,6 +376,10 @@
                                         @(f.Scope == ALDevToolbox.Domain.ValueObjects.OrganizationFileScope.EveryExtension ? "per extension" : "workspace root")
                                         · @(f.MustacheEnabled ? "mustache enabled" : "literal")
                                     </span>
+                                </span>
+                                <span class="module-card__lock"
+                                      title="The file's path, content, and mustache flag are curated under Configuration · Files. Tick to opt this template into it.">
+                                    <Icon Name="lock" Width="12" Height="12" />
                                 </span>
                             </label>
                         }
@@ -1113,45 +1118,56 @@
         }
 
         var rootName = string.IsNullOrWhiteSpace(_form.Key) ? "template" : _form.Key;
-        var includeCop = ParseIncludeAppSourceCop(_form.AppSourceCopJson);
+
+        // Split the template's opted-in org files by scope so the preview
+        // matches what WorkspaceZipBuilder emits: workspace-root files
+        // graft into the workspace tree; per-extension files duplicate
+        // into each extension folder. The legacy AppSourceCop.Include
+        // flag is no longer consulted — admins author AppSourceCop.json
+        // as an OrganizationFile with Scope = EveryExtension.
+        var workspaceRootPaths = new List<string>();
+        var perExtensionPaths = new List<string>();
+        var pickedPaths = new HashSet<string>(_form.IncludedFilePaths, StringComparer.Ordinal);
+        foreach (var f in _availableOrgFiles)
+        {
+            if (!pickedPaths.Contains(f.Path)) continue;
+            if (f.Scope == ALDevToolbox.Domain.ValueObjects.OrganizationFileScope.EveryExtension)
+            {
+                perExtensionPaths.Add(f.Path);
+            }
+            else
+            {
+                workspaceRootPaths.Add(f.Path);
+            }
+        }
 
         var children = new List<PreviewNode>();
         foreach (var ext in _form.Extensions)
         {
-            children.Add(BuildExtensionPreview(ext, includeCop));
+            children.Add(BuildExtensionPreview(ext, perExtensionPaths));
+        }
+
+        // Workspace-root org files + the generator-emitted side-cars
+        // ({ShortName}.code-workspace, workspace.aldt.toml). Use the
+        // template key as the workspace short name placeholder.
+        children.Add(PreviewNode.File($"{rootName}.code-workspace"));
+        children.Add(PreviewNode.File(WorkspaceConfigService.FileName));
+        foreach (var path in workspaceRootPaths)
+        {
+            PreviewTreeBuilder.GraftFile(children, path);
         }
 
         return PreviewTreeBuilder.SortForDisplay(
             new PreviewNode(rootName, PreviewNodeKind.Workspace, children));
     }
 
-    /// <summary>
-    /// Reads <c>include</c> from the AppSourceCop JSON textarea. Tolerates a
-    /// malformed buffer (the user might be mid-edit) and defaults to true so
-    /// the preview matches the generator's default behaviour.
-    /// </summary>
-    private static bool ParseIncludeAppSourceCop(string json)
-    {
-        if (string.IsNullOrWhiteSpace(json)) return true;
-        try
-        {
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("include", out var prop) && prop.ValueKind == System.Text.Json.JsonValueKind.False)
-            {
-                return false;
-            }
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            // Mid-edit malformed JSON; surface the default.
-        }
-        return true;
-    }
-
-    private static PreviewNode BuildExtensionPreview(ExtensionForm ext, bool includeAppSourceCop)
+    private static PreviewNode BuildExtensionPreview(ExtensionForm ext, IReadOnlyList<string> perExtensionFilePaths)
     {
         var contents = new List<PreviewNode> { PreviewNode.File("app.json") };
-        if (includeAppSourceCop) contents.Add(PreviewNode.File("AppSourceCop.json"));
+        foreach (var path in perExtensionFilePaths)
+        {
+            PreviewTreeBuilder.GraftFile(contents, path);
+        }
 
         foreach (var folder in ext.Folders.Where(f => !string.IsNullOrWhiteSpace(f.Path)))
         {

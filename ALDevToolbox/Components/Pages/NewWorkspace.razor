@@ -7,6 +7,7 @@
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services
 
 <PageTitle>New workspace · AL Dev Toolbox</PageTitle>
 
@@ -82,10 +83,13 @@
                            title="GUID in 8-4-4-4-12 hex form."
                            @bind="_tenantId" @bind:event="oninput" />
                     <small class="muted">
-                        Your Microsoft Entra (Azure AD) tenant ID — the GUID
-                        found in the Entra admin portal. Optional; leave blank
-                        if you don't need it. Available in templates and
-                        always-included files as <code>&#123;&#123;tenant_id&#125;&#125;</code>.
+                        The customer's Microsoft Entra (Azure AD) tenant ID —
+                        the GUID their tenant uses, typically pasted from
+                        their Business Central environment so the generated
+                        debug configs target the right tenant. Optional;
+                        leave blank if you don't have it yet. Available in
+                        templates and always-included files as
+                        <code>&#123;&#123;tenant_id&#125;&#125;</code>.
                     </small>
                 </section>
 
@@ -417,20 +421,46 @@
 
         var children = new List<PreviewNode>();
 
-        // The org logo is the only inherent workspace-level asset left — the
-        // ruleset, .gitignore, and README stub all moved onto OrganizationFile
-        // rows the admin opts each template into. Show .assets/images/logo.png
-        // only when an org logo has actually been uploaded; for a fresh org
-        // the directory wouldn't exist in the ZIP.
+        // The org logo lands at the path the admin set on
+        // /admin/configuration/defaults' "Default logo path" (stripped of
+        // any extension-relative ../ prefix). No logo uploaded means no
+        // logo node at all — fresh orgs don't see a phantom .assets folder.
         if (_orgConfig?.Logo is not null)
         {
-            children.Add(PreviewNode.Folder(".assets", new[]
+            var logoExt = _orgConfig.Logo.ContentType switch
             {
-                PreviewNode.Folder("images", new[] { PreviewNode.File("logo.png") }),
-            }));
+                "image/svg+xml" => "svg",
+                _ => "png",
+            };
+            var logoPath = ALDevToolbox.Services.Generation.WorkspaceZipBuilder.NormaliseLogoPath(
+                _orgConfig.Settings.DefaultLogo, logoExt);
+            PreviewTreeBuilder.GraftFile(children, logoPath);
         }
 
-        var includeCop = _selected?.AppSourceCop.Include ?? true;
+        // Split the template's included files by scope once: workspace-root
+        // grafts into the workspace tree; per-extension is duplicated inside
+        // each extension folder by ExtensionPreviewBuilder. This is exactly
+        // what WorkspaceZipBuilder does at emit time so the preview matches
+        // the ZIP.
+        var workspaceRootPaths = new List<string>();
+        var perExtensionPaths = new List<string>();
+        if (_selected is not null && _orgConfig is not null)
+        {
+            var byId = _orgConfig.Files.ToDictionary(f => f.Id);
+            foreach (var joined in _selected.IncludedFiles.OrderBy(j => j.Ordering))
+            {
+                if (!byId.TryGetValue(joined.OrganizationFileId, out var file)) continue;
+                if (file.Scope == OrganizationFileScope.EveryExtension)
+                {
+                    perExtensionPaths.Add(file.Path);
+                }
+                else
+                {
+                    workspaceRootPaths.Add(file.Path);
+                }
+            }
+        }
+
         if (_selected is not null)
         {
             foreach (var ext in _selected.WorkspaceExtensions.OrderBy(e => e.Ordering))
@@ -438,7 +468,7 @@
                 if (!ext.Required && !_selectedExtensionPaths.Contains(ext.Path)) continue;
                 children.Add(PreviewNode.Extension(
                     ext.Path,
-                    ExtensionPreviewBuilder.BuildContents(ext.Folders, _includeExamples, includeCop)));
+                    ExtensionPreviewBuilder.BuildContents(ext.Folders, _includeExamples, perExtensionPaths)));
             }
         }
 
@@ -453,24 +483,17 @@
                 // ZIP. Module.Key stays as the admin slug / dep ref target.
                 children.Add(PreviewNode.Extension(
                     module.ExtensionName,
-                    ExtensionPreviewBuilder.BuildContents(module.ExtensionFolders, _includeExamples, includeCop)));
+                    ExtensionPreviewBuilder.BuildContents(module.ExtensionFolders, _includeExamples, perExtensionPaths)));
             }
         }
 
+        // Workspace-root files emitted unconditionally by the generator.
         children.Add(PreviewNode.File($"{rootName}.code-workspace"));
+        children.Add(PreviewNode.File(WorkspaceConfigService.FileName));
 
-        // Always-included org files the picked template has opted into.
-        // Mirrors WorkspaceZipBuilder.WriteOrgFiles so the preview matches the
-        // ZIP. Files with nested paths (e.g. docs/onboarding.md) materialise as
-        // intermediate folders here just like they will inside the archive.
-        if (_selected is not null && _orgConfig is not null)
+        foreach (var path in workspaceRootPaths)
         {
-            var byId = _orgConfig.Files.ToDictionary(f => f.Id);
-            foreach (var joined in _selected.IncludedFiles.OrderBy(j => j.Ordering))
-            {
-                if (!byId.TryGetValue(joined.OrganizationFileId, out var file)) continue;
-                AddOrgFileNode(children, file.Path);
-            }
+            PreviewTreeBuilder.GraftFile(children, path);
         }
 
         return PreviewTreeBuilder.SortForDisplay(
@@ -479,44 +502,4 @@
 
     private static string StripWhitespace(string value) =>
         new(value.Where(c => !char.IsWhiteSpace(c)).ToArray());
-
-    /// <summary>
-    /// Walks a forward-slash-separated <paramref name="path"/> and grafts it
-    /// into the preview tree under <paramref name="siblings"/>, materialising
-    /// intermediate folders as needed. Duplicates fold into the existing
-    /// node so two org files in the same subdirectory share one parent.
-    /// </summary>
-    private static void AddOrgFileNode(IList<PreviewNode> siblings, string path)
-    {
-        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length == 0) return;
-        AddRecursive(siblings, segments, 0);
-    }
-
-    private static void AddRecursive(IList<PreviewNode> siblings, string[] segments, int idx)
-    {
-        var name = segments[idx];
-        if (idx == segments.Length - 1)
-        {
-            if (!siblings.Any(n => n.Kind == PreviewNodeKind.File && n.Name == name))
-            {
-                siblings.Add(PreviewNode.File(name));
-            }
-            return;
-        }
-        var existing = siblings.FirstOrDefault(n => n.Kind == PreviewNodeKind.Folder && n.Name == name);
-        if (existing is null)
-        {
-            var children = new List<PreviewNode>();
-            siblings.Add(new PreviewNode(name, PreviewNodeKind.Folder, children));
-            AddRecursive(children, segments, idx + 1);
-        }
-        else if (existing.Children is IList<PreviewNode> nestedList)
-        {
-            // The factory always allocates a mutable List<> here, so the cast
-            // is safe for nodes we built ourselves. External nodes (none
-            // currently) would be silently skipped which is a fine fallback.
-            AddRecursive(nestedList, segments, idx + 1);
-        }
-    }
 }
