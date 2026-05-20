@@ -1,0 +1,1069 @@
+/* AL Dev Toolbox — base styles.
+   CSS variables, body resets, shell layout (top bar / sidebar / content),
+   form fundamentals, generic buttons, theme toggle, tile grid (shared by
+   the tools home and admin dashboard), confirmation modal, and the
+   accessibility helpers. Loaded first in App.razor so later files can
+   override safely. */
+
+/* AL Dev Toolbox — global styles */
+
+:root {
+    --color-bg: #fafafa;
+    --color-surface: #ffffff;
+    /* Second surface tier — used by panels-within-panels: code snippet
+       boxes, kind badges, the search input, status bar chips. Light enough
+       above the page bg to read as a distinct surface, not so dark it
+       fights the body text. */
+    --color-surface-2: #f4f5f7;
+    /* Hover background for clickable rows. Subtle in light mode, the dark
+       block below uses a translucent white. */
+    --color-surface-strong: rgba(0, 0, 0, 0.04);
+    --color-border: #e6e6e8;
+    --color-border-strong: #d2d3d8;
+    --color-text: #1f2024;
+    --color-text-muted: #6b6f76;
+    --color-text-secondary: #8a8e96;
+    --color-accent: #0066ff;
+    --color-accent-soft: #e8f0ff;
+    --color-info: #2563eb;
+    --color-danger: #b32121;
+    --color-error-text: #e50000;
+    --color-valid: #26b050;
+    --color-accent-hover: #0052cc;
+    --color-shadow: rgba(0, 0, 0, 0.1);
+    --sidebar-width: 220px;
+    --top-bar-height: 52px;
+    --radius: 6px;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+/* Dark-theme variables. Variables only — no per-rule overrides — so component
+   styles don't need to know which theme is active.
+
+   The same dark variables are applied in two situations: when the OS prefers
+   dark and the user hasn't explicitly chosen light, and when the user has
+   explicitly chosen dark from the toggle. Duplicating the block is simpler
+   than doing CSS gymnastics with multi-selector @media rules. */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --color-bg: #16181c;
+        --color-surface: #1d2024;
+        --color-surface-2: #262a30;
+        --color-surface-strong: rgba(255, 255, 255, 0.06);
+        --color-border: #2c2f36;
+        --color-border-strong: #3a3e47;
+        --color-text: #e6e7ea;
+        --color-text-muted: #9aa0aa;
+        --color-text-secondary: #777c86;
+        --color-accent: #4b8bff;
+        --color-accent-soft: #1a2742;
+        --color-accent-hover: #6ba0ff;
+        --color-info: #6ba3ff;
+        --color-danger: #ef6464;
+        --color-error-text: #ff6b6b;
+        --color-valid: #4cc972;
+        --color-shadow: rgba(0, 0, 0, 0.5);
+    }
+}
+
+:root[data-theme="dark"] {
+    --color-bg: #16181c;
+    --color-surface: #1d2024;
+    --color-surface-2: #262a30;
+    --color-surface-strong: rgba(255, 255, 255, 0.06);
+    --color-border: #2c2f36;
+    --color-border-strong: #3a3e47;
+    --color-text: #e6e7ea;
+    --color-text-muted: #9aa0aa;
+    --color-text-secondary: #777c86;
+    --color-accent: #4b8bff;
+    --color-accent-soft: #1a2742;
+    --color-accent-hover: #6ba0ff;
+    --color-info: #6ba3ff;
+    --color-danger: #ef6464;
+    --color-error-text: #ff6b6b;
+    --color-valid: #4cc972;
+    --color-shadow: rgba(0, 0, 0, 0.5);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    /* Bound the viewport-level scroll to 100vh so the app-shell grid
+       can rely on .content (overflow-y: auto) as the actual scroll
+       container. Without this, .app-shell's min-height: 100vh allowed
+       the page to grow taller than the viewport and BODY would scroll
+       instead — which silently broke position: sticky on any element
+       that expected .content to be its scrolling ancestor. */
+    height: 100%;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--color-text);
+    background: var(--color-bg);
+}
+
+a { color: var(--color-accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+h1 { font-size: 22px; font-weight: 600; margin: 0 0 12px; }
+h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
+.muted { color: var(--color-text-muted); }
+
+/* ---------- Shell ---------- */
+
+.app-shell {
+    display: grid;
+    grid-template-columns: var(--sidebar-width) 1fr;
+    grid-template-rows: var(--top-bar-height) 1fr;
+    grid-template-areas:
+        "topbar topbar"
+        "sidebar content";
+    /* Fixed 100vh (not min-height) so the content grid row is bounded
+       and its overflow-y: auto actually engages instead of letting the
+       body scroll. Required for position: sticky inside .content. */
+    height: 100vh;
+}
+
+.top-bar {
+    grid-area: topbar;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.top-bar__brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+}
+
+/* Brand is wrapped in an anchor that links to /. Strip default link styling
+   so the wordmark and icon read the same whether or not the user has visited
+   the home dashboard before. */
+.top-bar__brand--link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.top-bar__brand--link:hover { text-decoration: none; }
+.top-bar__brand--link:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+.brand-icon { color: var(--color-accent); }
+.brand-name { font-size: 15px; }
+
+/* Muted, low-emphasis affordance in the top bar. The admin section is
+   secondary to the generator flows, so the entry point shouldn't compete
+   visually with anything on the page. */
+.signin-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: 12.5px;
+    text-decoration: none;
+}
+
+.signin-link:hover {
+    color: var(--color-text);
+    background: var(--color-bg);
+    text-decoration: none;
+}
+
+/* Icon-only variant used for the anonymous "Sign in" affordance — square
+   with no text so it stays visually quiet next to the theme toggle. */
+.signin-link--icon {
+    padding: 4px;
+    width: 28px;
+    height: 28px;
+    justify-content: center;
+}
+
+.sidebar {
+    grid-area: sidebar;
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+    padding: 20px 12px;
+    overflow-y: auto;
+    /* Flex column so the inner .sidebar-nav can fill the full height,
+       which in turn lets the storage indicator pin to the bottom via
+       margin-top: auto. */
+    display: flex;
+    flex-direction: column;
+}
+
+.content {
+    grid-area: content;
+    padding: 24px 32px;
+    overflow-y: auto;
+}
+
+/* Centre every page's top-level wrapper inside the content column. Pages
+   set their own max-width (.admin-page, .workspace-page, .audit-page,
+   etc.); margin-inline:auto is a no-op for elements with no max-width
+   so this also leaves naturally-full-width content alone. */
+.content > * { margin-inline: auto; }
+
+/* SiteAdmin pages place a bare .admin-section at the root; give it the
+   same reading width as .admin-page so the work area stays consistent
+   across the app. */
+.content > .admin-section { max-width: 1100px; }
+
+/* ---------- Sidebar nav ---------- */
+
+.sidebar-nav { display: flex; flex-direction: column; gap: 18px; flex: 1; min-height: 0; }
+
+.nav-section__label {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    padding: 0 10px 6px;
+}
+
+.nav-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+
+.nav-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: var(--radius);
+    color: var(--color-text);
+    font-size: 13.5px;
+}
+
+.nav-link:hover { background: var(--color-bg); text-decoration: none; }
+.nav-link.active { background: var(--color-accent-soft); color: var(--color-accent); font-weight: 500; }
+.nav-link__icon { color: var(--color-text-secondary); flex: 0 0 auto; }
+.nav-link.active .nav-link__icon { color: var(--color-accent); }
+.nav-link--muted { color: var(--color-text-muted); }
+
+.nav-group { display: flex; flex-direction: column; gap: 2px; }
+
+.nav-link--group {
+    color: var(--color-text);
+    cursor: default;
+}
+
+.nav-link--group:hover { background: transparent; }
+
+/* The sub-list is anchored to the parent's icon column (≈ 18px icon + 10px
+   gap = 28px) so a thin vertical guide can sit at that x-coordinate and read
+   as a continuation of the parent row. */
+.nav-sublist {
+    list-style: none;
+    margin: 2px 0 0;
+    padding: 2px 0 2px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    position: relative;
+}
+
+.nav-sublist::before {
+    content: "";
+    position: absolute;
+    left: 18px;
+    top: 2px;
+    bottom: 2px;
+    width: 1px;
+    background: var(--color-border-strong);
+}
+
+.nav-link--sub {
+    padding: 5px 10px;
+    font-size: 13px;
+    color: var(--color-text-secondary);
+}
+
+.nav-link--sub.active {
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+    font-weight: 500;
+}
+
+.nav-divider {
+    height: 1px;
+    background: var(--color-border);
+    margin: 10px 6px 10px;
+}
+
+/* Pinned to the bottom of the sidebar nav. Holds the storage indicator
+   (when applicable) and the copyright line. Uses margin-top:auto on the
+   wrapper so the copyright stays at the bottom even when the storage bar
+   is hidden (unlimited quota, non-admin, system org). */
+.sidebar-footer {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-links {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    padding: 10px 12px 4px;
+}
+
+.sidebar-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius);
+    color: var(--color-text-secondary);
+    transition: color 0.12s ease, background 0.12s ease;
+}
+
+.sidebar-link:hover {
+    color: var(--color-text);
+    background: var(--color-bg);
+    text-decoration: none;
+}
+
+.sidebar-copyright {
+    padding: 4px 12px 6px;
+    font-size: 11px;
+    color: var(--color-text-muted, var(--color-text-secondary));
+    text-align: center;
+}
+
+/* ---------- Page stub ---------- */
+
+.page-stub { max-width: 720px; }
+.page-stub p { margin: 0; }
+
+/* Page header used by the generator pages (New workspace, New extension,
+   Templates). Matches admin-page__header visually so the title bar reads
+   the same wherever you are. */
+.page-header { margin-bottom: 20px; }
+.page-header h1 { margin: 0 0 6px; }
+.page-header p { margin: 0; }
+.form-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+}
+
+.form-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.form-section--row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.form-section--row > div { display: flex; flex-direction: column; gap: 6px; }
+
+/* Narrower form grid for forms where 100%-wide inputs feel wider than they
+   need to be (the Configuration page being the main culprit). Keeps the
+   eye-line shorter without forcing each field to declare its own max-width. */
+.form-grid--narrow { max-width: 560px; }
+.form-grid--narrow .form-section--row { max-width: 360px; }
+.form-grid--narrow .form-section--id { max-width: 180px; }
+
+.section-label {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+}
+
+.form-section input[type="text"],
+.form-section input[type="email"],
+.form-section input[type="number"],
+.form-section input[type="password"],
+.form-section input[type="search"],
+.form-section input[type="time"],
+.form-section input[type="datetime-local"],
+.form-section input[type="file"],
+.form-section textarea,
+.form-section select,
+.form-grid > input[type="text"],
+.form-grid > input[type="email"],
+.form-grid > input[type="number"],
+.form-grid > input[type="password"],
+.form-grid > input[type="search"],
+.form-grid > input[type="time"],
+.form-grid > input[type="datetime-local"],
+.form-grid > input[type="file"],
+.form-grid > textarea,
+.form-grid > select,
+.admin-form input[type="text"],
+.admin-form input[type="email"],
+.admin-form input[type="number"],
+.admin-form input[type="password"],
+.admin-form input[type="search"],
+.admin-form input[type="time"],
+.admin-form input[type="datetime-local"],
+.admin-form input[type="file"],
+.admin-form textarea,
+.admin-form select,
+.admin-filter-form input[type="text"],
+.admin-filter-form input[type="search"],
+.admin-filter-form input[type="datetime-local"],
+.admin-filter-form select,
+.admin-search-input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    font-family: inherit;
+    font-size: 13.5px;
+    background: var(--color-surface);
+    color: var(--color-text);
+}
+
+.form-section textarea,
+.form-grid > textarea,
+.admin-form textarea { resize: vertical; min-height: 70px; }
+
+.form-section input:disabled,
+.form-section textarea:disabled,
+.form-section select:disabled,
+.form-grid > input:disabled,
+.form-grid > textarea:disabled,
+.form-grid > select:disabled,
+.admin-form input:disabled,
+.admin-form textarea:disabled,
+.admin-form select:disabled {
+    background: var(--color-bg);
+    color: var(--color-text-secondary);
+    cursor: not-allowed;
+}
+
+.form-section input:focus,
+.form-section textarea:focus,
+.form-section select:focus,
+.form-grid > input:focus,
+.form-grid > textarea:focus,
+.form-grid > select:focus,
+.admin-form input:focus,
+.admin-form textarea:focus,
+.admin-form select:focus {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -1px;
+    border-color: var(--color-accent);
+}
+
+/* Pin <option> colours to the dark surface so the browser doesn't paint the
+   open dropdown list in its own platform default (typically a near-white
+   panel that's unreadable against our dark text). Chromium honours these
+   on Linux; Safari and Windows still defer to the OS theme, which is a
+   long-standing browser quirk we accept rather than re-implement the
+   <select> in JS. */
+.form-section select option,
+.form-grid > select option,
+.admin-form select option,
+.admin-filter-form select option {
+    background: var(--color-surface);
+    color: var(--color-text);
+}
+
+.form-section select optgroup,
+.form-grid > select optgroup,
+.admin-form select optgroup,
+.admin-filter-form select optgroup {
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    font-style: italic;
+}
+
+/* Browsers (Chrome / Safari) repaint autofilled fields with their own
+   light-yellow background, which clashes badly with dark mode. Pin the
+   colour and use the inset-shadow trick to mask the agent default. */
+.form-section input:-webkit-autofill,
+.form-section input:-webkit-autofill:hover,
+.form-section input:-webkit-autofill:focus,
+.form-grid > input:-webkit-autofill,
+.form-grid > input:-webkit-autofill:hover,
+.form-grid > input:-webkit-autofill:focus,
+.admin-form input:-webkit-autofill,
+.admin-form input:-webkit-autofill:hover,
+.admin-form input:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--color-text);
+    -webkit-box-shadow: 0 0 0 1000px var(--color-surface) inset;
+    caret-color: var(--color-text);
+    transition: background-color 9999s ease-in-out 0s;
+}
+
+/* Sections inside .admin-form / .form-grid that pair a label with an
+   input. SiteAdminSettings wraps both inside the same <label> element;
+   the Administration pages place the .section-label and the input as
+   sibling children of .form-grid. Both layouts need the same vertical
+   rhythm. */
+.admin-form > label,
+.admin-form > .form-row > label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+}
+
+.admin-form > label > input,
+.admin-form > label > textarea,
+.admin-form > label > select,
+.admin-form > .form-row > label > input,
+.admin-form > .form-row > label > textarea,
+.admin-form > .form-row > label > select {
+    /* Reset the inherited uppercase from the label so the typed text
+       reads at normal case. */
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: 13.5px;
+    font-weight: 400;
+    color: var(--color-text);
+}
+
+.admin-form .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.admin-form .checkbox-label,
+.admin-form label.checkbox-label {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: normal;
+    text-transform: none;
+    color: var(--color-text);
+}
+
+.admin-form .checkbox-label input[type="checkbox"] {
+    margin: 0;
+}
+
+.admin-form > h2 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 8px 0 4px;
+    color: var(--color-text);
+}
+
+.admin-form > h2:first-child { margin-top: 0; }
+
+.admin-form,
+.admin-form--inline {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.admin-form--inline {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+}
+
+.admin-form .form-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 6px;
+}
+
+/* `.form-info` is referenced by SiteAdminSettings for success toasts;
+   match the form-success rule's visual chrome but keep the original
+   class so the page renders consistently. */
+.form-info {
+    color: var(--color-valid);
+    background: var(--color-surface);
+    border: 1px solid var(--color-valid);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    margin: 0 0 16px;
+    font-size: 13px;
+}
+
+.caption { font-size: 12px; margin: 0; }
+
+.module-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.module-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.1s ease;
+}
+
+.module-card:hover { background: var(--color-bg); }
+.module-card:has(input:checked) { background: var(--color-accent-soft); border-color: var(--color-accent); }
+
+.module-card__body { display: flex; flex-direction: column; gap: 2px; }
+.module-card__name { font-weight: 500; }
+.module-card__caption { font-size: 12px; }
+
+/* Lock badge on the right of an always-included file row. Signals that the
+   row's path / content / mustache flag live in another editor (Configuration
+   · Files); the checkbox here only opts the current template in or out. */
+.module-card--with-lock .module-card__body { flex: 1; }
+.module-card__lock {
+    display: inline-flex;
+    align-items: center;
+    color: var(--color-text-secondary);
+    margin-left: auto;
+}
+
+.check-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
+    border-radius: var(--radius);
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: 13.5px;
+    font-weight: 500;
+    line-height: 1.2;
+    cursor: pointer;
+    white-space: nowrap;
+    text-decoration: none;
+    box-sizing: border-box;
+}
+
+.btn:hover {
+    background: var(--color-bg);
+    text-decoration: none;
+}
+
+.btn--primary {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: white;
+    font-weight: 600;
+}
+
+.btn--primary:hover { background: var(--color-accent-hover); }
+
+/* Compact button used inside table rows (e.g. quick actions in the templates
+   browser). Renders inline-flex so an Icon + label sit on one line. */
+.btn--sm {
+    padding: 4px 10px;
+    font-size: 12.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.btn--sm:hover { text-decoration: none; }
+
+/* Square icon-only variant. Used in tight row-action cells where a row of
+   icons reads better than a row of full text buttons (Backups list, etc.).
+   Title/aria-label on the element carry the accessible name. */
+.btn--icon {
+    padding: 4px;
+    width: 28px;
+    height: 28px;
+    justify-content: center;
+    gap: 0;
+}
+
+.data-table__actions {
+    width: 1%;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.data-table__actions .btn + .btn { margin-left: 8px; }
+
+/* Inline action cell used on the Users / Invites tables. Lays out the
+   per-row form buttons on a single line and gives them a consistent gap
+   regardless of whether each <form> is rendered as inline-block. */
+.row-actions {
+    width: 1%;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.row-actions form { display: inline-block; }
+.row-actions form + form,
+.row-actions form + .btn,
+.row-actions .btn + form,
+.row-actions .btn + .btn { margin-left: 6px; }
+
+/* Small status pills for table cells (e.g. user Active/Disabled, role
+   Admin/User). Same look as .user-button__role so the chrome is
+   consistent across the app. */
+.status-pill {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    line-height: 1.6;
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+    white-space: nowrap;
+}
+
+.status-pill--muted {
+    background: var(--color-bg);
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+}
+
+.status-pill--warn {
+    background: rgba(207, 34, 46, 0.08);
+    color: #cf222e;
+}
+
+.status-pill--inline { margin-left: 6px; }
+
+/* ---------- Errors ---------- */
+
+#blazor-error-ui {
+    background: var(--color-danger);
+    color: white;
+    padding: 0.6rem 1rem;
+    box-shadow: 0 -1px 2px var(--color-shadow);
+    display: none;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 1000;
+}
+#blazor-error-ui .reload, #blazor-error-ui .dismiss {
+    color: white;
+    margin-left: 12px;
+    cursor: pointer;
+}
+
+.valid.modified:not([type=checkbox]) { outline: 1px solid var(--color-valid); }
+.invalid { outline: 1px solid var(--color-error-text); }
+.validation-message { color: var(--color-error-text); }
+
+/* Inline error banner used by every form that surfaces a saved-but-failed
+   message — login, admin saves, generator validation. Lives in base because
+   it crosses every surface; pages just emit <p class="form-error"> or wrap
+   richer content in <div class="form-error">. */
+.form-error {
+    color: var(--color-error-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-error-text);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    margin: 0 0 16px;
+    font-size: 13px;
+}
+
+.form-error code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+.form-error > p {
+    margin: 0;
+}
+
+.form-error > p + .form-error__list {
+    margin-top: 8px;
+}
+
+/* ---------- Theme toggle ---------- */
+
+.theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    padding: 2px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    background: var(--color-bg);
+    margin-right: 12px;
+}
+
+.theme-toggle__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+}
+
+.theme-toggle__btn:hover { color: var(--color-text); }
+
+.theme-toggle__btn--active {
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow: 0 1px 2px var(--color-shadow);
+}
+
+.top-bar__user {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.top-bar__user .theme-toggle { margin-right: 0; }
+
+.signout-form { margin: 0; display: inline-flex; }
+
+.user-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--color-text);
+    font: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+
+.user-button:hover {
+    background: var(--color-bg);
+    border-color: var(--color-accent);
+    text-decoration: none;
+}
+
+.user-button:hover .user-button__name,
+.user-button:hover .user-button__org { text-decoration: none; }
+
+.user-button__name { font-weight: 500; }
+
+.user-button__org {
+    color: var(--color-text-secondary);
+    font-weight: 400;
+}
+
+.user-button__role {
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+
+.user-button__icon { color: var(--color-text-muted); flex: 0 0 auto; }
+
+.user-button:hover .user-button__icon { color: var(--color-accent); }
+
+/* ---------- Tile grid (admin dashboard + tools home) ---------- */
+
+.admin-dashboard { max-width: 1100px; }
+.tools-home { max-width: 1100px; }
+
+.tile-grid {
+    margin-top: 20px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.tile {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+}
+
+.tile__icon { color: var(--color-text-secondary); flex: 0 0 auto; }
+
+.tile__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+.tile__title { font-weight: 500; }
+
+.tile__caption {
+    font-size: 12px;
+    color: var(--color-text-muted);
+}
+
+.tile--placeholder { opacity: 0.7; }
+
+.tile--link {
+    color: inherit;
+    text-decoration: none;
+    transition: border-color 0.1s ease, background-color 0.1s ease;
+}
+
+.tile--link:hover {
+    border-color: var(--color-accent);
+    background: var(--color-surface-hover, var(--color-surface));
+    text-decoration: none;
+}
+
+/* Locked tile: visible but visually quieter, with a lock badge in the
+   top-right corner. The whole tile is still a link (to /login?returnUrl=…)
+   so clicking it doesn't dead-end. */
+.tile--locked { opacity: 0.85; }
+.tile--locked .tile__icon { color: var(--color-text-muted); }
+
+.tile__lock {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    color: var(--color-text-muted);
+}
+
+.admin-section {
+    margin-top: 32px;
+    padding-top: 20px;
+    border-top: 1px solid var(--color-border);
+}
+
+.admin-section h2 {
+    margin: 0 0 6px;
+    font-size: 16px;
+}
+
+.admin-section p {
+    margin: 0 0 12px;
+}
+
+/* Stacked form-style sections — keep a consistent gap between siblings
+   so configuration pages don't render their forms flush against
+   following sections. */
+.admin-section > form,
+.admin-section > .form-grid {
+    margin-bottom: 12px;
+}
+
+.admin-section > form + form { margin-top: 12px; }
+
+.admin-section h3 {
+    font-size: 13px;
+    font-weight: 600;
+    margin: 16px 0 8px;
+    color: var(--color-text);
+}
+
+/* ---------- Confirmation modal ---------- */
+
+.confirm-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.confirm-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.confirm-modal__panel {
+    position: relative;
+    max-width: 420px;
+    width: 100%;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: 0 12px 32px var(--color-shadow);
+}
+
+.confirm-modal__title {
+    font-size: 16px;
+    margin: 0 0 8px;
+}
+
+.confirm-modal__message {
+    margin: 0 0 16px;
+    color: var(--color-text-muted);
+    font-size: 13px;
+}
+
+.confirm-modal__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+/* ---------- Bulleted form-error list ---------- */
+
+.form-error__list {
+    margin: 6px 0 0;
+    padding-left: 20px;
+    font-size: 12.5px;
+}
+
+.form-error__list code { font-family: var(--font-mono); }
+
+
+/* ---------- Accessibility helpers (M21) ---------- */
+
+/* Visually hide an element but keep it readable to screen readers. Used for
+   table captions and inline ARIA labels that would clutter the rendered UI. */
+.visually-hidden {
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}

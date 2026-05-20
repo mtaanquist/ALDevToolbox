@@ -14,8 +14,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
     <ResourcePreloader />
-    @* Synchronously honour the persisted theme choice before app.css loads,
-       so users who picked dark don't see a light flash on cold loads. *@
+    @* Synchronously honour the persisted theme choice before the CSS files
+       load, so users who picked dark don't see a light flash on cold loads. *@
     <script>
         (function () {
             try {
@@ -26,7 +26,14 @@
             } catch (e) { /* private mode etc. — fall through to system pref */ }
         })();
     </script>
-    <link rel="stylesheet" href="@Assets["app.css"]" />
+    @* CSS is split across four topic files (base, auth, tools, admin) so each
+       surface can be edited without scrolling through 5k lines. Load order is
+       deliberate: base owns shared shell + form fundamentals, then auth, then
+       tools, and admin last so admin-specific rules win on ties. *@
+    <link rel="stylesheet" href="@Assets["base.css"]" />
+    <link rel="stylesheet" href="@Assets["auth.css"]" />
+    <link rel="stylesheet" href="@Assets["tools.css"]" />
+    <link rel="stylesheet" href="@Assets["admin.css"]" />
     <link rel="stylesheet" href="@Assets["ALDevToolbox.styles.css"]" />
     <ImportMap />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
