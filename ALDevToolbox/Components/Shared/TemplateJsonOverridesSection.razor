@@ -46,7 +46,7 @@
               placeholder='{ "settings": { "al.newSetting": "..." } }'
               @bind="Form.CodeWorkspaceJson" @bind:event="oninput"></textarea>
     <small class="muted">
-        Per-template additions to <code>{ShortName}.code-workspace</code>.
+        Per-template additions to <code>{{short_name}}.code-workspace</code>.
         Deep-merged on top of the organisation's
         <a href="/admin/templates/workspace">workspace settings</a>:
         keys inside <code>settings</code> are merged individually

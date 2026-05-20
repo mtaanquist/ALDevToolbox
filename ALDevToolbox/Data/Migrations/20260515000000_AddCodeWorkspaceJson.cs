@@ -6,7 +6,7 @@ namespace ALDevToolbox.Data.Migrations
 {
     /// <summary>
     /// Adds <c>organization_settings.code_workspace_json</c>: the admin-editable
-    /// JSON template for each org's <c>{ShortName}.code-workspace</c> file. The
+    /// JSON template for each org's <c>{{short_name}}.code-workspace</c> file. The
     /// generator overlays the computed <c>folders</c> array onto whatever the
     /// admin has saved (see Issue #61 and
     /// <c>.design/generation-engine.md</c>).

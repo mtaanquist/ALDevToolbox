@@ -610,7 +610,7 @@ public sealed class WorkspaceZipBuilder
     // ===== Workspace-level files =====
 
     /// <summary>
-    /// Builds <c>{ShortName}.code-workspace</c> by layering three sources
+    /// Builds <c>{{short_name}}.code-workspace</c> by layering three sources
     /// (Issue #61):
     /// <list type="number">
     ///   <item>The organisation base JSON template

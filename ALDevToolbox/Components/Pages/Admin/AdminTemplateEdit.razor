@@ -303,7 +303,7 @@
                           placeholder='{ "settings": { "al.newSetting": "..." } }'
                           @bind="_form.CodeWorkspaceJson" @bind:event="oninput"></textarea>
                 <small class="muted">
-                    Per-template additions to <code>{ShortName}.code-workspace</code>.
+                    Per-template additions to <code>{{short_name}}.code-workspace</code>.
                     Deep-merged on top of the organisation base above:
                     keys inside <code>settings</code> are merged individually
                     (template wins on conflict), other top-level keys replace
@@ -1168,7 +1168,7 @@
         }
 
         // Workspace-root org files + the generator-emitted side-cars
-        // ({ShortName}.code-workspace, workspace.aldt.toml). Use the
+        // ({{short_name}}.code-workspace, workspace.aldt.toml). Use the
         // template key as the workspace short name placeholder.
         children.Add(PreviewNode.File($"{rootName}.code-workspace"));
         children.Add(PreviewNode.File(WorkspaceConfigService.FileName));

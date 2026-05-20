@@ -79,7 +79,7 @@ public class RuntimeTemplate
 
     /// <summary>
     /// Optional per-template additions to the workspace's
-    /// <c>{ShortName}.code-workspace</c> JSON. Deep-merged on top of the
+    /// <c>{{short_name}}.code-workspace</c> JSON. Deep-merged on top of the
     /// organisation's base template (see
     /// <c>OrganizationSettings.CodeWorkspaceJson</c>) at generation time, with
     /// template keys winning on the <c>settings</c> block and replacing whole

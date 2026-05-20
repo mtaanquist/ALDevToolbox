@@ -22,7 +22,7 @@ public class OrganizationSettingsSeed
     public string DefaultCoreDescription { get; set; } = string.Empty;
 
     /// <summary>
-    /// JSON template for the workspace's <c>{ShortName}.code-workspace</c>
+    /// JSON template for the workspace's <c>{{short_name}}.code-workspace</c>
     /// file. Empty in pre-Issue-#61 exports — readers default to the in-app
     /// fallback (<see cref="ValueObjects.OrganizationDefaults.CodeWorkspaceJson"/>).
     /// </summary>
