@@ -1915,32 +1915,44 @@ public class ObjectExplorerService
     /// the release, with a per-language row count. Drives the MCP
     /// <c>list_translation_languages</c> tool and the admin "languages
     /// uploaded" chips on the per-release translations admin page.
+    ///
+    /// Filter uses a subquery against <c>oe_modules</c> rather than the
+    /// <c>Module</c> navigation property: the Npgsql provider can't
+    /// translate <c>GroupBy</c> when its source query carries a
+    /// nav-property join, but the equivalent <c>WHERE EXISTS</c> form
+    /// generates clean SQL. Same goes for <see cref="ListModuleTranslationLanguagesAsync"/>.
+    /// We project to an anonymous type first and remap to the record DTO
+    /// in memory so the EF translator doesn't have to materialise a
+    /// record constructor inside the grouped select.
     /// </summary>
-    public Task<List<TranslationLanguageSummary>> ListTranslationLanguagesAsync(
+    public async Task<List<TranslationLanguageSummary>> ListTranslationLanguagesAsync(
         int releaseId, CancellationToken ct = default)
     {
-        return _db.OeModuleTranslations.AsNoTracking()
-            .Where(t => t.Module!.ReleaseId == releaseId)
+        var rows = await _db.OeModuleTranslations.AsNoTracking()
+            .Where(t => _db.OeModules.Any(m => m.Id == t.ModuleId && m.ReleaseId == releaseId))
             .GroupBy(t => t.LanguageCode)
-            .Select(g => new TranslationLanguageSummary(g.Key, g.Count()))
+            .Select(g => new { LanguageCode = g.Key, Count = g.Count() })
             .OrderBy(x => x.LanguageCode)
-            .ToListAsync(ct);
+            .ToListAsync(ct).ConfigureAwait(false);
+        return rows.Select(r => new TranslationLanguageSummary(r.LanguageCode, r.Count)).ToList();
     }
 
     /// <summary>
     /// Per-module, per-language counts — drives the admin translations
     /// page so each module row can show "da-DK · 1,247  de-DE · 1,250"
-    /// chips and a per-module upload button.
+    /// chips and a per-module upload button. Same subquery + remap
+    /// shape as <see cref="ListTranslationLanguagesAsync"/>.
     /// </summary>
     public async Task<List<ModuleTranslationLanguageRow>> ListModuleTranslationLanguagesAsync(
         int releaseId, CancellationToken ct = default)
     {
-        return await _db.OeModuleTranslations.AsNoTracking()
-            .Where(t => t.Module!.ReleaseId == releaseId)
+        var rows = await _db.OeModuleTranslations.AsNoTracking()
+            .Where(t => _db.OeModules.Any(m => m.Id == t.ModuleId && m.ReleaseId == releaseId))
             .GroupBy(t => new { t.ModuleId, t.LanguageCode })
-            .Select(g => new ModuleTranslationLanguageRow(g.Key.ModuleId, g.Key.LanguageCode, g.Count()))
+            .Select(g => new { g.Key.ModuleId, g.Key.LanguageCode, Count = g.Count() })
             .OrderBy(x => x.ModuleId).ThenBy(x => x.LanguageCode)
             .ToListAsync(ct).ConfigureAwait(false);
+        return rows.Select(r => new ModuleTranslationLanguageRow(r.ModuleId, r.LanguageCode, r.Count)).ToList();
     }
 
     /// <summary>
