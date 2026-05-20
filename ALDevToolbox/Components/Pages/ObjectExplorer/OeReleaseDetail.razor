@@ -95,10 +95,18 @@
             {
                 <label class="field">
                     <span class="field__label">Search</span>
+                    @*
+                        Uncontrolled input — no `value="@_search"` binding.
+                        InteractiveServer renders sent for every keystroke
+                        race against the user's typing on a slow circuit
+                        and reorder/drop characters; the initial value is
+                        seeded via JS once after first render. See
+                        wwwroot/uncontrolled-input.js.
+                    *@
                     <input type="search"
                            class="admin-search-input"
                            placeholder="@SearchPlaceholder"
-                           value="@_search"
+                           @ref="_searchInputRef"
                            @oninput="OnSearchChanged"
                            aria-label="@SearchPlaceholder" />
                 </label>
@@ -156,11 +164,17 @@
 
                 <label class="field">
                     <span class="field__label">Namespace</span>
+                    @*
+                        Uncontrolled input — same rationale as the search
+                        input above. The datalist still drives the dropdown
+                        suggestions; the input's text content is owned by
+                        the DOM after the first-render seed.
+                    *@
                     <input type="search"
                            class="field__input"
                            list="@($"namespace-list-{ReleaseId}")"
                            placeholder="All"
-                           value="@_namespace"
+                           @ref="_namespaceInputRef"
                            @oninput="OnNamespaceChanged"
                            aria-label="Filter by namespace" />
                     @if (_namespaces is not null)
@@ -219,6 +233,12 @@
     private List<ReleaseProcedureMatch>? _procedureResults;
     private List<ReleaseContentMatch>? _contentResults;
     private List<ReleaseCompareFileRow>? _compareResults;
+
+    // Refs to the search-style text inputs whose `value` attribute is
+    // intentionally NOT bound from the server side. See the comment on
+    // the inputs themselves and wwwroot/uncontrolled-input.js for why.
+    private ElementReference _searchInputRef;
+    private ElementReference _namespaceInputRef;
 
     private string SearchPlaceholder => _scope switch
     {
@@ -320,9 +340,21 @@
 
     private bool _isInteractive;
 
-    protected override void OnAfterRender(bool firstRender)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender) _isInteractive = true;
+        if (!firstRender) return;
+        _isInteractive = true;
+        // Seed the uncontrolled text inputs with whatever filter values
+        // we hydrated from the URL. After this single call the DOM owns
+        // the input value so fast typing can never race a render diff.
+        if (!string.IsNullOrEmpty(_search))
+        {
+            await JS.InvokeVoidAsync("aldt.seedInput", _searchInputRef, _search);
+        }
+        if (!string.IsNullOrEmpty(_namespace))
+        {
+            await JS.InvokeVoidAsync("aldt.seedInput", _namespaceInputRef, _namespace);
+        }
     }
 
     private async Task OnScopeChanged()

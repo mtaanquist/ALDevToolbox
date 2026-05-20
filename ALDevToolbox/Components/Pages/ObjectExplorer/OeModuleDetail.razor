@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @inject ALDevToolbox.Data.AppDbContext Db
+@inject IJSRuntime JS
 @using ALDevToolbox.Services.ObjectExplorer
 @using Microsoft.EntityFrameworkCore
 
@@ -53,9 +54,13 @@
                 </label>
                 <label class="field">
                     <span class="field__label">Search</span>
+                    @*
+                        Uncontrolled input — no `value="@_search"` binding.
+                        See wwwroot/uncontrolled-input.js for the rationale.
+                    *@
                     <input type="search"
                            placeholder="Name or numeric id"
-                           value="@_search"
+                           @ref="_searchInputRef"
                            @oninput="OnSearch"
                            class="field__input" />
                 </label>
@@ -110,6 +115,16 @@
     private string _kind = string.Empty;
     private string _search = string.Empty;
     private const int PageSize = 200;
+    private ElementReference _searchInputRef;
+
+    // Debounce + serialisation guard. Without these, every keystroke
+    // triggers an immediate ReloadAsync; the scoped EF context can't
+    // run two queries concurrently, so a fast typer hits exceptions.
+    // 250ms matches the OeReleaseDetail debounce so the two pages feel
+    // identical under fast typing.
+    private static readonly TimeSpan SearchDebounce = TimeSpan.FromMilliseconds(250);
+    private CancellationTokenSource? _searchDebounceCts;
+    private readonly SemaphoreSlim _reloadGate = new(1, 1);
 
     protected override async Task OnInitializedAsync()
     {
@@ -131,7 +146,7 @@
     private async Task OnSearch(ChangeEventArgs args)
     {
         _search = args.Value?.ToString() ?? string.Empty;
-        await ReloadAsync();
+        await DebounceReloadAsync();
     }
 
     private async Task OnKindChange(ChangeEventArgs args)
@@ -140,14 +155,32 @@
         await ReloadAsync();
     }
 
+    private async Task DebounceReloadAsync()
+    {
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _searchDebounceCts = cts;
+        try { await Task.Delay(SearchDebounce, cts.Token); }
+        catch (TaskCanceledException) { return; }
+        if (cts.IsCancellationRequested) return;
+        await ReloadAsync();
+        StateHasChanged();
+    }
+
     private async Task ReloadAsync()
     {
-        _objects = await ObjectExplorer.ListObjectsAsync(
-            ModuleId,
-            new ObjectListFilter(
-                Kind: string.IsNullOrEmpty(_kind) ? null : _kind,
-                Search: string.IsNullOrWhiteSpace(_search) ? null : _search),
-            skip: 0,
-            take: PageSize);
+        await _reloadGate.WaitAsync();
+        try
+        {
+            _objects = await ObjectExplorer.ListObjectsAsync(
+                ModuleId,
+                new ObjectListFilter(
+                    Kind: string.IsNullOrEmpty(_kind) ? null : _kind,
+                    Search: string.IsNullOrWhiteSpace(_search) ? null : _search),
+                skip: 0,
+                take: PageSize);
+        }
+        finally { _reloadGate.Release(); }
     }
 }
