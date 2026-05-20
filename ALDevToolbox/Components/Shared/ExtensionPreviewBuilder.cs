@@ -19,7 +19,10 @@ namespace ALDevToolbox.Components.Shared;
 /// <see cref="OrganizationFile"/> with
 /// <see cref="OrganizationFileScope.EveryExtension"/>. The flag is gone so
 /// the preview never lies about an AppSourceCop.json that won't actually
-/// land in the ZIP.
+/// land in the ZIP. <c>app.json</c> follows the same path: it ships as a
+/// seeded org file with <see cref="OrganizationFileScope.EveryExtension"/>,
+/// so it appears whenever the template opts into it (every new template
+/// does, by default).
 /// </remarks>
 public static class ExtensionPreviewBuilder
 {
@@ -51,10 +54,12 @@ public static class ExtensionPreviewBuilder
 
     private static List<PreviewNode> StartingContents(IReadOnlyList<string> perExtensionFilePaths)
     {
-        var list = new List<PreviewNode> { PreviewNode.File("app.json") };
+        var list = new List<PreviewNode>();
         // Per-extension org files (admin-authored, opt-in per template).
-        // Paths can be nested (e.g. ".vscode/settings.json") — graft them
-        // into the same tree so they share intermediate folder nodes.
+        // Includes app.json, which is now a seeded EveryExtension org file
+        // rather than a hardcoded emission. Paths can be nested (e.g.
+        // ".vscode/settings.json") — graft them into the same tree so they
+        // share intermediate folder nodes.
         foreach (var path in perExtensionFilePaths)
         {
             PreviewTreeBuilder.GraftFile(list, path);

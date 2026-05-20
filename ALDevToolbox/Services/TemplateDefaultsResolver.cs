@@ -32,6 +32,16 @@ public static class TemplateDefaultsResolver
         RuntimeTemplate template,
         IReadOnlyList<ApplicationVersion>? applicationVersions)
     {
+        // "Latest" pinned templates pre-select the sentinel so the form's
+        // dropdown lands on the "Latest" option. The endpoint resolves to
+        // the highest active row at submit time; we never bake a concrete
+        // version into the form for a latest-pinned template, otherwise a
+        // user who silently picks Generate would get yesterday's version.
+        if (template.DefaultApplicationVersionLatest)
+        {
+            return (ApplicationVersionService.LatestSentinel, ApplicationVersionService.LatestSentinel);
+        }
+
         var curated = ResolveCuratedVersion(template, applicationVersions);
         if (curated is not null)
         {

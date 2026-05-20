@@ -209,6 +209,11 @@
                         @bind="_form.DefaultApplicationVersionKey"
                         @bind:after="OnApplicationVersionChanged">
                     <option value="" disabled>(pick a curated entry)</option>
+                    @* "Latest" sentinel: resolves to the highest-ordered
+                       active catalogue row at the moment a user opens the
+                       New Workspace / New Extension form. The persisted
+                       template carries the bool flag, not a FK. *@
+                    <option value="@ApplicationVersionService.LatestSentinel">Latest (always highest)</option>
                     @foreach (var v in _availableApplicationVersions)
                     {
                         <option value="@v.Key">
@@ -222,7 +227,11 @@
                     <code>app.json</code>. Curate the list at
                     <a href="/admin/application-versions">Application versions</a>;
                     end-users can still override per project.
-                    @if (_selectedApplicationVersion is not null)
+                    @if (string.Equals(_form.DefaultApplicationVersionKey, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal))
+                    {
+                        <span>· resolves to the highest active catalogue row at form-load time.</span>
+                    }
+                    else if (_selectedApplicationVersion is not null)
                     {
                         <span>
                             · runtime <code>@_selectedApplicationVersion.Runtime</code>
@@ -765,6 +774,17 @@
     private void OnApplicationVersionChanged()
     {
         if (_form is null) return;
+        // "Latest" sentinel: the runtime/application strings are resolved
+        // per-request at form-submit time, so we don't write a concrete
+        // value back into the hidden form fields here. The bool flag on
+        // the form state carries the choice; the template editor saves
+        // it through ToAuthoring() which sets DefaultApplicationVersionLatest.
+        if (string.Equals(_form.DefaultApplicationVersionKey, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal))
+        {
+            _form.DefaultApplicationVersionLatest = true;
+            return;
+        }
+        _form.DefaultApplicationVersionLatest = false;
         var picked = _selectedApplicationVersion;
         if (picked is null) return;
         _form.Runtime = picked.Runtime;
@@ -1163,7 +1183,10 @@
 
     private static PreviewNode BuildExtensionPreview(ExtensionForm ext, IReadOnlyList<string> perExtensionFilePaths)
     {
-        var contents = new List<PreviewNode> { PreviewNode.File("app.json") };
+        // app.json is no longer hard-emitted; it arrives through
+        // perExtensionFilePaths when the template opts into the seeded
+        // EveryExtension org file (every fresh template does by default).
+        var contents = new List<PreviewNode>();
         foreach (var path in perExtensionFilePaths)
         {
             PreviewTreeBuilder.GraftFile(contents, path);

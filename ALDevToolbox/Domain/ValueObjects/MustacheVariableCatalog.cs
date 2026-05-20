@@ -31,7 +31,23 @@ public static class MustacheVariableCatalog
         new("extension_prefix", "Extension prefix from the New Workspace form.", AvailableInAdminContent: true),
         new("affix", "Template affix when the template's affix type is not 'None'; empty otherwise.", AvailableInAdminContent: true),
         new("tenant_id", "Tenant GUID captured on the New Workspace form (empty for standalone extensions).", AvailableInAdminContent: true),
-        new("name", "Resolved name of the current extension (per-file context only).", AvailableInAdminContent: false),
+        // The block below carries the per-extension app.json inputs. Surfaced
+        // to admin content because the canonical app.json template is now an
+        // OrganizationFile authored from /admin/templates/files; the variables
+        // resolve per-extension when the file is emitted with Scope =
+        // EveryExtension.
+        new("extension_name", "Resolved name of the current extension (e.g. \"ACME Core\"). Per-extension scope only.", AvailableInAdminContent: true),
+        new("extension_id", "Fresh GUID assigned to the current extension. Stable for a single generation.", AvailableInAdminContent: true),
+        new("brief", "Brief from the New Workspace / New Extension form.", AvailableInAdminContent: true),
+        new("description", "Description from the New Workspace / New Extension form.", AvailableInAdminContent: true),
+        new("url", "Organisation URL from the configuration defaults.", AvailableInAdminContent: true),
+        new("logo_path", "Workspace-relative path to the embedded org logo (e.g. ../.assets/images/logo.png).", AvailableInAdminContent: true),
+        new("platform_version", "Platform version from the template defaults.", AvailableInAdminContent: true),
+        new("application_version", "Application version resolved for the current extension (after \"Latest\" substitution).", AvailableInAdminContent: true),
+        new("runtime", "AL runtime version resolved for the current extension.", AvailableInAdminContent: true),
+        new("dependencies_array", "Raw JSON array of resolved dependency objects, e.g. [{\"id\":\"…\",\"name\":\"…\"}]. Embed verbatim where a JSON array is expected.", AvailableInAdminContent: true),
+        new("id_ranges_array", "Raw JSON array of resolved id range objects, e.g. [{\"from\":50000,\"to\":50099}].", AvailableInAdminContent: true),
+        new("name", "Resolved name of the current extension (per-file context only — prefer {{extension_name}} in admin-edited files).", AvailableInAdminContent: false),
         new("module_name", "Module name when generating from a catalogue module clone.", AvailableInAdminContent: false),
         new("namespace", "Folder path of the current AL file, dots-separated (per-file context only).", AvailableInAdminContent: false),
         new("guid", "Fresh GUID generated on every substitution — avoid in admin-edited files; the file would change on every generation.", AvailableInAdminContent: false),

@@ -123,7 +123,13 @@ public static class TemplateTomlMapper
             ModuleIdRangeStart = authoring.ModuleIdRangeStart,
             ModuleIdRangeSize = authoring.ModuleIdRangeSize,
             IsDefault = authoring.IsDefault,
-            DefaultApplicationVersion = authoring.DefaultApplicationVersionKey,
+            // TOML carries the sentinel string in the same slot as the FK key
+            // so the round-trip stays a single field. The mapper at parse
+            // time recognises the sentinel and lifts it onto the authoring
+            // bool.
+            DefaultApplicationVersion = authoring.DefaultApplicationVersionLatest
+                ? ApplicationVersionService.LatestSentinel
+                : authoring.DefaultApplicationVersionKey,
             DefaultModules = authoring.DefaultModuleKeys
                 .Select(k => new TemplateDefaultModuleSeed { Key = k })
                 .ToList(),
@@ -156,7 +162,9 @@ public static class TemplateTomlMapper
                 ModuleIdRangeStart = template.ModuleIdRangeStart,
                 ModuleIdRangeSize = template.ModuleIdRangeSize,
                 IsDefault = template.IsDefault,
-                DefaultApplicationVersion = template.DefaultApplicationVersion?.Key,
+                DefaultApplicationVersion = template.DefaultApplicationVersionLatest
+                    ? ApplicationVersionService.LatestSentinel
+                    : template.DefaultApplicationVersion?.Key,
                 DefaultModules = template.DefaultModules
                     .OrderBy(d => d.Ordering)
                     .Where(d => d.Module is not null)
@@ -413,7 +421,12 @@ public static class TemplateTomlMapper
             ModuleIdRangeSize: seed.Template.ModuleIdRangeSize,
             Deprecated: deprecated,
             IsDefault: seed.Template.IsDefault,
+            // The TOML carries either a fixed catalogue key or the
+            // ApplicationVersionService.LatestSentinel ("latest"). The
+            // sentinel lifts to the bool flag and clears the key; anything
+            // else stays in the key slot for normal catalogue resolution.
             DefaultApplicationVersionKey: string.IsNullOrWhiteSpace(seed.Template.DefaultApplicationVersion)
+                || string.Equals(seed.Template.DefaultApplicationVersion, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal)
                 ? null
                 : seed.Template.DefaultApplicationVersion,
             DefaultModuleKeys: seed.Template.DefaultModules.Select(d => d.Key).ToList(),
@@ -421,7 +434,11 @@ public static class TemplateTomlMapper
             CodeWorkspaceJson: string.IsNullOrWhiteSpace(seed.WorkspaceSettings?.Json)
                 ? null
                 : seed.WorkspaceSettings.Json,
-            IncludedFilePaths: seed.Template.IncludedFiles.ToList());
+            IncludedFilePaths: seed.Template.IncludedFiles.ToList(),
+            DefaultApplicationVersionLatest: string.Equals(
+                seed.Template.DefaultApplicationVersion,
+                ApplicationVersionService.LatestSentinel,
+                StringComparison.Ordinal));
     }
 
     private static ExtensionAuthoring MapExtension(ExtensionSeed seed) => new(

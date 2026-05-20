@@ -53,7 +53,8 @@
             <div class="form-error" role="alert"><p>@_errMessage</p></div>
         }
 
-        <MustacheVarsHint />
+        <div class="admin-template-files__layout">
+            <div class="admin-template-files__editor">
 
         <section class="admin-section">
             @if (_files.Count == 0)
@@ -137,6 +138,33 @@
                 }
             </div>
         </section>
+            </div>
+            <aside class="admin-template-files__aside">
+                <details class="preview-card preview-card--collapsible" open>
+                    <summary class="preview-card__summary">Mustache variables</summary>
+                    <div class="preview-card__body">
+                        <p class="muted preview-card__hint">
+                            Substituted into file contents at generation time
+                            when "Substitute mustache variables" is on for a
+                            file. Unknown placeholders are left as-is and
+                            logged.
+                        </p>
+                        @* Reads from MustacheVariableCatalog so this hint
+                           never drifts from the generator's actual switch.
+                           Lists All so admins authoring the per-extension
+                           app.json see the full set including
+                           {{dependencies_array}} and {{id_ranges_array}}. *@
+                        <dl class="mustache-vars">
+                            @foreach (var v in MustacheVariableCatalog.All)
+                            {
+                                <dt><code>@($"{{{{{v.Name}}}}}")</code></dt>
+                                <dd>@v.Caption</dd>
+                            }
+                        </dl>
+                    </div>
+                </details>
+            </aside>
+        </div>
     }
 </div>
 

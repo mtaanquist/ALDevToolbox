@@ -27,6 +27,14 @@ public record TemplateAuthoring(
     IReadOnlyList<string> DefaultModuleKeys,
     IReadOnlyList<ExtensionAuthoring> Extensions,
     /// <summary>
+    /// Pinned-to-"latest" flag — when true, the template's pre-fill resolves
+    /// to whichever catalogue row sits at the top of the active list on the
+    /// page-load that opens a builder. Mutually exclusive with
+    /// <see cref="DefaultApplicationVersionKey"/>; the validator clears the
+    /// key when this is set.
+    /// </summary>
+    bool DefaultApplicationVersionLatest = false,
+    /// <summary>
     /// Optional per-template addition to the workspace's .code-workspace
     /// JSON. Null / empty means "inherit the org base"; otherwise a JSON
     /// object that the generator deep-merges onto the org base (template

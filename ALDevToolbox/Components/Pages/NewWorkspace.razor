@@ -120,12 +120,21 @@
                     {
                         <select id="ws-app-version" name="ApplicationVersion"
                                 @bind="_applicationVersion" @bind:after="OnApplicationVersionChanged">
+                            @* "Latest" sentinel: the endpoint resolves to
+                               the highest-ordered active catalogue row at
+                               submit time. Picking it sets the hidden
+                               RuntimeVersion to the same sentinel so the
+                               endpoint can swap both atomically. *@
+                            <option value="@ApplicationVersionService.LatestSentinel">Latest (always highest)</option>
                             @* Orphan templates carry a free-text default
                                that doesn't necessarily appear in the curated
                                catalogue; render a synthetic option so the
                                browser keeps the orphan value selectable
-                               until an admin assigns a real entry. *@
-                            @if (!_applicationVersions.Any(v => v.Application == _applicationVersion))
+                               until an admin assigns a real entry. Skip
+                               this when the value is the Latest sentinel
+                               since that already renders above. *@
+                            @if (!string.Equals(_applicationVersion, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal)
+                                && !_applicationVersions.Any(v => v.Application == _applicationVersion))
                             {
                                 <option value="@_applicationVersion">@_applicationVersion (template default — not in catalogue)</option>
                             }
@@ -311,6 +320,13 @@
         // RuntimeVersion atomically (Milestone P2.4). The select's value is
         // the four-part Application string; we look the row up to recover the
         // matching runtime so the hidden RuntimeVersion input stays correct.
+        // "Latest" propagates the sentinel into RuntimeVersion so the
+        // endpoint can swap both fields in lock-step at submit time.
+        if (string.Equals(_applicationVersion, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal))
+        {
+            _runtimeVersion = ApplicationVersionService.LatestSentinel;
+            return;
+        }
         if (_applicationVersions is null) return;
         var match = _applicationVersions.FirstOrDefault(v => v.Application == _applicationVersion);
         if (match is not null)

@@ -32,6 +32,10 @@ internal sealed class RuntimeTemplateConfiguration : IEntityTypeConfiguration<Ru
         entity.Property(e => e.Name).HasColumnName("name").IsRequired();
         entity.Property(e => e.Description).HasColumnName("description");
         entity.Property(e => e.DefaultApplicationVersionId).HasColumnName("default_application_version_id");
+        entity.Property(e => e.DefaultApplicationVersionLatest)
+            .HasColumnName("default_application_version_latest")
+            .IsRequired()
+            .HasDefaultValue(false);
         // M16: jsonb. The value-converter still goes through string round-
         // trips on the C# side; HasColumnType pins the storage shape so EF
         // doesn't fall back to text. No JSONB GIN index yet — add one when

@@ -14,10 +14,10 @@ namespace ALDevToolbox.Services.Generation;
 /// are still resolved as aliases for backwards-compatibility — a single
 /// warning per render lists any deprecated names encountered so admins can
 /// rename them in their org files.
-/// Supported variables: <c>{{name}}</c>, <c>{{workspace_name}}</c>,
-/// <c>{{short_name}}</c>, <c>{{module_name}}</c>, <c>{{publisher}}</c>,
-/// <c>{{extension_prefix}}</c>, <c>{{affix}}</c>, <c>{{namespace}}</c>,
-/// <c>{{guid}}</c>, <c>{{tenant_id}}</c>.
+/// The full table is published by <see cref="Domain.ValueObjects.MustacheVariableCatalog"/>.
+/// The <c>dependencies_array</c> and <c>id_ranges_array</c> variables
+/// substitute as raw JSON fragments so the admin's <c>app.json</c> template
+/// can embed them verbatim (e.g. <c>"dependencies": {{dependencies_array}}</c>).
 /// </remarks>
 public sealed class MustacheRenderer
 {
@@ -73,6 +73,17 @@ public sealed class MustacheRenderer
                 "namespace" => ctx.FolderPath.Replace('/', '.'),
                 "guid" => Guid.NewGuid().ToString(),
                 "tenant_id" => ctx.TenantId,
+                "extension_id" => ctx.ExtensionId,
+                "extension_name" => ctx.ExtensionName,
+                "brief" => ctx.Brief,
+                "description" => ctx.Description,
+                "url" => ctx.Url,
+                "logo_path" => ctx.LogoPath,
+                "platform_version" => ctx.PlatformVersion,
+                "application_version" => ctx.ApplicationVersion,
+                "runtime" => ctx.Runtime,
+                "dependencies_array" => ctx.DependenciesArrayJson,
+                "id_ranges_array" => ctx.IdRangesArrayJson,
                 _ => UnknownVariable(match.Value, key),
             };
         });
@@ -112,4 +123,19 @@ public record MustacheContext(
     string ExtensionPrefix,
     string Affix,
     string FolderPath,
-    string TenantId = "");
+    string TenantId = "",
+    // Per-extension app.json inputs (workspace-root contexts pass the
+    // workspace's equivalents through so a root-scoped file can still embed
+    // them without producing nonsense). Default to empty so the existing
+    // `with`-clause call sites keep compiling without listing every field.
+    string ExtensionId = "",
+    string ExtensionName = "",
+    string Brief = "",
+    string Description = "",
+    string Url = "",
+    string LogoPath = "",
+    string PlatformVersion = "",
+    string ApplicationVersion = "",
+    string Runtime = "",
+    string DependenciesArrayJson = "[]",
+    string IdRangesArrayJson = "[]");

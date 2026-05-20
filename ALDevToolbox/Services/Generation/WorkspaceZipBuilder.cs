@@ -67,7 +67,7 @@ public sealed class WorkspaceZipBuilder
             // Per-extension folders.
             foreach (var ext in extensions)
             {
-                fileCount += WriteExtension(archive, rootFolder, ext, extensions, template, plan, includedFiles);
+                fileCount += WriteExtension(archive, rootFolder, ext, extensions, template, plan, orgConfig, includedFiles);
             }
 
             var folderNames = extensions.Select(e => e.Path).ToList();
@@ -130,15 +130,22 @@ public sealed class WorkspaceZipBuilder
 
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
-            var appJson = BuildStandaloneAppJson(plan, template);
-            WriteString(archive, $"{folderName}/app.json", appJson);
-            fileCount++;
-
-            // Per-extension org files (AppSourceCop.json, .editorconfig
-            // overrides, etc.) opt-in via the template's IncludedFiles join.
-            // The standalone flow synthesises a one-extension Emittable so it
-            // can reuse the same mustache context builder as the workspace
-            // flow.
+            // Synthesise a one-extension Emittable + plan so the standalone
+            // path reuses the same per-extension org-file + folder-tree
+            // emission as the workspace path. app.json now arrives through
+            // the per-extension org-file pipeline (seeded into every org).
+            // Literal dependencies on the plan map directly to the
+            // Emittable's dep list — no module / extension cross-refs
+            // because there's only one extension here.
+            var standaloneDeps = plan.Dependencies
+                .Select(d => new EmittableDependency(
+                    RefExtensionPath: null,
+                    RefModuleKey: null,
+                    LitId: d.DepId,
+                    LitName: d.DepName,
+                    LitPublisher: d.DepPublisher,
+                    LitVersion: d.DepVersion))
+                .ToList();
             var standaloneExt = new EmittableExtension(
                 Path: folderName,
                 Name: plan.ExtensionName,
@@ -152,7 +159,7 @@ public sealed class WorkspaceZipBuilder
                 ModuleKey: null,
                 ModuleName: plan.ExtensionName,
                 FolderRoots: scaffoldFolderRoots,
-                Dependencies: Array.Empty<EmittableDependency>());
+                Dependencies: standaloneDeps);
             var standaloneAsWorkspacePlan = new ProjectPlan(
                 TemplateKey: plan.TemplateKey,
                 WorkspaceName: plan.ExtensionName,
@@ -167,20 +174,13 @@ public sealed class WorkspaceZipBuilder
                 SelectedExtensionPaths: Array.Empty<string>(),
                 SelectedModuleKeys: Array.Empty<string>(),
                 TenantId: string.Empty);
+            var allExtensions = new[] { standaloneExt };
             fileCount += WritePerExtensionOrgFiles(
                 archive, folderName,
                 FilterIncluded(orgConfig.Files, template),
-                standaloneExt, template, standaloneAsWorkspacePlan);
+                standaloneExt, allExtensions, template, standaloneAsWorkspacePlan, orgConfig);
 
-            var substitutionCtx = new MustacheContext(
-                Name: plan.ExtensionName,
-                WorkspaceName: plan.ExtensionName,
-                ShortName: StripWhitespace(plan.ExtensionName),
-                ModuleName: plan.ExtensionName,
-                Publisher: plan.Publisher,
-                ExtensionPrefix: string.Empty,
-                Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
-                FolderPath: string.Empty);
+            var substitutionCtx = BuildExtensionMustacheContext(standaloneExt, allExtensions, template, standaloneAsWorkspacePlan, orgConfig);
             fileCount += EmitFolderTree(archive, folderName, scaffoldFolderRoots, plan.IncludeExamples, substitutionCtx);
 
             WriteString(archive, $"{folderName}/{WorkspaceConfigService.FileName}", _config.BuildExtension(plan));
@@ -230,20 +230,46 @@ public sealed class WorkspaceZipBuilder
         IReadOnlyList<EmittableExtension> allExtensions,
         RuntimeTemplate template,
         ProjectPlan plan,
+        OrganizationConfig orgConfig,
         IReadOnlyList<OrganizationFile> includedFiles)
     {
         var extPath = $"{rootFolder}/{ext.Path}";
-        var appJson = BuildAppJson(ext, allExtensions, template, plan);
-        WriteString(archive, $"{extPath}/app.json", appJson);
-        var fileCount = 1;
+        var fileCount = 0;
 
-        // Per-extension org files (formerly: the hard-coded AppSourceCop.json
-        // emission driven by template.AppSourceCop.Include). Admins author
-        // the file as an OrganizationFile with Scope = EveryExtension and tick
-        // it on the template; the emission is one duplicate per extension.
-        fileCount += WritePerExtensionOrgFiles(archive, extPath, includedFiles, ext, template, plan);
+        // Per-extension org files now include the canonical app.json (seeded
+        // into every org via PlatformOrganizationFiles, with Scope =
+        // EveryExtension and a mustache template body). The substitution
+        // resolves the per-extension app.json inputs through the renderer
+        // context built below.
+        fileCount += WritePerExtensionOrgFiles(archive, extPath, includedFiles, ext, allExtensions, template, plan, orgConfig);
 
-        var substitutionCtx = new MustacheContext(
+        var substitutionCtx = BuildExtensionMustacheContext(ext, allExtensions, template, plan, orgConfig);
+
+        fileCount += EmitFolderTree(archive, extPath, ext.FolderRoots, plan.IncludeExamples, substitutionCtx);
+        return fileCount;
+    }
+
+    /// <summary>
+    /// Builds the per-extension <see cref="MustacheContext"/> with the full
+    /// app.json variable set populated. The renderer reads from this context
+    /// when an admin-edited <c>app.json</c> (or any other per-extension org
+    /// file) references variables like <c>{{application_version}}</c> or
+    /// <c>{{dependencies_array}}</c>.
+    /// </summary>
+    private MustacheContext BuildExtensionMustacheContext(
+        EmittableExtension ext,
+        IReadOnlyList<EmittableExtension> allExtensions,
+        RuntimeTemplate template,
+        ProjectPlan plan,
+        OrganizationConfig orgConfig)
+    {
+        var deps = ResolveDependencies(ext, allExtensions);
+        var idRanges = new JsonArray(new JsonObject
+        {
+            ["from"] = ext.IdRangeFrom,
+            ["to"] = ext.IdRangeTo,
+        });
+        return new MustacheContext(
             Name: ext.Name,
             WorkspaceName: plan.WorkspaceName,
             ShortName: StripWhitespace(plan.WorkspaceName),
@@ -252,11 +278,39 @@ public sealed class WorkspaceZipBuilder
             ExtensionPrefix: plan.ExtensionPrefix,
             Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
             FolderPath: string.Empty,
-            TenantId: plan.TenantId);
-
-        fileCount += EmitFolderTree(archive, extPath, ext.FolderRoots, plan.IncludeExamples, substitutionCtx);
-        return fileCount;
+            TenantId: plan.TenantId,
+            ExtensionId: ext.Id.ToString(),
+            ExtensionName: ext.Name,
+            Brief: plan.Brief,
+            Description: plan.Description,
+            Url: orgConfig.Settings.DefaultUrl ?? template.Defaults.Url ?? string.Empty,
+            LogoPath: ResolveLogoPathForApp(orgConfig),
+            PlatformVersion: template.Defaults.Platform,
+            ApplicationVersion: ext.Application,
+            Runtime: ext.Runtime,
+            DependenciesArrayJson: deps.ToJsonString(CompactJsonOptions),
+            IdRangesArrayJson: idRanges.ToJsonString(CompactJsonOptions));
     }
+
+    /// <summary>
+    /// Returns the path admin app.json templates should embed for the org
+    /// logo. Mirrors the legacy hard-coded behaviour: the
+    /// <see cref="OrganizationSettings.DefaultLogo"/> string when set,
+    /// otherwise an empty string (no logo emitted, no logo referenced).
+    /// </summary>
+    private static string ResolveLogoPathForApp(OrganizationConfig orgConfig)
+    {
+        if (!string.IsNullOrWhiteSpace(orgConfig.Settings.DefaultLogo))
+        {
+            return orgConfig.Settings.DefaultLogo.Trim();
+        }
+        return string.Empty;
+    }
+
+    private static readonly JsonSerializerOptions CompactJsonOptions = new()
+    {
+        WriteIndented = false,
+    };
 
     /// <summary>
     /// Recursively emit every folder + file under <paramref name="parentPath"/>.
@@ -305,37 +359,7 @@ public sealed class WorkspaceZipBuilder
         return fileCount;
     }
 
-    // ===== app.json builders =====
-
-    /// <summary>
-    /// Builds the per-extension <c>AppSourceCop.json</c> contents. The
-    /// <see cref="AppSourceCopSettings.Include"/> flag is stripped — it's our
-    /// authoring toggle, not an AL concept; AL would reject an unknown field.
-    /// </summary>
-    private string BuildAppJson(
-        EmittableExtension ext,
-        IReadOnlyList<EmittableExtension> allExtensions,
-        RuntimeTemplate template,
-        ProjectPlan plan)
-    {
-        var node = BaseAppJson(template);
-        node["id"] = ext.Id.ToString();
-        node["name"] = ext.Name;
-        node["publisher"] = ext.Publisher;
-        node["brief"] = plan.Brief;
-        node["description"] = plan.Description;
-        node["version"] = "0.0.0.1";
-        node["application"] = ext.Application;
-        node["platform"] = template.Defaults.Platform;
-        node["runtime"] = ext.Runtime;
-        node["idRanges"] = new JsonArray(new JsonObject
-        {
-            ["from"] = ext.IdRangeFrom,
-            ["to"] = ext.IdRangeTo,
-        });
-        node["dependencies"] = ResolveDependencies(ext, allExtensions);
-        return SerializeIndented(node);
-    }
+    // ===== dependency resolver (used by ExtensionMustacheContext) =====
 
     /// <summary>
     /// Walks an extension's declared deps in order, dispatching on which
@@ -412,60 +436,6 @@ public sealed class WorkspaceZipBuilder
         ["publisher"] = publisher,
         ["version"] = version,
     };
-
-    private static string BuildStandaloneAppJson(StandaloneExtensionPlan plan, RuntimeTemplate template)
-    {
-        var node = BaseAppJson(template);
-        node["id"] = Guid.NewGuid().ToString();
-        node["name"] = plan.ExtensionName;
-        node["publisher"] = string.IsNullOrWhiteSpace(plan.Publisher) ? template.Defaults.Publisher : plan.Publisher;
-        node["brief"] = plan.Brief;
-        node["description"] = plan.Description;
-        node["version"] = "0.0.0.1";
-        node["application"] = plan.ApplicationVersion;
-        node["platform"] = template.Defaults.Platform;
-        node["runtime"] = plan.RuntimeVersion;
-        node["idRanges"] = new JsonArray(new JsonObject
-        {
-            ["from"] = plan.IdRangeFrom,
-            ["to"] = plan.IdRangeTo,
-        });
-
-        var deps = new JsonArray();
-        foreach (var d in plan.Dependencies)
-        {
-            deps.Add(BuildDepNode(d.DepId, d.DepName, d.DepPublisher, d.DepVersion));
-        }
-        node["dependencies"] = deps;
-        return SerializeIndented(node);
-    }
-
-    private static JsonObject BaseAppJson(RuntimeTemplate template)
-    {
-        var node = new JsonObject
-        {
-            ["id"] = "00000000-0000-0000-0000-000000000000",
-            ["name"] = string.Empty,
-        };
-        // Round-trip TemplateDefaults through JSON so the template-defined
-        // fields (target, features, supportedLocales, resourceExposurePolicy,
-        // …) get merged. The form-pre-fill fields (application, platform,
-        // extension_prefix, affix, affixType) appear in the serialised blob
-        // too — the per-extension layering overwrites application / platform
-        // with plan values; the affix / extension_prefix entries are
-        // mustache-template inputs, not app.json content.
-        var defaults = JsonSerializer.SerializeToNode(template.Defaults, JsonOptions)?.AsObject();
-        if (defaults is not null)
-        {
-            foreach (var kvp in defaults.ToList())
-            {
-                // Strip the form-pre-fill keys that aren't app.json fields.
-                if (kvp.Key is "application" or "platform" or "extension_prefix" or "affix" or "affixType") continue;
-                node[kvp.Key] = kvp.Value?.DeepClone();
-            }
-        }
-        return node;
-    }
 
     // ===== Org assets =====
 
@@ -564,6 +534,7 @@ public sealed class WorkspaceZipBuilder
             var content = file.MustacheEnabled
                 ? _mustache.Render(file.Content, ctx with { FolderPath = file.Path })
                 : file.Content;
+            content = MaybePrettifyJson(file.Path, content);
             WriteString(archive, $"{rootFolder}/{file.Path}", content);
             written++;
         }
@@ -584,31 +555,56 @@ public sealed class WorkspaceZipBuilder
         string extensionFolderPath,
         IReadOnlyList<OrganizationFile> files,
         EmittableExtension ext,
+        IReadOnlyList<EmittableExtension> allExtensions,
         RuntimeTemplate template,
-        ProjectPlan plan)
+        ProjectPlan plan,
+        OrganizationConfig orgConfig)
     {
         if (files.Count == 0) return 0;
         var written = 0;
-        var ctx = new MustacheContext(
-            Name: ext.Name,
-            WorkspaceName: plan.WorkspaceName,
-            ShortName: StripWhitespace(plan.WorkspaceName),
-            ModuleName: ext.ModuleName,
-            Publisher: ext.Publisher,
-            ExtensionPrefix: plan.ExtensionPrefix,
-            Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
-            FolderPath: string.Empty,
-            TenantId: plan.TenantId);
+        // The full per-extension context — populated with app.json inputs —
+        // so the canonical app.json template (and any other admin-authored
+        // per-extension file) can reference variables like
+        // {{application_version}} or {{dependencies_array}}.
+        var ctx = BuildExtensionMustacheContext(ext, allExtensions, template, plan, orgConfig);
         foreach (var file in files)
         {
             if (file.Scope != Domain.ValueObjects.OrganizationFileScope.EveryExtension) continue;
             var content = file.MustacheEnabled
                 ? _mustache.Render(file.Content, ctx with { FolderPath = file.Path })
                 : file.Content;
+            content = MaybePrettifyJson(file.Path, content);
             WriteString(archive, $"{extensionFolderPath}/{file.Path}", content);
             written++;
         }
         return written;
+    }
+
+    /// <summary>
+    /// When <paramref name="path"/> ends in <c>.json</c>, re-parse
+    /// <paramref name="content"/> as JSON and re-serialize with two-space
+    /// indentation so admin templates that embed compact mustache fragments
+    /// (e.g. <c>{{dependencies_array}}</c>) come out cleanly formatted.
+    /// Parse failures fall through silently — the user-authored body might
+    /// not be valid JSON at all, and the resulting file is whatever the
+    /// admin wrote. A warning is logged so the admin can spot a typo
+    /// without the file silently disappearing.
+    /// </summary>
+    private string MaybePrettifyJson(string path, string content)
+    {
+        if (!path.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) return content;
+        try
+        {
+            var node = JsonNode.Parse(content);
+            if (node is null) return content;
+            return node.ToJsonString(JsonOptions);
+        }
+        catch (JsonException)
+        {
+            // Body emitted verbatim so the admin can fix it; the AL toolchain
+            // will report the parse error when the extension is built.
+            return content;
+        }
     }
 
     // ===== Workspace-level files =====

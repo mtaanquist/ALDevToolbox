@@ -46,13 +46,20 @@ internal static class StartupTasks
             await db.SaveChangesAsync(stopping);
         }
 
-        // Ensure the Default org carries the platform-default workspace
-        // files. The MovePlatformFilesToOrgFiles migration covers existing
-        // orgs at migration time, but a fresh-DB boot creates the Default
-        // org AFTER migrations have run — without this call the org would
-        // have no .gitignore / ruleset / README to opt new templates into.
-        // Idempotent: existing rows at those paths are left alone.
-        await PlatformOrganizationFileSeeder.EnsureForOrganizationAsync(db, defaultOrg.Id, DateTime.UtcNow, stopping);
+        // Ensure every org carries the platform-default workspace files.
+        // The MovePlatformFilesToOrgFiles migration covered existing orgs at
+        // migration time, but new platform files added later (like the
+        // canonical per-extension app.json) need a startup-time backfill so
+        // existing orgs pick them up too. Idempotent: the seeder skips
+        // existing rows by path so reboots are no-ops.
+        var allOrgIds = await db.Organizations
+            .IgnoreQueryFilters()
+            .Select(o => o.Id)
+            .ToListAsync(stopping);
+        foreach (var orgId in allOrgIds)
+        {
+            await PlatformOrganizationFileSeeder.EnsureForOrganizationAsync(db, orgId, DateTime.UtcNow, stopping);
+        }
         await db.SaveChangesAsync(stopping);
 
         // Bootstrap admin: only runs once, when there are no users in the

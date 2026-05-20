@@ -30,6 +30,45 @@ public static class PlatformOrganizationFiles
     public const string GitignorePath = ".gitignore";
     public const string RulesetPath = ".assets/rulesets/Company.ruleset.json";
     public const string ReadmePath = "README.md";
+    public const string AppJsonPath = "app.json";
+
+    /// <summary>
+    /// Canonical per-extension <c>app.json</c> template. Mustache-substituted
+    /// per extension at generation time; the variables resolve through the
+    /// renderer's per-extension context. Admins can edit / override the body
+    /// at <c>/admin/templates/files</c>.
+    /// </summary>
+    public const string DefaultAppJsonContent = """
+        {
+            "id": "{{extension_id}}",
+            "name": "{{extension_name}}",
+            "publisher": "{{publisher}}",
+            "version": "0.0.0.1",
+            "brief": "{{brief}}",
+            "description": "{{description}}",
+            "privacyStatement": "",
+            "EULA": "",
+            "help": "",
+            "url": "{{url}}",
+            "logo": "{{logo_path}}",
+            "dependencies": {{dependencies_array}},
+            "screenshots": [],
+            "platform": "{{platform_version}}",
+            "application": "{{application_version}}",
+            "target": "Cloud",
+            "idRanges": {{id_ranges_array}},
+            "resourceExposurePolicy": {
+                "allowDebugging": true,
+                "allowDownloadingSource": true,
+                "includeSourceInSymbolFile": true
+            },
+            "runtime": "{{runtime}}",
+            "features": [
+                "NoImplicitWith",
+                "TranslationFile"
+            ]
+        }
+        """;
 
     public static IReadOnlyList<Definition> All { get; } = new Definition[]
     {
@@ -116,5 +155,16 @@ public static class PlatformOrganizationFiles
                 """,
             MustacheEnabled: true,
             Ordering: 1002),
+        // app.json — one copy per extension. Ordering = 0 so it lands at the
+        // top of each extension folder when WriteOrgFiles iterates over the
+        // template's IncludedFiles join in order. Admins can replace the body
+        // wholesale on /admin/templates/files; the mustache substitution
+        // tolerates whatever shape they prefer.
+        new(
+            Path: AppJsonPath,
+            Content: DefaultAppJsonContent,
+            MustacheEnabled: true,
+            Ordering: 0,
+            Scope: OrganizationFileScope.EveryExtension),
     };
 }
