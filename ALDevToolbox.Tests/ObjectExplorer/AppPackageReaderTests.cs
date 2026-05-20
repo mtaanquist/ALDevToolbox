@@ -72,25 +72,24 @@ public sealed class AppPackageReaderTests
     }
 
     [Fact]
-    public void ParseExtendsRef_strips_namespace_prefix_from_qualified_target()
+    public void ParseExtendsRef_does_not_strip_namespace_qualified_input()
     {
-        // Modern BC symbol packages encode the extends target as a
-        // namespace-qualified name even when the .al source writes the
-        // bare name (`extends "BOM Buffer"`). The base object itself
-        // is catalogued unqualified, so the qualified form has to be
-        // stripped here — otherwise the chain walker's
-        // _extensionsByBaseName lookup, the pageextension SourceTable
-        // propagation SQL, and the extends_target reference row all
-        // miss. Repro: BC's `tableextension "Asm. BOM Buffer" extends
-        // "BOM Buffer"` ships with TargetObject
-        // `#<appid>#Microsoft.Inventory.BOM.BOM Buffer`; a
-        // `BOMBuffer.TransferFromAsmHeader(...)` chain fires
-        // chain-step because the extension isn't found.
+        // BC symbol packages we've swept (BaseApp, BusinessFoundation,
+        // SystemApp, QualityManagement, EDocument Core, Intrastat
+        // Core, OIOUBL, DK Core) never ship a namespace-qualified
+        // Target / TargetObject — every value is already bare. We
+        // therefore don't attempt to strip a namespace prefix; a
+        // hypothetical qualified shape passes through verbatim. If a
+        // partner app or future BC release does ship one, the
+        // resulting `extends_object_name = "Microsoft.Foo.Bar"`
+        // won't equal any base table's bare `name`, and the chain
+        // walker will miss — that miss is the signal that brings us
+        // back here with real data to inform a real rule.
         var (appId, name) = AppPackageReader.ParseExtendsRef(
             "#437dbf0e84ff417a965ded2bb9650972#Microsoft.Inventory.BOM.BOM Buffer");
 
         appId.Should().Be(Guid.Parse("437dbf0e-84ff-417a-965d-ed2bb9650972"));
-        name.Should().Be("BOM Buffer");
+        name.Should().Be("Microsoft.Inventory.BOM.BOM Buffer");
     }
 
     [Fact]
@@ -122,33 +121,31 @@ public sealed class AppPackageReaderTests
     }
 
     [Fact]
-    public void ParseExtendsRef_strips_namespace_from_unwrapped_qualified_target()
+    public void ParseExtendsRef_does_not_strip_unwrapped_namespace_qualified_input()
     {
-        // A same-app TableExtension can also ship its target as a
-        // bare namespace-qualified name (no `#appid#` wrapper). Strip
-        // the namespace so the extension-walk key matches the base
-        // object's unqualified `Name`.
+        // Bare-form passthrough applies whether or not the `#appid#`
+        // wrapper is present. See the doc comment on ParseExtendsRef
+        // for why we don't try to identify a namespace prefix.
         var (appId, name) = AppPackageReader.ParseExtendsRef(
             "Microsoft.Inventory.Location.Location");
 
         appId.Should().BeNull();
-        name.Should().Be("Location");
+        name.Should().Be("Microsoft.Inventory.Location.Location");
     }
 
     [Fact]
-    public void ParseExtendsRef_preserves_dots_inside_object_names()
+    public void ParseExtendsRef_preserves_dots_inside_bare_object_names()
     {
-        // Repro: `tableextension … extends "Gen. Journal Line"` in the
-        // DK Payment & Reconciliation Formats app. The base object
-        // name itself contains a dot, so the old last-dot strategy
-        // stripped everything before " Journal Line" and stamped a
-        // phantom `Journal Line` table into the file's Using list.
-        // A valid namespace segment is a bare identifier, so the
-        // first segment that doesn't match — `Gen. Journal Line`,
-        // starting with a space-bearing token — marks the boundary
-        // between namespace and name.
-        var (appId, name) = AppPackageReader.ParseExtendsRef(
-            "Microsoft.Finance.GeneralLedger.Journal.Gen. Journal Line");
+        // Original bug repro: `tableextension … extends "Gen. Journal
+        // Line"` in the DK Payment & Reconciliation Formats app. The
+        // base object name itself contains a dot, so the original
+        // LastIndexOf('.') strategy stripped everything before
+        // " Journal Line" and stamped a phantom `Journal Line` table
+        // into the file's Using list. The simplified ParseExtendsRef
+        // strips only the #appid# wrapper, so a bare name with
+        // internal dots round-trips unchanged — which is all the
+        // real-world `TargetObject` payload ever needs.
+        var (appId, name) = AppPackageReader.ParseExtendsRef("Gen. Journal Line");
 
         appId.Should().BeNull();
         name.Should().Be("Gen. Journal Line");
@@ -157,11 +154,11 @@ public sealed class AppPackageReaderTests
     [Fact]
     public void ParseExtendsRef_preserves_dots_inside_object_names_with_appid()
     {
-        // Same name + the #appid# wrapper. Verifies the dot-preserving
-        // segment walk still kicks in after the GUID prefix is
-        // consumed.
+        // Same name + the #appid# wrapper. Confirms the GUID prefix
+        // is decoded and the bare name comes back verbatim, dots
+        // and all.
         var (appId, name) = AppPackageReader.ParseExtendsRef(
-            "#437dbf0e84ff417a965ded2bb9650972#Microsoft.Finance.GeneralLedger.Journal.Gen. Journal Line");
+            "#437dbf0e84ff417a965ded2bb9650972#Gen. Journal Line");
 
         appId.Should().Be(Guid.Parse("437dbf0e-84ff-417a-965d-ed2bb9650972"));
         name.Should().Be("Gen. Journal Line");
@@ -202,33 +199,10 @@ public sealed class AppPackageReaderTests
         name.Should().Be(raw);
     }
 
-    /// <summary>
-    /// Sweep test: the same shapes wrapped in the modern <c>#appid#</c>
-    /// and namespace-qualified envelopes. Every name part that arrived
-    /// intact in the bare-name test must also survive the namespace
-    /// strip — the heuristic is the only thing standing between a
-    /// future BC release that namespaces these objects and a renewed
-    /// run of phantom dependency rows.
-    /// </summary>
-    [Theory]
-    [InlineData("Microsoft.Foundation.Templates.Vendor Templ.", "Vendor Templ.")]
-    [InlineData("Microsoft.Foundation.Templates.Vendor Templ. Card", "Vendor Templ. Card")]
-    [InlineData("Microsoft.Inventory.Tracking.Lot No. Information", "Lot No. Information")]
-    [InlineData("Microsoft.Warehouse.RoleCenters.Whse. Basic Role Center", "Whse. Basic Role Center")]
-    [InlineData("Microsoft.Sales.History.Sales Cr.Memo Header", "Sales Cr.Memo Header")]
-    [InlineData("Microsoft.Service.History.Service Cr.Memo Header", "Service Cr.Memo Header")]
-    [InlineData("Microsoft.Foundation.EDoc.Doc. Sending Profile Elec.Doc.", "Doc. Sending Profile Elec.Doc.")]
-    [InlineData("Microsoft.Foundation.Address.Country/Region", "Country/Region")]
-    [InlineData("Microsoft.Purchases.Setup.Purchases & Payables Setup", "Purchases & Payables Setup")]
-    [InlineData("Microsoft.Finance.GeneralLedger.Journal.Gen. Journal Line", "Gen. Journal Line")]
-    [InlineData("Microsoft.Warehouse.Activity.Whse.-Source - Create Document", "Whse.-Source - Create Document")]
-    [InlineData("Microsoft.Purchases.History.Blanket Purch. Order Arch.Sub.", "Blanket Purch. Order Arch.Sub.")]
-    public void ParseExtendsRef_strips_namespace_from_real_world_qualified_names(string raw, string expected)
-    {
-        var (appId, name) = AppPackageReader.ParseExtendsRef(raw);
-        appId.Should().BeNull();
-        name.Should().Be(expected);
-    }
+    // No namespace-stripping sweep here: the simplified ParseExtendsRef
+    // returns qualified inputs verbatim, so the equivalent test would
+    // just be `assert raw == raw`. The bare-name sweep above already
+    // pins every real shape Microsoft's apps actually ship.
 
     [Fact]
     public async Task ReadAsync_resolves_cross_module_variable_subtypes()

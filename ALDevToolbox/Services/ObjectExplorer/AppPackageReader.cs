@@ -337,151 +337,57 @@ public static class AppPackageReader
 
     /// <summary>
     /// Decodes a symbol-package extends-target string into its
-    /// <c>(AppId?, BaseObjectName?)</c> components. Three shapes occur
+    /// <c>(AppId?, BaseObjectName?)</c> components. Two shapes occur
     /// in practice:
     /// <list type="bullet">
-    ///   <item><b><c>#&lt;32 hex&gt;#&lt;qualified name&gt;</c></b> — the
-    ///     modern cross-app form (e.g. OIOUBL extending Base App's
-    ///     <c>Customer</c>). Returns the AppId and the last namespace
-    ///     segment.</item>
-    ///   <item><b><c>&lt;qualified name&gt;</c></b> — same-app extensions
-    ///     and ReportExtensions ship without the <c>#appid#</c>
-    ///     wrapper (BC's Base App writes <c>Target = "Cancel FA Ledger
-    ///     Entries"</c> for ReportExtensions, and same-namespace
-    ///     TableExtensions like <c>Mfg. Location</c> extends
-    ///     <c>Location</c> in Base App). Returns (null, last segment).</item>
-    ///   <item><b>null / empty / malformed <c>#</c>-prefix</b> — returns
+    ///   <item><c>#&lt;32 hex&gt;#&lt;name&gt;</c> — the cross-app
+    ///     form (e.g. OIOUBL extending Base App's <c>Customer</c>).
+    ///     Returns the decoded AppId and the unwrapped name.</item>
+    ///   <item><c>&lt;name&gt;</c> — same-app extensions and
+    ///     ReportExtensions ship without the <c>#appid#</c> wrapper
+    ///     (BC's Base App writes <c>Target = "Cancel FA Ledger
+    ///     Entries"</c> for ReportExtensions; same-app
+    ///     TableExtensions ship the base name as-is).
+    ///     Returns (null, name).</item>
+    ///   <item>null / empty / malformed <c>#</c>-prefix — returns
     ///     (null, null).</item>
     /// </list>
-    /// <para>Whichever shape we get, the namespace prefix is stripped:
-    /// the base object itself is catalogued by its unqualified name
-    /// (<c>oe_module_objects.Name = "BOM Buffer"</c>), so storing the
-    /// qualified form here would mismatch every downstream consumer
-    /// that joins <c>extends_object_name</c> back to the base
-    /// object's <c>Name</c> — the chain walker's
-    /// <c>_extensionsByBaseName</c> lookup, the pageextension
-    /// SourceTable propagation SQL, the <c>extends_target</c>
-    /// reference row, and the UI display.</para>
-    /// <para>Returning a name without an AppId is fine for the
-    /// extension-walk path (keyed by name only), but the
-    /// <c>extends_target</c> reference row in <c>EmitReferences</c>
-    /// requires both — same-app extensions lose that one click-target
-    /// rather than the entire membership.</para>
+    /// <para>The name is returned verbatim, including any internal
+    /// dots, spaces, dashes, slashes, ampersands, or trailing
+    /// periods — <c>Gen. Journal Line</c>, <c>Sales Cr.Memo Header</c>,
+    /// <c>Whse.-Source - Create Document</c>, <c>Country/Region</c>,
+    /// <c>Purchases &amp; Payables Setup</c>, <c>Vendor Templ.</c>
+    /// are all real BC 28.1 targets and round-trip unchanged. We do
+    /// <em>not</em> attempt to strip an AL namespace prefix: a sweep
+    /// over every <c>Target</c>, <c>TargetObject</c>, and
+    /// <c>Subtype.Name</c> string across BaseApp, BusinessFoundation,
+    /// SystemApp, QualityManagement, EDocument Core, Intrastat Core,
+    /// OIOUBL, and DK Core found zero values shaped like
+    /// <c>Microsoft.Foo.Bar</c>, so there's nothing to strip in
+    /// practice and a heuristic would only buy ambiguity for AL names
+    /// that happen to look like one.</para>
+    /// <para>If a future BC release or a partner app starts emitting
+    /// namespace-qualified targets, the symptom will be missing
+    /// <c>extends_target</c> lookups (the chain walker's
+    /// <c>_extensionsByBaseName</c> joins on
+    /// <c>base.name = ext.extends_object_name</c>, which only matches
+    /// when both sides are bare). At that point we'll re-introduce a
+    /// strip, informed by real data instead of a guess.</para>
     /// </summary>
     internal static (Guid? AppId, string? Name) ParseExtendsRef(string? raw)
     {
         if (string.IsNullOrEmpty(raw)) return (null, null);
 
-        Guid? guid = null;
-        string name = raw;
-
-        if (raw[0] == '#')
+        if (raw[0] != '#')
         {
-            var second = raw.IndexOf('#', 1);
-            if (second != 33) return (null, null); // need exactly 32 hex digits between '#'s
-            if (!Guid.TryParseExact(raw.AsSpan(1, 32), "N", out var parsed)) return (null, null);
-            guid = parsed;
-            name = raw.Substring(34);
+            return (null, raw);
         }
 
-        name = StripLeadingNamespaceSegments(name);
-
-        return string.IsNullOrEmpty(name) ? (null, null) : (guid, name);
-    }
-
-    /// <summary>
-    /// Drops the AL namespace prefix from a qualified name. Walks
-    /// dot-separated segments left-to-right, accepting a dot as a
-    /// namespace boundary only when BOTH neighbouring segments (the
-    /// one ending at the dot and the one starting after it) look like
-    /// AL namespace identifiers. Everything from the first dot whose
-    /// neighbours don't qualify is the object's name.
-    /// <para>
-    /// The previous implementation just split on the last <c>.</c>,
-    /// which silently corrupted names that themselves contain a dot —
-    /// <c>"Gen. Journal Line"</c> being the canonical repro. With the
-    /// raw <c>Microsoft.Finance.GeneralLedger.Journal.Gen. Journal
-    /// Line</c>, the last-dot strategy returned " Journal Line" and
-    /// stamped a phantom <c>Journal Line</c> table into every
-    /// reference row downstream. A single-direction check still got
-    /// it wrong because <c>Gen</c> alone is a valid identifier; we
-    /// only know it belongs to the name once we see the next
-    /// segment starts with a space.
-    /// </para>
-    /// <para>
-    /// AL namespace segments are bare identifiers (letters, digits and
-    /// underscores). A segment with a space, a leading digit, or any
-    /// other non-identifier character can only be part of an object
-    /// name, so the boundary is unambiguous once both sides are
-    /// inspected. Same heuristic catches <c>"Asm. BOM Buffer"</c>,
-    /// <c>"Cust. Ledger Entry"</c>, and every other dot-containing AL
-    /// identifier that ships in the BC base app.
-    /// </para>
-    /// </summary>
-    private static string StripLeadingNamespaceSegments(string qualified)
-    {
-        if (string.IsNullOrEmpty(qualified)) return qualified;
-        // Walk dots left-to-right and remember the rightmost one that
-        // separates two valid namespace identifiers. A dot only
-        // counts as a namespace boundary when BOTH sides of it look
-        // like AL namespace identifiers:
-        //
-        //   - LEFT (segment since last boundary): bare identifier —
-        //     starts with letter or underscore, all letters/digits/
-        //     underscores. Rejects names that have already crossed
-        //     into name-territory like "Sales Cr" (space) or "Doc"
-        //     (when preceded by a non-identifier).
-        //   - RIGHT (the very next character): an identifier start,
-        //     i.e. letter or underscore. Anything else — whitespace,
-        //     `-`, `/`, `&`, `,`, a digit, another `.`, end-of-string
-        //     — means the dot is already inside the object's name,
-        //     because no AL namespace segment can start with those.
-        //
-        // The right-side check is what stops the BC base-app target
-        // `Whse.-Source - Create Document` from collapsing into
-        // `-Source - Create Document`: the dash after `Whse.` isn't a
-        // valid identifier start, so the dot stays inside the name.
-        // Same logic protects the common abbreviation pattern
-        // (`Gen. Journal Line`, `Asm. BOM Buffer`, `Sales Cr.Memo
-        // Header`) since the post-dot character is either a space or
-        // a letter whose left segment contains a space.
-        //
-        // Verified against 335 unique Target/TargetObject strings
-        // pulled from BC 28.1 BaseApp, BusinessFoundation, SystemApp,
-        // QualityManagement, EDocument Core, Intrastat Core, OIOUBL,
-        // and DK Core. The structural edge case we still can't
-        // disambiguate — a bare name shaped like `Foo.Bar` (period,
-        // no whitespace, both sides identifier-like) — does not
-        // appear in any Microsoft app we've inspected; if a partner
-        // app ever ships one we'll need a new signal (the dotted
-        // namespace could itself be data we track instead of guessed
-        // from the qualified string).
-        var lastNamespaceDot = -1;
-        for (var i = 0; i < qualified.Length - 1; i++)
-        {
-            if (qualified[i] != '.') continue;
-            var next = qualified[i + 1];
-            if (!IsIdentifierStart(next)) continue;
-            var segmentStart = lastNamespaceDot + 1;
-            var leftSegment = qualified.AsSpan(segmentStart, i - segmentStart);
-            if (!IsValidNamespaceSegment(leftSegment)) continue;
-            lastNamespaceDot = i;
-        }
-        return lastNamespaceDot < 0 ? qualified : qualified.Substring(lastNamespaceDot + 1);
-    }
-
-    private static bool IsIdentifierStart(char c) =>
-        char.IsLetter(c) || c == '_';
-
-    private static bool IsValidNamespaceSegment(ReadOnlySpan<char> segment)
-    {
-        if (segment.IsEmpty) return false;
-        if (!char.IsLetter(segment[0]) && segment[0] != '_') return false;
-        foreach (var ch in segment)
-        {
-            if (!char.IsLetterOrDigit(ch) && ch != '_') return false;
-        }
-        return true;
+        var second = raw.IndexOf('#', 1);
+        if (second != 33) return (null, null); // need exactly 32 hex digits between '#'s
+        if (!Guid.TryParseExact(raw.AsSpan(1, 32), "N", out var guid)) return (null, null);
+        var name = raw.Substring(34);
+        return string.IsNullOrEmpty(name) ? (null, null) : ((Guid?)guid, name);
     }
 
     private static IReadOnlyList<SymbolProperty> ToProperties(IReadOnlyList<RawProperty>? raws)
