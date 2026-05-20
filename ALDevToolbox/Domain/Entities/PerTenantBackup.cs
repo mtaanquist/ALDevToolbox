@@ -42,4 +42,18 @@ public class PerTenantBackup
 
     /// <summary>Pinned snapshots are exempt from retention pruning.</summary>
     public bool IsPinned { get; set; }
+
+    /// <summary>
+    /// UTC instant the snapshot ZIP was last uploaded to the off-site
+    /// bucket, or <see langword="null"/> if it has never been mirrored.
+    /// Set by <see cref="Services.OffsiteBackupService.UploadPerTenantAsync"/>.
+    /// </summary>
+    public DateTime? OffsiteUploadedAt { get; set; }
+
+    /// <summary>
+    /// Object key (including the configured prefix) under which the ZIP
+    /// lives in the off-site bucket. Set together with
+    /// <see cref="OffsiteUploadedAt"/>.
+    /// </summary>
+    public string? OffsiteObjectKey { get; set; }
 }

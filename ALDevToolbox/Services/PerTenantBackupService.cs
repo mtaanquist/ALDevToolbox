@@ -26,7 +26,9 @@ public sealed record PerTenantBackupRow(
     string? CreatedByEmail,
     BackupKind Kind,
     int SchemaVersion,
-    bool IsPinned);
+    bool IsPinned,
+    DateTime? OffsiteUploadedAt,
+    string? OffsiteObjectKey);
 
 /// <summary>
 /// Logical, per-organisation snapshot service. Writes a ZIP containing one
@@ -117,7 +119,9 @@ public sealed class PerTenantBackupService
                 b.CreatedByUser == null ? null : b.CreatedByUser.Email,
                 b.Kind,
                 b.SchemaVersion,
-                b.IsPinned))
+                b.IsPinned,
+                b.OffsiteUploadedAt,
+                b.OffsiteObjectKey))
             .ToListAsync(ct);
     }
 
@@ -264,10 +268,10 @@ public sealed class PerTenantBackupService
 
         var manifestEntry = zip.GetEntry(ManifestEntryName)
             ?? throw new InvalidOperationException("Snapshot is missing manifest.json.");
-        Manifest manifest;
+        PerTenantBackupManifest manifest;
         await using (var manifestStream = manifestEntry.Open())
         {
-            manifest = await JsonSerializer.DeserializeAsync<Manifest>(manifestStream, ManifestJson, ct)
+            manifest = await JsonSerializer.DeserializeAsync<PerTenantBackupManifest>(manifestStream, ManifestJson, ct)
                 ?? throw new InvalidOperationException("Snapshot manifest.json is empty.");
         }
         if (manifest.organization_id != row.OrganizationId)
@@ -468,11 +472,34 @@ public sealed class PerTenantBackupService
 
     private static readonly JsonSerializerOptions ManifestJson = new() { WriteIndented = true };
 
-    private sealed record Manifest(
-        int schema_version,
-        int organization_id,
-        string organization_slug,
-        string organization_name,
-        DateTime created_at,
-        IReadOnlyList<string> tables);
+    /// <summary>
+    /// Reads and parses the <c>manifest.json</c> entry from a per-tenant
+    /// snapshot ZIP. The caller (typically the off-site download flow)
+    /// uses it to learn the snapshot's owning organisation and schema
+    /// version before deciding whether it's safe to register locally.
+    /// Throws <see cref="InvalidOperationException"/> if the manifest is
+    /// missing or empty.
+    /// </summary>
+    public static async Task<PerTenantBackupManifest> ReadManifestAsync(Stream zipStream, CancellationToken ct)
+    {
+        using var zip = new ZipArchive(zipStream, ZipArchiveMode.Read, leaveOpen: true);
+        var manifestEntry = zip.GetEntry(ManifestEntryName)
+            ?? throw new InvalidOperationException("Snapshot is missing manifest.json.");
+        await using var manifestStream = manifestEntry.Open();
+        return await JsonSerializer.DeserializeAsync<PerTenantBackupManifest>(manifestStream, ManifestJson, ct)
+            ?? throw new InvalidOperationException("Snapshot manifest.json is empty.");
+    }
 }
+
+/// <summary>
+/// Shape of the <c>manifest.json</c> entry written into every per-tenant
+/// snapshot ZIP. Public so off-site code can read manifests from
+/// downloaded files without re-defining the contract.
+/// </summary>
+public sealed record PerTenantBackupManifest(
+    int schema_version,
+    int organization_id,
+    string organization_slug,
+    string organization_name,
+    DateTime created_at,
+    IReadOnlyList<string> tables);

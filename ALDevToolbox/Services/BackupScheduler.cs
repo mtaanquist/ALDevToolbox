@@ -147,6 +147,7 @@ public sealed class BackupScheduler : BackgroundService
             .ToListAsync(ct);
         foreach (var orgId in orgs)
         {
+            PerTenantBackup? perTenantRow = null;
             try
             {
                 var lastPerTenant = await db.PerTenantBackups
@@ -157,11 +158,28 @@ public sealed class BackupScheduler : BackgroundService
                     .Select(b => (DateTime?)b.CreatedAt)
                     .FirstOrDefaultAsync(ct);
                 if (lastPerTenant is not null && lastPerTenant >= todayWindow) continue;
-                await perTenant.CreateAsync(orgId, BackupKind.Scheduled, ct);
+                perTenantRow = await perTenant.CreateAsync(orgId, BackupKind.Scheduled, ct);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Scheduled per-tenant snapshot failed for org {OrgId}.", orgId);
+            }
+
+            // Mirror the freshly-written per-tenant snapshot off-site too —
+            // a tenant rolling back to yesterday is still a useful surface
+            // after a whole-deployment disaster recovery.
+            if (perTenantRow is not null)
+            {
+                try
+                {
+                    await offsite.UploadPerTenantAsync(perTenantRow.Id, ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex,
+                        "Off-site upload of per-tenant snapshot {FileName} (org {OrgId}) failed.",
+                        perTenantRow.FileName, orgId);
+                }
             }
         }
     }

@@ -25,18 +25,32 @@ public sealed record OffsiteTestResult(bool Success, string Message);
 public sealed record OffsiteObjectInfo(string Key, string FileName, long Size, DateTime LastModified);
 
 /// <summary>
-/// Uploads full-database pg_dump backups to the configured S3-compatible
-/// bucket and prunes objects older than <c>OffsiteRetentionDays</c>. Only
-/// the whole-DB backups produced by <see cref="BackupService"/> go off-site
-/// — per-tenant logical snapshots stay on the local <c>app-backups</c>
-/// volume because they're the in-cluster "restore my tenant to yesterday"
-/// surface; the off-site copy is disaster recovery for the whole deployment.
+/// One per-tenant snapshot object returned by
+/// <see cref="OffsiteBackupService.ListPerTenantAsync"/>. Carries the slug
+/// parsed out of the object key so the catalogue UI can group rows by
+/// organisation without an extra round-trip.
+/// </summary>
+public sealed record OffsitePerTenantObjectInfo(string Key, string Slug, string FileName, long Size, DateTime LastModified);
+
+/// <summary>
+/// Uploads full-database pg_dump backups and per-tenant snapshot ZIPs to
+/// the configured S3-compatible bucket and prunes objects older than
+/// <c>OffsiteRetentionDays</c>. Whole-DB dumps live at
+/// <c>&lt;prefix&gt;&lt;filename&gt;</c>; per-tenant snapshots namespace
+/// under <c>&lt;prefix&gt;tenants/&lt;slug&gt;/&lt;filename&gt;</c> so the
+/// two catalogues stay separable and a DR restore can pull either back
+/// down independently. After a whole-deployment loss, the per-tenant
+/// copies are what keeps the "restore one org to yesterday" surface alive.
 /// </summary>
 public sealed class OffsiteBackupService
 {
+    /// <summary>Sub-prefix under the configured bucket prefix where per-tenant snapshots live.</summary>
+    public const string PerTenantKeyPrefix = "tenants/";
+
     private readonly AppDbContext _db;
     private readonly SystemSettingsService _systemSettings;
     private readonly BackupService _backups;
+    private readonly PerTenantBackupService _perTenantBackups;
     private readonly ILogger<OffsiteBackupService> _logger;
     private readonly TimeProvider _clock;
 
@@ -44,12 +58,14 @@ public sealed class OffsiteBackupService
         AppDbContext db,
         SystemSettingsService systemSettings,
         BackupService backups,
+        PerTenantBackupService perTenantBackups,
         ILogger<OffsiteBackupService> logger,
         TimeProvider clock)
     {
         _db = db;
         _systemSettings = systemSettings;
         _backups = backups;
+        _perTenantBackups = perTenantBackups;
         _logger = logger;
         _clock = clock;
     }
@@ -122,6 +138,55 @@ public sealed class OffsiteBackupService
     }
 
     /// <summary>
+    /// Uploads a per-tenant snapshot ZIP to
+    /// <c>&lt;prefix&gt;tenants/&lt;slug&gt;/&lt;filename&gt;</c> and stamps
+    /// the row with <c>OffsiteUploadedAt</c> + <c>OffsiteObjectKey</c>. No-op
+    /// when off-site is disabled, the row is missing, or the local ZIP has
+    /// been removed out-of-band.
+    /// </summary>
+    public async Task<string?> UploadPerTenantAsync(int perTenantBackupId, CancellationToken ct)
+    {
+        var settings = await _systemSettings.ResolveOffsiteAsync(ct);
+        if (settings is null) return null;
+
+        var row = await _db.PerTenantBackups
+            .Include(b => b.Organization)
+            .FirstOrDefaultAsync(b => b.Id == perTenantBackupId, ct);
+        if (row is null || row.Organization is null) return null;
+
+        var path = Path.Combine(_perTenantBackups.DirectoryFor(row.Organization.Slug), row.FileName);
+        if (!File.Exists(path))
+        {
+            _logger.LogWarning(
+                "Refusing to upload per-tenant snapshot {FileName} for {Slug}: local file missing.",
+                row.FileName, row.Organization.Slug);
+            return null;
+        }
+
+        var objectKey = BuildPerTenantObjectKey(settings.Prefix, row.Organization.Slug, row.FileName);
+        using var client = CreateClient(settings);
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true);
+        await client.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = settings.Bucket,
+            Key = objectKey,
+            InputStream = stream,
+            AutoCloseStream = false,
+            ContentType = "application/zip",
+            DisablePayloadSigning = settings.ForcePathStyle,
+        }, ct);
+
+        row.OffsiteUploadedAt = _clock.GetUtcNow().UtcDateTime;
+        row.OffsiteObjectKey = objectKey;
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Uploaded per-tenant snapshot {FileName} for {Slug} to s3://{Bucket}/{Key}.",
+            row.FileName, row.Organization.Slug, settings.Bucket, objectKey);
+        return objectKey;
+    }
+
+    /// <summary>
     /// Lists every dump-shaped object under the configured prefix, newest
     /// first. Drives the off-site catalogue on <c>/site-admin/backups</c>;
     /// returns an empty list when off-site isn't configured rather than
@@ -154,13 +219,66 @@ public sealed class OffsiteBackupService
             foreach (var obj in resp.S3Objects)
             {
                 var fileName = StripPrefix(obj.Key, prefix);
-                // Skip anything that doesn't look like one of our dumps —
-                // the bucket may have other content (logs, neighbour
-                // deployments) and we don't want to offer those as
-                // restorable.
+                // Skip the per-tenant namespace and anything that doesn't
+                // look like one of our whole-DB dumps — the bucket may
+                // hold neighbour deployments' files, logs, or per-tenant
+                // ZIPs (which belong to a separate catalogue).
+                if (fileName.StartsWith(PerTenantKeyPrefix, StringComparison.Ordinal)) continue;
                 if (!fileName.EndsWith(BackupService.BackupFileSuffix, StringComparison.Ordinal)) continue;
                 if (fileName.Contains('/') || fileName.Contains('\\') || fileName.Contains("..", StringComparison.Ordinal)) continue;
                 results.Add(new OffsiteObjectInfo(obj.Key, fileName, obj.Size, obj.LastModified.ToUniversalTime()));
+                if (results.Count >= maxObjects) break;
+            }
+
+            continuation = resp.IsTruncated == true && results.Count < maxObjects
+                ? resp.NextContinuationToken
+                : null;
+        } while (continuation is not null);
+
+        results.Sort((a, b) => b.LastModified.CompareTo(a.LastModified));
+        return results;
+    }
+
+    /// <summary>
+    /// Lists every per-tenant snapshot under
+    /// <c>&lt;prefix&gt;tenants/&lt;slug&gt;/</c>, newest first. Drives the
+    /// off-site catalogue on <c>/site-admin/tenant-backups</c>; returns an
+    /// empty list when off-site isn't configured.
+    /// </summary>
+    public async Task<IReadOnlyList<OffsitePerTenantObjectInfo>> ListPerTenantAsync(int maxObjects, CancellationToken ct)
+    {
+        var settings = await _systemSettings.ResolveOffsiteAsync(ct);
+        if (settings is null) return Array.Empty<OffsitePerTenantObjectInfo>();
+        if (maxObjects < 1) maxObjects = 1;
+
+        var prefix = settings.Prefix ?? string.Empty;
+        var tenantPrefix = (prefix.Length == 0 ? string.Empty : EnsureTrailingSlash(prefix)) + PerTenantKeyPrefix;
+        var results = new List<OffsitePerTenantObjectInfo>(capacity: Math.Min(maxObjects, 256));
+        using var client = CreateClient(settings);
+        string? continuation = null;
+        do
+        {
+            var resp = await client.ListObjectsV2Async(new ListObjectsV2Request
+            {
+                BucketName = settings.Bucket,
+                Prefix = tenantPrefix,
+                ContinuationToken = continuation,
+                MaxKeys = Math.Min(1000, maxObjects - results.Count),
+            }, ct);
+
+            foreach (var obj in resp.S3Objects)
+            {
+                var remainder = StripPrefix(obj.Key, tenantPrefix);
+                // Expected shape: "<slug>/<filename>.tenant.zip". Reject
+                // anything with extra path segments or the wrong suffix.
+                var slash = remainder.IndexOf('/');
+                if (slash <= 0 || slash == remainder.Length - 1) continue;
+                var slug = remainder[..slash];
+                var fileName = remainder[(slash + 1)..];
+                if (fileName.Contains('/') || fileName.Contains('\\') || fileName.Contains("..", StringComparison.Ordinal)) continue;
+                if (!fileName.EndsWith(PerTenantBackupService.FileSuffix, StringComparison.Ordinal)) continue;
+                results.Add(new OffsitePerTenantObjectInfo(
+                    obj.Key, slug, fileName, obj.Size, obj.LastModified.ToUniversalTime()));
                 if (results.Count >= maxObjects) break;
             }
 
@@ -278,6 +396,137 @@ public sealed class OffsiteBackupService
     }
 
     /// <summary>
+    /// Downloads a per-tenant snapshot ZIP into the per-tenant subdirectory
+    /// and inserts a <c>per_tenant_backups</c> row pointing at it, so the
+    /// existing Restore button on <c>/site-admin/tenant-backups</c> can take
+    /// over. Mirror of <see cref="DownloadAsync"/> for the per-tenant case;
+    /// reports byte-level progress for the same progress-bar surface.
+    ///
+    /// <para>
+    /// Reads the snapshot's <c>manifest.json</c> to determine the owning
+    /// organisation and refuses if the slug parsed from the object key
+    /// doesn't match, the org isn't present locally, or the snapshot's
+    /// <c>organization_id</c> can't be reconciled with the local org id.
+    /// Stages under <c>&lt;name&gt;.partial</c> and renames atomically so a
+    /// crash mid-download can't register a corrupt row.
+    /// </para>
+    /// </summary>
+    /// <returns>The id of the inserted <c>per_tenant_backups</c> row.</returns>
+    public async Task<int> DownloadPerTenantAsync(string objectKey, IProgress<(long BytesDownloaded, long? TotalBytes)>? progress, CancellationToken ct)
+    {
+        var settings = await _systemSettings.ResolveOffsiteAsync(ct)
+            ?? throw new InvalidOperationException("Off-site backup is not configured.");
+
+        var prefix = settings.Prefix ?? string.Empty;
+        var tenantPrefix = (prefix.Length == 0 ? string.Empty : EnsureTrailingSlash(prefix)) + PerTenantKeyPrefix;
+        var remainder = StripPrefix(objectKey, tenantPrefix);
+        var slash = remainder.IndexOf('/');
+        if (slash <= 0 || slash == remainder.Length - 1)
+        {
+            throw new InvalidOperationException($"Refusing to download per-tenant object with malformed key: {objectKey}");
+        }
+        var slug = remainder[..slash];
+        var fileName = remainder[(slash + 1)..];
+        if (fileName.Contains('/') || fileName.Contains('\\') || fileName.Contains("..", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Refusing to download per-tenant object with suspicious leaf name: {objectKey}");
+        }
+        if (!fileName.EndsWith(PerTenantBackupService.FileSuffix, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Refusing to download non-per-tenant-snapshot object: {objectKey}");
+        }
+
+        // The slug must already exist locally — restoring a tenant snapshot
+        // into a brand-new org would tangle FK references the manifest
+        // doesn't know about. Look it up before downloading so we fail fast.
+        var org = await _db.Organizations
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(o => o.Slug == slug, ct)
+            ?? throw new InvalidOperationException(
+                $"No local organisation with slug '{slug}' — create or restore the org before pulling its per-tenant snapshot.");
+
+        var dir = _perTenantBackups.DirectoryFor(slug);
+        Directory.CreateDirectory(dir);
+        var finalPath = Path.Combine(dir, fileName);
+        var stagingPath = finalPath + ".partial";
+
+        if (File.Exists(finalPath))
+        {
+            throw new InvalidOperationException(
+                $"A local per-tenant snapshot named '{fileName}' already exists for org '{slug}'. Delete or rename it before re-importing the off-site copy.");
+        }
+        if (File.Exists(stagingPath))
+        {
+            File.Delete(stagingPath);
+        }
+
+        using var client = CreateClient(settings);
+        using var response = await client.GetObjectAsync(new GetObjectRequest
+        {
+            BucketName = settings.Bucket,
+            Key = objectKey,
+        }, ct);
+
+        var total = response.ContentLength > 0 ? response.ContentLength : (long?)null;
+        progress?.Report((0L, total));
+
+        long bytes = 0;
+        await using (var source = response.ResponseStream)
+        await using (var destination = new FileStream(stagingPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 64 * 1024, useAsync: true))
+        {
+            var buffer = new byte[64 * 1024];
+            int read;
+            while ((read = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), ct)) > 0)
+            {
+                await destination.WriteAsync(buffer.AsMemory(0, read), ct);
+                bytes += read;
+                progress?.Report((bytes, total));
+            }
+        }
+
+        // Verify the manifest before promoting the staging file to a row —
+        // an object that doesn't carry a manifest, or whose manifest names
+        // a different org, is either corrupt or someone else's snapshot.
+        PerTenantBackupManifest manifest;
+        await using (var zipStream = new FileStream(stagingPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            manifest = await PerTenantBackupService.ReadManifestAsync(zipStream, ct);
+        }
+        if (!string.Equals(manifest.organization_slug, slug, StringComparison.Ordinal))
+        {
+            File.Delete(stagingPath);
+            throw new InvalidOperationException(
+                $"Snapshot manifest names org '{manifest.organization_slug}' but the object key is under '{slug}'.");
+        }
+
+        File.Move(stagingPath, finalPath);
+        var size = new FileInfo(finalPath).Length;
+
+        var row = new PerTenantBackup
+        {
+            OrganizationId = org.Id,
+            FileName = fileName,
+            FileSizeBytes = size,
+            CreatedAt = manifest.created_at,
+            Kind = BackupKind.AdHoc,
+            SchemaVersion = manifest.schema_version,
+            // Auto-pin so retention can't bin the row before the operator
+            // restores from it.
+            IsPinned = true,
+            OffsiteObjectKey = objectKey,
+            OffsiteUploadedAt = _clock.GetUtcNow().UtcDateTime,
+        };
+        _db.PerTenantBackups.Add(row);
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Downloaded off-site per-tenant snapshot s3://{Bucket}/{Key} ({Bytes} bytes) for org {Slug} into local row {RowId}.",
+            settings.Bucket, objectKey, size, slug, row.Id);
+        return row.Id;
+    }
+
+    /// <summary>
     /// Lists objects under the configured prefix and deletes those older
     /// than <c>OffsiteRetentionDays</c>. Idempotent — safe to call on
     /// every scheduler tick.
@@ -339,6 +588,15 @@ public sealed class OffsiteBackupService
         string.IsNullOrEmpty(prefix)
             ? fileName
             : prefix.TrimEnd('/') + "/" + fileName;
+
+    private static string BuildPerTenantObjectKey(string? prefix, string slug, string fileName)
+    {
+        var head = string.IsNullOrEmpty(prefix) ? string.Empty : prefix.TrimEnd('/') + "/";
+        return head + PerTenantKeyPrefix + slug + "/" + fileName;
+    }
+
+    private static string EnsureTrailingSlash(string value) =>
+        value.EndsWith('/') ? value : value + "/";
 
     private static string StripPrefix(string objectKey, string prefix)
     {
