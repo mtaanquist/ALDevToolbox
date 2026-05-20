@@ -42,4 +42,5 @@ public sealed record ReleaseImportSummary(
     int ModulesSkipped,
     int ObjectsImported,
     int ReferencesImported,
-    int SourceFilesImported);
+    int SourceFilesImported,
+    int TranslationsImported);

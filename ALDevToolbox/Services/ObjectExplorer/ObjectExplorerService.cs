@@ -1907,4 +1907,112 @@ public class ObjectExplorerService
         string.IsNullOrEmpty(content)
             ? Array.Empty<string>()
             : content.Replace("\r\n", "\n").Split('\n');
+
+    // ── Translations ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Lists every target language that has at least one translation row in
+    /// the release, with a per-language row count. Drives the MCP
+    /// <c>list_translation_languages</c> tool and the admin "languages
+    /// uploaded" chips on the per-release translations admin page.
+    /// </summary>
+    public Task<List<TranslationLanguageSummary>> ListTranslationLanguagesAsync(
+        int releaseId, CancellationToken ct = default)
+    {
+        return _db.OeModuleTranslations.AsNoTracking()
+            .Where(t => t.Module!.ReleaseId == releaseId)
+            .GroupBy(t => t.LanguageCode)
+            .Select(g => new TranslationLanguageSummary(g.Key, g.Count()))
+            .OrderBy(x => x.LanguageCode)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Per-module, per-language counts — drives the admin translations
+    /// page so each module row can show "da-DK · 1,247  de-DE · 1,250"
+    /// chips and a per-module upload button.
+    /// </summary>
+    public async Task<List<ModuleTranslationLanguageRow>> ListModuleTranslationLanguagesAsync(
+        int releaseId, CancellationToken ct = default)
+    {
+        return await _db.OeModuleTranslations.AsNoTracking()
+            .Where(t => t.Module!.ReleaseId == releaseId)
+            .GroupBy(t => new { t.ModuleId, t.LanguageCode })
+            .Select(g => new ModuleTranslationLanguageRow(g.Key.ModuleId, g.Key.LanguageCode, g.Count()))
+            .OrderBy(x => x.ModuleId).ThenBy(x => x.LanguageCode)
+            .ToListAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Substring search over <c>oe_module_translations.target_text</c> within
+    /// a release. Backs the MCP <c>search_translations</c> tool used by an
+    /// agent to map a native-language caption / error message back to the
+    /// AL object that produced it. The default kind filter
+    /// (<c>caption,label</c>) honours the user's stated priority — captions
+    /// + errors first; tooltips are opt-in via <c>kinds=any</c>.
+    /// </summary>
+    public async Task<List<TranslationMatch>> SearchTranslationsInReleaseAsync(
+        int releaseId,
+        string query,
+        string? language,
+        IReadOnlySet<string>? kindFilter,
+        string? moduleNamePattern,
+        int maxResults,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return new List<TranslationMatch>();
+        var needle = query.Trim().ToLower();
+
+        var q = _db.OeModuleTranslations.AsNoTracking()
+            .Where(t => t.Module!.ReleaseId == releaseId)
+            .Where(t => t.TargetText.ToLower().Contains(needle));
+
+        if (!string.IsNullOrWhiteSpace(language))
+        {
+            // Normalise the user-supplied language to the same shape we
+            // store (xx-XX). Hand-crafted MCP callers might pass "da" or
+            // "da_DK" — split on '-' / '_' and uppercase the region.
+            var raw = language.Trim().Replace('_', '-');
+            var dash = raw.IndexOf('-');
+            string normalised;
+            if (dash <= 0 || dash >= raw.Length - 1)
+            {
+                normalised = raw.ToLowerInvariant();
+                q = q.Where(t => t.LanguageCode.StartsWith(normalised));
+            }
+            else
+            {
+                normalised = raw.Substring(0, dash).ToLowerInvariant() + "-" + raw.Substring(dash + 1).ToUpperInvariant();
+                q = q.Where(t => t.LanguageCode == normalised);
+            }
+        }
+
+        if (kindFilter is { Count: > 0 } && !kindFilter.Contains("any"))
+        {
+            q = q.Where(t => kindFilter.Contains(t.Kind));
+        }
+
+        if (!string.IsNullOrWhiteSpace(moduleNamePattern))
+        {
+            var modPat = moduleNamePattern.Trim().ToLower();
+            q = q.Where(t => t.Module!.Name.ToLower().Contains(modPat));
+        }
+
+        return await q.OrderBy(t => t.Module!.Name).ThenBy(t => t.ObjectName)
+            .Take(maxResults)
+            .Select(t => new TranslationMatch(
+                t.Id,
+                t.LanguageCode,
+                t.Module!.Name,
+                t.ObjectKind,
+                t.ObjectName,
+                t.SubKind,
+                t.SubName,
+                t.PropertyName,
+                t.Kind,
+                t.SourceText,
+                t.TargetText,
+                t.SymbolId))
+            .ToListAsync(ct).ConfigureAwait(false);
+    }
 }

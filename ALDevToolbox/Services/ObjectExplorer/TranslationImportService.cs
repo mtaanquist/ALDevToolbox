@@ -1,0 +1,406 @@
+using System.IO.Compression;
+using ALDevToolbox.Data;
+using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services;
+using Microsoft.EntityFrameworkCore;
+using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
+using OeModuleSymbol = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol;
+using OeModuleTranslation = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleTranslation;
+
+namespace ALDevToolbox.Services.ObjectExplorer;
+
+/// <summary>
+/// Reads XLIFF translation files and persists them as
+/// <see cref="OeModuleTranslation"/> rows. Three entry points (single-file
+/// admin upload, per-release ZIP admin upload, automatic extraction during
+/// <see cref="ReleaseImportService"/>) funnel into a shared
+/// <c>(module, language)</c> clobber + insert + best-effort symbol-resolution
+/// path. See GitHub issue #151 for the larger feature and
+/// <c>CLAUDE.md</c> for the architecture fences this service stays inside.
+/// </summary>
+public class TranslationImportService
+{
+    private readonly AppDbContext _db;
+    private readonly IOrganizationContext _orgContext;
+    private readonly ILogger<TranslationImportService> _logger;
+
+    public TranslationImportService(
+        AppDbContext db,
+        IOrganizationContext orgContext,
+        ILogger<TranslationImportService> logger)
+    {
+        _db = db;
+        _orgContext = orgContext;
+        _logger = logger;
+    }
+
+    private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
+        ?? throw new InvalidOperationException("No organization in scope; TranslationImportService called outside an authenticated request.");
+
+    // ── Single .xlf admin upload ───────────────────────────────────────
+
+    /// <summary>
+    /// Admin uploads one <c>.xlf</c> against a known module. Re-uploading
+    /// for the same target language clobbers the previous rows.
+    /// </summary>
+    public async Task<TranslationImportSummary> ImportSingleAsync(
+        int releaseId,
+        long moduleId,
+        Stream xliff,
+        string fileName,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(xliff);
+        var orgId = RequireOrganizationId();
+
+        var module = await _db.OeModules.AsNoTracking()
+            .Where(m => m.Id == moduleId && m.ReleaseId == releaseId)
+            .Select(m => new { m.Id, m.Name })
+            .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+        if (module is null)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["ModuleId"] = $"Module {moduleId} does not belong to release {releaseId}.",
+            });
+        }
+
+        XliffDocument parsed;
+        try
+        {
+            parsed = AlXliffParser.Parse(xliff);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["XliffFile"] = $"Could not parse \"{fileName}\" as XLIFF v1.2: {ex.Message}",
+            });
+        }
+
+        // Light sanity check: the file's <file original> should match the
+        // module name. Mismatch isn't fatal (admin may know better; we
+        // chose the module explicitly) but it's worth logging.
+        if (!string.IsNullOrEmpty(parsed.OriginalName)
+            && !string.Equals(parsed.OriginalName, module.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "Translation upload {File} declares original=\"{Original}\" but admin attached it to module \"{Module}\" (id={ModuleId}).",
+                fileName, parsed.OriginalName, module.Name, moduleId);
+        }
+
+        var inserted = await ReplaceForModuleAsync(orgId, moduleId, parsed, ct).ConfigureAwait(false);
+        return new TranslationImportSummary(
+            LanguageCode: parsed.TargetLanguage,
+            ModuleName: module.Name,
+            Inserted: inserted);
+    }
+
+    // ── Per-release ZIP admin upload ───────────────────────────────────
+
+    /// <summary>
+    /// Admin uploads a ZIP holding one or more <c>.xlf</c> files. Each
+    /// entry is matched to a module in the release by the XLIFF's
+    /// <c>&lt;file original="..."&gt;</c> attribute → <see cref="OeModule.Name"/>
+    /// (case-insensitive). Unmatched entries are skipped — their names
+    /// appear in <see cref="TranslationZipImportSummary.UnmatchedFiles"/>
+    /// so the admin can see why a file didn't land.
+    /// </summary>
+    public async Task<TranslationZipImportSummary> ImportZipAsync(
+        int releaseId,
+        Stream zip,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(zip);
+        var orgId = RequireOrganizationId();
+
+        var release = await _db.OeReleases.AsNoTracking()
+            .Where(r => r.Id == releaseId)
+            .Select(r => new { r.Id })
+            .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+        if (release is null)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["ReleaseId"] = $"Release {releaseId} does not exist in this organisation.",
+            });
+        }
+
+        // Build a case-insensitive Name → ModuleId map once per upload.
+        var modules = await _db.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == releaseId)
+            .Select(m => new { m.Id, m.Name })
+            .ToListAsync(ct).ConfigureAwait(false);
+        var byName = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var m in modules)
+        {
+            // Duplicate module names in one release shouldn't happen, but
+            // if they do, last-write-wins is fine for this lookup.
+            byName[m.Name] = m.Id;
+        }
+
+        int matched = 0, totalInserted = 0;
+        var unmatched = new List<string>();
+        var matchedSummaries = new List<TranslationImportSummary>();
+
+        using var archive = new ZipArchive(zip, ZipArchiveMode.Read, leaveOpen: true);
+        foreach (var entry in archive.Entries)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (string.IsNullOrEmpty(entry.Name)) continue;
+            if (!entry.FullName.EndsWith(".xlf", StringComparison.OrdinalIgnoreCase)) continue;
+
+            XliffDocument parsed;
+            try
+            {
+                using var stream = entry.Open();
+                parsed = AlXliffParser.Parse(stream);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException)
+            {
+                _logger.LogWarning(ex, "Skipping XLIFF zip entry {Entry}: parse failed.", entry.FullName);
+                unmatched.Add(entry.FullName);
+                continue;
+            }
+
+            if (string.IsNullOrEmpty(parsed.OriginalName)
+                || !byName.TryGetValue(parsed.OriginalName, out var moduleId))
+            {
+                unmatched.Add(entry.FullName);
+                continue;
+            }
+
+            var inserted = await ReplaceForModuleAsync(orgId, moduleId, parsed, ct).ConfigureAwait(false);
+            matched++;
+            totalInserted += inserted;
+            matchedSummaries.Add(new TranslationImportSummary(
+                LanguageCode: parsed.TargetLanguage,
+                ModuleName: parsed.OriginalName!,
+                Inserted: inserted));
+        }
+
+        return new TranslationZipImportSummary(
+            MatchedFiles: matched,
+            UnmatchedFiles: unmatched,
+            TotalInserted: totalInserted,
+            PerFile: matchedSummaries);
+    }
+
+    // ── Automatic extraction during .app import ────────────────────────
+
+    /// <summary>
+    /// Called by <see cref="ReleaseImportService"/> once per module with the
+    /// XLIFFs pulled out of the <c>.app</c>'s <c>Translations/</c> folder.
+    /// Errors are logged as warnings rather than thrown — a malformed XLIFF
+    /// inside a Microsoft .app should never sink the whole release import.
+    /// </summary>
+    public async Task<int> ImportFromAppPackageAsync(
+        int orgId,
+        long moduleId,
+        IReadOnlyList<AppXliffFile> payloads,
+        CancellationToken ct = default)
+    {
+        if (payloads.Count == 0) return 0;
+        int total = 0;
+        foreach (var payload in payloads)
+        {
+            ct.ThrowIfCancellationRequested();
+            XliffDocument parsed;
+            try
+            {
+                using var stream = new MemoryStream(payload.Content, writable: false);
+                parsed = AlXliffParser.Parse(stream);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Skipping XLIFF {Path} during .app import for module {ModuleId}: parse failed.",
+                    payload.Path, moduleId);
+                continue;
+            }
+
+            try
+            {
+                total += await ReplaceForModuleAsync(orgId, moduleId, parsed, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Skipping XLIFF {Path} during .app import for module {ModuleId}: persist failed.",
+                    payload.Path, moduleId);
+            }
+        }
+        return total;
+    }
+
+    // ── Shared parse → clobber → insert → resolve ──────────────────────
+
+    /// <summary>
+    /// Replaces every <see cref="OeModuleTranslation"/> row for the given
+    /// <c>(moduleId, languageCode)</c> with rows derived from the parsed
+    /// XLIFF, then runs a single name-keyed symbol resolution pass against
+    /// <c>oe_module_symbols</c>. Returns the number of rows inserted.
+    /// Clobber semantics are intentional — the user asked for "if one
+    /// was already uploaded, it's fine for it to clobber existing".
+    /// </summary>
+    private async Task<int> ReplaceForModuleAsync(
+        int orgId, long moduleId, XliffDocument parsed, CancellationToken ct)
+    {
+        // Symbol map keyed by lower(name) → list of symbol ids. Loaded
+        // once per upload so the per-row resolver doesn't run a query
+        // for each of the thousands of trans-units. Field captions and
+        // tooltips resolve to kind='table_field' / 'page_field'; labels
+        // (sub_kind=namedtype) resolve to a same-name symbol — most
+        // commonly a Label declaration emitted by the source extractor.
+        var symbols = await _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.ModuleId == moduleId)
+            .Select(s => new { s.Id, s.Name, s.Kind })
+            .ToListAsync(ct).ConfigureAwait(false);
+        var symbolByName = new Dictionary<string, List<(long Id, string Kind)>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var s in symbols)
+        {
+            if (!symbolByName.TryGetValue(s.Name, out var list))
+            {
+                list = new List<(long, string)>();
+                symbolByName[s.Name] = list;
+            }
+            list.Add((s.Id, s.Kind));
+        }
+
+        // Clobber existing rows for (module, language) so re-upload
+        // replaces wholesale rather than merging. Executed as one DELETE
+        // for tracker hygiene; the unique index on (module, language,
+        // trans_unit_id) makes the insert side safe even when XLIFFs
+        // accidentally double up a trans-unit.
+        await _db.OeModuleTranslations
+            .Where(t => t.ModuleId == moduleId && t.LanguageCode == parsed.TargetLanguage)
+            .ExecuteDeleteAsync(ct).ConfigureAwait(false);
+
+        int inserted = 0;
+        int pending = 0;
+        const int chunkSize = 500;
+        var now = DateTime.UtcNow;
+        // XLIFFs occasionally repeat the same id (BC compiler bug history;
+        // hand-edited files); dedupe inside the upload so we don't violate
+        // the unique index. Last-write-wins on collisions.
+        var seenIds = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var unit in parsed.Units)
+        {
+            if (!seenIds.Add(unit.Id))
+            {
+                continue;
+            }
+            var kind = AlXliffParser.BucketKind(unit.Hint);
+            long? symbolId = ResolveSymbolId(symbolByName, unit.Hint, kind);
+
+            _db.OeModuleTranslations.Add(new OeModuleTranslation
+            {
+                OrganizationId = orgId,
+                ModuleId = moduleId,
+                LanguageCode = parsed.TargetLanguage,
+                TransUnitId = unit.Id,
+                SourceText = unit.SourceText,
+                TargetText = unit.TargetText,
+                TargetState = unit.TargetState,
+                Kind = kind,
+                ObjectKind = unit.Hint?.ObjectKind,
+                ObjectName = unit.Hint?.ObjectName,
+                SubKind = unit.Hint?.SubKind,
+                SubName = unit.Hint?.SubName,
+                PropertyName = unit.Hint?.PropertyName,
+                DeveloperNote = unit.DeveloperNote,
+                SymbolId = symbolId,
+                CreatedAt = now,
+            });
+            inserted++;
+            pending++;
+            if (pending >= chunkSize)
+            {
+                await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+                _db.ChangeTracker.Clear();
+                pending = 0;
+            }
+        }
+        if (pending > 0)
+        {
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            _db.ChangeTracker.Clear();
+        }
+
+        _logger.LogInformation(
+            "Imported XLIFF translations: Module={ModuleId} Lang={Lang} Inserted={Inserted}",
+            moduleId, parsed.TargetLanguage, inserted);
+        return inserted;
+    }
+
+    /// <summary>
+    /// Best-effort match from the parsed hint to a row in
+    /// <c>oe_module_symbols</c>. Field captions / tooltips resolve to the
+    /// field symbol; labels (NamedType sub-kind) to the label symbol.
+    /// Returns null for hints we don't yet symbolise (page controls,
+    /// page actions, enum values — issue #151 v2 closes those gaps).
+    /// </summary>
+    private static long? ResolveSymbolId(
+        IReadOnlyDictionary<string, List<(long Id, string Kind)>> symbolByName,
+        XliffLookupHint? hint,
+        string bucketKind)
+    {
+        if (hint is null) return null;
+
+        // Field caption / tooltip → match by field name (sub_name) against
+        // table_field / page_field rows.
+        if (string.Equals(hint.SubKind, "field", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrEmpty(hint.SubName)
+            && symbolByName.TryGetValue(hint.SubName, out var fieldCandidates))
+        {
+            var hit = fieldCandidates.FirstOrDefault(c =>
+                string.Equals(c.Kind, "table_field", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(c.Kind, "page_field", StringComparison.OrdinalIgnoreCase));
+            if (hit.Id != 0) return hit.Id;
+        }
+
+        // Label (NamedType) → match by sub_name against any symbol with
+        // that name. The source extractor doesn't yet emit a distinct
+        // 'label' kind, but Microsoft labels typically live in codeunits
+        // as local variables; this falls through to symbol-id=null for
+        // most v1 cases and is fine.
+        if (bucketKind == "label" && !string.IsNullOrEmpty(hint.SubName)
+            && symbolByName.TryGetValue(hint.SubName, out var labelCandidates))
+        {
+            return labelCandidates[0].Id;
+        }
+
+        // Procedure-typed XLIFF entries are uncommon but possible (Method
+        // sub-kind). Resolve to the first procedure-shaped row by name.
+        if (string.Equals(hint.SubKind, "method", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrEmpty(hint.SubName)
+            && symbolByName.TryGetValue(hint.SubName, out var procCandidates))
+        {
+            var hit = procCandidates.FirstOrDefault(c =>
+                c.Kind is "procedure" or "local_procedure" or "internal_procedure" or "protected_procedure");
+            if (hit.Id != 0) return hit.Id;
+        }
+
+        return null;
+    }
+}
+
+/// <summary>
+/// Result of importing one XLIFF file into one module.
+/// </summary>
+public sealed record TranslationImportSummary(
+    string LanguageCode,
+    string ModuleName,
+    int Inserted);
+
+/// <summary>
+/// Result of importing a per-release ZIP. <see cref="UnmatchedFiles"/>
+/// holds the entry names whose <c>&lt;file original&gt;</c> didn't match
+/// any module in the release, plus any entries we couldn't parse.
+/// </summary>
+public sealed record TranslationZipImportSummary(
+    int MatchedFiles,
+    IReadOnlyList<string> UnmatchedFiles,
+    int TotalInserted,
+    IReadOnlyList<TranslationImportSummary> PerFile);

@@ -10,7 +10,15 @@ public sealed record AppPackage(
     AppManifest Manifest,
     SymbolPackage Symbols,
     IReadOnlyList<AppSourceFile> SourceFiles,
+    IReadOnlyList<AppXliffFile> XliffFiles,
     string AppFileHash);
+
+/// <summary>
+/// One <c>.xlf</c> translation file pulled out of the archive's
+/// <c>Translations/</c> folder. Bytes are kept in memory so the importer
+/// can stream them into the XLIFF parser without re-opening the archive.
+/// </summary>
+public sealed record AppXliffFile(string Path, byte[] Content);
 
 /// <summary>
 /// Parsed <c>NavxManifest.xml</c>. App identity (AppId / Name / Publisher /

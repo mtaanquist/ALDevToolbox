@@ -403,3 +403,43 @@ public sealed record DependencyEntry(
 public sealed record FileDependencies(
     IReadOnlyList<DependencyEntry> Using,
     IReadOnlyList<DependencyEntry> UsedBy);
+
+/// <summary>
+/// One language available on a release, with the total trans-unit count
+/// across every module. Cheap discovery for "what can I search in?" —
+/// drives the MCP <c>list_translation_languages</c> tool and the per-release
+/// admin page header.
+/// </summary>
+public sealed record TranslationLanguageSummary(
+    string LanguageCode,
+    int TranslationCount);
+
+/// <summary>
+/// Per-module, per-language row count — drives the per-module language
+/// chips on the admin translations page.
+/// </summary>
+public sealed record ModuleTranslationLanguageRow(
+    long ModuleId,
+    string LanguageCode,
+    int TranslationCount);
+
+/// <summary>
+/// One translation hit from <c>SearchTranslationsInReleaseAsync</c>. The
+/// MCP tool returns these so an agent can answer "the caption belongs to
+/// field 'Activate Assembly On Service' on table 'AppSetup'", and
+/// <see cref="SymbolId"/> (when non-null) lets the source viewer
+/// navigate straight to the declaration.
+/// </summary>
+public sealed record TranslationMatch(
+    long Id,
+    string LanguageCode,
+    string ModuleName,
+    string? ObjectKind,
+    string? ObjectName,
+    string? SubKind,
+    string? SubName,
+    string? PropertyName,
+    string Kind,
+    string SourceText,
+    string TargetText,
+    long? SymbolId);
