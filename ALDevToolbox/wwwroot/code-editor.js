@@ -849,11 +849,33 @@ const currentLineField = StateField.define({
 });
 
 // Theme rule keeps the highlight readable across CM's default theme +
-// the one-dark theme we swap in via themeCompartment. The colour itself
-// is driven by --color-accent-soft so it tracks the page theme.
+// the one-dark theme we swap in via themeCompartment. Anchored to the
+// accent palette so the tint reads in both themes. We render the
+// highlight as a translucent tint plus a left-edge accent stripe
+// rather than a solid fill: a flat tint behind the line text hides
+// the browser-native selection rectangle whenever the user drags
+// across the linked line (`?line=N`), which is the same gesture
+// users expect to work. The `box-shadow inset` adds the stripe
+// without disturbing the line's text layout (no padding shift).
 const currentLineTheme = EditorView.baseTheme({
     ".cm-line--current": {
-        backgroundColor: "var(--color-accent-soft)",
+        backgroundColor: "var(--color-current-line-bg, rgba(99, 102, 241, 0.08))",
+        boxShadow: "inset 3px 0 0 var(--color-accent, #6366f1)",
+    },
+    // Native ::selection on the highlighted line — the user expected
+    // to be able to drag-select text inside a `?line=N` highlighted
+    // line, but the accent-soft fill that originally sat there had
+    // roughly the same hue as the browser's default selection blue,
+    // making the selection invisible. Force a high-contrast inversion
+    // (text/background swap) so selection always stands out, even when
+    // it overlaps the highlight tint.
+    ".cm-line--current ::selection": {
+        backgroundColor: "var(--color-text, #1f2024)",
+        color: "var(--color-bg, #ffffff)",
+    },
+    ".cm-line--current::selection": {
+        backgroundColor: "var(--color-text, #1f2024)",
+        color: "var(--color-bg, #ffffff)",
     },
 });
 
@@ -931,6 +953,31 @@ export function openSearch(id) {
     if (!e) return;
     e.view.focus();
     openSearchPanel(e.view);
+}
+
+/// Selects the entire document in the editor identified by id. Same
+/// rationale as openSearch: defaultKeymap binds Mod-a to selectAll but
+/// the read-only mount keeps contenteditable=false on the contentDOM,
+/// so the browser's native "select everything on the page" wins
+/// instead. The source viewer's window-level Ctrl/Cmd-A handler calls
+/// this when focus is inside the editor surface.
+export function selectAll(id) {
+    const e = editors.get(id);
+    if (!e) return;
+    const view = e.view;
+    view.focus();
+    view.dispatch({
+        selection: { anchor: 0, head: view.state.doc.length },
+    });
+}
+
+/// Whether the editor identified by id contains the given DOM node.
+/// Used by host-page handlers (Ctrl-A intercept, etc.) so the page
+/// doesn't have to know about CodeMirror's internal DOM layout.
+export function containsNode(id, node) {
+    const e = editors.get(id);
+    if (!e || !node) return false;
+    return e.view.dom.contains(node);
 }
 
 export function setValue(id, value) {

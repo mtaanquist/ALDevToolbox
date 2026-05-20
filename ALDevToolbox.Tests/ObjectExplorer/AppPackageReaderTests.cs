@@ -136,6 +136,38 @@ public sealed class AppPackageReaderTests
     }
 
     [Fact]
+    public void ParseExtendsRef_preserves_dots_inside_object_names()
+    {
+        // Repro: `tableextension … extends "Gen. Journal Line"` in the
+        // DK Payment & Reconciliation Formats app. The base object
+        // name itself contains a dot, so the old last-dot strategy
+        // stripped everything before " Journal Line" and stamped a
+        // phantom `Journal Line` table into the file's Using list.
+        // A valid namespace segment is a bare identifier, so the
+        // first segment that doesn't match — `Gen. Journal Line`,
+        // starting with a space-bearing token — marks the boundary
+        // between namespace and name.
+        var (appId, name) = AppPackageReader.ParseExtendsRef(
+            "Microsoft.Finance.GeneralLedger.Journal.Gen. Journal Line");
+
+        appId.Should().BeNull();
+        name.Should().Be("Gen. Journal Line");
+    }
+
+    [Fact]
+    public void ParseExtendsRef_preserves_dots_inside_object_names_with_appid()
+    {
+        // Same name + the #appid# wrapper. Verifies the dot-preserving
+        // segment walk still kicks in after the GUID prefix is
+        // consumed.
+        var (appId, name) = AppPackageReader.ParseExtendsRef(
+            "#437dbf0e84ff417a965ded2bb9650972#Microsoft.Finance.GeneralLedger.Journal.Gen. Journal Line");
+
+        appId.Should().Be(Guid.Parse("437dbf0e-84ff-417a-965d-ed2bb9650972"));
+        name.Should().Be("Gen. Journal Line");
+    }
+
+    [Fact]
     public async Task ReadAsync_resolves_cross_module_variable_subtypes()
     {
         await using var stream = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));

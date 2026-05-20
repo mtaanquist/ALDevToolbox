@@ -384,13 +384,74 @@ public static class AppPackageReader
             name = raw.Substring(34);
         }
 
-        var lastDot = name.LastIndexOf('.');
-        if (lastDot >= 0 && lastDot + 1 < name.Length)
-        {
-            name = name.Substring(lastDot + 1);
-        }
+        name = StripLeadingNamespaceSegments(name);
 
         return string.IsNullOrEmpty(name) ? (null, null) : (guid, name);
+    }
+
+    /// <summary>
+    /// Drops the AL namespace prefix from a qualified name. Walks
+    /// dot-separated segments left-to-right, accepting a dot as a
+    /// namespace boundary only when BOTH neighbouring segments (the
+    /// one ending at the dot and the one starting after it) look like
+    /// AL namespace identifiers. Everything from the first dot whose
+    /// neighbours don't qualify is the object's name.
+    /// <para>
+    /// The previous implementation just split on the last <c>.</c>,
+    /// which silently corrupted names that themselves contain a dot —
+    /// <c>"Gen. Journal Line"</c> being the canonical repro. With the
+    /// raw <c>Microsoft.Finance.GeneralLedger.Journal.Gen. Journal
+    /// Line</c>, the last-dot strategy returned " Journal Line" and
+    /// stamped a phantom <c>Journal Line</c> table into every
+    /// reference row downstream. A single-direction check still got
+    /// it wrong because <c>Gen</c> alone is a valid identifier; we
+    /// only know it belongs to the name once we see the next
+    /// segment starts with a space.
+    /// </para>
+    /// <para>
+    /// AL namespace segments are bare identifiers (letters, digits and
+    /// underscores). A segment with a space, a leading digit, or any
+    /// other non-identifier character can only be part of an object
+    /// name, so the boundary is unambiguous once both sides are
+    /// inspected. Same heuristic catches <c>"Asm. BOM Buffer"</c>,
+    /// <c>"Cust. Ledger Entry"</c>, and every other dot-containing AL
+    /// identifier that ships in the BC base app.
+    /// </para>
+    /// </summary>
+    private static string StripLeadingNamespaceSegments(string qualified)
+    {
+        if (string.IsNullOrEmpty(qualified)) return qualified;
+        // Walk dots left-to-right and remember the rightmost one that
+        // separates two valid namespace identifiers. AL's name-with-
+        // dot pattern always has whitespace right after the dot
+        // (`"Gen. Journal Line"`, `"Asm. BOM Buffer"`,
+        // `"Cust. Ledger Entry"`), while namespace separators never
+        // do — that single character is all the disambiguation we
+        // need. Bonus: also reject dots whose left-hand segment isn't
+        // a valid identifier, so a malformed qualified name doesn't
+        // accidentally strip a real character.
+        var lastNamespaceDot = -1;
+        for (var i = 0; i < qualified.Length - 1; i++)
+        {
+            if (qualified[i] != '.') continue;
+            if (char.IsWhiteSpace(qualified[i + 1])) continue;
+            var segmentStart = lastNamespaceDot + 1;
+            var leftSegment = qualified.AsSpan(segmentStart, i - segmentStart);
+            if (!IsValidNamespaceSegment(leftSegment)) continue;
+            lastNamespaceDot = i;
+        }
+        return lastNamespaceDot < 0 ? qualified : qualified.Substring(lastNamespaceDot + 1);
+    }
+
+    private static bool IsValidNamespaceSegment(ReadOnlySpan<char> segment)
+    {
+        if (segment.IsEmpty) return false;
+        if (!char.IsLetter(segment[0]) && segment[0] != '_') return false;
+        foreach (var ch in segment)
+        {
+            if (!char.IsLetterOrDigit(ch) && ch != '_') return false;
+        }
+        return true;
     }
 
     private static IReadOnlyList<SymbolProperty> ToProperties(IReadOnlyList<RawProperty>? raws)
