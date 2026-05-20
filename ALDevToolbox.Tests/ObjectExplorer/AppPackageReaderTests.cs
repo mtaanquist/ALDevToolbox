@@ -167,6 +167,61 @@ public sealed class AppPackageReaderTests
         name.Should().Be("Gen. Journal Line");
     }
 
+    /// <summary>
+    /// Sweep test: bare-name shapes lifted from real Microsoft .app
+    /// symbol packages (E-Document Core 28.1 and Intrastat Core 28.1).
+    /// Every shape that ships without a namespace prefix must pass
+    /// through unchanged, regardless of how many internal periods,
+    /// slashes, ampersands, or dashes appear. Each row is a single
+    /// real target string observed in the wild.
+    /// </summary>
+    [Theory]
+    [InlineData("Vendor Templ.")]                              // trailing period
+    [InlineData("Vendor Templ. Card")]                          // period mid-name + trailing space
+    [InlineData("Lot No. Information")]                         // period inside an abbreviation
+    [InlineData("Whse. Basic Role Center")]                     // leading-word abbreviation
+    [InlineData("Sales Cr.Memo Header")]                        // period without trailing space
+    [InlineData("Service Cr.Memo Header")]
+    [InlineData("Doc. Sending Profile Elec.Doc.")]              // three periods, one trailing
+    [InlineData("Country/Region")]                              // slash
+    [InlineData("Purchases & Payables Setup")]                  // ampersand
+    [InlineData("Service - Credit Memo")]                       // dash with surrounding spaces
+    [InlineData("Standard Sales - Credit Memo")]
+    [InlineData("D365 BUS PREMIUM")]                            // upper-case + digits
+    [InlineData("Customer")]                                    // single-word baseline
+    public void ParseExtendsRef_passes_real_world_bare_names_through_unchanged(string raw)
+    {
+        var (appId, name) = AppPackageReader.ParseExtendsRef(raw);
+        appId.Should().BeNull();
+        name.Should().Be(raw);
+    }
+
+    /// <summary>
+    /// Sweep test: the same shapes wrapped in the modern <c>#appid#</c>
+    /// and namespace-qualified envelopes. Every name part that arrived
+    /// intact in the bare-name test must also survive the namespace
+    /// strip — the heuristic is the only thing standing between a
+    /// future BC release that namespaces these objects and a renewed
+    /// run of phantom dependency rows.
+    /// </summary>
+    [Theory]
+    [InlineData("Microsoft.Foundation.Templates.Vendor Templ.", "Vendor Templ.")]
+    [InlineData("Microsoft.Foundation.Templates.Vendor Templ. Card", "Vendor Templ. Card")]
+    [InlineData("Microsoft.Inventory.Tracking.Lot No. Information", "Lot No. Information")]
+    [InlineData("Microsoft.Warehouse.RoleCenters.Whse. Basic Role Center", "Whse. Basic Role Center")]
+    [InlineData("Microsoft.Sales.History.Sales Cr.Memo Header", "Sales Cr.Memo Header")]
+    [InlineData("Microsoft.Service.History.Service Cr.Memo Header", "Service Cr.Memo Header")]
+    [InlineData("Microsoft.Foundation.EDoc.Doc. Sending Profile Elec.Doc.", "Doc. Sending Profile Elec.Doc.")]
+    [InlineData("Microsoft.Foundation.Address.Country/Region", "Country/Region")]
+    [InlineData("Microsoft.Purchases.Setup.Purchases & Payables Setup", "Purchases & Payables Setup")]
+    [InlineData("Microsoft.Finance.GeneralLedger.Journal.Gen. Journal Line", "Gen. Journal Line")]
+    public void ParseExtendsRef_strips_namespace_from_real_world_qualified_names(string raw, string expected)
+    {
+        var (appId, name) = AppPackageReader.ParseExtendsRef(raw);
+        appId.Should().BeNull();
+        name.Should().Be(expected);
+    }
+
     [Fact]
     public async Task ReadAsync_resolves_cross_module_variable_subtypes()
     {
