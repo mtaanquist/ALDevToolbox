@@ -15,10 +15,17 @@ public sealed record AppPackage(
 
 /// <summary>
 /// One <c>.xlf</c> translation file pulled out of the archive's
-/// <c>Translations/</c> folder. Bytes are kept in memory so the importer
-/// can stream them into the XLIFF parser without re-opening the archive.
+/// <c>Translations/</c> folder, already parsed into an
+/// <see cref="XliffDocument"/>. The parser runs inline during
+/// <see cref="AppPackageReader.ReadAsync"/> so the raw decompressed
+/// bytes (which can be 50–100&#160;MB per language for the BC base
+/// app) are released as soon as parsing finishes, rather than being
+/// held alive on the <see cref="AppPackage"/> until the import
+/// service processes them. Holding the parsed document instead
+/// keeps memory proportional to the trans-units we'll persist
+/// (much smaller), not to the raw XML.
 /// </summary>
-public sealed record AppXliffFile(string Path, byte[] Content);
+public sealed record AppXliffFile(string Path, XliffDocument Document);
 
 /// <summary>
 /// Parsed <c>NavxManifest.xml</c>. App identity (AppId / Name / Publisher /
