@@ -307,4 +307,201 @@ public sealed class PiperTransformTests
         });
         result.Output.Should().Be("1|2|3");
     }
+
+    // ---------- ParseTable (Table input mode) ----------
+
+    private const string SampleBcPaste =
+        "Nummer\tNavn\tAnsvarscenter\tLokationskode\tTelefon\tGLN\tKontakt\tTillad flere bogføringsgrupper\tSaldo (RV)\tForfaldne beløb (RV)\tSalg (RV)\tBetalt (RV)\tOutputprofil\tForsegl PDF-dokumenter\n" +
+        "10000\tKontorcentralen A/S\t\t\t\t\tRobert Townes\tNej\t0,00\t0,00\t1.606.446,00\t2.008.057,50\t\tNej\n" +
+        "20000\tRavel Møbler\t\t\t\t\tHelen Ray\tNej\t20.081,25\t20.081,25\t538.217,00\t652.690,00\t\tNej\n" +
+        "30000\tLauritzen Kontormøbler A/S\t\t\t\t\tAmalie Hansen\tNej\t349.380,00\t349.380,00\t1.509.225,00\t1.537.151,25\t\tNej\n" +
+        "40000\tDeerfield Graphics Company\t\t\t\t\tIan Deberry\tNej\t22.413,00\t22.413,00\t549.806,00\t527.393,00\t\tNej\n" +
+        "50000\tGuildford Water Department\t\t\t\t\tMathias Nilsson\tNej\t46.314,00\t46.314,00\t564.301,00\t517.987,00\t\tNej\n";
+
+    [Fact]
+    public void ParseTable_parses_the_sample_business_central_paste_headers_and_rows()
+    {
+        var table = PiperTransform.ParseTable(SampleBcPaste);
+        table.Should().NotBeNull();
+        table!.Headers.Should().HaveCount(14);
+        table.Headers[0].Should().Be("Nummer");
+        table.Headers[1].Should().Be("Navn");
+        table.Headers[13].Should().Be("Forsegl PDF-dokumenter");
+        table.Rows.Should().HaveCount(5);
+        table.Rows[0][0].Should().Be("10000");
+        table.Rows[0][1].Should().Be("Kontorcentralen A/S");
+        // Ansvarscenter is empty in every sample row.
+        table.Rows.Should().AllSatisfy(row => row[2].Should().BeEmpty());
+    }
+
+    [Fact]
+    public void ParseTable_returns_null_when_input_has_only_a_header_row()
+    {
+        // No data rows means the dropdown would be useless — caller renders
+        // an empty-state message instead.
+        var table = PiperTransform.ParseTable("Name\tAge");
+        table.Should().BeNull();
+    }
+
+    [Fact]
+    public void ParseTable_returns_null_when_input_has_no_tabs_anywhere()
+    {
+        // Without a tab there's no column structure to project; bail out so
+        // the page can prompt the user with the right hint.
+        var table = PiperTransform.ParseTable("just a list\nwith two lines\nbut no tabs");
+        table.Should().BeNull();
+    }
+
+    [Fact]
+    public void ParseTable_returns_null_for_empty_input()
+    {
+        PiperTransform.ParseTable("").Should().BeNull();
+        PiperTransform.ParseTable(null!).Should().BeNull();
+    }
+
+    [Fact]
+    public void ParseTable_trims_a_single_trailing_blank_row()
+    {
+        // BC clipboards usually end with a trailing newline; that should
+        // not become a phantom all-empty row in the parsed output.
+        var input = "A\tB\n1\t2\n3\t4\n";
+        var table = PiperTransform.ParseTable(input);
+        table.Should().NotBeNull();
+        table!.Rows.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void ParseTable_preserves_interior_blank_rows()
+    {
+        // A blank row mid-list might be intentional in the source data —
+        // the parser doesn't try to second-guess it.
+        var input = "A\tB\n1\t2\n\n3\t4";
+        var table = PiperTransform.ParseTable(input);
+        table.Should().NotBeNull();
+        table!.Rows.Should().HaveCount(3);
+        table.Rows[1][0].Should().BeEmpty();
+        table.Rows[1][1].Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ParseTable_pads_short_rows_to_header_width()
+    {
+        // BC sometimes elides trailing empty cells on a row.
+        var input = "A\tB\tC\n1\t2";
+        var table = PiperTransform.ParseTable(input);
+        table.Should().NotBeNull();
+        table!.Rows[0].Should().HaveCount(3);
+        table.Rows[0][2].Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ParseTable_truncates_over_wide_rows_to_header_width()
+    {
+        // An over-wide row also shouldn't poison column indexing.
+        var input = "A\tB\n1\t2\t3\t4";
+        var table = PiperTransform.ParseTable(input);
+        table.Should().NotBeNull();
+        table!.Rows[0].Should().HaveCount(2);
+        table.Rows[0][0].Should().Be("1");
+        table.Rows[0][1].Should().Be("2");
+    }
+
+    [Fact]
+    public void ParseTable_disambiguates_duplicate_header_names_with_numeric_suffixes()
+    {
+        // Lets a <select> built from headers use the displayed name as a
+        // unique option value without losing either column.
+        var input = "Name\tValue\tName\n1\t2\t3\n";
+        var table = PiperTransform.ParseTable(input);
+        table.Should().NotBeNull();
+        table!.Headers.Should().Equal("Name", "Value", "Name (2)");
+    }
+
+    [Theory]
+    [InlineData("A\tB\r\n1\t2\r\n3\t4\r\n")]
+    [InlineData("A\tB\n1\t2\n3\t4\n")]
+    [InlineData("A\tB\r1\t2\r3\t4\r")]
+    public void ParseTable_recognises_crlf_lf_and_lone_cr_as_row_separators(string input)
+    {
+        var table = PiperTransform.ParseTable(input);
+        table.Should().NotBeNull();
+        table!.Headers.Should().Equal("A", "B");
+        table.Rows.Should().HaveCount(2);
+        table.Rows[1][0].Should().Be("3");
+    }
+
+    // ---------- RunOnItems (Table input mode → pipeline) ----------
+
+    [Fact]
+    public void RunOnItems_pipeline_matches_Run_defaults_with_BcOr_format()
+    {
+        var result = PiperTransform.RunOnItems(
+            new[] { "a", "b", "c" },
+            new PiperOptions(),
+            "table column: \"X\"");
+        result.Output.Should().Be("a|b|c");
+        result.ItemCount.Should().Be(3);
+        result.DelimiterDescription.Should().Be("table column: \"X\"");
+        result.DetectedSeparatorDisplay.Should().BeNull();
+    }
+
+    [Fact]
+    public void RunOnItems_applies_trim_skip_empty_dedup_sort_in_the_same_order_as_Run()
+    {
+        var result = PiperTransform.RunOnItems(
+            new[] { " 2 ", "", " 1", "2 ", " 3 " },
+            new PiperOptions
+            {
+                TrimItems = true,
+                SkipEmpty = true,
+                RemoveDuplicates = true,
+                Sort = PiperSortOrder.Ascending,
+            },
+            "table column: \"Nummer\"");
+        result.Output.Should().Be("1|2|3");
+    }
+
+    [Fact]
+    public void RunOnItems_empty_list_yields_empty_output_and_zero_count()
+    {
+        var result = PiperTransform.RunOnItems(
+            Array.Empty<string>(),
+            new PiperOptions(),
+            "table column: \"empty\"");
+        result.Output.Should().BeEmpty();
+        result.ItemCount.Should().Be(0);
+        result.DelimiterDescription.Should().Be("table column: \"empty\"");
+    }
+
+    [Fact]
+    public void RunOnItems_applies_format_presets_and_result_wrappers()
+    {
+        var result = PiperTransform.RunOnItems(
+            new[] { "10000", "20000", "30000" },
+            new PiperOptions
+            {
+                Format = PiperOutputFormat.Sql,
+                ResultPrefix = "IN (",
+                ResultSuffix = ")",
+            },
+            "table column: \"Nummer\"");
+        result.Output.Should().Be("IN ('10000','20000','30000')");
+    }
+
+    [Fact]
+    public void RunOnItems_picks_the_chosen_column_from_a_parsed_BC_table()
+    {
+        // End-to-end check of how the Piper page composes ParseTable +
+        // RunOnItems: pull the "Nummer" column out of the sample paste and
+        // build a BC OR filter string.
+        var table = PiperTransform.ParseTable(SampleBcPaste);
+        table.Should().NotBeNull();
+
+        var columnIndex = table!.Headers.ToList().IndexOf("Nummer");
+        var values = table.Rows.Select(r => r[columnIndex]).ToArray();
+
+        var result = PiperTransform.RunOnItems(values, new PiperOptions(), "table column: \"Nummer\"");
+        result.Output.Should().Be("10000|20000|30000|40000|50000");
+        result.ItemCount.Should().Be(5);
+    }
 }

@@ -78,6 +78,17 @@ public sealed record PiperResult(
     string? DetectedSeparatorDisplay);
 
 /// <summary>
+/// Parsed clipboard table — what <see cref="PiperTransform.ParseTable"/>
+/// returns when the input looks like a tab-separated grid copied from a
+/// Business Central list page. <see cref="Headers"/> is the first row;
+/// <see cref="Rows"/> is everything after. Each row is padded to the header
+/// width so callers can index by column without bounds checks.
+/// </summary>
+public sealed record PiperTable(
+    IReadOnlyList<string> Headers,
+    IReadOnlyList<IReadOnlyList<string>> Rows);
+
+/// <summary>
 /// Pure string transform that powers the <c>/piper</c> page. Lives in
 /// <c>Services/</c> rather than under a <c>PiperService</c> DI registration
 /// because there is no DB access, no async, and no per-request state — it's
@@ -99,7 +110,34 @@ public static class PiperTransform
         }
 
         var (items, delimiterDesc, detectedDisplay) = Split(input, options);
+        return RunPipeline(items, options, delimiterDesc, detectedDisplay);
+    }
 
+    /// <summary>
+    /// Runs the format pipeline (trim → skip empty → dedup → sort → format
+    /// → wrap) over an already-split item list. Used by Table mode on the
+    /// <c>/piper</c> page, where the items are projected from a parsed
+    /// table column rather than split out of a single delimited string.
+    /// <paramref name="delimiterDescription"/> is echoed back on the result
+    /// so the page can show something meaningful in the meta line
+    /// (e.g. <c>"table column: \"Nummer\""</c>).
+    /// </summary>
+    public static PiperResult RunOnItems(IReadOnlyList<string> items, PiperOptions options, string delimiterDescription)
+    {
+        if (items.Count == 0)
+        {
+            return new PiperResult("", 0, delimiterDescription, null);
+        }
+
+        // Copy into a mutable array so the shared pipeline can rewrite slots
+        // (Trim) without mutating the caller's list.
+        var copy = new string[items.Count];
+        for (var i = 0; i < items.Count; i++) copy[i] = items[i];
+        return RunPipeline(copy, options, delimiterDescription, null);
+    }
+
+    private static PiperResult RunPipeline(string[] items, PiperOptions options, string delimiterDescription, string? detectedDisplay)
+    {
         if (options.TrimItems)
         {
             for (var i = 0; i < items.Length; i++) items[i] = items[i].Trim();
@@ -133,7 +171,91 @@ public static class PiperTransform
             formatted = options.ResultPrefix + formatted + options.ResultSuffix;
         }
 
-        return new PiperResult(formatted, items.Length, delimiterDesc, detectedDisplay);
+        return new PiperResult(formatted, items.Length, delimiterDescription, detectedDisplay);
+    }
+
+    /// <summary>
+    /// Parses a clipboard table copied from a Business Central list page —
+    /// tab-separated cells, newline-separated rows, first row treated as
+    /// column headers. Returns <c>null</c> when the input doesn't look like
+    /// a table (zero data rows, or no tab anywhere); the caller renders an
+    /// empty-state message in that case.
+    /// </summary>
+    /// <remarks>
+    /// A single trailing blank row is trimmed (BC clipboards usually have
+    /// one); interior blank rows are preserved because the source data
+    /// might genuinely contain a blank row. Short rows are padded to the
+    /// header width with empty strings, and over-wide rows are truncated —
+    /// both happen silently because BC sometimes elides trailing empty
+    /// cells. Duplicate header names are disambiguated with
+    /// <c>" (2)"</c>, <c>" (3)"</c>, … so a UI <c>&lt;select&gt;</c> built
+    /// from these can rely on unique option values.
+    /// </remarks>
+    public static PiperTable? ParseTable(string input)
+    {
+        if (string.IsNullOrEmpty(input)) return null;
+
+        // Normalise line endings (\r\n and lone \r → \n) so a single split
+        // suffices and we don't have to juggle three separators downstream.
+        var normalised = input.Replace("\r\n", "\n").Replace('\r', '\n');
+        var rawRows = normalised.Split('\n');
+
+        // Trim a single trailing empty row (the common clipboard pattern).
+        var rowCount = rawRows.Length;
+        if (rowCount > 0 && rawRows[rowCount - 1].Length == 0)
+        {
+            rowCount--;
+        }
+
+        if (rowCount < 2) return null;
+        if (input.IndexOf('\t') < 0) return null;
+
+        var headerCells = rawRows[0].Split('\t');
+        var headers = DisambiguateHeaders(headerCells);
+
+        var rows = new List<IReadOnlyList<string>>(rowCount - 1);
+        for (var r = 1; r < rowCount; r++)
+        {
+            var cells = rawRows[r].Split('\t');
+            if (cells.Length == headers.Count)
+            {
+                rows.Add(cells);
+                continue;
+            }
+
+            // Pad short rows; truncate over-wide rows. Both are silent —
+            // BC elides trailing empty cells and we don't want to refuse
+            // an otherwise-valid paste over a cosmetic mismatch.
+            var padded = new string[headers.Count];
+            var copyLen = Math.Min(cells.Length, headers.Count);
+            for (var c = 0; c < copyLen; c++) padded[c] = cells[c];
+            for (var c = copyLen; c < headers.Count; c++) padded[c] = "";
+            rows.Add(padded);
+        }
+
+        return new PiperTable(headers, rows);
+    }
+
+    private static IReadOnlyList<string> DisambiguateHeaders(string[] raw)
+    {
+        var seen = new Dictionary<string, int>(StringComparer.Ordinal);
+        var result = new string[raw.Length];
+        for (var i = 0; i < raw.Length; i++)
+        {
+            var name = raw[i];
+            if (seen.TryGetValue(name, out var count))
+            {
+                count++;
+                seen[name] = count;
+                result[i] = $"{name} ({count})";
+            }
+            else
+            {
+                seen[name] = 1;
+                result[i] = name;
+            }
+        }
+        return result;
     }
 
     private static (string[] Items, string DelimiterDescription, string? DetectedDisplay) Split(string input, PiperOptions options)
