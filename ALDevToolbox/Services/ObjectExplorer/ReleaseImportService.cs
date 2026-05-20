@@ -701,6 +701,8 @@ public class ReleaseImportService
                 case "table_field":
                 case "page_field":
                 case "page_action":
+                case "page_control":
+                case "enum_value":
                 case "query_column":
                     break;
                 default:

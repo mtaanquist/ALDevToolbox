@@ -60,7 +60,9 @@
                         aria-label="What to search for">
                     <option value="@SearchScope.Objects">Objects</option>
                     <option value="@SearchScope.Procedures">Procedures</option>
+                    <option value="@SearchScope.Fields">Fields</option>
                     <option value="@SearchScope.Content">File content</option>
+                    <option value="@SearchScope.Translations">Translations</option>
                     <option value="@SearchScope.Compare">Compare with release</option>
                 </select>
             </label>
@@ -125,6 +127,51 @@
                                 <option value="@k">@k</option>
                             }
                         }
+                    </select>
+                </label>
+            }
+
+            @if (_scope == SearchScope.Fields)
+            {
+                <label class="field">
+                    <span class="field__label">Field kind</span>
+                    <select class="field__input" @bind="_fieldKind" @bind:after="ReloadAsync"
+                            aria-label="Filter by field kind">
+                        <option value="">All</option>
+                        <option value="table">Table fields</option>
+                        <option value="page">Page fields</option>
+                    </select>
+                </label>
+            }
+
+            @if (_scope == SearchScope.Translations)
+            {
+                <label class="field">
+                    <span class="field__label">Language</span>
+                    <select class="field__input" @bind="_language" @bind:after="ReloadAsync"
+                            aria-label="Filter translations by language">
+                        <option value="">All languages</option>
+                        @if (_languages is not null)
+                        {
+                            @foreach (var lang in _languages)
+                            {
+                                <option value="@lang.LanguageCode">
+                                    @lang.LanguageCode (@lang.TranslationCount.ToString("N0"))
+                                </option>
+                            }
+                        }
+                    </select>
+                </label>
+
+                <label class="field">
+                    <span class="field__label">Translation kind</span>
+                    <select class="field__input" @bind="_translationKind" @bind:after="ReloadAsync"
+                            aria-label="Filter translations by kind">
+                        <option value="">Default (captions, labels, tooltips, instructional)</option>
+                        <option value="caption">Captions only</option>
+                        <option value="label">Labels only</option>
+                        <option value="tooltip">Tooltips only</option>
+                        <option value="any">Any kind</option>
                     </select>
                 </label>
             }
@@ -198,8 +245,14 @@
             case SearchScope.Procedures:
                 @RenderProceduresResults()
                 break;
+            case SearchScope.Fields:
+                @RenderFieldsResults()
+                break;
             case SearchScope.Content:
                 @RenderContentResults()
+                break;
+            case SearchScope.Translations:
+                @RenderTranslationsResults()
                 break;
             case SearchScope.Compare:
                 @RenderCompareResults()
@@ -211,7 +264,7 @@
 @code {
     [Parameter] public int ReleaseId { get; set; }
 
-    private enum SearchScope { Objects, Procedures, Content, Compare }
+    private enum SearchScope { Objects, Procedures, Fields, Content, Translations, Compare }
 
     private ReleaseDetail? _release;
     private List<ReleaseModuleSummary>? _modules;
@@ -219,6 +272,7 @@
     private List<string>? _moduleSegments;
     private List<string>? _namespaces;
     private List<ReleaseListItem>? _otherReleases;
+    private List<TranslationLanguageSummary>? _languages;
 
     private SearchScope _scope = SearchScope.Objects;
     private string _search = string.Empty;
@@ -228,11 +282,23 @@
     private string _namespace = string.Empty;
     private string _compareRight = string.Empty;
     private string _compareDirection = "ab";
+    private string _language = string.Empty;           // empty = all languages
+    private string _translationKind = string.Empty;     // empty = default kinds (caption,label,tooltip,instructional)
+    private string _fieldKind = string.Empty;           // empty = both table_field + page_field
 
     private List<ReleaseObjectMatch>? _objectResults;
     private List<ReleaseProcedureMatch>? _procedureResults;
+    private List<ReleaseFieldMatch>? _fieldResults;
     private List<ReleaseContentMatch>? _contentResults;
+    private List<TranslationMatch>? _translationResults;
     private List<ReleaseCompareFileRow>? _compareResults;
+
+    // Default kind set for the Translations scope when the user hasn't
+    // narrowed further. Matches the MCP `search_translations` defaults.
+    private static readonly HashSet<string> DefaultTranslationKinds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "caption", "label", "tooltip", "instructional",
+    };
 
     // Refs to the search-style text inputs whose `value` attribute is
     // intentionally NOT bound from the server side. See the comment on
@@ -298,6 +364,9 @@
         _moduleSegment = query["segment"] ?? string.Empty;
         _namespace = query["namespace"] ?? string.Empty;
         _compareRight = query["right"] ?? string.Empty;
+        _language = query["lang"] ?? string.Empty;
+        _translationKind = query["tkind"] ?? string.Empty;
+        _fieldKind = query["fkind"] ?? string.Empty;
         var dir = query["dir"];
         _compareDirection = dir == "ba" ? "ba" : "ab";
     }
@@ -331,6 +400,9 @@
         if (!string.IsNullOrWhiteSpace(_namespace)) parts.Add("namespace=" + Uri.EscapeDataString(_namespace));
         if (_scope == SearchScope.Compare && !string.IsNullOrWhiteSpace(_compareRight)) parts.Add("right=" + Uri.EscapeDataString(_compareRight));
         if (_scope == SearchScope.Compare && _compareDirection == "ba") parts.Add("dir=ba");
+        if (_scope == SearchScope.Translations && !string.IsNullOrWhiteSpace(_language)) parts.Add("lang=" + Uri.EscapeDataString(_language));
+        if (_scope == SearchScope.Translations && !string.IsNullOrWhiteSpace(_translationKind)) parts.Add("tkind=" + Uri.EscapeDataString(_translationKind));
+        if (_scope == SearchScope.Fields && !string.IsNullOrWhiteSpace(_fieldKind)) parts.Add("fkind=" + Uri.EscapeDataString(_fieldKind));
 
         var url = $"/object-explorer/release/{ReleaseId}";
         if (parts.Count > 0) url += "?" + string.Join("&", parts);
@@ -448,11 +520,51 @@
                     ReleaseId, trimmedSearch, moduleId, take: 500);
                 break;
 
+            case SearchScope.Fields:
+                // Issue #169: empty-search clears the result list (a wide
+                // open "all fields" listing isn't useful at base-app
+                // scale — 10k+ rows). The cap is 2000 with a "narrow
+                // your search" affordance when it bites.
+                _fieldResults = string.IsNullOrEmpty(trimmedSearch)
+                    ? new()
+                    : await ObjectExplorer.SearchFieldsInReleaseAsync(
+                        ReleaseId, trimmedSearch, moduleId,
+                        fieldKind: string.IsNullOrEmpty(_fieldKind) ? null : _fieldKind,
+                        take: 2000);
+                break;
+
             case SearchScope.Content:
                 _contentResults = string.IsNullOrEmpty(trimmedSearch)
                     ? new()
                     : await ObjectExplorer.SearchContentInReleaseAsync(
                         ReleaseId, trimmedSearch, moduleId, take: 200);
+                break;
+
+            case SearchScope.Translations:
+                // Lazy-load the language list the first time the user
+                // switches to this scope. Languages don't change once
+                // an XLIFF is uploaded; a single fetch per page life
+                // is enough.
+                if (_languages is null)
+                {
+                    _languages = await ObjectExplorer.ListTranslationLanguagesAsync(ReleaseId);
+                }
+                // The Extension dropdown holds a module id; the
+                // translation search takes a name pattern instead, so
+                // look up the picked module's name from the cached
+                // module summaries.
+                var moduleNamePattern = moduleId is { } pickedId
+                    ? _modules?.FirstOrDefault(x => x.Id == pickedId)?.Name
+                    : null;
+                _translationResults = string.IsNullOrEmpty(trimmedSearch)
+                    ? new()
+                    : await ObjectExplorer.SearchTranslationsInReleaseAsync(
+                        ReleaseId,
+                        trimmedSearch,
+                        language: string.IsNullOrEmpty(_language) ? null : _language,
+                        kindFilter: BuildTranslationKindFilter(),
+                        moduleNamePattern: moduleNamePattern,
+                        maxResults: 2000);
                 break;
 
             case SearchScope.Compare:
@@ -681,6 +793,182 @@
         "modified" => "badge--warning",
         _ => "muted",
     };
+
+    /// <summary>
+    /// Builds the kind filter set for <see cref="ObjectExplorerService.SearchTranslationsInReleaseAsync"/>.
+    /// Empty <c>_translationKind</c> means the default MCP set
+    /// (captions + labels + tooltips + instructional); "any" returns
+    /// null so the service skips the filter entirely; a specific kind
+    /// returns a singleton set.
+    /// </summary>
+    private IReadOnlySet<string>? BuildTranslationKindFilter()
+    {
+        if (string.IsNullOrEmpty(_translationKind))
+        {
+            return DefaultTranslationKinds;
+        }
+        if (string.Equals(_translationKind, "any", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+        return new HashSet<string>(StringComparer.OrdinalIgnoreCase) { _translationKind };
+    }
+
+    private RenderFragment RenderFieldsResults() => __builder =>
+    {
+        if (string.IsNullOrWhiteSpace(_search))
+        {
+            <p class="muted">Type a field name to search across every table and page in this Release.</p>
+            return;
+        }
+        if (_fieldResults is null)
+        {
+            <p class="muted">Searching…</p>
+            return;
+        }
+        if (_fieldResults.Count == 0)
+        {
+            <p class="muted">No fields match "@_search". Try a different substring.</p>
+            return;
+        }
+        <p class="muted">
+            Showing @_fieldResults.Count.ToString("N0") field(s)@(_fieldResults.Count >= 2000 ? " (capped at 2,000 — narrow the search to see the rest)" : "").
+        </p>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th scope="col">Module</th>
+                    <th scope="col">Object</th>
+                    <th scope="col">Kind</th>
+                    <th scope="col">Field ID</th>
+                    <th scope="col">Field</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Source</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _fieldResults)
+                {
+                    <tr>
+                        <td>@r.ModuleName</td>
+                        <td><a href="@($"/object-explorer/object/{r.ObjectId}")">@r.ObjectKind @r.ObjectName</a></td>
+                        <td><span class="badge muted">@(r.Kind == "table_field" ? "table" : "page")</span></td>
+                        <td>@(r.FieldId?.ToString() ?? "—")</td>
+                        <td>
+                            @if (r.SourceFileId is { } nameFid && r.LineNumber > 0)
+                            {
+                                <a href="@Links.SourceFile(nameFid, r.LineNumber)"><strong>@r.Name</strong></a>
+                            }
+                            else
+                            {
+                                <strong>@r.Name</strong>
+                            }
+                        </td>
+                        <td class="muted">@(r.Signature ?? "—")</td>
+                        <td>
+                            @if (r.SourceFileId is { } srcFid && r.LineNumber > 0)
+                            {
+                                <a href="@Links.SourceFile(srcFid, r.LineNumber)">View source</a>
+                            }
+                            else
+                            {
+                                <span class="muted">—</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+
+    private RenderFragment RenderTranslationsResults() => __builder =>
+    {
+        if (string.IsNullOrWhiteSpace(_search))
+        {
+            <p class="muted">Type a translated phrase to search captions, labels, and tooltips across this release.</p>
+            return;
+        }
+        if (_translationResults is null)
+        {
+            <p class="muted">Searching translations…</p>
+            return;
+        }
+        if (_translationResults.Count == 0)
+        {
+            <p class="muted">No translations match "@_search". Try a shorter substring or switch the language filter.</p>
+            return;
+        }
+        <p class="muted">
+            Showing @_translationResults.Count.ToString("N0") translation(s)@(_translationResults.Count >= 2000 ? " (capped at 2,000 — narrow the search to see the rest)" : "").
+        </p>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th scope="col">Language</th>
+                    <th scope="col">Module</th>
+                    <th scope="col">Object / element</th>
+                    <th scope="col">Kind</th>
+                    <th scope="col">Translation</th>
+                    <th scope="col"><span class="visually-hidden">Source</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _translationResults)
+                {
+                    <tr>
+                        <td><span class="badge muted">@r.LanguageCode</span></td>
+                        <td>@r.ModuleName</td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(r.ObjectKind))
+                            {
+                                <span class="muted">@r.ObjectKind</span>
+                                <span> @(r.ObjectName ?? "—")</span>
+                            }
+                            else
+                            {
+                                <span class="muted">—</span>
+                            }
+                            @if (!string.IsNullOrEmpty(r.SubKind) || !string.IsNullOrEmpty(r.SubName))
+                            {
+                                <br/>
+                                <span class="muted">@r.SubKind</span>
+                                <span> @(r.SubName ?? "—")</span>
+                            }
+                            @if (!string.IsNullOrEmpty(r.PropertyName))
+                            {
+                                <br/>
+                                <span class="muted">Property: @r.PropertyName</span>
+                            }
+                        </td>
+                        <td><span class="badge muted">@r.Kind</span></td>
+                        <td>
+                            <strong>@r.TargetText</strong>
+                            <details>
+                                <summary class="muted">Source: @TruncateForSummary(r.SourceText)</summary>
+                                <div class="muted">@r.SourceText</div>
+                            </details>
+                        </td>
+                        <td>
+                            @if (r.SymbolSourceFileId is { } fid && r.SymbolLineNumber is { } ln && ln > 0)
+                            {
+                                <a href="@Links.SourceFile(fid, ln)">View source</a>
+                            }
+                            else
+                            {
+                                <span class="muted" title="No navigable symbol for this translation kind yet">—</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+
+    private static string TruncateForSummary(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return string.Empty;
+        return s.Length <= 80 ? s : s[..80] + "…";
+    }
 
     private RenderFragment RenderContentResults() => __builder =>
     {

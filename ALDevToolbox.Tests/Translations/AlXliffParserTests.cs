@@ -185,4 +185,83 @@ public sealed class AlXliffParserTests
         Action act = () => AlXliffParser.Parse(stream);
         act.Should().Throw<InvalidDataException>().WithMessage("*target-language*");
     }
+
+    // ── Streaming parser (issue #207) ──────────────────────────────────
+
+    [Fact]
+    public void ParseStreaming_yields_each_trans_unit_once_in_document_order()
+    {
+        using var stream = File.OpenRead(Path.Combine(FixtureRoot, "OIOUBL.daDK.xlf"));
+        var ids = new List<string>();
+
+        var header = AlXliffParser.ParseStreaming(stream, unit => ids.Add(unit.Id));
+
+        header.TargetLanguage.Should().Be("da-DK");
+        ids.Should().HaveCount(436,
+            because: "the streaming walker must yield exactly the same set of trans-units as the materialising Parse");
+        ids.Distinct().Should().HaveCount(436,
+            because: "no trans-unit is yielded twice — ReadSubtree advances past the end of each <trans-unit> element");
+    }
+
+    [Fact]
+    public void ParseStreaming_emits_same_header_as_Parse()
+    {
+        using (var s = File.OpenRead(Path.Combine(FixtureRoot, "OIOUBL.daDK.xlf")))
+        {
+            var doc = AlXliffParser.Parse(s);
+
+            using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "OIOUBL.daDK.xlf"));
+            var header = AlXliffParser.ParseStreaming(s2, _ => { });
+
+            header.TargetLanguage.Should().Be(doc.TargetLanguage);
+            header.SourceLanguage.Should().Be(doc.SourceLanguage);
+            header.OriginalName.Should().Be(doc.OriginalName);
+        }
+    }
+
+    [Fact]
+    public void ParseStreaming_handles_trans_units_without_target_element()
+    {
+        // Legacy / hand-edited XLIFFs sometimes ship <trans-unit> without
+        // a <target> child. The streaming walker should treat the target
+        // text as empty rather than skip the row.
+        const string xml =
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+                <file source-language="en-US" target-language="da-DK" original="Foo">
+                    <body>
+                        <trans-unit id="t1">
+                            <source>Hello</source>
+                        </trans-unit>
+                    </body>
+                </file>
+            </xliff>
+            """;
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(xml));
+
+        var units = new List<XliffTransUnit>();
+        var header = AlXliffParser.ParseStreaming(stream, units.Add);
+
+        header.TargetLanguage.Should().Be("da-DK");
+        units.Should().ContainSingle();
+        units[0].Id.Should().Be("t1");
+        units[0].SourceText.Should().Be("Hello");
+        units[0].TargetText.Should().BeEmpty();
+        units[0].TargetState.Should().BeNull();
+    }
+
+    [Fact]
+    public void ParseStreaming_throws_on_missing_file_element()
+    {
+        const string xml =
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2" />
+            """;
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(xml));
+
+        Action act = () => AlXliffParser.ParseStreaming(stream, _ => { });
+        act.Should().Throw<InvalidDataException>().WithMessage("*<file>*");
+    }
 }

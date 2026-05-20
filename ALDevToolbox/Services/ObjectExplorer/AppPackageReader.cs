@@ -70,12 +70,26 @@ public static class AppPackageReader
 
         if (IsReadyToRunWrapper(archive))
         {
-            var innerBytes = await ExtractReadyToRunInnerAppAsync(archive, ct).ConfigureAwait(false);
-            await using var innerStream = new MemoryStream(innerBytes, writable: false);
-            var inner = await ReadAsync(innerStream, ct).ConfigureAwait(false);
-            // Keep the outer hash: ReleaseImportService.ImportOneAppAsync
-            // dedupes on the bytes the operator uploaded.
-            return inner with { AppFileHash = hash };
+            // The inner .app for a BC base-app R2R wrapper runs 100-200 MB.
+            // Buffering it as byte[] held that array alive across the whole
+            // nested ReadAsync — see issue #207. Stage it to a temp file
+            // and open a FileStream into the recursion instead so the
+            // bytes live on disk during the recursive walk.
+            var tempPath = await ExtractReadyToRunInnerAppToTempFileAsync(archive, ct).ConfigureAwait(false);
+            try
+            {
+                await using var innerStream = new FileStream(
+                    tempPath, FileMode.Open, FileAccess.Read, FileShare.None);
+                var inner = await ReadAsync(innerStream, ct).ConfigureAwait(false);
+                // Keep the outer hash: ReleaseImportService.ImportOneAppAsync
+                // dedupes on the bytes the operator uploaded.
+                return inner with { AppFileHash = hash };
+            }
+            finally
+            {
+                try { File.Delete(tempPath); }
+                catch (IOException) { /* best-effort; OS will reclaim eventually */ }
+            }
         }
 
         var manifest = ReadManifest(archive);
@@ -112,13 +126,20 @@ public static class AppPackageReader
             && FindEntry(archive, "readytorunappmanifest.json") is not null;
 
     /// <summary>
-    /// Pulls the single root-level nested <c>.app</c> entry out of a
-    /// Ready2Run wrapper into a fresh byte array. The wrapper holds exactly
-    /// one <c>.app</c> at the archive root (any deeper <c>publishedartifacts/...</c>
-    /// entries are build-machine path artefacts, not real apps). Refuses
-    /// ambiguous archives with a diagnostic that lists what was found.
+    /// Streams the single root-level nested <c>.app</c> entry out of a
+    /// Ready2Run wrapper into a fresh temp file. Returns the temp file
+    /// path — the caller is responsible for deleting it. The wrapper
+    /// holds exactly one <c>.app</c> at the archive root (any deeper
+    /// <c>publishedartifacts/...</c> entries are build-machine path
+    /// artefacts, not real apps); refuses ambiguous archives with a
+    /// diagnostic that lists what was found.
+    ///
+    /// Streaming to disk rather than a <see cref="MemoryStream"/> keeps
+    /// the inner-app bytes (100-200 MB for a BC base-app R2R wrapper)
+    /// off the managed heap during the recursive <see cref="ReadAsync"/>
+    /// — issue #207.
     /// </summary>
-    private static async Task<byte[]> ExtractReadyToRunInnerAppAsync(ZipArchive archive, CancellationToken ct)
+    private static async Task<string> ExtractReadyToRunInnerAppToTempFileAsync(ZipArchive archive, CancellationToken ct)
     {
         ZipArchiveEntry? inner = null;
         foreach (var e in archive.Entries)
@@ -138,10 +159,21 @@ public static class AppPackageReader
                 "a root-level nested .app inside the Ready2Run wrapper");
         }
 
-        using var innerStream = inner.Open();
-        using var buffer = new MemoryStream();
-        await innerStream.CopyToAsync(buffer, ct).ConfigureAwait(false);
-        return buffer.ToArray();
+        var tempPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        try
+        {
+            await using var innerStream = inner.Open();
+            await using var temp = new FileStream(
+                tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                bufferSize: 81920, useAsync: true);
+            await innerStream.CopyToAsync(temp, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            try { File.Delete(tempPath); } catch (IOException) { /* best-effort */ }
+            throw;
+        }
+        return tempPath;
     }
 
     private static bool IsNavxHeader(byte[] bytes)
