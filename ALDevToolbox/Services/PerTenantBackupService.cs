@@ -176,11 +176,9 @@ public sealed class PerTenantBackupService
             foreach (var table in TenantTableCatalog.ContentTables)
             {
                 if (!TenantTableCatalog.TablesWithDirectOrgColumn.Contains(table)) continue;
-                var json = await ReadTableAsJsonAsync(connection, table, organizationId, ct);
                 var entry = zip.CreateEntry(table + ".json", CompressionLevel.Optimal);
                 await using var entryStream = entry.Open();
-                var bytes = Encoding.UTF8.GetBytes(json);
-                await entryStream.WriteAsync(bytes, ct);
+                await WriteTableAsJsonAsync(connection, table, organizationId, entryStream, ct);
                 includedTables.Add(table);
             }
 
@@ -296,25 +294,33 @@ public sealed class PerTenantBackupService
         // Insert in FK order. jsonb_populate_recordset takes a row type that
         // PostgreSQL synthesises automatically for the table, so the JSON
         // keys map onto column names without us re-declaring the column list.
+        //
+        // Batching by serialised byte length keeps each @rows::jsonb cast
+        // well under Postgres' 256 MB jsonb-value ceiling. Loading the
+        // whole file then casting it as one blob is what crashed
+        // blob-heavy tenants (oe_module_files in particular) before this
+        // change.
         foreach (var table in TenantTableCatalog.ContentTables
                      .Where(TenantTableCatalog.TablesWithDirectOrgColumn.Contains))
         {
             var entry = zip.GetEntry(table + ".json");
             if (entry is null) continue;
-            string json;
-            await using (var entryStream = entry.Open())
-            using (var reader = new StreamReader(entryStream, Encoding.UTF8))
-            {
-                json = await reader.ReadToEndAsync(ct);
-            }
-            if (string.IsNullOrWhiteSpace(json) || json == "null" || json == "[]") continue;
 
-            await using var cmd = connection.CreateCommand();
-            cmd.Transaction = tx;
-            cmd.CommandText =
-                $"INSERT INTO {table} SELECT * FROM jsonb_populate_recordset(NULL::{table}, @rows::jsonb)";
-            cmd.Parameters.AddWithValue("@rows", json);
-            await cmd.ExecuteNonQueryAsync(ct);
+            var insertedAny = false;
+            await using (var entryStream = entry.Open())
+            {
+                await foreach (var batchJson in PerTenantBackupJson.BatchJsonArrayAsync(entryStream, RestoreBatchBytes, ct))
+                {
+                    await using var cmd = connection.CreateCommand();
+                    cmd.Transaction = tx;
+                    cmd.CommandText =
+                        $"INSERT INTO {table} SELECT * FROM jsonb_populate_recordset(NULL::{table}, @rows::jsonb)";
+                    cmd.Parameters.AddWithValue("@rows", batchJson);
+                    await cmd.ExecuteNonQueryAsync(ct);
+                    insertedAny = true;
+                }
+            }
+            if (!insertedAny) continue;
 
             // Re-align identity sequence so the next INSERT doesn't collide
             // with restored row ids. pg_get_serial_sequence returns NULL
@@ -399,14 +405,43 @@ public sealed class PerTenantBackupService
         await _db.SaveChangesAsync(ct);
     }
 
-    private static async Task<string> ReadTableAsJsonAsync(NpgsqlConnection connection, string table, int organizationId, CancellationToken ct)
+    /// <summary>
+    /// Per-batch cap when restoring. Each batch turns into a single
+    /// <c>jsonb_populate_recordset(@rows::jsonb)</c> call, so it must stay
+    /// well below Postgres' 256 MB jsonb-value ceiling. 32 MB gives the
+    /// row-side metadata plenty of headroom and keeps managed-heap pressure
+    /// bounded.
+    /// </summary>
+    private const long RestoreBatchBytes = 32L * 1024 * 1024;
+
+    /// <summary>
+    /// Streams <c>to_jsonb(t)</c> rows one at a time into
+    /// <paramref name="destination"/>, framing them as a JSON array. Replaces
+    /// the older <c>jsonb_agg</c> path that built a single jsonb on the
+    /// server and tripped the 256 MB limit on blob-heavy tenants.
+    /// </summary>
+    private static async Task WriteTableAsJsonAsync(
+        NpgsqlConnection connection,
+        string table,
+        int organizationId,
+        Stream destination,
+        CancellationToken ct)
     {
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText =
-            $"SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) FROM {table} t WHERE t.organization_id = @org";
+        cmd.CommandText = $"SELECT to_jsonb(t)::text FROM {table} t WHERE t.organization_id = @org";
         cmd.Parameters.AddWithValue("@org", organizationId);
-        var result = await cmd.ExecuteScalarAsync(ct);
-        return result?.ToString() ?? "[]";
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        await destination.WriteAsync("["u8.ToArray(), ct);
+        var first = true;
+        while (await reader.ReadAsync(ct))
+        {
+            if (!first) await destination.WriteAsync(","u8.ToArray(), ct);
+            first = false;
+            var rowJson = reader.GetString(0);
+            await destination.WriteAsync(Encoding.UTF8.GetBytes(rowJson), ct);
+        }
+        await destination.WriteAsync("]"u8.ToArray(), ct);
     }
 
     private string ResolveFilePath(string slug, string fileName)
