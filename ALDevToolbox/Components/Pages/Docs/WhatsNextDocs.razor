@@ -1,0 +1,159 @@
+@page "/docs/extensions-whats-next"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+@*
+    Landing page users are sent to after Generate finishes on
+    /projects/new or /projects/extension. The ZIP download is already
+    triggered by the time this page loads (the form's response carried
+    Content-Disposition: attachment); this page picks up the user where
+    the browser's download dialog left them.
+
+    Tone is intentionally soft — many of our users are Business Central
+    consultants who do some development but aren't full-time git
+    practitioners. Avoid imperative "you must" language; explain the
+    why before the what.
+
+    Provider-agnostic by design: we name the popular hosts in passing
+    but don't favour one. The generic `git remote add origin <url>`
+    pattern works the same way on GitHub, Azure DevOps, GitLab,
+    Bitbucket, and self-hosted Gitea.
+*@
+
+<PageTitle>What's next · AL Dev Toolbox</PageTitle>
+
+<div class="account-page">
+    <header class="page-header">
+        <h1>You're all set — here's what's next</h1>
+        <p class="muted">
+            Your workspace or extension is in your Downloads folder. The rest of
+            this page walks through opening it, putting it under source control,
+            and pushing it to wherever your team keeps its code. Nothing here is
+            mandatory — if you already have a git workflow you like, skip ahead.
+        </p>
+    </header>
+
+    <section class="account-section">
+        <h2>1. Open the folder</h2>
+        <p>
+            Unzip the file you just downloaded somewhere you'll find it again —
+            most people pick a <code>Projects</code> or <code>Source</code>
+            folder under their user directory. The unzipped folder is your
+            workspace; everything inside it belongs together.
+        </p>
+        <p>
+            Open that folder in VS Code (<em>File &rarr; Open Folder…</em>) and,
+            if it asks, trust the workspace. If VS Code prompts you to install
+            the <strong>AL Language</strong> extension, accept — that's the
+            Microsoft extension that gives you IntelliSense, compile, and
+            launch for Business Central projects.
+        </p>
+        <p class="muted">
+            Two side-cars sit at the workspace root that you don't need to
+            touch: a <code>.code-workspace</code> file (VS Code reads it to
+            know which folders belong together) and a
+            <code>workspace.aldt.toml</code> file (AL Dev Toolbox uses it if
+            you ever come back to regenerate the workspace). Leave them where
+            they are — they travel with the project.
+        </p>
+    </section>
+
+    <section class="account-section">
+        <h2>2. Save it with git</h2>
+        <p>
+            Git is the safety net that records every change you make so you
+            can roll back when something breaks, see who changed what, and
+            share your work with teammates. The workspace already has a
+            <code>.gitignore</code> in it, so git knows to skip the build
+            output and other generated files.
+        </p>
+        <p>
+            Open a terminal inside the workspace folder (in VS Code:
+            <em>Terminal &rarr; New Terminal</em>) and run these three
+            commands. They tell git to start tracking the folder, stage all
+            the files you just got, and record the first snapshot.
+        </p>
+        <pre><code>git init
+git add .
+git commit -m "Initial workspace from AL Dev Toolbox"</code></pre>
+        <p class="muted">
+            If git complains that it doesn't know who you are, it'll tell you
+            exactly which two commands to run to set your name and email — a
+            one-time setup per machine. Paste those, then re-run
+            <code>git commit</code>.
+        </p>
+    </section>
+
+    <section class="account-section">
+        <h2>3. Push it to your team's host</h2>
+        <p>
+            "Push" means uploading your local history to a server so other
+            people can see it and so your work survives if your laptop
+            disappears. The server is usually one of:
+        </p>
+        <ul>
+            <li><strong>GitHub</strong> — common for open source and many product teams.</li>
+            <li><strong>Azure DevOps</strong> — common for Microsoft-stack consultancies and enterprises.</li>
+            <li><strong>GitLab</strong>, <strong>Bitbucket</strong>, <strong>Gitea</strong>, or your own self-hosted server — the underlying git is the same.</li>
+        </ul>
+        <p>
+            Each provider has its own UI for creating a new repository, but the
+            steps are roughly the same: sign in, click <em>New repository</em>
+            (or <em>New repo</em>), give it a name, and leave the "initialize
+            with README" boxes unchecked — your local folder is already
+            initialised, so an empty remote is what you want.
+        </p>
+        <p>
+            Once it's created, the provider shows you a URL that looks
+            something like one of these:
+        </p>
+        <pre><code>https://github.com/your-org/customer-acme.git
+https://dev.azure.com/your-org/your-project/_git/customer-acme
+git@gitlab.com:your-org/customer-acme.git</code></pre>
+        <p>
+            Copy whichever URL your provider shows. Back in your terminal,
+            point your local repository at it and push the first commit:
+        </p>
+        <pre><code>git remote add origin &lt;paste the URL here&gt;
+git branch -M main
+git push -u origin main</code></pre>
+        <p class="muted">
+            That second line renames your local branch to <code>main</code>
+            so it lines up with what most hosts expect by default. If you'd
+            rather use <code>master</code>, <code>trunk</code>, or anything
+            else, swap it in — git doesn't care. The <code>-u</code> in the
+            push command tells git "remember this remote next time", so from
+            then on a plain <code>git push</code> works.
+        </p>
+    </section>
+
+    <section class="account-section">
+        <h2>From here on</h2>
+        <p>
+            Day-to-day, the loop is small: edit files, save, then run
+            <code>git add</code> / <code>git commit</code> / <code>git push</code>
+            when you've finished something worth saving. VS Code's
+            <strong>Source Control</strong> pane (the branch icon in the
+            sidebar) gives you buttons for all of that if you'd rather not
+            type the commands.
+        </p>
+        <p>
+            If you need another extension on top of this workspace later,
+            head back to <a href="/projects/extension">New extension</a> —
+            pick the same template and AL Dev Toolbox will add a sibling
+            folder alongside the ones you already have.
+        </p>
+    </section>
+
+    <section class="account-section">
+        <h2>Stuck?</h2>
+        <p>
+            None of the commands above will destroy work you haven't pushed
+            yet. If something looks wrong, take a breath; the original ZIP
+            is still in your Downloads folder, and a fresh
+            <a href="/projects/new">New workspace</a> is always one click
+            away. For team-specific things — which host to use, what the
+            repo should be named, who owns what — your tech lead or
+            architect is the right person to ask.
+        </p>
+    </section>
+</div>
