@@ -1,0 +1,16 @@
+@page "/admin/administration"
+@attribute [Authorize(Roles = "Admin")]
+@inject NavigationManager Nav
+
+@*
+    Root /admin/administration redirects to the Identity tab so the sidebar
+    entry has a real landing spot. See AdministrationHeader.razor for the
+    shared pill-tab nav across the five sub-pages.
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/admin/administration/identity", replace: true);
+    }
+}

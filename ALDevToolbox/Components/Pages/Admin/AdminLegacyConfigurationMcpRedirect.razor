@@ -1,0 +1,16 @@
+@page "/admin/configuration/mcp"
+@attribute [Authorize(Roles = "Admin")]
+@inject NavigationManager Nav
+
+@*
+    Legacy redirect: /admin/configuration/mcp moved to
+    /admin/administration/mcp when the per-org admin pages were
+    consolidated.
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/admin/administration/mcp", replace: true);
+    }
+}

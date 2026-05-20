@@ -1,4 +1,4 @@
-@page "/admin/users/new"
+@page "/admin/administration/users/new"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @using ALDevToolbox.Components.Shared
@@ -11,13 +11,13 @@
 @inject IJSRuntime JS
 
 @*
-    Create-or-invite sub-page split out of /admin/users (P4.22). The main
-    users page is now read-mostly — pending invites, pending signups, active
-    user management — and this page owns the two add-a-user flows so the
-    forms aren't competing for attention with the tables on every visit.
+    Create-or-invite sub-page. The Users tab is read-mostly — pending invites,
+    pending signups, active user management — and this page owns the two
+    add-a-user flows so the forms aren't competing for attention with the
+    tables on every visit.
 *@
 
-<PageTitle>Add a user · Admin · AL Dev Toolbox</PageTitle>
+<PageTitle>Add a user · Administration · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page">
     <header class="admin-page__header">
@@ -29,7 +29,7 @@
                 link that lets them set their own password.
             </p>
         </div>
-        <a class="btn btn--sm" href="/admin/users">
+        <a class="btn btn--sm" href="/admin/administration/users">
             <Icon Name="arrow-left" Width="14" Height="14" />
             <span>Back to users</span>
         </a>

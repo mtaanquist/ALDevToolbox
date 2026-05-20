@@ -1,4 +1,4 @@
-using ALDevToolbox.Components.Pages.Admin;
+using ALDevToolbox.Components.Pages.Admin.Administration;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
@@ -61,7 +61,7 @@ public sealed class AdminUsersTests : IDisposable
     [Fact]
     public void Empty_org_renders_empty_state_copy_for_invites_and_pending_signups()
     {
-        var cut = _ctx.RenderComponent<AdminUsers>();
+        var cut = _ctx.RenderComponent<AdminAdministrationUsers>();
 
         cut.WaitForAssertion(() =>
         {
@@ -100,7 +100,7 @@ public sealed class AdminUsersTests : IDisposable
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminUsers>();
+        var cut = _ctx.RenderComponent<AdminAdministrationUsers>();
 
         cut.WaitForAssertion(() =>
         {

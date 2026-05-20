@@ -9,10 +9,10 @@ internal static class RouteConstants
 {
     public const string Login = "/login";
     public const string Account = "/account";
-    public const string AdminUsers = "/admin/users";
-    public const string AdminUsersNew = "/admin/users/new";
+    public const string AdminUsers = "/admin/administration/users";
+    public const string AdminUsersNew = "/admin/administration/users/new";
     public const string AdminTemplates = "/admin/templates";
-    public const string AdminExport = "/admin/export";
+    public const string AdminExport = "/admin/administration/export";
     public const string SiteAdminUsers = "/site-admin/users";
     public const string SiteAdminSettings = "/site-admin/settings";
     public const string SiteAdminBackups = "/site-admin/backups";

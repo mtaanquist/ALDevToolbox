@@ -1,4 +1,4 @@
-@page "/admin/users"
+@page "/admin/administration/users"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @using ALDevToolbox.Data
@@ -15,31 +15,29 @@
 @inject IDataProtectionProvider Protection
 @inject IHttpContextAccessor Http
 @inject IJSRuntime JS
-@inject ILogger<AdminUsers> Log
+@inject ILogger<AdminAdministrationUsers> Log
 
-<PageTitle>Users · AL Dev Toolbox</PageTitle>
+@*
+    Users tab of the Administration surface. Read-mostly: pending invites,
+    pending signups, and active/disabled user management with per-row and
+    bulk actions. Per-row actions POST to the existing /admin/users/*
+    endpoints (which stayed at their original URLs after the page move);
+    role changes run inside this circuit via UserAdministrationService.
+    There's no global "Save changes" button here — every action mutates a
+    single row at submit time, so dirty state never accumulates.
+*@
+
+<PageTitle>Users · Administration · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page">
-    <header class="admin-page__header">
-        <div>
-            <h1>Users</h1>
-            <p class="muted">
-                Approve pending signups, change roles, and disable accounts in
-                your organisation. Use <strong>Add user</strong> to create or
-                invite a new one.
-            </p>
-        </div>
-        <div class="admin-page__header-actions">
-            <a class="btn btn--sm" href="/admin">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to admin</span>
-            </a>
-            <a class="btn btn--sm btn--primary" href="/admin/users/new">
+    <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Users">
+        <Actions>
+            <a class="btn btn--sm btn--primary" href="/admin/administration/users/new">
                 <Icon Name="user-plus" Width="14" Height="14" />
                 <span>Add user</span>
             </a>
-        </div>
-    </header>
+        </Actions>
+    </AdministrationHeader>
 
 @if (!string.IsNullOrEmpty(Error))
 {

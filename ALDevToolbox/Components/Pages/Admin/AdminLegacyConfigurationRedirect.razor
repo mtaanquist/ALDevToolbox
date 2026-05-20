@@ -1,0 +1,18 @@
+@page "/admin/configuration"
+@page "/admin/configuration/identity"
+@attribute [Authorize(Roles = "Admin")]
+@inject NavigationManager Nav
+
+@*
+    Legacy redirect: /admin/configuration and /admin/configuration/identity
+    moved under /admin/administration/identity when the per-org admin pages
+    were consolidated. Kept so old bookmarks and outbound links still land
+    in the right place.
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/admin/administration/identity", replace: true);
+    }
+}

@@ -1,9 +1,148 @@
 @page "/"
-@inject NavigationManager Nav
+@using ALDevToolbox.Services.Mcp
+@inject IMcpAvailability McpAvailability
 
-@code {
-    protected override void OnInitialized()
-    {
-        Nav.NavigateTo("/projects/new", replace: true);
-    }
-}
+<PageTitle>AL Dev Toolbox</PageTitle>
+
+@*
+    Tools home dashboard. Renders one tile per user-facing tool. Cards stay
+    visible for unauthenticated visitors — each card just points at
+    /login?returnUrl=<tool> instead of the tool itself, and we add a small
+    lock badge so it's obvious sign-in is needed first. The MCP card is
+    additionally gated on the site-wide MCP enable flag (no point linking
+    to a feature the SiteAdmin turned off).
+*@
+
+<AuthorizeView>
+    <Authorized>
+        <div class="tools-home">
+            <h1>AL Dev Toolbox</h1>
+            <p class="muted">Pick a tool to get started.</p>
+            <div class="tile-grid">
+                <a class="tile tile--link" href="/projects/new">
+                    <Icon Name="folder-plus" Width="20" Height="20" Css="tile__icon" />
+                    <div class="tile__body">
+                        <div class="tile__title">Workspace</div>
+                        <div class="tile__caption">Generate a multi-extension AL workspace from a runtime template.</div>
+                    </div>
+                </a>
+                <a class="tile tile--link" href="/projects/extension">
+                    <Icon Name="package" Width="20" Height="20" Css="tile__icon" />
+                    <div class="tile__body">
+                        <div class="tile__title">Extension</div>
+                        <div class="tile__caption">Generate a single standalone AL extension.</div>
+                    </div>
+                </a>
+                <a class="tile tile--link" href="/templates">
+                    <Icon Name="layers" Width="20" Height="20" Css="tile__icon" />
+                    <div class="tile__body">
+                        <div class="tile__title">Templates</div>
+                        <div class="tile__caption">Browse the runtime templates available for your organisation.</div>
+                    </div>
+                </a>
+                <a class="tile tile--link" href="/snippets">
+                    <Icon Name="code" Width="20" Height="20" Css="tile__icon" />
+                    <div class="tile__body">
+                        <div class="tile__title">Snippets</div>
+                        <div class="tile__caption">Search the AL snippet library and suggest new ones.</div>
+                    </div>
+                </a>
+                <a class="tile tile--link" href="/object-explorer">
+                    <Icon Name="search" Width="20" Height="20" Css="tile__icon" />
+                    <div class="tile__body">
+                        <div class="tile__title">Object Explorer</div>
+                        <div class="tile__caption">Browse BC releases, modules, objects, and source files.</div>
+                    </div>
+                </a>
+                <a class="tile tile--link" href="/piper">
+                    <Icon Name="git-merge" Width="20" Height="20" Css="tile__icon" />
+                    <div class="tile__body">
+                        <div class="tile__title">Piper</div>
+                        <div class="tile__caption">Compare and merge AL source across releases.</div>
+                    </div>
+                </a>
+                <AuthorizeView Context="mcpCtx">
+                    <Authorized>
+                        @if (McpAvailability.IsEnabled && mcpCtx.User.FindFirst("org_mcp_enabled")?.Value != "false")
+                        {
+                            <a class="tile tile--link" href="/tools/mcp">
+                                <Icon Name="bot" Width="20" Height="20" Css="tile__icon" />
+                                <div class="tile__body">
+                                    <div class="tile__title">MCP</div>
+                                    <div class="tile__caption">Connect Claude, Cursor, or another assistant to AL Dev Toolbox via the MCP server.</div>
+                                </div>
+                            </a>
+                        }
+                    </Authorized>
+                </AuthorizeView>
+            </div>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <div class="tools-home">
+            <h1>AL Dev Toolbox</h1>
+            <p class="muted">Sign in to open any of these tools.</p>
+            <div class="tile-grid">
+                <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Fprojects%2Fnew">
+                    <Icon Name="folder-plus" Width="20" Height="20" Css="tile__icon" />
+                    <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
+                    <div class="tile__body">
+                        <div class="tile__title">Workspace</div>
+                        <div class="tile__caption">Generate a multi-extension AL workspace from a runtime template. Sign in to use.</div>
+                    </div>
+                </a>
+                <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Fprojects%2Fextension">
+                    <Icon Name="package" Width="20" Height="20" Css="tile__icon" />
+                    <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
+                    <div class="tile__body">
+                        <div class="tile__title">Extension</div>
+                        <div class="tile__caption">Generate a single standalone AL extension. Sign in to use.</div>
+                    </div>
+                </a>
+                <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Ftemplates">
+                    <Icon Name="layers" Width="20" Height="20" Css="tile__icon" />
+                    <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
+                    <div class="tile__body">
+                        <div class="tile__title">Templates</div>
+                        <div class="tile__caption">Browse the runtime templates available for your organisation. Sign in to use.</div>
+                    </div>
+                </a>
+                <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Fsnippets">
+                    <Icon Name="code" Width="20" Height="20" Css="tile__icon" />
+                    <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
+                    <div class="tile__body">
+                        <div class="tile__title">Snippets</div>
+                        <div class="tile__caption">Search the AL snippet library and suggest new ones. Sign in to use.</div>
+                    </div>
+                </a>
+                <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Fobject-explorer">
+                    <Icon Name="search" Width="20" Height="20" Css="tile__icon" />
+                    <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
+                    <div class="tile__body">
+                        <div class="tile__title">Object Explorer</div>
+                        <div class="tile__caption">Browse BC releases, modules, objects, and source files. Sign in to use.</div>
+                    </div>
+                </a>
+                <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Fpiper">
+                    <Icon Name="git-merge" Width="20" Height="20" Css="tile__icon" />
+                    <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
+                    <div class="tile__body">
+                        <div class="tile__title">Piper</div>
+                        <div class="tile__caption">Compare and merge AL source across releases. Sign in to use.</div>
+                    </div>
+                </a>
+                @if (McpAvailability.IsEnabled)
+                {
+                    <a class="tile tile--link tile--locked" href="/login?returnUrl=%2Ftools%2Fmcp">
+                        <Icon Name="bot" Width="20" Height="20" Css="tile__icon" />
+                        <Icon Name="lock" Width="14" Height="14" Css="tile__lock" />
+                        <div class="tile__body">
+                            <div class="tile__title">MCP</div>
+                            <div class="tile__caption">Connect Claude, Cursor, or another assistant to AL Dev Toolbox via the MCP server. Sign in to use.</div>
+                        </div>
+                    </a>
+                }
+            </div>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
