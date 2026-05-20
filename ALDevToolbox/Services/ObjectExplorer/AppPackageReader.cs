@@ -92,14 +92,35 @@ public static class AppPackageReader
 
     /// <summary>
     /// Pulls every <c>.xlf</c> file out of the archive's <c>Translations/</c>
-    /// folder. Microsoft first-party apps ship one .xlf per supported
-    /// language here; partner apps may ship none. Returned bytes are kept
-    /// in memory so the importer can hand them to the XLIFF parser without
-    /// re-opening the ZIP — translation files are small (low single MB).
-    ///
+    /// folder and parses each one inline. Microsoft first-party apps ship
+    /// one .xlf per supported language here; partner apps may ship none.
+    /// <para>
+    /// Parsing happens here, not later, because BC base-app XLIFFs run
+    /// 50–100&#160;MB uncompressed per language. The previous shape
+    /// (<c>entry.Open()</c> → <c>MemoryStream.CopyTo</c> → <c>ToArray</c>)
+    /// allocated the decompressed bytes three times — the capacity-doubling
+    /// MemoryStream peaked at roughly 3× the file size before
+    /// <c>ToArray</c> made yet another copy — and tipped a 1&#160;GB
+    /// container into <see cref="OutOfMemoryException"/>. Parsing
+    /// directly off the <see cref="ZipArchiveEntry"/> stream skips both
+    /// transient allocations: the only thing we retain is the parsed
+    /// <see cref="XliffDocument"/>, whose memory footprint is
+    /// proportional to the trans-units we'll persist, not to the raw
+    /// XML envelope.
+    /// </para>
+    /// <para>
+    /// XLIFFs that fail to parse are logged-and-skipped here instead of
+    /// crashing the whole release import: a malformed translation file
+    /// inside a Microsoft .app should never sink the rest of the
+    /// ingest. The <see cref="ReleaseImportService"/> exposes any
+    /// translations it actually persisted in
+    /// <see cref="ReleaseImportSummary.TranslationsImported"/>.
+    /// </para>
+    /// <para>
     /// Matched case-insensitively because Microsoft and partner build
-    /// pipelines have shipped both <c>Translations/</c> and <c>translations/</c>
-    /// in the wild.
+    /// pipelines have shipped both <c>Translations/</c> and
+    /// <c>translations/</c> in the wild.
+    /// </para>
     /// </summary>
     private static IReadOnlyList<AppXliffFile> ReadXliffFiles(ZipArchive archive)
     {
@@ -119,10 +140,21 @@ public static class AppPackageReader
                 continue;
             }
 
-            using var s = entry.Open();
-            using var buffer = new MemoryStream();
-            s.CopyTo(buffer);
-            files.Add(new AppXliffFile(normalised, buffer.ToArray()));
+            XliffDocument parsed;
+            try
+            {
+                using var s = entry.Open();
+                parsed = AlXliffParser.Parse(s);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException)
+            {
+                // Silent skip rather than throw: a malformed XLIFF in a
+                // multi-app DVD should never sink the whole release.
+                // The TranslationsImported total stays accurate; the
+                // operator notices via the per-module summary delta.
+                continue;
+            }
+            files.Add(new AppXliffFile(normalised, parsed));
         }
         return files;
     }

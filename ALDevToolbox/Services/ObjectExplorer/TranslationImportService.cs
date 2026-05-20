@@ -191,8 +191,11 @@ public class TranslationImportService
     /// <summary>
     /// Called by <see cref="ReleaseImportService"/> once per module with the
     /// XLIFFs pulled out of the <c>.app</c>'s <c>Translations/</c> folder.
-    /// Errors are logged as warnings rather than thrown — a malformed XLIFF
-    /// inside a Microsoft .app should never sink the whole release import.
+    /// Parsing happens inside <see cref="AppPackageReader"/> so the raw
+    /// decompressed bytes are released as soon as parsing finishes — we
+    /// only see the much-smaller parsed documents here. Errors are
+    /// logged as warnings rather than thrown so a single bad XLIFF
+    /// can't sink the whole release import.
     /// </summary>
     public async Task<int> ImportFromAppPackageAsync(
         int orgId,
@@ -205,23 +208,9 @@ public class TranslationImportService
         foreach (var payload in payloads)
         {
             ct.ThrowIfCancellationRequested();
-            XliffDocument parsed;
             try
             {
-                using var stream = new MemoryStream(payload.Content, writable: false);
-                parsed = AlXliffParser.Parse(stream);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "Skipping XLIFF {Path} during .app import for module {ModuleId}: parse failed.",
-                    payload.Path, moduleId);
-                continue;
-            }
-
-            try
-            {
-                total += await ReplaceForModuleAsync(orgId, moduleId, parsed, ct).ConfigureAwait(false);
+                total += await ReplaceForModuleAsync(orgId, moduleId, payload.Document, ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
