@@ -3264,24 +3264,44 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 .cm-line.cm-diff-imaginary  { background-color: var(--color-surface-strong); color: var(--color-text-muted); }
 
 /* Compare-with-release picker on the single-file viewer header.
-   Sits to the right of the breadcrumb; collapses below the heading on
-   narrow widths. */
+   Sits stacked under the Download button on the right edge. The
+   picker collapses to one row inside its container (the field label
+   stays above the select for accessibility, but no min-width pushes
+   it wider than the outline column). */
 .source-viewer__compare-picker {
     display: flex;
-    align-items: flex-end;
+    align-items: stretch;
+    width: 100%;
 }
 .source-viewer__compare-picker .field {
-    min-width: 220px;
+    width: 100%;
+    min-width: 0;
 }
 
 /* Header actions wrapper — sits to the right of the breadcrumb and
-   bundles the Download button with the Compare-with-release picker so
-   they stay aligned on the same row. */
+   stacks the Download button + Compare-with-release picker
+   vertically. The column width tracks the outline panel's width so
+   the two controls always read as a visual pair with the outline
+   below them (rather than the picker stretching wider than its
+   own outline column did). */
 .source-viewer__header-actions {
     display: flex;
-    align-items: flex-end;
-    gap: 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
     margin-left: auto;
+    width: var(--source-viewer-outline-width, 340px);
+    max-width: 100%;
+}
+.source-viewer__header-actions > .btn {
+    width: 100%;
+    text-align: center;
+}
+.source-viewer__header-actions .field__label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-muted);
 }
 
 /* Status-row badges in the Compare-with-release results table. Reuse the

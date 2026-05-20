@@ -1146,7 +1146,7 @@ function wireOutlineResizer(root) {
     // resizer would otherwise let the layout flash at the default.
     const stored = readStoredWidth();
     if (stored !== null) {
-        layout.style.setProperty("--source-viewer-outline-width", stored + "px");
+        root.style.setProperty("--source-viewer-outline-width", stored + "px");
     }
 
     let pointerId = null;
@@ -1171,7 +1171,7 @@ function wireOutlineResizer(root) {
         // visible handle towards the outline shrinks it intuitively.
         const delta = e.clientX - startX;
         const next = clamp(startWidth - delta, OUTLINE_WIDTH_MIN, OUTLINE_WIDTH_MAX);
-        layout.style.setProperty("--source-viewer-outline-width", next + "px");
+        root.style.setProperty("--source-viewer-outline-width", next + "px");
     });
 
     const endDrag = e => {
@@ -1197,7 +1197,7 @@ function wireOutlineResizer(root) {
         e.preventDefault();
         const current = outline.getBoundingClientRect().width;
         const next = clamp(current + delta, OUTLINE_WIDTH_MIN, OUTLINE_WIDTH_MAX);
-        layout.style.setProperty("--source-viewer-outline-width", next + "px");
+        root.style.setProperty("--source-viewer-outline-width", next + "px");
         storeWidth(next);
     });
 }

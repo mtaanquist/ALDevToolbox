@@ -1153,7 +1153,7 @@ public class ObjectExplorerService
                 FROM oe_module_references mr
                 WHERE mr.source_object_id = ANY({1})
             )
-            SELECT DISTINCT ON (o.target_app_id, o.target_object_kind, COALESCE(o.target_object_id, -1), o.target_object_name)
+            SELECT DISTINCT ON (o.target_app_id, o.target_object_kind, o.target_object_name)
                 o.target_app_id        AS "TargetAppId",
                 COALESCE(w.name, '')   AS "TargetModuleName",
                 o.target_object_kind   AS "TargetObjectKind",
@@ -1171,7 +1171,22 @@ public class ObjectExplorerService
                     (o.target_object_id IS NOT NULL AND tgt.object_id = o.target_object_id)
                     OR (o.target_object_id IS NULL AND tgt.name = o.target_object_name)
                 )
-            ORDER BY o.target_app_id, o.target_object_kind, COALESCE(o.target_object_id, -1), o.target_object_name, o.reference_kind
+            -- Dedupe key is (app, kind, name): AL guarantees a single
+            -- object per (app, kind, name), so two source rows for the
+            -- same target are always the same object. The ORDER BY
+            -- breaks ties so the surviving row carries the most useful
+            -- payload: prefer a non-null target_object_id (lets the
+            -- LEFT JOIN against oe_module_objects hit the object_id
+            -- branch instead of the name branch), then prefer
+            -- reference_kind alphabetically for determinism. Without
+            -- this an extends_target row (object_id=null) and a
+            -- variable_type row (object_id=set) for the same base
+            -- table both surfaced as separate Using entries — the
+            -- user-reported "Gen. Journal Line shows twice in the
+            -- Using list" bug.
+            ORDER BY o.target_app_id, o.target_object_kind, o.target_object_name,
+                     (o.target_object_id IS NULL), o.target_object_id,
+                     o.reference_kind
             """;
 
         var rows = await _db.Database
