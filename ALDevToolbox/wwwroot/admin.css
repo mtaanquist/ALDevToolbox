@@ -333,7 +333,13 @@
 
 .admin-page__header h1 { margin: 0 0 6px; }
 
-.admin-page__header p { margin: 0; }
+/* Cap descriptive prose at the typographic readable measure (~72 chars).
+   .admin-page itself stays 1100px so tables, the tile grid, and form-grid
+   layouts get the full width — only the muted explanatory paragraphs are
+   constrained. */
+.admin-page__header p { margin: 0; max-width: 72ch; }
+.admin-page > p,
+.admin-section > p { max-width: 72ch; }
 
 .admin-page__header-actions {
     display: flex;
