@@ -4,6 +4,9 @@
 @using ALDevToolbox.Services
 @inject BackupService Backups
 @inject SystemSettingsService Settings
+@inject OffsiteBackupService Offsite
+@inject OffsiteRestoreJobs RestoreJobs
+@inject ILogger<SiteAdminBackups> Log
 
 <PageTitle>Site Admin · Backups · AL Dev Toolbox</PageTitle>
 
@@ -56,6 +59,119 @@
     else if (Ok == "restored")
     {
         <p class="form-info" role="status">Restore complete — the application is back online.</p>
+    }
+
+    @if (_activeJobs is { Count: > 0 })
+    {
+        <section class="admin-section" aria-label="Off-site downloads in progress">
+            <h2>Off-site downloads</h2>
+            <p class="muted">
+                Streaming objects from the bucket to the local backups volume.
+                The page refreshes automatically once a download finishes — the
+                new row appears below and you can pick Restore from there.
+            </p>
+            <ul class="job-list">
+                @foreach (var job in _activeJobs)
+                {
+                    var pct = job.TotalBytes is > 0
+                        ? (int)Math.Min(100, job.BytesDownloaded * 100 / job.TotalBytes.Value)
+                        : (int?)null;
+                    <li class="job-list__item" data-offsite-job-id="@job.Id">
+                        <div class="job-list__head">
+                            <code>@job.FileName</code>
+                            <span class="job-list__status" data-job-status>@StatusLabel(job)</span>
+                        </div>
+                        @if (job.Status == OffsiteRestoreJobStatus.Failed)
+                        {
+                            <p class="form-error" role="alert" data-job-error>@job.Error</p>
+                        }
+                        else
+                        {
+                            <progress class="job-list__progress"
+                                      data-job-progress
+                                      value="@job.BytesDownloaded"
+                                      max="@(job.TotalBytes ?? Math.Max(job.BytesDownloaded, 1))">
+                            </progress>
+                            <p class="muted" data-job-detail>
+                                @FormatSize(job.BytesDownloaded)@(job.TotalBytes is long t ? $" / {FormatSize(t)} ({pct}%)" : "")
+                            </p>
+                        }
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+
+    @if (_offsiteEnabled)
+    {
+        <section class="admin-section" aria-label="Off-site catalogue">
+            <header class="admin-section__header">
+                <h2>Off-site catalogue</h2>
+                <form method="get" action="/site-admin/backups" style="display:inline">
+                    <button type="submit" class="btn btn--sm" title="Re-list the bucket">
+                        <Icon Name="refresh-cw" Width="14" Height="14" />
+                        <span>Refresh</span>
+                    </button>
+                </form>
+            </header>
+            <p class="muted">
+                Objects under the configured prefix that look like our dumps.
+                Pick one to stream into the local backups volume; the row that
+                appears in the table below can then be restored with the usual
+                button. The download runs in the background and survives this
+                page being closed.
+            </p>
+            @if (_offsiteError is not null)
+            {
+                <p class="form-error" role="alert">@_offsiteError</p>
+            }
+            else if (_offsite is null)
+            {
+                <p class="muted">Loading…</p>
+            }
+            else if (_offsite.Count == 0)
+            {
+                <p class="muted">No dump-shaped objects under the prefix yet. They appear after the next scheduled backup uploads.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Object</th>
+                            <th>Last modified (UTC)</th>
+                            <th>Size</th>
+                            <th>Already local?</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var obj in _offsite)
+                        {
+                            var alreadyLocal = _localFileNames.Contains(obj.FileName);
+                            <tr>
+                                <td><code>@obj.FileName</code></td>
+                                <td>@obj.LastModified.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                <td>@FormatSize(obj.Size)</td>
+                                <td>@(alreadyLocal ? "Yes" : "No")</td>
+                                <td class="row-actions">
+                                    <form method="post" action="/site-admin/backups/offsite/download" style="display:inline">
+                                        <AntiforgeryToken />
+                                        <input type="hidden" name="ObjectKey" value="@obj.Key" />
+                                        <button type="submit" class="btn btn--sm btn--icon"
+                                                title="@(alreadyLocal ? "A local backup with this name already exists" : "Download to local for restore")"
+                                                aria-label="Download to local"
+                                                disabled="@alreadyLocal">
+                                            <Icon Name="archive-restore" Width="14" Height="14" />
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
     }
 
     @if (_view is not null)
@@ -170,6 +286,75 @@
             </tbody>
         </table>
     }
+
+    @if (HasPendingJobs())
+    {
+        @* Polls each active job once a second, updates the progress element
+           and status text in place, and reloads the page once every job
+           reaches a terminal state so the local backups table picks up the
+           new row. Static-rendered page — no IJSObjectReference machinery,
+           just a script block the browser runs once on initial render. *@
+        <script>
+            (function () {
+                const items = document.querySelectorAll('[data-offsite-job-id]');
+                if (items.length === 0) return;
+                const pending = new Set();
+                items.forEach(el => {
+                    const status = el.querySelector('[data-job-status]')?.textContent?.trim();
+                    if (status === 'Queued' || status === 'Downloading') {
+                        pending.add(el.dataset.offsiteJobId);
+                    }
+                });
+                if (pending.size === 0) return;
+                const fmt = (n) => {
+                    if (n < 1024) return n + ' B';
+                    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+                    if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
+                    return (n / 1073741824).toFixed(2) + ' GB';
+                };
+                const tick = async () => {
+                    for (const id of Array.from(pending)) {
+                        try {
+                            const resp = await fetch(`/site-admin/backups/offsite/jobs/${id}`, {
+                                headers: { 'Accept': 'application/json' },
+                                credentials: 'same-origin',
+                            });
+                            if (!resp.ok) { pending.delete(id); continue; }
+                            const job = await resp.json();
+                            const root = document.querySelector(`[data-offsite-job-id="${id}"]`);
+                            if (!root) { pending.delete(id); continue; }
+                            const statusEl = root.querySelector('[data-job-status]');
+                            const detailEl = root.querySelector('[data-job-detail]');
+                            const progEl = root.querySelector('[data-job-progress]');
+                            const label = { pending: 'Queued', running: 'Downloading', completed: 'Completed', failed: 'Failed' }[job.status] || job.status;
+                            if (statusEl) statusEl.textContent = label;
+                            if (progEl) {
+                                progEl.value = job.bytesDownloaded;
+                                if (job.totalBytes) progEl.max = job.totalBytes;
+                            }
+                            if (detailEl) {
+                                const pct = job.totalBytes ? Math.min(100, Math.floor(job.bytesDownloaded * 100 / job.totalBytes)) : null;
+                                detailEl.textContent = fmt(job.bytesDownloaded) + (job.totalBytes ? ` / ${fmt(job.totalBytes)} (${pct}%)` : '');
+                            }
+                            if (job.status === 'completed' || job.status === 'failed') {
+                                pending.delete(id);
+                            }
+                        } catch (_) {
+                            // network blip, try again next tick
+                        }
+                    }
+                    if (pending.size === 0) {
+                        // Every job is terminal — reload so the static-SSR
+                        // page picks up the new local backups row.
+                        setTimeout(() => window.location.reload(), 600);
+                        return;
+                    }
+                    setTimeout(tick, 1000);
+                };
+                setTimeout(tick, 1000);
+            })();
+        </script>
+    }
 </div>
 
 @code {
@@ -178,11 +363,37 @@
 
     private List<BackupRow>? _rows;
     private SystemSettingsView? _view;
+    private IReadOnlyList<OffsiteObjectInfo>? _offsite;
+    private string? _offsiteError;
+    private bool _offsiteEnabled;
+    private HashSet<string> _localFileNames = new(StringComparer.Ordinal);
+    private List<OffsiteRestoreJob> _activeJobs = new();
 
     protected override async Task OnInitializedAsync()
     {
         _view = await Settings.GetViewAsync();
         _rows = await Backups.ListAsync();
+        _localFileNames = _rows.Select(r => r.FileName).ToHashSet(StringComparer.Ordinal);
+
+        var offsiteView = await Settings.GetOffsiteViewAsync();
+        _offsiteEnabled = offsiteView.Enabled && !string.IsNullOrWhiteSpace(offsiteView.Bucket);
+        if (_offsiteEnabled)
+        {
+            try
+            {
+                _offsite = await Offsite.ListAsync(maxObjects: 200, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                Log.LogWarning(ex, "Failed to list off-site catalogue for /site-admin/backups.");
+                _offsiteError = $"Could not list the off-site bucket: {ex.Message}";
+            }
+        }
+
+        // Active and recently-terminal jobs drive the in-progress panel and
+        // the JS polling — keep both the "we just enqueued one" navigation
+        // hint and any older still-running jobs from the worker.
+        _activeJobs = RestoreJobs.List().ToList();
     }
 
     private static string FormatSize(long bytes)
@@ -192,4 +403,16 @@
         if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024):F1} MB";
         return $"{bytes / (1024.0 * 1024 * 1024):F2} GB";
     }
+
+    private static string StatusLabel(OffsiteRestoreJob job) => job.Status switch
+    {
+        OffsiteRestoreJobStatus.Pending => "Queued",
+        OffsiteRestoreJobStatus.Running => "Downloading",
+        OffsiteRestoreJobStatus.Completed => "Completed",
+        OffsiteRestoreJobStatus.Failed => "Failed",
+        _ => job.Status.ToString(),
+    };
+
+    private bool HasPendingJobs() =>
+        _activeJobs.Any(j => j.Status is OffsiteRestoreJobStatus.Pending or OffsiteRestoreJobStatus.Running);
 }

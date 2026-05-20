@@ -84,59 +84,64 @@ bucket. Tune them separately.
 
 ## Restoring from an off-site copy
 
-The **Restore** button on `/site-admin/backups` only restores from the
-local `app-backups` volume. To restore from an off-site object, pull it
-down first.
+`/site-admin/backups` lists every dump-shaped object under the configured
+prefix in an **Off-site catalogue** section. The flow is fully UI-driven
+— no shelling into the container, no SQL by hand.
 
-1. Locate the object key. The `/site-admin/backups` page shows the key
-   on the `Off-site` badge tooltip; or list with your tool of choice:
+1. Open `/site-admin/backups` as a SiteAdmin. Below the local backups
+   table you'll see **Off-site catalogue** with each remote object's file
+   name, last-modified timestamp, size, and whether a local row with the
+   same file name already exists. If the catalogue is empty, take a
+   scheduled or ad-hoc backup first and upload it.
 
-   ```bash
-   aws s3 ls s3://<bucket>/<prefix> --recursive
-   # or, for MinIO with the `mc` client:
-   mc ls myminio/<bucket>/<prefix> --recursive
-   ```
+2. Pick the row you want and click its **Download** icon
+   (archive-restore). The button posts to
+   `/site-admin/backups/offsite/download`, which enqueues a job on the
+   background worker and redirects you straight back to the page.
 
-2. Copy the dump into the running container's backups directory:
+3. An **Off-site downloads** panel appears at the top of the page with a
+   live progress bar — bytes downloaded over total size, refreshed every
+   second by a small in-page script polling
+   `/site-admin/backups/offsite/jobs/{id}`. The download runs in a
+   `BackgroundService`, so the bar keeps moving even if you close the
+   browser tab. The status flips to **Completed** when the dump lands
+   on the `app-backups` volume.
 
-   ```bash
-   # From a workstation that has the bucket credentials:
-   aws s3 cp s3://<bucket>/<prefix><filename>.dump ./<filename>.dump
-   docker compose cp ./<filename>.dump aldevtoolbox:/var/lib/aldevtoolbox/backups/<filename>.dump
-   ```
+4. When every active job is terminal the page reloads. The downloaded
+   file appears in the local backups table with an `Off-site` badge,
+   pinned automatically so retention can't prune it before you've
+   restored.
 
-   The filename must match the original — `BackupService` validates it
-   against `[/\\]` and `..` segments before opening it.
-
-3. Insert a row in the `backups` table so the UI can see the file. SSH
-   into the `db` container and run:
-
-   ```sql
-   INSERT INTO backups (file_name, file_size_bytes, created_at, kind, is_pinned)
-   VALUES (
-     '<filename>.dump',
-     <size-in-bytes>,
-     timezone('UTC', now()),
-     0,            -- 0 = Scheduled; pick the kind that matches the original
-     true          -- pin it so retention pruning doesn't bin your DR copy
-   );
-   ```
-
-   Reload `/site-admin/backups`. The row appears with the file size and
-   creation time you provided.
-
-4. Click **Restore** on the row and confirm. The app enters maintenance
-   mode for the duration; non-SiteAdmin users see the maintenance page.
+5. Click **Restore** on the new row and confirm. The app enters
+   maintenance mode for the duration; non-SiteAdmin requests get a
+   static maintenance page until `pg_restore` finishes.
 
 If the deployment is completely gone (lost host, lost `pg-data`, lost
-`app-backups`), the recovery path is:
+`app-backups`), the recovery path is just as short:
 
-1. Stand up the compose stack on a fresh host. Let migrations run
-   against an empty `pg-data` so the schema is in place.
-2. Sign in as the bootstrap admin (`BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD`).
-3. Copy the dump in and create the `backups` row as in steps 2–3 above.
-4. Restore. The bootstrap user's identity will be replaced by whatever
-   was in the dump — sign in again with the original credentials.
+1. Stand up the compose stack on a fresh host pointed at the same
+   bucket. Set `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` so
+   you can sign in against the empty database; migrations run against an
+   empty `pg-data` and the bucket is untouched.
+2. Sign in as the bootstrap admin. Configure off-site under
+   `/site-admin/settings` with the same bucket, prefix, and credentials.
+3. Open `/site-admin/backups`. The catalogue lists every object that
+   survived the loss. Download the snapshot you want, wait for the
+   progress bar to finish, click **Restore**, confirm.
+4. The bootstrap user's identity will be replaced by whatever the dump
+   carried — sign in again with the original credentials.
+
+### Job lifetime and host restarts
+
+Restore jobs live in memory on the running container. If the host
+crashes or you redeploy mid-download, the job is lost — but the
+download writes to `<filename>.partial` and is only renamed to the final
+name on success, so a half-finished file never gets registered as a
+restorable row. Just re-queue the download from the catalogue.
+
+Terminal jobs (Completed, Failed) linger on the page for an hour so a
+SiteAdmin who refreshed at the wrong moment can still see the outcome,
+then evict themselves on the next page render.
 
 ## Disabling or rotating credentials
 
@@ -184,6 +189,18 @@ Symptoms → things to check.
 - **Prune runs but nothing is deleted.** Confirm `RetentionDays` is set
   and that the prefix matches the upload path — `ListObjectsV2` filters
   on `Prefix`, so retention can only see what's under it.
+- **Download job stuck in Queued.** The single-threaded restore worker
+  is serialising — only one download runs at a time. The earlier job
+  finishes first, then the next moves to Running. If no other job is
+  active, check `docker compose logs aldevtoolbox` for
+  `OffsiteRestoreWorker` errors.
+- **Download fails with "A local backup named '...' already exists".**
+  Either delete or rename the local row (unpin first if needed), or
+  rename the off-site object out of the way. The service refuses to
+  overwrite a row that may already be on disk.
+- **Catalogue says "Already local: Yes" but the Download button is
+  disabled.** That's the same collision-prevention guard. The local row
+  is already there — restore from it directly.
 - **A bucket policy that requires server-side encryption rejects uploads
   with `AccessDenied`.** The service does not set `ServerSideEncryption`
   on the `PutObject` request. Either relax the policy, or configure
@@ -191,10 +208,14 @@ Symptoms → things to check.
 
 ## Acceptance check
 
-After setup, all three of the following should be true:
+After setup, all four of the following should be true:
 
 - `/site-admin/settings` → **Test off-site connection** → `OK: Connected …`.
 - The next scheduled backup row on `/site-admin/backups` shows the
   `Off-site` badge within ~30 s of the scheduled time.
 - An external listing (`aws s3 ls`, `mc ls`, AWS console) shows the
   object under the configured prefix with the matching filename.
+- `/site-admin/backups` shows the object under **Off-site catalogue**;
+  clicking **Download** brings up a progress bar in **Off-site
+  downloads** that runs to completion and produces a new local row
+  carrying the `Off-site` badge.

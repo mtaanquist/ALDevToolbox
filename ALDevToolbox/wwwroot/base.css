@@ -996,6 +996,75 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     color: var(--color-text);
 }
 
+/* ---------- Long-running job progress list ---------- */
+/* /site-admin/backups renders the in-flight off-site downloads here. The
+   list is intentionally minimal — one row per job, a wide progress bar,
+   a single status string. Anything richer (logs, ETA) belongs on a
+   dedicated jobs page, which doesn't exist yet. */
+
+.admin-section__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+}
+
+.admin-section__header h2 { margin: 0; }
+
+.job-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.job-list__item {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    background: var(--color-surface);
+}
+
+.job-list__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.job-list__head code {
+    font-size: 13px;
+}
+
+.job-list__status {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.job-list__progress {
+    width: 100%;
+    height: 8px;
+    appearance: none;
+    border: 0;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--color-border);
+}
+
+.job-list__progress::-webkit-progress-bar { background: var(--color-border); border-radius: 999px; }
+.job-list__progress::-webkit-progress-value { background: var(--color-accent); border-radius: 999px; }
+.job-list__progress::-moz-progress-bar { background: var(--color-accent); border-radius: 999px; }
+
+.job-list__item .form-error {
+    margin: 4px 0 0;
+}
+
 /* ---------- Confirmation modal ---------- */
 
 .confirm-modal {
