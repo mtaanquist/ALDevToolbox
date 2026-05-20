@@ -9,13 +9,12 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace ALDevToolbox.Tests.Translations;
 
 /// <summary>
-/// End-to-end coverage for <see cref="TranslationImportService"/>: the
-/// single-file admin path, the per-release ZIP path, and the
-/// clobber-on-re-upload semantics the user requested. Symbol-resolution
-/// coverage is light because the FTU Core XLIFF refers to objects that
-/// don't live in our DK Core / OIOUBL fixtures — that's fine; the
-/// resolver gracefully drops to symbol_id=null and the rows still land
-/// for search.
+/// End-to-end coverage for <see cref="TranslationImportService"/> against a
+/// real Microsoft OIOUBL XLIFF: the single-file admin path, the per-release
+/// ZIP path, and the clobber-on-re-upload semantics the user requested. The
+/// OIOUBL <c>.app</c> fixture and the OIOUBL <c>.xlf</c> fixture share a
+/// module name ("OIOUBL"), so the ZIP path's <c>&lt;file original&gt;</c> →
+/// <c>Module.Name</c> match works without any test-only renames.
 /// </summary>
 public sealed class TranslationImportServiceTests : IDisposable
 {
@@ -35,37 +34,38 @@ public sealed class TranslationImportServiceTests : IDisposable
         new(ctx, _db.OrgContext, NullLogger<TranslationImportService>.Instance);
 
     /// <summary>
-    /// Seeds a release that contains a module named "FTU Core" so the
-    /// XLIFF upload's <c>&lt;file original&gt;</c> attribute matches. We
-    /// borrow the DK Core .app as the carrier (its real name is "DK Core")
-    /// and rename the module row after import; the symbol resolver works
-    /// against the post-rename module, but the FTU XLIFF's hint names
-    /// don't overlap with DK Core's symbols anyway.
+    /// Seeds a release containing the Microsoft OIOUBL <c>.app</c> fixture
+    /// (along with its DK Core parent so reference resolution stays
+    /// happy). Returns both the release id and the OIOUBL module id so
+    /// follow-up assertions don't re-query.
     /// </summary>
-    private async Task<(int ReleaseId, long ModuleId)> SeedFtuCoreShellAsync()
+    private async Task<(int ReleaseId, long OioublModuleId)> SeedOioublReleaseAsync()
     {
         int releaseId;
         await using (var ctx = _db.NewContext())
         {
             var svc = NewImporter(ctx);
-            await using var s = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+            await using var s1 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+            await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
             var summary = await svc.ImportReleaseAsync(new ReleaseImportRequest(
                 Label: "Translation fixture release",
                 Kind: "first_party",
                 ParentReleaseId: null, ApplicationVersionId: null,
-                Uploads: new[] { new AppFileUpload("Microsoft_DK_Core.app", s, null) }));
+                Uploads: new[]
+                {
+                    new AppFileUpload("Microsoft_DK_Core.app", s1, null),
+                    new AppFileUpload("Microsoft_OIOUBL.app", s2, null),
+                }));
             releaseId = summary.ReleaseId;
         }
 
         long moduleId;
         await using (var ctx = _db.NewContext())
         {
-            // Rename the module so the XLIFF's <file original="FTU Core">
-            // matches our module name. Avoids cooking a second .app fixture.
-            var mod = await ctx.OeModules.SingleAsync(m => m.ReleaseId == releaseId);
-            mod.Name = "FTU Core";
-            await ctx.SaveChangesAsync();
-            moduleId = mod.Id;
+            moduleId = await ctx.OeModules
+                .Where(m => m.ReleaseId == releaseId && m.Name == "OIOUBL")
+                .Select(m => m.Id)
+                .SingleAsync();
         }
 
         return (releaseId, moduleId);
@@ -74,62 +74,57 @@ public sealed class TranslationImportServiceTests : IDisposable
     [Fact]
     public async Task ImportSingleAsync_persists_trans_units_with_normalised_language()
     {
-        var (releaseId, moduleId) = await SeedFtuCoreShellAsync();
+        var (releaseId, moduleId) = await SeedOioublReleaseAsync();
 
         await using (var ctx = _db.NewContext())
         {
             var svc = NewTranslator(ctx);
-            await using var s = File.OpenRead(Path.Combine(FixtureRoot, "FTU_Core.daDK.xlf"));
-            var summary = await svc.ImportSingleAsync(releaseId, moduleId, s, "FTU_Core.daDK.xlf");
+            await using var s = File.OpenRead(Path.Combine(FixtureRoot, "OIOUBL.daDK.xlf"));
+            var summary = await svc.ImportSingleAsync(releaseId, moduleId, s, "OIOUBL.daDK.xlf");
 
             summary.LanguageCode.Should().Be("da-DK");
-            summary.ModuleName.Should().Be("FTU Core");
-            summary.Inserted.Should().BeGreaterThan(100);
+            summary.ModuleName.Should().Be("OIOUBL");
+            summary.Inserted.Should().Be(436,
+                because: "OIOUBL.daDK.xlf ships 436 trans-units; a different count means the parser or de-dup skipped something");
         }
 
         await using (var read = _db.NewContext())
         {
-            var rowCount = await read.OeModuleTranslations
-                .CountAsync(t => t.ModuleId == moduleId && t.LanguageCode == "da-DK");
-            rowCount.Should().BeGreaterThan(100);
-
-            // Spot-check one resolved row to prove the developer-note
-            // parser landed structured fields on the row, not just the
-            // raw text.
-            var sample = await read.OeModuleTranslations
+            // Spot-check a NamedType error label — modern Microsoft format
+            // puts the LookupHint inside the Developer note; the importer
+            // must extract that and persist structured object/sub-element
+            // info instead of dropping the row to "unknown".
+            var label = await read.OeModuleTranslations
                 .FirstAsync(t => t.ModuleId == moduleId
                     && t.LanguageCode == "da-DK"
-                    && t.SubName == "Activate Assembly On Service");
-            sample.ObjectKind.Should().Be("table");
-            sample.ObjectName.Should().Be("AppSetup");
-            sample.SubKind.Should().Be("field");
-            sample.PropertyName.Should().Be("Caption");
-            sample.Kind.Should().Be("caption");
-            sample.TargetText.Should().Contain("montageordrer");
+                    && t.SubName == "DiscountAmountNegativeErr");
+            label.ObjectKind.Should().Be("codeunit");
+            label.ObjectName.Should().Be("OIOUBL-Check Sales Header");
+            label.SubKind.Should().Be("namedtype");
+            label.Kind.Should().Be("label");
+            label.TargetText.Should().Contain("linjerabatbeløb");
         }
     }
 
     [Fact]
     public async Task ImportSingleAsync_re_upload_clobbers_previous_rows()
     {
-        var (releaseId, moduleId) = await SeedFtuCoreShellAsync();
+        var (releaseId, moduleId) = await SeedOioublReleaseAsync();
 
         int firstCount;
         await using (var ctx = _db.NewContext())
         {
             var svc = NewTranslator(ctx);
-            await using var s = File.OpenRead(Path.Combine(FixtureRoot, "FTU_Core.daDK.xlf"));
-            var summary = await svc.ImportSingleAsync(releaseId, moduleId, s, "FTU_Core.daDK.xlf");
-            firstCount = summary.Inserted;
+            await using var s = File.OpenRead(Path.Combine(FixtureRoot, "OIOUBL.daDK.xlf"));
+            firstCount = (await svc.ImportSingleAsync(releaseId, moduleId, s, "OIOUBL.daDK.xlf")).Inserted;
         }
 
         int secondCount;
         await using (var ctx = _db.NewContext())
         {
             var svc = NewTranslator(ctx);
-            await using var s = File.OpenRead(Path.Combine(FixtureRoot, "FTU_Core.daDK.xlf"));
-            var summary = await svc.ImportSingleAsync(releaseId, moduleId, s, "FTU_Core.daDK.xlf");
-            secondCount = summary.Inserted;
+            await using var s = File.OpenRead(Path.Combine(FixtureRoot, "OIOUBL.daDK.xlf"));
+            secondCount = (await svc.ImportSingleAsync(releaseId, moduleId, s, "OIOUBL.daDK.xlf")).Inserted;
         }
 
         secondCount.Should().Be(firstCount,
@@ -147,12 +142,12 @@ public sealed class TranslationImportServiceTests : IDisposable
     [Fact]
     public async Task ImportSingleAsync_rejects_module_not_in_release()
     {
-        var (releaseId, _) = await SeedFtuCoreShellAsync();
+        var (releaseId, _) = await SeedOioublReleaseAsync();
         const long missingModuleId = 99999;
 
         await using var ctx = _db.NewContext();
         var svc = NewTranslator(ctx);
-        await using var s = File.OpenRead(Path.Combine(FixtureRoot, "FTU_Core.daDK.xlf"));
+        await using var s = File.OpenRead(Path.Combine(FixtureRoot, "OIOUBL.daDK.xlf"));
 
         Func<Task> act = () => svc.ImportSingleAsync(releaseId, missingModuleId, s, "x.xlf");
         await act.Should().ThrowAsync<PlanValidationException>();
@@ -161,17 +156,17 @@ public sealed class TranslationImportServiceTests : IDisposable
     [Fact]
     public async Task ImportZipAsync_matches_modules_by_file_original_attribute()
     {
-        var (releaseId, moduleId) = await SeedFtuCoreShellAsync();
+        var (releaseId, moduleId) = await SeedOioublReleaseAsync();
 
         // Pack the sample XLIFF into a ZIP plus a deliberately-unmatched
-        // entry so we cover both the matched count and the
+        // entry so the test covers both the matched count and the
         // UnmatchedFiles list.
         await using var zipBuffer = new MemoryStream();
         using (var archive = new ZipArchive(zipBuffer, ZipArchiveMode.Create, leaveOpen: true))
         {
-            var matched = archive.CreateEntry("FTU_Core.daDK.xlf");
+            var matched = archive.CreateEntry("OIOUBL.daDK.xlf");
             await using (var entryStream = matched.Open())
-            await using (var fs = File.OpenRead(Path.Combine(FixtureRoot, "FTU_Core.daDK.xlf")))
+            await using (var fs = File.OpenRead(Path.Combine(FixtureRoot, "OIOUBL.daDK.xlf")))
             {
                 await fs.CopyToAsync(entryStream);
             }
@@ -199,23 +194,23 @@ public sealed class TranslationImportServiceTests : IDisposable
         summary.MatchedFiles.Should().Be(1);
         summary.UnmatchedFiles.Should().ContainSingle()
             .Which.Should().Be("NotARealModule.daDK.xlf");
-        summary.TotalInserted.Should().BeGreaterThan(100);
+        summary.TotalInserted.Should().Be(436);
 
         var moduleCount = await ctx.OeModuleTranslations
             .CountAsync(t => t.ModuleId == moduleId && t.LanguageCode == "da-DK");
-        moduleCount.Should().BeGreaterThan(100);
+        moduleCount.Should().Be(436);
     }
 
     [Fact]
     public async Task ListTranslationLanguagesAsync_surfaces_uploaded_languages()
     {
-        var (releaseId, moduleId) = await SeedFtuCoreShellAsync();
+        var (releaseId, moduleId) = await SeedOioublReleaseAsync();
 
         await using (var ctx = _db.NewContext())
         {
             var svc = NewTranslator(ctx);
-            await using var s = File.OpenRead(Path.Combine(FixtureRoot, "FTU_Core.daDK.xlf"));
-            await svc.ImportSingleAsync(releaseId, moduleId, s, "FTU_Core.daDK.xlf");
+            await using var s = File.OpenRead(Path.Combine(FixtureRoot, "OIOUBL.daDK.xlf"));
+            await svc.ImportSingleAsync(releaseId, moduleId, s, "OIOUBL.daDK.xlf");
         }
 
         await using var read = _db.NewContext();
@@ -226,27 +221,31 @@ public sealed class TranslationImportServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SearchTranslationsInReleaseAsync_finds_caption_by_translated_substring()
+    public async Task SearchTranslationsInReleaseAsync_finds_error_label_by_translated_substring()
     {
-        var (releaseId, moduleId) = await SeedFtuCoreShellAsync();
+        var (releaseId, moduleId) = await SeedOioublReleaseAsync();
 
         await using (var ctx = _db.NewContext())
         {
             var svc = NewTranslator(ctx);
-            await using var s = File.OpenRead(Path.Combine(FixtureRoot, "FTU_Core.daDK.xlf"));
-            await svc.ImportSingleAsync(releaseId, moduleId, s, "FTU_Core.daDK.xlf");
+            await using var s = File.OpenRead(Path.Combine(FixtureRoot, "OIOUBL.daDK.xlf"));
+            await svc.ImportSingleAsync(releaseId, moduleId, s, "OIOUBL.daDK.xlf");
         }
 
         await using var read = _db.NewContext();
         var query = new ObjectExplorerService(read, NullLogger<ObjectExplorerService>.Instance);
+        // The Danish translation of "The total Line Discount Amount cannot
+        // be negative." — pinned because it's the user's headline scenario:
+        // a customer pastes a Danish error message into a ticket and the
+        // developer needs to find the AL label that produced it.
         var hits = await query.SearchTranslationsInReleaseAsync(
-            releaseId, query: "Aktivér montageordrer", language: "da-DK",
+            releaseId, query: "linjerabatbeløb", language: "da-DK",
             kindFilter: new HashSet<string> { "caption", "label" },
             moduleNamePattern: null, maxResults: 50);
 
         hits.Should().NotBeEmpty();
-        hits.Should().Contain(h => h.ObjectName == "AppSetup"
-                                && h.SubName == "Activate Assembly On Service"
-                                && h.Kind == "caption");
+        hits.Should().Contain(h => h.ObjectName == "OIOUBL-Check Sales Header"
+                                && h.SubName == "DiscountAmountNegativeErr"
+                                && h.Kind == "label");
     }
 }

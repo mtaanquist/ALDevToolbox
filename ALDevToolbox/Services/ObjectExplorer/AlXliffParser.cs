@@ -50,17 +50,64 @@ public sealed record XliffTransUnit(
 /// </summary>
 public sealed record XliffLookupHint(
     string ObjectKind,
-    string ObjectName,
+    string? ObjectName,
     string? SubKind,
     string? SubName,
     string? PropertyName);
 
 /// <summary>
 /// Pure-function XLIFF v1.2 parser. No DB, no DI — feeds <see cref="TranslationImportService"/>.
+///
+/// Real-world XLIFFs from BC ship in (at least) two shapes:
+/// <list type="bullet">
+///   <item><b>Modern Microsoft (BC 20+)</b> — Developer note carries
+///     <c>(LookupHint=Codeunit X - NamedType Y)</c>; the Xliff Generator
+///     note is empty. Page-extension actions / controls have empty
+///     notes entirely, and their structure lives in the trans-unit
+///     <c>id</c> attribute plus an <c>ObjectTarget</c> note.</item>
+///   <item><b>Older / hand-edited</b> — Xliff Generator note carries the
+///     human-readable <c>"Table AppSetup - Field X - Property Caption"</c>
+///     text and the Developer note is empty.</item>
+/// </list>
+/// The parser tries in this order: LookupHint regex against any note;
+/// Xliff Generator note body; trans-unit <c>id</c> structural decode
+/// against a small well-known-property-hash map. The last fallback gives
+/// us ObjectKind / SubKind / PropertyName for navigation; the human-
+/// readable ObjectName / SubName are null but the row still indexes for
+/// substring search on the translated text.
 /// </summary>
 public static class AlXliffParser
 {
     private static readonly XNamespace Ns = "urn:oasis:names:tc:xliff:document:1.2";
+
+    /// <summary>
+    /// AL compiler's well-known property hash ids, harvested from the
+    /// sample Microsoft XLIFFs in <c>Fixtures/ObjectExplorer/</c>. The map
+    /// drives the trans-unit id structural fallback when neither note
+    /// carries a textual hint. Unknown ids fall through as null — the row
+    /// still lands; we just don't know which property bucket it belongs to.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> WellKnownPropertyIds =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["2879900210"] = "Caption",
+            ["1295455071"] = "ToolTip",
+            ["62802879"]   = "OptionCaption",
+        };
+
+    // Matches `LookupHint=<content>)` embedded in a note body. AL identifiers
+    // can't contain `)` so the non-greedy character-class stops at the
+    // first closing paren, which is the literal end of the LookupHint
+    // segment. The (Namespace=…) and (ObjectTarget=…) sibling segments
+    // are separate parentheticals and don't interfere.
+    private static readonly System.Text.RegularExpressions.Regex LookupHintRegex =
+        new(@"LookupHint=([^)]+)\)", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    // First segment of a trans-unit id: "<Kind> <NumericHashId>". The kind
+    // is one of the AL declaration kinds; the id is BC's hash — not the
+    // human-readable AL object number — so we keep just the kind.
+    private static readonly System.Text.RegularExpressions.Regex IdSegmentRegex =
+        new(@"^(?<kind>[A-Za-z]+)\s+\d+$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     /// <summary>
     /// Parses an XLIFF stream. Throws <see cref="InvalidDataException"/>
@@ -102,40 +149,126 @@ public static class AlXliffParser
 
         var source = el.Element(Ns + "source")?.Value ?? string.Empty;
         var targetEl = el.Element(Ns + "target");
-        // Trans-units that haven't been translated yet still come through
-        // as rows with empty target text — they're useful as search misses
-        // ("the developer hasn't translated this caption yet") and as a
-        // canvas the structured admin tools could light up later. Skipping
-        // here would lose that signal.
         var target = targetEl?.Value ?? string.Empty;
         var state = targetEl?.Attribute("state")?.Value;
 
-        string? developerNote = null;
+        // Gather every note's text by its "from" attribute so the hint
+        // resolver can prefer Developer (modern Microsoft format) over
+        // Xliff Generator (older shape) without re-walking the children.
+        string? developerNoteText = null;
+        string? xliffGeneratorText = null;
         foreach (var note in el.Elements(Ns + "note"))
         {
             var from = note.Attribute("from")?.Value;
-            // The AL compiler emits two notes: an empty "Developer" one and
-            // the structured "Xliff Generator" one ("Table AppSetup - Field
-            // X - Property Caption"). Some older / hand-edited XLIFFs flip
-            // the convention and stuff the structured info into the
-            // Developer note. Prefer Xliff Generator when both exist; fall
-            // back to Developer otherwise.
-            if (string.Equals(from, "Xliff Generator", StringComparison.OrdinalIgnoreCase))
+            var body = note.Value;
+            if (string.IsNullOrWhiteSpace(body)) continue;
+            if (string.Equals(from, "Developer", StringComparison.OrdinalIgnoreCase))
             {
-                if (!string.IsNullOrWhiteSpace(note.Value))
-                {
-                    developerNote = note.Value;
-                    break;
-                }
+                developerNoteText = body;
             }
-            else if (developerNote is null && !string.IsNullOrWhiteSpace(note.Value))
+            else if (string.Equals(from, "Xliff Generator", StringComparison.OrdinalIgnoreCase))
             {
-                developerNote = note.Value;
+                xliffGeneratorText = body;
             }
         }
 
-        var hint = developerNote is null ? null : ParseLookupHint(developerNote);
+        var hint = ResolveHint(id, developerNoteText, xliffGeneratorText);
+        // Store whatever non-empty note we found so the row carries a
+        // usable diagnostic blob — Developer takes precedence because
+        // the modern Microsoft format puts the rich content there.
+        var developerNote = developerNoteText ?? xliffGeneratorText;
         return new XliffTransUnit(id, source, target, state, developerNote, hint);
+    }
+
+    /// <summary>
+    /// Three-way resolver for the lookup hint:
+    /// <list type="number">
+    ///   <item><c>(LookupHint=…)</c> embedded in any note body (modern
+    ///     Microsoft format, both Developer and Xliff Generator are
+    ///     considered)</item>
+    ///   <item>The Xliff Generator note body parsed as a bare hint string
+    ///     (older / FTU-style format)</item>
+    ///   <item>Structural decode of the trans-unit <c>id</c> attribute,
+    ///     mapped through <see cref="WellKnownPropertyIds"/> for the
+    ///     property name (NamedType / Action / Control / Field /
+    ///     Property segments are themselves the kinds)</item>
+    /// </list>
+    /// </summary>
+    internal static XliffLookupHint? ResolveHint(string transUnitId, string? developerNote, string? xliffGeneratorNote)
+    {
+        // (1) LookupHint regex against either note.
+        foreach (var src in new[] { developerNote, xliffGeneratorNote })
+        {
+            if (string.IsNullOrEmpty(src)) continue;
+            var m = LookupHintRegex.Match(src);
+            if (!m.Success) continue;
+            var parsed = ParseLookupHint(m.Groups[1].Value);
+            if (parsed is not null) return parsed;
+        }
+
+        // (2) Bare hint string in the Xliff Generator note body.
+        if (!string.IsNullOrEmpty(xliffGeneratorNote))
+        {
+            var parsed = ParseLookupHint(xliffGeneratorNote);
+            if (parsed is not null) return parsed;
+        }
+
+        // (3) Structural decode of the trans-unit id. Gives us
+        // ObjectKind / SubKind / PropertyName but not the names.
+        return ParseIdStructure(transUnitId);
+    }
+
+    /// <summary>
+    /// Decodes the trans-unit <c>id</c> attribute as a structural
+    /// fallback when neither note carries a hint. Examples from a real
+    /// Microsoft OIOUBL XLIFF:
+    /// <list type="bullet">
+    ///   <item><c>Codeunit 1465371914 - NamedType 1138880009</c></item>
+    ///   <item><c>PageExtension 1344584502 - Action 2103005105 - Property 1295455071</c></item>
+    ///   <item><c>Table N - Field N - Property 2879900210</c></item>
+    /// </list>
+    /// Returns null when the id doesn't parse to a recognised shape.
+    /// </summary>
+    internal static XliffLookupHint? ParseIdStructure(string transUnitId)
+    {
+        var segments = transUnitId.Split(" - ", StringSplitOptions.None);
+        if (segments.Length == 0) return null;
+
+        var first = IdSegmentRegex.Match(segments[0]);
+        if (!first.Success) return null;
+        var objectKind = first.Groups["kind"].Value.ToLowerInvariant();
+
+        string? subKind = null;
+        string? propertyName = null;
+        for (int i = 1; i < segments.Length; i++)
+        {
+            var m = IdSegmentRegex.Match(segments[i]);
+            if (!m.Success) continue;
+            var kind = m.Groups["kind"].Value;
+            if (string.Equals(kind, "Property", StringComparison.OrdinalIgnoreCase))
+            {
+                var hash = segments[i].Substring(kind.Length).Trim();
+                if (WellKnownPropertyIds.TryGetValue(hash, out var propName))
+                {
+                    propertyName = propName;
+                }
+            }
+            else if (subKind is null)
+            {
+                subKind = kind.ToLowerInvariant();
+            }
+        }
+
+        // Object name and sub name are intentionally null — the trans-unit
+        // id only carries the hashed numeric ids, not the human-readable
+        // names. The row still lands for substring search; the MCP tool
+        // surfaces the kinds we did extract.
+        return new XliffLookupHint(
+            ObjectKind: objectKind,
+            ObjectName: null,
+            SubKind: subKind,
+            SubName: null,
+            PropertyName: propertyName);
     }
 
     /// <summary>
