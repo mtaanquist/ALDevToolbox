@@ -76,21 +76,26 @@ public sealed class ExtensionPreviewBuilderTests
 
         var contents = ExtensionPreviewBuilder.BuildContents(new[] { declared }, includeExamples: true, NoPerExtensionFiles);
 
-        // With no per-extension org files threaded in, only app.json and
-        // the declared folder land — no AppSourceCop.json phantom.
+        // With no per-extension org files threaded in, only the declared
+        // folder lands. app.json is no longer hardcoded — it arrives via
+        // perExtensionFilePaths now that it's a seeded EveryExtension org
+        // file. No AppSourceCop.json phantom either.
         contents.Select(c => c.Name).Should()
-            .BeEquivalentTo(new[] { "app.json", "Source" });
+            .BeEquivalentTo(new[] { "Source" });
     }
 
     [Fact]
     public void BuildContents_includes_per_extension_org_files_threaded_by_caller()
     {
         var folder = new WorkspaceExtensionFolder { OrganizationId = 1, Path = "Source" };
-        var perExtension = new[] { "AppSourceCop.json", ".vscode/settings.json" };
+        // app.json sits alongside other admin-opted-in per-extension files
+        // now — the seeded canonical app.json ships through the same join
+        // as anything else the template opts into.
+        var perExtension = new[] { "app.json", "AppSourceCop.json", ".vscode/settings.json" };
 
         var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: true, perExtension);
 
-        // Top-level files include AppSourceCop.json and the .vscode parent.
+        // Top-level files include app.json, AppSourceCop.json and the .vscode parent.
         contents.Select(c => c.Name).Should().Contain(new[] { "app.json", "AppSourceCop.json", ".vscode", "Source" });
         var vscode = contents.Single(c => c.Name == ".vscode");
         vscode.Children.Should().ContainSingle(c => c.Name == "settings.json");
@@ -107,7 +112,9 @@ public sealed class ExtensionPreviewBuilderTests
 
         var contents = ExtensionPreviewBuilder.BuildContents(new[] { folder }, includeExamples: true, NoPerExtensionFiles);
 
-        contents.Select(c => c.Name).Should().Contain(new[] { "app.json", "Source" });
+        // app.json no longer hardcoded — only the declared folder lands when
+        // no per-extension org files are threaded in.
+        contents.Select(c => c.Name).Should().Contain(new[] { "Source" });
         contents.Single(n => n.Name == "Source")
             .Children.Should().ContainSingle(c => c.Name == "Helper.al");
     }

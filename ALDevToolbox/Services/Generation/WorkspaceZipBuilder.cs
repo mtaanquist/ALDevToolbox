@@ -534,7 +534,6 @@ public sealed class WorkspaceZipBuilder
             var content = file.MustacheEnabled
                 ? _mustache.Render(file.Content, ctx with { FolderPath = file.Path })
                 : file.Content;
-            content = MaybePrettifyJson(file.Path, content);
             WriteString(archive, $"{rootFolder}/{file.Path}", content);
             written++;
         }
@@ -565,7 +564,10 @@ public sealed class WorkspaceZipBuilder
         // The full per-extension context — populated with app.json inputs —
         // so the canonical app.json template (and any other admin-authored
         // per-extension file) can reference variables like
-        // {{application_version}} or {{dependencies_array}}.
+        // {{application_version}} or {{dependencies_array}}. Content lands
+        // verbatim (after substitution): admins authoring a JSON file own
+        // its formatting, and inline `{{dependencies_array}}` interpolates
+        // to a valid compact JSON array without needing a re-format pass.
         var ctx = BuildExtensionMustacheContext(ext, allExtensions, template, plan, orgConfig);
         foreach (var file in files)
         {
@@ -573,38 +575,10 @@ public sealed class WorkspaceZipBuilder
             var content = file.MustacheEnabled
                 ? _mustache.Render(file.Content, ctx with { FolderPath = file.Path })
                 : file.Content;
-            content = MaybePrettifyJson(file.Path, content);
             WriteString(archive, $"{extensionFolderPath}/{file.Path}", content);
             written++;
         }
         return written;
-    }
-
-    /// <summary>
-    /// When <paramref name="path"/> ends in <c>.json</c>, re-parse
-    /// <paramref name="content"/> as JSON and re-serialize with two-space
-    /// indentation so admin templates that embed compact mustache fragments
-    /// (e.g. <c>{{dependencies_array}}</c>) come out cleanly formatted.
-    /// Parse failures fall through silently — the user-authored body might
-    /// not be valid JSON at all, and the resulting file is whatever the
-    /// admin wrote. A warning is logged so the admin can spot a typo
-    /// without the file silently disappearing.
-    /// </summary>
-    private string MaybePrettifyJson(string path, string content)
-    {
-        if (!path.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) return content;
-        try
-        {
-            var node = JsonNode.Parse(content);
-            if (node is null) return content;
-            return node.ToJsonString(JsonOptions);
-        }
-        catch (JsonException)
-        {
-            // Body emitted verbatim so the admin can fix it; the AL toolchain
-            // will report the parse error when the extension is built.
-            return content;
-        }
     }
 
     // ===== Workspace-level files =====
