@@ -371,8 +371,20 @@ public static class AppPackageReader
     /// <c>extends_target</c> lookups (the chain walker's
     /// <c>_extensionsByBaseName</c> joins on
     /// <c>base.name = ext.extends_object_name</c>, which only matches
-    /// when both sides are bare). At that point we'll re-introduce a
-    /// strip, informed by real data instead of a guess.</para>
+    /// when both sides are bare). The right fix at that point is
+    /// <em>not</em> to reintroduce a guess: we already store
+    /// <c>oe_module_objects.namespace</c> for every base object, so
+    /// the importer can split a qualified target on the longest
+    /// namespace prefix that matches a real namespace in the same
+    /// release rather than walking dots and hoping. The previous
+    /// heuristic-driven strip is preserved in the git history at
+    /// commit <c>69ba173</c> (refined "dot followed by identifier
+    /// start") and <c>0bf279c</c> (original "dot followed by
+    /// whitespace") if the next maintainer wants a reference shape
+    /// to start from.</para>
+    /// <para>See <c>.design/object-explorer.md</c> ("TargetObject /
+    /// Target are read verbatim") for the rationale and the rollback
+    /// plan.</para>
     /// </summary>
     internal static (Guid? AppId, string? Name) ParseExtendsRef(string? raw)
     {

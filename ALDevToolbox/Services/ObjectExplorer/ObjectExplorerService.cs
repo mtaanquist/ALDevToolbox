@@ -1419,7 +1419,43 @@ public class ObjectExplorerService
             return new GoToDefinitionTarget(memberHit.SymbolFileId!.Value, memberHit.SymbolLine);
         }
 
-        // 2. Same-Release lookup by object name. Chain-walk semantics (for
+        // 2. Variable-of-typed-receiver strategy. The click landed on
+        //    an identifier that has a `VarName: Kind "TypeName"`
+        //    declaration somewhere in the file — almost always a
+        //    local var like `PaymentMethod: Record "Payment Method"`.
+        //    The user expects Go-to-definition to land on the TYPE
+        //    (the `Payment Method` table), not on some unrelated
+        //    object that happens to share the variable name (user-
+        //    reported repro: `PaymentMethod` taking the click to a
+        //    tableextension also named `PaymentMethod`). Resolving
+        //    against the declaration short-circuits that mis-match.
+        //
+        //    The regex-driven helper here is file-scoped (no scope
+        //    tracking), which matches the rest of the source viewer's
+        //    affordances and is good enough for the dominant case:
+        //    AL devs almost never reuse a local-variable name across
+        //    procedures inside one file, and when they do, both
+        //    declarations almost always share the same type.
+        var varTypes = Services.Al.AlGoToDefinitionLocator.ResolveAllObjectVariableTypes(meta.Content);
+        if (varTypes.TryGetValue(word, out var resolvedType)
+            && !string.IsNullOrEmpty(resolvedType.TypeName))
+        {
+            var typeKindHint = ResolveKindHint(resolvedType.Keyword);
+            var typeTarget = await _db.OeModuleObjects.AsNoTracking()
+                .Where(o => o.Module!.ReleaseId == meta.ReleaseId)
+                .Where(o => o.SourceFileId != null)
+                .Where(o => o.Name == resolvedType.TypeName)
+                .Where(o => typeKindHint == null || o.Kind == typeKindHint)
+                .OrderBy(o => o.Kind)
+                .Select(o => new { o.SourceFileId, o.LineNumber })
+                .FirstOrDefaultAsync(ct);
+            if (typeTarget?.SourceFileId is not null)
+            {
+                return new GoToDefinitionTarget(typeTarget.SourceFileId.Value, typeTarget.LineNumber);
+            }
+        }
+
+        // 3. Same-Release lookup by object name. Chain-walk semantics (for
         //    customer Releases sitting on top of BC) are a follow-up — the
         //    dominant case is Microsoft-DVD-ingest where everything lives in
         //    a single Release.
@@ -1433,6 +1469,36 @@ public class ObjectExplorerService
         if (target?.SourceFileId is null) return null;
         return new GoToDefinitionTarget(target.SourceFileId.Value, target.LineNumber);
     }
+
+    /// <summary>
+    /// Maps an AL variable-declaration keyword (the one returned by
+    /// <see cref="Services.Al.AlGoToDefinitionLocator.ResolveAllObjectVariableTypes"/>)
+    /// to the matching <c>oe_module_objects.kind</c> string. Returns
+    /// null when the keyword doesn't map cleanly (or wasn't supplied
+    /// at all, e.g. a bare type like <c>HttpClient</c>) — the caller
+    /// then falls back to a name-only lookup ordered by kind, which
+    /// is fine for the vast majority of cases where a name uniquely
+    /// identifies an object.
+    /// </summary>
+    private static string? ResolveKindHint(string? keyword) => keyword?.ToLowerInvariant() switch
+    {
+        "record" => "table",
+        "codeunit" => "codeunit",
+        "page" => "page",
+        "report" => "report",
+        "query" => "query",
+        "xmlport" => "xmlport",
+        "interface" => "interface",
+        "enum" => "enum",
+        "requestpage" => "page",
+        "testpage" => "page",
+        "testpart" => "page",
+        "testrequestpage" => "page",
+        "controladdin" => "controladdin",
+        "permissionset" => "permissionset",
+        "profile" => "profile",
+        _ => null,
+    };
 
     /// <summary>
     /// Spans inside <paramref name="fileId"/> that the source viewer should
@@ -1550,7 +1616,77 @@ public class ObjectExplorerService
                     ColumnEnd: idx + 1 + fallbackLen));
             }
         }
+
+        // Second pass: `extends_target` rows. The importer doesn't stamp
+        // a line/column on them (the extends target sits in the object
+        // header, not somewhere in the body), so they fall outside the
+        // LineNumber != null filter above. Recover the range by joining
+        // each row to its source object's header line and scanning that
+        // line for the extends keyword + target name. The user
+        // reported the `tableextension … extends "Gen. Journal Line"`
+        // base name showing no underline; this is what restores it.
+        var extendsRows = await _db.OeModuleReferences.AsNoTracking()
+            .Where(r => r.SourceObject!.SourceFileId == fileId
+                && r.ReferenceKind == "extends_target"
+                && r.SourceObject!.LineNumber > 0
+                && r.TargetObjectName != null)
+            .Select(r => new
+            {
+                Line = r.SourceObject!.LineNumber,
+                Name = r.TargetObjectName!,
+            })
+            .ToListAsync(ct);
+        foreach (var row in extendsRows)
+        {
+            if (row.Line < 1 || row.Line > lines.Length) continue;
+            var span = FindExtendsTargetSpan(lines[row.Line - 1], row.Name);
+            if (span is null) continue;
+            result.Add(new ALDevToolbox.Components.Shared.CodeViewerResolvable(
+                Line: row.Line,
+                ColumnStart: span.Value.Start,
+                ColumnEnd: span.Value.End));
+        }
+
         return result;
+    }
+
+    /// <summary>
+    /// Finds the column span of <paramref name="targetName"/> within an
+    /// object-header line, but only when it appears after the
+    /// <c>extends</c> keyword. The name may be quoted (the common
+    /// case for AL names with spaces, dots, or other special
+    /// characters) or bare; both forms are returned with their
+    /// 1-based ColumnStart and exclusive-end column. Returns null
+    /// when the line doesn't actually contain an <c>extends</c>
+    /// followed by this target — defensive in case the header was
+    /// reformatted between import and source storage.
+    /// </summary>
+    private static (int Start, int End)? FindExtendsTargetSpan(string lineText, string targetName)
+    {
+        const string keyword = "extends";
+        var kwIdx = lineText.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
+        if (kwIdx < 0) return null;
+        var after = kwIdx + keyword.Length;
+        // `extends` must be followed by whitespace, then the name. If
+        // the keyword appears as part of another identifier (very
+        // unlikely on an object-header line, but cheap to guard
+        // against) bail out.
+        if (after < lineText.Length && IsIdentChar(lineText[after])) return null;
+        while (after < lineText.Length && char.IsWhiteSpace(lineText[after])) after++;
+        if (after >= lineText.Length) return null;
+
+        var quotedTarget = "\"" + targetName + "\"";
+        var quotedIdx = lineText.IndexOf(quotedTarget, after, StringComparison.Ordinal);
+        if (quotedIdx >= 0)
+        {
+            return (quotedIdx + 1, quotedIdx + 1 + quotedTarget.Length);
+        }
+        var bareIdx = IndexOfWord(lineText, targetName, after);
+        if (bareIdx >= 0)
+        {
+            return (bareIdx + 1, bareIdx + 1 + targetName.Length);
+        }
+        return null;
     }
 
     /// <summary>
