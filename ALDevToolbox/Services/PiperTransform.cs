@@ -175,25 +175,38 @@ public static class PiperTransform
     }
 
     /// <summary>
-    /// Parses a clipboard table copied from a Business Central list page —
-    /// tab-separated cells, newline-separated rows, first row treated as
-    /// column headers. Returns <c>null</c> when the input doesn't look like
-    /// a table (zero data rows, or no tab anywhere); the caller renders an
-    /// empty-state message in that case.
+    /// Parses a delimited table (tab-separated by default, configurable
+    /// for CSVs and similar) into headers + rows. Returns <c>null</c> when
+    /// the input doesn't look like a table — no occurrence of the chosen
+    /// separator, or not enough rows for the requested header layout.
     /// </summary>
+    /// <param name="input">The raw paste from the clipboard.</param>
+    /// <param name="separator">
+    /// The cell separator. Defaults to <c>"\t"</c> so a Business Central
+    /// list paste works out of the box.
+    /// </param>
+    /// <param name="hasHeaders">
+    /// When <c>true</c> (the default), the first row is the header row and
+    /// remaining rows are data. When <c>false</c>, every row is data and
+    /// headers are synthesised as <c>"Column 1"</c>, <c>"Column 2"</c>, …
+    /// up to the widest row's cell count.
+    /// </param>
     /// <remarks>
-    /// A single trailing blank row is trimmed (BC clipboards usually have
+    /// A single trailing blank row is trimmed (clipboards usually have
     /// one); interior blank rows are preserved because the source data
     /// might genuinely contain a blank row. Short rows are padded to the
-    /// header width with empty strings, and over-wide rows are truncated —
+    /// table width with empty strings, and over-wide rows are truncated —
     /// both happen silently because BC sometimes elides trailing empty
     /// cells. Duplicate header names are disambiguated with
     /// <c>" (2)"</c>, <c>" (3)"</c>, … so a UI <c>&lt;select&gt;</c> built
     /// from these can rely on unique option values.
+    /// Quoted CSV fields (<c>"value, with comma"</c>) are out of scope —
+    /// callers that need RFC 4180 quoting should pre-process the input.
     /// </remarks>
-    public static PiperTable? ParseTable(string input)
+    public static PiperTable? ParseTable(string input, string separator = "\t", bool hasHeaders = true)
     {
         if (string.IsNullOrEmpty(input)) return null;
+        if (string.IsNullOrEmpty(separator)) return null;
 
         // Normalise line endings (\r\n and lone \r → \n) so a single split
         // suffices and we don't have to juggle three separators downstream.
@@ -207,17 +220,44 @@ public static class PiperTransform
             rowCount--;
         }
 
-        if (rowCount < 2) return null;
-        if (input.IndexOf('\t') < 0) return null;
+        var minRows = hasHeaders ? 2 : 1;
+        if (rowCount < minRows) return null;
+        if (input.IndexOf(separator, StringComparison.Ordinal) < 0) return null;
 
-        var headerCells = rawRows[0].Split('\t');
-        var headers = DisambiguateHeaders(headerCells);
-
-        var rows = new List<IReadOnlyList<string>>(rowCount - 1);
-        for (var r = 1; r < rowCount; r++)
+        var splitRows = new string[rowCount][];
+        var maxWidth = 0;
+        for (var r = 0; r < rowCount; r++)
         {
-            var cells = rawRows[r].Split('\t');
-            if (cells.Length == headers.Count)
+            splitRows[r] = rawRows[r].Split(new[] { separator }, StringSplitOptions.None);
+            if (splitRows[r].Length > maxWidth) maxWidth = splitRows[r].Length;
+        }
+
+        IReadOnlyList<string> headers;
+        int dataStart;
+        int width;
+        if (hasHeaders)
+        {
+            headers = DisambiguateHeaders(splitRows[0]);
+            dataStart = 1;
+            width = headers.Count;
+        }
+        else
+        {
+            // No header row — label each column by its 1-based position so
+            // the UI <select> has something to display. Use the widest row
+            // as the canonical column count.
+            var names = new string[maxWidth];
+            for (var i = 0; i < maxWidth; i++) names[i] = $"Column {i + 1}";
+            headers = names;
+            dataStart = 0;
+            width = maxWidth;
+        }
+
+        var rows = new List<IReadOnlyList<string>>(rowCount - dataStart);
+        for (var r = dataStart; r < rowCount; r++)
+        {
+            var cells = splitRows[r];
+            if (cells.Length == width)
             {
                 rows.Add(cells);
                 continue;
@@ -226,10 +266,10 @@ public static class PiperTransform
             // Pad short rows; truncate over-wide rows. Both are silent —
             // BC elides trailing empty cells and we don't want to refuse
             // an otherwise-valid paste over a cosmetic mismatch.
-            var padded = new string[headers.Count];
-            var copyLen = Math.Min(cells.Length, headers.Count);
+            var padded = new string[width];
+            var copyLen = Math.Min(cells.Length, width);
             for (var c = 0; c < copyLen; c++) padded[c] = cells[c];
-            for (var c = copyLen; c < headers.Count; c++) padded[c] = "";
+            for (var c = copyLen; c < width; c++) padded[c] = "";
             rows.Add(padded);
         }
 

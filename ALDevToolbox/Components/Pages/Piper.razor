@@ -24,12 +24,14 @@
                         class="pill-tab @(_mode == InputMode.Text ? "pill-tab--active" : "")"
                         role="tab" aria-selected="@(_mode == InputMode.Text ? "true" : "false")"
                         @onclick="() => SetMode(InputMode.Text)">
+                    <Icon Name="type" Width="14" Height="14" />
                     <span>Text</span>
                 </button>
                 <button type="button"
                         class="pill-tab @(_mode == InputMode.Table ? "pill-tab--active" : "")"
                         role="tab" aria-selected="@(_mode == InputMode.Table ? "true" : "false")"
                         @onclick="() => SetMode(InputMode.Table)">
+                    <Icon Name="table" Width="14" Height="14" />
                     <span>Table</span>
                 </button>
             </nav>
@@ -44,17 +46,34 @@
                 <p class="muted piper-meta">@_inputMetaText</p>
             </div>
 
-            @if (_mode == InputMode.Table && _table is not null)
+            @if (_mode == InputMode.Table)
             {
                 <div class="form-section">
-                    <label class="section-label" for="piper-column">Column</label>
-                    <select id="piper-column" @bind="SelectedColumn">
-                        @foreach (var header in _table.Headers)
-                        {
-                            <option value="@header">@(string.IsNullOrEmpty(header) ? "(unnamed column)" : header)</option>
-                        }
+                    <label class="section-label" for="piper-table-sep">Cell separator</label>
+                    <select id="piper-table-sep" @bind="TableSeparatorKey">
+                        <option value="tab">Tab</option>
+                        <option value="comma">Comma</option>
+                        <option value="semicolon">Semicolon</option>
+                        <option value="pipe">Pipe</option>
                     </select>
                 </div>
+                <label class="check-row">
+                    <input type="checkbox" @bind="TableHasHeaders" />
+                    <span>First row is headers</span>
+                </label>
+
+                @if (_table is not null)
+                {
+                    <div class="form-section">
+                        <label class="section-label" for="piper-column">Column</label>
+                        <select id="piper-column" @bind="SelectedColumn">
+                            @foreach (var header in _table.Headers)
+                            {
+                                <option value="@header">@(string.IsNullOrEmpty(header) ? "(unnamed column)" : header)</option>
+                            }
+                        </select>
+                    </div>
+                }
             }
 
             <div class="form-section">
@@ -190,6 +209,19 @@
     private InputMode _mode = InputMode.Text;
     private PiperTable? _table;
     private string? _selectedColumn;
+    private string _tableSeparatorKey = "tab";
+    private bool _tableHasHeaders = true;
+
+    // <select> can't bind to a control character directly in Razor markup,
+    // so the UI binds to a short key and we map to the actual separator
+    // when calling ParseTable.
+    private static readonly Dictionary<string, string> TableSeparators = new(StringComparer.Ordinal)
+    {
+        ["tab"] = "\t",
+        ["comma"] = ",",
+        ["semicolon"] = ";",
+        ["pipe"] = "|",
+    };
 
     private bool _justCopied;
     private CancellationTokenSource? _copyTimer;
@@ -197,7 +229,7 @@
 
     private const string DefaultSeparatorPlaceholder = "leave blank to auto-detect";
     private const string TextPlaceholder = "e.g. 1001, 1005, 1007 — or one value per line";
-    private const string TablePlaceholder = "Paste tab-separated rows copied from a Business Central list (first row = headers)";
+    private const string TablePlaceholder = "Paste rows from a list or CSV — one row per line, cells split by the selected separator";
 
     private string Input { get => _input; set { _input = value; Transform(); } }
     private PiperOutputFormat Format { get => _options.Format; set { _options = _options with { Format = value }; Transform(); } }
@@ -213,6 +245,8 @@
     private bool SkipEmpty { get => _options.SkipEmpty; set { _options = _options with { SkipEmpty = value }; Transform(); } }
     private bool RemoveDuplicates { get => _options.RemoveDuplicates; set { _options = _options with { RemoveDuplicates = value }; Transform(); } }
     private string? SelectedColumn { get => _selectedColumn; set { _selectedColumn = value; Transform(); } }
+    private string TableSeparatorKey { get => _tableSeparatorKey; set { _tableSeparatorKey = value; Transform(); } }
+    private bool TableHasHeaders { get => _tableHasHeaders; set { _tableHasHeaders = value; Transform(); } }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -255,12 +289,22 @@
             return;
         }
 
-        _table = PiperTransform.ParseTable(_input);
+        var separator = TableSeparators.GetValueOrDefault(_tableSeparatorKey, "\t");
+        _table = PiperTransform.ParseTable(_input, separator, _tableHasHeaders);
         if (_table is null)
         {
             _selectedColumn = null;
             _output = "";
-            _inputMetaText = "No table detected — paste at least 2 tab-separated rows.";
+            var minRows = _tableHasHeaders ? 2 : 1;
+            var separatorName = _tableSeparatorKey switch
+            {
+                "tab" => "tab-separated",
+                "comma" => "comma-separated",
+                "semicolon" => "semicolon-separated",
+                "pipe" => "pipe-separated",
+                _ => "separated",
+            };
+            _inputMetaText = $"No table detected — paste at least {minRows} {separatorName} row{(minRows == 1 ? "" : "s")}.";
             return;
         }
 

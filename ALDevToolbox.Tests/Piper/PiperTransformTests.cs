@@ -430,6 +430,112 @@ public sealed class PiperTransformTests
         table.Rows[1][0].Should().Be("3");
     }
 
+    // ---------- ParseTable: configurable separator + headerless ----------
+
+    [Fact]
+    public void ParseTable_with_comma_separator_parses_csv_style_input()
+    {
+        var input = "name,city,age\nAlice,NYC,30\nBob,Paris,25\n";
+        var table = PiperTransform.ParseTable(input, ",", hasHeaders: true);
+        table.Should().NotBeNull();
+        table!.Headers.Should().Equal("name", "city", "age");
+        table.Rows.Should().HaveCount(2);
+        table.Rows[0][0].Should().Be("Alice");
+        table.Rows[1][2].Should().Be("25");
+    }
+
+    [Fact]
+    public void ParseTable_with_semicolon_separator_parses_european_csv_style_input()
+    {
+        var input = "name;age\nAlice;30\nBob;25";
+        var table = PiperTransform.ParseTable(input, ";", hasHeaders: true);
+        table.Should().NotBeNull();
+        table!.Headers.Should().Equal("name", "age");
+        table.Rows.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void ParseTable_with_pipe_separator_works()
+    {
+        var input = "a|b|c\n1|2|3";
+        var table = PiperTransform.ParseTable(input, "|", hasHeaders: true);
+        table.Should().NotBeNull();
+        table!.Headers.Should().Equal("a", "b", "c");
+        table.Rows.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void ParseTable_returns_null_when_chosen_separator_is_absent()
+    {
+        // Wrong separator selected — fail closed so the caller renders a
+        // hint asking the user to switch.
+        PiperTransform.ParseTable("name,city\nAlice,NYC", "\t", hasHeaders: true).Should().BeNull();
+    }
+
+    [Fact]
+    public void ParseTable_without_headers_labels_columns_by_one_based_position()
+    {
+        var input = "10000\tKontorcentralen A/S\n20000\tRavel Møbler";
+        var table = PiperTransform.ParseTable(input, "\t", hasHeaders: false);
+        table.Should().NotBeNull();
+        table!.Headers.Should().Equal("Column 1", "Column 2");
+        table.Rows.Should().HaveCount(2);
+        table.Rows[0][0].Should().Be("10000");
+        table.Rows[0][1].Should().Be("Kontorcentralen A/S");
+    }
+
+    [Fact]
+    public void ParseTable_without_headers_accepts_a_single_data_row()
+    {
+        // With headers we need at least 2 rows (header + 1 data). Without
+        // headers, one row is enough — every cell becomes a value.
+        var table = PiperTransform.ParseTable("1\t2\t3", "\t", hasHeaders: false);
+        table.Should().NotBeNull();
+        table!.Headers.Should().Equal("Column 1", "Column 2", "Column 3");
+        table.Rows.Should().HaveCount(1);
+        table.Rows[0].Should().Equal("1", "2", "3");
+    }
+
+    [Fact]
+    public void ParseTable_without_headers_uses_widest_row_as_column_count()
+    {
+        // Row widths: 2, 3, 1. The table is sized to the widest row;
+        // narrower rows pad with empty strings.
+        var input = "1,2\n3,4,5\n6";
+        var table = PiperTransform.ParseTable(input, ",", hasHeaders: false);
+        table.Should().NotBeNull();
+        table!.Headers.Should().Equal("Column 1", "Column 2", "Column 3");
+        table.Rows.Should().HaveCount(3);
+        table.Rows[0].Should().Equal("1", "2", "");
+        table.Rows[1].Should().Equal("3", "4", "5");
+        table.Rows[2].Should().Equal("6", "", "");
+    }
+
+    [Fact]
+    public void ParseTable_without_headers_treats_first_row_as_data_not_labels()
+    {
+        // The cell "name" looks like a header but with hasHeaders=false it
+        // must still appear in row 0 as data.
+        var input = "name,city\nAlice,NYC";
+        var table = PiperTransform.ParseTable(input, ",", hasHeaders: false);
+        table.Should().NotBeNull();
+        table!.Headers.Should().Equal("Column 1", "Column 2");
+        table.Rows.Should().HaveCount(2);
+        table.Rows[0].Should().Equal("name", "city");
+        table.Rows[1].Should().Equal("Alice", "NYC");
+    }
+
+    [Fact]
+    public void ParseTable_default_separator_is_tab_so_existing_callers_keep_working()
+    {
+        // The first overload-less ParseTable() in the codebase relies on
+        // the default ("\t", hasHeaders: true) — pin that contract.
+        var table = PiperTransform.ParseTable("A\tB\n1\t2");
+        table.Should().NotBeNull();
+        table!.Headers.Should().Equal("A", "B");
+        table.Rows.Should().ContainSingle().Which.Should().Equal("1", "2");
+    }
+
     // ---------- RunOnItems (Table input mode → pipeline) ----------
 
     [Fact]
