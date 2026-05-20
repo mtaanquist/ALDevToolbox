@@ -257,12 +257,13 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .nav-group { display: flex; flex-direction: column; gap: 2px; }
 
+/* Group-header link (Projects, Templates). Used to be a non-clickable <div>;
+   now it's a real NavLink that navigates to the group's primary page, so it
+   picks up the standard pointer cursor and hover background like any other
+   nav link — no overrides needed. */
 .nav-link--group {
     color: var(--color-text);
-    cursor: default;
 }
-
-.nav-link--group:hover { background: transparent; }
 
 /* The sub-list is anchored to the parent's icon column (≈ 18px icon + 10px
    gap = 28px) so a thin vertical guide can sit at that x-coordinate and read
