@@ -94,11 +94,11 @@ public sealed class NavMenuTests : IDisposable
         var cut = _ctx.RenderComponent<NavMenu>();
 
         cut.FindAll("a[href='/admin']").Should().BeEmpty();
-        cut.FindAll("a[href='/admin/users']").Should().BeEmpty();
+        cut.FindAll("a[href='/admin/administration']").Should().BeEmpty();
     }
 
     [Fact]
-    public void Admin_in_non_system_org_sees_per_org_users_configuration_audit_and_export()
+    public void Admin_in_non_system_org_sees_per_org_administration_audit_and_template_pages()
     {
         _auth.SetAuthorized("admin@example.com");
         _auth.SetRoles("Admin");
@@ -108,15 +108,20 @@ public sealed class NavMenuTests : IDisposable
         var cut = _ctx.RenderComponent<NavMenu>();
 
         cut.FindAll("a[href='/admin']").Should().NotBeEmpty();
-        cut.FindAll("a[href='/admin/users']").Should().NotBeEmpty(
-            "per-org Users link is only hidden in the system org");
-        cut.FindAll("a[href='/admin/configuration/identity']").Should().NotBeEmpty(
-            "the Configuration group hosts the org-identity page; template-shaping pages moved under /admin/templates/*");
+        cut.FindAll("a[href='/admin/administration']").Should().NotBeEmpty(
+            "the consolidated Administration entry hosts Identity, MCP, Users, OAuth clients and Export — "
+            + "only hidden in the system org");
         cut.FindAll("a[href='/admin/templates/defaults']").Should().NotBeEmpty(
-            "Defaults now lives under the Templates group rather than under Configuration");
+            "Defaults lives under the Templates group");
         cut.FindAll("a[href='/admin/audit']").Should().NotBeEmpty(
             "non-SiteAdmin admins get the per-org audit log, not the cross-org one");
-        cut.FindAll("a[href='/admin/export']").Should().NotBeEmpty();
+
+        cut.FindAll("a[href='/admin/users']").Should().BeEmpty(
+            "Users moved under /admin/administration/users when the per-org admin pages were consolidated");
+        cut.FindAll("a[href='/admin/configuration/identity']").Should().BeEmpty(
+            "Configuration was renamed to Administration and the sub-pages moved under /admin/administration/*");
+        cut.FindAll("a[href='/admin/export']").Should().BeEmpty(
+            "Export is now a tab inside the Administration page rather than a separate sidebar entry");
 
         cut.FindAll("a[href^='/site-admin/']").Should().BeEmpty(
             "SiteAdmin-only entries must stay hidden from regular org admins");
@@ -133,8 +138,8 @@ public sealed class NavMenuTests : IDisposable
 
         var cut = _ctx.RenderComponent<NavMenu>();
 
-        cut.FindAll("a[href='/admin/users']").Should().NotBeEmpty(
-            "the per-org Users entry stays visible — SiteAdmin sees both");
+        cut.FindAll("a[href='/admin/administration']").Should().NotBeEmpty(
+            "the per-org Administration entry stays visible — SiteAdmin sees both");
         var siteUsers = cut.FindAll("a[href='/site-admin/users']");
         siteUsers.Should().NotBeEmpty();
         siteUsers[0].TextContent.Should().Contain("All users",
@@ -160,10 +165,9 @@ public sealed class NavMenuTests : IDisposable
 
         var cut = _ctx.RenderComponent<NavMenu>();
 
-        cut.FindAll("a[href='/admin/users']").Should().BeEmpty(
-            "system org hides the per-org Users page — there are no per-org users to manage");
-        cut.FindAll("a[href='/admin/configuration/defaults']").Should().BeEmpty(
-            "system org has no per-org configuration");
+        cut.FindAll("a[href='/admin/administration']").Should().BeEmpty(
+            "system org has no per-org configuration, users, or export — the Administration entry is hidden");
+        cut.FindAll("a[href='/admin/users']").Should().BeEmpty();
         cut.FindAll("a[href='/admin/export']").Should().BeEmpty();
 
         var siteUsers = cut.FindAll("a[href='/site-admin/users']");
