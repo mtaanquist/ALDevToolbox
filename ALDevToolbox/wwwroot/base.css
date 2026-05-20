@@ -512,8 +512,9 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 /* Sections inside .admin-form / .form-grid that pair a label with an
    input. SiteAdminSettings wraps both inside the same <label> element;
-   AdminConfiguration places the .section-label and the input as sibling
-   children of .form-grid. Both layouts need the same vertical rhythm. */
+   the Administration pages place the .section-label and the input as
+   sibling children of .form-grid. Both layouts need the same vertical
+   rhythm. */
 .admin-form > label,
 .admin-form > .form-row > label {
     display: flex;
@@ -669,9 +670,10 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     box-sizing: border-box;
 }
 
-.btn:hover { text-decoration: none; }
-
-.btn:hover { background: var(--color-bg); }
+.btn:hover {
+    background: var(--color-bg);
+    text-decoration: none;
+}
 
 .btn--primary {
     background: var(--color-accent);
@@ -780,6 +782,33 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .valid.modified:not([type=checkbox]) { outline: 1px solid var(--color-valid); }
 .invalid { outline: 1px solid var(--color-error-text); }
 .validation-message { color: var(--color-error-text); }
+
+/* Inline error banner used by every form that surfaces a saved-but-failed
+   message — login, admin saves, generator validation. Lives in base because
+   it crosses every surface; pages just emit <p class="form-error"> or wrap
+   richer content in <div class="form-error">. */
+.form-error {
+    color: var(--color-error-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-error-text);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    margin: 0 0 16px;
+    font-size: 13px;
+}
+
+.form-error code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+.form-error > p {
+    margin: 0;
+}
+
+.form-error > p + .form-error__list {
+    margin-top: 8px;
+}
 
 /* ---------- Theme toggle ---------- */
 

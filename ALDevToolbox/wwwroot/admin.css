@@ -3,7 +3,10 @@
    and the templates list / edit pages. Loaded last so admin-specific
    rules win when they share a class with a tool page. */
 
-/* ---------- Configuration page ---------- */
+/* ---------- Administration & template-shaping pages ---------- */
+/* The .admin-configuration marker class is shared by /admin/administration/*
+   and /admin/templates/* (Defaults, Files, Workspace settings) — the visual
+   primitives are the same, only the form fields differ. */
 
 .logo-preview {
     display: flex;
