@@ -172,8 +172,8 @@ public class ReleaseImportService
             await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
             _logger.LogInformation(
-                "Completed Release ingest: ReleaseId={ReleaseId} ModulesImported={ModulesImported} ModulesSkipped={ModulesSkipped} ObjectsImported={ObjectsImported} ReferencesImported={ReferencesImported} TranslationsImported={TranslationsImported}",
-                release.Id, totals.ModulesImported, totals.ModulesSkipped, totals.ObjectsImported, totals.ReferencesImported, totals.TranslationsImported);
+                "Completed Release ingest: ReleaseId={ReleaseId} ModulesImported={ModulesImported} ModulesSkipped={ModulesSkipped} ObjectsImported={ObjectsImported} ReferencesImported={ReferencesImported}",
+                release.Id, totals.ModulesImported, totals.ModulesSkipped, totals.ObjectsImported, totals.ReferencesImported);
 
             return new ReleaseImportSummary(
                 ReleaseId: release.Id,
@@ -182,7 +182,7 @@ public class ReleaseImportService
                 ObjectsImported: totals.ObjectsImported,
                 ReferencesImported: totals.ReferencesImported,
                 SourceFilesImported: totals.SourceFilesImported,
-                TranslationsImported: totals.TranslationsImported);
+                TranslationsImported: 0);
         }
         catch (Exception ex)
         {
@@ -520,17 +520,12 @@ public class ReleaseImportService
 
         totals.ModulesImported++;
 
-        // Translations: pulled from the .app's Translations/ folder by
-        // AppPackageReader. Best-effort — malformed XLIFFs are logged and
-        // skipped, never bubbled up. Runs after the symbols are saved so
-        // the resolver can match field captions / labels to symbol_ids in
-        // one query. See GitHub issue #151.
-        if (pkg.XliffFiles.Count > 0)
-        {
-            totals.TranslationsImported += await _translations
-                .ImportFromAppPackageAsync(orgId, module.Id, pkg.XliffFiles, ct)
-                .ConfigureAwait(false);
-        }
+        // Translations are NOT extracted from .app files during release
+        // ingest. The base-app XLIFFs are large enough that the DOM
+        // parser (XDocument.Load inside AlXliffParser) ran the import
+        // container out of memory. Admins upload XLIFFs on demand
+        // through TranslationImportService — see the note in
+        // AppPackageReader for the longer rationale.
 
         // Surface a warning when source files were loaded but no
         // symbol-package objects matched any .al header — that means
@@ -1240,7 +1235,11 @@ public class ReleaseImportService
         public int ObjectsImported;
         public int ReferencesImported;
         public int SourceFilesImported;
-        public int TranslationsImported;
+        // No `TranslationsImported` here — translations are no longer
+        // auto-extracted during release ingest. The public
+        // ReleaseImportSummary still surfaces the field (always 0)
+        // so existing callers keep compiling; admins drive the count
+        // up via TranslationImportService's explicit upload paths.
     }
 
     // ── Phase-2 call-site extraction ───────────────────────────────────

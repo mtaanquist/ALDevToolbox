@@ -83,81 +83,27 @@ public static class AppPackageReader
         var sourceFiles = manifest.IncludeSourceInSymbolFile
             ? ReadEmbeddedSource(archive)
             : Array.Empty<AppSourceFile>();
-        var xliffFiles = ReadXliffFiles(archive);
 
-        return new AppPackage(manifest, symbols, sourceFiles, xliffFiles, hash);
+        return new AppPackage(manifest, symbols, sourceFiles, hash);
     }
 
-    // ── XLIFF translations ─────────────────────────────────────────────
-
-    /// <summary>
-    /// Pulls every <c>.xlf</c> file out of the archive's <c>Translations/</c>
-    /// folder and parses each one inline. Microsoft first-party apps ship
-    /// one .xlf per supported language here; partner apps may ship none.
-    /// <para>
-    /// Parsing happens here, not later, because BC base-app XLIFFs run
-    /// 50–100&#160;MB uncompressed per language. The previous shape
-    /// (<c>entry.Open()</c> → <c>MemoryStream.CopyTo</c> → <c>ToArray</c>)
-    /// allocated the decompressed bytes three times — the capacity-doubling
-    /// MemoryStream peaked at roughly 3× the file size before
-    /// <c>ToArray</c> made yet another copy — and tipped a 1&#160;GB
-    /// container into <see cref="OutOfMemoryException"/>. Parsing
-    /// directly off the <see cref="ZipArchiveEntry"/> stream skips both
-    /// transient allocations: the only thing we retain is the parsed
-    /// <see cref="XliffDocument"/>, whose memory footprint is
-    /// proportional to the trans-units we'll persist, not to the raw
-    /// XML envelope.
-    /// </para>
-    /// <para>
-    /// XLIFFs that fail to parse are logged-and-skipped here instead of
-    /// crashing the whole release import: a malformed translation file
-    /// inside a Microsoft .app should never sink the rest of the
-    /// ingest. The <see cref="ReleaseImportService"/> exposes any
-    /// translations it actually persisted in
-    /// <see cref="ReleaseImportSummary.TranslationsImported"/>.
-    /// </para>
-    /// <para>
-    /// Matched case-insensitively because Microsoft and partner build
-    /// pipelines have shipped both <c>Translations/</c> and
-    /// <c>translations/</c> in the wild.
-    /// </para>
-    /// </summary>
-    private static IReadOnlyList<AppXliffFile> ReadXliffFiles(ZipArchive archive)
-    {
-        var files = new List<AppXliffFile>();
-        foreach (var entry in archive.Entries)
-        {
-            if (string.IsNullOrEmpty(entry.Name)) continue;
-            if (!entry.FullName.EndsWith(".xlf", StringComparison.OrdinalIgnoreCase)) continue;
-
-            var normalised = entry.FullName.Replace('\\', '/');
-            var slashTr = normalised.IndexOf("translations/", StringComparison.OrdinalIgnoreCase);
-            // Accept the file when "Translations/" sits at the archive root
-            // OR anywhere along the path (some wrapped packages nest it
-            // under the project folder, e.g. "Base Application/Translations/…").
-            if (slashTr < 0 && !normalised.StartsWith("translations/", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            XliffDocument parsed;
-            try
-            {
-                using var s = entry.Open();
-                parsed = AlXliffParser.Parse(s);
-            }
-            catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException)
-            {
-                // Silent skip rather than throw: a malformed XLIFF in a
-                // multi-app DVD should never sink the whole release.
-                // The TranslationsImported total stays accurate; the
-                // operator notices via the per-module summary delta.
-                continue;
-            }
-            files.Add(new AppXliffFile(normalised, parsed));
-        }
-        return files;
-    }
+    // Note: the .app's `Translations/` folder is intentionally NOT
+    // walked during ReadAsync. BC base-app XLIFFs run multi-hundred-MB
+    // per language and `XDocument.Load` (the heart of AlXliffParser)
+    // is a DOM parser that allocates an XElement per node — for a
+    // 200&#160;MB XLIFF that's roughly 2&#160;GB of XLinq objects,
+    // which tipped the import container straight into
+    // OutOfMemoryException. The two earlier attempts at this
+    // (`byte[]` buffering in commit 84b6001, then inline parsing
+    // also at 84b6001's followups) didn't help because the DOM-load
+    // cost dominates either way. Translations now arrive only via
+    // the explicit upload paths on `TranslationImportService` —
+    // admins choose when to pay that cost, on a per-file basis, and
+    // a single bad XLIFF can't sink the whole release ingest.
+    //
+    // The right structural fix is a streaming XmlReader-based
+    // rewrite of AlXliffParser; until that lands, no caller in this
+    // layer pulls translations out of an .app automatically.
 
     // ── Ready2Run wrapper ───────────────────────────────────────────────
 

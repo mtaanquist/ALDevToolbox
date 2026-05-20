@@ -186,42 +186,6 @@ public class TranslationImportService
             PerFile: matchedSummaries);
     }
 
-    // ── Automatic extraction during .app import ────────────────────────
-
-    /// <summary>
-    /// Called by <see cref="ReleaseImportService"/> once per module with the
-    /// XLIFFs pulled out of the <c>.app</c>'s <c>Translations/</c> folder.
-    /// Parsing happens inside <see cref="AppPackageReader"/> so the raw
-    /// decompressed bytes are released as soon as parsing finishes — we
-    /// only see the much-smaller parsed documents here. Errors are
-    /// logged as warnings rather than thrown so a single bad XLIFF
-    /// can't sink the whole release import.
-    /// </summary>
-    public async Task<int> ImportFromAppPackageAsync(
-        int orgId,
-        long moduleId,
-        IReadOnlyList<AppXliffFile> payloads,
-        CancellationToken ct = default)
-    {
-        if (payloads.Count == 0) return 0;
-        int total = 0;
-        foreach (var payload in payloads)
-        {
-            ct.ThrowIfCancellationRequested();
-            try
-            {
-                total += await ReplaceForModuleAsync(orgId, moduleId, payload.Document, ct).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "Skipping XLIFF {Path} during .app import for module {ModuleId}: persist failed.",
-                    payload.Path, moduleId);
-            }
-        }
-        return total;
-    }
-
     // ── Shared parse → clobber → insert → resolve ──────────────────────
 
     /// <summary>
