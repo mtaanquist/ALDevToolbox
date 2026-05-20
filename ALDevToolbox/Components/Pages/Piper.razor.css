@@ -12,8 +12,12 @@
     min-width: 0;
 }
 
+/* Without align-self the inline-flex pill bar still gets stretched to
+   the column-flex parent's cross axis (full width), which feels loose
+   next to a 100% textarea. flex-start sizes it to its content. */
 .piper-main ::deep .pill-tabs {
     margin-bottom: 0;
+    align-self: flex-start;
 }
 
 .piper-main ::deep textarea {

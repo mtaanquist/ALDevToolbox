@@ -24,12 +24,14 @@
                         class="pill-tab @(_mode == InputMode.Text ? "pill-tab--active" : "")"
                         role="tab" aria-selected="@(_mode == InputMode.Text ? "true" : "false")"
                         @onclick="() => SetMode(InputMode.Text)">
+                    <Icon Name="type" Width="14" Height="14" />
                     <span>Text</span>
                 </button>
                 <button type="button"
                         class="pill-tab @(_mode == InputMode.Table ? "pill-tab--active" : "")"
                         role="tab" aria-selected="@(_mode == InputMode.Table ? "true" : "false")"
                         @onclick="() => SetMode(InputMode.Table)">
+                    <Icon Name="table" Width="14" Height="14" />
                     <span>Table</span>
                 </button>
             </nav>
