@@ -191,7 +191,7 @@ internal static class SiteAdminEndpoints
                     + Uri.EscapeDataString("That object is no longer in the bucket or doesn't look like one of our backups."));
                 return;
             }
-            var id = jobs.Enqueue(match.Key, match.FileName);
+            var id = jobs.Enqueue(OffsiteRestoreJobKind.WholeDb, match.Key, match.FileName);
             ctx.Response.Redirect($"{RouteConstants.SiteAdminBackups}?job={Uri.EscapeDataString(id.ToString())}");
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
@@ -203,6 +203,7 @@ internal static class SiteAdminEndpoints
             return Results.Json(new
             {
                 id = job.Id,
+                kind = job.Kind.ToString().ToLowerInvariant(),
                 objectKey = job.ObjectKey,
                 fileName = job.FileName,
                 status = job.Status.ToString().ToLowerInvariant(),
@@ -419,6 +420,57 @@ internal static class SiteAdminEndpoints
                 await stream.CopyToAsync(ctx.Response.Body, ct);
             }
             finally { await stream.DisposeAsync(); }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/tenant-backups/{id:int}/upload", async (
+            int id, HttpContext ctx, OffsiteBackupService offsite, IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            try
+            {
+                var key = await offsite.UploadPerTenantAsync(id, ct);
+                if (key is null)
+                {
+                    ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
+                        + Uri.EscapeDataString("Off-site backup not configured, or the local snapshot is missing."));
+                    return;
+                }
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.OkQuery}=uploaded");
+            }
+            catch (Exception ex)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString("Upload failed: " + ex.Message));
+            }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/tenant-backups/offsite/download", async (
+            HttpContext ctx, OffsiteBackupService offsite, OffsiteRestoreJobs jobs,
+            IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var key = form["ObjectKey"].ToString();
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString("Pick a per-tenant object to download."));
+                return;
+            }
+            // Cross-check membership in the listed bucket (under the
+            // tenants/ namespace) so a tampered submit can't trigger a
+            // download of an arbitrary key. The download method enforces
+            // the same shape rules internally — this is belt-and-braces.
+            var listed = await offsite.ListPerTenantAsync(maxObjects: 1000, ct);
+            var match = listed.FirstOrDefault(o => string.Equals(o.Key, key, StringComparison.Ordinal));
+            if (match is null)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString("That per-tenant object is no longer in the bucket or doesn't look like one of our snapshots."));
+                return;
+            }
+            var id = jobs.Enqueue(OffsiteRestoreJobKind.PerTenant, match.Key, match.FileName);
+            ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?job={Uri.EscapeDataString(id.ToString())}");
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
         app.MapPost("/site-admin/tenant-backups/{id:int}/pin", async (

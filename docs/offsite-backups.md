@@ -1,10 +1,11 @@
 # Off-site (S3-compatible) backups
 
-The in-app backup scheduler already writes `pg_dump` files to the
-`app-backups` named volume (see [operator-runbook.md](operator-runbook.md)).
-Off-site backup adds a second, disaster-recovery copy by uploading every
-scheduled *full* backup to an S3-compatible bucket and pruning objects past
-a configurable retention window.
+The in-app backup scheduler already writes `pg_dump` files and per-tenant
+snapshot ZIPs to the `app-backups` named volume (see
+[operator-runbook.md](operator-runbook.md)). Off-site backup adds a
+second, disaster-recovery copy by uploading every scheduled full backup
+*and* every scheduled per-tenant snapshot to an S3-compatible bucket and
+pruning objects past a configurable retention window.
 
 Tested against AWS S3 and MinIO; any S3-compatible server (Backblaze B2,
 Wasabi, Cloudflare R2, Hetzner Object Storage, Ceph RGW, SeaweedFS, …)
@@ -17,7 +18,13 @@ and an endpoint URL.
 |-------------------------------------------------------|:----------------------------:|:-----------------:|
 | Full backup, **Scheduled** (`BackupKind.Scheduled`)   | Yes                           | Yes (automatic, after each scheduled run) |
 | Full backup, **Ad-hoc** (`BackupKind.AdHoc`)          | Yes                           | Only when SiteAdmin clicks **Upload** on the row |
-| Per-tenant logical snapshot (`PerTenantBackup`)       | Yes                           | No — the off-site copy is whole-deployment DR; per-tenant snapshots stay local |
+| Per-tenant logical snapshot, **Scheduled**            | Yes                           | Yes (automatic, after each scheduled per-tenant run) |
+| Per-tenant logical snapshot, **Ad-hoc**               | Yes                           | Only when SiteAdmin clicks **Upload** on the row |
+
+Whole-DB dumps live at `<prefix><filename>.dump`. Per-tenant snapshots
+namespace under `<prefix>tenants/<slug>/<filename>.tenant.zip` so the
+two catalogues stay separable and a DR restore can pull either back
+down independently.
 
 Both access keys are encrypted at rest with the ASP.NET Core Data
 Protection key ring backed by the `app-keys` volume. Losing `app-keys`
@@ -82,7 +89,7 @@ Off-site retention is *independent* from local retention. The local
 off-site `RetentionDays` keeps objects for a calendar window in the
 bucket. Tune them separately.
 
-## Restoring from an off-site copy
+## Restoring from an off-site copy (whole-DB)
 
 `/site-admin/backups` lists every dump-shaped object under the configured
 prefix in an **Off-site catalogue** section. The flow is fully UI-driven
@@ -131,17 +138,56 @@ If the deployment is completely gone (lost host, lost `pg-data`, lost
 4. The bootstrap user's identity will be replaced by whatever the dump
    carried — sign in again with the original credentials.
 
+## Restoring a per-tenant snapshot from off-site
+
+`/site-admin/tenant-backups` carries an identical **Off-site catalogue**
+section, populated from objects under `<prefix>tenants/<slug>/`. The flow
+mirrors the whole-DB one:
+
+1. Pick a row in the catalogue. The page shows the slug, the snapshot
+   filename, last-modified time, size, and whether a local snapshot
+   with the same name already exists.
+
+2. Click the **Download** icon. The page posts to
+   `/site-admin/tenant-backups/offsite/download`, enqueues a job, and
+   redirects with the same in-page progress bar as the whole-DB flow.
+
+3. On completion, a new row appears under the tenant's section of the
+   local snapshots table — auto-pinned and stamped with `Off-site`. The
+   row's `SchemaVersion`, `CreatedAt`, and `OrganizationId` come from
+   the snapshot's `manifest.json`, not from the object key — so the
+   download refuses if the manifest's slug or org id doesn't match
+   what's locally known.
+
+4. Click **Restore** on the row and confirm. The org's rows are wiped
+   and replayed from the snapshot, exactly as if the snapshot had been
+   created locally.
+
+**Pre-requisite for per-tenant DR.** The local deployment must already
+know about the org (by slug). If you've just stood up a fresh stack
+after losing `pg-data`, restore the whole-DB dump first — that brings
+the `organizations` row back. Then come here and pull the per-tenant
+ZIP. The download button is disabled with a tooltip when the slug isn't
+recognised locally.
+
 ### Job lifetime and host restarts
 
-Restore jobs live in memory on the running container. If the host
-crashes or you redeploy mid-download, the job is lost — but the
-download writes to `<filename>.partial` and is only renamed to the final
-name on success, so a half-finished file never gets registered as a
-restorable row. Just re-queue the download from the catalogue.
+Restore jobs (whole-DB and per-tenant alike) live in memory on the
+running container. If the host crashes or you redeploy mid-download,
+the job is lost — but the download writes to `<filename>.partial` and
+is only renamed to the final name on success, so a half-finished file
+never gets registered as a restorable row. Just re-queue the download
+from the catalogue.
 
 Terminal jobs (Completed, Failed) linger on the page for an hour so a
 SiteAdmin who refreshed at the wrong moment can still see the outcome,
 then evict themselves on the next page render.
+
+Jobs are kept on the page they were enqueued from — whole-DB downloads
+on `/site-admin/backups`, per-tenant downloads on
+`/site-admin/tenant-backups`. They share the same in-memory tracker and
+the same JSON status endpoint, but the UI filters by job kind so each
+page only shows the work that landed there.
 
 ## Disabling or rotating credentials
 
@@ -201,6 +247,16 @@ Symptoms → things to check.
 - **Catalogue says "Already local: Yes" but the Download button is
   disabled.** That's the same collision-prevention guard. The local row
   is already there — restore from it directly.
+- **Per-tenant catalogue says "(unknown)" next to the slug and the
+  Download button is disabled.** The deployment doesn't have an
+  organisation with that slug. Restore the whole-DB dump first so the
+  `organizations` row exists, then come back to pull the per-tenant
+  snapshot.
+- **Per-tenant download fails with "Snapshot manifest names org … but
+  the object key is under …".** The object's key path and the
+  snapshot's manifest don't agree on which org it belongs to.
+  Investigate the bucket — the snapshot may have been moved between
+  prefixes, which the restore refuses for safety.
 - **A bucket policy that requires server-side encryption rejects uploads
   with `AccessDenied`.** The service does not set `ServerSideEncryption`
   on the `PutObject` request. Either relax the policy, or configure
@@ -208,14 +264,18 @@ Symptoms → things to check.
 
 ## Acceptance check
 
-After setup, all four of the following should be true:
+After setup, all five of the following should be true:
 
 - `/site-admin/settings` → **Test off-site connection** → `OK: Connected …`.
 - The next scheduled backup row on `/site-admin/backups` shows the
   `Off-site` badge within ~30 s of the scheduled time.
-- An external listing (`aws s3 ls`, `mc ls`, AWS console) shows the
-  object under the configured prefix with the matching filename.
-- `/site-admin/backups` shows the object under **Off-site catalogue**;
-  clicking **Download** brings up a progress bar in **Off-site
-  downloads** that runs to completion and produces a new local row
-  carrying the `Off-site` badge.
+- The next scheduled per-tenant snapshot row on
+  `/site-admin/tenant-backups` shows the `Off-site` badge in the same
+  window.
+- An external listing (`aws s3 ls --recursive`, `mc ls --recursive`,
+  AWS console) shows the whole-DB dump at `<prefix><filename>.dump` and
+  per-tenant ZIPs at `<prefix>tenants/<slug>/<filename>.tenant.zip`.
+- Each catalogue (whole-DB on `/site-admin/backups`, per-tenant on
+  `/site-admin/tenant-backups`) lists its corresponding objects;
+  clicking **Download** in either runs a progress bar to completion
+  and produces a new local row carrying the `Off-site` badge.

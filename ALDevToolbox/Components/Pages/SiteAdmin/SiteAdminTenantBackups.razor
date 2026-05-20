@@ -2,6 +2,10 @@
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
 @using ALDevToolbox.Services
 @inject PerTenantBackupService Backups
+@inject SystemSettingsService Settings
+@inject OffsiteBackupService Offsite
+@inject OffsiteRestoreJobs RestoreJobs
+@inject ILogger<SiteAdminTenantBackups> Log
 
 <PageTitle>Site Admin · Tenant snapshots · AL Dev Toolbox</PageTitle>
 
@@ -47,6 +51,127 @@
     {
         <p class="form-success" role="status">Snapshot unpinned.</p>
     }
+    else if (Ok == "uploaded")
+    {
+        <p class="form-success" role="status">Snapshot uploaded to off-site bucket.</p>
+    }
+
+    @if (_activeJobs is { Count: > 0 })
+    {
+        <section class="admin-section" aria-label="Off-site per-tenant downloads in progress">
+            <h2>Off-site downloads</h2>
+            <p class="muted">
+                Streaming per-tenant snapshots from the bucket to the local
+                backups volume. The page refreshes automatically once a
+                download finishes — the new row appears below pinned and
+                you can pick Restore from there.
+            </p>
+            <ul class="job-list">
+                @foreach (var job in _activeJobs)
+                {
+                    var pct = job.TotalBytes is > 0
+                        ? (int)Math.Min(100, job.BytesDownloaded * 100 / job.TotalBytes.Value)
+                        : (int?)null;
+                    <li class="job-list__item" data-offsite-job-id="@job.Id">
+                        <div class="job-list__head">
+                            <code>@job.FileName</code>
+                            <span class="job-list__status" data-job-status>@StatusLabel(job)</span>
+                        </div>
+                        @if (job.Status == OffsiteRestoreJobStatus.Failed)
+                        {
+                            <p class="form-error" role="alert" data-job-error>@job.Error</p>
+                        }
+                        else
+                        {
+                            <progress class="job-list__progress"
+                                      data-job-progress
+                                      value="@job.BytesDownloaded"
+                                      max="@(job.TotalBytes ?? Math.Max(job.BytesDownloaded, 1))">
+                            </progress>
+                            <p class="muted" data-job-detail>
+                                @FormatBytes(job.BytesDownloaded)@(job.TotalBytes is long t ? $" / {FormatBytes(t)} ({pct}%)" : "")
+                            </p>
+                        }
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+
+    @if (_offsiteEnabled)
+    {
+        <section class="admin-section" aria-label="Off-site per-tenant catalogue">
+            <header class="admin-section__header">
+                <h2>Off-site catalogue</h2>
+                <form method="get" action="/site-admin/tenant-backups" style="display:inline">
+                    <button type="submit" class="btn btn--sm" title="Re-list the bucket">
+                        <Icon Name="refresh-cw" Width="14" Height="14" />
+                        <span>Refresh</span>
+                    </button>
+                </form>
+            </header>
+            <p class="muted">
+                Per-tenant snapshots uploaded to the off-site bucket under
+                <code>tenants/&lt;slug&gt;/</code>. Pick one to stream into
+                the local backups volume; the row that appears below can
+                then be restored with the usual button. The download runs
+                in the background and survives this page being closed.
+            </p>
+            @if (_offsiteError is not null)
+            {
+                <p class="form-error" role="alert">@_offsiteError</p>
+            }
+            else if (_offsite is null)
+            {
+                <p class="muted">Loading…</p>
+            }
+            else if (_offsite.Count == 0)
+            {
+                <p class="muted">No per-tenant snapshots in the bucket yet. They appear after the next scheduled run uploads.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Org</th>
+                            <th>Snapshot</th>
+                            <th>Last modified (UTC)</th>
+                            <th class="data-table__num">Size</th>
+                            <th>Already local?</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var obj in _offsite)
+                        {
+                            var alreadyLocal = _localFiles.Contains((obj.Slug, obj.FileName));
+                            var orgKnown = _localSlugs.Contains(obj.Slug);
+                            <tr>
+                                <td>@obj.Slug @(orgKnown ? "" : " (unknown)")</td>
+                                <td><code>@obj.FileName</code></td>
+                                <td class="muted">@obj.LastModified.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                <td class="data-table__num">@FormatBytes(obj.Size)</td>
+                                <td>@(alreadyLocal ? "Yes" : "No")</td>
+                                <td class="row-actions">
+                                    <form method="post" action="/site-admin/tenant-backups/offsite/download" style="display:inline">
+                                        <AntiforgeryToken />
+                                        <input type="hidden" name="ObjectKey" value="@obj.Key" />
+                                        <button type="submit" class="btn btn--sm btn--icon"
+                                                title="@(alreadyLocal ? "A local snapshot with this name already exists" : (orgKnown ? "Download to local for restore" : "No local org with this slug — create or restore it first"))"
+                                                aria-label="Download to local"
+                                                disabled="@(alreadyLocal || !orgKnown)">
+                                            <Icon Name="archive-restore" Width="14" Height="14" />
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    }
 
     @if (_rows is null)
     {
@@ -70,7 +195,7 @@
                     <th class="data-table__num">Size</th>
                     <th>Kind</th>
                     <th>Schema</th>
-                    <th>Pinned</th>
+                    <th>Status</th>
                     <th>By</th>
                     <th></th>
                 </tr>
@@ -85,13 +210,37 @@
                     <td class="data-table__num">@FormatBytes(r.FileSizeBytes)</td>
                     <td>@r.Kind</td>
                     <td>@(r.SchemaVersion == PerTenantBackupService.CurrentSchemaVersion ? "v" + r.SchemaVersion : $"v{r.SchemaVersion} (stale)")</td>
-                    <td>@(r.IsPinned ? "Yes" : "—")</td>
+                    <td>
+                        @if (r.IsPinned)
+                        {
+                            <span class="badge">Pinned</span>
+                        }
+                        @if (r.OffsiteUploadedAt is not null)
+                        {
+                            <span class="badge" title="@r.OffsiteObjectKey">Off-site</span>
+                        }
+                        @if (!r.IsPinned && r.OffsiteUploadedAt is null)
+                        {
+                            <text>—</text>
+                        }
+                    </td>
                     <td class="muted">@(r.CreatedByEmail ?? "scheduled")</td>
                     <td class="row-actions">
                         <a class="btn btn--sm btn--icon" title="Download" aria-label="Download"
                            href="@($"/site-admin/tenant-backups/{r.Id}/download")">
                             <Icon Name="download" Width="14" Height="14" />
                         </a>
+                        @if (_offsiteEnabled)
+                        {
+                            <form method="post" action="@($"/site-admin/tenant-backups/{r.Id}/upload")" style="display:inline">
+                                <AntiforgeryToken />
+                                <button type="submit" class="btn btn--sm btn--icon"
+                                        title="@(r.OffsiteUploadedAt is null ? "Upload to off-site" : "Re-upload to off-site")"
+                                        aria-label="Upload to off-site">
+                                    <Icon Name="upload" Width="14" Height="14" />
+                                </button>
+                            </form>
+                        }
                         @if (r.IsPinned)
                         {
                             <form method="post" action="@($"/site-admin/tenant-backups/{r.Id}/unpin")" style="display:inline">
@@ -133,6 +282,70 @@
             </tbody>
         </table>
     }
+
+    @if (HasPendingJobs())
+    {
+        @* Same shape as the script on /site-admin/backups: poll every
+           active per-tenant download once a second, update the progress
+           bar in place, reload when every job is terminal so the local
+           list picks up the new row. *@
+        <script>
+            (function () {
+                const items = document.querySelectorAll('[data-offsite-job-id]');
+                if (items.length === 0) return;
+                const pending = new Set();
+                items.forEach(el => {
+                    const status = el.querySelector('[data-job-status]')?.textContent?.trim();
+                    if (status === 'Queued' || status === 'Downloading') {
+                        pending.add(el.dataset.offsiteJobId);
+                    }
+                });
+                if (pending.size === 0) return;
+                const fmt = (n) => {
+                    if (n < 1024) return n + ' B';
+                    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+                    if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
+                    return (n / 1073741824).toFixed(2) + ' GB';
+                };
+                const tick = async () => {
+                    for (const id of Array.from(pending)) {
+                        try {
+                            const resp = await fetch(`/site-admin/backups/offsite/jobs/${id}`, {
+                                headers: { 'Accept': 'application/json' },
+                                credentials: 'same-origin',
+                            });
+                            if (!resp.ok) { pending.delete(id); continue; }
+                            const job = await resp.json();
+                            const root = document.querySelector(`[data-offsite-job-id="${id}"]`);
+                            if (!root) { pending.delete(id); continue; }
+                            const statusEl = root.querySelector('[data-job-status]');
+                            const detailEl = root.querySelector('[data-job-detail]');
+                            const progEl = root.querySelector('[data-job-progress]');
+                            const label = { pending: 'Queued', running: 'Downloading', completed: 'Completed', failed: 'Failed' }[job.status] || job.status;
+                            if (statusEl) statusEl.textContent = label;
+                            if (progEl) {
+                                progEl.value = job.bytesDownloaded;
+                                if (job.totalBytes) progEl.max = job.totalBytes;
+                            }
+                            if (detailEl) {
+                                const pct = job.totalBytes ? Math.min(100, Math.floor(job.bytesDownloaded * 100 / job.totalBytes)) : null;
+                                detailEl.textContent = fmt(job.bytesDownloaded) + (job.totalBytes ? ` / ${fmt(job.totalBytes)} (${pct}%)` : '');
+                            }
+                            if (job.status === 'completed' || job.status === 'failed') {
+                                pending.delete(id);
+                            }
+                        } catch (_) { /* network blip, try again next tick */ }
+                    }
+                    if (pending.size === 0) {
+                        setTimeout(() => window.location.reload(), 600);
+                        return;
+                    }
+                    setTimeout(tick, 1000);
+                };
+                setTimeout(tick, 1000);
+            })();
+        </script>
+    }
 </div>
 
 @code {
@@ -140,10 +353,40 @@
     [SupplyParameterFromQuery(Name = "msg")] public string? Msg { get; set; }
 
     private List<PerTenantBackupRow>? _rows;
+    private IReadOnlyList<OffsitePerTenantObjectInfo>? _offsite;
+    private string? _offsiteError;
+    private bool _offsiteEnabled;
+    private HashSet<(string Slug, string FileName)> _localFiles = new();
+    private HashSet<string> _localSlugs = new(StringComparer.Ordinal);
+    private List<OffsiteRestoreJob> _activeJobs = new();
 
     protected override async Task OnInitializedAsync()
     {
         _rows = await Backups.ListAsync(null, CancellationToken.None);
+        _localFiles = _rows.Select(r => (r.OrganizationSlug, r.FileName)).ToHashSet();
+        _localSlugs = _rows.Select(r => r.OrganizationSlug).ToHashSet(StringComparer.Ordinal);
+
+        var offsiteView = await Settings.GetOffsiteViewAsync();
+        _offsiteEnabled = offsiteView.Enabled && !string.IsNullOrWhiteSpace(offsiteView.Bucket);
+        if (_offsiteEnabled)
+        {
+            try
+            {
+                _offsite = await Offsite.ListPerTenantAsync(maxObjects: 200, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                Log.LogWarning(ex, "Failed to list off-site per-tenant catalogue for /site-admin/tenant-backups.");
+                _offsiteError = $"Could not list the off-site bucket: {ex.Message}";
+            }
+        }
+
+        // Only surface PerTenant-kind jobs on this page — WholeDb downloads
+        // belong on /site-admin/backups and would confuse the operator
+        // here.
+        _activeJobs = RestoreJobs.List()
+            .Where(j => j.Kind == OffsiteRestoreJobKind.PerTenant)
+            .ToList();
     }
 
     private static string FormatBytes(long bytes)
@@ -155,4 +398,16 @@
         do { v /= 1024; i++; } while (v >= 1024 && i < units.Length - 1);
         return $"{v:0.#} {units[i]}";
     }
+
+    private static string StatusLabel(OffsiteRestoreJob job) => job.Status switch
+    {
+        OffsiteRestoreJobStatus.Pending => "Queued",
+        OffsiteRestoreJobStatus.Running => "Downloading",
+        OffsiteRestoreJobStatus.Completed => "Completed",
+        OffsiteRestoreJobStatus.Failed => "Failed",
+        _ => job.Status.ToString(),
+    };
+
+    private bool HasPendingJobs() =>
+        _activeJobs.Any(j => j.Status is OffsiteRestoreJobStatus.Pending or OffsiteRestoreJobStatus.Running);
 }

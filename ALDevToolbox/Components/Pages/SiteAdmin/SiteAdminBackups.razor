@@ -393,7 +393,11 @@
         // Active and recently-terminal jobs drive the in-progress panel and
         // the JS polling — keep both the "we just enqueued one" navigation
         // hint and any older still-running jobs from the worker.
-        _activeJobs = RestoreJobs.List().ToList();
+        // Only surface WholeDb-kind jobs on this page — PerTenant
+        // downloads belong on /site-admin/tenant-backups.
+        _activeJobs = RestoreJobs.List()
+            .Where(j => j.Kind == OffsiteRestoreJobKind.WholeDb)
+            .ToList();
     }
 
     private static string FormatSize(long bytes)

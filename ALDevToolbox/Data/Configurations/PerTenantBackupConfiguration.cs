@@ -19,6 +19,8 @@ internal sealed class PerTenantBackupConfiguration : IEntityTypeConfiguration<Pe
         entity.Property(e => e.Kind).HasColumnName("kind").HasConversion<string>().IsRequired();
         entity.Property(e => e.SchemaVersion).HasColumnName("schema_version").IsRequired();
         entity.Property(e => e.IsPinned).HasColumnName("is_pinned").IsRequired();
+        entity.Property(e => e.OffsiteUploadedAt).HasColumnName("offsite_uploaded_at");
+        entity.Property(e => e.OffsiteObjectKey).HasColumnName("offsite_object_key");
         entity.HasIndex(e => new { e.OrganizationId, e.CreatedAt })
             .HasDatabaseName("ix_per_tenant_backups_org_created");
         entity.HasOne(e => e.Organization)

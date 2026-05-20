@@ -18,6 +18,18 @@ public enum OffsiteRestoreJobStatus
 }
 
 /// <summary>
+/// Discriminator between whole-DB dump downloads and per-tenant snapshot
+/// downloads. The worker uses this to pick the right
+/// <see cref="OffsiteBackupService"/> method; the status endpoint and the
+/// SiteAdmin pages use it to decide which catalogue surfaces the row.
+/// </summary>
+public enum OffsiteRestoreJobKind
+{
+    WholeDb = 0,
+    PerTenant = 1,
+}
+
+/// <summary>
 /// Immutable snapshot of an in-flight or terminal off-site restore job.
 /// The <see cref="OffsiteRestoreJobs"/> singleton swaps the value in the
 /// dictionary on every progress tick rather than mutating it in place so
@@ -25,6 +37,7 @@ public enum OffsiteRestoreJobStatus
 /// </summary>
 public sealed record OffsiteRestoreJob(
     Guid Id,
+    OffsiteRestoreJobKind Kind,
     string ObjectKey,
     string FileName,
     DateTime StartedAt,
@@ -74,13 +87,14 @@ public sealed class OffsiteRestoreJobs
     /// freshly-minted id so the endpoint can redirect to a page that
     /// knows which job to poll.
     /// </summary>
-    public Guid Enqueue(string objectKey, string fileName)
+    public Guid Enqueue(OffsiteRestoreJobKind kind, string objectKey, string fileName)
     {
         EvictOldTerminal();
         var now = _clock.GetUtcNow().UtcDateTime;
         var id = Guid.NewGuid();
         var job = new OffsiteRestoreJob(
             Id: id,
+            Kind: kind,
             ObjectKey: objectKey,
             FileName: fileName,
             StartedAt: now,
@@ -222,11 +236,16 @@ public sealed class OffsiteRestoreWorker : BackgroundService
             _jobs.MarkRunning(jobId, totalBytes: null);
             var progress = new Progress<(long BytesDownloaded, long? TotalBytes)>(tuple =>
                 _jobs.ReportProgress(jobId, tuple.BytesDownloaded, tuple.TotalBytes));
-            var backupId = await offsite.DownloadAsync(job.ObjectKey, progress, stoppingToken);
+            var backupId = job.Kind switch
+            {
+                OffsiteRestoreJobKind.WholeDb => await offsite.DownloadAsync(job.ObjectKey, progress, stoppingToken),
+                OffsiteRestoreJobKind.PerTenant => await offsite.DownloadPerTenantAsync(job.ObjectKey, progress, stoppingToken),
+                _ => throw new InvalidOperationException($"Unknown off-site restore job kind: {job.Kind}"),
+            };
             _jobs.MarkCompleted(jobId, backupId);
             _logger.LogInformation(
-                "Off-site restore job {JobId} for {ObjectKey} completed as local backup {BackupId}.",
-                jobId, job.ObjectKey, backupId);
+                "Off-site restore job {JobId} ({Kind}) for {ObjectKey} completed as local row {RowId}.",
+                jobId, job.Kind, job.ObjectKey, backupId);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {

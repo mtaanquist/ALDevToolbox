@@ -19,7 +19,7 @@ public sealed class OffsiteRestoreJobsTests
     {
         var jobs = new OffsiteRestoreJobs(_clock);
 
-        var id = jobs.Enqueue("backups/aldevtoolbox-20260520T010000Z-scheduled.dump", "aldevtoolbox-20260520T010000Z-scheduled.dump");
+        var id = jobs.Enqueue(OffsiteRestoreJobKind.WholeDb, "backups/aldevtoolbox-20260520T010000Z-scheduled.dump", "aldevtoolbox-20260520T010000Z-scheduled.dump");
 
         var job = jobs.Get(id);
         job.Should().NotBeNull();
@@ -35,7 +35,7 @@ public sealed class OffsiteRestoreJobsTests
     {
         var jobs = new OffsiteRestoreJobs(_clock);
 
-        var id = jobs.Enqueue("k", "f.dump");
+        var id = jobs.Enqueue(OffsiteRestoreJobKind.WholeDb, "k", "f.dump");
 
         jobs.Reader.TryRead(out var fromQueue).Should().BeTrue();
         fromQueue.Should().Be(id);
@@ -46,7 +46,7 @@ public sealed class OffsiteRestoreJobsTests
     public void Status_transitions_running_then_completed_with_progress()
     {
         var jobs = new OffsiteRestoreJobs(_clock);
-        var id = jobs.Enqueue("k", "f.dump");
+        var id = jobs.Enqueue(OffsiteRestoreJobKind.WholeDb, "k", "f.dump");
 
         jobs.MarkRunning(id, totalBytes: 1024);
         jobs.ReportProgress(id, bytesDownloaded: 256, totalBytes: 1024);
@@ -65,7 +65,7 @@ public sealed class OffsiteRestoreJobsTests
     public void Failed_status_carries_error_message()
     {
         var jobs = new OffsiteRestoreJobs(_clock);
-        var id = jobs.Enqueue("k", "f.dump");
+        var id = jobs.Enqueue(OffsiteRestoreJobKind.WholeDb, "k", "f.dump");
 
         jobs.MarkRunning(id, totalBytes: null);
         jobs.MarkFailed(id, "AccessDenied — check the secret key.");
@@ -80,7 +80,7 @@ public sealed class OffsiteRestoreJobsTests
     public void Terminal_jobs_are_evicted_after_an_hour()
     {
         var jobs = new OffsiteRestoreJobs(_clock);
-        var id = jobs.Enqueue("k", "f.dump");
+        var id = jobs.Enqueue(OffsiteRestoreJobKind.WholeDb, "k", "f.dump");
         jobs.MarkCompleted(id, backupId: 1);
 
         // Just under the cutoff: the job is still visible.
@@ -97,7 +97,7 @@ public sealed class OffsiteRestoreJobsTests
     public void Active_jobs_are_not_evicted_even_when_old()
     {
         var jobs = new OffsiteRestoreJobs(_clock);
-        var id = jobs.Enqueue("k", "f.dump");
+        var id = jobs.Enqueue(OffsiteRestoreJobKind.WholeDb, "k", "f.dump");
         jobs.MarkRunning(id, totalBytes: null);
 
         _clock.Advance(TimeSpan.FromHours(6));
@@ -111,11 +111,11 @@ public sealed class OffsiteRestoreJobsTests
     public void List_returns_newest_first()
     {
         var jobs = new OffsiteRestoreJobs(_clock);
-        var first = jobs.Enqueue("k1", "f1.dump");
+        var first = jobs.Enqueue(OffsiteRestoreJobKind.WholeDb, "k1", "f1.dump");
         _clock.Advance(TimeSpan.FromSeconds(1));
-        var second = jobs.Enqueue("k2", "f2.dump");
+        var second = jobs.Enqueue(OffsiteRestoreJobKind.WholeDb, "k2", "f2.dump");
         _clock.Advance(TimeSpan.FromSeconds(1));
-        var third = jobs.Enqueue("k3", "f3.dump");
+        var third = jobs.Enqueue(OffsiteRestoreJobKind.WholeDb, "k3", "f3.dump");
 
         var list = jobs.List();
 
