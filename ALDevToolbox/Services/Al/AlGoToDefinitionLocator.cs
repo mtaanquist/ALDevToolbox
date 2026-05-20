@@ -157,6 +157,43 @@ public static class AlGoToDefinitionLocator
     }
 
     /// <summary>
+    /// Returns the 1-based line number where <paramref name="variableName"/>
+    /// is declared in <paramref name="fileContent"/>, or null when no
+    /// matching declaration appears. First-match wins — AL almost never
+    /// reuses a name across procedures, and when it does the first
+    /// declaration is the sensible target for "go to definition".
+    /// <para>
+    /// Used by the file viewer's Go-to-definition step that lands on a
+    /// local-variable token (e.g. clicking <c>PaymentMethod</c> in
+    /// <c>PaymentMethod.GET(...)</c>): the user wants the
+    /// <c>PaymentMethod: Record "Payment Method"</c> line, not the
+    /// <c>Payment Method</c> table source. The corresponding "click on
+    /// the underlined type name" path is handled separately by the
+    /// object-name resolver.
+    /// </para>
+    /// </summary>
+    public static int? ResolveVariableDeclarationLine(string fileContent, string variableName)
+    {
+        if (string.IsNullOrEmpty(fileContent) || string.IsNullOrEmpty(variableName)) return null;
+        foreach (Match m in AllObjectVarDeclsRegex.Matches(fileContent))
+        {
+            if (!string.Equals(m.Groups["var"].Value, variableName, StringComparison.OrdinalIgnoreCase)) continue;
+            // Count newlines up to the match start. Both `\n` and
+            // `\r\n` are handled because `\r\n` contains `\n` so a
+            // single count of `\n` characters yields the right line
+            // index either way.
+            var prefix = fileContent.AsSpan(0, m.Index);
+            int line = 1;
+            foreach (var ch in prefix)
+            {
+                if (ch == '\n') line++;
+            }
+            return line;
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Public entry into the private <see cref="ReadLeftContext"/> tokeniser.
     /// Lets callers that already have a line and a known token start index
     /// (e.g. a regex-match column) read the operator and qualifier directly
