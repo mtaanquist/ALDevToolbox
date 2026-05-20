@@ -2188,6 +2188,27 @@ a.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     font-size: 12.5px;
 }
 
+/* Floating notice toast (`showFloatingToast` in source-viewer.js). Sits
+   under the user's mouse so feedback for in-editor gestures ("No
+   definition found", "Couldn't reach the server") doesn't slip below
+   the viewport in the way the bottom-of-outline notice did. Fixed
+   positioning + a z-index above the editor's gutter so it always
+   floats on top. */
+.source-viewer__toast {
+    position: absolute;
+    z-index: 1000;
+    max-width: 320px;
+    padding: 8px 12px;
+    background: var(--color-surface-2, #262a30);
+    color: var(--color-text, #e6e7ea);
+    border: 1px solid var(--color-border-strong, #3a3e47);
+    border-radius: var(--radius, 6px);
+    box-shadow: 0 4px 16px var(--color-shadow, rgba(0, 0, 0, 0.4));
+    font-size: 12.5px;
+    line-height: 1.4;
+    pointer-events: none;
+}
+
 .source-viewer__refs-header {
     display: flex;
     align-items: center;
@@ -3238,10 +3259,19 @@ a.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 .source-viewer__compare-picker {
     display: flex;
     align-items: flex-end;
-    margin-left: auto;
 }
 .source-viewer__compare-picker .field {
     min-width: 220px;
+}
+
+/* Header actions wrapper — sits to the right of the breadcrumb and
+   bundles the Download button with the Compare-with-release picker so
+   they stay aligned on the same row. */
+.source-viewer__header-actions {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    margin-left: auto;
 }
 
 /* Status-row badges in the Compare-with-release results table. Reuse the

@@ -43,6 +43,15 @@ internal sealed class AlTableStructure : IAlObjectStructureExtractor
             return true;
         }
 
+        if (string.Equals(tok.Value, "modify", StringComparison.OrdinalIgnoreCase)
+            && _state.Pos + 1 < _state.Tokens.Count
+            && _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Punct
+            && _state.Tokens[_state.Pos + 1].Value == "(")
+        {
+            TryConsumeFieldModification();
+            return true;
+        }
+
         return false;
     }
 
@@ -147,5 +156,81 @@ internal sealed class AlTableStructure : IAlObjectStructureExtractor
             _state.Resolved++;
             return;
         }
+    }
+
+    /// <summary>
+    /// Reads a tableextension-side <c>modify("&lt;field name&gt;")</c>
+    /// construct and emits a <c>field_access</c> reference for the
+    /// named field. The name targets a field on the base table the
+    /// extension is attached to (<see cref="AlExtractContext.OwnerSourceTableName"/>
+    /// holds it after the importer copies <c>ExtendsObjectName</c>
+    /// through).
+    /// <para>
+    /// Without this handler the modified field token slipped past the
+    /// object-scope dispatch entirely and got no underline / no
+    /// resolvable, even though Go-to-definition on the same token
+    /// would have worked once the underline pointed users at it.
+    /// </para>
+    /// <para>
+    /// Defensive guard: if the base table can't be resolved (the
+    /// extension targets a table outside the imported release, for
+    /// example), skip silently rather than emit an unresolved row —
+    /// the noise would dominate any real signal.
+    /// </para>
+    /// </summary>
+    private void TryConsumeFieldModification()
+    {
+        _state.Pos++; // modify
+        if (!_state.At("(")) return;
+        _state.Pos++; // (
+        if (_state.Pos >= _state.Tokens.Count) return;
+
+        var nameTok = _state.Tokens[_state.Pos];
+        if (nameTok.Kind == AlTokenKind.Identifier
+            || nameTok.Kind == AlTokenKind.QuotedIdentifier)
+        {
+            EmitBaseTableFieldReference(nameTok);
+        }
+
+        // Walk to the closing `)` so the orchestrator picks up
+        // wherever modify(...)'s body block follows (the per-trigger
+        // dispatch lives in the procedure walker, not here).
+        int depth = 0;
+        while (_state.Pos < _state.Tokens.Count)
+        {
+            var tok = _state.Tokens[_state.Pos];
+            if (tok.Kind == AlTokenKind.Punct)
+            {
+                if (tok.Value == "(") { depth++; }
+                else if (tok.Value == ")")
+                {
+                    if (depth == 0) { _state.Pos++; return; }
+                    depth--;
+                }
+            }
+            _state.Pos++;
+        }
+    }
+
+    private void EmitBaseTableFieldReference(AlToken nameTok)
+    {
+        var baseTableName = _state.Ctx.OwnerSourceTableName;
+        if (string.IsNullOrEmpty(baseTableName)) return;
+        var baseTable = _state.Ctx.Resolver.ResolveTypeByName(baseTableName, "table");
+        if (baseTable is null) return;
+        var member = _state.Ctx.Resolver.ResolveMember(baseTable, nameTok.Value);
+        if (member is null || !AlExtractionState.IsFieldKind(member.Kind)) return;
+        var targetOwner = member.DeclaringType ?? baseTable;
+        _state.EmitReference(new ExtractedReference(
+            Line: nameTok.Line,
+            Column: nameTok.Column,
+            TargetAppId: targetOwner.AppId,
+            TargetObjectKind: targetOwner.Kind,
+            TargetObjectId: targetOwner.ObjectId,
+            TargetObjectName: targetOwner.Name,
+            TargetMemberName: member.Name,
+            TargetMemberKind: member.Kind,
+            ReferenceKind: "field_access"));
+        _state.Resolved++;
     }
 }

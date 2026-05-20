@@ -11,7 +11,7 @@
 // /code-editor.js doesn't stay cached after a deploy that bumped both.
 const moduleVersion = new URL(import.meta.url).searchParams.get("v") ?? "";
 const codeEditorUrl = moduleVersion ? `/code-editor.js?v=${moduleVersion}` : "/code-editor.js";
-const { mountReadOnly, scrollToLine, openSearch } = await import(codeEditorUrl);
+const { mountReadOnly, scrollToLine, openSearch, selectAll, containsNode } = await import(codeEditorUrl);
 
 const FILE_URL_PREFIX = "/object-explorer/file/";
 
@@ -84,6 +84,20 @@ function initOne(root) {
     const notice = root.querySelector(".source-viewer__notice");
     const tabs = new TabController(root);
 
+    // Track the last pointer position inside the editor so notice toasts
+    // can pop up near the user's mouse, rather than at the bottom of the
+    // outline panel where they may be off-screen. Updated on
+    // mousemove/contextmenu/click anywhere inside the editor surface.
+    const pointerTracker = { x: 0, y: 0, fresh: false };
+    const updatePointer = (ev) => {
+        pointerTracker.x = ev.clientX;
+        pointerTracker.y = ev.clientY;
+        pointerTracker.fresh = true;
+    };
+    root.addEventListener("mousemove", updatePointer);
+    root.addEventListener("contextmenu", updatePointer);
+    root.addEventListener("click", updatePointer);
+
     const jsBridge = {
         invokeMethodAsync(method, ...args) {
             switch (method) {
@@ -147,6 +161,7 @@ function initOne(root) {
     wireOutlineFindReferences(root);
     wireRefsCloseButton(root);
     wireSearchShortcut(root, editorId);
+    wireSelectAllShortcut(root, editorId, codeHost);
     wirePopstate(root, editorId);
     wireOutlineResizer(root);
     if (Number.isFinite(fileId)) {
@@ -444,7 +459,19 @@ function initOne(root) {
         });
     }
 
+    /// Shows a transient notice as a floating toast anchored near the
+    /// user's last pointer position inside the editor surface. The
+    /// toast fades out on its own after a short delay so the user
+    /// isn't left looking at a stale status line at the bottom of the
+    /// outline (which is frequently off-screen on tall files). Falls
+    /// back to the bottom-of-outline notice element when we don't have
+    /// a fresh pointer position (keyboard-driven gestures).
     function showNotice(text) {
+        if (!text) return;
+        if (pointerTracker.fresh) {
+            showFloatingToast(text, pointerTracker.x, pointerTracker.y);
+            return;
+        }
         if (!notice) return;
         notice.textContent = text;
         notice.hidden = false;
@@ -456,6 +483,68 @@ function initOne(root) {
     }
 
     return editorId;
+}
+
+// ── Floating notice toast ────────────────────────────────────────
+//
+// The source-viewer used to surface "No definition found", "Server
+// error", etc. into a tiny <p class="source-viewer__notice"> docked
+// at the bottom of the outline. On long files that paragraph sits
+// well below the viewport, so users never noticed the response to
+// their gesture. A floating toast anchored to the most recent
+// pointer position inside the editor keeps the feedback in view,
+// then fades itself out so it doesn't linger.
+
+let floatingToastEl = null;
+let floatingToastHideTimer = 0;
+let floatingToastRemoveTimer = 0;
+
+const TOAST_VISIBLE_MS = 1800;   // Time the toast stays at full opacity.
+const TOAST_FADE_MS = 350;        // Length of the fade-out transition.
+
+function showFloatingToast(text, clientX, clientY) {
+    clearTimeout(floatingToastHideTimer);
+    clearTimeout(floatingToastRemoveTimer);
+
+    if (!floatingToastEl) {
+        floatingToastEl = document.createElement("div");
+        floatingToastEl.className = "source-viewer__toast";
+        floatingToastEl.setAttribute("role", "status");
+        document.body.appendChild(floatingToastEl);
+    }
+    const el = floatingToastEl;
+    el.textContent = text;
+    el.style.transition = "";
+    el.style.opacity = "1";
+    el.style.pointerEvents = "none";
+
+    // Position relative to the pointer. Default: just below + to the
+    // right of the cursor so the text doesn't sit under the mouse
+    // arrow. Flip across the boundary when we'd otherwise spill off
+    // the viewport.
+    el.style.left = "0px";
+    el.style.top = "0px";
+    el.hidden = false;
+    const rect = el.getBoundingClientRect();
+    const margin = 8;
+    let x = clientX + 14;
+    let y = clientY + 14;
+    if (x + rect.width + margin > window.innerWidth) {
+        x = Math.max(margin, clientX - rect.width - 14);
+    }
+    if (y + rect.height + margin > window.innerHeight) {
+        y = Math.max(margin, clientY - rect.height - 14);
+    }
+    el.style.left = `${Math.round(x + window.scrollX)}px`;
+    el.style.top  = `${Math.round(y + window.scrollY)}px`;
+
+    floatingToastHideTimer = setTimeout(() => {
+        el.style.transition = `opacity ${TOAST_FADE_MS}ms ease-out`;
+        el.style.opacity = "0";
+        floatingToastRemoveTimer = setTimeout(() => {
+            el.hidden = true;
+        }, TOAST_FADE_MS);
+    }, TOAST_VISIBLE_MS);
 }
 
 // ── Tab controller ───────────────────────────────────────────────
@@ -1002,6 +1091,33 @@ function wireSearchShortcut(root, editorId) {
         if (!document.contains(root)) return;
         e.preventDefault();
         openSearch(editorId);
+    });
+}
+
+// ── Ctrl/Cmd-A intercept ─────────────────────────────────────────
+//
+// The read-only mount keeps EditorView.editable.of(false) on the
+// editor's contentDOM (contenteditable="false"). That means
+// defaultKeymap's Mod-a binding never sees the keystroke — the
+// browser's native "select everything on the page" wins, which
+// selects the outline, the breadcrumb, and the rest of the surface
+// alongside the code. Intercept at the window level only when focus
+// (or the click target) lives inside the editor surface, and route to
+// CodeMirror's selectAll so users get the IDE-style "select all in
+// the code" they expect.
+function wireSelectAllShortcut(root, editorId, codeHost) {
+    window.addEventListener("keydown", e => {
+        const isA = e.key === "a" || e.key === "A";
+        if (!isA) return;
+        if (!(e.ctrlKey || e.metaKey)) return;
+        if (e.shiftKey || e.altKey) return;
+        if (!document.contains(root)) return;
+        const active = document.activeElement;
+        const inEditor = (active && codeHost.contains(active))
+            || (active && containsNode(editorId, active));
+        if (!inEditor) return;
+        e.preventDefault();
+        selectAll(editorId);
     });
 }
 

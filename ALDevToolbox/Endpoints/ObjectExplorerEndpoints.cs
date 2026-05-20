@@ -154,6 +154,24 @@ internal static class ObjectExplorerEndpoints
             return result is null ? Results.NoContent() : Results.Ok(result);
         }).RequireAuthorization();
 
+        // Download the raw source for a file. Streams the stored content with
+        // a Content-Disposition: attachment header so the browser saves it
+        // under the file's path basename rather than rendering it inline.
+        app.MapGet("/api/object-explorer/files/{fileId:long}/download", async (
+            long fileId,
+            ObjectExplorerService oe,
+            CancellationToken ct) =>
+        {
+            var file = await oe.GetFileAsync(fileId, ct);
+            if (file is null) return Results.NotFound();
+            var fileName = file.Path;
+            var slash = fileName.LastIndexOf('/');
+            if (slash >= 0) fileName = fileName[(slash + 1)..];
+            if (string.IsNullOrEmpty(fileName)) fileName = $"file-{fileId}.al";
+            var bytes = System.Text.Encoding.UTF8.GetBytes(file.Content ?? string.Empty);
+            return Results.File(bytes, "text/plain; charset=utf-8", fileName);
+        }).RequireAuthorization();
+
         // Outline dependencies (#148): the file viewer's outline lazy-loads
         // "Using" and "Used by" sections after the static-SSR paint. One
         // round-trip per page load.

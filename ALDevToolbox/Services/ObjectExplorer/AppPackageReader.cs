@@ -377,60 +377,69 @@ public static class AppPackageReader
 
     /// <summary>
     /// Decodes a symbol-package extends-target string into its
-    /// <c>(AppId?, BaseObjectName?)</c> components. Three shapes occur
+    /// <c>(AppId?, BaseObjectName?)</c> components. Two shapes occur
     /// in practice:
     /// <list type="bullet">
-    ///   <item><b><c>#&lt;32 hex&gt;#&lt;qualified name&gt;</c></b> — the
-    ///     modern cross-app form (e.g. OIOUBL extending Base App's
-    ///     <c>Customer</c>). Returns the AppId and the last namespace
-    ///     segment.</item>
-    ///   <item><b><c>&lt;qualified name&gt;</c></b> — same-app extensions
-    ///     and ReportExtensions ship without the <c>#appid#</c>
-    ///     wrapper (BC's Base App writes <c>Target = "Cancel FA Ledger
-    ///     Entries"</c> for ReportExtensions, and same-namespace
-    ///     TableExtensions like <c>Mfg. Location</c> extends
-    ///     <c>Location</c> in Base App). Returns (null, last segment).</item>
-    ///   <item><b>null / empty / malformed <c>#</c>-prefix</b> — returns
+    ///   <item><c>#&lt;32 hex&gt;#&lt;name&gt;</c> — the cross-app
+    ///     form (e.g. OIOUBL extending Base App's <c>Customer</c>).
+    ///     Returns the decoded AppId and the unwrapped name.</item>
+    ///   <item><c>&lt;name&gt;</c> — same-app extensions and
+    ///     ReportExtensions ship without the <c>#appid#</c> wrapper
+    ///     (BC's Base App writes <c>Target = "Cancel FA Ledger
+    ///     Entries"</c> for ReportExtensions; same-app
+    ///     TableExtensions ship the base name as-is).
+    ///     Returns (null, name).</item>
+    ///   <item>null / empty / malformed <c>#</c>-prefix — returns
     ///     (null, null).</item>
     /// </list>
-    /// <para>Whichever shape we get, the namespace prefix is stripped:
-    /// the base object itself is catalogued by its unqualified name
-    /// (<c>oe_module_objects.Name = "BOM Buffer"</c>), so storing the
-    /// qualified form here would mismatch every downstream consumer
-    /// that joins <c>extends_object_name</c> back to the base
-    /// object's <c>Name</c> — the chain walker's
-    /// <c>_extensionsByBaseName</c> lookup, the pageextension
-    /// SourceTable propagation SQL, the <c>extends_target</c>
-    /// reference row, and the UI display.</para>
-    /// <para>Returning a name without an AppId is fine for the
-    /// extension-walk path (keyed by name only), but the
-    /// <c>extends_target</c> reference row in <c>EmitReferences</c>
-    /// requires both — same-app extensions lose that one click-target
-    /// rather than the entire membership.</para>
+    /// <para>The name is returned verbatim, including any internal
+    /// dots, spaces, dashes, slashes, ampersands, or trailing
+    /// periods — <c>Gen. Journal Line</c>, <c>Sales Cr.Memo Header</c>,
+    /// <c>Whse.-Source - Create Document</c>, <c>Country/Region</c>,
+    /// <c>Purchases &amp; Payables Setup</c>, <c>Vendor Templ.</c>
+    /// are all real BC 28.1 targets and round-trip unchanged. We do
+    /// <em>not</em> attempt to strip an AL namespace prefix: a sweep
+    /// over every <c>Target</c>, <c>TargetObject</c>, and
+    /// <c>Subtype.Name</c> string across BaseApp, BusinessFoundation,
+    /// SystemApp, QualityManagement, EDocument Core, Intrastat Core,
+    /// OIOUBL, and DK Core found zero values shaped like
+    /// <c>Microsoft.Foo.Bar</c>, so there's nothing to strip in
+    /// practice and a heuristic would only buy ambiguity for AL names
+    /// that happen to look like one.</para>
+    /// <para>If a future BC release or a partner app starts emitting
+    /// namespace-qualified targets, the symptom will be missing
+    /// <c>extends_target</c> lookups (the chain walker's
+    /// <c>_extensionsByBaseName</c> joins on
+    /// <c>base.name = ext.extends_object_name</c>, which only matches
+    /// when both sides are bare). The right fix at that point is
+    /// <em>not</em> to reintroduce a guess: we already store
+    /// <c>oe_module_objects.namespace</c> for every base object, so
+    /// the importer can split a qualified target on the longest
+    /// namespace prefix that matches a real namespace in the same
+    /// release rather than walking dots and hoping. The previous
+    /// heuristic-driven strip is preserved in the git history at
+    /// commit <c>69ba173</c> (refined "dot followed by identifier
+    /// start") and <c>0bf279c</c> (original "dot followed by
+    /// whitespace") if the next maintainer wants a reference shape
+    /// to start from.</para>
+    /// <para>See <c>.design/object-explorer.md</c> ("TargetObject /
+    /// Target are read verbatim") for the rationale and the rollback
+    /// plan.</para>
     /// </summary>
     internal static (Guid? AppId, string? Name) ParseExtendsRef(string? raw)
     {
         if (string.IsNullOrEmpty(raw)) return (null, null);
 
-        Guid? guid = null;
-        string name = raw;
-
-        if (raw[0] == '#')
+        if (raw[0] != '#')
         {
-            var second = raw.IndexOf('#', 1);
-            if (second != 33) return (null, null); // need exactly 32 hex digits between '#'s
-            if (!Guid.TryParseExact(raw.AsSpan(1, 32), "N", out var parsed)) return (null, null);
-            guid = parsed;
-            name = raw.Substring(34);
+            return (null, raw);
         }
 
-        var lastDot = name.LastIndexOf('.');
-        if (lastDot >= 0 && lastDot + 1 < name.Length)
-        {
-            name = name.Substring(lastDot + 1);
-        }
-
-        return string.IsNullOrEmpty(name) ? (null, null) : (guid, name);
+        var second = raw.IndexOf('#', 1);
+        if (second != 33) return (null, null); // need exactly 32 hex digits between '#'s
+        if (!Guid.TryParseExact(raw.AsSpan(1, 32), "N", out var guid)) return (null, null);
+        var name = raw.Substring(34);
+        return string.IsNullOrEmpty(name) ? (null, null) : ((Guid?)guid, name);
     }
 
     private static IReadOnlyList<SymbolProperty> ToProperties(IReadOnlyList<RawProperty>? raws)

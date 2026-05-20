@@ -47,22 +47,28 @@
                    bottom status bar (see code-editor.js → buildStatusBarExtension).
                    The heading stays a clean breadcrumb. *@
             </div>
-            @if (_compareTargets is { Count: > 0 })
-            {
-                <form method="get" action="/object-explorer/compare/file" class="source-viewer__compare-picker">
-                    <label class="field">
-                        <span class="field__label">Compare with release</span>
-                        <select name="right" class="field__input" onchange="this.form.submit()" aria-label="Compare this file with the same file in another release">
-                            <option value="">None</option>
-                            @foreach (var t in _compareTargets)
-                            {
-                                <option value="@t.TargetFileId">@t.ReleaseLabel</option>
-                            }
-                        </select>
-                    </label>
-                    <input type="hidden" name="left" value="@FileId" />
-                </form>
-            }
+            <div class="source-viewer__header-actions">
+                <a class="btn btn--sm"
+                   href="@($"/api/object-explorer/files/{FileId}/download")"
+                   download
+                   title="Download the raw source for this file">Download source</a>
+                @if (_compareTargets is { Count: > 0 })
+                {
+                    <form method="get" action="/object-explorer/compare/file" class="source-viewer__compare-picker">
+                        <label class="field">
+                            <span class="field__label">Compare with release</span>
+                            <select name="right" class="field__input" onchange="this.form.submit()" aria-label="Compare this file with the same file in another release">
+                                <option value="">None</option>
+                                @foreach (var t in _compareTargets)
+                                {
+                                    <option value="@t.TargetFileId">@t.ReleaseLabel</option>
+                                }
+                            </select>
+                        </label>
+                        <input type="hidden" name="left" value="@FileId" />
+                    </form>
+                }
+            </div>
         </header>
 
         <div class="source-viewer__layout">
