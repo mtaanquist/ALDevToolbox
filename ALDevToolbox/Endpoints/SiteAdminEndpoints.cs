@@ -164,6 +164,57 @@ internal static class SiteAdminEndpoints
             }
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
+        app.MapPost("/site-admin/backups/offsite/download", async (
+            HttpContext ctx, OffsiteBackupService offsite, OffsiteRestoreJobs jobs,
+            IAntiforgery antiforgery, CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var key = form["ObjectKey"].ToString();
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString("Pick an object to download."));
+                return;
+            }
+            // The form already lists the bucket's objects; cross-checking
+            // membership here costs another S3 round-trip but stops a
+            // tampered submit from triggering a download of an arbitrary
+            // object outside the configured prefix. The download service
+            // ALSO enforces the prefix and dump-suffix rule, so this is
+            // belt-and-braces.
+            var listed = await offsite.ListAsync(maxObjects: 1000, ct);
+            var match = listed.FirstOrDefault(o => string.Equals(o.Key, key, StringComparison.Ordinal));
+            if (match is null)
+            {
+                ctx.Response.Redirect($"{RouteConstants.SiteAdminBackups}?{RouteConstants.MsgQuery}="
+                    + Uri.EscapeDataString("That object is no longer in the bucket or doesn't look like one of our backups."));
+                return;
+            }
+            var id = jobs.Enqueue(match.Key, match.FileName);
+            ctx.Response.Redirect($"{RouteConstants.SiteAdminBackups}?job={Uri.EscapeDataString(id.ToString())}");
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapGet("/site-admin/backups/offsite/jobs/{id:guid}", (
+            Guid id, OffsiteRestoreJobs jobs) =>
+        {
+            var job = jobs.Get(id);
+            if (job is null) return Results.NotFound();
+            return Results.Json(new
+            {
+                id = job.Id,
+                objectKey = job.ObjectKey,
+                fileName = job.FileName,
+                status = job.Status.ToString().ToLowerInvariant(),
+                bytesDownloaded = job.BytesDownloaded,
+                totalBytes = job.TotalBytes,
+                error = job.Error,
+                backupId = job.BackupId,
+                startedAt = job.StartedAt,
+                updatedAt = job.UpdatedAt,
+            });
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
         app.MapPost("/site-admin/settings/test-email", async (
             HttpContext ctx, IEmailService email, AppDbContext db, IOrganizationContext orgCtx,
             IAntiforgery antiforgery, ILoggerFactory loggerFactory, CancellationToken ct) =>

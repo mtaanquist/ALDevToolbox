@@ -106,6 +106,17 @@ Verify: post-restore, `/readyz` is 200 and `/site-admin/audit` shows the
 If the restore fails part-way, the database is in an indeterminate state —
 restore the most recent pre-restore backup to roll back, then investigate.
 
+## Off-site (S3-compatible) backups
+
+For pushing scheduled backups to AWS S3, MinIO, or any other S3-compatible
+bucket — plus the restore-from-bucket recovery path when the local
+`app-backups` volume is gone — see
+[`offsite-backups.md`](offsite-backups.md).
+
+Verify: with off-site enabled, the next scheduled backup row on
+`/site-admin/backups` carries an `Off-site` badge and the object appears
+under the configured prefix in the bucket.
+
 ## SMTP rotation
 
 1. `/site-admin/settings`. Update **SMTP password** (the rest of the SMTP

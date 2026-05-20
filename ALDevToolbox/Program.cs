@@ -385,6 +385,13 @@ builder.Services.AddScoped<SiteAdminService>();
 builder.Services.AddScoped<BackupService>();
 builder.Services.AddScoped<PerTenantBackupService>();
 builder.Services.AddScoped<OffsiteBackupService>();
+// Off-site restore download jobs: a singleton job tracker shared between
+// the SiteAdmin endpoint that enqueues and the worker that drains, and a
+// sequential BackgroundService that processes one download at a time.
+// Sequential because the bottleneck is the local disk on the
+// `app-backups` volume, not S3 throughput.
+builder.Services.AddSingleton<OffsiteRestoreJobs>();
+builder.Services.AddHostedService<OffsiteRestoreWorker>();
 builder.Services.AddScoped<DatabaseUsageService>();
 builder.Services.AddScoped<StorageQuotaGuard>();
 // MaintenanceModeState is a process-local flag — singleton lifetime so the
