@@ -109,14 +109,6 @@ public static class AppPackageReader
             if (string.IsNullOrEmpty(entry.Name)) continue;
             if (!entry.FullName.EndsWith(".xlf", StringComparison.OrdinalIgnoreCase)) continue;
 
-            // Skip the AL compiler's generator template — source-language
-            // equals target-language (both en-US) and the body just mirrors
-            // the source strings as "translations" of themselves. Microsoft
-            // ships one per .app alongside the real per-language XLIFFs
-            // (<Module>.g.xlf next to <Module>.<lang>.xlf); ingesting it
-            // would double every search hit with an English no-op row.
-            if (entry.Name.EndsWith(".g.xlf", StringComparison.OrdinalIgnoreCase)) continue;
-
             var normalised = entry.FullName.Replace('\\', '/');
             var slashTr = normalised.IndexOf("translations/", StringComparison.OrdinalIgnoreCase);
             // Accept the file when "Translations/" sits at the archive root

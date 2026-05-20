@@ -27,6 +27,8 @@ public sealed class AlXliffParserTests
         var doc = AlXliffParser.Parse(stream);
 
         doc.TargetLanguage.Should().Be("da-DK");
+        doc.SourceLanguage.Should().Be("en-US",
+            because: "the importer's source==target skip uses this to drop AL .g.xlf generator templates");
         doc.OriginalName.Should().Be("OIOUBL");
     }
 

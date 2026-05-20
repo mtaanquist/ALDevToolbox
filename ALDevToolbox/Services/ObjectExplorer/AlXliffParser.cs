@@ -18,6 +18,7 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 /// </summary>
 public sealed record XliffDocument(
     string TargetLanguage,
+    string? SourceLanguage,
     string? OriginalName,
     IReadOnlyList<XliffTransUnit> Units);
 
@@ -126,6 +127,7 @@ public static class AlXliffParser
 
         var targetLang = fileEl.Attribute("target-language")?.Value
             ?? throw new InvalidDataException("XLIFF <file> element is missing the target-language attribute.");
+        var sourceLang = fileEl.Attribute("source-language")?.Value;
         var original = fileEl.Attribute("original")?.Value;
 
         var body = fileEl.Element(Ns + "body");
@@ -139,7 +141,11 @@ public static class AlXliffParser
             }
         }
 
-        return new XliffDocument(NormaliseLanguage(targetLang), original, units);
+        return new XliffDocument(
+            NormaliseLanguage(targetLang),
+            sourceLang is null ? null : NormaliseLanguage(sourceLang),
+            original,
+            units);
     }
 
     private static XliffTransUnit? ParseTransUnit(XElement el)
