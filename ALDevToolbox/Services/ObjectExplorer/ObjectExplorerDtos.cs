@@ -302,6 +302,25 @@ public sealed record ReleaseProcedureMatch(
     int ObjectLineNumber);
 
 /// <summary>
+/// One field-search hit on the Release search page. Carries the symbol's
+/// own source line (the line of the <c>field(...)</c> declaration, not the
+/// object header) so the row deep-links to the precise declaration line.
+/// Backs issue #169.
+/// </summary>
+public sealed record ReleaseFieldMatch(
+    long Id,
+    string Kind,
+    int? FieldId,
+    string Name,
+    string? Signature,
+    long ObjectId,
+    string ObjectKind,
+    string ObjectName,
+    string ModuleName,
+    long? SourceFileId,
+    int LineNumber);
+
+/// <summary>
 /// One content-search hit on the Release search page. The snippet is the
 /// matched line's text trimmed to a reasonable display length; the file
 /// pointer + line number deep-link straight into the source viewer with the
@@ -442,4 +461,6 @@ public sealed record TranslationMatch(
     string Kind,
     string SourceText,
     string TargetText,
-    long? SymbolId);
+    long? SymbolId,
+    long? SymbolSourceFileId,
+    int? SymbolLineNumber);

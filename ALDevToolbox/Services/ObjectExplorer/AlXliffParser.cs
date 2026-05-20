@@ -23,6 +23,18 @@ public sealed record XliffDocument(
     IReadOnlyList<XliffTransUnit> Units);
 
 /// <summary>
+/// The file-level metadata returned by <see cref="AlXliffParser.ParseStreaming"/>:
+/// target / source language and the <c>&lt;file original&gt;</c> attribute.
+/// Trans-units are not materialised — the streaming API hands each one to
+/// a callback as it's read so a multi-million-string XLIFF doesn't pull
+/// the whole document onto the heap at once.
+/// </summary>
+public sealed record XliffDocumentHeader(
+    string TargetLanguage,
+    string? SourceLanguage,
+    string? OriginalName);
+
+/// <summary>
 /// One <c>&lt;trans-unit&gt;</c>: id + source + target + state + developer note.
 /// <see cref="Hint"/> is the parsed lookup hint when the developer note
 /// matched the AL compiler's standard format; null when the note was empty
@@ -111,40 +123,97 @@ public static class AlXliffParser
         new(@"^(?<kind>[A-Za-z]+)\s+\d+$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     /// <summary>
-    /// Parses an XLIFF stream. Throws <see cref="InvalidDataException"/>
-    /// when the document doesn't carry the structure we expect (no
-    /// <c>&lt;file&gt;</c>, no <c>target-language</c>, …) so callers can
-    /// surface a field-keyed error to the operator. Malformed XML bubbles
-    /// up as <see cref="XmlException"/>.
+    /// Streams an XLIFF stream into per-unit callbacks. Reads <c>&lt;file&gt;</c>
+    /// attributes once, then walks every <c>&lt;trans-unit&gt;</c> element
+    /// via <see cref="XmlReader"/> and hands each one to
+    /// <paramref name="onUnit"/> before the next is read. Peak heap during
+    /// the walk is one trans-unit's worth of XLinq objects — the original
+    /// <see cref="XDocument.Load"/> path allocated ~10× the file size and
+    /// OOM'd on multi-hundred-MB base-app XLIFFs (issue #207).
+    ///
+    /// Throws <see cref="InvalidDataException"/> when the document doesn't
+    /// carry the structure we expect (no <c>&lt;file&gt;</c>, no
+    /// <c>target-language</c>); malformed XML bubbles up as <see cref="XmlException"/>.
     /// </summary>
-    public static XliffDocument Parse(Stream xliff)
+    public static XliffDocumentHeader ParseStreaming(
+        Stream xliff,
+        Action<XliffTransUnit> onUnit,
+        CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(xliff);
+        ArgumentNullException.ThrowIfNull(onUnit);
 
-        var doc = XDocument.Load(xliff);
-        var fileEl = doc.Root?.Element(Ns + "file")
-            ?? throw new InvalidDataException("XLIFF document is missing the <file> element.");
-
-        var targetLang = fileEl.Attribute("target-language")?.Value
-            ?? throw new InvalidDataException("XLIFF <file> element is missing the target-language attribute.");
-        var sourceLang = fileEl.Attribute("source-language")?.Value;
-        var original = fileEl.Attribute("original")?.Value;
-
-        var body = fileEl.Element(Ns + "body");
-        var units = new List<XliffTransUnit>();
-        if (body is not null)
+        var settings = new XmlReaderSettings
         {
-            foreach (var transUnit in body.Descendants(Ns + "trans-unit"))
+            IgnoreWhitespace = true,
+            IgnoreComments = true,
+            DtdProcessing = DtdProcessing.Prohibit,
+            CloseInput = false,
+            Async = false,
+        };
+
+        using var reader = XmlReader.Create(xliff, settings);
+
+        // Advance to the first <file>. ReadToFollowing skips the XML
+        // declaration, the <xliff> root start-tag, and any whitespace
+        // between them.
+        if (!reader.ReadToFollowing("file", Ns.NamespaceName))
+        {
+            throw new InvalidDataException("XLIFF document is missing the <file> element.");
+        }
+
+        var targetLang = reader.GetAttribute("target-language")
+            ?? throw new InvalidDataException("XLIFF <file> element is missing the target-language attribute.");
+        var sourceLang = reader.GetAttribute("source-language");
+        var original = reader.GetAttribute("original");
+
+        // Walk every <trans-unit> in document order. ReadSubtree gives a
+        // reader scoped to the current trans-unit; XElement.Load builds a
+        // throwaway DOM just for that element. The per-unit DOM is GC'd
+        // when ParseTransUnit returns, keeping steady-state heap flat.
+        while (reader.ReadToFollowing("trans-unit", Ns.NamespaceName))
+        {
+            ct.ThrowIfCancellationRequested();
+
+            XliffTransUnit? unit;
+            using (var subtree = reader.ReadSubtree())
             {
-                var unit = ParseTransUnit(transUnit);
-                if (unit is not null) units.Add(unit);
+                var transUnitEl = XElement.Load(subtree);
+                unit = ParseTransUnit(transUnitEl);
+            }
+            if (unit is not null)
+            {
+                onUnit(unit);
             }
         }
 
+        return new XliffDocumentHeader(
+            TargetLanguage: NormaliseLanguage(targetLang),
+            SourceLanguage: sourceLang is null ? null : NormaliseLanguage(sourceLang),
+            OriginalName: original);
+    }
+
+    /// <summary>
+    /// Parses an XLIFF stream into a fully-materialised <see cref="XliffDocument"/>.
+    /// A thin wrapper over <see cref="ParseStreaming"/> for callers that
+    /// can afford to hold every trans-unit in memory at once (small
+    /// fixtures, test code, the legacy code path). Long-running import
+    /// flows should call <see cref="ParseStreaming"/> directly so peak
+    /// heap stays bounded.
+    ///
+    /// Throws <see cref="InvalidDataException"/> when the document doesn't
+    /// carry the structure we expect (no <c>&lt;file&gt;</c>, no
+    /// <c>target-language</c>) so callers can surface a field-keyed error
+    /// to the operator. Malformed XML bubbles up as <see cref="XmlException"/>.
+    /// </summary>
+    public static XliffDocument Parse(Stream xliff)
+    {
+        var units = new List<XliffTransUnit>();
+        var header = ParseStreaming(xliff, unit => units.Add(unit));
         return new XliffDocument(
-            NormaliseLanguage(targetLang),
-            sourceLang is null ? null : NormaliseLanguage(sourceLang),
-            original,
+            header.TargetLanguage,
+            header.SourceLanguage,
+            header.OriginalName,
             units);
     }
 

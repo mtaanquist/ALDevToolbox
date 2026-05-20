@@ -49,6 +49,33 @@ public static class AlSymbolExtractor
         @"^\s*action\s*\(\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*\)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // Page-layout group / cuegroup / repeater / part declaration inside a
+    // page or pageextension. Microsoft's XLIFF LookupHints name every
+    // page-layout member "Control" regardless of AL keyword — so a
+    // `group(General) { Caption = '...' }` XLIFF row needs a navigable
+    // symbol row that the TranslationImportService resolver can find by
+    // SubKind=control, SubName="General". `field(...)` controls are
+    // already emitted as `page_field` above (and resolve via the same
+    // SubKind=control clause); the kinds here cover the rest of the
+    // page-layout vocabulary that carries translatable properties.
+    // Issue #151 v2.
+    private static readonly Regex PageControlDeclarationRegex = new(
+        // `group(Name)` / `cuegroup(Name)` / `repeater(Name)` use a single
+        // name argument; `part(Name; SubPage)` carries the part page as
+        // a second argument after a semicolon. Accept either by stopping
+        // at the first `)` or `;` after the name token.
+        @"^\s*(?:group|cuegroup|repeater|part)\s*\(\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*[;)]",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // Enum value declaration: `value(N; Name)` or
+    // `value(N; Name) { Caption = '...'; }` inside an `enum` or
+    // `enumextension` body. The numeric id is the AL enum ordinal; we
+    // surface it as FieldId so the resolver and outline can reuse the
+    // table_field column convention. Issue #151 v2.
+    private static readonly Regex EnumValueDeclarationRegex = new(
+        @"^\s*value\s*\(\s*(?<id>\d+)\s*;\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*\)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     // Query column / filter declaration: `column(Sum_Remaining_Amt_LCY;
     // "Remaining Amt. (LCY)")` and `filter(Document_Type; "Document Type")`
     // inside a `query`'s `dataitem` block. Surfaces as a member of the
@@ -290,6 +317,63 @@ public static class AlSymbolExtractor
                     ColumnEnd: fColEnd));
                 pendingEventKind = null;
                 continue;
+            }
+
+            // Page-layout group / cuegroup / repeater / part. Only inside
+            // pages and page extensions — the keywords overlap with other
+            // contexts (a codeunit could in theory name a procedure
+            // `group`, though unlikely). Owner-kind gate keeps the false
+            // matches out. Issue #151 v2.
+            if (string.Equals(ownerKind, "page", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ownerKind, "pageextension", StringComparison.OrdinalIgnoreCase))
+            {
+                var pageControlMatch = PageControlDeclarationRegex.Match(stripped);
+                if (pageControlMatch.Success)
+                {
+                    var ctlRawName = pageControlMatch.Groups["name"].Value;
+                    var ctlName = Unquote(ctlRawName);
+                    var (cColStart, cColEnd) = FindNameColumns(rawLine, ctlRawName);
+                    results.Add(new AlSymbol(
+                        Kind: "page_control",
+                        Name: ctlName,
+                        Signature: null,
+                        FieldId: null,
+                        LineNumber: i + 1,
+                        ColumnStart: cColStart,
+                        ColumnEnd: cColEnd));
+                    pendingEventKind = null;
+                    continue;
+                }
+            }
+
+            // Enum value declarations. Owner-kind gated to enum /
+            // enumextension because `value(N; Name)` doesn't appear in
+            // other AL contexts. FieldId carries the AL ordinal so the
+            // outline / resolver can reuse the table_field convention.
+            // Issue #151 v2.
+            if (string.Equals(ownerKind, "enum", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ownerKind, "enumextension", StringComparison.OrdinalIgnoreCase))
+            {
+                var enumValueMatch = EnumValueDeclarationRegex.Match(stripped);
+                if (enumValueMatch.Success)
+                {
+                    var valRawName = enumValueMatch.Groups["name"].Value;
+                    var valName = Unquote(valRawName);
+                    int? valId = int.TryParse(enumValueMatch.Groups["id"].Value, out var parsed)
+                        ? parsed
+                        : null;
+                    var (eColStart, eColEnd) = FindNameColumns(rawLine, valRawName);
+                    results.Add(new AlSymbol(
+                        Kind: "enum_value",
+                        Name: valName,
+                        Signature: null,
+                        FieldId: valId,
+                        LineNumber: i + 1,
+                        ColumnStart: eColStart,
+                        ColumnEnd: eColEnd));
+                    pendingEventKind = null;
+                    continue;
+                }
             }
 
             // Label declaration. Lives in object-level or procedure-local

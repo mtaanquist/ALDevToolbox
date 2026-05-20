@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Xml;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
@@ -65,10 +66,22 @@ public class TranslationImportService
             });
         }
 
-        XliffDocument parsed;
+        // Diagnostic baseline: working-set before parse + the upload's
+        // declared length (when seekable) so operators can correlate
+        // memory growth against XLIFF size in the logs (issue #207).
+        var workingSetBefore = Environment.WorkingSet;
+        var xliffLength = xliff.CanSeek ? xliff.Length : (long?)null;
+        _logger.LogInformation(
+            "XLIFF upload starting: File={File} ModuleId={ModuleId} XliffBytes={XliffBytes} WorkingSetBefore={WorkingSetBefore}",
+            fileName, moduleId, xliffLength, workingSetBefore);
+
+        int inserted;
+        string targetLanguage;
+        string? originalName;
         try
         {
-            parsed = AlXliffParser.Parse(xliff);
+            (inserted, targetLanguage, originalName) =
+                await StreamParseAndReplaceAsync(orgId, moduleId, xliff, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException)
         {
@@ -78,20 +91,24 @@ public class TranslationImportService
             });
         }
 
+        var workingSetAfter = Environment.WorkingSet;
+        _logger.LogInformation(
+            "XLIFF upload finished: File={File} ModuleId={ModuleId} Lang={Lang} Inserted={Inserted} WorkingSetAfter={WorkingSetAfter} WorkingSetDelta={WorkingSetDelta}",
+            fileName, moduleId, targetLanguage, inserted, workingSetAfter, workingSetAfter - workingSetBefore);
+
         // Light sanity check: the file's <file original> should match the
         // module name. Mismatch isn't fatal (admin may know better; we
         // chose the module explicitly) but it's worth logging.
-        if (!string.IsNullOrEmpty(parsed.OriginalName)
-            && !string.Equals(parsed.OriginalName, module.Name, StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrEmpty(originalName)
+            && !string.Equals(originalName, module.Name, StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning(
                 "Translation upload {File} declares original=\"{Original}\" but admin attached it to module \"{Module}\" (id={ModuleId}).",
-                fileName, parsed.OriginalName, module.Name, moduleId);
+                fileName, originalName, module.Name, moduleId);
         }
 
-        var inserted = await ReplaceForModuleAsync(orgId, moduleId, parsed, ct).ConfigureAwait(false);
         return new TranslationImportSummary(
-            LanguageCode: parsed.TargetLanguage,
+            LanguageCode: targetLanguage,
             ModuleName: module.Name,
             Inserted: inserted);
     }
@@ -150,11 +167,45 @@ public class TranslationImportService
             if (string.IsNullOrEmpty(entry.Name)) continue;
             if (!entry.FullName.EndsWith(".xlf", StringComparison.OrdinalIgnoreCase)) continue;
 
-            XliffDocument parsed;
+            // Two-pass per entry: peek the header (cheap — reads only up
+            // to the first <body>) to match the entry to a module, then
+            // re-open and stream-parse for the import. The peek cost is
+            // bounded by the <file> tag size (a few hundred bytes); the
+            // alternative — staging the whole entry into memory to read
+            // the header then re-parse — is exactly the shape #207
+            // wants us to avoid.
+            string? originalName;
+            try
+            {
+                using var peekStream = entry.Open();
+                originalName = PeekOriginal(peekStream);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException)
+            {
+                _logger.LogWarning(ex, "Skipping XLIFF zip entry {Entry}: header parse failed.", entry.FullName);
+                unmatched.Add(entry.FullName);
+                continue;
+            }
+
+            if (string.IsNullOrEmpty(originalName)
+                || !byName.TryGetValue(originalName, out var moduleId))
+            {
+                unmatched.Add(entry.FullName);
+                continue;
+            }
+
+            var workingSetBefore = Environment.WorkingSet;
+            _logger.LogInformation(
+                "XLIFF zip entry starting: Entry={Entry} ModuleId={ModuleId} EntryBytes={EntryBytes} WorkingSetBefore={WorkingSetBefore}",
+                entry.FullName, moduleId, entry.Length, workingSetBefore);
+
+            int inserted;
+            string targetLanguage;
             try
             {
                 using var stream = entry.Open();
-                parsed = AlXliffParser.Parse(stream);
+                (inserted, targetLanguage, _) =
+                    await StreamParseAndReplaceAsync(orgId, moduleId, stream, ct).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException)
             {
@@ -163,19 +214,16 @@ public class TranslationImportService
                 continue;
             }
 
-            if (string.IsNullOrEmpty(parsed.OriginalName)
-                || !byName.TryGetValue(parsed.OriginalName, out var moduleId))
-            {
-                unmatched.Add(entry.FullName);
-                continue;
-            }
+            var workingSetAfter = Environment.WorkingSet;
+            _logger.LogInformation(
+                "XLIFF zip entry finished: Entry={Entry} ModuleId={ModuleId} Lang={Lang} Inserted={Inserted} WorkingSetAfter={WorkingSetAfter} WorkingSetDelta={WorkingSetDelta}",
+                entry.FullName, moduleId, targetLanguage, inserted, workingSetAfter, workingSetAfter - workingSetBefore);
 
-            var inserted = await ReplaceForModuleAsync(orgId, moduleId, parsed, ct).ConfigureAwait(false);
             matched++;
             totalInserted += inserted;
             matchedSummaries.Add(new TranslationImportSummary(
-                LanguageCode: parsed.TargetLanguage,
-                ModuleName: parsed.OriginalName!,
+                LanguageCode: targetLanguage,
+                ModuleName: originalName!,
                 Inserted: inserted));
         }
 
@@ -189,52 +237,123 @@ public class TranslationImportService
     // ── Shared parse → clobber → insert → resolve ──────────────────────
 
     /// <summary>
-    /// Replaces every <see cref="OeModuleTranslation"/> row for the given
-    /// <c>(moduleId, languageCode)</c> with rows derived from the parsed
-    /// XLIFF, then runs a single name-keyed symbol resolution pass against
-    /// <c>oe_module_symbols</c>. Returns the number of rows inserted.
-    /// Clobber semantics are intentional — the user asked for "if one
-    /// was already uploaded, it's fine for it to clobber existing".
+    /// Streams an XLIFF stream end-to-end: reads <c>&lt;file&gt;</c>
+    /// metadata, deletes existing rows for <c>(moduleId, target-language)</c>,
+    /// and inserts each trans-unit as it's parsed. Peak heap stays bounded
+    /// to a single 500-row insert buffer plus the per-unit DOM held by
+    /// <see cref="AlXliffParser.ParseStreaming"/> — see issue #207 for the
+    /// shape we replaced. Returns <c>(insertedCount, targetLanguage, originalName)</c>.
     /// </summary>
-    private async Task<int> ReplaceForModuleAsync(
-        int orgId, long moduleId, XliffDocument parsed, CancellationToken ct)
+    private async Task<(int Inserted, string TargetLanguage, string? OriginalName)> StreamParseAndReplaceAsync(
+        int orgId, long moduleId, Stream xliff, CancellationToken ct)
     {
+        // The XLIFF header is read first by ParseStreaming, but per-unit
+        // callbacks run inside that same call — we need the symbol map,
+        // the chunk buffer, and the clobber side-effect prepared in
+        // advance. Read the header without trans-unit callbacks first by
+        // staging a peek; once we know the target language we can run the
+        // DELETE and load the symbol map, then stream-parse for real.
+        //
+        // Two passes are unavoidable because the clobber key (target
+        // language) lives in the file header and the import is
+        // semantically "replace this (module, language) wholesale". We
+        // keep the peek scope tight: only the <file> attributes are read
+        // before the stream is closed.
+        if (!xliff.CanSeek)
+        {
+            // Stage to a temp file so we can read the header, then re-open
+            // for the streaming walk. Temp file beats MemoryStream for
+            // multi-hundred-MB XLIFFs — that's exactly the case #207
+            // surfaced.
+            var tempPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+            try
+            {
+                await using (var fs = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    await xliff.CopyToAsync(fs, ct).ConfigureAwait(false);
+                }
+                await using var reopen = new FileStream(tempPath, FileMode.Open, FileAccess.Read, FileShare.None);
+                return await DoStreamParseAndReplaceAsync(orgId, moduleId, reopen, ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                try { File.Delete(tempPath); }
+                catch (IOException ex) { _logger.LogWarning(ex, "Failed to delete temp XLIFF file {Path}.", tempPath); }
+            }
+        }
+
+        return await DoStreamParseAndReplaceAsync(orgId, moduleId, xliff, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Inner implementation of <see cref="StreamParseAndReplaceAsync"/>
+    /// against a seekable stream. Reads the header to learn the target
+    /// language, runs the DELETE, loads the symbol map, then rewinds and
+    /// streams trans-units into the insert buffer.
+    /// </summary>
+    private async Task<(int Inserted, string TargetLanguage, string? OriginalName)> DoStreamParseAndReplaceAsync(
+        int orgId, long moduleId, Stream xliff, CancellationToken ct)
+    {
+        // Pass 1: header only (no per-unit callback work). The peek hands
+        // back as soon as it's seen <file>; the stream advances forward,
+        // so we rewind before the real walk.
+        var headerOnly = AlXliffParser.ParseStreaming(xliff, _ => { /* discard */ }, ct);
+
         // Skip XLIFFs whose source-language matches their target-language.
         // That's the shape the AL compiler emits as <Module>.g.xlf — the
         // generator template where every <target> mirrors the <source>
         // verbatim. Ingesting it would double every search hit with an
         // English no-op row and put a phantom en-US entry on the
         // per-release languages chip. Doing the check here means all
-        // three intake paths (single-file admin, ZIP, .app auto-extract)
-        // catch it without each having to know the filename convention.
-        if (!string.IsNullOrEmpty(parsed.SourceLanguage)
-            && string.Equals(parsed.SourceLanguage, parsed.TargetLanguage, StringComparison.OrdinalIgnoreCase))
+        // intake paths (single-file admin, ZIP) catch it without each
+        // having to know the filename convention.
+        if (!string.IsNullOrEmpty(headerOnly.SourceLanguage)
+            && string.Equals(headerOnly.SourceLanguage, headerOnly.TargetLanguage, StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogInformation(
                 "Skipped XLIFF for module {ModuleId}: source-language and target-language are both {Lang} (generator template, not a real translation).",
-                moduleId, parsed.TargetLanguage);
-            return 0;
+                moduleId, headerOnly.TargetLanguage);
+            return (0, headerOnly.TargetLanguage, headerOnly.OriginalName);
         }
 
-        // Symbol map keyed by lower(name) → list of symbol ids. Loaded
-        // once per upload so the per-row resolver doesn't run a query
-        // for each of the thousands of trans-units. Field captions and
-        // tooltips resolve to kind='table_field' / 'page_field'; labels
-        // (sub_kind=namedtype) resolve to a same-name symbol — most
-        // commonly a Label declaration emitted by the source extractor.
+        // Symbol map keyed by lower(name) → list of (id, kind, objectId).
+        // Loaded once per upload so the per-row resolver doesn't run a
+        // query for each of the thousands of trans-units. Field captions
+        // and tooltips resolve to kind='table_field' / 'page_field';
+        // labels (sub_kind=namedtype) resolve to a same-name symbol —
+        // most commonly a Label declaration emitted by the source
+        // extractor. Page controls and enum values (issue #151 v2)
+        // resolve via the new page_control / enum_value kinds the
+        // extractor emits.
         var symbols = await _db.OeModuleSymbols.AsNoTracking()
             .Where(s => s.ModuleId == moduleId)
-            .Select(s => new { s.Id, s.Name, s.Kind })
+            .Select(s => new { s.Id, s.Name, s.Kind, s.ObjectId })
             .ToListAsync(ct).ConfigureAwait(false);
-        var symbolByName = new Dictionary<string, List<(long Id, string Kind)>>(StringComparer.OrdinalIgnoreCase);
+        var symbolByName = new Dictionary<string, List<(long Id, string Kind, long ObjectId)>>(StringComparer.OrdinalIgnoreCase);
         foreach (var s in symbols)
         {
             if (!symbolByName.TryGetValue(s.Name, out var list))
             {
-                list = new List<(long, string)>();
+                list = new List<(long, string, long)>();
                 symbolByName[s.Name] = list;
             }
-            list.Add((s.Id, s.Kind));
+            list.Add((s.Id, s.Kind, s.ObjectId));
+        }
+
+        // Object-name → ObjectId map, scoped by object kind. Lets the
+        // resolver scope page-control / enum-value matches to the right
+        // owning object when multiple objects in the module share a
+        // sub-element name (e.g. "Description" exists as a page_control
+        // on many pages).
+        var objects = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.ModuleId == moduleId)
+            .Select(o => new { o.Id, o.Name, o.Kind })
+            .ToListAsync(ct).ConfigureAwait(false);
+        var objectByNameAndKind = new Dictionary<(string Name, string Kind), long>(
+            new ObjectKeyComparer());
+        foreach (var o in objects)
+        {
+            objectByNameAndKind[(o.Name, o.Kind)] = o.Id;
         }
 
         // Clobber existing rows for (module, language) so re-upload
@@ -243,8 +362,11 @@ public class TranslationImportService
         // trans_unit_id) makes the insert side safe even when XLIFFs
         // accidentally double up a trans-unit.
         await _db.OeModuleTranslations
-            .Where(t => t.ModuleId == moduleId && t.LanguageCode == parsed.TargetLanguage)
+            .Where(t => t.ModuleId == moduleId && t.LanguageCode == headerOnly.TargetLanguage)
             .ExecuteDeleteAsync(ct).ConfigureAwait(false);
+
+        // Rewind for pass 2.
+        xliff.Seek(0, SeekOrigin.Begin);
 
         int inserted = 0;
         int pending = 0;
@@ -255,20 +377,24 @@ public class TranslationImportService
         // the unique index. Last-write-wins on collisions.
         var seenIds = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var unit in parsed.Units)
+        // ParseStreaming's pull-loop is synchronous (XmlReader has async
+        // counterparts, but the per-unit DOM build uses XElement.Load
+        // which doesn't). Flushing mid-stream therefore needs sync EF —
+        // SaveChanges, not SaveChangesAsync — so we don't block-await an
+        // outer task inside the callback. Npgsql exposes a real sync
+        // path; using it here is safe and avoids the sync-over-async
+        // deadlock shape.
+        var header = AlXliffParser.ParseStreaming(xliff, unit =>
         {
-            if (!seenIds.Add(unit.Id))
-            {
-                continue;
-            }
+            if (!seenIds.Add(unit.Id)) return;
             var kind = AlXliffParser.BucketKind(unit.Hint);
-            long? symbolId = ResolveSymbolId(symbolByName, unit.Hint, kind);
+            long? symbolId = ResolveSymbolId(symbolByName, objectByNameAndKind, unit.Hint, kind);
 
             _db.OeModuleTranslations.Add(new OeModuleTranslation
             {
                 OrganizationId = orgId,
                 ModuleId = moduleId,
-                LanguageCode = parsed.TargetLanguage,
+                LanguageCode = headerOnly.TargetLanguage,
                 TransUnitId = unit.Id,
                 SourceText = unit.SourceText,
                 TargetText = unit.TargetText,
@@ -287,11 +413,15 @@ public class TranslationImportService
             pending++;
             if (pending >= chunkSize)
             {
-                await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+                _db.SaveChanges();
                 _db.ChangeTracker.Clear();
                 pending = 0;
             }
-        }
+        }, ct);
+
+        // Drain any rows left in the tracker after the last partial
+        // chunk. SaveChangesAsync here because we're back outside the
+        // sync pull-loop.
         if (pending > 0)
         {
             await _db.SaveChangesAsync(ct).ConfigureAwait(false);
@@ -300,19 +430,58 @@ public class TranslationImportService
 
         _logger.LogInformation(
             "Imported XLIFF translations: Module={ModuleId} Lang={Lang} Inserted={Inserted}",
-            moduleId, parsed.TargetLanguage, inserted);
-        return inserted;
+            moduleId, header.TargetLanguage, inserted);
+        return (inserted, header.TargetLanguage, header.OriginalName);
+    }
+
+    /// <summary>
+    /// Reads only the <c>&lt;file original&gt;</c> attribute from an XLIFF
+    /// stream without materialising any trans-units. Used by
+    /// <see cref="ImportZipAsync"/> to match a zip entry to a module
+    /// before deciding whether to commit to the full streaming parse.
+    /// Returns <c>null</c> when the attribute is missing.
+    /// </summary>
+    private static string? PeekOriginal(Stream xliff)
+    {
+        var settings = new XmlReaderSettings
+        {
+            IgnoreWhitespace = true,
+            IgnoreComments = true,
+            DtdProcessing = DtdProcessing.Prohibit,
+            CloseInput = false,
+            Async = false,
+        };
+        using var reader = XmlReader.Create(xliff, settings);
+        if (!reader.ReadToFollowing("file", "urn:oasis:names:tc:xliff:document:1.2"))
+        {
+            throw new InvalidDataException("XLIFF document is missing the <file> element.");
+        }
+        return reader.GetAttribute("original");
+    }
+
+    private sealed class ObjectKeyComparer : IEqualityComparer<(string Name, string Kind)>
+    {
+        public bool Equals((string Name, string Kind) x, (string Name, string Kind) y)
+            => string.Equals(x.Name, y.Name, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.Kind, y.Kind, StringComparison.OrdinalIgnoreCase);
+
+        public int GetHashCode((string Name, string Kind) obj)
+            => HashCode.Combine(
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Name),
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Kind));
     }
 
     /// <summary>
     /// Best-effort match from the parsed hint to a row in
     /// <c>oe_module_symbols</c>. Field captions / tooltips resolve to the
-    /// field symbol; labels (NamedType sub-kind) to the label symbol.
-    /// Returns null for hints we don't yet symbolise (page controls,
-    /// page actions, enum values — issue #151 v2 closes those gaps).
+    /// field symbol; labels (NamedType sub-kind) to the label symbol;
+    /// page controls / enum values (issue #151 v2) to the matching
+    /// <c>page_control</c> / <c>enum_value</c> rows, scoped to the
+    /// owning object when the hint carries an object name.
     /// </summary>
     private static long? ResolveSymbolId(
-        IReadOnlyDictionary<string, List<(long Id, string Kind)>> symbolByName,
+        IReadOnlyDictionary<string, List<(long Id, string Kind, long ObjectId)>> symbolByName,
+        IReadOnlyDictionary<(string Name, string Kind), long> objectByNameAndKind,
         XliffLookupHint? hint,
         string bucketKind)
     {
@@ -324,10 +493,35 @@ public class TranslationImportService
             && !string.IsNullOrEmpty(hint.SubName)
             && symbolByName.TryGetValue(hint.SubName, out var fieldCandidates))
         {
-            var hit = fieldCandidates.FirstOrDefault(c =>
-                string.Equals(c.Kind, "table_field", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(c.Kind, "page_field", StringComparison.OrdinalIgnoreCase));
-            if (hit.Id != 0) return hit.Id;
+            var hit = ScopeToOwner(fieldCandidates, objectByNameAndKind, hint, "table_field", "page_field");
+            if (hit is not null) return hit;
+        }
+
+        // Page control → match by control name against page_field +
+        // page_control rows. Microsoft's LookupHint format names every
+        // page-layout member "Control" regardless of whether the AL
+        // source uses `field(...)`, `group(...)`, `repeater(...)`,
+        // `cuegroup(...)` or `part(...)`. `field(...)` controls already
+        // appear as `page_field` from the source extractor; the others
+        // appear as the new `page_control` kind (issue #151 v2).
+        if (string.Equals(hint.SubKind, "control", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrEmpty(hint.SubName)
+            && symbolByName.TryGetValue(hint.SubName, out var controlCandidates))
+        {
+            var hit = ScopeToOwner(controlCandidates, objectByNameAndKind, hint, "page_control", "page_field");
+            if (hit is not null) return hit;
+        }
+
+        // Enum value → match the new `enum_value` rows (issue #151 v2).
+        // Scoped to the owning enum / enumextension when the hint
+        // names the parent object, so multi-enum modules with shared
+        // value names resolve to the right declaration.
+        if (string.Equals(hint.SubKind, "value", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrEmpty(hint.SubName)
+            && symbolByName.TryGetValue(hint.SubName, out var valueCandidates))
+        {
+            var hit = ScopeToOwner(valueCandidates, objectByNameAndKind, hint, "enum_value");
+            if (hit is not null) return hit;
         }
 
         // Label (NamedType) → match by sub_name against any symbol with
@@ -350,6 +544,58 @@ public class TranslationImportService
             var hit = procCandidates.FirstOrDefault(c =>
                 c.Kind is "procedure" or "local_procedure" or "internal_procedure" or "protected_procedure");
             if (hit.Id != 0) return hit.Id;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Filters <paramref name="candidates"/> to those whose Kind is in
+    /// <paramref name="kindAllowList"/>, optionally scoping to the
+    /// ObjectId of the hint's named owner. When the owner can't be
+    /// resolved (older XLIFFs without LookupHint, partner apps with
+    /// drifted names) the first kind-matching candidate wins. Returns
+    /// the symbol id of the winner, or null when nothing matches.
+    /// </summary>
+    private static long? ScopeToOwner(
+        List<(long Id, string Kind, long ObjectId)> candidates,
+        IReadOnlyDictionary<(string Name, string Kind), long> objectByNameAndKind,
+        XliffLookupHint hint,
+        params string[] kindAllowList)
+    {
+        long? ownerObjectId = null;
+        if (!string.IsNullOrEmpty(hint.ObjectName) && !string.IsNullOrEmpty(hint.ObjectKind)
+            && objectByNameAndKind.TryGetValue((hint.ObjectName, hint.ObjectKind), out var ownerId))
+        {
+            ownerObjectId = ownerId;
+        }
+
+        // Owner-scoped first pass: same object id + kind in the allow-list.
+        if (ownerObjectId is { } scopeId)
+        {
+            foreach (var c in candidates)
+            {
+                if (c.ObjectId != scopeId) continue;
+                foreach (var k in kindAllowList)
+                {
+                    if (string.Equals(c.Kind, k, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return c.Id;
+                    }
+                }
+            }
+        }
+
+        // Owner-less fallback: first candidate with a matching kind.
+        foreach (var c in candidates)
+        {
+            foreach (var k in kindAllowList)
+            {
+                if (string.Equals(c.Kind, k, StringComparison.OrdinalIgnoreCase))
+                {
+                    return c.Id;
+                }
+            }
         }
 
         return null;

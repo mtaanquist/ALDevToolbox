@@ -691,4 +691,186 @@ public sealed class AlSymbolExtractorTests
 
         labels.Should().BeEmpty();
     }
+
+    // ── Page controls (issue #151 v2) ──────────────────────────────────
+
+    [Fact]
+    public void Extracts_page_group_as_page_control()
+    {
+        // A `group(General)` inside a page layout. Microsoft's XLIFF
+        // LookupHint names this "Control General" — the extractor's
+        // page_control row is what the translation resolver hits.
+        var source = """
+            page 50100 "My Card"
+            {
+                layout
+                {
+                    area(content)
+                    {
+                        group(General)
+                        {
+                            Caption = 'General';
+                        }
+                    }
+                }
+            }
+            """;
+
+        var controls = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "page_control")
+            .ToList();
+
+        controls.Should().ContainSingle();
+        controls[0].Name.Should().Be("General");
+        controls[0].LineNumber.Should().Be(7);
+        controls[0].ColumnStart.Should().BeGreaterThan(1);
+    }
+
+    [Fact]
+    public void Extracts_page_repeater_cuegroup_and_part_as_page_control()
+    {
+        // All three keywords share the page-layout / page-control bucket
+        // from a translation-resolution point of view — Microsoft emits
+        // SubKind=control for any of them.
+        var source = """
+            page 50101 "My List"
+            {
+                layout
+                {
+                    area(content)
+                    {
+                        repeater(Group)
+                        {
+                            field("Code"; Rec.Code) { }
+                        }
+                        cuegroup(Activities)
+                        {
+                            Caption = 'Activities';
+                        }
+                        part(Lines; "My Subpage") { }
+                    }
+                }
+            }
+            """;
+
+        var controls = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "page_control")
+            .Select(s => s.Name)
+            .ToList();
+
+        controls.Should().BeEquivalentTo(new[] { "Group", "Activities", "Lines" });
+    }
+
+    [Fact]
+    public void Does_not_emit_page_control_outside_page_object_kinds()
+    {
+        // `group(...)` inside a codeunit is — in practice — never the AL
+        // page-layout keyword; but a defensive owner-kind gate keeps
+        // hypothetical false matches out.
+        var source = """
+            codeunit 50100 "Sales-Post"
+            {
+                procedure Foo()
+                begin
+                end;
+            }
+            """;
+
+        var controls = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "page_control")
+            .ToList();
+
+        controls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Page_control_quoted_names_are_unquoted_and_keep_column_position()
+    {
+        var source = """
+            page 50102 "Quoted Names"
+            {
+                layout
+                {
+                    area(content)
+                    {
+                        group("General Info") { }
+                    }
+                }
+            }
+            """;
+
+        var control = AlSymbolExtractor.Extract(source)
+            .Single(s => s.Kind == "page_control");
+
+        control.Name.Should().Be("General Info");
+        control.ColumnStart.Should().BeGreaterThan(1);
+        control.ColumnEnd.Should().Be(control.ColumnStart + "\"General Info\"".Length);
+    }
+
+    // ── Enum values (issue #151 v2) ────────────────────────────────────
+
+    [Fact]
+    public void Extracts_enum_values_with_id_and_name()
+    {
+        // The bare `value(N; Name)` form. FieldId carries the AL ordinal
+        // so downstream consumers reuse the table_field id convention.
+        var source = """
+            enum 50100 "Document Status"
+            {
+                value(0; Open) { Caption = 'Open'; }
+                value(1; Released) { Caption = 'Released'; }
+                value(2; "Pending Approval") { Caption = 'Pending Approval'; }
+            }
+            """;
+
+        var values = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "enum_value")
+            .ToList();
+
+        values.Should().HaveCount(3);
+        values[0].Name.Should().Be("Open");
+        values[0].FieldId.Should().Be(0);
+        values[1].Name.Should().Be("Released");
+        values[1].FieldId.Should().Be(1);
+        values[2].Name.Should().Be("Pending Approval");
+        values[2].FieldId.Should().Be(2);
+    }
+
+    [Fact]
+    public void Does_not_emit_enum_value_outside_enum_object_kinds()
+    {
+        var source = """
+            codeunit 50100 "Not An Enum"
+            {
+                procedure Foo()
+                begin
+                end;
+            }
+            """;
+
+        var values = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "enum_value")
+            .ToList();
+
+        values.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Extracts_enum_values_inside_enumextension()
+    {
+        var source = """
+            enumextension 50100 "Status Ext" extends "Document Status"
+            {
+                value(10; Reopened) { Caption = 'Reopened'; }
+            }
+            """;
+
+        var values = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "enum_value")
+            .ToList();
+
+        values.Should().ContainSingle();
+        values[0].Name.Should().Be("Reopened");
+        values[0].FieldId.Should().Be(10);
+    }
 }

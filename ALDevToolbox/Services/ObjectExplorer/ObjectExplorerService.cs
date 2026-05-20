@@ -649,6 +649,68 @@ public class ObjectExplorerService
     }
 
     /// <summary>
+    /// Field-name search across every Module in the Release. Matches the
+    /// supplied substring (case-insensitive) against <c>oe_module_symbols</c>
+    /// where the symbol is a <c>table_field</c> or <c>page_field</c>; the
+    /// owning object + module names join inline so the row can render
+    /// "Module / Object / Field" in one query. Capped at <paramref name="take"/>.
+    ///
+    /// Backs issue #169's Fields scope on the OeReleaseDetail search hub.
+    /// The cap is larger than the Objects / Procedures scopes (2000 vs
+    /// 500) because BC base apps carry roughly 10k unique field names and
+    /// substring searches return broader sets; the UI renders a "narrow
+    /// your search to see the rest" affordance when the cap bites.
+    /// </summary>
+    public async Task<List<ReleaseFieldMatch>> SearchFieldsInReleaseAsync(
+        int releaseId,
+        string? search,
+        long? moduleId,
+        string? fieldKind,
+        int take = 2000,
+        CancellationToken ct = default)
+    {
+        var q = _db.OeModuleSymbols.AsNoTracking()
+            .Where(s => s.Module!.ReleaseId == releaseId)
+            .Where(s => s.Kind == "table_field" || s.Kind == "page_field");
+
+        if (string.Equals(fieldKind, "table", StringComparison.OrdinalIgnoreCase))
+        {
+            q = q.Where(s => s.Kind == "table_field");
+        }
+        else if (string.Equals(fieldKind, "page", StringComparison.OrdinalIgnoreCase))
+        {
+            q = q.Where(s => s.Kind == "page_field");
+        }
+
+        if (moduleId is { } mid)
+        {
+            q = q.Where(s => s.ModuleId == mid);
+        }
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var lower = search.Trim().ToLower();
+            q = q.Where(s => s.Name.ToLower().Contains(lower));
+        }
+
+        return await q.OrderBy(s => s.Module!.Name)
+            .ThenBy(s => s.Object!.Name).ThenBy(s => s.Name)
+            .Take(take)
+            .Select(s => new ReleaseFieldMatch(
+                s.Id,
+                s.Kind,
+                s.FieldId,
+                s.Name,
+                s.Signature,
+                s.ObjectId,
+                s.Object!.Kind,
+                s.Object.Name,
+                s.Module!.Name,
+                s.Object.SourceFileId,
+                s.LineNumber))
+            .ToListAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Content (text) search across every <c>oe_module_files.content</c> row
     /// in the Release. Server-side substring match (<c>LIKE '%…%'</c> on
     /// lower-cased content) — fine for small/medium releases; a follow-up
@@ -2175,7 +2237,9 @@ public class ObjectExplorerService
                 t.Kind,
                 t.SourceText,
                 t.TargetText,
-                t.SymbolId))
+                t.SymbolId,
+                t.Symbol != null ? t.Symbol.Object!.SourceFileId : (long?)null,
+                t.Symbol != null ? t.Symbol.LineNumber : (int?)null))
             .ToListAsync(ct).ConfigureAwait(false);
     }
 }
