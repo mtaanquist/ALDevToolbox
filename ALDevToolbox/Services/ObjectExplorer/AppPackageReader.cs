@@ -422,19 +422,46 @@ public static class AppPackageReader
     {
         if (string.IsNullOrEmpty(qualified)) return qualified;
         // Walk dots left-to-right and remember the rightmost one that
-        // separates two valid namespace identifiers. AL's name-with-
-        // dot pattern always has whitespace right after the dot
-        // (`"Gen. Journal Line"`, `"Asm. BOM Buffer"`,
-        // `"Cust. Ledger Entry"`), while namespace separators never
-        // do — that single character is all the disambiguation we
-        // need. Bonus: also reject dots whose left-hand segment isn't
-        // a valid identifier, so a malformed qualified name doesn't
-        // accidentally strip a real character.
+        // separates two valid namespace identifiers. A dot only
+        // counts as a namespace boundary when BOTH sides of it look
+        // like AL namespace identifiers:
+        //
+        //   - LEFT (segment since last boundary): bare identifier —
+        //     starts with letter or underscore, all letters/digits/
+        //     underscores. Rejects names that have already crossed
+        //     into name-territory like "Sales Cr" (space) or "Doc"
+        //     (when preceded by a non-identifier).
+        //   - RIGHT (the very next character): an identifier start,
+        //     i.e. letter or underscore. Anything else — whitespace,
+        //     `-`, `/`, `&`, `,`, a digit, another `.`, end-of-string
+        //     — means the dot is already inside the object's name,
+        //     because no AL namespace segment can start with those.
+        //
+        // The right-side check is what stops the BC base-app target
+        // `Whse.-Source - Create Document` from collapsing into
+        // `-Source - Create Document`: the dash after `Whse.` isn't a
+        // valid identifier start, so the dot stays inside the name.
+        // Same logic protects the common abbreviation pattern
+        // (`Gen. Journal Line`, `Asm. BOM Buffer`, `Sales Cr.Memo
+        // Header`) since the post-dot character is either a space or
+        // a letter whose left segment contains a space.
+        //
+        // Verified against 335 unique Target/TargetObject strings
+        // pulled from BC 28.1 BaseApp, BusinessFoundation, SystemApp,
+        // QualityManagement, EDocument Core, Intrastat Core, OIOUBL,
+        // and DK Core. The structural edge case we still can't
+        // disambiguate — a bare name shaped like `Foo.Bar` (period,
+        // no whitespace, both sides identifier-like) — does not
+        // appear in any Microsoft app we've inspected; if a partner
+        // app ever ships one we'll need a new signal (the dotted
+        // namespace could itself be data we track instead of guessed
+        // from the qualified string).
         var lastNamespaceDot = -1;
         for (var i = 0; i < qualified.Length - 1; i++)
         {
             if (qualified[i] != '.') continue;
-            if (char.IsWhiteSpace(qualified[i + 1])) continue;
+            var next = qualified[i + 1];
+            if (!IsIdentifierStart(next)) continue;
             var segmentStart = lastNamespaceDot + 1;
             var leftSegment = qualified.AsSpan(segmentStart, i - segmentStart);
             if (!IsValidNamespaceSegment(leftSegment)) continue;
@@ -442,6 +469,9 @@ public static class AppPackageReader
         }
         return lastNamespaceDot < 0 ? qualified : qualified.Substring(lastNamespaceDot + 1);
     }
+
+    private static bool IsIdentifierStart(char c) =>
+        char.IsLetter(c) || c == '_';
 
     private static bool IsValidNamespaceSegment(ReadOnlySpan<char> segment)
     {

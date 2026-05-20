@@ -183,10 +183,16 @@ public sealed class AppPackageReaderTests
     [InlineData("Sales Cr.Memo Header")]                        // period without trailing space
     [InlineData("Service Cr.Memo Header")]
     [InlineData("Doc. Sending Profile Elec.Doc.")]              // three periods, one trailing
+    [InlineData("Whse.-Source - Create Document")]              // period followed by dash (no space)
+    [InlineData("Blanket Purch. Order Arch.Sub.")]              // multiple internal periods + trailing
+    [InlineData("Purch. Cr. Memo Line")]                        // two abbreviations in one name
+    [InlineData("Posted Purch. Cr. Memo Subform")]
+    [InlineData("Item Avail. by Lot No. Lines")]
     [InlineData("Country/Region")]                              // slash
     [InlineData("Purchases & Payables Setup")]                  // ampersand
     [InlineData("Service - Credit Memo")]                       // dash with surrounding spaces
     [InlineData("Standard Sales - Credit Memo")]
+    [InlineData("D365PREM MFG, EDIT")]                          // comma + uppercase + digits
     [InlineData("D365 BUS PREMIUM")]                            // upper-case + digits
     [InlineData("Customer")]                                    // single-word baseline
     public void ParseExtendsRef_passes_real_world_bare_names_through_unchanged(string raw)
@@ -215,6 +221,8 @@ public sealed class AppPackageReaderTests
     [InlineData("Microsoft.Foundation.Address.Country/Region", "Country/Region")]
     [InlineData("Microsoft.Purchases.Setup.Purchases & Payables Setup", "Purchases & Payables Setup")]
     [InlineData("Microsoft.Finance.GeneralLedger.Journal.Gen. Journal Line", "Gen. Journal Line")]
+    [InlineData("Microsoft.Warehouse.Activity.Whse.-Source - Create Document", "Whse.-Source - Create Document")]
+    [InlineData("Microsoft.Purchases.History.Blanket Purch. Order Arch.Sub.", "Blanket Purch. Order Arch.Sub.")]
     public void ParseExtendsRef_strips_namespace_from_real_world_qualified_names(string raw, string expected)
     {
         var (appId, name) = AppPackageReader.ParseExtendsRef(raw);
