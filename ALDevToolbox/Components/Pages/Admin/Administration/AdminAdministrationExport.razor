@@ -1,31 +1,18 @@
-@page "/admin/export"
+@page "/admin/administration/export"
 @attribute [Authorize(Roles = "Admin")]
 
 @*
-    Per-organisation TOML export and configuration import. Database backups
-    live on /site-admin/backups and are SiteAdmin-only; tenants only ever
-    see this page and its TOML snapshot workflow.
+    Export tab of the Administration surface. Per-organisation TOML export
+    and configuration import. Database backups live on /site-admin/backups
+    and are SiteAdmin-only; tenants only ever see this page and its TOML
+    snapshot workflow. No global "Save changes" here — each form submits
+    immediately to its own endpoint.
 *@
 
-<PageTitle>Configuration export &amp; import · Admin · AL Dev Toolbox</PageTitle>
+<PageTitle>Export · Administration · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page">
-    <header class="admin-page__header">
-        <div>
-            <h1>Configuration export &amp; import</h1>
-            <p class="muted">
-                Export this organisation's templates, modules, catalogue and
-                configuration as a TOML snapshot, or replay a previously
-                exported <code>organization-config.toml</code> to overwrite the
-                current configuration block. Database backups are managed by
-                your SiteAdmin.
-            </p>
-        </div>
-        <a class="btn btn--sm" href="/admin">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to admin</span>
-        </a>
-    </header>
+    <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Export" />
 
     @if (Ok == "imported")
     {

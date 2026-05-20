@@ -1,11 +1,11 @@
-@page "/admin/configuration/mcp"
+@page "/admin/administration/mcp"
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @inject OrganizationConfigService Config
 @inject AppDbContext Db
 @inject IOrganizationContext OrgCtx
 @inject IMcpAvailability McpAvailability
-@inject ILogger<AdminConfigurationMcp> Log
+@inject ILogger<AdminAdministrationMcp> Log
 @using ALDevToolbox.Data
 @using ALDevToolbox.Domain.ValueObjects
 @using ALDevToolbox.Services.Mcp
@@ -18,25 +18,10 @@
     the same gate on POST.
 *@
 
-<PageTitle>MCP integration · Configuration · AL Dev Toolbox</PageTitle>
+<PageTitle>MCP · Administration · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page admin-configuration">
-    <header class="admin-page__header">
-        <div>
-            <h1>MCP integration</h1>
-            <p class="muted">
-                Decide whether this organisation exposes the MCP server to its
-                users. Personal access tokens minted in this org will be
-                refused at <code>/mcp</code> while it's off.
-            </p>
-        </div>
-        <div class="admin-page__header-actions">
-            <a class="btn btn--sm" href="/admin">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to admin</span>
-            </a>
-        </div>
-    </header>
+    <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Mcp" />
 
     @if (_loading)
     {
@@ -65,6 +50,12 @@
         }
 
         <section class="admin-section">
+            <h2>MCP integration</h2>
+            <p class="muted">
+                Decide whether this organisation exposes the MCP server to its
+                users. Personal access tokens minted in this org will be
+                refused at <code>/mcp</code> while it's off.
+            </p>
             <div class="form-grid form-grid--narrow">
                 <section class="form-section">
                     <label class="section-label">
@@ -84,7 +75,7 @@
                             @onclick="SaveAsync"
                             disabled="@(_saving || !McpAvailability.IsEnabled || _enabled == _baseEnabled)">
                         <Icon Name="save" Width="14" Height="14" />
-                        <span>@(_saving ? "Saving…" : "Save")</span>
+                        <span>@(_saving ? "Saving…" : "Save changes")</span>
                     </button>
                 </section>
             </div>

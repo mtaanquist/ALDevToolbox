@@ -1,0 +1,30 @@
+@*
+    Pill tab navigation. Renders a row of links styled to match the in-page
+    toggle on AdminTemplateEdit (Form / TOML). Active tab gets a contrasting
+    background; the rest are quietly recessed inside the same container.
+    Used by the per-org Administration page to switch between Identity,
+    MCP, Users, OAuth clients, and Export sub-pages. Each tab is a real
+    <a href> — full page navigation, not SPA-like — so the routes can be
+    bookmarked and the back button works as expected.
+*@
+
+<nav class="pill-tabs" role="tablist" aria-label="@AriaLabel">
+    @foreach (var item in Items)
+    {
+        var classes = item.IsActive ? "pill-tab pill-tab--active" : "pill-tab";
+        <a class="@classes" href="@item.Href" role="tab" aria-selected="@(item.IsActive ? "true" : "false")">
+            @if (!string.IsNullOrEmpty(item.IconName))
+            {
+                <Icon Name="@item.IconName" Width="14" Height="14" />
+            }
+            <span>@item.Label</span>
+        </a>
+    }
+</nav>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<PillTabItem> Items { get; set; } = Array.Empty<PillTabItem>();
+    [Parameter] public string AriaLabel { get; set; } = "Section";
+
+    public record PillTabItem(string Label, string Href, string? IconName, bool IsActive);
+}

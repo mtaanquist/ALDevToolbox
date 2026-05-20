@@ -1,0 +1,17 @@
+@page "/admin/export"
+@attribute [Authorize(Roles = "Admin")]
+@inject NavigationManager Nav
+
+@*
+    Legacy redirect: /admin/export moved to /admin/administration/export
+    when the per-org admin pages were consolidated. The POST endpoints
+    under /admin/export/download and /admin/export/import stayed at their
+    original URLs.
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/admin/administration/export", replace: true);
+    }
+}

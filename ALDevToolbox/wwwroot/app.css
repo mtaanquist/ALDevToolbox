@@ -138,6 +138,21 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     font-weight: 600;
 }
 
+/* Brand is wrapped in an anchor that links to /. Strip default link styling
+   so the wordmark and icon read the same whether or not the user has visited
+   the home dashboard before. */
+.top-bar__brand--link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.top-bar__brand--link:hover { text-decoration: none; }
+.top-bar__brand--link:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
 .brand-icon { color: var(--color-accent); }
 .brand-name { font-size: 15px; }
 
@@ -1460,18 +1475,20 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     margin-top: 8px;
 }
 
-/* ---------- Admin dashboard ---------- */
+/* ---------- Tile grid (admin dashboard + tools home) ---------- */
 
 .admin-dashboard { max-width: 1100px; }
+.tools-home { max-width: 1100px; }
 
-.admin-tiles {
+.tile-grid {
     margin-top: 20px;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
 }
 
-.admin-tile {
+.tile {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 12px;
@@ -1481,29 +1498,42 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     border-radius: var(--radius);
 }
 
-.admin-tile__icon { color: var(--color-text-secondary); flex: 0 0 auto; }
+.tile__icon { color: var(--color-text-secondary); flex: 0 0 auto; }
 
-.admin-tile__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tile__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 
-.admin-tile__title { font-weight: 500; }
+.tile__title { font-weight: 500; }
 
-.admin-tile__caption {
+.tile__caption {
     font-size: 12px;
     color: var(--color-text-muted);
 }
 
-.admin-tile--placeholder { opacity: 0.7; }
+.tile--placeholder { opacity: 0.7; }
 
-.admin-tile--link {
+.tile--link {
     color: inherit;
     text-decoration: none;
     transition: border-color 0.1s ease, background-color 0.1s ease;
 }
 
-.admin-tile--link:hover {
+.tile--link:hover {
     border-color: var(--color-accent);
     background: var(--color-surface-hover, var(--color-surface));
     text-decoration: none;
+}
+
+/* Locked tile: visible but visually quieter, with a lock badge in the
+   top-right corner. The whole tile is still a link (to /login?returnUrl=…)
+   so clicking it doesn't dead-end. */
+.tile--locked { opacity: 0.85; }
+.tile--locked .tile__icon { color: var(--color-text-muted); }
+
+.tile__lock {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    color: var(--color-text-muted);
 }
 
 .admin-section {
@@ -2208,7 +2238,12 @@ ul.form-field-error {
     max-height: 220px;
 }
 
-.admin-template-edit__mode {
+/* Pill tabs. Originally introduced for the Form / TOML toggle on the
+   template editor; now also used to navigate sub-pages of the per-org
+   Administration surface (where each tab is an <a href> to a sibling
+   route rather than an in-page button). The container is the same; only
+   the inner elements differ. */
+.pill-tabs {
     display: inline-flex;
     gap: 0;
     margin-bottom: 16px;
@@ -2218,15 +2253,33 @@ ul.form-field-error {
     background: var(--color-surface);
 }
 
-.admin-template-edit__mode-btn {
+.pill-tab {
     border: 1px solid transparent;
     background: transparent;
 }
 
-.admin-template-edit__mode-btn--active {
+.pill-tab--active {
     background: var(--color-bg);
     border-color: var(--color-border);
 }
+
+/* Anchor variant — used when pill tabs are route navigation links rather
+   than in-page toggles. Keeps the same size/spacing as the .btn--sm shape
+   the button variant inherits, without dragging in the full .btn rule set. */
+a.pill-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: calc(var(--radius) - 2px);
+    color: var(--color-text);
+    text-decoration: none;
+    font-size: 13px;
+    line-height: 1.2;
+}
+
+a.pill-tab:hover { text-decoration: none; }
+a.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 
 .admin-template-edit__toml-form { max-width: 880px; }
 

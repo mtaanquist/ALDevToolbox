@@ -1,0 +1,44 @@
+@*
+    Shared page header for every /admin/administration/* sub-page. Renders
+    a single "Administration" h1, a description, the pill-tab row, and an
+    optional slot for per-page action buttons (Add user, etc.). Pages set
+    ActiveTab to highlight the right pill.
+*@
+
+<header class="admin-page__header">
+    <div>
+        <h1>Administration</h1>
+        <p class="muted">
+            Configure this organisation, manage users and connected assistants, and import or export configuration.
+        </p>
+    </div>
+    @if (Actions is not null)
+    {
+        <div class="admin-page__header-actions">
+            @Actions
+        </div>
+    }
+</header>
+
+<PillTabs Items="@_tabs" AriaLabel="Administration sections" />
+
+@code {
+    public enum Tab { Identity, Mcp, Users, OAuthClients, Export }
+
+    [Parameter, EditorRequired] public Tab ActiveTab { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+
+    private IReadOnlyList<PillTabs.PillTabItem> _tabs = Array.Empty<PillTabs.PillTabItem>();
+
+    protected override void OnParametersSet()
+    {
+        _tabs = new[]
+        {
+            new PillTabs.PillTabItem("Identity", "/admin/administration/identity", "users-round", ActiveTab == Tab.Identity),
+            new PillTabs.PillTabItem("MCP", "/admin/administration/mcp", "bot", ActiveTab == Tab.Mcp),
+            new PillTabs.PillTabItem("Users", "/admin/administration/users", "users", ActiveTab == Tab.Users),
+            new PillTabs.PillTabItem("OAuth clients", "/admin/administration/oauth-clients", "plug", ActiveTab == Tab.OAuthClients),
+            new PillTabs.PillTabItem("Export", "/admin/administration/export", "archive", ActiveTab == Tab.Export),
+        };
+    }
+}

@@ -1,0 +1,16 @@
+@page "/admin/oauth-clients"
+@attribute [Authorize(Roles = "Admin")]
+@inject NavigationManager Nav
+
+@*
+    Legacy redirect: /admin/oauth-clients moved to
+    /admin/administration/oauth-clients when the per-org admin pages were
+    consolidated.
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/admin/administration/oauth-clients", replace: true);
+    }
+}

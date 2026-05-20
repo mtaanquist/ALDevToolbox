@@ -1,0 +1,22 @@
+@page "/admin/users"
+@page "/admin/users/new"
+@attribute [Authorize(Roles = "Admin")]
+@inject NavigationManager Nav
+
+@*
+    Legacy redirect: /admin/users and /admin/users/new moved under
+    /admin/administration/users when the per-org admin pages were
+    consolidated. The POST endpoints under /admin/users/* (approve,
+    reject, disable, invite, …) stayed at their original URLs and are
+    handled by AdminUserEndpoints.cs.
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        var target = Nav.Uri.Contains("/admin/users/new", StringComparison.OrdinalIgnoreCase)
+            ? "/admin/administration/users/new"
+            : "/admin/administration/users";
+        Nav.NavigateTo(target, replace: true);
+    }
+}

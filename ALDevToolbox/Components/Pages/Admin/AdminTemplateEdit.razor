@@ -87,7 +87,7 @@
     }
     else
     {
-        <div class="admin-template-edit__mode" role="tablist" aria-label="Editor mode">
+        <div class="pill-tabs" role="tablist" aria-label="Editor mode">
             <button type="button"
                     class="@ModeButtonClass(EditorMode.Form)"
                     role="tab"
@@ -1076,8 +1076,8 @@
     }
 
     private string ModeButtonClass(EditorMode mode) =>
-        _mode == mode ? "btn btn--sm admin-template-edit__mode-btn admin-template-edit__mode-btn--active"
-                      : "btn btn--sm admin-template-edit__mode-btn";
+        _mode == mode ? "btn btn--sm pill-tab pill-tab--active"
+                      : "btn btn--sm pill-tab";
 
     /// <summary>
     /// Renders the current form state as TOML for the Form → TOML mode switch.

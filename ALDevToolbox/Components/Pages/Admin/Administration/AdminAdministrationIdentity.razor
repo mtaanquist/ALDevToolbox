@@ -1,11 +1,11 @@
-@page "/admin/configuration/identity"
+@page "/admin/administration/identity"
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @inject OrganizationConfigService Config
 @inject AppDbContext Db
 @inject IOrganizationContext OrgCtx
 @inject NavigationManager Nav
-@inject ILogger<AdminConfigurationIdentity> Log
+@inject ILogger<AdminAdministrationIdentity> Log
 @using ALDevToolbox.Data
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
@@ -15,27 +15,13 @@
     Organisation identity and email-domain claims. The display name shown in
     the top bar comes from Organization.Name; rename it here. Email domains
     are globally unique — claiming one routes future signups from that domain
-    into this org as Pending users (admin still approves via /admin/users).
+    into this org as Pending users (admin still approves via the Users tab).
 *@
 
-<PageTitle>Identity · Configuration · AL Dev Toolbox</PageTitle>
+<PageTitle>Identity · Administration · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page admin-configuration">
-    <header class="admin-page__header">
-        <div>
-            <h1>Identity</h1>
-            <p class="muted">
-                How this organisation is named and which email domains it
-                claims for automatic signup routing.
-            </p>
-        </div>
-        <div class="admin-page__header-actions">
-            <a class="btn btn--sm" href="/admin">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to admin</span>
-            </a>
-        </div>
-    </header>
+    <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Identity" />
 
     @if (_loading)
     {
@@ -77,7 +63,7 @@
                             @onclick="SaveNameAsync"
                             disabled="@(_savingName || _name == _baseName)">
                         <Icon Name="save" Width="14" Height="14" />
-                        <span>@(_savingName ? "Saving…" : "Rename")</span>
+                        <span>@(_savingName ? "Saving…" : "Save changes")</span>
                     </button>
                 </section>
             </div>
@@ -88,7 +74,7 @@
             <p class="muted">
                 When someone signs up with an email at one of these domains we
                 attach them to this organisation as a Pending user — they still
-                need an admin's approval via <a href="/admin/users">Users</a>.
+                need an admin's approval via the <a href="/admin/administration/users">Users</a> tab.
                 A domain belongs to exactly one organisation deployment-wide.
             </p>
             @if (!string.IsNullOrEmpty(_domainOkMessage))

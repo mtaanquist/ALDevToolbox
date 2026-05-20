@@ -12,8 +12,11 @@ namespace ALDevToolbox.Endpoints;
 
 /// <summary>
 /// /admin/users/* — approve / reject / disable / enable / invite. Admin-only.
-/// Role changes run inside the Blazor circuit (interactive role dropdown on
-/// AdminUsers.razor) and call UserAdministrationService.ChangeRoleAsync directly.
+/// The page UI moved to /admin/administration/users (AdminAdministrationUsers.razor)
+/// but these POST endpoints keep their original URLs so legacy redirects, email
+/// templates, and external links continue to work. Role changes run inside the
+/// Blazor circuit (interactive role dropdown on the users page) and call
+/// UserAdministrationService.ChangeRoleAsync directly.
 /// </summary>
 internal static class AdminUserEndpoints
 {

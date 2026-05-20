@@ -17,11 +17,17 @@
         <div class="nav-section__label">Tools</div>
         <ul class="nav-list">
             <li>
+                <NavLink class="nav-link" href="/" Match="NavLinkMatch.All" ActiveClass="active">
+                    <Icon Name="house" Width="18" Height="18" Css="nav-link__icon" />
+                    <span>Home</span>
+                </NavLink>
+            </li>
+            <li>
                 <div class="nav-group">
-                    <div class="nav-link nav-link--group">
+                    <NavLink class="nav-link nav-link--group" href="/templates" Match="NavLinkMatch.Prefix" ActiveClass="active">
                         <Icon Name="folder-plus" Width="18" Height="18" Css="nav-link__icon" />
                         <span>Projects</span>
-                    </div>
+                    </NavLink>
                     <ul class="nav-sublist">
                         <li>
                             <NavLink class="nav-link nav-link--sub" href="/projects/new" Match="NavLinkMatch.All" ActiveClass="active">
@@ -31,11 +37,6 @@
                         <li>
                             <NavLink class="nav-link nav-link--sub" href="/projects/extension" Match="NavLinkMatch.All" ActiveClass="active">
                                 <span>Extension</span>
-                            </NavLink>
-                        </li>
-                        <li>
-                            <NavLink class="nav-link nav-link--sub" href="/templates" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <span>Templates</span>
                             </NavLink>
                         </li>
                     </ul>
@@ -105,16 +106,11 @@
                     {
                         <li>
                             <div class="nav-group">
-                                <div class="nav-link nav-link--group">
+                                <NavLink class="nav-link nav-link--group" href="/admin/templates" Match="NavLinkMatch.All" ActiveClass="active">
                                     <Icon Name="layers" Width="18" Height="18" Css="nav-link__icon" />
                                     <span>Templates</span>
-                                </div>
+                                </NavLink>
                                 <ul class="nav-sublist">
-                                    <li>
-                                        <NavLink class="nav-link nav-link--sub" href="/admin/templates" Match="NavLinkMatch.All" ActiveClass="active">
-                                            <span>Browse</span>
-                                        </NavLink>
-                                    </li>
                                     <li>
                                         <NavLink class="nav-link nav-link--sub" href="/admin/templates/defaults" Match="NavLinkMatch.Prefix" ActiveClass="active">
                                             <span>Defaults</span>
@@ -179,15 +175,9 @@
                     @if (!isSystemOrg)
                     {
                         <li>
-                            <NavLink class="nav-link" href="/admin/users" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <Icon Name="users" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>Users</span>
-                            </NavLink>
-                        </li>
-                        <li>
-                            <NavLink class="nav-link" href="/admin/oauth-clients" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <Icon Name="plug" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>OAuth clients</span>
+                            <NavLink class="nav-link" href="/admin/administration" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                <Icon Name="settings" Width="18" Height="18" Css="nav-link__icon" />
+                                <span>Administration</span>
                             </NavLink>
                         </li>
                     }
@@ -198,30 +188,6 @@
                                 <Icon Name="users-round" Width="18" Height="18" Css="nav-link__icon" />
                                 <span>@(isSystemOrg ? "Users" : "All users")</span>
                             </NavLink>
-                        </li>
-                    }
-
-                    @if (!isSystemOrg)
-                    {
-                        <li>
-                            <div class="nav-group">
-                                <div class="nav-link nav-link--group">
-                                    <Icon Name="settings" Width="18" Height="18" Css="nav-link__icon" />
-                                    <span>Configuration</span>
-                                </div>
-                                <ul class="nav-sublist">
-                                    <li>
-                                        <NavLink class="nav-link nav-link--sub" href="/admin/configuration/identity" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                            <span>Identity</span>
-                                        </NavLink>
-                                    </li>
-                                    <li>
-                                        <NavLink class="nav-link nav-link--sub" href="/admin/configuration/mcp" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                            <span>MCP integration</span>
-                                        </NavLink>
-                                    </li>
-                                </ul>
-                            </div>
                         </li>
                     }
 
@@ -241,16 +207,6 @@
                             </NavLink>
                         }
                     </li>
-
-                    @if (!isSystemOrg)
-                    {
-                        <li>
-                            <NavLink class="nav-link" href="/admin/export" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <Icon Name="archive" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>Export</span>
-                            </NavLink>
-                        </li>
-                    }
                     @if (isSiteAdmin)
                     {
                         <li>
