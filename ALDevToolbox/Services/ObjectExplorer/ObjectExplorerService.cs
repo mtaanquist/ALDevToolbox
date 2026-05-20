@@ -1408,15 +1408,17 @@ public class ObjectExplorerService
         var word = click.Word;
 
         // 1. Member-access strategy. Phase-2 extraction stamps
-        //    method_call / field_access rows with (LineNumber, TargetMemberName,
-        //    TargetSymbolId). Match the clicked word case-insensitively (AL
-        //    identifiers are case-insensitive). Prefer rows with a resolved
-        //    TargetSymbolId — those have a direct file + line via the symbol's
-        //    owner object.
+        //    method_call / field_access / event_publisher / label_use
+        //    rows with (LineNumber, TargetMemberName, TargetSymbolId).
+        //    Match the clicked word case-insensitively (AL identifiers
+        //    are case-insensitive). Prefer rows with a resolved
+        //    TargetSymbolId — those have a direct file + line via the
+        //    symbol's owner object.
         var memberHit = await _db.OeModuleReferences.AsNoTracking()
             .Where(r => (r.ReferenceKind == "method_call"
                     || r.ReferenceKind == "field_access"
-                    || r.ReferenceKind == "event_publisher")
+                    || r.ReferenceKind == "event_publisher"
+                    || r.ReferenceKind == "label_use")
                 && r.SourceObject!.SourceFileId == fileId
                 && r.LineNumber == line
                 && r.TargetMemberName != null
@@ -1434,40 +1436,31 @@ public class ObjectExplorerService
             return new GoToDefinitionTarget(memberHit.SymbolFileId!.Value, memberHit.SymbolLine);
         }
 
-        // 2. Variable-of-typed-receiver strategy. The click landed on
+        // 2. Local-variable-declaration strategy. The click landed on
         //    an identifier that has a `VarName: Kind "TypeName"`
         //    declaration somewhere in the file — almost always a
         //    local var like `PaymentMethod: Record "Payment Method"`.
-        //    The user expects Go-to-definition to land on the TYPE
-        //    (the `Payment Method` table), not on some unrelated
-        //    object that happens to share the variable name (user-
-        //    reported repro: `PaymentMethod` taking the click to a
-        //    tableextension also named `PaymentMethod`). Resolving
-        //    against the declaration short-circuits that mis-match.
+        //    The user expects Go-to-definition to land on the
+        //    DECLARATION LINE in this file, not on the underlying
+        //    type's source: typing `PaymentMethod` everywhere refers
+        //    to the variable, so navigating to "where this variable
+        //    was declared" is the IDE-conventional behaviour. The
+        //    matching click on the underlined type-name token
+        //    (`"Payment Method"` itself) still resolves through the
+        //    object-name lookup below.
         //
-        //    The regex-driven helper here is file-scoped (no scope
-        //    tracking), which matches the rest of the source viewer's
-        //    affordances and is good enough for the dominant case:
-        //    AL devs almost never reuse a local-variable name across
-        //    procedures inside one file, and when they do, both
-        //    declarations almost always share the same type.
-        var varTypes = Services.Al.AlGoToDefinitionLocator.ResolveAllObjectVariableTypes(meta.Content);
-        if (varTypes.TryGetValue(word, out var resolvedType)
-            && !string.IsNullOrEmpty(resolvedType.TypeName))
+        //    Earlier shape of this step navigated to the type — that
+        //    was a temporary workaround for the bug where a bare
+        //    variable name was getting object-name-looked-up and
+        //    landing on an unrelated tableextension. With Go-to-def
+        //    now ending on the declaration line, the user sees the
+        //    type-name token right there and can Cmd-click it to
+        //    reach the type source if they want it.
+        var declLine = Services.Al.AlGoToDefinitionLocator
+            .ResolveVariableDeclarationLine(meta.Content, word);
+        if (declLine is int targetLine)
         {
-            var typeKindHint = ResolveKindHint(resolvedType.Keyword);
-            var typeTarget = await _db.OeModuleObjects.AsNoTracking()
-                .Where(o => o.Module!.ReleaseId == meta.ReleaseId)
-                .Where(o => o.SourceFileId != null)
-                .Where(o => o.Name == resolvedType.TypeName)
-                .Where(o => typeKindHint == null || o.Kind == typeKindHint)
-                .OrderBy(o => o.Kind)
-                .Select(o => new { o.SourceFileId, o.LineNumber })
-                .FirstOrDefaultAsync(ct);
-            if (typeTarget?.SourceFileId is not null)
-            {
-                return new GoToDefinitionTarget(typeTarget.SourceFileId.Value, typeTarget.LineNumber);
-            }
+            return new GoToDefinitionTarget(fileId, targetLine);
         }
 
         // 3. Same-Release lookup by object name. Chain-walk semantics (for
@@ -1484,36 +1477,6 @@ public class ObjectExplorerService
         if (target?.SourceFileId is null) return null;
         return new GoToDefinitionTarget(target.SourceFileId.Value, target.LineNumber);
     }
-
-    /// <summary>
-    /// Maps an AL variable-declaration keyword (the one returned by
-    /// <see cref="Services.Al.AlGoToDefinitionLocator.ResolveAllObjectVariableTypes"/>)
-    /// to the matching <c>oe_module_objects.kind</c> string. Returns
-    /// null when the keyword doesn't map cleanly (or wasn't supplied
-    /// at all, e.g. a bare type like <c>HttpClient</c>) — the caller
-    /// then falls back to a name-only lookup ordered by kind, which
-    /// is fine for the vast majority of cases where a name uniquely
-    /// identifies an object.
-    /// </summary>
-    private static string? ResolveKindHint(string? keyword) => keyword?.ToLowerInvariant() switch
-    {
-        "record" => "table",
-        "codeunit" => "codeunit",
-        "page" => "page",
-        "report" => "report",
-        "query" => "query",
-        "xmlport" => "xmlport",
-        "interface" => "interface",
-        "enum" => "enum",
-        "requestpage" => "page",
-        "testpage" => "page",
-        "testpart" => "page",
-        "testrequestpage" => "page",
-        "controladdin" => "controladdin",
-        "permissionset" => "permissionset",
-        "profile" => "profile",
-        _ => null,
-    };
 
     /// <summary>
     /// Spans inside <paramref name="fileId"/> that the source viewer should

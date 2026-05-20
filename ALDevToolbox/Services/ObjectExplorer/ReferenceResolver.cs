@@ -48,6 +48,36 @@ public sealed class ReferenceResolver
     public async Task<ReferenceResolution?> ResolveAsync(
         ResolverContext ctx, CancellationToken ct = default)
     {
+        // Strategy: local-variable. Runs FIRST so a click on a
+        // procedure-local or object-scope `var` name short-circuits
+        // before the type-name strategies below get a chance to
+        // accidentally bind to the variable's underlying type. The
+        // user-reported repro: right-clicking `BankAccount` (a local
+        // `Record "Bank Account"`) used to surface every reference
+        // to the Bank Account table across the whole release —
+        // because some downstream strategy fell back to the type.
+        // Returning the LocalVariable target here makes Find
+        // references show same-file occurrences and Go-to-definition
+        // land on the declaration line, which is what the user
+        // expects from a local-variable click. The corresponding
+        // click on the underlined type-name token (`"Bank Account"`,
+        // whose word is the type name not the variable name) still
+        // resolves through extracted-ref / object-name below.
+        if (!string.IsNullOrEmpty(ctx.LeftQualifier))
+        {
+            // Skip when the user clicked a member chain's RIGHT side
+            // (`var.Member` / `Var::Y`) — those should always go
+            // through the member resolver paths. Only bare-context
+            // clicks engage the local-variable check.
+        }
+        else if (AlGoToDefinitionLocator
+                    .ResolveVariableDeclarationLine(ctx.FileContent, ctx.Word) is not null)
+        {
+            return new ReferenceResolution(
+                new ResolutionTarget.LocalVariable(ctx.FileId, ctx.Word),
+                "local-variable");
+        }
+
         // Strategy: extracted-ref — token-level disambiguation via
         // the import-time reference rows.
         var precise = await ResolveExtractedReferenceAtAsync(
@@ -283,4 +313,15 @@ public abstract record ResolutionTarget
     public sealed record CatalogObject(long ObjectId) : ResolutionTarget;
     public sealed record MemberSymbol(long SymbolId) : ResolutionTarget;
     public sealed record GlobalVariable(long VariableId, long OwnerObjectId) : ResolutionTarget;
+
+    /// <summary>
+    /// A bare identifier that matches a procedure-local (or object-scope
+    /// <c>var</c>-block) declaration in the current file. Find-references
+    /// on this target scopes to in-file occurrences instead of the
+    /// underlying type's references — the user's mental model is
+    /// "where else does this variable appear", not "every place this
+    /// table is touched anywhere in the release". Go-to-definition on
+    /// the same target navigates to the declaration line.
+    /// </summary>
+    public sealed record LocalVariable(long FileId, string Name) : ResolutionTarget;
 }

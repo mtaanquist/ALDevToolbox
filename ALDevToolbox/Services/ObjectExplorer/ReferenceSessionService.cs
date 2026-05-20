@@ -176,6 +176,102 @@ public sealed class ReferenceSessionService
     }
 
     /// <summary>
+    /// Mints a session for a local-variable click. Local variables
+    /// aren't catalogued (only object-scope globals live in
+    /// <c>oe_module_variables</c>), so "find references" here means
+    /// "every occurrence of the identifier in the same file" — same
+    /// shape as the right-click "Find in this file" affordance, just
+    /// surfaced through the References panel so the user gets one
+    /// coherent UI for the gesture. Word-boundary aware so
+    /// <c>Item</c> doesn't match inside <c>ItemNo</c>.
+    /// <para>
+    /// Returns an empty session (rather than null) when nothing is
+    /// found — the click is acknowledged and the panel renders the
+    /// "no references" empty state instead of falling through to the
+    /// generic resolver-miss notice.
+    /// </para>
+    /// </summary>
+    public async Task<ReferenceSession?> CreateFromLocalVariableAsync(
+        long fileId, string varName, string ownerKey, CancellationToken ct = default)
+    {
+        var meta = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Id == fileId)
+            .Select(f => new
+            {
+                f.Content,
+                ReleaseId = f.Module!.ReleaseId,
+                ModuleId = f.ModuleId,
+                ModuleName = f.Module!.Name,
+                f.Path,
+                Owner = _db.OeModuleObjects.AsNoTracking()
+                    .Where(o => o.SourceFileId == f.Id)
+                    .OrderBy(o => o.Id)
+                    .Select(o => new { o.Id, o.Kind, o.Name })
+                    .FirstOrDefault(),
+            })
+            .SingleOrDefaultAsync(ct);
+        if (meta is null || meta.Owner is null || string.IsNullOrEmpty(meta.Content))
+        {
+            return null;
+        }
+
+        var rows = new List<ReferenceMatch>();
+        var lines = meta.Content.Replace("\r\n", "\n").Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var lineText = lines[i];
+            var idx = IndexOfWord(lineText, varName, 0);
+            if (idx < 0) continue;
+            var trimmed = lineText.TrimStart();
+            rows.Add(new ReferenceMatch(
+                Id: rows.Count + 1,
+                SourceModuleId: meta.ModuleId,
+                SourceModuleName: meta.ModuleName,
+                SourceObjectId: meta.Owner.Id,
+                SourceObjectKind: meta.Owner.Kind,
+                SourceObjectName: meta.Owner.Name,
+                ReferenceKind: "local_variable_use",
+                LineNumber: i + 1,
+                SourceFileId: fileId,
+                SourceFilePath: meta.Path,
+                Snippet: trimmed.Length > 200 ? trimmed[..200] : trimmed,
+                Category: "object",
+                MemberName: null,
+                MemberKind: null,
+                MemberSignature: null));
+        }
+
+        var label = $"uses of local variable {varName} in this file";
+        return Store(label, meta.ReleaseId, rows, ownerKey);
+    }
+
+    /// <summary>
+    /// Word-boundary-aware <c>IndexOf</c>: returns the position of
+    /// <paramref name="word"/> in <paramref name="haystack"/> only
+    /// when the surrounding characters aren't AL identifier characters
+    /// (letter, digit, underscore). Stops <c>Item</c> from matching
+    /// inside <c>ItemNo</c>.
+    /// </summary>
+    private static int IndexOfWord(string haystack, string word, int start)
+    {
+        var i = start;
+        while (i <= haystack.Length - word.Length)
+        {
+            var idx = haystack.IndexOf(word, i, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0) return -1;
+            var before = idx == 0 || !IsIdentChar(haystack[idx - 1]);
+            var after = idx + word.Length == haystack.Length
+                || !IsIdentChar(haystack[idx + word.Length]);
+            if (before && after) return idx;
+            i = idx + 1;
+        }
+        return -1;
+    }
+
+    private static bool IsIdentChar(char c) =>
+        char.IsLetterOrDigit(c) || c == '_';
+
+    /// <summary>
     /// Mints a session by clicking position: looks up the word at
     /// (line, column) in the supplied file, then delegates the
     /// "what does this token point at?" question to
@@ -240,6 +336,11 @@ public sealed class ReferenceSessionService
                     "FindRefsAtPosition FileId={FileId} Word='{Word}' resolved-via={Reason} to VariableId={VariableId} on OwnerObjectId={OwnerObjectId}.",
                     fileId, click.Word, resolution.Reason, variable.VariableId, variable.OwnerObjectId);
                 return await CreateFromGlobalVariableAsync(variable.VariableId, ownerKey, ct);
+            case ResolutionTarget.LocalVariable local:
+                _logger.LogInformation(
+                    "FindRefsAtPosition FileId={FileId} Word='{Word}' resolved-via={Reason} to local var in same file.",
+                    fileId, click.Word, resolution.Reason);
+                return await CreateFromLocalVariableAsync(local.FileId, local.Name, ownerKey, ct);
             default:
                 _logger.LogInformation(
                     "FindRefsAtPosition FileId={FileId} resolved to unknown target {Target}.",
