@@ -246,6 +246,23 @@ public class TranslationImportService
     private async Task<int> ReplaceForModuleAsync(
         int orgId, long moduleId, XliffDocument parsed, CancellationToken ct)
     {
+        // Skip XLIFFs whose source-language matches their target-language.
+        // That's the shape the AL compiler emits as <Module>.g.xlf — the
+        // generator template where every <target> mirrors the <source>
+        // verbatim. Ingesting it would double every search hit with an
+        // English no-op row and put a phantom en-US entry on the
+        // per-release languages chip. Doing the check here means all
+        // three intake paths (single-file admin, ZIP, .app auto-extract)
+        // catch it without each having to know the filename convention.
+        if (!string.IsNullOrEmpty(parsed.SourceLanguage)
+            && string.Equals(parsed.SourceLanguage, parsed.TargetLanguage, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation(
+                "Skipped XLIFF for module {ModuleId}: source-language and target-language are both {Lang} (generator template, not a real translation).",
+                moduleId, parsed.TargetLanguage);
+            return 0;
+        }
+
         // Symbol map keyed by lower(name) → list of symbol ids. Loaded
         // once per upload so the per-row resolver doesn't run a query
         // for each of the thousands of trans-units. Field captions and
