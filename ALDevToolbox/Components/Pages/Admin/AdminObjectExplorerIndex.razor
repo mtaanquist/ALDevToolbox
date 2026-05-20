@@ -89,6 +89,11 @@
                         <td class="row-actions">
                             @if (r.DeletedAt is null)
                             {
+                                <a class="btn btn--sm" href="@($"/admin/object-explorer/release/{r.Id}/translations")"
+                                   title="Upload XLIFF translation files for this release">
+                                    <Icon Name="book-open" Width="14" Height="14" />
+                                    <span>Translations</span>
+                                </a>
                                 <form method="post"
                                       action="@($"/admin/object-explorer/{r.Id}/soft-delete")"
                                       style="display:inline">

@@ -9,6 +9,7 @@ using OeModuleObject = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject;
 using OeModuleSymbol = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol;
 using OeModuleVariable = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleVariable;
 using OeModuleReference = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleReference;
+using OeModuleTranslation = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleTranslation;
 
 namespace ALDevToolbox.Data;
 
@@ -153,6 +154,7 @@ public class AppDbContext : DbContext
     public DbSet<OeModuleSymbol> OeModuleSymbols => Set<OeModuleSymbol>();
     public DbSet<OeModuleVariable> OeModuleVariables => Set<OeModuleVariable>();
     public DbSet<OeModuleReference> OeModuleReferences => Set<OeModuleReference>();
+    public DbSet<OeModuleTranslation> OeModuleTranslations => Set<OeModuleTranslation>();
     public DbSet<Snippet> Snippets => Set<Snippet>();
     public DbSet<SnippetFile> SnippetFiles => Set<SnippetFile>();
     public DbSet<SnippetSuggestion> SnippetSuggestions => Set<SnippetSuggestion>();
@@ -220,6 +222,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OeModuleSymbol>(modelBuilder);
         ScopeToOrganization<OeModuleVariable>(modelBuilder);
         ScopeToOrganization<OeModuleReference>(modelBuilder);
+        ScopeToOrganization<OeModuleTranslation>(modelBuilder);
         ScopeToOrganization<Snippet>(modelBuilder);
         ScopeToOrganization<SnippetFile>(modelBuilder);
         ScopeToOrganization<SnippetSuggestion>(modelBuilder);

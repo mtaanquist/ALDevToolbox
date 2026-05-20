@@ -22,7 +22,9 @@ public sealed class ReleaseManagementServiceTests : IDisposable
         Path.Combine(AppContext.BaseDirectory, "Fixtures", "ObjectExplorer");
 
     private ReleaseImportService NewImporter(Data.AppDbContext ctx) =>
-        new(ctx, _db.OrgContext, _db.NewQuotaGuard(ctx), NullLogger<ReleaseImportService>.Instance);
+        new(ctx, _db.OrgContext, _db.NewQuotaGuard(ctx),
+            new TranslationImportService(ctx, _db.OrgContext, NullLogger<TranslationImportService>.Instance),
+            NullLogger<ReleaseImportService>.Instance);
 
     private ReleaseManagementService NewManagement(Data.AppDbContext ctx) =>
         new(ctx, _db.OrgContext, NullLogger<ReleaseManagementService>.Instance);

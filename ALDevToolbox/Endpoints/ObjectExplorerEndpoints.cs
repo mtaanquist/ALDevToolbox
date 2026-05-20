@@ -101,7 +101,8 @@ internal static class ObjectExplorerEndpoints
                     + $"?ok=imported"
                     + $"&modules={summary.ModulesImported}"
                     + $"&skipped={summary.ModulesSkipped}"
-                    + $"&refs={summary.ReferencesImported}";
+                    + $"&refs={summary.ReferencesImported}"
+                    + $"&translations={summary.TranslationsImported}";
                 ctx.Response.Redirect(query);
             }
             finally
@@ -230,6 +231,82 @@ internal static class ObjectExplorerEndpoints
             return session is null ? Results.NoContent() : Results.Ok(session);
         }).RequireAuthorization();
 
+        // ── Translation uploads (#151) ─────────────────────────────────
+        // Two admin POSTs: single .xlf against one module, or per-release
+        // ZIP holding many .xlf files matched to modules by the XLIFF's
+        // <file original> attribute. Both clobber existing rows for the
+        // affected (module, language) pairs so re-upload is the recovery
+        // story when a translation needs updating. 64 MB cap — a single
+        // .xlf is well under 5 MB and a 12-language ZIP comfortably fits.
+        app.MapPost("/admin/object-explorer/release/{releaseId:int}/modules/{moduleId:long}/translations", async (
+            int releaseId,
+            long moduleId,
+            HttpContext ctx,
+            TranslationImportService translations,
+            IAntiforgery antiforgery,
+            CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var file = form.Files.GetFile("XliffFile");
+            if (file is null || file.Length == 0)
+            {
+                RedirectTranslations(ctx, releaseId, "XliffFile", "Pick an .xlf file before submitting.");
+                return;
+            }
+            try
+            {
+                await using var stream = file.OpenReadStream();
+                var summary = await translations.ImportSingleAsync(releaseId, moduleId, stream, file.FileName, ct);
+                ctx.Response.Redirect(
+                    $"/admin/object-explorer/release/{releaseId}/translations"
+                    + $"?ok=imported&lang={Uri.EscapeDataString(summary.LanguageCode)}"
+                    + $"&module={Uri.EscapeDataString(summary.ModuleName)}"
+                    + $"&count={summary.Inserted}");
+            }
+            catch (PlanValidationException ex)
+            {
+                var first = ex.Errors.First();
+                RedirectTranslations(ctx, releaseId, first.Key, first.Value);
+            }
+        })
+        .RequireAuthorization(policy => policy.RequireRole("Admin"))
+        .WithMetadata(new RequestSizeLimitAttribute(64L * 1024 * 1024));
+
+        app.MapPost("/admin/object-explorer/release/{releaseId:int}/translations-zip", async (
+            int releaseId,
+            HttpContext ctx,
+            TranslationImportService translations,
+            IAntiforgery antiforgery,
+            CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var file = form.Files.GetFile("ZipFile");
+            if (file is null || file.Length == 0)
+            {
+                RedirectTranslations(ctx, releaseId, "ZipFile", "Pick a ZIP file holding one or more .xlf files before submitting.");
+                return;
+            }
+            try
+            {
+                await using var stream = file.OpenReadStream();
+                var summary = await translations.ImportZipAsync(releaseId, stream, ct);
+                ctx.Response.Redirect(
+                    $"/admin/object-explorer/release/{releaseId}/translations"
+                    + $"?ok=zip-imported&matched={summary.MatchedFiles}"
+                    + $"&skipped={summary.UnmatchedFiles.Count}"
+                    + $"&inserted={summary.TotalInserted}");
+            }
+            catch (PlanValidationException ex)
+            {
+                var first = ex.Errors.First();
+                RedirectTranslations(ctx, releaseId, first.Key, first.Value);
+            }
+        })
+        .RequireAuthorization(policy => policy.RequireRole("Admin"))
+        .WithMetadata(new RequestSizeLimitAttribute(64L * 1024 * 1024));
+
         app.MapPost("/admin/object-explorer/{id:int}/soft-delete", async (
             int id,
             HttpContext ctx,
@@ -302,6 +379,13 @@ internal static class ObjectExplorerEndpoints
     {
         ctx.Response.Redirect(
             "/admin/object-explorer?err=" + Uri.EscapeDataString(errKey)
+            + "&msg=" + Uri.EscapeDataString(message));
+    }
+
+    private static void RedirectTranslations(HttpContext ctx, int releaseId, string errKey, string message)
+    {
+        ctx.Response.Redirect(
+            $"/admin/object-explorer/release/{releaseId}/translations?err=" + Uri.EscapeDataString(errKey)
             + "&msg=" + Uri.EscapeDataString(message));
     }
 

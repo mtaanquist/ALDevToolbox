@@ -205,6 +205,8 @@ public sealed class McpToolTests : IDisposable
         await using var ctx = _db.NewContext();
         var importer = new ALDevToolbox.Services.ObjectExplorer.ReleaseImportService(
             ctx, _db.OrgContext, _db.NewQuotaGuard(ctx),
+            new ALDevToolbox.Services.ObjectExplorer.TranslationImportService(
+                ctx, _db.OrgContext, NullLogger<ALDevToolbox.Services.ObjectExplorer.TranslationImportService>.Instance),
             NullLogger<ALDevToolbox.Services.ObjectExplorer.ReleaseImportService>.Instance);
         await using var s1 = File.OpenRead(Path.Combine(OeFixtureRoot, "Microsoft_DK_Core.app"));
         var summary = await importer.ImportReleaseAsync(

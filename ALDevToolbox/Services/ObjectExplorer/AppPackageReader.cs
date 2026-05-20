@@ -83,8 +83,56 @@ public static class AppPackageReader
         var sourceFiles = manifest.IncludeSourceInSymbolFile
             ? ReadEmbeddedSource(archive)
             : Array.Empty<AppSourceFile>();
+        var xliffFiles = ReadXliffFiles(archive);
 
-        return new AppPackage(manifest, symbols, sourceFiles, hash);
+        return new AppPackage(manifest, symbols, sourceFiles, xliffFiles, hash);
+    }
+
+    // ── XLIFF translations ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Pulls every <c>.xlf</c> file out of the archive's <c>Translations/</c>
+    /// folder. Microsoft first-party apps ship one .xlf per supported
+    /// language here; partner apps may ship none. Returned bytes are kept
+    /// in memory so the importer can hand them to the XLIFF parser without
+    /// re-opening the ZIP — translation files are small (low single MB).
+    ///
+    /// Matched case-insensitively because Microsoft and partner build
+    /// pipelines have shipped both <c>Translations/</c> and <c>translations/</c>
+    /// in the wild.
+    /// </summary>
+    private static IReadOnlyList<AppXliffFile> ReadXliffFiles(ZipArchive archive)
+    {
+        var files = new List<AppXliffFile>();
+        foreach (var entry in archive.Entries)
+        {
+            if (string.IsNullOrEmpty(entry.Name)) continue;
+            if (!entry.FullName.EndsWith(".xlf", StringComparison.OrdinalIgnoreCase)) continue;
+
+            // Skip the AL compiler's generator template — source-language
+            // equals target-language (both en-US) and the body just mirrors
+            // the source strings as "translations" of themselves. Microsoft
+            // ships one per .app alongside the real per-language XLIFFs
+            // (<Module>.g.xlf next to <Module>.<lang>.xlf); ingesting it
+            // would double every search hit with an English no-op row.
+            if (entry.Name.EndsWith(".g.xlf", StringComparison.OrdinalIgnoreCase)) continue;
+
+            var normalised = entry.FullName.Replace('\\', '/');
+            var slashTr = normalised.IndexOf("translations/", StringComparison.OrdinalIgnoreCase);
+            // Accept the file when "Translations/" sits at the archive root
+            // OR anywhere along the path (some wrapped packages nest it
+            // under the project folder, e.g. "Base Application/Translations/…").
+            if (slashTr < 0 && !normalised.StartsWith("translations/", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            using var s = entry.Open();
+            using var buffer = new MemoryStream();
+            s.CopyTo(buffer);
+            files.Add(new AppXliffFile(normalised, buffer.ToArray()));
+        }
+        return files;
     }
 
     // ── Ready2Run wrapper ───────────────────────────────────────────────

@@ -28,7 +28,9 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     private static readonly Guid BaseAppId = Guid.Parse("437dbf0e-84ff-417a-965d-ed2bb9650972");
 
     private ReleaseImportService NewImporter(Data.AppDbContext ctx) =>
-        new(ctx, _db.OrgContext, _db.NewQuotaGuard(ctx), NullLogger<ReleaseImportService>.Instance);
+        new(ctx, _db.OrgContext, _db.NewQuotaGuard(ctx),
+            new TranslationImportService(ctx, _db.OrgContext, NullLogger<TranslationImportService>.Instance),
+            NullLogger<ReleaseImportService>.Instance);
 
     private ObjectExplorerService NewQuery(Data.AppDbContext ctx) =>
         new(ctx, NullLogger<ObjectExplorerService>.Instance);

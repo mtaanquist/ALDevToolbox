@@ -182,6 +182,40 @@ public sealed class ObjectExplorerTools
         return calls;
     }
 
+    [McpServerTool(Name = "list_translation_languages", ReadOnly = true)]
+    [Description("Lists every target language with at least one translation row in a BC release, plus the trans-unit count per language. Cheap discovery before calling search_translations — e.g. an agent helping a Danish customer would call this first to confirm 'da-DK' is loaded for the release in question.")]
+    public async Task<IReadOnlyList<TranslationLanguageSummary>> ListTranslationLanguagesAsync(
+        [Description("Release Label ('BC 28.1') or numeric id from list_releases.")] string releaseLabelOrId,
+        CancellationToken ct = default)
+    {
+        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
+        return await _explorer.ListTranslationLanguagesAsync(releaseId, ct);
+    }
+
+    [McpServerTool(Name = "search_translations", ReadOnly = true)]
+    [Description("Searches translated captions / labels / error messages in a BC release for a substring of the target text. Use this when a customer reports an issue in their native language and you need to find the AL field, caption, or label that produced the text. Defaults to caption + label hits (the user's stated priority — captions for fields, labels for error messages); pass kinds='any' to include tooltips and other property kinds. Each hit carries the owning module + object + sub-element + property names plus a SymbolId when the lookup hint resolved to a known symbol — clients can navigate straight to source for those rows.")]
+    public async Task<IReadOnlyList<TranslationMatch>> SearchTranslationsAsync(
+        [Description("Release Label ('BC 28.1') or numeric id.")] string releaseLabelOrId,
+        [Description("Substring of the target (translated) text, case-insensitive. E.g. 'Aktivér montageordrer' for the Danish caption.")] string query,
+        [Description("Optional BCP-47 language code (e.g. 'da-DK', 'de-DE'). Null searches every uploaded language. 'da' (no region) matches every variant starting with that prefix.")] string? language = null,
+        [Description("Comma-separated kind filter. Default 'caption,label' surfaces field captions and error-message labels first. Pass 'any' to include tooltips / instructional text / other. Valid kinds: caption, tooltip, label, instructional, option, other.")] string kinds = "caption,label",
+        [Description("Optional substring of the owning module name (e.g. 'Base' to scope to Base Application).")] string? moduleNamePattern = null,
+        CancellationToken ct = default)
+    {
+        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            throw new McpException("query is required: pass the substring of the translated text to search for.");
+        }
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in kinds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            set.Add(raw);
+        }
+        return await _explorer.SearchTranslationsInReleaseAsync(
+            releaseId, query, language, set, moduleNamePattern, MaxResults, ct);
+    }
+
     private const int MaxProcedureSourceLines = 200;
 
     /// <summary>

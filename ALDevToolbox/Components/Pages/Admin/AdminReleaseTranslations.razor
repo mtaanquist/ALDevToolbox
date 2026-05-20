@@ -1,0 +1,229 @@
+@page "/admin/object-explorer/release/{ReleaseId:int}/translations"
+@attribute [Authorize(Roles = "Admin")]
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject IAntiforgery Antiforgery
+@inject IHttpContextAccessor Http
+@using ALDevToolbox.Services.ObjectExplorer
+@using Microsoft.AspNetCore.Antiforgery
+
+@*
+    Admin surface for attaching XLIFF translation files to an already-imported
+    release. Two paths:
+    1. Per-module single .xlf upload — handy when adding one language to one
+       module after the fact.
+    2. Per-release ZIP upload — drop a bundle of .xlf files and we match each
+       to its module by the <file original="..."> attribute.
+
+    Both paths share the TranslationImportService pipeline; re-uploading the
+    same (module, language) pair clobbers the previous rows. See GitHub
+    issue #151.
+
+    Static-rendered for the same reason AdminReleasesImport.razor is —
+    multipart bodies should stream through Kestrel, not a SignalR circuit.
+*@
+
+<PageTitle>Translations · @(_release?.Label ?? "Release") · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Translations</h1>
+            @if (_release is not null)
+            {
+                <p class="muted">
+                    @_release.Label · @_release.ModuleCount module(s)
+                    @if (_languages is { Count: > 0 })
+                    {
+                        <span> · @_languages.Count language(s) loaded</span>
+                    }
+                </p>
+            }
+        </div>
+        <a class="btn btn--sm" href="/object-explorer/release/@ReleaseId">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to release</span>
+        </a>
+    </header>
+
+    @if (Status is { } status)
+    {
+        @if (status.IsError)
+        {
+            <div class="form-error" role="alert"><p>@status.Message</p></div>
+        }
+        else
+        {
+            <p class="form-success" role="status">@status.Message</p>
+        }
+    }
+
+    @if (_release is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_modules is null || _modules.Count == 0)
+    {
+        <p class="muted">
+            This release has no modules yet. Re-import it from
+            <a href="/admin/object-explorer">the admin index</a>.
+        </p>
+    }
+    else
+    {
+        <section class="form-section">
+            <h2>Bulk upload (ZIP)</h2>
+            <p class="muted">
+                Drop a ZIP of <code>.xlf</code> files — we match each to its
+                module by the XLIFF's <code>&lt;file original=&quot;…&quot;&gt;</code>
+                attribute against the module name. Files that don't match are
+                skipped; the result banner lists their names. Re-uploading the
+                same <em>(module, language)</em> pair replaces the previous
+                rows.
+            </p>
+            <form method="post"
+                  action="@($"/admin/object-explorer/release/{ReleaseId}/translations-zip")"
+                  enctype="multipart/form-data"
+                  class="form-grid">
+                @if (_antiforgeryToken is not null)
+                {
+                    <input type="hidden" name="@_antiforgeryToken.FormFieldName" value="@_antiforgeryToken.RequestToken" />
+                }
+                <label class="field">
+                    <span class="field__label">ZIP file</span>
+                    <input type="file" name="ZipFile" accept=".zip" required class="field__input" />
+                </label>
+                <button type="submit" class="btn btn--primary">
+                    <Icon Name="upload" Width="16" Height="16" />
+                    <span>Upload ZIP</span>
+                </button>
+            </form>
+        </section>
+
+        <section class="form-section">
+            <h2>Per-module upload</h2>
+            <p class="muted">
+                Attach one <code>.xlf</code> to a specific module. The chips
+                next to each module name show which languages are already
+                loaded and how many trans-units they carry.
+            </p>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Module</th>
+                        <th scope="col">Languages loaded</th>
+                        <th scope="col">Add a translation</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var m in _modules)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@m.Name</strong>
+                                <small class="muted"> · @m.Publisher @m.Version</small>
+                            </td>
+                            <td>
+                                @{
+                                    var langs = _languagesByModule.TryGetValue(m.Id, out var list)
+                                        ? list
+                                        : Array.Empty<ModuleTranslationLanguageRow>().ToList();
+                                }
+                                @if (langs.Count == 0)
+                                {
+                                    <span class="muted">— none —</span>
+                                }
+                                else
+                                {
+                                    @foreach (var l in langs)
+                                    {
+                                        <span class="badge">@l.LanguageCode · @l.TranslationCount.ToString("N0")</span>
+                                        <span> </span>
+                                    }
+                                }
+                            </td>
+                            <td>
+                                <form method="post"
+                                      action="@($"/admin/object-explorer/release/{ReleaseId}/modules/{m.Id}/translations")"
+                                      enctype="multipart/form-data"
+                                      style="display:flex; gap:.5rem; align-items:center;">
+                                    @if (_antiforgeryToken is not null)
+                                    {
+                                        <input type="hidden" name="@_antiforgeryToken.FormFieldName" value="@_antiforgeryToken.RequestToken" />
+                                    }
+                                    <input type="file" name="XliffFile" accept=".xlf" required class="field__input" />
+                                    <button type="submit" class="btn btn--sm">
+                                        <Icon Name="upload" Width="14" Height="14" />
+                                        <span>Upload</span>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter] public int ReleaseId { get; set; }
+
+    private AntiforgeryTokenSet? _antiforgeryToken;
+    private ReleaseDetail? _release;
+    private List<ModuleListItem>? _modules;
+    private List<TranslationLanguageSummary>? _languages;
+    private Dictionary<long, List<ModuleTranslationLanguageRow>> _languagesByModule = new();
+    private (string Message, bool IsError)? Status { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var ctx = Http.HttpContext;
+        if (ctx is not null)
+        {
+            _antiforgeryToken = Antiforgery.GetAndStoreTokens(ctx);
+
+            var err = ctx.Request.Query["err"].ToString();
+            var msg = ctx.Request.Query["msg"].ToString();
+            if (!string.IsNullOrEmpty(err) && !string.IsNullOrEmpty(msg))
+            {
+                Status = ($"{err}: {msg}", true);
+            }
+            else
+            {
+                var ok = ctx.Request.Query["ok"].ToString();
+                if (!string.IsNullOrEmpty(ok))
+                {
+                    Status = (FormatOk(ok, ctx.Request.Query), false);
+                }
+            }
+        }
+
+        _release = await ObjectExplorer.GetReleaseAsync(ReleaseId);
+        if (_release is null) return;
+
+        // Show every module — including test / internal / language-pack
+        // modules — because translations are most useful exactly on the
+        // language-pack rows that the default filter hides.
+        _modules = await ObjectExplorer.ListModulesAsync(ReleaseId,
+            new ModuleListFilter(
+                IncludeTest: true,
+                IncludeInternal: true,
+                IncludeLanguagePack: true));
+        _languages = await ObjectExplorer.ListTranslationLanguagesAsync(ReleaseId);
+
+        var perModule = await ObjectExplorer.ListModuleTranslationLanguagesAsync(ReleaseId);
+        _languagesByModule = perModule
+            .GroupBy(r => r.ModuleId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(r => r.LanguageCode).ToList());
+    }
+
+    private static string FormatOk(string ok, IQueryCollection q) => ok switch
+    {
+        "imported" => $"Imported {q["count"]} trans-unit(s) for {q["module"]} in {q["lang"]}.",
+        "zip-imported" => $"Imported {q["inserted"]} trans-unit(s) across {q["matched"]} file(s)."
+            + (int.TryParse(q["skipped"].ToString(), out var sk) && sk > 0
+                ? $" {sk} entry/entries didn't match any module and were skipped."
+                : string.Empty),
+        _ => "Done.",
+    };
+}
