@@ -19,15 +19,43 @@
 
     <div class="piper-layout">
         <section class="piper-main">
+            <nav class="pill-tabs" role="tablist" aria-label="Input mode">
+                <button type="button"
+                        class="pill-tab @(_mode == InputMode.Text ? "pill-tab--active" : "")"
+                        role="tab" aria-selected="@(_mode == InputMode.Text ? "true" : "false")"
+                        @onclick="() => SetMode(InputMode.Text)">
+                    <span>Text</span>
+                </button>
+                <button type="button"
+                        class="pill-tab @(_mode == InputMode.Table ? "pill-tab--active" : "")"
+                        role="tab" aria-selected="@(_mode == InputMode.Table ? "true" : "false")"
+                        @onclick="() => SetMode(InputMode.Table)">
+                    <span>Table</span>
+                </button>
+            </nav>
+
             <div class="form-section">
                 <label class="section-label" for="piper-input">Input</label>
                 <textarea id="piper-input" rows="10"
-                          placeholder="e.g. 1001, 1005, 1007 — or one value per line"
+                          placeholder="@_inputPlaceholder"
                           spellcheck="false"
                           @ref="_inputRef"
                           @bind="Input" @bind:event="oninput"></textarea>
                 <p class="muted piper-meta">@_inputMetaText</p>
             </div>
+
+            @if (_mode == InputMode.Table && _table is not null)
+            {
+                <div class="form-section">
+                    <label class="section-label" for="piper-column">Column</label>
+                    <select id="piper-column" @bind="SelectedColumn">
+                        @foreach (var header in _table.Headers)
+                        {
+                            <option value="@header">@(string.IsNullOrEmpty(header) ? "(unnamed column)" : header)</option>
+                        }
+                    </select>
+                </div>
+            }
 
             <div class="form-section">
                 <label class="section-label" for="piper-output">Result</label>
@@ -99,14 +127,17 @@
                 </div>
             </div>
 
-            <div class="form-section">
-                <label class="section-label" for="piper-sep">Input separator</label>
-                <input id="piper-sep" type="text" placeholder="@_separatorPlaceholder"
-                       @bind="SeparatorOverride" @bind:event="oninput" />
-                <p class="muted piper-hint">
-                    Use <code>\t</code>, <code>\n</code>, <code>\r</code> for whitespace.
-                </p>
-            </div>
+            @if (_mode == InputMode.Text)
+            {
+                <div class="form-section">
+                    <label class="section-label" for="piper-sep">Input separator</label>
+                    <input id="piper-sep" type="text" placeholder="@_separatorPlaceholder"
+                           @bind="SeparatorOverride" @bind:event="oninput" />
+                    <p class="muted piper-hint">
+                        Use <code>\t</code>, <code>\n</code>, <code>\r</code> for whitespace.
+                    </p>
+                </div>
+            }
 
             <div class="form-section">
                 <label class="section-label" for="piper-sort">Sort items</label>
@@ -117,10 +148,13 @@
                 </select>
             </div>
 
-            <label class="check-row">
-                <input type="checkbox" @bind="SplitOnNewlinesOnly" />
-                <span>Auto-detect: split on new lines only</span>
-            </label>
+            @if (_mode == InputMode.Text)
+            {
+                <label class="check-row">
+                    <input type="checkbox" @bind="SplitOnNewlinesOnly" />
+                    <span>Auto-detect: split on new lines only</span>
+                </label>
+            }
             <label class="check-row">
                 <input type="checkbox" @bind="TrimItems" />
                 <span>Trim whitespace around items</span>
@@ -144,18 +178,26 @@
     // clipboard call, and the meta strings that aren't part of the
     // transform contract.
 
+    private enum InputMode { Text, Table }
+
     private string _input = "";
     private string _output = "";
     private string _inputMetaText = "Awaiting input…";
     private string _separatorPlaceholder = DefaultSeparatorPlaceholder;
+    private string _inputPlaceholder = TextPlaceholder;
 
     private PiperOptions _options = new();
+    private InputMode _mode = InputMode.Text;
+    private PiperTable? _table;
+    private string? _selectedColumn;
 
     private bool _justCopied;
     private CancellationTokenSource? _copyTimer;
     private ElementReference _inputRef;
 
     private const string DefaultSeparatorPlaceholder = "leave blank to auto-detect";
+    private const string TextPlaceholder = "e.g. 1001, 1005, 1007 — or one value per line";
+    private const string TablePlaceholder = "Paste tab-separated rows copied from a Business Central list (first row = headers)";
 
     private string Input { get => _input; set { _input = value; Transform(); } }
     private PiperOutputFormat Format { get => _options.Format; set { _options = _options with { Format = value }; Transform(); } }
@@ -170,6 +212,7 @@
     private bool TrimItems { get => _options.TrimItems; set { _options = _options with { TrimItems = value }; Transform(); } }
     private bool SkipEmpty { get => _options.SkipEmpty; set { _options = _options with { SkipEmpty = value }; Transform(); } }
     private bool RemoveDuplicates { get => _options.RemoveDuplicates; set { _options = _options with { RemoveDuplicates = value }; Transform(); } }
+    private string? SelectedColumn { get => _selectedColumn; set { _selectedColumn = value; Transform(); } }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -183,6 +226,12 @@
 
     private void Transform()
     {
+        if (_mode == InputMode.Table)
+        {
+            TransformTable();
+            return;
+        }
+
         var result = PiperTransform.Run(_input, _options);
         _output = result.Output;
         _inputMetaText = string.IsNullOrEmpty(_input)
@@ -191,6 +240,71 @@
         _separatorPlaceholder = result.DetectedSeparatorDisplay is null
             ? DefaultSeparatorPlaceholder
             : $"auto-detected: {result.DetectedSeparatorDisplay}";
+    }
+
+    private void TransformTable()
+    {
+        _separatorPlaceholder = DefaultSeparatorPlaceholder;
+
+        if (string.IsNullOrEmpty(_input))
+        {
+            _table = null;
+            _selectedColumn = null;
+            _output = "";
+            _inputMetaText = "Awaiting input…";
+            return;
+        }
+
+        _table = PiperTransform.ParseTable(_input);
+        if (_table is null)
+        {
+            _selectedColumn = null;
+            _output = "";
+            _inputMetaText = "No table detected — paste at least 2 tab-separated rows.";
+            return;
+        }
+
+        // Keep the user's selection across edits when possible; otherwise
+        // fall back to the first header so the dropdown always has a
+        // valid value selected.
+        if (_selectedColumn is null || !_table.Headers.Contains(_selectedColumn))
+        {
+            _selectedColumn = _table.Headers.FirstOrDefault();
+        }
+
+        var columnIndex = _selectedColumn is null
+            ? -1
+            : _table.Headers.ToList().IndexOf(_selectedColumn);
+
+        var values = columnIndex < 0
+            ? Array.Empty<string>()
+            : _table.Rows.Select(row => row[columnIndex]).ToArray();
+
+        var description = _selectedColumn is null
+            ? "table"
+            : $"table column: \"{_selectedColumn}\"";
+
+        var result = PiperTransform.RunOnItems(values, _options, description);
+        _output = result.Output;
+
+        var rows = _table.Rows.Count;
+        var cols = _table.Headers.Count;
+        _inputMetaText = _selectedColumn is null
+            ? $"{rows} row{(rows == 1 ? "" : "s")} × {cols} column{(cols == 1 ? "" : "s")}"
+            : $"{rows} row{(rows == 1 ? "" : "s")} × {cols} column{(cols == 1 ? "" : "s")} · using column \"{_selectedColumn}\"";
+    }
+
+    private void SetMode(InputMode mode)
+    {
+        if (_mode == mode) return;
+        _mode = mode;
+        _inputPlaceholder = mode == InputMode.Table ? TablePlaceholder : TextPlaceholder;
+        if (mode == InputMode.Text)
+        {
+            _table = null;
+            _selectedColumn = null;
+        }
+        Transform();
     }
 
     private async Task CopyAsync()
@@ -229,6 +343,16 @@
     private void SwapInputOutput()
     {
         if (string.IsNullOrEmpty(_output)) return;
+        // The piped result is a flat string, not a table — flipping back to
+        // Text mode keeps chained transforms working without the user
+        // having to toggle the pill manually.
+        if (_mode == InputMode.Table)
+        {
+            _mode = InputMode.Text;
+            _inputPlaceholder = TextPlaceholder;
+            _table = null;
+            _selectedColumn = null;
+        }
         _input = _output;
         Transform();
     }
@@ -239,6 +363,10 @@
         _output = "";
         _inputMetaText = "Awaiting input…";
         _separatorPlaceholder = DefaultSeparatorPlaceholder;
+        _mode = InputMode.Text;
+        _inputPlaceholder = TextPlaceholder;
+        _table = null;
+        _selectedColumn = null;
     }
 
     public void Dispose()

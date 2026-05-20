@@ -658,10 +658,12 @@
     border-color: var(--color-border);
 }
 
-/* Anchor variant — used when pill tabs are route navigation links rather
-   than in-page toggles. Keeps the same size/spacing as the .btn--sm shape
-   the button variant inherits, without dragging in the full .btn rule set. */
-a.pill-tab {
+/* Anchor variant is used when pill tabs are route navigation links
+   (PillTabs.razor); the button variant covers in-page mode toggles
+   like Piper's Text/Table switcher. Both share the same size/spacing so
+   the visual language matches across the app. */
+a.pill-tab,
+button.pill-tab {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -673,8 +675,16 @@ a.pill-tab {
     line-height: 1.2;
 }
 
-a.pill-tab:hover { text-decoration: none; }
-a.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
+button.pill-tab {
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+a.pill-tab:hover,
+button.pill-tab:hover { text-decoration: none; }
+a.pill-tab.pill-tab--active,
+button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 
 .admin-template-edit__toml-form { max-width: 880px; }
 

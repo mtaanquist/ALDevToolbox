@@ -12,6 +12,10 @@
     min-width: 0;
 }
 
+.piper-main ::deep .pill-tabs {
+    margin-bottom: 0;
+}
+
 .piper-main ::deep textarea {
     font-family: var(--font-mono);
     font-size: 13px;
