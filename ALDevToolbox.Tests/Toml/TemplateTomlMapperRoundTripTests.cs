@@ -325,6 +325,27 @@ public sealed class TemplateTomlMapperRoundTripTests
     }
 
     [Fact]
+    public void Round_trip_preserves_default_application_version_latest_sentinel()
+    {
+        // When a template pins to "Latest", the TOML carries the
+        // ApplicationVersionService.LatestSentinel string in the same
+        // default_application_version slot as a fixed catalogue key; the
+        // mapper lifts it onto the explicit bool on parse so the editor
+        // and the service can act on it.
+        var template = TemplateBuilder.Default();
+        template.DefaultApplicationVersionLatest = true;
+        template.DefaultApplicationVersionId = null;
+        template.DefaultApplicationVersion = null;
+
+        var toml = TemplateTomlMapper.ToToml(template);
+        toml.Should().Contain($"default_application_version = \"{ApplicationVersionService.LatestSentinel}\"");
+
+        var parsed = TemplateTomlMapper.FromToml(toml, deprecated: false);
+        parsed.DefaultApplicationVersionLatest.Should().BeTrue();
+        parsed.DefaultApplicationVersionKey.Should().BeNull();
+    }
+
+    [Fact]
     public void Templates_without_overlay_emit_no_workspace_settings_block()
     {
         // Default state: no template-level overlay. ToToml must not emit the

@@ -289,8 +289,9 @@ public class GenerationService
 
         // Module dependencies (from module_dependencies) become literal deps.
         // Implicit dependencies on every required template-declared extension
-        // get added in BuildAppJson at emit time so they pick up the
-        // freshly-generated GUIDs from the rest of the list.
+        // get added in WorkspaceZipBuilder.ResolveDependencies at emit time
+        // so they pick up the freshly-generated GUIDs from the rest of the
+        // list (used when rendering {{dependencies_array}} in app.json).
         var deps = module.Dependencies
             .OrderBy(d => d.Ordering)
             .Select(d => new EmittableDependency(null, null, d.DepId, d.DepName, d.DepPublisher, d.DepVersion))

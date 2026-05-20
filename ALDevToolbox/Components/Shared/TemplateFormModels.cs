@@ -48,6 +48,14 @@ public sealed class TemplateFormState
     public bool Deprecated { get; set; }
     public bool IsDefault { get; set; }
     public string DefaultApplicationVersionKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// When true, the form treats <see cref="DefaultApplicationVersionKey"/>
+    /// as the <see cref="ApplicationVersionService.LatestSentinel"/> sentinel.
+    /// The dropdown surfaces a "Latest" option; the underlying FK on the
+    /// template entity is cleared on save.
+    /// </summary>
+    public bool DefaultApplicationVersionLatest { get; set; }
     public List<string> DefaultModuleKeys { get; } = new();
 
     /// <summary>
@@ -100,7 +108,10 @@ public sealed class TemplateFormState
             ModuleIdRangeSize = source.ModuleIdRangeSize,
             Deprecated = source.Deprecated,
             IsDefault = source.IsDefault,
-            DefaultApplicationVersionKey = source.DefaultApplicationVersionKey ?? string.Empty,
+            DefaultApplicationVersionKey = source.DefaultApplicationVersionLatest
+                ? ApplicationVersionService.LatestSentinel
+                : source.DefaultApplicationVersionKey ?? string.Empty,
+            DefaultApplicationVersionLatest = source.DefaultApplicationVersionLatest,
         };
         foreach (var key in source.DefaultModuleKeys) state.DefaultModuleKeys.Add(key);
         if (source.IncludedFilePaths is not null)
@@ -118,26 +129,37 @@ public sealed class TemplateFormState
     /// validator sees the user-edited values regardless of what was in the
     /// textarea.
     /// </summary>
-    public TemplateAuthoring ToAuthoring() => new(
-        Key: Key,
-        Runtime: Runtime,
-        Name: Name,
-        Description: Description,
-        DefaultsJson: SpliceAppPlatform(DefaultsJson, DefaultApplication, DefaultPlatform),
-        AppSourceCopJson: AppSourceCopJson,
-        CoreIdRangeFrom: CoreIdRangeFrom,
-        CoreIdRangeTo: CoreIdRangeTo,
-        ModuleIdRangeStart: ModuleIdRangeStart,
-        ModuleIdRangeSize: ModuleIdRangeSize,
-        Deprecated: Deprecated,
-        IsDefault: IsDefault,
-        DefaultApplicationVersionKey: string.IsNullOrWhiteSpace(DefaultApplicationVersionKey)
-            ? null
-            : DefaultApplicationVersionKey,
-        DefaultModuleKeys: DefaultModuleKeys.ToList(),
-        Extensions: Extensions.Select(e => e.ToAuthoring()).ToList(),
-        CodeWorkspaceJson: string.IsNullOrWhiteSpace(CodeWorkspaceJson) ? null : CodeWorkspaceJson,
-        IncludedFilePaths: IncludedFilePaths.ToList());
+    public TemplateAuthoring ToAuthoring()
+    {
+        // "Latest" is carried as a string in the dropdown's selection slot so
+        // a single <select> drives both fixed and sentinel choices. Project it
+        // onto the explicit bool when packing back to authoring; the FK key
+        // is nulled so the service doesn't try to resolve it against the
+        // catalogue.
+        var isLatest = DefaultApplicationVersionLatest
+            || string.Equals(DefaultApplicationVersionKey, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal);
+        return new TemplateAuthoring(
+            Key: Key,
+            Runtime: Runtime,
+            Name: Name,
+            Description: Description,
+            DefaultsJson: SpliceAppPlatform(DefaultsJson, DefaultApplication, DefaultPlatform),
+            AppSourceCopJson: AppSourceCopJson,
+            CoreIdRangeFrom: CoreIdRangeFrom,
+            CoreIdRangeTo: CoreIdRangeTo,
+            ModuleIdRangeStart: ModuleIdRangeStart,
+            ModuleIdRangeSize: ModuleIdRangeSize,
+            Deprecated: Deprecated,
+            IsDefault: IsDefault,
+            DefaultApplicationVersionKey: isLatest || string.IsNullOrWhiteSpace(DefaultApplicationVersionKey)
+                ? null
+                : DefaultApplicationVersionKey,
+            DefaultModuleKeys: DefaultModuleKeys.ToList(),
+            Extensions: Extensions.Select(e => e.ToAuthoring()).ToList(),
+            CodeWorkspaceJson: string.IsNullOrWhiteSpace(CodeWorkspaceJson) ? null : CodeWorkspaceJson,
+            IncludedFilePaths: IncludedFilePaths.ToList(),
+            DefaultApplicationVersionLatest: isLatest);
+    }
 
     internal static readonly JsonSerializerOptions PrettyJson = new() { WriteIndented = true };
 

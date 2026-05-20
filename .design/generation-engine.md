@@ -96,7 +96,7 @@ What the template declares is what the ZIP contains — there are no static fall
         the folder ends up with no emitted files AND no child folders, drop a
         .gitkeep placeholder so empty directories survive the ZIP round-trip.
 5. Generate workspace-root files:
-     a. {ShortName}.code-workspace (see below).
+     a. {{short_name}}.code-workspace (see below).
      b. README.md (minimal — workspace name + description).
      c. .gitignore (embedded resource shipped with the app; per-deployment policy).
      d. Per-template-included files from `organization_files`, filtered by

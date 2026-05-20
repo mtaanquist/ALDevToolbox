@@ -25,7 +25,7 @@ public class TemplateSeed
     public AppSourceCopSeed AppSourceCop { get; set; } = new();
 
     /// <summary>
-    /// Optional per-template overlay for <c>{ShortName}.code-workspace</c>
+    /// Optional per-template overlay for <c>{{short_name}}.code-workspace</c>
     /// (issue #61). Absent in most templates — the org's base template is
     /// used unchanged. When present, the JSON is deep-merged onto the org
     /// base at generation time. Serialised by hand so the embedded JSON
@@ -45,7 +45,7 @@ public class TemplateSeed
 
 /// <summary>
 /// The <c>[workspace_settings]</c> table — per-template overlay for the
-/// generated <c>{ShortName}.code-workspace</c> JSON. See
+/// generated <c>{{short_name}}.code-workspace</c> JSON. See
 /// <see cref="RuntimeTemplate.CodeWorkspaceJson"/>.
 /// </summary>
 public class WorkspaceSettingsSeed

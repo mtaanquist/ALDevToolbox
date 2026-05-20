@@ -134,7 +134,11 @@
                     {
                         <select id="ext-app-version" name="ApplicationVersion"
                                 @bind="_applicationVersion" @bind:after="OnApplicationVersionChanged">
-                            @if (!_applicationVersions.Any(v => v.Application == _applicationVersion))
+                            @* "Latest" sentinel — resolves to the highest
+                               active catalogue row at submit time. *@
+                            <option value="@ApplicationVersionService.LatestSentinel">Latest (always highest)</option>
+                            @if (!string.Equals(_applicationVersion, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal)
+                                && !_applicationVersions.Any(v => v.Application == _applicationVersion))
                             {
                                 <option value="@_applicationVersion">@_applicationVersion (template default — not in catalogue)</option>
                             }
@@ -339,6 +343,13 @@
 
     private void OnApplicationVersionChanged()
     {
+        // "Latest" propagates the sentinel into RuntimeVersion so the
+        // endpoint can swap both fields in lock-step at submit time.
+        if (string.Equals(_applicationVersion, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal))
+        {
+            _runtimeVersion = ApplicationVersionService.LatestSentinel;
+            return;
+        }
         if (_applicationVersions is null) return;
         var match = _applicationVersions.FirstOrDefault(v => v.Application == _applicationVersion);
         if (match is not null)

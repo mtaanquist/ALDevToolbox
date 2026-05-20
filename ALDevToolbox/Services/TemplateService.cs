@@ -301,7 +301,9 @@ public class TemplateService
             ModuleIdRangeSize: template.ModuleIdRangeSize,
             Deprecated: template.Deprecated,
             IsDefault: template.IsDefault,
-            DefaultApplicationVersionKey: template.DefaultApplicationVersion?.Key,
+            DefaultApplicationVersionKey: template.DefaultApplicationVersionLatest
+                ? null
+                : template.DefaultApplicationVersion?.Key,
             DefaultModuleKeys: template.DefaultModules
                 .OrderBy(d => d.Ordering)
                 .Where(d => d.Module is not null)
@@ -313,7 +315,8 @@ public class TemplateService
                 .OrderBy(j => j.Ordering)
                 .Where(j => j.OrganizationFile is not null)
                 .Select(j => j.OrganizationFile!.Path)
-                .ToList());
+                .ToList(),
+            DefaultApplicationVersionLatest: template.DefaultApplicationVersionLatest);
     }
 
     private Task HydrateExtensionFolderTreeAsync(RuntimeTemplate template, CancellationToken ct)
@@ -388,6 +391,13 @@ public class TemplateService
         var (defaults, appSourceCop, defaultModuleIds, appVersionId, includedFileIds) =
             await ValidateAsync(input, existingId: null, ct);
 
+        // Auto-include the canonical app.json for every new template so the
+        // admin doesn't have to remember to tick the box. Resolves by path
+        // against the seeded org files; if the org somehow doesn't have one
+        // (legacy DBs that pre-date the seeder + migration), skip silently —
+        // the admin can opt in once the row exists.
+        includedFileIds = await EnsureAppJsonFirstAsync(includedFileIds, ct);
+
         var now = DateTime.UtcNow;
         var orgId = RequireOrganizationId();
         var template = new RuntimeTemplate
@@ -406,6 +416,7 @@ public class TemplateService
             ModuleIdRangeSize = input.ModuleIdRangeSize,
             Deprecated = input.Deprecated,
             DefaultApplicationVersionId = appVersionId,
+            DefaultApplicationVersionLatest = input.DefaultApplicationVersionLatest,
             CreatedAt = now,
             UpdatedAt = now,
             WorkspaceExtensions = input.Extensions
@@ -477,6 +488,7 @@ public class TemplateService
         existing.Deprecated = input.Deprecated;
         existing.DefaultApplicationVersionId = appVersionId;
         existing.DefaultApplicationVersion = null;
+        existing.DefaultApplicationVersionLatest = input.DefaultApplicationVersionLatest;
         existing.UpdatedAt = DateTime.UtcNow;
 
         // Extensions: clear-and-rebuild. The cascade FK on workspace_extensions
@@ -1012,12 +1024,45 @@ public class TemplateService
     }
 
     /// <summary>
+    /// Prepends the org's canonical <c>app.json</c> organisation file to the
+    /// resolved include-file list when it isn't already present. Lets fresh
+    /// templates emit an <c>app.json</c> by default without forcing admins
+    /// to remember to tick the box — they can still untick it later if they
+    /// don't want one. Idempotent on already-included rows.
+    /// </summary>
+    private async Task<IReadOnlyList<int>> EnsureAppJsonFirstAsync(
+        IReadOnlyList<int> includedFileIds, CancellationToken ct)
+    {
+        var orgId = RequireOrganizationId();
+        var appJsonId = await _db.OrganizationFiles
+            .AsNoTracking()
+            .Where(f => f.OrganizationId == orgId && f.Path == PlatformOrganizationFiles.AppJsonPath)
+            .Select(f => (int?)f.Id)
+            .FirstOrDefaultAsync(ct);
+        if (appJsonId is null) return includedFileIds;
+        if (includedFileIds.Contains(appJsonId.Value)) return includedFileIds;
+        var combined = new List<int>(includedFileIds.Count + 1) { appJsonId.Value };
+        combined.AddRange(includedFileIds);
+        return combined;
+    }
+
+    /// <summary>
     /// Resolves the optional default application-version key to an id. Empty
     /// returns null; an unknown / soft-deleted key lands in <paramref name="errors"/>.
     /// </summary>
     private async Task<int?> ResolveApplicationVersionIdAsync(
         TemplateAuthoring input, Dictionary<string, string> errors, CancellationToken ct)
     {
+        // "Latest" sentinel: the FK stays null and the bool flag on the
+        // entity drives the pre-fill at form-load time. Accept either form
+        // (explicit bool, or the sentinel string in the key slot) so the
+        // structured form, TOML, and direct API callers can all express it.
+        if (input.DefaultApplicationVersionLatest
+            || string.Equals(input.DefaultApplicationVersionKey?.Trim(), ApplicationVersionService.LatestSentinel, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
         var versionKey = input.DefaultApplicationVersionKey?.Trim();
         if (string.IsNullOrEmpty(versionKey)) return null;
 

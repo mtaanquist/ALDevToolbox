@@ -53,6 +53,17 @@ public class RuntimeTemplate
     public ApplicationVersion? DefaultApplicationVersion { get; set; }
 
     /// <summary>
+    /// When true, the form-pre-fill resolves to the highest-ordered active
+    /// <see cref="ApplicationVersion"/> at the moment a user opens the
+    /// builder, rather than a fixed catalogue row. Mutually exclusive with
+    /// <see cref="DefaultApplicationVersionId"/>; the validator clears the FK
+    /// when this flag is set. The endpoint also accepts the same sentinel
+    /// on the form submission directly so users can pick "Latest" even when
+    /// the template pins a specific version.
+    /// </summary>
+    public bool DefaultApplicationVersionLatest { get; set; }
+
+    /// <summary>
     /// Typed view of the rest of the <c>app.json</c> defaults plus the
     /// workspace plan's pre-fill block (publisher, target, application,
     /// platform, extension_prefix, affix, features, …). Stored on the row as
@@ -68,7 +79,7 @@ public class RuntimeTemplate
 
     /// <summary>
     /// Optional per-template additions to the workspace's
-    /// <c>{ShortName}.code-workspace</c> JSON. Deep-merged on top of the
+    /// <c>{{short_name}}.code-workspace</c> JSON. Deep-merged on top of the
     /// organisation's base template (see
     /// <c>OrganizationSettings.CodeWorkspaceJson</c>) at generation time, with
     /// template keys winning on the <c>settings</c> block and replacing whole

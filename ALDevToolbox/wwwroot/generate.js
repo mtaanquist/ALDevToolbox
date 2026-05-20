@@ -9,6 +9,13 @@
 // echoed back from a hidden input the form already posts. The poll falls back
 // to a generous safety timer so the spinner can't get stuck even if the
 // browser blocks the cookie.
+//
+// On a successful generation we also send the user on to
+// /docs/extensions-whats-next — a short walkthrough of opening the project,
+// putting it under source control, and pushing it to a remote. Validation
+// errors take a different path: the server replies with 400 + plain text,
+// which the browser renders as a new page, so the JS below doesn't run in
+// that case and the user stays on the error response.
 
 (function () {
     const COOKIE_NAME = "aldt-gen";
@@ -51,6 +58,13 @@
                     btn.classList.remove("btn--loading");
                     btn.removeAttribute("aria-busy");
                     btn.disabled = false;
+                    // Only navigate when the server confirmed the
+                    // submission completed (cookie matched our token).
+                    // A safety-timer timeout leaves the user where they
+                    // are so they can retry without losing form state.
+                    if (seen && seen === token) {
+                        window.location.href = "/docs/extensions-whats-next";
+                    }
                 }
             }, 250);
         });

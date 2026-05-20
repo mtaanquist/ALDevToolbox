@@ -16,6 +16,16 @@ namespace ALDevToolbox.Services;
 /// </summary>
 public class ApplicationVersionService
 {
+    /// <summary>
+    /// Sentinel value that means "resolve to the highest-ordered active
+    /// catalogue row at request time" rather than a fixed application
+    /// version. Carried on <see cref="RuntimeTemplate.DefaultApplicationVersionLatest"/>
+    /// for template defaults; the New Workspace / New Extension form also
+    /// posts this literal string in the <c>ApplicationVersion</c> +
+    /// <c>RuntimeVersion</c> fields when the user picks "Latest" directly.
+    /// </summary>
+    public const string LatestSentinel = "latest";
+
     private static readonly Regex ApplicationVersionRegex = new(@"^\d+\.\d+\.\d+\.\d+$", RegexOptions.Compiled);
     private static readonly Regex RuntimeFormatRegex = new(@"^\d+(\.\d+)?$", RegexOptions.Compiled);
 
@@ -64,6 +74,21 @@ public class ApplicationVersionService
             .ThenBy(a => a.Ordering)
             .ThenBy(a => a.Name)
             .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Returns the highest-ordered active (non-deleted, non-deprecated) row,
+    /// or null when the catalogue is empty. Drives the "Latest" sentinel
+    /// resolution on the template editor and the form endpoints.
+    /// </summary>
+    public Task<ApplicationVersion?> GetLatestAsync(CancellationToken ct = default)
+    {
+        return _db.ApplicationVersions
+            .AsNoTracking()
+            .Where(a => a.DeletedAt == null && !a.Deprecated)
+            .OrderBy(a => a.Ordering)
+            .ThenBy(a => a.Name)
+            .FirstOrDefaultAsync(ct);
     }
 
     /// <summary>Lookup by stable URL-safe key. Used by the seed/TOML round-trip.</summary>

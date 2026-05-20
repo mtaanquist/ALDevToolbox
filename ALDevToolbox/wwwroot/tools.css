@@ -501,6 +501,37 @@
     gap: 12px;
 }
 
+/* Mirrors admin-template-edit__layout for the /admin/templates/files page.
+   The mustache catalogue now lists 18 variables (with the per-extension
+   app.json inputs); the inline MustacheVarsHint that used to sit above the
+   file list was crowding the editor. */
+.admin-template-files__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 32px;
+    align-items: start;
+    max-width: 1240px;
+}
+
+.admin-template-files__editor { min-width: 0; }
+
+.admin-template-files__aside {
+    position: sticky;
+    top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+@media (max-width: 900px) {
+    .admin-template-files__layout {
+        grid-template-columns: 1fr;
+    }
+    .admin-template-files__aside {
+        position: static;
+    }
+}
+
 .preview-card__hint {
     margin: 0 0 8px;
     font-size: 12px;

@@ -11,18 +11,23 @@ internal static class GenerationEndpoints
     {
         // File download endpoint for the New Workspace flow. Requires a
         // signed-in user — anonymous access to the generators stopped with M13.
-        app.MapPost("/generate/workspace", async (HttpContext ctx, GenerationService gen, IAntiforgery antiforgery, CancellationToken ct) =>
+        app.MapPost("/generate/workspace", async (HttpContext ctx, GenerationService gen, ApplicationVersionService versions, IAntiforgery antiforgery, CancellationToken ct) =>
         {
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
             var form = await ctx.Request.ReadFormAsync(ct);
+            var (resolvedApp, resolvedRuntime) = await ResolveVersionAsync(
+                form["ApplicationVersion"].ToString().Trim(),
+                form["RuntimeVersion"].ToString().Trim(),
+                versions, ctx, form, ct);
+            if (resolvedApp is null) return;
             var plan = new ProjectPlan(
                 TemplateKey: form["TemplateKey"].ToString(),
                 WorkspaceName: form["WorkspaceName"].ToString().Trim(),
                 ExtensionPrefix: form["ExtensionPrefix"].ToString().Trim(),
                 Brief: form["Brief"].ToString().Trim(),
                 Description: form["Description"].ToString().Trim(),
-                ApplicationVersion: form["ApplicationVersion"].ToString().Trim(),
-                RuntimeVersion: form["RuntimeVersion"].ToString().Trim(),
+                ApplicationVersion: resolvedApp,
+                RuntimeVersion: resolvedRuntime!,
                 CoreIdRangeFrom: int.TryParse(form["CoreIdRangeFrom"], out var cf) ? cf : 0,
                 CoreIdRangeTo: int.TryParse(form["CoreIdRangeTo"], out var ctn) ? ctn : 0,
                 IncludeExamples: form["IncludeExamples"] == "true" || form["IncludeExamples"] == "on",
@@ -55,10 +60,15 @@ internal static class GenerationEndpoints
             }
         }).RequireAuthorization();
 
-        app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen, OrganizationConfigService orgConfig, IAntiforgery antiforgery, CancellationToken ct) =>
+        app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen, OrganizationConfigService orgConfig, ApplicationVersionService appVersions, IAntiforgery antiforgery, CancellationToken ct) =>
         {
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
             var form = await ctx.Request.ReadFormAsync(ct);
+            var (resolvedApp, resolvedRuntime) = await ResolveVersionAsync(
+                form["ApplicationVersion"].ToString().Trim(),
+                form["RuntimeVersion"].ToString().Trim(),
+                appVersions, ctx, form, ct);
+            if (resolvedApp is null) return;
 
             var ids = form["DependencyIds"];
             var names = form["DependencyNames"];
@@ -86,8 +96,8 @@ internal static class GenerationEndpoints
                 ExtensionName: form["ExtensionName"].ToString().Trim(),
                 Brief: form["Brief"].ToString().Trim(),
                 Description: form["Description"].ToString().Trim(),
-                ApplicationVersion: form["ApplicationVersion"].ToString().Trim(),
-                RuntimeVersion: form["RuntimeVersion"].ToString().Trim(),
+                ApplicationVersion: resolvedApp,
+                RuntimeVersion: resolvedRuntime!,
                 IdRangeFrom: int.TryParse(form["IdRangeFrom"], out var idFrom) ? idFrom : 0,
                 IdRangeTo: int.TryParse(form["IdRangeTo"], out var idTo) ? idTo : 0,
                 IncludeExamples: form["IncludeExamples"] == "true" || form["IncludeExamples"] == "on",
@@ -129,5 +139,42 @@ internal static class GenerationEndpoints
         }).RequireAuthorization();
 
         return app;
+    }
+
+    /// <summary>
+    /// Resolves the form-posted application/runtime version pair, swapping
+    /// the <see cref="ApplicationVersionService.LatestSentinel"/> sentinel
+    /// for the highest-ordered active catalogue row when the user picked
+    /// "Latest". The sentinel travels in both fields together — they swap
+    /// in lock-step so the resulting <c>app.json</c> stays internally
+    /// consistent. Returns <c>(null, null)</c> after writing a 400
+    /// response when the catalogue is empty so the caller can short-
+    /// circuit cleanly.
+    /// </summary>
+    private static async Task<(string? Application, string? Runtime)> ResolveVersionAsync(
+        string formApplication,
+        string formRuntime,
+        ApplicationVersionService versions,
+        HttpContext ctx,
+        Microsoft.AspNetCore.Http.IFormCollection form,
+        CancellationToken ct)
+    {
+        var isLatest = string.Equals(formApplication, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal)
+            || string.Equals(formRuntime, ApplicationVersionService.LatestSentinel, StringComparison.Ordinal);
+        if (!isLatest) return (formApplication, formRuntime);
+
+        var latest = await versions.GetLatestAsync(ct);
+        if (latest is null)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+            ctx.Response.ContentType = "text/plain; charset=utf-8";
+            SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
+            await ctx.Response.WriteAsync(
+                "The submitted form failed validation:\n\n"
+                + "  - ApplicationVersion: \"Latest\" requires at least one active application-version row. Add one under /admin/application-versions.",
+                ct);
+            return (null, null);
+        }
+        return (latest.Application, latest.Runtime);
     }
 }
