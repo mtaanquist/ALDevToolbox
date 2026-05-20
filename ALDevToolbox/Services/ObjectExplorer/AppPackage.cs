@@ -2,30 +2,21 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 
 /// <summary>
 /// In-memory representation of one parsed BC <c>.app</c> file. Produced by
-/// <see cref="AppPackageReader"/>; consumed by the import service (PR 3) to
-/// emit <c>oe_*</c> rows. Records are immutable so the consumer can fan-out
+/// <see cref="AppPackageReader"/>; consumed by the import service to emit
+/// <c>oe_*</c> rows. Records are immutable so the consumer can fan-out
 /// safely across threads without copying.
+/// <para>
+/// Translations (<c>.xlf</c> files under <c>Translations/</c>) are
+/// intentionally NOT carried here — see the note in
+/// <see cref="AppPackageReader"/> for why. Admins upload XLIFFs
+/// explicitly via <see cref="TranslationImportService"/>.
+/// </para>
 /// </summary>
 public sealed record AppPackage(
     AppManifest Manifest,
     SymbolPackage Symbols,
     IReadOnlyList<AppSourceFile> SourceFiles,
-    IReadOnlyList<AppXliffFile> XliffFiles,
     string AppFileHash);
-
-/// <summary>
-/// One <c>.xlf</c> translation file pulled out of the archive's
-/// <c>Translations/</c> folder, already parsed into an
-/// <see cref="XliffDocument"/>. The parser runs inline during
-/// <see cref="AppPackageReader.ReadAsync"/> so the raw decompressed
-/// bytes (which can be 50–100&#160;MB per language for the BC base
-/// app) are released as soon as parsing finishes, rather than being
-/// held alive on the <see cref="AppPackage"/> until the import
-/// service processes them. Holding the parsed document instead
-/// keeps memory proportional to the trans-units we'll persist
-/// (much smaller), not to the raw XML.
-/// </summary>
-public sealed record AppXliffFile(string Path, XliffDocument Document);
 
 /// <summary>
 /// Parsed <c>NavxManifest.xml</c>. App identity (AppId / Name / Publisher /
