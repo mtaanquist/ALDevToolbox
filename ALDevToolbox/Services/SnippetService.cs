@@ -21,6 +21,12 @@ public class SnippetService
     public const int MaxDescriptionLength = 2000;
     public const int MaxKeywordsLength = 500;
     public const int MaxFileNameLength = 260;
+    /// <summary>
+    /// Generous Markdown body cap. Big enough for multi-section setup notes
+    /// with code fences; small enough that a runaway paste can't bloat the
+    /// row (a single snippet would have to be quite pathological to top this).
+    /// </summary>
+    public const int MaxInstructionsLength = 10_000;
 
     private readonly AppDbContext _db;
     private readonly ILogger<SnippetService> _logger;
@@ -49,6 +55,7 @@ public class SnippetService
         var trimmed = (query ?? string.Empty).Trim();
         var rows = _db.Snippets
             .AsNoTracking()
+            .Include(s => s.MinimumApplicationVersion)
             .Where(s => s.DeletedAt == null);
 
         if (!includeDeprecated)
@@ -81,6 +88,7 @@ public class SnippetService
 
         return query
             .Include(s => s.Files.OrderBy(f => f.Ordering))
+            .Include(s => s.MinimumApplicationVersion)
             .OrderBy(s => s.DeletedAt == null ? 0 : 1)
             .ThenBy(s => s.Title)
             .ToListAsync(ct);
@@ -92,6 +100,7 @@ public class SnippetService
         return _db.Snippets
             .AsNoTracking()
             .Include(s => s.Files.OrderBy(f => f.Ordering))
+            .Include(s => s.MinimumApplicationVersion)
             .FirstOrDefaultAsync(s => s.Id == id, ct);
     }
 
@@ -110,6 +119,8 @@ public class SnippetService
             Description = input.Description.Trim(),
             Keywords = NormaliseKeywords(input.Keywords),
             Deprecated = input.Deprecated,
+            Instructions = NullIfBlank(input.Instructions),
+            MinimumApplicationVersionId = input.MinimumApplicationVersionId,
             CreatedAt = now,
             UpdatedAt = now,
             Files = input.Files
@@ -151,6 +162,8 @@ public class SnippetService
         existing.Description = input.Description.Trim();
         existing.Keywords = NormaliseKeywords(input.Keywords);
         existing.Deprecated = input.Deprecated;
+        existing.Instructions = NullIfBlank(input.Instructions);
+        existing.MinimumApplicationVersionId = input.MinimumApplicationVersionId;
         existing.UpdatedAt = DateTime.UtcNow;
 
         ReconcileFiles(existing, input.Files, orgId);
@@ -226,6 +239,13 @@ public class SnippetService
         return string.Join(' ', tokens.Select(t => t.ToLowerInvariant()));
     }
 
+    /// <summary>Trims to null for whitespace-only input so an empty textarea persists as null rather than "".</summary>
+    internal static string? NullIfBlank(string? raw)
+    {
+        var trimmed = raw?.Trim();
+        return string.IsNullOrEmpty(trimmed) ? null : trimmed;
+    }
+
     private async Task ValidateAsync(SnippetInput input, int? existingId, int orgId, CancellationToken ct)
     {
         var errors = new Dictionary<string, string>();
@@ -267,11 +287,55 @@ public class SnippetService
             errors[nameof(input.Keywords)] = $"Keywords must be {MaxKeywordsLength} characters or fewer.";
         }
 
+        await ValidateMetadataAsync(_db, input.Instructions, input.MinimumApplicationVersionId, errors, ct);
+
         ValidateFiles(input.Files, errors);
 
         if (errors.Count > 0)
         {
             throw new PlanValidationException(errors);
+        }
+    }
+
+    /// <summary>
+    /// Validates the optional Markdown instructions length and that the picked
+    /// <see cref="ApplicationVersion"/> exists and isn't soft-deleted. Shared
+    /// with <see cref="SnippetSuggestionService"/> so both surfaces enforce
+    /// the same rules.
+    /// </summary>
+    internal static async Task ValidateMetadataAsync(
+        AppDbContext db,
+        string? instructions,
+        int? minimumApplicationVersionId,
+        IDictionary<string, string> errors,
+        CancellationToken ct)
+    {
+        if (!string.IsNullOrEmpty(instructions) && instructions.Length > MaxInstructionsLength)
+        {
+            errors["Instructions"] = $"Instructions must be {MaxInstructionsLength} characters or fewer.";
+        }
+
+        if (minimumApplicationVersionId is int versionId)
+        {
+            // Allow rows the EF filter would normally hide (other orgs are
+            // impossible here because the catalogue is org-scoped, but a row
+            // that was soft-deleted between page load and save would
+            // otherwise produce an opaque FK error). Soft-deleted rows are
+            // refused with a friendly message; deprecated rows are accepted
+            // so an existing snippet stays valid after a catalogue cleanup.
+            var row = await db.ApplicationVersions
+                .AsNoTracking()
+                .Where(a => a.Id == versionId)
+                .Select(a => new { a.DeletedAt })
+                .FirstOrDefaultAsync(ct);
+            if (row is null)
+            {
+                errors["MinimumApplicationVersionId"] = "Selected application version no longer exists.";
+            }
+            else if (row.DeletedAt is not null)
+            {
+                errors["MinimumApplicationVersionId"] = "Selected application version has been removed from the catalogue.";
+            }
         }
     }
 
@@ -363,7 +427,9 @@ public record SnippetInput(
     string Description,
     string Keywords,
     bool Deprecated,
-    IReadOnlyList<SnippetFileInput> Files);
+    IReadOnlyList<SnippetFileInput> Files,
+    string? Instructions = null,
+    int? MinimumApplicationVersionId = null);
 
 /// <summary>One file row submitted by the snippet file editor.</summary>
 public record SnippetFileInput(string FileName, string Content);

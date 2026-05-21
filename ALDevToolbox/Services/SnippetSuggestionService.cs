@@ -37,7 +37,7 @@ public class SnippetSuggestionService
         var orgId = RequireOrganizationId();
         var userId = RequireUserId();
 
-        Validate(input);
+        await ValidateAsync(input, ct);
 
         var now = DateTime.UtcNow;
         var suggestion = new SnippetSuggestion
@@ -47,6 +47,8 @@ public class SnippetSuggestionService
             Title = input.Title.Trim(),
             Description = input.Description.Trim(),
             Keywords = SnippetService.NormaliseKeywords(input.Keywords),
+            Instructions = SnippetService.NullIfBlank(input.Instructions),
+            MinimumApplicationVersionId = input.MinimumApplicationVersionId,
             Decision = SnippetSuggestionDecision.Pending,
             RequestedAt = now,
             Files = input.Files
@@ -77,6 +79,7 @@ public class SnippetSuggestionService
             .Where(s => s.Decision == SnippetSuggestionDecision.Pending)
             .Include(s => s.Files.OrderBy(f => f.Ordering))
             .Include(s => s.SuggestedByUser)
+            .Include(s => s.MinimumApplicationVersion)
             .OrderBy(s => s.RequestedAt)
             .ToListAsync(ct);
     }
@@ -88,6 +91,7 @@ public class SnippetSuggestionService
             .AsNoTracking()
             .Include(s => s.Files.OrderBy(f => f.Ordering))
             .Include(s => s.SuggestedByUser)
+            .Include(s => s.MinimumApplicationVersion)
             .FirstOrDefaultAsync(s => s.Id == id, ct);
     }
 
@@ -143,6 +147,8 @@ public class SnippetSuggestionService
             Description = suggestion.Description,
             Keywords = suggestion.Keywords,
             Deprecated = false,
+            Instructions = suggestion.Instructions,
+            MinimumApplicationVersionId = suggestion.MinimumApplicationVersionId,
             CreatedAt = now,
             UpdatedAt = now,
             Files = suggestion.Files
@@ -207,7 +213,7 @@ public class SnippetSuggestionService
             suggestion.Title, suggestion.Id);
     }
 
-    private static void Validate(SnippetSuggestionInput input)
+    private async Task ValidateAsync(SnippetSuggestionInput input, CancellationToken ct)
     {
         var errors = new Dictionary<string, string>();
 
@@ -236,6 +242,9 @@ public class SnippetSuggestionService
             errors[nameof(input.Keywords)] = $"Keywords must be {SnippetService.MaxKeywordsLength} characters or fewer.";
         }
 
+        await SnippetService.ValidateMetadataAsync(
+            _db, input.Instructions, input.MinimumApplicationVersionId, errors, ct);
+
         SnippetService.ValidateFiles(input.Files, errors);
 
         if (errors.Count > 0)
@@ -250,4 +259,6 @@ public record SnippetSuggestionInput(
     string Title,
     string Description,
     string Keywords,
-    IReadOnlyList<SnippetFileInput> Files);
+    IReadOnlyList<SnippetFileInput> Files,
+    string? Instructions = null,
+    int? MinimumApplicationVersionId = null);

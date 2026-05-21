@@ -3,6 +3,7 @@
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @inject SnippetService Snippets
+@inject ApplicationVersionService ApplicationVersions
 @inject NavigationManager Nav
 @inject ILogger<AdminSnippetEdit> Log
 @using ALDevToolbox.Domain.Entities
@@ -68,6 +69,30 @@
                     <FieldError Field="Keywords" Errors="_errors" />
                 </section>
 
+                <section class="form-section">
+                    <label class="section-label" for="snippet-min-version">Minimum BC application version</label>
+                    <select id="snippet-min-version" @bind="_minimumApplicationVersionId">
+                        <option value="">No minimum</option>
+                        @foreach (var v in _applicationVersions)
+                        {
+                            <option value="@v.Id">@v.Name (@v.Application)</option>
+                        }
+                    </select>
+                    <small class="muted">
+                        Shown as a badge on the browser card and detail page so users can
+                        tell at a glance whether this snippet targets their runtime.
+                    </small>
+                    <FieldError Field="MinimumApplicationVersionId" Errors="_errors" />
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label" for="snippet-instructions">Instructions (Markdown)</label>
+                    <textarea id="snippet-instructions" rows="6" maxlength="10000"
+                              @bind="_instructions" @bind:event="oninput"
+                              placeholder="Optional setup notes. Markdown is rendered on the public detail page (headings, lists, code fences, links)."></textarea>
+                    <FieldError Field="Instructions" Errors="_errors" />
+                </section>
+
                 <label class="check-row">
                     <input type="checkbox" @bind="_deprecated" />
                     <span>Deprecated (hidden from the user-facing browser)</span>
@@ -99,6 +124,9 @@
     private string _description = string.Empty;
     private string _keywords = string.Empty;
     private bool _deprecated;
+    private string _instructions = string.Empty;
+    private string _minimumApplicationVersionId = string.Empty;
+    private List<ApplicationVersion> _applicationVersions = new();
     private List<SnippetFileEditor.EditableFile> _files = new() { new SnippetFileEditor.EditableFile() };
     private IReadOnlyDictionary<string, string>? _errors;
     private string? _lastError;
@@ -107,6 +135,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _applicationVersions = await ApplicationVersions.GetActiveAsync();
         if (Id is null) return;
         var existing = await Snippets.GetAsync(Id.Value);
         if (existing is null)
@@ -118,6 +147,17 @@
         _description = existing.Description;
         _keywords = existing.Keywords;
         _deprecated = existing.Deprecated;
+        _instructions = existing.Instructions ?? string.Empty;
+        _minimumApplicationVersionId = existing.MinimumApplicationVersionId?.ToString() ?? string.Empty;
+        // If the snippet points at a deprecated or soft-deleted catalogue row
+        // the active-only list wouldn't include it; surface the existing
+        // navigation entity as a synthetic option so the dropdown stays
+        // consistent with what's persisted.
+        if (existing.MinimumApplicationVersion is { } current
+            && !_applicationVersions.Any(v => v.Id == current.Id))
+        {
+            _applicationVersions = _applicationVersions.Append(current).ToList();
+        }
         _files = existing.Files
             .OrderBy(f => f.Ordering)
             .Select(f => new SnippetFileEditor.EditableFile { FileName = f.FileName, Content = f.Content })
@@ -141,7 +181,9 @@
                 _description,
                 _keywords,
                 _deprecated,
-                _files.Select(f => new SnippetFileInput(f.FileName, f.Content)).ToList());
+                _files.Select(f => new SnippetFileInput(f.FileName, f.Content)).ToList(),
+                Instructions: _instructions,
+                MinimumApplicationVersionId: int.TryParse(_minimumApplicationVersionId, out var avId) ? avId : null);
             if (Id is null)
             {
                 var created = await Snippets.CreateAsync(input);

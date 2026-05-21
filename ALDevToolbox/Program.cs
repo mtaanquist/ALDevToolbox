@@ -400,6 +400,9 @@ builder.Services.AddSingleton<MaintenanceModeState>();
 // IconCatalog reads the vendored Lucide SVGs from embedded resources once
 // at startup; singleton so we pay the parse cost a single time per process.
 builder.Services.AddSingleton<IconCatalog>();
+// MarkdownRenderer builds the Markdig pipeline once on construction and
+// reuses it for every render; safe as a singleton, no per-request state.
+builder.Services.AddSingleton<MarkdownRenderer>();
 // The scheduler runs in the background; opt-out via DISABLE_BACKUP_SCHEDULER=1
 // for environments (tests, CI) that don't want a background timer to start
 // chasing pg_dump.

@@ -2,8 +2,10 @@
 @attribute [Authorize]
 @rendermode InteractiveServer
 @inject SnippetSuggestionService Suggestions
+@inject ApplicationVersionService ApplicationVersions
 @inject NavigationManager Nav
 @inject ILogger<SuggestSnippet> Log
+@using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 
 <PageTitle>Suggest a snippet · AL Dev Toolbox</PageTitle>
@@ -70,6 +72,30 @@
                            placeholder="space-separated, e.g. factbox attachment subscriber" />
                     <FieldError Field="Keywords" Errors="_errors" />
                 </section>
+
+                <section class="form-section">
+                    <label class="section-label" for="snippet-min-version">Minimum BC application version (optional)</label>
+                    <select id="snippet-min-version" @bind="_minimumApplicationVersionId">
+                        <option value="">No minimum</option>
+                        @foreach (var v in _applicationVersions)
+                        {
+                            <option value="@v.Id">@v.Name (@v.Application)</option>
+                        }
+                    </select>
+                    <small class="muted">
+                        Pick the lowest BC release this snippet compiles against. Shown as a
+                        badge on the published snippet.
+                    </small>
+                    <FieldError Field="MinimumApplicationVersionId" Errors="_errors" />
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label" for="snippet-instructions">Instructions (optional, Markdown)</label>
+                    <textarea id="snippet-instructions" rows="6" maxlength="10000"
+                              @bind="_instructions" @bind:event="oninput"
+                              placeholder="Where should the recipient put this? Anything to add to a permission set or setup table? Markdown is rendered on the published page."></textarea>
+                    <FieldError Field="Instructions" Errors="_errors" />
+                </section>
             </div>
         </section>
 
@@ -95,11 +121,19 @@
     private string _title = string.Empty;
     private string _description = string.Empty;
     private string _keywords = string.Empty;
+    private string _instructions = string.Empty;
+    private string _minimumApplicationVersionId = string.Empty;
+    private List<ApplicationVersion> _applicationVersions = new();
     private List<SnippetFileEditor.EditableFile> _files = new() { new SnippetFileEditor.EditableFile() };
     private IReadOnlyDictionary<string, string>? _errors;
     private string? _lastError;
     private bool _busy;
     private bool _submitted;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _applicationVersions = await ApplicationVersions.GetActiveAsync();
+    }
 
     private async Task SubmitAsync()
     {
@@ -113,7 +147,9 @@
                 _title,
                 _description,
                 _keywords,
-                _files.Select(f => new SnippetFileInput(f.FileName, f.Content)).ToList());
+                _files.Select(f => new SnippetFileInput(f.FileName, f.Content)).ToList(),
+                Instructions: _instructions,
+                MinimumApplicationVersionId: int.TryParse(_minimumApplicationVersionId, out var avId) ? avId : null);
             await Suggestions.SubmitAsync(input);
             _submitted = true;
         }
