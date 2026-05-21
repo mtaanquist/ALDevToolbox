@@ -30,6 +30,25 @@ public class Snippet
     /// <summary>Hidden from the user-facing browser when true; remains in the admin list.</summary>
     public bool Deprecated { get; set; }
 
+    /// <summary>
+    /// Optional usage instructions (e.g. "place this codeunit in the Setup
+    /// area, then add the permission set entry"). Authored as Markdown and
+    /// rendered on the public detail page; null/empty hides the section.
+    /// </summary>
+    public string? Instructions { get; set; }
+
+    /// <summary>
+    /// Optional minimum BC application version this snippet targets. Surfaced
+    /// as a badge on the browser card and the detail page so users can tell at
+    /// a glance whether it'll compile against their target runtime. Soft-deleted
+    /// catalogue rows are still referencable so the badge keeps rendering;
+    /// deprecated rows are also still referencable because flipping
+    /// <c>Deprecated</c> on the catalogue shouldn't silently drop labels on
+    /// existing snippets.
+    /// </summary>
+    public int? MinimumApplicationVersionId { get; set; }
+    public ApplicationVersion? MinimumApplicationVersion { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 

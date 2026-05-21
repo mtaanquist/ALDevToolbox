@@ -41,7 +41,9 @@ public sealed class SnippetTools
             .ToDictionaryAsync(x => x.SnippetId, x => x.Count, ct);
         return rows.Select(s => new SnippetSummary(
             s.Id, s.Title, s.Description, s.Keywords, s.Deprecated,
-            counts.TryGetValue(s.Id, out var c) ? c : 0)).ToList();
+            counts.TryGetValue(s.Id, out var c) ? c : 0,
+            s.MinimumApplicationVersion?.Name,
+            s.MinimumApplicationVersion?.Application)).ToList();
     }
 
     [McpServerTool(Name = "get_snippet", ReadOnly = true)]
@@ -57,6 +59,9 @@ public sealed class SnippetTools
         }
         return new SnippetDetail(
             row.Id, row.Title, row.Description, row.Keywords, row.Deprecated,
-            row.Files.OrderBy(f => f.Ordering).Select(f => new SnippetFileDto(f.FileName, f.Content)).ToList());
+            row.Files.OrderBy(f => f.Ordering).Select(f => new SnippetFileDto(f.FileName, f.Content)).ToList(),
+            row.Instructions,
+            row.MinimumApplicationVersion?.Name,
+            row.MinimumApplicationVersion?.Application);
     }
 }

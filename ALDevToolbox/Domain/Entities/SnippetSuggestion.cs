@@ -32,6 +32,18 @@ public class SnippetSuggestion
     public string Description { get; set; } = string.Empty;
     public string Keywords { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Proposed Markdown instructions. Carried through to the created
+    /// <see cref="Snippet"/> on approval.
+    /// </summary>
+    public string? Instructions { get; set; }
+
+    /// <summary>
+    /// Proposed minimum BC application version. Carried through on approval.
+    /// </summary>
+    public int? MinimumApplicationVersionId { get; set; }
+    public ApplicationVersion? MinimumApplicationVersion { get; set; }
+
     public SnippetSuggestionDecision Decision { get; set; }
     public DateTime RequestedAt { get; set; }
     public DateTime? DecidedAt { get; set; }

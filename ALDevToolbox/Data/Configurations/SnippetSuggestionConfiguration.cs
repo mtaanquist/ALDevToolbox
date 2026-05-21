@@ -17,6 +17,8 @@ internal sealed class SnippetSuggestionConfiguration : IEntityTypeConfiguration<
         entity.Property(e => e.Title).HasColumnName("title").IsRequired();
         entity.Property(e => e.Description).HasColumnName("description").IsRequired();
         entity.Property(e => e.Keywords).HasColumnName("keywords").IsRequired();
+        entity.Property(e => e.Instructions).HasColumnName("instructions");
+        entity.Property(e => e.MinimumApplicationVersionId).HasColumnName("minimum_application_version_id");
         entity.Property(e => e.Decision).HasColumnName("decision").HasConversion<string>().IsRequired();
         entity.Property(e => e.RequestedAt).HasColumnName("requested_at").IsRequired();
         entity.Property(e => e.DecidedAt).HasColumnName("decided_at");
@@ -39,6 +41,10 @@ internal sealed class SnippetSuggestionConfiguration : IEntityTypeConfiguration<
         entity.HasOne(e => e.ApprovedSnippet)
             .WithMany()
             .HasForeignKey(e => e.ApprovedSnippetId)
+            .OnDelete(DeleteBehavior.SetNull);
+        entity.HasOne(e => e.MinimumApplicationVersion)
+            .WithMany()
+            .HasForeignKey(e => e.MinimumApplicationVersionId)
             .OnDelete(DeleteBehavior.SetNull);
         entity.HasMany(e => e.Files)
             .WithOne(f => f.Suggestion!)

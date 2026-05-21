@@ -109,7 +109,9 @@ public sealed record SnippetSummary(
     string Description,
     string Keywords,
     bool Deprecated,
-    int FileCount);
+    int FileCount,
+    string? MinimumApplicationVersionName = null,
+    string? MinimumApplication = null);
 
 public sealed record SnippetFileDto(string Path, string Content);
 
@@ -119,4 +121,7 @@ public sealed record SnippetDetail(
     string Description,
     string Keywords,
     bool Deprecated,
-    IReadOnlyList<SnippetFileDto> Files);
+    IReadOnlyList<SnippetFileDto> Files,
+    string? Instructions = null,
+    string? MinimumApplicationVersionName = null,
+    string? MinimumApplication = null);

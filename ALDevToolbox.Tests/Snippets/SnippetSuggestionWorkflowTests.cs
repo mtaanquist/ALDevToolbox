@@ -192,6 +192,58 @@ public sealed class SnippetSuggestionWorkflowTests : IDisposable
     }
 
     [Fact]
+    public async Task Approve_carries_instructions_and_minimum_application_version_to_snippet()
+    {
+        ApplicationVersion version;
+        await using (var ctx = _db.NewContext())
+        {
+            version = new ApplicationVersion
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Key = "bc28",
+                Name = "BC 2026 Wave 1",
+                Application = "28.0.0.0",
+                Runtime = "28.0",
+                Ordering = 0,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            ctx.ApplicationVersions.Add(version);
+            await ctx.SaveChangesAsync();
+        }
+
+        var user = await SeedUserAsync(userId: 720);
+        _db.OrgContext.CurrentUserId = user.Id;
+        int suggestionId;
+        await using (var ctx = _db.NewContext())
+        {
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new SnippetSuggestionInput(
+                Title: "Carry metadata",
+                Description: "Body.",
+                Keywords: "",
+                Files: new[] { new SnippetFileInput("A.al", "// a") },
+                Instructions: "## Setup\n\nDrop into `src/`.",
+                MinimumApplicationVersionId: version.Id));
+        }
+
+        var admin = await SeedUserAsync(userId: 721, role: UserRole.Admin);
+        _db.OrgContext.CurrentUserId = admin.Id;
+        Snippet snippet;
+        await using (var ctx = _db.NewContext())
+        {
+            snippet = await NewSuggestionService(ctx).ApproveAsync(suggestionId);
+        }
+
+        await using var verify = _db.NewContext();
+        var promoted = await verify.Snippets
+            .Include(s => s.MinimumApplicationVersion)
+            .SingleAsync(s => s.Id == snippet.Id);
+        promoted.Instructions.Should().Be("## Setup\n\nDrop into `src/`.");
+        promoted.MinimumApplicationVersionId.Should().Be(version.Id);
+        promoted.MinimumApplicationVersion!.Name.Should().Be("BC 2026 Wave 1");
+    }
+
+    [Fact]
     public async Task Approve_refuses_when_already_decided()
     {
         var user = await SeedUserAsync(userId: 708);

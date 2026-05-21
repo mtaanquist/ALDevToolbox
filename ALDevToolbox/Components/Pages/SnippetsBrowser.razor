@@ -71,6 +71,12 @@
                     {
                         <span class="snippet-card__badge">Deprecated</span>
                     }
+                    @if (s.MinimumApplicationVersion is { } minV)
+                    {
+                        <span class="snippet-card__badge" title="Minimum BC application version">
+                            Min: @minV.Name
+                        </span>
+                    }
                     <p class="snippet-card__description">@s.Description</p>
                     @if (!string.IsNullOrWhiteSpace(s.Keywords))
                     {

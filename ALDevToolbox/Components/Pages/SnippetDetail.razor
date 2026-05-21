@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @implements IDisposable
 @inject SnippetService Snippets
+@inject MarkdownRenderer Markdown
 @inject IJSRuntime JS
 @using ALDevToolbox.Domain.Entities
 
@@ -41,6 +42,12 @@
                 {
                     <span class="snippet-card__badge">Deprecated</span>
                 }
+                @if (_snippet.MinimumApplicationVersion is { } minV)
+                {
+                    <span class="snippet-card__badge" title="Minimum BC application version this snippet targets">
+                        Min: @minV.Name (@minV.Application)
+                    </span>
+                }
             </header>
             <p class="snippet-detail__description">@_snippet.Description</p>
             @if (!string.IsNullOrWhiteSpace(_snippet.Keywords))
@@ -51,6 +58,16 @@
                         <span class="snippet-card__keyword">@kw</span>
                     }
                 </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(_snippet.Instructions))
+            {
+                <section class="snippet-detail__instructions">
+                    <h2>Instructions</h2>
+                    <div class="snippet-detail__instructions-body">
+                        @Markdown.Render(_snippet.Instructions)
+                    </div>
+                </section>
             }
 
             <h2>Files</h2>

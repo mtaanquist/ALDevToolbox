@@ -2,6 +2,7 @@
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @inject SnippetSuggestionService Suggestions
+@inject MarkdownRenderer Markdown
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject ILogger<AdminSnippetSuggestions> Log
@@ -53,6 +54,12 @@
                             from @(s.SuggestedByUser?.DisplayName ?? "unknown user")
                             on @s.RequestedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")
                         </span>
+                        @if (s.MinimumApplicationVersion is { } minV)
+                        {
+                            <span class="snippet-card__badge" title="Suggested minimum BC application version">
+                                Min: @minV.Name (@minV.Application)
+                            </span>
+                        }
                     </header>
                     <p>@s.Description</p>
                     @if (!string.IsNullOrWhiteSpace(s.Keywords))
@@ -63,6 +70,15 @@
                                 <span class="snippet-card__keyword">@kw</span>
                             }
                         </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(s.Instructions))
+                    {
+                        <details class="snippet-suggestion__instructions">
+                            <summary>Suggested instructions</summary>
+                            <div class="snippet-detail__instructions-body">
+                                @Markdown.Render(s.Instructions)
+                            </div>
+                        </details>
                     }
 
                     <details>
