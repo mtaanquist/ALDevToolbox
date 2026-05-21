@@ -150,8 +150,11 @@ public sealed class NavMenuTests : IDisposable
         cut.FindAll("a[href='/admin/audit']").Should().BeEmpty(
             "SiteAdmin's /site-admin/audit replaces the per-org one — see NavMenu's header comment");
 
-        var siteBackups = cut.FindAll("a[href='/site-admin/backups']");
-        siteBackups[0].TextContent.Should().Contain("Database backups");
+        var siteBackups = cut.FindAll("a[href='/site-admin/backup-storage']").ToList();
+        siteBackups.Should().NotBeEmpty("Backups, snapshots and storage merged behind one Backup & storage entry");
+        siteBackups[0].TextContent.Should().Contain("Backup");
+        cut.FindAll("a[href='/site-admin/connections']").Should().NotBeEmpty(
+            "Access tokens and OAuth clients merged behind one Connections entry");
         cut.FindAll("a[href='/site-admin/settings']").Should().NotBeEmpty();
     }
 
@@ -176,11 +179,12 @@ public sealed class NavMenuTests : IDisposable
             .And.NotContain("All users",
                 "inside the system org there is no \"per-org\" users page to disambiguate from");
 
-        var siteBackups = cut.FindAll("a[href='/site-admin/backups']");
-        siteBackups[0].TextContent.Should().Contain("Backups")
-            .And.NotContain("Database backups");
+        var siteBackups = cut.FindAll("a[href='/site-admin/backup-storage']").ToList();
+        siteBackups.Should().NotBeEmpty();
+        siteBackups[0].TextContent.Should().Contain("Backup");
 
         cut.FindAll("a[href='/site-admin/settings']").Should().NotBeEmpty();
         cut.FindAll("a[href='/site-admin/audit']").Should().NotBeEmpty();
+        cut.FindAll("a[href='/site-admin/connections']").Should().NotBeEmpty();
     }
 }
