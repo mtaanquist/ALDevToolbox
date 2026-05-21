@@ -707,4 +707,208 @@ public sealed class ReleaseImportServiceTests : IDisposable
                 because: "source_symbol_id must reference a symbol on the same source object");
         });
     }
+
+    // ── Amend (issue #216) ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Helper that ingests a release with one module, returning its id.
+    /// Keeps the amend-test setup compact since most tests need a
+    /// pre-existing ready release with at least one module before the
+    /// amend can run.
+    /// </summary>
+    private async Task<int> SeedReadyReleaseAsync(string label, string appFile)
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        await using var stream = File.OpenRead(Path.Combine(FixtureRoot, appFile));
+        var summary = await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: label,
+            Kind: "first_party",
+            ParentReleaseId: null,
+            ApplicationVersionId: null,
+            Uploads: new[] { new AppFileUpload(appFile, stream, SourceZipStream: null) }));
+        return summary.ReleaseId;
+    }
+
+    [Fact]
+    public async Task Amend_adds_a_second_module_to_an_existing_ready_release()
+    {
+        var releaseId = await SeedReadyReleaseAsync("Amend happy path", "Microsoft_DK_Core.app");
+
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        await using var second = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
+        var amend = await svc.AmendReleaseAsync(
+            releaseId,
+            new[] { new AppFileUpload("Microsoft_OIOUBL.app", second, SourceZipStream: null) });
+
+        amend.ReleaseId.Should().Be(releaseId);
+        amend.ModulesImported.Should().Be(1);
+        amend.ModulesSkipped.Should().Be(0);
+
+        await using var read = _db.NewContext();
+        var release = await read.OeReleases.AsNoTracking().SingleAsync(r => r.Id == releaseId);
+        release.Status.Should().Be("ready");
+        release.StatusMessage.Should().BeNull();
+
+        var modules = await read.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == releaseId)
+            .OrderBy(m => m.Name)
+            .ToListAsync();
+        modules.Should().HaveCount(2);
+        modules.Select(m => m.AppId).Should().Contain(Guid.Parse(DkCoreAppId));
+        modules.Select(m => m.Name).Should().Contain("OIOUBL");
+
+        // Denormalised totals must reflect the amended file set.
+        var groundTruth = await read.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Module!.ReleaseId == releaseId)
+            .GroupBy(_ => 1)
+            .Select(g => new { Count = g.Count(), Length = g.Sum(f => (long)f.Content.Length) })
+            .SingleAsync();
+        release.SourceFileCount.Should().Be(groundTruth.Count);
+        release.SourceContentLength.Should().Be(groundTruth.Length);
+    }
+
+    [Fact]
+    public async Task Amend_re_uploading_byte_identical_module_is_a_silent_skip()
+    {
+        var releaseId = await SeedReadyReleaseAsync("Amend idempotent", "Microsoft_DK_Core.app");
+
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        await using var same = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        var amend = await svc.AmendReleaseAsync(
+            releaseId,
+            new[] { new AppFileUpload("Microsoft_DK_Core.app", same, SourceZipStream: null) });
+
+        amend.ModulesImported.Should().Be(0);
+        amend.ModulesSkipped.Should().Be(1);
+
+        await using var read = _db.NewContext();
+        var modulesInRelease = await read.OeModules.AsNoTracking()
+            .CountAsync(m => m.ReleaseId == releaseId);
+        modulesInRelease.Should().Be(1, because: "no duplicate row should be created on a byte-identical re-upload");
+    }
+
+    [Fact]
+    public async Task Amend_refuses_when_release_is_not_ready()
+    {
+        // Seed a release, then flip it to "ingesting" by hand to simulate
+        // a concurrent amend racing into a partly-mutated release.
+        var releaseId = await SeedReadyReleaseAsync("Amend not-ready", "Microsoft_DK_Core.app");
+        await using (var setup = _db.NewContext())
+        {
+            var r = await setup.OeReleases.SingleAsync(r => r.Id == releaseId);
+            r.Status = "ingesting";
+            await setup.SaveChangesAsync();
+        }
+
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        await using var s = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
+        var act = async () => await svc.AmendReleaseAsync(
+            releaseId,
+            new[] { new AppFileUpload("Microsoft_OIOUBL.app", s, SourceZipStream: null) });
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("ReleaseId");
+    }
+
+    [Fact]
+    public async Task Amend_refuses_when_release_does_not_exist()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        await using var s = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        var act = async () => await svc.AmendReleaseAsync(
+            releaseId: 99_999,
+            new[] { new AppFileUpload("Microsoft_DK_Core.app", s, SourceZipStream: null) });
+
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("ReleaseId");
+    }
+
+    [Fact]
+    public async Task Amend_refuses_when_no_uploads_provided()
+    {
+        var releaseId = await SeedReadyReleaseAsync("Amend no uploads", "Microsoft_DK_Core.app");
+
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        var act = async () => await svc.AmendReleaseAsync(releaseId, Array.Empty<AppFileUpload>());
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("Uploads");
+    }
+
+    [Fact]
+    public async Task Amend_flips_release_to_failed_and_preserves_existing_modules_on_exception()
+    {
+        var releaseId = await SeedReadyReleaseAsync("Amend failure", "Microsoft_DK_Core.app");
+
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        await using var notAnApp = new MemoryStream(new byte[] { 0x50, 0x4B, 0x03, 0x04, 0x00 });
+        var act = async () => await svc.AmendReleaseAsync(
+            releaseId,
+            new[] { new AppFileUpload("not-an-app.zip", notAnApp, SourceZipStream: null) });
+        await act.Should().ThrowAsync<InvalidDataException>();
+
+        await using var read = _db.NewContext();
+        var release = await read.OeReleases.AsNoTracking().SingleAsync(r => r.Id == releaseId);
+        release.Status.Should().Be("failed");
+        release.StatusMessage.Should().NotBeNullOrEmpty();
+
+        var modules = await read.OeModules.AsNoTracking()
+            .CountAsync(m => m.ReleaseId == releaseId);
+        modules.Should().Be(1, because: "the pre-existing module must survive an amend failure");
+    }
+
+    [Fact]
+    public async Task Amend_re_emits_call_site_references_against_the_full_module_set()
+    {
+        // Bring in DK Core first (its source contains member-access patterns
+        // the extractor surfaces as method_call / field_access references
+        // against tables in its own symbol package).
+        var releaseId = await SeedReadyReleaseAsync("Amend reindex", "Microsoft_DK_Core.app");
+        int beforeRefCount;
+        await using (var read = _db.NewContext())
+        {
+            beforeRefCount = await read.OeModuleReferences.AsNoTracking()
+                .CountAsync(r => r.Module!.ReleaseId == releaseId
+                    && (r.ReferenceKind == "method_call" || r.ReferenceKind == "field_access"));
+            beforeRefCount.Should().BeGreaterThan(0,
+                because: "DK Core import emits call-site references during phase 2");
+        }
+
+        // Amend OIOUBL on top of DK Core. The reindex sweep wipes the
+        // previous call-site rows for this release and re-emits them
+        // against the union of modules, so DK Core's call sites must
+        // still be present (and OIOUBL's get added when its .al has any).
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        await using var second = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
+        await svc.AmendReleaseAsync(
+            releaseId,
+            new[] { new AppFileUpload("Microsoft_OIOUBL.app", second, SourceZipStream: null) });
+
+        await using var afterCtx = _db.NewContext();
+        var afterRefCount = await afterCtx.OeModuleReferences.AsNoTracking()
+            .CountAsync(r => r.Module!.ReleaseId == releaseId
+                && (r.ReferenceKind == "method_call" || r.ReferenceKind == "field_access"));
+        afterRefCount.Should().BeGreaterOrEqualTo(beforeRefCount,
+            because: "the reindex must preserve DK Core's call sites; adding OIOUBL can only add more");
+
+        // No duplicates from the reindex: a (module, source_object, line,
+        // column, target) tuple should appear at most once. Picking a
+        // representative key — line + column + target — catches the
+        // double-emit a missing DELETE would cause.
+        var dupes = await afterCtx.OeModuleReferences.AsNoTracking()
+            .Where(r => r.Module!.ReleaseId == releaseId
+                && (r.ReferenceKind == "method_call" || r.ReferenceKind == "field_access"))
+            .GroupBy(r => new { r.SourceObjectId, r.LineNumber, r.ColumnNumber, r.TargetMemberName, r.TargetObjectName })
+            .Where(g => g.Count() > 1)
+            .CountAsync();
+        dupes.Should().Be(0,
+            because: "the amend path must DELETE then re-emit so the reindex doesn't produce duplicate rows");
+    }
 }

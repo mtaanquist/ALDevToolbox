@@ -205,6 +205,181 @@ public class ReleaseImportService
         }
     }
 
+    /// <summary>
+    /// Adds more <c>.app</c> uploads to an existing <c>ready</c> Release.
+    /// Used when partner / customer modules trickle in after the first-party
+    /// DVD has been ingested, and as the fallback for NEA-encrypted .apps
+    /// that can't go through <see cref="ImportReleaseAsync"/> directly —
+    /// admin compiles the publisher's .Source.zip locally with alc and
+    /// drops the resulting unsigned .app onto the existing Release.
+    /// Mirrors <see cref="TranslationImportService"/>'s on-demand additive
+    /// pattern. See GitHub issue #216.
+    ///
+    /// Flips <c>ready → ingesting</c> for the duration of the amend so
+    /// concurrent submits can be refused by the UI; back to <c>ready</c>
+    /// on success or <c>failed</c> on any exception. Re-runs the same
+    /// release-scoped post-passes <see cref="ImportReleaseAsync"/> uses,
+    /// and reindexes extracted call-site references (option 1 from #216)
+    /// so a late-landing module retroactively resolves earlier modules'
+    /// unresolved call sites.
+    /// </summary>
+    public async Task<ReleaseImportSummary> AmendReleaseAsync(
+        int releaseId,
+        IReadOnlyList<AppFileUpload> uploads,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(uploads);
+        var orgId = RequireOrganizationId();
+        await _quotaGuard.EnsureCanWriteAsync(ct).ConfigureAwait(false);
+
+        if (uploads.Count == 0)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Uploads"] = "At least one .app file is required.",
+            });
+        }
+
+        // Pre-check the Release's current state so the operator gets a
+        // field-keyed error instead of an unexpected status flip if they
+        // try to amend an ingesting / failed / soft-deleted Release.
+        var preview = await _db.OeReleases.AsNoTracking()
+            .Where(r => r.Id == releaseId)
+            .Select(r => new { r.Status, r.DeletedAt })
+            .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+        if (preview is null)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["ReleaseId"] = $"Release {releaseId} not found in this organisation.",
+            });
+        }
+        if (preview.DeletedAt is not null)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["ReleaseId"] = $"Release {releaseId} is soft-deleted. Restore it from the admin page before amending.",
+            });
+        }
+        if (!string.Equals(preview.Status, "ready", StringComparison.Ordinal))
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["ReleaseId"] = $"Release {releaseId} isn't ready to amend (status = {preview.Status}). Wait for the current import to finish, or restore the release first.",
+            });
+        }
+
+        var release = await _db.OeReleases.FindAsync(new object?[] { releaseId }, ct).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Release {releaseId} disappeared between the pre-check and the load.");
+
+        release.Status = "ingesting";
+        release.StatusMessage = null;
+        release.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "Started Release amend: ReleaseId={ReleaseId} Label={Label} Uploads={UploadCount}",
+            release.Id, release.Label, uploads.Count);
+
+        var totals = new ImportTotals();
+        try
+        {
+            foreach (var upload in uploads)
+            {
+                ct.ThrowIfCancellationRequested();
+                await ImportOneAppAsync(orgId, release, upload, totals, ct).ConfigureAwait(false);
+            }
+
+            // Same post-passes as ImportReleaseAsync (lines ~130–147). The
+            // first two are idempotent UPDATEs; the third (call-site
+            // extraction) is not, so we wipe its previous output for this
+            // release before re-running. See issue #216 reindex section.
+            await PropagateSourceTableToPageExtensionsAsync(release.Id, ct).ConfigureAwait(false);
+            await ResolveNumericSourceTableNamesAsync(release.Id, ct).ConfigureAwait(false);
+            await DeleteExtractedCallSiteReferencesAsync(release.Id, ct).ConfigureAwait(false);
+            await EmitCallSiteReferencesAsync(orgId, release.Id, totals, ct).ConfigureAwait(false);
+
+            _db.ChangeTracker.Clear();
+            var ready = await _db.OeReleases.FindAsync(new object?[] { release.Id }, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Release {release.Id} disappeared mid-amend.");
+
+            // Re-infer BcVersion so amending the Base App into a previously
+            // third-party-only release lights it up. Don't *clear* an
+            // already-set value if InferBcVersion returns null — the
+            // amend can only add modules, never remove them, so the
+            // pre-existing inference still stands.
+            var inferred = InferBcVersion(release.Id);
+            if (inferred is not null)
+            {
+                ready.BcVersion = inferred;
+            }
+
+            ready.Status = "ready";
+            ready.UpdatedAt = DateTime.UtcNow;
+
+            // Re-stamp denormalised totals in the same SaveChanges as the
+            // status flip back to ready, so the Releases picker never
+            // reads stale counts.
+            var totalsRow = await _db.OeModuleFiles.AsNoTracking()
+                .Where(f => f.Module!.ReleaseId == release.Id)
+                .GroupBy(_ => 1)
+                .Select(g => new { Count = g.Count(), Length = g.Sum(f => (long)f.Content.Length) })
+                .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+            ready.SourceFileCount = totalsRow?.Count ?? 0;
+            ready.SourceContentLength = totalsRow?.Length ?? 0;
+
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Completed Release amend: ReleaseId={ReleaseId} ModulesImported={ModulesImported} ModulesSkipped={ModulesSkipped} ObjectsImported={ObjectsImported} ReferencesImported={ReferencesImported}",
+                release.Id, totals.ModulesImported, totals.ModulesSkipped, totals.ObjectsImported, totals.ReferencesImported);
+
+            return new ReleaseImportSummary(
+                ReleaseId: release.Id,
+                ModulesImported: totals.ModulesImported,
+                ModulesSkipped: totals.ModulesSkipped,
+                ObjectsImported: totals.ObjectsImported,
+                ReferencesImported: totals.ReferencesImported,
+                SourceFilesImported: totals.SourceFilesImported,
+                TranslationsImported: 0);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Release amend failed: ReleaseId={ReleaseId} ModulesImportedBeforeFailure={ModulesImported}",
+                release.Id, totals.ModulesImported);
+            _db.ChangeTracker.Clear();
+            var failed = await _db.OeReleases.FindAsync(new object?[] { release.Id }, ct).ConfigureAwait(false);
+            if (failed is not null)
+            {
+                failed.Status = "failed";
+                failed.StatusMessage = ex.Message;
+                failed.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            }
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Wipes the call-site reference rows (<c>method_call</c> /
+    /// <c>field_access</c>) for every module in this Release. Run before
+    /// <see cref="EmitCallSiteReferencesAsync"/> on the amend path so the
+    /// reindex doesn't produce duplicates. Declarative references
+    /// (variable_type, extends_target, …) are written per-module during
+    /// <see cref="ImportOneAppAsync"/> and stay put — only the extracted
+    /// call-site bucket needs the sweep.
+    /// </summary>
+    private async Task DeleteExtractedCallSiteReferencesAsync(int releaseId, CancellationToken ct)
+    {
+        const string sql = """
+            DELETE FROM oe_module_references
+            WHERE reference_kind IN ('method_call', 'field_access')
+              AND module_id IN (SELECT id FROM oe_modules WHERE release_id = {0});
+            """;
+        await _db.Database.ExecuteSqlRawAsync(sql, new object[] { releaseId }, ct).ConfigureAwait(false);
+    }
+
     // ── Validation ──────────────────────────────────────────────────────
 
     private static void Validate(ReleaseImportRequest req)
