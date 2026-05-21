@@ -40,7 +40,7 @@ public sealed class ObjectExplorerVacuumScheduler : BackgroundService
     {
         "VACUUM oe_module_files;",
         "VACUUM oe_module_objects;",
-        "VACUUM oe_module_procedures;",
+        "VACUUM oe_module_symbols;",
         "VACUUM oe_modules;",
     };
 
