@@ -1,0 +1,49 @@
+@*
+    Shared page header for every /site-admin/settings/* sub-page. Renders
+    a single "Site administration · Settings" h1, a description, and the
+    pill-tab row. Pages set ActiveTab to highlight the right pill and can
+    supply an Actions render fragment for header-aligned buttons (typically
+    the "Save" button bound to the page's form via form="…").
+*@
+
+@using ALDevToolbox.Components.Shared
+
+<header class="admin-page__header">
+    <div>
+        <h1>Settings</h1>
+        <p class="muted">
+            Hosting-wide configuration. Each tab saves on its own so you
+            can edit one section without retyping the rest.
+        </p>
+    </div>
+    @if (Actions is not null)
+    {
+        <div class="admin-page__header-actions">
+            @Actions
+        </div>
+    }
+</header>
+
+<PillTabs Items="@_tabs" AriaLabel="Settings sections" />
+
+@code {
+    public enum Tab { Smtp, Backups, Offsite, Quotas, General, Mcp }
+
+    [Parameter, EditorRequired] public Tab ActiveTab { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+
+    private IReadOnlyList<PillTabs.PillTabItem> _tabs = Array.Empty<PillTabs.PillTabItem>();
+
+    protected override void OnParametersSet()
+    {
+        _tabs = new[]
+        {
+            new PillTabs.PillTabItem("SMTP",            "/site-admin/settings/smtp",     "mail",         ActiveTab == Tab.Smtp),
+            new PillTabs.PillTabItem("Backups",         "/site-admin/settings/backups",  "database-backup", ActiveTab == Tab.Backups),
+            new PillTabs.PillTabItem("Off-site (S3)",   "/site-admin/settings/offsite",  "upload",       ActiveTab == Tab.Offsite),
+            new PillTabs.PillTabItem("Storage quotas",  "/site-admin/settings/quotas",   "hard-drive",   ActiveTab == Tab.Quotas),
+            new PillTabs.PillTabItem("Banner & signup", "/site-admin/settings/general",  "server-cog",   ActiveTab == Tab.General),
+            new PillTabs.PillTabItem("MCP",             "/site-admin/settings/mcp",      "bot",          ActiveTab == Tab.Mcp),
+        };
+    }
+}

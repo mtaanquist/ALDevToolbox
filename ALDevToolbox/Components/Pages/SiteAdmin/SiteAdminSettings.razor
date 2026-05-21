@@ -1,294 +1,47 @@
 @page "/site-admin/settings"
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
-@using ALDevToolbox.Services
-@inject SystemSettingsService Settings
-@inject OffsiteBackupService Offsite
+@inject NavigationManager Nav
 
-<PageTitle>Site Admin · Settings · AL Dev Toolbox</PageTitle>
+@*
+    Bare-route redirect for the Settings sidebar entry. The settings page
+    is now split into per-section pill-tab routes; SMTP is the most
+    common edit (and shows the running-mail-config status), so it's the
+    default tab.
 
-<div class="admin-page">
-    <header class="admin-page__header">
-        <div>
-            <h1>Site Admin · Settings</h1>
-            <p class="muted">
-                Hosting-wide configuration. SMTP values entered here override
-                the <code>SMTP_*</code> environment variables on the next
-                email send — no restart required. Leave a field blank to fall
-                back to the env-var path; clear all fields to disable the
-                override entirely.
-            </p>
-        </div>
-        <div class="admin-page__header-actions">
-            <a class="btn btn--sm" href="/admin">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to admin</span>
-            </a>
-            <button type="submit" form="site-admin-settings-form" class="btn btn--sm btn--primary">
-                <Icon Name="save" Width="14" Height="14" />
-                <span>Save settings</span>
-            </button>
-        </div>
-    </header>
-
-    @if (!string.IsNullOrEmpty(Message))
-    {
-        <p class="form-error" role="alert">@Message</p>
-    }
-    @if (Ok == "saved")
-    {
-        <p class="form-info" role="status">Settings saved.</p>
-    }
-    else if (Ok == "test-sent")
-    {
-        <p class="form-info" role="status">Test email sent — check your inbox.</p>
-    }
-    else if (Ok == "offsite-saved")
-    {
-        <p class="form-info" role="status">Off-site backup settings saved.</p>
-    }
-    @if (TestResult is not null)
-    {
-        <p class="@(TestResult.StartsWith("OK") ? "form-info" : "form-error")" role="status">@TestResult</p>
-    }
-
-    @if (_view is null)
-    {
-        <p class="muted">Loading…</p>
-    }
-    else
-    {
-        <form method="post" action="/site-admin/settings/save" class="admin-form" id="site-admin-settings-form">
-            <AntiforgeryToken />
-
-            <h2>SMTP</h2>
-            <div class="form-row">
-                <label>
-                    Host
-                    <input type="text" name="SmtpHost" value="@_view.SmtpHost" placeholder="smtp.example.com" />
-                </label>
-                <label>
-                    Port
-                    <input type="number" name="SmtpPort" value="@_view.SmtpPort" min="1" max="65535" placeholder="587" />
-                </label>
-            </div>
-            <div class="form-row">
-                <label>
-                    User
-                    <input type="text" name="SmtpUser" value="@_view.SmtpUser" autocomplete="off" />
-                </label>
-                <label>
-                    From address
-                    <input type="email" name="SmtpFrom" value="@_view.SmtpFrom" placeholder="noreply@@example.com" />
-                </label>
-            </div>
-            <div class="form-row">
-                <label>
-                    New password
-                    <input type="password" name="SmtpPassword" value="" autocomplete="new-password"
-                           placeholder="@(_view.HasSmtpPassword ? "(leave blank to keep current)" : "set a password")" />
-                </label>
-                <label class="checkbox-label">
-                    <input type="checkbox" name="ClearSmtpPassword" value="true" />
-                    Clear stored password
-                </label>
-            </div>
-            <label class="checkbox-label">
-                <input type="checkbox" name="SmtpUseStartTls" value="true" checked="@(_view.SmtpUseStartTls != false)" />
-                Use STARTTLS
-            </label>
-
-            <h2>Backups</h2>
-            <label class="checkbox-label">
-                <input type="checkbox" name="BackupScheduleEnabled" value="true" checked="@_view.BackupScheduleEnabled" />
-                Run a scheduled backup once a day
-            </label>
-            <div class="form-row">
-                <label>
-                    Scheduled time (UTC)
-                    <input type="time" name="BackupScheduleTimeUtc"
-                           value="@_view.BackupScheduleTimeUtc.ToString("HH:mm")" />
-                </label>
-                <label>
-                    Retention (full backups, unpinned)
-                    <input type="number" name="BackupRetentionCount"
-                           value="@_view.BackupRetentionCount" min="1" max="365" />
-                </label>
-                <label>
-                    Retention (per-tenant snapshots)
-                    <input type="number" name="PerTenantBackupRetentionCount"
-                           value="@_view.PerTenantBackupRetentionCount" min="1" max="365" />
-                </label>
-            </div>
-            <p class="muted">
-                Pinned backups are exempt from retention pruning. Manage individual
-                backups on the <a href="/site-admin/backup-storage/database">Backups</a> page.
-                Per-tenant snapshots live under each org's backup folder and
-                drive the "restore to yesterday" SiteAdmin tool.
-            </p>
-
-            <h2>Storage quotas</h2>
-            <p class="muted">
-                Default applied to every organisation that doesn't have its own
-                quota set on the <a href="/site-admin/backup-storage/storage">Storage</a> page.
-                Leave blank for unlimited. Billable size is
-                <code>logical + multiplier × index/metadata</code> — set the
-                multiplier to 0 to charge purely for logical bytes.
-            </p>
-            <div class="form-row">
-                <label>
-                    Default quota (MB)
-                    <input type="number" name="DefaultStorageQuotaMb" min="0" step="1"
-                           value="@(_view.DefaultStorageQuotaMb?.ToString() ?? string.Empty)"
-                           placeholder="unlimited" />
-                </label>
-                <label>
-                    Index/metadata multiplier
-                    <input type="number" name="IndexSizeMultiplier" min="0" max="10" step="0.1"
-                           value="@_view.IndexSizeMultiplier.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" />
-                </label>
-            </div>
-
-            <h2>Banner &amp; signup</h2>
-            <label>
-                System banner
-                <textarea name="BannerText" rows="2" maxlength="500"
-                          placeholder="Optional notice shown at the top of every page.">@_view.BannerText</textarea>
-            </label>
-            <label class="checkbox-label">
-                <input type="checkbox" name="DefaultSignupAutoApprove" value="true"
-                       checked="@_view.DefaultSignupAutoApprove" />
-                Auto-approve signups into existing organisations (skip admin review)
-            </label>
-
-            <h2>MCP integration</h2>
-            <p class="muted">
-                Lets users connect AI agents (Claude Desktop, Cursor, VS Code Copilot agent mode,
-                Claude Code) to the toolbox via Personal Access Tokens. When off, the
-                <code>/mcp</code> endpoint returns 404 and the MCP page under <em>Tools</em>
-                is hidden — but existing PATs stay in the database. See
-                <a href="/tools/mcp">the user-facing MCP page</a> for the setup users see.
-            </p>
-            <label class="checkbox-label">
-                <input type="checkbox" name="McpEnabled" value="true"
-                       checked="@_view.McpEnabled" />
-                Enable the MCP server on this deployment
-            </label>
-
-        </form>
-
-        @if (_offsite is not null)
-        {
-            <form method="post" action="/site-admin/settings/offsite/save" class="admin-form" id="offsite-form">
-                <AntiforgeryToken />
-                <h2>Off-site backups (S3-compatible)</h2>
-                <p class="muted">
-                    When enabled, every successful scheduled full backup is
-                    uploaded to the configured bucket and objects older than
-                    the retention window are pruned. Access and secret keys
-                    are encrypted with the Data Protection key ring; leave
-                    blank to keep the stored value, tick the clear box to
-                    wipe it.
-                </p>
-                <label class="checkbox-label">
-                    <input type="checkbox" name="Enabled" value="true" checked="@_offsite.Enabled" />
-                    Upload scheduled backups to the off-site bucket
-                </label>
-                <div class="form-row">
-                    <label>
-                        Endpoint
-                        <input type="text" name="Endpoint" value="@_offsite.Endpoint"
-                               placeholder="https://s3.example.com (blank = AWS default)" />
-                    </label>
-                    <label>
-                        Region
-                        <input type="text" name="Region" value="@_offsite.Region"
-                               placeholder="eu-west-1" />
-                    </label>
-                </div>
-                <div class="form-row">
-                    <label>
-                        Bucket
-                        <input type="text" name="Bucket" value="@_offsite.Bucket" />
-                    </label>
-                    <label>
-                        Prefix
-                        <input type="text" name="Prefix" value="@_offsite.Prefix" placeholder="aldevtoolbox/" />
-                    </label>
-                </div>
-                <div class="form-row">
-                    <label>
-                        Access key id
-                        <input type="text" name="AccessKey" autocomplete="off"
-                               placeholder="@(_offsite.HasAccessKey ? "(stored — leave blank to keep)" : "")" />
-                    </label>
-                    <label>
-                        Secret access key
-                        <input type="password" name="SecretKey" autocomplete="new-password"
-                               placeholder="@(_offsite.HasSecretKey ? "(stored — leave blank to keep)" : "")" />
-                    </label>
-                </div>
-                <div class="form-row">
-                    <label class="checkbox-label">
-                        <input type="checkbox" name="ClearAccessKey" value="true" />
-                        Clear stored access key
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" name="ClearSecretKey" value="true" />
-                        Clear stored secret key
-                    </label>
-                </div>
-                <div class="form-row">
-                    <label class="checkbox-label">
-                        <input type="checkbox" name="ForcePathStyle" value="true" checked="@_offsite.ForcePathStyle" />
-                        Force path-style addressing (MinIO and most S3-compatible servers)
-                    </label>
-                    <label>
-                        Retention (days)
-                        <input type="number" name="RetentionDays" value="@_offsite.RetentionDays" min="1" max="3650" />
-                    </label>
-                </div>
-                <div class="form-actions">
-                    <button type="submit" class="btn btn--sm btn--primary">
-                        <Icon Name="save" Width="14" Height="14" />
-                        <span>Save off-site settings</span>
-                    </button>
-                </div>
-            </form>
-
-            <form method="post" action="/site-admin/settings/offsite/test" class="admin-form admin-form--inline">
-                <AntiforgeryToken />
-                <button type="submit" class="btn btn--sm">
-                    <Icon Name="refresh-cw" Width="14" Height="14" />
-                    <span>Test off-site connection</span>
-                </button>
-                <span class="muted">HEADs the configured bucket using the stored credentials.</span>
-            </form>
-        }
-
-        <form method="post" action="/site-admin/settings/test-email" class="admin-form admin-form--inline">
-            <AntiforgeryToken />
-            <button type="submit" class="btn btn--sm">
-                <Icon Name="mail" Width="14" Height="14" />
-                <span>Send test email to me</span>
-            </button>
-            <span class="muted">Sends a one-line test to your own address using the resolved SMTP settings.</span>
-        </form>
-
-        <p class="muted">Last updated: @_view.UpdatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</p>
-    }
-</div>
+    Query parameters are forwarded so existing per-section endpoints can
+    keep redirecting back to /site-admin/settings?... and still land on a
+    real tab.
+*@
 
 @code {
-    [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
-    [SupplyParameterFromQuery(Name = "test")] public string? TestResult { get; set; }
+    [SupplyParameterFromQuery(Name = "msg")] public string? Msg { get; set; }
+    [SupplyParameterFromQuery(Name = "test")] public string? Test { get; set; }
 
-    private SystemSettingsView? _view;
-    private OffsiteSettingsView? _offsite;
-
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
-        _view = await Settings.GetViewAsync();
-        _offsite = await Settings.GetOffsiteViewAsync();
+        // Pick the tab that matches the legacy success/error code so
+        // SMTP-related redirects land on the SMTP tab, off-site on the
+        // off-site tab, etc. Anything else falls back to SMTP.
+        var (tab, query) = Resolve();
+        Nav.NavigateTo(tab + query, replace: true);
+    }
+
+    private (string Tab, string Query) Resolve()
+    {
+        var parts = new List<string>(3);
+        if (!string.IsNullOrEmpty(Ok)) parts.Add("ok=" + Uri.EscapeDataString(Ok));
+        if (!string.IsNullOrEmpty(Msg)) parts.Add("msg=" + Uri.EscapeDataString(Msg));
+        if (!string.IsNullOrEmpty(Test)) parts.Add("test=" + Uri.EscapeDataString(Test));
+        var query = parts.Count == 0 ? string.Empty : "?" + string.Join("&", parts);
+
+        var tab = (Ok, Test) switch
+        {
+            ("offsite-saved", _) => "/site-admin/settings/offsite",
+            (_, not null) => "/site-admin/settings/offsite",
+            ("test-sent", _) => "/site-admin/settings/smtp",
+            _ => "/site-admin/settings/smtp",
+        };
+        return (tab, query);
     }
 }

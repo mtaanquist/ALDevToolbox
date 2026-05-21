@@ -1,0 +1,72 @@
+@page "/site-admin/settings/quotas"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Services
+@inject SystemSettingsService Settings
+
+<PageTitle>Site Admin · Storage quotas · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <SiteAdminSettingsHeader ActiveTab="SiteAdminSettingsHeader.Tab.Quotas">
+        <Actions>
+            <button type="submit" form="settings-quotas-form" class="btn btn--sm btn--primary">
+                <Icon Name="save" Width="14" Height="14" />
+                <span>Save quotas</span>
+            </button>
+        </Actions>
+    </SiteAdminSettingsHeader>
+
+    @if (!string.IsNullOrEmpty(Message))
+    {
+        <p class="form-error" role="alert">@Message</p>
+    }
+    @if (Ok == "saved")
+    {
+        <p class="form-info" role="status">Storage quotas saved.</p>
+    }
+
+    <p class="muted">
+        Default applied to every organisation that doesn't have its own
+        quota set on the <a href="/site-admin/backup-storage/storage">Storage</a> page.
+        Leave blank for unlimited. Billable size is
+        <code>logical + multiplier × index/metadata</code> — set the
+        multiplier to 0 to charge purely for logical bytes.
+    </p>
+
+    @if (_view is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        <form method="post" action="/site-admin/settings/quotas/save" class="admin-form" id="settings-quotas-form">
+            <AntiforgeryToken />
+            <div class="form-row">
+                <label>
+                    Default quota (MB)
+                    <input type="number" name="DefaultStorageQuotaMb" min="0" step="1"
+                           value="@(_view.DefaultStorageQuotaMb?.ToString() ?? string.Empty)"
+                           placeholder="unlimited" />
+                </label>
+                <label>
+                    Index/metadata multiplier
+                    <input type="number" name="IndexSizeMultiplier" min="0" max="10" step="0.1"
+                           value="@_view.IndexSizeMultiplier.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" />
+                </label>
+            </div>
+        </form>
+
+        <p class="muted">Last updated: @_view.UpdatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</p>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+
+    private SystemSettingsView? _view;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _view = await Settings.GetViewAsync();
+    }
+}
