@@ -253,7 +253,18 @@ public class ReleaseImportService
     private async Task ImportOneAppAsync(
         int orgId, OeRelease release, AppFileUpload upload, ImportTotals totals, CancellationToken ct)
     {
-        var pkg = await AppPackageReader.ReadAsync(upload.AppStream, ct).ConfigureAwait(false);
+        AppPackage pkg;
+        try
+        {
+            pkg = await AppPackageReader.ReadAsync(upload.AppStream, ct).ConfigureAwait(false);
+        }
+        catch (NeaEncryptedAppException ex)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                [$"Uploads.{upload.FileName}"] = ex.Message,
+            });
+        }
 
         // Idempotency: if this Release already has a module with the same
         // (AppId, Version) AND the same byte hash, treat the upload as a

@@ -6,6 +6,17 @@ using System.Xml.Linq;
 namespace ALDevToolbox.Services.ObjectExplorer;
 
 /// <summary>
+/// Thrown when <see cref="AppPackageReader"/> recognises an
+/// NEA-encrypted (signed / marketplace) <c>.app</c>. The importer
+/// catches this specifically to surface a field-keyed
+/// <c>PlanValidationException</c> instead of a 500 page.
+/// </summary>
+public sealed class NeaEncryptedAppException : Exception
+{
+    public NeaEncryptedAppException(string message) : base(message) { }
+}
+
+/// <summary>
 /// Parses a Business Central <c>.app</c> archive into an in-memory
 /// <see cref="AppPackage"/>. The reader does no DB writes and has no
 /// dependencies on services or DI — see <c>.design/object-explorer.md</c>
@@ -60,6 +71,22 @@ public static class AppPackageReader
         {
             throw new InvalidDataException(
                 "Input does not look like a Business Central .app file — missing NAVX header.");
+        }
+
+        // NEA-encrypted apps (signed for AppSource / marketplace distribution)
+        // carry a "NAVX.NEA" magic immediately after the 32-byte NAVX header
+        // hash block, where a plain .app would have ZIP bytes. We can't open
+        // the inner archive without the publisher's decryption key, so reject
+        // up front with a recognisable message — otherwise the next line hands
+        // an encrypted payload to ZipArchive and the operator sees a generic
+        // "End of Central Directory record could not be found" stack trace.
+        if (IsNeaEncrypted(bytes))
+        {
+            throw new NeaEncryptedAppException(
+                "This .app is NEA-encrypted (signed for AppSource / marketplace distribution) "
+                + "and can't be ingested — the Object Explorer needs an unencrypted .app. "
+                + "Ask the publisher for the unsigned build, or use the per-tenant .app from "
+                + "the BC artifacts/DVD instead of the AppSource download.");
         }
 
         // After the 40-byte prefix the bytes are a standard ZIP. Wrap a
@@ -147,6 +174,24 @@ public static class AppPackageReader
     private static bool IsNavxHeader(byte[] bytes)
         => bytes.Length >= NavxPrefixLength
             && bytes[0] == 'N' && bytes[1] == 'A' && bytes[2] == 'V' && bytes[3] == 'X';
+
+    // NEA-encrypted .app files have the 8-byte ASCII magic "NAVX.NEA" at
+    // offset 36 — sitting inside the otherwise-fixed 40-byte NAVX prefix
+    // immediately after the 20-byte hash block and 4 bytes of zero padding.
+    // The Microsoft signed-app tooling (and AppSource downloads) emits this
+    // shape; the unsigned developer build doesn't.
+    private const int NeaMagicOffset = 36;
+    private static readonly byte[] NeaMagic = "NAVX.NEA"u8.ToArray();
+
+    private static bool IsNeaEncrypted(byte[] bytes)
+    {
+        if (bytes.Length < NeaMagicOffset + NeaMagic.Length) return false;
+        for (int i = 0; i < NeaMagic.Length; i++)
+        {
+            if (bytes[NeaMagicOffset + i] != NeaMagic[i]) return false;
+        }
+        return true;
+    }
 
     /// <summary>
     /// Case-insensitive entry lookup. <see cref="ZipArchive.GetEntry"/> is
