@@ -126,6 +126,86 @@ internal static class ObjectExplorerEndpoints
             MultipartHeadersLengthLimit = 32 * 1024,
         });
 
+        // ── Amend modules into an existing release (#216) ───────────────
+        // Mirrors /admin/object-explorer/import but binds to an existing
+        // release id; reuses the same FolderZip / AppFiles + SourceZips
+        // form shape so the upload-building helpers come for free.
+        // Same 1 GB cap — a late-landing partner DVD is rare but possible.
+        app.MapPost("/admin/object-explorer/release/{releaseId:int}/modules", async (
+            int releaseId,
+            HttpContext ctx,
+            ReleaseImportService importer,
+            IAntiforgery antiforgery,
+            CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var folderZip = form.Files.GetFile("FolderZip");
+            var appFiles = form.Files.GetFiles("AppFiles").Where(f => f.Length > 0).ToArray();
+
+            if (folderZip is null && appFiles.Length == 0)
+            {
+                RedirectAmend(ctx, releaseId, "AppFiles", "Pick a folder ZIP or at least one .app file before submitting.");
+                return;
+            }
+
+            var openedStreams = new List<Stream>();
+            ZipArchive? folderArchive = null;
+            string? tempFolderZipPath = null;
+            try
+            {
+                List<AppFileUpload> uploads;
+                if (folderZip is not null && folderZip.Length > 0)
+                {
+                    (uploads, folderArchive, tempFolderZipPath) =
+                        await BuildUploadsFromFolderZipAsync(folderZip, openedStreams, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    uploads = BuildUploadsFromIndividualFiles(form, appFiles, openedStreams);
+                }
+
+                ReleaseImportSummary summary;
+                try
+                {
+                    summary = await importer.AmendReleaseAsync(releaseId, uploads, ct);
+                }
+                catch (PlanValidationException ex)
+                {
+                    var first = ex.Errors.First();
+                    RedirectAmend(ctx, releaseId, first.Key, first.Value);
+                    return;
+                }
+
+                ctx.Response.Redirect(
+                    $"/admin/object-explorer/release/{releaseId}/modules"
+                    + $"?ok=amended"
+                    + $"&modules={summary.ModulesImported}"
+                    + $"&skipped={summary.ModulesSkipped}"
+                    + $"&refs={summary.ReferencesImported}");
+            }
+            finally
+            {
+                foreach (var s in openedStreams)
+                {
+                    try { s.Dispose(); } catch { /* swallow */ }
+                }
+                folderArchive?.Dispose();
+                if (tempFolderZipPath is not null && File.Exists(tempFolderZipPath))
+                {
+                    try { File.Delete(tempFolderZipPath); } catch { /* swallow */ }
+                }
+            }
+        })
+        .RequireAuthorization(policy => policy.RequireRole("Admin"))
+        .WithMetadata(new RequestSizeLimitAttribute(MaxUploadBytes))
+        .WithMetadata(new RequestFormLimitsAttribute
+        {
+            MultipartBodyLengthLimit = MaxUploadBytes,
+            MultipartHeadersLengthLimit = 32 * 1024,
+        });
+
         // ── JSON read-side endpoints for the static-SSR source viewer ──
         // Replace the Blazor-callback path used by the legacy interactive
         // viewer. The static page's source-viewer.js hits these on Cmd/Ctrl
@@ -404,6 +484,13 @@ internal static class ObjectExplorerEndpoints
     {
         ctx.Response.Redirect(
             $"/admin/object-explorer/release/{releaseId}/translations?err=" + Uri.EscapeDataString(errKey)
+            + "&msg=" + Uri.EscapeDataString(message));
+    }
+
+    private static void RedirectAmend(HttpContext ctx, int releaseId, string errKey, string message)
+    {
+        ctx.Response.Redirect(
+            $"/admin/object-explorer/release/{releaseId}/modules?err=" + Uri.EscapeDataString(errKey)
             + "&msg=" + Uri.EscapeDataString(message));
     }
 

@@ -41,6 +41,8 @@ The resolver now reads each module's `DependenciesJson`, computes the transitive
 
 **Priority**: medium. In practice users import every module they care about into one release. The pattern hits operators who layer customer-specific extensions on a parent BC release — important when it lands, but not the common shape.
 
+**Relation to amend (issue #216)**: the amend path re-runs `EmitCallSiteReferencesAsync` over the full release after each add (option-1 reindex; see `ReleaseImportService.AmendReleaseAsync`). That picks up call sites against modules added later *within the same release*, but it doesn't change the single-release catalog scope — a child-release file calling into a parent-release table still drops on amend the same way it does on first ingest. Closing this gap remains a separate change.
+
 ### 4. ~~Bare self-procedure calls~~ — RESOLVED
 
 Landed alongside the Go-to-definition wiring for call sites. The walker now

@@ -48,10 +48,18 @@
                     <span> · @FormatStatus(_release.Status)</span>
                 </p>
             </div>
-            <a class="btn" href="/object-explorer">
-                <Icon Name="arrow-left" Width="16" Height="16" />
-                <span>All Releases</span>
-            </a>
+            <div style="display:flex; gap:.5rem; align-items:center;">
+                <AuthorizeView Roles="Admin">
+                    <a class="btn btn--sm" href="/admin/object-explorer/release/@ReleaseId/modules">
+                        <Icon Name="package-plus" Width="14" Height="14" />
+                        <span>Add modules</span>
+                    </a>
+                </AuthorizeView>
+                <a class="btn" href="/object-explorer">
+                    <Icon Name="arrow-left" Width="16" Height="16" />
+                    <span>All Releases</span>
+                </a>
+            </div>
         </header>
 
         <div class="object-explorer__filters object-explorer__filters--with-scope">

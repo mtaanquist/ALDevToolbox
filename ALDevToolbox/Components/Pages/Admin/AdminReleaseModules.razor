@@ -1,0 +1,220 @@
+@page "/admin/object-explorer/release/{ReleaseId:int}/modules"
+@attribute [Authorize(Roles = "Admin")]
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject IAntiforgery Antiforgery
+@inject IHttpContextAccessor Http
+@using ALDevToolbox.Services.ObjectExplorer
+@using Microsoft.AspNetCore.Antiforgery
+
+@*
+    Admin surface for amending more .app modules into an already-ingested
+    Release. Mirrors AdminReleaseTranslations.razor's pattern: bulk and
+    per-release upload forms at the top, existing modules listed below.
+    Static-rendered so the multipart body streams through Kestrel rather
+    than the Blazor SignalR circuit — same reason AdminReleasesImport.razor
+    is static. See GitHub issue #216.
+*@
+
+<PageTitle>Add modules · @(_release?.Label ?? "Release") · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Add modules</h1>
+            @if (_release is not null)
+            {
+                <p class="muted">
+                    @_release.Label · @_release.ModuleCount module(s)
+                    @if (!string.IsNullOrEmpty(_release.BcVersion))
+                    {
+                        <span> · BC @_release.BcVersion</span>
+                    }
+                    <span> · @_release.Status</span>
+                </p>
+            }
+        </div>
+        <a class="btn btn--sm" href="/object-explorer/release/@ReleaseId">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to release</span>
+        </a>
+    </header>
+
+    @if (Status is { } status)
+    {
+        @if (status.IsError)
+        {
+            <div class="form-error" role="alert"><p>@status.Message</p></div>
+        }
+        else
+        {
+            <p class="form-success" role="status">@status.Message</p>
+        }
+    }
+
+    @if (_release is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_release.Status != "ready")
+    {
+        <p class="muted">
+            This release is currently <strong>@_release.Status</strong>.
+            Amends can only run against a <code>ready</code> release —
+            wait for the current import to finish, or restore the release
+            first from <a href="/admin/object-explorer">the admin index</a>.
+        </p>
+    }
+    else
+    {
+        <section class="form-section">
+            <p class="muted">
+                Drop one or more <code>.app</code> files into this release.
+                Useful for partner / customer modules that land after the
+                first ingest, or when a publisher's NEA-encrypted
+                <code>.app</code> can't be uploaded directly — compile the
+                <code>.Source.zip</code> locally with <code>alc</code> and
+                drop the resulting unsigned <code>.app</code> here. The
+                same <code>(AppId, Version, FileHash)</code> idempotency
+                check applies as the original import: byte-identical
+                re-uploads are silent no-ops; a different content hash
+                for the same <code>(AppId, Version)</code> is refused.
+            </p>
+
+            <form method="post"
+                  action="@($"/admin/object-explorer/release/{ReleaseId}/modules")"
+                  enctype="multipart/form-data"
+                  class="form-grid">
+                @if (_antiforgeryToken is not null)
+                {
+                    <input type="hidden" name="@_antiforgeryToken.FormFieldName" value="@_antiforgeryToken.RequestToken" />
+                }
+
+                <label class="field">
+                    <span class="field__label">Application folder ZIP (recommended)</span>
+                    <input type="file" name="FolderZip" accept=".zip" class="field__input" />
+                    <small class="field__caption muted">
+                        Drop a publisher's <code>applications/</code> folder
+                        as one ZIP — each <code>.app</code> is paired with
+                        its sibling <code>.Source.zip</code> automatically.
+                        Up to 1 GB.
+                    </small>
+                </label>
+
+                <p class="muted">
+                    — or pick individual files (the common case for one or two add-on modules) —
+                </p>
+
+                <label class="field">
+                    <span class="field__label">.app files</span>
+                    <input type="file" name="AppFiles" accept=".app" multiple
+                           class="field__input" />
+                </label>
+
+                <label class="field">
+                    <span class="field__label">.Source.zip files (optional)</span>
+                    <input type="file" name="SourceZips" accept=".zip,.Source.zip" multiple
+                           class="field__input" />
+                    <small class="field__caption muted">
+                        Only needed when an <code>.app</code> was built without
+                        <code>IncludeSourceInSymbolFile=true</code>. We pair
+                        each zip with its <code>.app</code> by filename stem.
+                    </small>
+                </label>
+
+                <button type="submit" class="btn btn--primary">
+                    <Icon Name="upload" Width="16" Height="16" />
+                    <span>Add modules</span>
+                </button>
+            </form>
+        </section>
+
+        <section class="form-section">
+            <h2>Modules already in this release</h2>
+            @if (_modules is null || _modules.Count == 0)
+            {
+                <p class="muted">— none —</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Module</th>
+                            <th scope="col">Publisher</th>
+                            <th scope="col">Version</th>
+                            <th scope="col">AppId</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var m in _modules)
+                        {
+                            <tr>
+                                <td><strong>@m.Name</strong></td>
+                                <td>@m.Publisher</td>
+                                <td><code>@m.Version</code></td>
+                                <td><code class="muted">@m.AppId</code></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter] public int ReleaseId { get; set; }
+
+    private AntiforgeryTokenSet? _antiforgeryToken;
+    private ReleaseDetail? _release;
+    private List<ModuleListItem>? _modules;
+    private (string Message, bool IsError)? Status { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var ctx = Http.HttpContext;
+        if (ctx is not null)
+        {
+            _antiforgeryToken = Antiforgery.GetAndStoreTokens(ctx);
+
+            var err = ctx.Request.Query["err"].ToString();
+            var msg = ctx.Request.Query["msg"].ToString();
+            if (!string.IsNullOrEmpty(err) && !string.IsNullOrEmpty(msg))
+            {
+                Status = ($"{err}: {msg}", true);
+            }
+            else
+            {
+                var ok = ctx.Request.Query["ok"].ToString();
+                if (!string.IsNullOrEmpty(ok))
+                {
+                    Status = (FormatOk(ok, ctx.Request.Query), false);
+                }
+            }
+        }
+
+        _release = await ObjectExplorer.GetReleaseAsync(ReleaseId);
+        if (_release is null) return;
+
+        // Show every module — test / internal / language-pack included —
+        // so the operator can spot duplicates before re-uploading.
+        _modules = await ObjectExplorer.ListModulesAsync(ReleaseId,
+            new ModuleListFilter(
+                IncludeTest: true,
+                IncludeInternal: true,
+                IncludeLanguagePack: true));
+    }
+
+    private static string FormatOk(string ok, IQueryCollection q) => ok switch
+    {
+        "amended" => $"Added {q["modules"]} module(s)"
+            + (int.TryParse(q["skipped"].ToString(), out var sk) && sk > 0
+                ? $" ({sk} byte-identical re-upload(s) skipped)"
+                : string.Empty)
+            + "."
+            + (int.TryParse(q["refs"].ToString(), out var refs) && refs > 0
+                ? $" Re-emitted {refs} call-site reference(s)."
+                : string.Empty),
+        _ => "Done.",
+    };
+}
