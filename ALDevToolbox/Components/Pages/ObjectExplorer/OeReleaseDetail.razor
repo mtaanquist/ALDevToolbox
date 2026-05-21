@@ -6,6 +6,7 @@
    prerender lets the first paint be the loading state and the data
    loads exactly once on the interactive pass. *@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
+@implements IAsyncDisposable
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
 @inject NavigationManager Nav
@@ -57,11 +58,13 @@
             <label class="field">
                 <span class="field__label">Search in</span>
                 <select class="field__input" @bind="_scope" @bind:after="OnScopeChanged"
-                        aria-label="What to search for">
-                    <option value="@SearchScope.Objects">Objects</option>
-                    <option value="@SearchScope.Procedures">Procedures</option>
-                    <option value="@SearchScope.Content">File content</option>
-                    <option value="@SearchScope.Compare">Compare with release</option>
+                        aria-label="What to search for"
+                        aria-keyshortcuts="Alt+1 Alt+2 Alt+3 Alt+4"
+                        title="Alt+1..4 to switch">
+                    <option value="@SearchScope.Objects">Objects (Alt+1)</option>
+                    <option value="@SearchScope.Procedures">Procedures (Alt+2)</option>
+                    <option value="@SearchScope.Content">File content (Alt+3)</option>
+                    <option value="@SearchScope.Compare">Compare with release (Alt+4)</option>
                 </select>
             </label>
 
@@ -339,6 +342,8 @@
     }
 
     private bool _isInteractive;
+    private IJSObjectReference? _keybindModule;
+    private DotNetObjectReference<OeReleaseDetail>? _selfRef;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -355,6 +360,48 @@
         {
             await JS.InvokeVoidAsync("aldt.seedInput", _namespaceInputRef, _namespace);
         }
+
+        // Park focus in the search box on first render so a keyboard-first
+        // user can land on the page and start typing. Compare mode doesn't
+        // render a search input, so skip it there.
+        if (_scope != SearchScope.Compare)
+        {
+            try { await _searchInputRef.FocusAsync(); }
+            catch { /* input was removed before focus landed */ }
+        }
+
+        // Wire the document-level Alt+1..Alt+4 scope keybinds.
+        _keybindModule = await JS.InvokeAsync<IJSObjectReference>(
+            "import", "./Components/Pages/ObjectExplorer/OeReleaseDetail.razor.js");
+        _selfRef = DotNetObjectReference.Create(this);
+        await _keybindModule.InvokeVoidAsync("init", _selfRef);
+    }
+
+    /// <summary>
+    /// Entry point invoked from <c>OeReleaseDetail.razor.js</c> when the
+    /// user presses <kbd>Alt+1</kbd>..<kbd>Alt+4</kbd> anywhere on the
+    /// page to flip the "Search in" scope.
+    /// </summary>
+    [JSInvokable]
+    public async Task SetScopeFromKeybind(string scopeName)
+    {
+        if (!Enum.TryParse<SearchScope>(scopeName, ignoreCase: false, out var scope)) return;
+        if (_scope == scope) return;
+        _scope = scope;
+        await OnScopeChanged();
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+        if (_keybindModule is not null)
+        {
+            try { await _keybindModule.InvokeVoidAsync("detach"); } catch { }
+            try { await _keybindModule.DisposeAsync(); } catch { }
+        }
+        _selfRef?.Dispose();
     }
 
     private async Task OnScopeChanged()

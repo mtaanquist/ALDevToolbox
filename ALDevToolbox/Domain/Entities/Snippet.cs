@@ -3,8 +3,8 @@ namespace ALDevToolbox.Domain.Entities;
 /// <summary>
 /// A reusable AL code pattern made of one or more files. Snippets are
 /// org-scoped and managed by admins; end users browse and search them
-/// from <c>/snippets</c>. Per the design, snippets are viewed in-browser
-/// only — there is no ZIP export.
+/// from <c>/snippets</c> and can download all files as a ZIP archive via
+/// <c>GET /api/snippets/{id}/download</c>.
 /// </summary>
 public class Snippet
 {

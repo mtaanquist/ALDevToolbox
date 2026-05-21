@@ -40,18 +40,59 @@
         <section class="admin-section mcp-step">
             <div class="mcp-step__heading">
                 <span class="mcp-step__number" aria-hidden="true">1</span>
-                <h2>Create a personal access token</h2>
+                <h2>Choose how the agent authenticates</h2>
             </div>
             <p class="muted">
-                Tokens let the agent act as you — same organisation, same role.
-                Treat them like passwords: the full token is shown only once when you
-                create it. You can revoke a token any time.
+                Pick whichever credential matches your client. Both produce a
+                Bearer token that the agent sends with every MCP request.
             </p>
-            <div class="mcp-step__actions">
-                <a class="btn btn--primary" href="/account/access-tokens">
-                    <Icon Name="key-round" Width="16" Height="16" />
-                    <span>Manage access tokens</span>
-                </a>
+            <div class="mcp-step__choice">
+                <div class="mcp-step__choice-card">
+                    <div class="mcp-step__choice-heading">
+                        <Icon Name="key-round" Width="18" Height="18" />
+                        <h3>Personal access token</h3>
+                    </div>
+                    <p class="muted">
+                        Quickest to set up. Works in any MCP-aware client that
+                        supports Bearer auth (VS Code, Claude Desktop, Cursor,
+                        Claude Code). Tokens act as you — same organisation,
+                        same role — and the full value is shown only once when
+                        you create it.
+                    </p>
+                    <div class="mcp-step__actions">
+                        <a class="btn btn--primary" href="/account/access-tokens">
+                            <Icon Name="key-round" Width="16" Height="16" />
+                            <span>Manage access tokens</span>
+                        </a>
+                    </div>
+                </div>
+
+                <div class="mcp-step__choice-divider" aria-hidden="true">
+                    <span>OR</span>
+                </div>
+
+                <div class="mcp-step__choice-card">
+                    <div class="mcp-step__choice-heading">
+                        <Icon Name="plug" Width="18" Height="18" />
+                        <h3>OAuth connector</h3>
+                    </div>
+                    <p class="muted">
+                        For clients that prefer a per-org consented connection —
+                        Claude.ai web and mobile add the server as a Custom
+                        Connector and use the OAuth flow. Manage which
+                        assistants are connected from the Account page.
+                    </p>
+                    <div class="mcp-step__actions">
+                        <a class="btn btn--primary" href="/account/oauth-clients">
+                            <Icon Name="plug" Width="16" Height="16" />
+                            <span>Connected assistants</span>
+                        </a>
+                        <a class="btn" href="/docs/mcp">
+                            <Icon Name="book-open" Width="16" Height="16" />
+                            <span>Claude.ai walk-through</span>
+                        </a>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -61,8 +102,10 @@
                 <h2>Add the server to your AI client</h2>
             </div>
             <p class="muted">
-                Your server URL is <code>@_serverUrl</code>. Replace <code>${PAT}</code> in the
-                snippet below with the token you copied in step 1.
+                Your server URL is <code>@_serverUrl</code>. Replace
+                <code>${TOKEN}</code> in the snippet below with the personal
+                access token from step 1, or the OAuth access token issued
+                by the connected-assistants flow.
             </p>
             <div class="mcp-tabs" role="tablist">
                 @foreach (var tab in Tabs)
@@ -215,7 +258,7 @@
               "type": "http",
               "url": "{{url}}",
               "headers": {
-                "Authorization": "Bearer ${PAT}"
+                "Authorization": "Bearer ${TOKEN}"
               }
             }
           }
@@ -229,7 +272,7 @@
               "type": "http",
               "url": "{{url}}",
               "headers": {
-                "Authorization": "Bearer ${PAT}"
+                "Authorization": "Bearer ${TOKEN}"
               }
             }
           }
@@ -242,7 +285,7 @@
             "aldevtoolbox": {
               "url": "{{url}}",
               "headers": {
-                "Authorization": "Bearer ${PAT}"
+                "Authorization": "Bearer ${TOKEN}"
               }
             }
           }
@@ -250,5 +293,5 @@
         """;
 
     private static string ClaudeCodeSnippet(string url) =>
-        $"claude mcp add aldevtoolbox \\\n  --transport http \\\n  --url {url} \\\n  --header \"Authorization: Bearer ${{PAT}}\"";
+        $"claude mcp add aldevtoolbox \\\n  --transport http \\\n  --url {url} \\\n  --header \"Authorization: Bearer ${{TOKEN}}\"";
 }

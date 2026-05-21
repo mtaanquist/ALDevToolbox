@@ -23,16 +23,22 @@
                 <button type="button"
                         class="pill-tab @(_mode == InputMode.Text ? "pill-tab--active" : "")"
                         role="tab" aria-selected="@(_mode == InputMode.Text ? "true" : "false")"
+                        aria-keyshortcuts="Alt+1"
+                        title="Alt+1"
                         @onclick="() => SetMode(InputMode.Text)">
                     <Icon Name="type" Width="14" Height="14" />
                     <span>Text</span>
+                    <kbd class="pill-tab__hint">Alt+1</kbd>
                 </button>
                 <button type="button"
                         class="pill-tab @(_mode == InputMode.Table ? "pill-tab--active" : "")"
                         role="tab" aria-selected="@(_mode == InputMode.Table ? "true" : "false")"
+                        aria-keyshortcuts="Alt+2"
+                        title="Alt+2"
                         @onclick="() => SetMode(InputMode.Table)">
                     <Icon Name="table" Width="14" Height="14" />
                     <span>Table</span>
+                    <kbd class="pill-tab__hint">Alt+2</kbd>
                 </button>
             </nav>
 
@@ -226,6 +232,8 @@
     private bool _justCopied;
     private CancellationTokenSource? _copyTimer;
     private ElementReference _inputRef;
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<Piper>? _selfRef;
 
     private const string DefaultSeparatorPlaceholder = "leave blank to auto-detect";
     private const string TextPlaceholder = "e.g. 1001, 1005, 1007 — or one value per line";
@@ -251,11 +259,49 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+
+        _module = await JS.InvokeAsync<IJSObjectReference>(
+            "import", "./Components/Pages/Piper.razor.js");
+        _selfRef = DotNetObjectReference.Create(this);
+        await _module.InvokeVoidAsync("init", _selfRef);
+
+        // Restore the last-used input mode from localStorage. Done after the
+        // first render so the SSR pass doesn't depend on per-browser state.
+        try
+        {
+            var stored = await _module.InvokeAsync<string?>("readMode");
+            if (!string.IsNullOrEmpty(stored)
+                && Enum.TryParse<InputMode>(stored, ignoreCase: false, out var restored)
+                && restored != _mode)
+            {
+                SetMode(restored);
+                StateHasChanged();
+            }
+        }
+        catch { /* storage unavailable — leave default mode */ }
+
         // Routes.razor's <FocusOnNavigate Selector="h1" /> announces the page
         // title for screen readers; once that's done, hand focus to the input
         // so a keyboard user can just start typing.
         try { await _inputRef.FocusAsync(); }
         catch { /* element gone — nothing to focus */ }
+    }
+
+    /// <summary>
+    /// Entry point invoked from <c>Piper.razor.js</c> when the user presses
+    /// <kbd>Alt+1</kbd> or <kbd>Alt+2</kbd> anywhere on the page (the JS
+    /// handler listens at the document level so focus inside the textarea
+    /// doesn't swallow the shortcut).
+    /// </summary>
+    [JSInvokable]
+    public Task SetModeFromKeybind(string modeName)
+    {
+        if (Enum.TryParse<InputMode>(modeName, ignoreCase: false, out var mode))
+        {
+            SetMode(mode);
+            StateHasChanged();
+        }
+        return Task.CompletedTask;
     }
 
     private void Transform()
@@ -349,6 +395,10 @@
             _selectedColumn = null;
         }
         Transform();
+        if (_module is not null)
+        {
+            _ = _module.InvokeVoidAsync("writeMode", mode.ToString()).AsTask();
+        }
     }
 
     private async Task CopyAsync()
@@ -417,5 +467,16 @@
     {
         _copyTimer?.Cancel();
         _copyTimer?.Dispose();
+        // Fire-and-forget JS detach + module dispose. Both calls go via the
+        // circuit and can fault if it's already torn down; swallow.
+        if (_module is not null)
+        {
+            _ = Task.Run(async () =>
+            {
+                try { await _module.InvokeVoidAsync("detach"); } catch { }
+                try { await _module.DisposeAsync(); } catch { }
+            });
+        }
+        _selfRef?.Dispose();
     }
 }

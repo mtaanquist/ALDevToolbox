@@ -717,6 +717,19 @@ button.pill-tab:hover { text-decoration: none; }
 a.pill-tab.pill-tab--active,
 button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 
+/* Keyboard-shortcut hint shown after the label. Quietly recessed so it
+   doesn't compete with the tab name; the parent button still owns the
+   click target. */
+.pill-tab__hint {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-text-muted, #808080);
+    background: transparent;
+    padding: 0;
+    margin-left: 2px;
+    opacity: 0.7;
+}
+
 .admin-template-edit__toml-form { max-width: 880px; }
 
 /* The CodeMirror 6 editor mounts into this div. We give it a fixed height
@@ -1139,6 +1152,23 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     color: var(--color-text-muted);
 }
 
+.snippet-detail--with-outline {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 240px;
+    gap: 24px;
+    align-items: start;
+}
+
+.snippet-detail__main {
+    min-width: 0;
+}
+
+.snippet-detail__topbar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .snippet-detail__header {
     display: flex;
     align-items: baseline;
@@ -1177,10 +1207,45 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 6px 12px;
+    gap: 8px;
+    padding: 4px 12px 4px 6px;
     background: var(--color-bg);
     color: var(--color-text);
     border-bottom: 1px solid var(--color-border);
+}
+
+.snippet-file-view--collapsed .snippet-file-view__header {
+    border-bottom-color: transparent;
+}
+
+.snippet-file-view__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 auto;
+    min-width: 0;
+    background: transparent;
+    border: 0;
+    padding: 4px 6px;
+    border-radius: 4px;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+}
+
+.snippet-file-view__toggle:hover {
+    background: var(--color-surface);
+}
+
+.snippet-file-view__toggle code {
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
 }
 
 .snippet-file-view__header code {
@@ -1195,6 +1260,72 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     overflow-x: auto;
     font-size: 0.85em;
     line-height: 1.45;
+}
+
+.snippet-file-view--collapsed .snippet-file-view__content {
+    display: none;
+}
+
+.snippet-outline {
+    position: sticky;
+    top: 16px;
+    align-self: start;
+    max-height: calc(100vh - 32px);
+}
+
+.snippet-outline__inner {
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-surface);
+    padding: 12px 14px;
+    overflow: auto;
+    max-height: calc(100vh - 32px);
+}
+
+.snippet-outline__title {
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 0 0 8px;
+    color: var(--color-text-muted, var(--color-text));
+}
+
+.snippet-outline__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 4px;
+}
+
+.snippet-outline__link {
+    display: block;
+    padding: 4px 6px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--color-text);
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.snippet-outline__link:hover {
+    background: var(--color-bg);
+}
+
+@media (max-width: 960px) {
+    .snippet-detail--with-outline {
+        grid-template-columns: 1fr;
+    }
+    .snippet-outline {
+        position: static;
+        max-height: none;
+    }
+    .snippet-outline__inner {
+        max-height: none;
+    }
 }
 
 .snippet-files {
