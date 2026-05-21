@@ -1,0 +1,130 @@
+@page "/site-admin/settings/offsite"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Services
+@inject SystemSettingsService Settings
+@inject OffsiteBackupService Offsite
+
+<PageTitle>Off-site backups · Site administration · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <SiteAdminSettingsHeader ActiveTab="SiteAdminSettingsHeader.Tab.Offsite">
+        <Actions>
+            <button type="submit" form="settings-offsite-form" class="btn btn--sm btn--primary">
+                <Icon Name="save" Width="14" Height="14" />
+                <span>Save off-site settings</span>
+            </button>
+        </Actions>
+    </SiteAdminSettingsHeader>
+
+    @if (!string.IsNullOrEmpty(Message))
+    {
+        <p class="form-error" role="alert">@Message</p>
+    }
+    @if (Ok == "offsite-saved")
+    {
+        <p class="form-info" role="status">Off-site backup settings saved.</p>
+    }
+    @if (TestResult is not null)
+    {
+        <p class="@(TestResult.StartsWith("OK") ? "form-info" : "form-error")" role="status">@TestResult</p>
+    }
+
+    <p class="muted">
+        When enabled, every successful scheduled full backup is uploaded
+        to the configured bucket and objects older than the retention
+        window are pruned. Access and secret keys are encrypted with the
+        Data Protection key ring; leave blank to keep the stored value,
+        tick the clear box to wipe it.
+    </p>
+
+    @if (_offsite is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        <form method="post" action="/site-admin/settings/offsite/save" class="admin-form" id="settings-offsite-form">
+            <AntiforgeryToken />
+            <label class="checkbox-label">
+                <input type="checkbox" name="Enabled" value="true" checked="@_offsite.Enabled" />
+                Upload scheduled backups to the off-site bucket
+            </label>
+            <div class="form-row">
+                <label>
+                    Endpoint
+                    <input type="text" name="Endpoint" value="@_offsite.Endpoint"
+                           placeholder="https://s3.example.com (blank = AWS default)" />
+                </label>
+                <label>
+                    Region
+                    <input type="text" name="Region" value="@_offsite.Region"
+                           placeholder="eu-west-1" />
+                </label>
+            </div>
+            <div class="form-row">
+                <label>
+                    Bucket
+                    <input type="text" name="Bucket" value="@_offsite.Bucket" />
+                </label>
+                <label>
+                    Prefix
+                    <input type="text" name="Prefix" value="@_offsite.Prefix" placeholder="aldevtoolbox/" />
+                </label>
+            </div>
+            <div class="form-row">
+                <label>
+                    Access key id
+                    <input type="text" name="AccessKey" autocomplete="off"
+                           placeholder="@(_offsite.HasAccessKey ? "(stored — leave blank to keep)" : "")" />
+                </label>
+                <label>
+                    Secret access key
+                    <input type="password" name="SecretKey" autocomplete="new-password"
+                           placeholder="@(_offsite.HasSecretKey ? "(stored — leave blank to keep)" : "")" />
+                </label>
+            </div>
+            <div class="form-row">
+                <label class="checkbox-label">
+                    <input type="checkbox" name="ClearAccessKey" value="true" />
+                    Clear stored access key
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" name="ClearSecretKey" value="true" />
+                    Clear stored secret key
+                </label>
+            </div>
+            <div class="form-row">
+                <label class="checkbox-label">
+                    <input type="checkbox" name="ForcePathStyle" value="true" checked="@_offsite.ForcePathStyle" />
+                    Force path-style addressing (MinIO and most S3-compatible servers)
+                </label>
+                <label>
+                    Retention (days)
+                    <input type="number" name="RetentionDays" value="@_offsite.RetentionDays" min="1" max="3650" />
+                </label>
+            </div>
+        </form>
+
+        <form method="post" action="/site-admin/settings/offsite/test" class="admin-form admin-form--inline">
+            <AntiforgeryToken />
+            <button type="submit" class="btn btn--sm">
+                <Icon Name="refresh-cw" Width="14" Height="14" />
+                <span>Test off-site connection</span>
+            </button>
+            <span class="muted">HEADs the configured bucket using the stored credentials.</span>
+        </form>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+    [SupplyParameterFromQuery(Name = "test")] public string? TestResult { get; set; }
+
+    private OffsiteSettingsView? _offsite;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _offsite = await Settings.GetOffsiteViewAsync();
+    }
+}

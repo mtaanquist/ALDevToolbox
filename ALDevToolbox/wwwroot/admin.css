@@ -391,6 +391,47 @@
 
 .btn--danger:hover { background: #a40e26; }
 
+/* Inline confirm-and-delete form used on /admin/object-explorer. The input
+   sits next to the danger button so an admin can type the release label
+   and submit in one row. align-items: stretch makes the input and button
+   the same height regardless of border treatment. */
+.hard-delete-form {
+    display: inline-flex;
+    gap: 6px;
+    align-items: stretch;
+    vertical-align: middle;
+}
+
+.hard-delete-form__input {
+    min-width: 14rem;
+}
+
+/* Bottom-of-table pagination strip used by /admin/audit. Counter on the
+   left, prev/next on the right; disabled state is presentational so the
+   anchor still renders for the keyboard tab order. */
+.audit-pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 16px;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.audit-pagination__buttons {
+    display: inline-flex;
+    gap: 8px;
+}
+
+.btn--disabled,
+.btn--disabled:hover,
+.btn[aria-disabled="true"],
+.btn[aria-disabled="true"]:hover {
+    opacity: 0.45;
+    pointer-events: none;
+    cursor: default;
+}
+
 .form-success {
     color: var(--color-valid);
     background: var(--color-surface);

@@ -1,0 +1,16 @@
+@page "/site-admin/backup-storage"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@inject NavigationManager Nav
+
+@*
+    Bare-route redirect for the unified Backup & storage entry in the
+    site-admin sidebar. Lands users on the Database tab — the most
+    operationally relevant of the three for day-to-day work.
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/site-admin/backup-storage/database", replace: true);
+    }
+}

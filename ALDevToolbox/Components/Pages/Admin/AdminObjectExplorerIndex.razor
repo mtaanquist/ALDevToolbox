@@ -118,15 +118,14 @@
 
                                 <form method="post"
                                       action="@($"/admin/object-explorer/{r.Id}/hard-delete")"
-                                      style="display:inline">
+                                      class="hard-delete-form">
                                     <AntiforgeryToken />
                                     <input type="text"
                                            name="ConfirmLabel"
                                            required
-                                           class="field__input"
+                                           class="field__input hard-delete-form__input"
                                            placeholder="Type label to confirm"
-                                           aria-label="Confirm label"
-                                           style="display:inline-block; width: 14rem;" />
+                                           aria-label="Confirm label" />
                                     <button type="submit" class="btn btn--sm btn--danger"
                                             title="Permanently remove this Release and all its data">
                                         <Icon Name="trash-2" Width="14" Height="14" />
@@ -175,7 +174,7 @@
         "imported"     => $"Release {id} imported.",
         "soft-deleted" => $"Release {id} soft-deleted. Restore from this page if it was a mistake.",
         "restored"     => $"Release {id} restored.",
-        "hard-deleted" => $"Release {id} permanently deleted. Run VACUUM oe_module_files to reclaim disk now if you need it.",
+        "hard-deleted" => $"Release {id} permanently deleted.",
         _              => "Done.",
     };
 

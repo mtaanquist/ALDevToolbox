@@ -1,0 +1,16 @@
+@page "/site-admin/oauth-clients"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@inject NavigationManager Nav
+
+@*
+    Legacy redirect: /site-admin/oauth-clients moved under the unified
+    /site-admin/connections/oauth-clients route. POST endpoints kept
+    their original paths.
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/site-admin/connections/oauth-clients", replace: true);
+    }
+}

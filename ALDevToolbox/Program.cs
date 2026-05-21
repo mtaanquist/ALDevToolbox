@@ -407,6 +407,12 @@ if (Environment.GetEnvironmentVariable("DISABLE_BACKUP_SCHEDULER") != "1")
 {
     builder.Services.AddHostedService<BackupScheduler>();
 }
+// Daily VACUUM over the Object Explorer content tables. Same opt-out
+// pattern as the backup scheduler so tests can disable the timer.
+if (Environment.GetEnvironmentVariable("DISABLE_OE_VACUUM_SCHEDULER") != "1")
+{
+    builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerVacuumScheduler>();
+}
 // Email shares the AppDbContext lifetime (Scoped) so it can read the
 // hybrid SMTP override from system_settings.
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
@@ -527,6 +533,7 @@ app.MapAdminEndpoints();
 app.MapAccountEndpoints();
 app.MapAdminUserEndpoints();
 app.MapObjectExplorerEndpoints();
+app.MapSnippetEndpoints();
 app.MapSiteAdminEndpoints();
 app.MapMcpEndpoints();
 app.MapOAuthEndpoints();

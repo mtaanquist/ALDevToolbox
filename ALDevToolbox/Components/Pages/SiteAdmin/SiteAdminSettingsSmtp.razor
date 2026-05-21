@@ -1,0 +1,111 @@
+@page "/site-admin/settings/smtp"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Services
+@inject SystemSettingsService Settings
+
+<PageTitle>SMTP · Site administration · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <SiteAdminSettingsHeader ActiveTab="SiteAdminSettingsHeader.Tab.Smtp">
+        <Actions>
+            <button type="submit" form="settings-smtp-form" class="btn btn--sm btn--primary">
+                <Icon Name="save" Width="14" Height="14" />
+                <span>Save SMTP</span>
+            </button>
+        </Actions>
+    </SiteAdminSettingsHeader>
+
+    @if (!string.IsNullOrEmpty(Message))
+    {
+        <p class="form-error" role="alert">@Message</p>
+    }
+    @if (Ok == "saved")
+    {
+        <p class="form-info" role="status">SMTP settings saved.</p>
+    }
+    else if (Ok == "test-sent")
+    {
+        <p class="form-info" role="status">Test email sent — check your inbox.</p>
+    }
+    @if (TestResult is not null)
+    {
+        <p class="@(TestResult.StartsWith("OK") ? "form-info" : "form-error")" role="status">@TestResult</p>
+    }
+
+    <p class="muted">
+        SMTP values entered here override the <code>SMTP_*</code> environment
+        variables on the next email send — no restart required. Leave a field
+        blank to fall back to the env-var path; clear all fields to disable
+        the override entirely.
+    </p>
+
+    @if (_view is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        <form method="post" action="/site-admin/settings/smtp/save" class="admin-form" id="settings-smtp-form">
+            <AntiforgeryToken />
+            <div class="form-row">
+                <label>
+                    Host
+                    <input type="text" name="SmtpHost" value="@_view.SmtpHost" placeholder="smtp.example.com" />
+                </label>
+                <label>
+                    Port
+                    <input type="number" name="SmtpPort" value="@_view.SmtpPort" min="1" max="65535" placeholder="587" />
+                </label>
+            </div>
+            <div class="form-row">
+                <label>
+                    User
+                    <input type="text" name="SmtpUser" value="@_view.SmtpUser" autocomplete="off" />
+                </label>
+                <label>
+                    From address
+                    <input type="email" name="SmtpFrom" value="@_view.SmtpFrom" placeholder="noreply@@example.com" />
+                </label>
+            </div>
+            <div class="form-row">
+                <label>
+                    New password
+                    <input type="password" name="SmtpPassword" value="" autocomplete="new-password"
+                           placeholder="@(_view.HasSmtpPassword ? "(leave blank to keep current)" : "set a password")" />
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" name="ClearSmtpPassword" value="true" />
+                    Clear stored password
+                </label>
+            </div>
+            <label class="checkbox-label">
+                <input type="checkbox" name="SmtpUseStartTls" value="true" checked="@(_view.SmtpUseStartTls != false)" />
+                Use STARTTLS
+            </label>
+        </form>
+
+        <form method="post" action="/site-admin/settings/test-email" class="admin-form admin-form--inline">
+            <AntiforgeryToken />
+            <button type="submit" class="btn btn--sm">
+                <Icon Name="mail" Width="14" Height="14" />
+                <span>Send test email to me</span>
+            </button>
+            <span class="muted">Sends a one-line test to your own address using the resolved SMTP settings.</span>
+        </form>
+
+        <p class="muted">Last updated: @_view.UpdatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</p>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+    [SupplyParameterFromQuery(Name = "test")] public string? TestResult { get; set; }
+
+    private SystemSettingsView? _view;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _view = await Settings.GetViewAsync();
+    }
+}

@@ -1,0 +1,16 @@
+@page "/site-admin/connections"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@inject NavigationManager Nav
+
+@*
+    Bare-route redirect for the Connections sidebar entry. Lands users on
+    the Access tokens tab — PATs are the more common credential type to
+    audit, so it's the more useful default.
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/site-admin/connections/access-tokens", replace: true);
+    }
+}

@@ -1,4 +1,4 @@
-@page "/site-admin/oauth-clients"
+@page "/site-admin/connections/oauth-clients"
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
 @rendermode InteractiveServer
 @using ALDevToolbox.Services
@@ -6,24 +6,18 @@
 @using ALDevToolbox.Components.Shared
 @inject OAuthClientAdminService Clients
 
-<PageTitle>Site Admin · OAuth clients · AL Dev Toolbox</PageTitle>
+<PageTitle>OAuth clients · Site administration · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page">
-    <header class="admin-page__header">
-        <div>
-            <h1>Site Admin · OAuth clients</h1>
-            <p class="muted">
-                Every Claude / Cursor / agent connection across every organisation. DCR rows
-                were registered via <code>/oauth/register</code>; CIMD rows identify themselves
-                with a URL-hosted client metadata document. Revoking signs the assistant out
-                of that user's account; deleting the client wipes it for every user.
-            </p>
-        </div>
-        <a class="btn btn--sm" href="/site-admin/access-tokens">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Personal access tokens</span>
-        </a>
-    </header>
+    <SiteAdminConnectionsHeader ActiveTab="SiteAdminConnectionsHeader.Tab.OAuthClients" />
+
+    <p class="muted">
+        Every Claude / Cursor / agent connection across every organisation.
+        DCR rows were registered via <code>/oauth/register</code>; CIMD rows
+        identify themselves with a URL-hosted client metadata document.
+        Revoking signs the assistant out of that user's account; deleting
+        the client wipes it for every user.
+    </p>
 
     @if (Ok == "revoked")
     {

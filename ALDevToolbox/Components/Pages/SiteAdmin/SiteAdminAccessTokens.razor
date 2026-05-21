@@ -1,4 +1,4 @@
-@page "/site-admin/access-tokens"
+@page "/site-admin/connections/access-tokens"
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Services
@@ -6,22 +6,15 @@
 @using ALDevToolbox.Components.Shared
 @inject PersonalAccessTokenService Tokens
 
-<PageTitle>Site Admin · Access tokens · AL Dev Toolbox</PageTitle>
+<PageTitle>Access tokens · Site administration · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page">
-    <header class="admin-page__header">
-        <div>
-            <h1>Site Admin · Personal access tokens</h1>
-            <p class="muted">
-                Every Personal Access Token across every organisation. Use the
-                revoke action when a token has leaked or its owner has left.
-            </p>
-        </div>
-        <a class="btn btn--sm" href="/site-admin/users">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to users</span>
-        </a>
-    </header>
+    <SiteAdminConnectionsHeader ActiveTab="SiteAdminConnectionsHeader.Tab.AccessTokens" />
+
+    <p class="muted">
+        Every Personal Access Token across every organisation. Use the
+        revoke action when a token has leaked or its owner has left.
+    </p>
 
     @if (Ok == "revoked")
     {

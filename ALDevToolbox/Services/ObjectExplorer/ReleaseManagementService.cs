@@ -118,7 +118,7 @@ public class ReleaseManagementService
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
         _logger.LogWarning(
-            "Hard-deleted Release {ReleaseId} ({Label}). All dependent oe_* rows were cascade-removed; storage reclaim requires VACUUM.",
+            "Hard-deleted Release {ReleaseId} ({Label}). All dependent oe_* rows were cascade-removed; ObjectExplorerVacuumScheduler reclaims storage on its next nightly tick.",
             release.Id, release.Label);
     }
 

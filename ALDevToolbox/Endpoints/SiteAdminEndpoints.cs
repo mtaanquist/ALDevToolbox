@@ -27,7 +27,7 @@ internal static class SiteAdminEndpoints
         {
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
             await tokens.RevokeAsync(id, ignoreOrgScope: true, ct);
-            ctx.Response.Redirect("/site-admin/access-tokens?ok=revoked");
+            ctx.Response.Redirect("/site-admin/connections/access-tokens?ok=revoked");
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
         app.MapPost("/site-admin/users/{id:int}/promote", async (
@@ -58,50 +58,69 @@ internal static class SiteAdminEndpoints
             ctx.Response.Redirect($"{RouteConstants.SiteAdminUsers}?{RouteConstants.OkQuery}=demoted");
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
-        // Post to a distinct sub-path so we don't collide with the Razor
-        // Components endpoint that MapRazorComponents registers for the
-        // `/site-admin/settings` page route — overlapping the two raises
-        // AmbiguousMatchException at request time.
-        app.MapPost("/site-admin/settings/save", async (
-            HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
+        // Per-section save endpoints. Each loads the current settings
+        // view, overlays only its own fields from the form, and then
+        // calls SystemSettingsService.SaveAsync — which still does the
+        // single transactional write and validation. That way the
+        // service contract stays minimal, the SMTP password encryption
+        // path stays in one place, and tabs save independently from the
+        // user's point of view.
+
+        async Task SaveSectionAsync(
+            HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct,
+            Func<SystemSettingsView, IFormCollection, SystemSettingsInput> overlay,
+            string tabPath)
         {
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
             var form = await ctx.Request.ReadFormAsync(ct);
-            var input = new SystemSettingsInput(
-                SmtpHost: form["SmtpHost"].ToString(),
-                SmtpPort: int.TryParse(form["SmtpPort"], out var port) ? port : null,
-                SmtpUser: form["SmtpUser"].ToString(),
-                SmtpPassword: form["SmtpPassword"].ToString(),
-                ClearSmtpPassword: form["ClearSmtpPassword"] == "true" || form["ClearSmtpPassword"] == "on",
-                SmtpFrom: form["SmtpFrom"].ToString(),
-                SmtpUseStartTls: form.ContainsKey("SmtpUseStartTls")
-                    ? (form["SmtpUseStartTls"] == "true" || form["SmtpUseStartTls"] == "on")
-                    : null,
-                BannerText: form["BannerText"].ToString(),
-                DefaultSignupAutoApprove: form["DefaultSignupAutoApprove"] == "true" || form["DefaultSignupAutoApprove"] == "on",
-                BackupScheduleEnabled: form["BackupScheduleEnabled"] == "true" || form["BackupScheduleEnabled"] == "on",
-                BackupScheduleTimeUtc: TimeOnly.TryParse(form["BackupScheduleTimeUtc"], out var bst) ? bst : new TimeOnly(2, 0),
-                BackupRetentionCount: int.TryParse(form["BackupRetentionCount"], out var brc) ? brc : 14,
-                PerTenantBackupRetentionCount: int.TryParse(form["PerTenantBackupRetentionCount"], out var ptrc) ? ptrc : 30,
-                DefaultStorageQuotaMb: string.IsNullOrWhiteSpace(form["DefaultStorageQuotaMb"])
-                    ? null
-                    : int.TryParse(form["DefaultStorageQuotaMb"], out var dsq) ? dsq : null,
-                IndexSizeMultiplier: decimal.TryParse(form["IndexSizeMultiplier"], System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var ism)
-                    ? ism
-                    : 0.5m,
-                McpEnabled: form["McpEnabled"] == "true" || form["McpEnabled"] == "on");
-
+            var current = await settings.GetViewAsync(ct);
+            var input = overlay(current, form);
             try
             {
                 await settings.SaveAsync(input, ct);
-                ctx.Response.Redirect($"{RouteConstants.SiteAdminSettings}?{RouteConstants.OkQuery}=saved");
+                ctx.Response.Redirect($"{tabPath}?{RouteConstants.OkQuery}=saved");
             }
             catch (PlanValidationException ex)
             {
                 var first = ex.Errors.First();
-                ctx.Response.Redirect($"{RouteConstants.SiteAdminSettings}?{RouteConstants.MsgQuery}=" + Uri.EscapeDataString(first.Value));
+                ctx.Response.Redirect($"{tabPath}?{RouteConstants.MsgQuery}=" + Uri.EscapeDataString(first.Value));
             }
-        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+        }
+
+        app.MapPost("/site-admin/settings/smtp/save", (
+            HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
+                SaveSectionAsync(ctx, settings, antiforgery, ct,
+                    (current, form) => SettingsInputBuilder.WithSmtp(current, form),
+                    "/site-admin/settings/smtp"))
+            .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/settings/backups/save", (
+            HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
+                SaveSectionAsync(ctx, settings, antiforgery, ct,
+                    (current, form) => SettingsInputBuilder.WithBackups(current, form),
+                    "/site-admin/settings/backups"))
+            .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/settings/quotas/save", (
+            HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
+                SaveSectionAsync(ctx, settings, antiforgery, ct,
+                    (current, form) => SettingsInputBuilder.WithQuotas(current, form),
+                    "/site-admin/settings/quotas"))
+            .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/settings/general/save", (
+            HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
+                SaveSectionAsync(ctx, settings, antiforgery, ct,
+                    (current, form) => SettingsInputBuilder.WithGeneral(current, form),
+                    "/site-admin/settings/general"))
+            .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+
+        app.MapPost("/site-admin/settings/mcp/save", (
+            HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
+                SaveSectionAsync(ctx, settings, antiforgery, ct,
+                    (current, form) => SettingsInputBuilder.WithMcp(current, form),
+                    "/site-admin/settings/mcp"))
+            .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
         app.MapPost("/site-admin/settings/offsite/save", async (
             HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>

@@ -1,0 +1,79 @@
+@page "/site-admin/settings/backups"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Services
+@inject SystemSettingsService Settings
+
+<PageTitle>Backup schedule · Site administration · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <SiteAdminSettingsHeader ActiveTab="SiteAdminSettingsHeader.Tab.Backups">
+        <Actions>
+            <button type="submit" form="settings-backups-form" class="btn btn--sm btn--primary">
+                <Icon Name="save" Width="14" Height="14" />
+                <span>Save schedule</span>
+            </button>
+        </Actions>
+    </SiteAdminSettingsHeader>
+
+    @if (!string.IsNullOrEmpty(Message))
+    {
+        <p class="form-error" role="alert">@Message</p>
+    }
+    @if (Ok == "saved")
+    {
+        <p class="form-info" role="status">Backup schedule saved.</p>
+    }
+
+    <p class="muted">
+        Pinned backups are exempt from retention pruning. Manage individual
+        backups on the <a href="/site-admin/backup-storage/database">Database backups</a> page.
+        Per-tenant snapshots live under each org's backup folder and drive
+        the "restore to yesterday" SiteAdmin tool.
+    </p>
+
+    @if (_view is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        <form method="post" action="/site-admin/settings/backups/save" class="admin-form" id="settings-backups-form">
+            <AntiforgeryToken />
+            <label class="checkbox-label">
+                <input type="checkbox" name="BackupScheduleEnabled" value="true" checked="@_view.BackupScheduleEnabled" />
+                Run a scheduled backup once a day
+            </label>
+            <div class="form-row">
+                <label>
+                    Scheduled time (UTC)
+                    <input type="time" name="BackupScheduleTimeUtc"
+                           value="@_view.BackupScheduleTimeUtc.ToString("HH:mm")" />
+                </label>
+                <label>
+                    Retention (full backups, unpinned)
+                    <input type="number" name="BackupRetentionCount"
+                           value="@_view.BackupRetentionCount" min="1" max="365" />
+                </label>
+                <label>
+                    Retention (per-tenant snapshots)
+                    <input type="number" name="PerTenantBackupRetentionCount"
+                           value="@_view.PerTenantBackupRetentionCount" min="1" max="365" />
+                </label>
+            </div>
+        </form>
+
+        <p class="muted">Last updated: @_view.UpdatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</p>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+
+    private SystemSettingsView? _view;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _view = await Settings.GetViewAsync();
+    }
+}

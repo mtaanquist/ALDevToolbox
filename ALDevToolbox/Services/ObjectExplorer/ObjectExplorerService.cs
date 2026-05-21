@@ -38,7 +38,7 @@ public class ObjectExplorerService
     /// in-progress Releases come along — the picker UI badges them
     /// distinctly but admins still need to see them.
     /// </summary>
-    public Task<List<ReleaseListItem>> ListReleasesAsync(
+    public async Task<List<ReleaseListItem>> ListReleasesAsync(
         bool includeSoftDeleted = false, CancellationToken ct = default)
     {
         var q = _db.OeReleases.AsNoTracking().AsQueryable();
@@ -46,8 +46,7 @@ public class ObjectExplorerService
         {
             q = q.Where(r => r.DeletedAt == null);
         }
-        return q.OrderBy(r => r.DeletedAt == null ? 0 : 1)
-            .ThenBy(r => r.Label)
+        var rows = await q
             .Select(r => new ReleaseListItem(
                 r.Id, r.Label, r.Kind, r.Status, r.BcVersion, r.ParentReleaseId, r.ImportedAt,
                 // Denormalised counters stamped at ingest time. The Releases
@@ -59,6 +58,21 @@ public class ObjectExplorerService
                 SourceContentLength: r.SourceContentLength,
                 DeletedAt: r.DeletedAt))
             .ToListAsync(ct);
+
+        // Sort in memory: active rows first, then by BC version descending
+        // (so "28.10" sorts above "28.2"), then by ImportedAt descending so
+        // a re-import of the same version wins. The list is bounded — a
+        // production org caps out at a few dozen releases — so the
+        // in-memory sort cost is negligible compared to the row I/O.
+        rows.Sort((a, b) =>
+        {
+            var deletedCmp = (a.DeletedAt == null ? 0 : 1).CompareTo(b.DeletedAt == null ? 0 : 1);
+            if (deletedCmp != 0) return deletedCmp;
+            var versionCmp = BcVersionComparer.Instance.Compare(b.BcVersion, a.BcVersion);
+            if (versionCmp != 0) return versionCmp;
+            return b.ImportedAt.CompareTo(a.ImportedAt);
+        });
+        return rows;
     }
 
     /// <summary>

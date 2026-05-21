@@ -1,0 +1,15 @@
+@page "/site-admin/tenant-backups"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@inject NavigationManager Nav
+
+@*
+    Legacy redirect: /site-admin/tenant-backups moved under the unified
+    /site-admin/backup-storage/snapshots route.
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/site-admin/backup-storage/snapshots", replace: true);
+    }
+}

@@ -1,0 +1,45 @@
+@*
+    Shared page header for every /site-admin/connections/* sub-page.
+    Personal access tokens and OAuth-client consents are both forms of
+    machine-to-server credentials, so they share one menu entry with
+    two pill-tabs underneath.
+*@
+
+@using ALDevToolbox.Components.Shared
+
+<header class="admin-page__header">
+    <div>
+        <h1>Connections</h1>
+        <p class="muted">
+            Credentials that let agents and clients talk to the server on a
+            user's behalf — personal access tokens and per-assistant OAuth
+            consents.
+        </p>
+    </div>
+    @if (Actions is not null)
+    {
+        <div class="admin-page__header-actions">
+            @Actions
+        </div>
+    }
+</header>
+
+<PillTabs Items="@_tabs" AriaLabel="Connections sections" />
+
+@code {
+    public enum Tab { AccessTokens, OAuthClients }
+
+    [Parameter, EditorRequired] public Tab ActiveTab { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+
+    private IReadOnlyList<PillTabs.PillTabItem> _tabs = Array.Empty<PillTabs.PillTabItem>();
+
+    protected override void OnParametersSet()
+    {
+        _tabs = new[]
+        {
+            new PillTabs.PillTabItem("Access tokens", "/site-admin/connections/access-tokens", "key-round", ActiveTab == Tab.AccessTokens),
+            new PillTabs.PillTabItem("OAuth clients", "/site-admin/connections/oauth-clients", "plug",      ActiveTab == Tab.OAuthClients),
+        };
+    }
+}

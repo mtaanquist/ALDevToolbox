@@ -1,0 +1,17 @@
+@page "/site-admin/backups"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@inject NavigationManager Nav
+
+@*
+    Legacy redirect: /site-admin/backups moved under the unified
+    /site-admin/backup-storage/database route. The POST endpoints under
+    /site-admin/backups/... stayed at their original URLs (they're form
+    targets, not user-facing).
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/site-admin/backup-storage/database", replace: true);
+    }
+}

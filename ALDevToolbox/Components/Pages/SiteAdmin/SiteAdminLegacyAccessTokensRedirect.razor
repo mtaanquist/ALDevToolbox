@@ -1,0 +1,16 @@
+@page "/site-admin/access-tokens"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@inject NavigationManager Nav
+
+@*
+    Legacy redirect: /site-admin/access-tokens moved under the unified
+    /site-admin/connections/access-tokens route. POST endpoints kept
+    their original paths.
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/site-admin/connections/access-tokens", replace: true);
+    }
+}

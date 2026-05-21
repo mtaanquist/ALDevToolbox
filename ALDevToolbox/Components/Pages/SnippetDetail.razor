@@ -8,63 +8,105 @@
 
 <PageTitle>@(_snippet?.Title ?? "Snippet") · AL Dev Toolbox</PageTitle>
 
-<div class="snippet-detail">
-    <a class="btn btn--sm" href="/snippets">
-        <Icon Name="arrow-left" Width="14" Height="14" />
-        <span>Back to snippets</span>
-    </a>
-
-    @if (_loaded && _snippet is null)
-    {
-        <p class="form-error" role="alert">Snippet not found.</p>
-    }
-    else if (_snippet is null)
-    {
-        <p class="muted">Loading…</p>
-    }
-    else
-    {
-        <header class="snippet-detail__header">
-            <h1>@_snippet.Title</h1>
-            @if (_snippet.Deprecated)
+<div class="snippet-detail @(HasOutline ? "snippet-detail--with-outline" : null)">
+    <div class="snippet-detail__main">
+        <div class="snippet-detail__topbar">
+            <a class="btn btn--sm" href="/snippets">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to snippets</span>
+            </a>
+            @if (_snippet is not null && _snippet.Files.Count > 0)
             {
-                <span class="snippet-card__badge">Deprecated</span>
+                <a class="btn btn--sm" href="@($"/api/snippets/{_snippet.Id}/download")"
+                   title="Download all files in this snippet as a ZIP archive">
+                    <Icon Name="download" Width="14" Height="14" />
+                    <span>Download all</span>
+                </a>
             }
-        </header>
-        <p class="snippet-detail__description">@_snippet.Description</p>
-        @if (!string.IsNullOrWhiteSpace(_snippet.Keywords))
-        {
-            <div class="snippet-card__keywords">
-                @foreach (var kw in _snippet.Keywords.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-                {
-                    <span class="snippet-card__keyword">@kw</span>
-                }
-            </div>
-        }
+        </div>
 
-        <h2>Files</h2>
-        @if (_snippet.Files.Count == 0)
+        @if (_loaded && _snippet is null)
         {
-            <p class="muted">No files attached.</p>
+            <p class="form-error" role="alert">Snippet not found.</p>
+        }
+        else if (_snippet is null)
+        {
+            <p class="muted">Loading…</p>
         }
         else
         {
-            <ol class="snippet-detail__files">
-                @foreach (var file in _snippet.Files)
+            <header class="snippet-detail__header">
+                <h1>@_snippet.Title</h1>
+                @if (_snippet.Deprecated)
                 {
-                    <li class="snippet-file-view">
-                        <div class="snippet-file-view__header">
-                            <code>@file.FileName</code>
-                            <button type="button" class="btn btn--sm" @onclick="() => CopyAsync(file.Content, file.FileName)">
-                                <Icon Name="copy" Width="14" Height="14" />
-                                <span>@(IsJustCopied(file.FileName) ? "Copied!" : "Copy")</span>
-                            </button>
-                        </div>
-                        <pre class="snippet-file-view__content"><code>@file.Content</code></pre>
-                    </li>
+                    <span class="snippet-card__badge">Deprecated</span>
                 }
-            </ol>
+            </header>
+            <p class="snippet-detail__description">@_snippet.Description</p>
+            @if (!string.IsNullOrWhiteSpace(_snippet.Keywords))
+            {
+                <div class="snippet-card__keywords">
+                    @foreach (var kw in _snippet.Keywords.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        <span class="snippet-card__keyword">@kw</span>
+                    }
+                </div>
+            }
+
+            <h2>Files</h2>
+            @if (_snippet.Files.Count == 0)
+            {
+                <p class="muted">No files attached.</p>
+            }
+            else
+            {
+                <ol class="snippet-detail__files">
+                    @foreach (var file in _snippet.Files)
+                    {
+                        var anchor = AnchorFor(file.FileName);
+                        var isCollapsed = _collapsed.Contains(file.FileName);
+                        <li id="@anchor" class="snippet-file-view @(isCollapsed ? "snippet-file-view--collapsed" : null)">
+                            <div class="snippet-file-view__header">
+                                <button type="button"
+                                        class="snippet-file-view__toggle"
+                                        aria-expanded="@((!isCollapsed).ToString().ToLowerInvariant())"
+                                        aria-controls="@($"{anchor}-content")"
+                                        @onclick="() => ToggleCollapsed(file.FileName)">
+                                    <Icon Name="@(isCollapsed ? "chevron-right" : "chevron-down")" Width="14" Height="14" />
+                                    <code>@file.FileName</code>
+                                </button>
+                                <button type="button" class="btn btn--sm" @onclick="() => CopyAsync(file.Content, file.FileName)">
+                                    <Icon Name="copy" Width="14" Height="14" />
+                                    <span>@(IsJustCopied(file.FileName) ? "Copied!" : "Copy")</span>
+                                </button>
+                            </div>
+                            <pre id="@($"{anchor}-content")" class="snippet-file-view__content"><code>@file.Content</code></pre>
+                        </li>
+                    }
+                </ol>
+            }
         }
+    </div>
+
+    @if (HasOutline)
+    {
+        <aside class="snippet-outline" aria-label="Files in this snippet">
+            <div class="snippet-outline__inner">
+                <h2 class="snippet-outline__title">Files</h2>
+                <ul class="snippet-outline__list">
+                    @foreach (var file in _snippet!.Files)
+                    {
+                        var anchor = AnchorFor(file.FileName);
+                        <li>
+                            <a class="snippet-outline__link"
+                               href="@($"#{anchor}")"
+                               @onclick="() => ExpandForJump(file.FileName)"
+                               @onclick:preventDefault="false">@file.FileName</a>
+                        </li>
+                    }
+                </ul>
+            </div>
+        </aside>
     }
 </div>
 
@@ -75,6 +117,9 @@
     private bool _loaded;
     private string? _justCopied;
     private CancellationTokenSource? _copyTimer;
+    private readonly HashSet<string> _collapsed = new(StringComparer.Ordinal);
+
+    private bool HasOutline => _snippet is not null && _snippet.Files.Count > 1;
 
     protected override async Task OnInitializedAsync()
     {
@@ -83,6 +128,31 @@
     }
 
     private bool IsJustCopied(string fileName) => _justCopied == fileName;
+
+    private void ToggleCollapsed(string fileName)
+    {
+        if (!_collapsed.Add(fileName))
+        {
+            _collapsed.Remove(fileName);
+        }
+    }
+
+    /// <summary>
+    /// When the user clicks an aside link, expand the target file (if
+    /// collapsed) so the browser's hash-scroll lands on visible content
+    /// instead of a collapsed stub.
+    /// </summary>
+    private void ExpandForJump(string fileName) => _collapsed.Remove(fileName);
+
+    private static string AnchorFor(string fileName)
+    {
+        var sb = new System.Text.StringBuilder("snippet-file-");
+        foreach (var c in fileName)
+        {
+            sb.Append(char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-');
+        }
+        return sb.ToString().TrimEnd('-');
+    }
 
     private async Task CopyAsync(string content, string fileName)
     {
