@@ -509,6 +509,27 @@ public sealed class AppPackageReaderTests
     }
 
     [Fact]
+    public async Task ReadAsync_rejects_nea_encrypted_app_with_recognisable_exception()
+    {
+        // Shape: 36 bytes of NAVX-prefixed header, then the "NAVX.NEA"
+        // magic that Microsoft's signed-app tooling emits at offset 36.
+        // The bytes past the magic don't matter — the reader has to bail
+        // before handing the encrypted payload to ZipArchive, otherwise
+        // the operator sees a generic "End of Central Directory record
+        // could not be found" 500.
+        var buf = new byte[256];
+        buf[0] = (byte)'N'; buf[1] = (byte)'A'; buf[2] = (byte)'V'; buf[3] = (byte)'X';
+        var nea = "NAVX.NEA"u8;
+        nea.CopyTo(buf.AsSpan(36));
+
+        await using var stream = new MemoryStream(buf);
+        var act = async () => await AppPackageReader.ReadAsync(stream);
+
+        await act.Should().ThrowAsync<NeaEncryptedAppException>()
+            .Where(e => e.Message.Contains("NEA-encrypted"));
+    }
+
+    [Fact]
     public async Task ReadAsync_produces_identical_hash_on_replay()
     {
         var path = Path.Combine(FixtureRoot, "Microsoft_DK_Core.app");
