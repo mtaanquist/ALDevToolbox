@@ -15,9 +15,9 @@ internal static class RouteConstants
     public const string AdminExport = "/admin/administration/export";
     public const string SiteAdminUsers = "/site-admin/users";
     public const string SiteAdminSettings = "/site-admin/settings";
-    public const string SiteAdminBackups = "/site-admin/backups";
-    public const string SiteAdminStorage = "/site-admin/storage";
-    public const string SiteAdminTenantBackups = "/site-admin/tenant-backups";
+    public const string SiteAdminBackups = "/site-admin/backup-storage/database";
+    public const string SiteAdminStorage = "/site-admin/backup-storage/storage";
+    public const string SiteAdminTenantBackups = "/site-admin/backup-storage/snapshots";
 
     public const string OkQuery = "ok";
     public const string ErrQuery = "err";

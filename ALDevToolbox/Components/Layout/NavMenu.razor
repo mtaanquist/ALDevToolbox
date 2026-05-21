@@ -180,62 +180,54 @@
                             </NavLink>
                         </li>
                     }
-                    @if (isSiteAdmin)
+                    @* Per-org Admin still owns its own audit-log entry for
+                       non-SiteAdmins. SiteAdmins see the cross-org audit log
+                       in their own section below; their org-scoped audit
+                       link stays accessible by URL. *@
+                    @if (!isSiteAdmin)
                     {
+                        <li>
+                            <NavLink class="nav-link" href="/admin/audit" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                                <Icon Name="history" Width="18" Height="18" Css="nav-link__icon" />
+                                <span>Audit log</span>
+                            </NavLink>
+                        </li>
+                    }
+                </ul>
+            </div>
+
+            @if (isSiteAdmin)
+            {
+                @* Separate section so the user knows which links are
+                   scoped to their org (Admin, above) and which span every
+                   org (Site administration, here). Helps when one person
+                   wears both hats. *@
+                <div class="nav-section nav-section--site-admin">
+                    <div class="nav-divider"></div>
+                    <div class="nav-section__label">Site administration</div>
+                    <ul class="nav-list">
                         <li>
                             <NavLink class="nav-link" href="/site-admin/users" Match="NavLinkMatch.Prefix" ActiveClass="active">
                                 <Icon Name="users-round" Width="18" Height="18" Css="nav-link__icon" />
                                 <span>@(isSystemOrg ? "Users" : "All users")</span>
                             </NavLink>
                         </li>
-                    }
-
-                    <li>
-                        @if (isSiteAdmin)
-                        {
+                        <li>
                             <NavLink class="nav-link" href="/site-admin/audit" Match="NavLinkMatch.Prefix" ActiveClass="active">
                                 <Icon Name="history" Width="18" Height="18" Css="nav-link__icon" />
                                 <span>Audit log</span>
                             </NavLink>
-                        }
-                        else
-                        {
-                            <NavLink class="nav-link" href="/admin/audit" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <Icon Name="history" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>Audit log</span>
-                            </NavLink>
-                        }
-                    </li>
-                    @if (isSiteAdmin)
-                    {
+                        </li>
                         <li>
-                            <NavLink class="nav-link" href="/site-admin/backups" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <NavLink class="nav-link" href="/site-admin/backup-storage" Match="NavLinkMatch.Prefix" ActiveClass="active">
                                 <Icon Name="database-backup" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>@(isSystemOrg ? "Backups" : "Database backups")</span>
+                                <span>Backup &amp; storage</span>
                             </NavLink>
                         </li>
                         <li>
-                            <NavLink class="nav-link" href="/site-admin/storage" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <Icon Name="hard-drive" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>Storage</span>
-                            </NavLink>
-                        </li>
-                        <li>
-                            <NavLink class="nav-link" href="/site-admin/tenant-backups" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <Icon Name="archive-restore" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>Tenant snapshots</span>
-                            </NavLink>
-                        </li>
-                        <li>
-                            <NavLink class="nav-link" href="/site-admin/access-tokens" Match="NavLinkMatch.Prefix" ActiveClass="active">
-                                <Icon Name="key-round" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>Access tokens</span>
-                            </NavLink>
-                        </li>
-                        <li>
-                            <NavLink class="nav-link" href="/site-admin/oauth-clients" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <NavLink class="nav-link" href="/site-admin/connections" Match="NavLinkMatch.Prefix" ActiveClass="active">
                                 <Icon Name="plug" Width="18" Height="18" Css="nav-link__icon" />
-                                <span>OAuth clients</span>
+                                <span>Connections</span>
                             </NavLink>
                         </li>
                         <li>
@@ -244,9 +236,9 @@
                                 <span>Settings</span>
                             </NavLink>
                         </li>
-                    }
-                </ul>
-            </div>
+                    </ul>
+                </div>
+            }
         </Authorized>
     </AuthorizeView>
 

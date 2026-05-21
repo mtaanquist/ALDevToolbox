@@ -112,18 +112,11 @@
 
                 @if (isSiteAdmin)
                 {
-                    <a class="tile tile--link" href="/site-admin/backups">
+                    <a class="tile tile--link" href="/site-admin/backup-storage">
                         <Icon Name="database-backup" Width="20" Height="20" Css="tile__icon" />
                         <div class="tile__body">
-                            <div class="tile__title">@(isSystemOrg ? "Backups" : "Database backups")</div>
-                            <div class="tile__caption">Browse, pin, restore, and trigger ad-hoc <code>pg_dump</code> backups.</div>
-                        </div>
-                    </a>
-                    <a class="tile tile--link" href="/site-admin/storage">
-                        <Icon Name="hard-drive" Width="20" Height="20" Css="tile__icon" />
-                        <div class="tile__body">
-                            <div class="tile__title">Storage</div>
-                            <div class="tile__caption">Per-organisation database usage, billable size, and storage quotas.</div>
+                            <div class="tile__title">Backup &amp; storage</div>
+                            <div class="tile__caption">Database backups, per-tenant snapshots, and storage quotas in one place.</div>
                         </div>
                     </a>
                     <a class="tile tile--link" href="/site-admin/settings">

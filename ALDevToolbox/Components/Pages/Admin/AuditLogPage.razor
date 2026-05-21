@@ -3,17 +3,69 @@
 @inject AuditService Audit
 @using ALDevToolbox.Components.Shared
 @using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Services
 @using static ALDevToolbox.Components.Shared.AdminPageHelpers
 
 <PageTitle>Audit log · AL Dev Toolbox</PageTitle>
 
-<div class="audit-page">
-    <h1>Audit log</h1>
-    <p class="muted">
-        Most recent changes to runtime templates, modules, and the well-known
-        dependency catalogue. Snapshots show the row's state immediately before the
-        change; created rows have no prior state, so their snapshot is empty.
-    </p>
+<div class="admin-page audit-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Audit log</h1>
+            <p class="muted">
+                Recent changes to runtime templates, modules, the well-known
+                dependency catalogue, snippets, and other audited entities.
+                Snapshots show the row's state immediately before the change;
+                created rows have no prior state, so their snapshot is empty.
+            </p>
+        </div>
+    </header>
+
+    @*
+        Filters apply on change rather than waiting for a submit button:
+        selects fire change events synchronously, and the text inputs
+        submit on Enter or when they lose focus. Keeping the form
+        GET-based preserves bookmarkable URLs and uses the same
+        SupplyParameterFromQuery wiring as the rest of the audit family.
+    *@
+    <form method="get" action="/admin/audit" class="admin-filter-form" onchange="this.submit()">
+        <label>
+            Entity type
+            <select name="entityType">
+                <option value="">Any</option>
+                @foreach (var type in Enum.GetValues<AuditEntityType>())
+                {
+                    <option value="@type" selected="@(EntityType == type.ToString())">@FriendlyType(type)</option>
+                }
+            </select>
+        </label>
+        <label>
+            Action
+            <select name="action">
+                <option value="">Any</option>
+                @foreach (var act in Enum.GetValues<AuditAction>())
+                {
+                    <option value="@act" selected="@(Action == act.ToString())">@act</option>
+                }
+            </select>
+        </label>
+        <label>
+            Entity id
+            <input type="text" name="entityId" value="@EntityId" placeholder="exact match" />
+        </label>
+        <label>
+            Actor contains
+            <input type="text" name="actor" value="@Actor" placeholder="email or display name" />
+        </label>
+        <label>
+            From (UTC)
+            <input type="datetime-local" name="from" value="@FromUtc" />
+        </label>
+        <label>
+            To (UTC)
+            <input type="datetime-local" name="to" value="@ToUtc" />
+        </label>
+    </form>
 
     @if (_entries is null)
     {
@@ -22,8 +74,9 @@
     else if (_entries.Count == 0)
     {
         <p class="muted">
-            No changes recorded yet. Once an admin edits a template, module, or
-            catalogue entry, the change will appear here.
+            @(_total == 0 && !HasAnyFilter()
+                ? "No changes recorded yet. Once an admin edits a template, module, or catalogue entry, the change will appear here."
+                : "No audit entries match the current filters.")
         </p>
     }
     else
@@ -73,23 +126,93 @@
                 }
             </tbody>
         </table>
-        @if (_entries.Count >= _limit)
-        {
-            <p class="muted audit-page__limit-note">
-                Showing the @_limit most recent entries. Older entries are still in the
-                database; per-entity history is available from each admin edit page.
-            </p>
-        }
+
+        <nav class="audit-pagination" aria-label="Audit log pagination">
+            <span class="muted">
+                Showing @(_firstRowNumber.ToString("N0"))–@(_lastRowNumber.ToString("N0"))
+                of @_total.ToString("N0").
+            </span>
+            <span class="audit-pagination__buttons">
+                @{
+                    var currentPage = Page ?? 1;
+                    var hasPrev = currentPage > 1;
+                    var hasNext = currentPage < _totalPages;
+                }
+                <a class="btn btn--sm @(hasPrev ? null : "btn--disabled")"
+                   href="@BuildPageUrl(currentPage - 1)"
+                   aria-disabled="@(hasPrev ? "false" : "true")"
+                   tabindex="@(hasPrev ? 0 : -1)">
+                    <Icon Name="chevron-left" Width="14" Height="14" />
+                    <span>Previous</span>
+                </a>
+                <a class="btn btn--sm @(hasNext ? null : "btn--disabled")"
+                   href="@BuildPageUrl(currentPage + 1)"
+                   aria-disabled="@(hasNext ? "false" : "true")"
+                   tabindex="@(hasNext ? 0 : -1)">
+                    <span>Next</span>
+                    <Icon Name="chevron-right" Width="14" Height="14" />
+                </a>
+            </span>
+        </nav>
     }
 </div>
 
 @code {
-    private const int _limit = 200;
-    private List<AuditLogEntry>? _entries;
+    private const int PageSize = 50;
 
-    protected override async Task OnInitializedAsync()
+    [SupplyParameterFromQuery(Name = "entityType")] public string? EntityType { get; set; }
+    [SupplyParameterFromQuery(Name = "action")] public string? Action { get; set; }
+    [SupplyParameterFromQuery(Name = "entityId")] public string? EntityId { get; set; }
+    [SupplyParameterFromQuery(Name = "actor")] public string? Actor { get; set; }
+    [SupplyParameterFromQuery(Name = "from")] public string? FromUtc { get; set; }
+    [SupplyParameterFromQuery(Name = "to")] public string? ToUtc { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? Page { get; set; }
+
+    private List<AuditLogEntry>? _entries;
+    private int _total;
+    private int _totalPages;
+    private int _firstRowNumber;
+    private int _lastRowNumber;
+
+    protected override async Task OnParametersSetAsync()
     {
-        _entries = await Audit.GetRecentAsync(_limit);
+        if (Page is null or < 1) Page = 1;
+        var filter = new AuditFilter(
+            EntityType: Enum.TryParse<AuditEntityType>(EntityType, ignoreCase: false, out var et) ? et : null,
+            Action: Enum.TryParse<AuditAction>(Action, ignoreCase: false, out var ac) ? ac : null,
+            EntityId: string.IsNullOrWhiteSpace(EntityId) ? null : EntityId.Trim(),
+            Actor: string.IsNullOrWhiteSpace(Actor) ? null : Actor,
+            From: DateTime.TryParse(FromUtc, out var f) ? DateTime.SpecifyKind(f, DateTimeKind.Utc) : null,
+            To: DateTime.TryParse(ToUtc, out var t) ? DateTime.SpecifyKind(t, DateTimeKind.Utc) : null);
+
+        var skip = (Page!.Value - 1) * PageSize;
+        var (items, total) = await Audit.GetPagedAsync(filter, skip, PageSize);
+        _entries = items;
+        _total = total;
+        _totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)PageSize));
+        _firstRowNumber = total == 0 ? 0 : skip + 1;
+        _lastRowNumber = skip + items.Count;
+    }
+
+    private bool HasAnyFilter() =>
+        !string.IsNullOrWhiteSpace(EntityType)
+        || !string.IsNullOrWhiteSpace(Action)
+        || !string.IsNullOrWhiteSpace(EntityId)
+        || !string.IsNullOrWhiteSpace(Actor)
+        || !string.IsNullOrWhiteSpace(FromUtc)
+        || !string.IsNullOrWhiteSpace(ToUtc);
+
+    private string BuildPageUrl(int page)
+    {
+        var parts = new List<string>(8);
+        if (!string.IsNullOrWhiteSpace(EntityType)) parts.Add("entityType=" + Uri.EscapeDataString(EntityType));
+        if (!string.IsNullOrWhiteSpace(Action)) parts.Add("action=" + Uri.EscapeDataString(Action));
+        if (!string.IsNullOrWhiteSpace(EntityId)) parts.Add("entityId=" + Uri.EscapeDataString(EntityId));
+        if (!string.IsNullOrWhiteSpace(Actor)) parts.Add("actor=" + Uri.EscapeDataString(Actor));
+        if (!string.IsNullOrWhiteSpace(FromUtc)) parts.Add("from=" + Uri.EscapeDataString(FromUtc));
+        if (!string.IsNullOrWhiteSpace(ToUtc)) parts.Add("to=" + Uri.EscapeDataString(ToUtc));
+        if (page > 1) parts.Add("page=" + page);
+        return parts.Count == 0 ? "/admin/audit" : "/admin/audit?" + string.Join("&", parts);
     }
 
     private static string FriendlyType(AuditEntityType type) => type switch
@@ -113,5 +236,4 @@
         AuditEntityType.WellKnownDependency => "Catalogue entry",
         _ => type.ToString()
     };
-
 }

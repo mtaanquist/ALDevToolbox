@@ -121,7 +121,7 @@
             </div>
             <p class="muted">
                 Pinned backups are exempt from retention pruning. Manage individual
-                backups on the <a href="/site-admin/backups">Backups</a> page.
+                backups on the <a href="/site-admin/backup-storage/database">Backups</a> page.
                 Per-tenant snapshots live under each org's backup folder and
                 drive the "restore to yesterday" SiteAdmin tool.
             </p>
@@ -129,7 +129,7 @@
             <h2>Storage quotas</h2>
             <p class="muted">
                 Default applied to every organisation that doesn't have its own
-                quota set on the <a href="/site-admin/storage">Storage</a> page.
+                quota set on the <a href="/site-admin/backup-storage/storage">Storage</a> page.
                 Leave blank for unlimited. Billable size is
                 <code>logical + multiplier × index/metadata</code> — set the
                 multiplier to 0 to charge purely for logical bytes.

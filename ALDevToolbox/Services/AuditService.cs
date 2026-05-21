@@ -37,6 +37,58 @@ public class AuditService
     }
 
     /// <summary>
+    /// Filtered + paginated read for the per-org Admin audit page.
+    /// All filters are optional; any combination narrows the set.
+    /// </summary>
+    public async Task<(List<AuditLogEntry> Items, int Total)> GetPagedAsync(
+        AuditFilter filter,
+        int skip,
+        int take,
+        CancellationToken ct = default)
+    {
+        var orgId = _orgContext.CurrentOrganizationId;
+        var q = _db.AuditLog
+            .AsNoTracking()
+            .Where(e => e.OrganizationId == orgId);
+
+        if (filter.EntityType is { } entityType)
+        {
+            q = q.Where(e => e.EntityType == entityType);
+        }
+        if (filter.Action is { } action)
+        {
+            q = q.Where(e => e.Action == action);
+        }
+        if (!string.IsNullOrWhiteSpace(filter.EntityId)
+            && int.TryParse(filter.EntityId, out var entityIdValue))
+        {
+            q = q.Where(e => e.EntityId == entityIdValue);
+        }
+        if (!string.IsNullOrWhiteSpace(filter.Actor))
+        {
+            var pattern = "%" + filter.Actor.Trim() + "%";
+            q = q.Where(e => EF.Functions.ILike(e.ChangedBy, pattern));
+        }
+        if (filter.From is { } from)
+        {
+            q = q.Where(e => e.Timestamp >= from);
+        }
+        if (filter.To is { } to)
+        {
+            q = q.Where(e => e.Timestamp <= to);
+        }
+
+        var total = await q.CountAsync(ct);
+        var items = await q
+            .OrderByDescending(e => e.Timestamp)
+            .ThenByDescending(e => e.Id)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(ct);
+        return (items, total);
+    }
+
+    /// <summary>
     /// Returns the most recent <paramref name="limit"/> audit entries for a
     /// specific entity, newest first. Drives the
     /// <c>&lt;AuditHistoryPanel&gt;</c> component embedded on admin edit pages.
@@ -96,3 +148,16 @@ public class AuditService
             .FirstOrDefaultAsync(ct);
     }
 }
+
+/// <summary>
+/// Optional filters applied by <see cref="AuditService.GetPagedAsync"/>.
+/// <c>EntityId</c> is a string so the UI can pass the raw query-string
+/// value through; the service parses it.
+/// </summary>
+public record AuditFilter(
+    AuditEntityType? EntityType,
+    AuditAction? Action,
+    string? EntityId,
+    string? Actor,
+    DateTime? From,
+    DateTime? To);

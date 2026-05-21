@@ -27,7 +27,7 @@ internal static class SiteAdminEndpoints
         {
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
             await tokens.RevokeAsync(id, ignoreOrgScope: true, ct);
-            ctx.Response.Redirect("/site-admin/access-tokens?ok=revoked");
+            ctx.Response.Redirect("/site-admin/connections/access-tokens?ok=revoked");
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
 
         app.MapPost("/site-admin/users/{id:int}/promote", async (

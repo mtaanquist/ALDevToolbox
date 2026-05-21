@@ -1,0 +1,45 @@
+@*
+    Shared page header for every /site-admin/backup-storage/* sub-page.
+    Renders a single "Backup & storage" h1, a description, and the
+    pill-tab row. Pages set ActiveTab to highlight the right pill and
+    can supply an Actions render fragment for header-aligned buttons.
+*@
+
+@using ALDevToolbox.Components.Shared
+
+<header class="admin-page__header">
+    <div>
+        <h1>Backup &amp; storage</h1>
+        <p class="muted">
+            Database backups, per-tenant snapshots, and the storage quotas
+            that govern how much space each organisation can consume.
+        </p>
+    </div>
+    @if (Actions is not null)
+    {
+        <div class="admin-page__header-actions">
+            @Actions
+        </div>
+    }
+</header>
+
+<PillTabs Items="@_tabs" AriaLabel="Backup & storage sections" />
+
+@code {
+    public enum Tab { Database, Snapshots, Storage }
+
+    [Parameter, EditorRequired] public Tab ActiveTab { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+
+    private IReadOnlyList<PillTabs.PillTabItem> _tabs = Array.Empty<PillTabs.PillTabItem>();
+
+    protected override void OnParametersSet()
+    {
+        _tabs = new[]
+        {
+            new PillTabs.PillTabItem("Database",        "/site-admin/backup-storage/database",  "database-backup", ActiveTab == Tab.Database),
+            new PillTabs.PillTabItem("Tenant snapshots","/site-admin/backup-storage/snapshots", "archive-restore", ActiveTab == Tab.Snapshots),
+            new PillTabs.PillTabItem("Storage",         "/site-admin/backup-storage/storage",   "hard-drive",      ActiveTab == Tab.Storage),
+        };
+    }
+}
