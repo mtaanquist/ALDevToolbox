@@ -74,9 +74,27 @@ public sealed class CookbookTools
     internal static readonly IReadOnlyDictionary<string, string> BuiltInTypeDescriptions =
         new Dictionary<string, string>
         {
-            ["Snippet"] = "A small one- or two-file pattern. Use for self-contained fragments — a single event subscriber, one tableextension, a focused helper codeunit.",
-            ["Pattern"] = "A few related files that together solve one problem — for example an event subscriber + the page/table it modifies, or a setup table + page + install codeunit. Files may live under a folder structure (RelativePath).",
-            ["Module"] = "A near-complete feature spanning several files and namespaces under one top-level namespace. Bigger than a Pattern; smaller than a full BC app.",
+            ["Snippet"] =
+                "1–2 files, flat (no folders). A single self-contained AL artefact you can describe in one sentence: " +
+                "an OnAfterValidate subscriber for X, a tableextension adding field Y, a helper codeunit that does Z. " +
+                "No setup tables, no permission sets, no folder structure. " +
+                "Not a Snippet if: more than one AL object type is involved, or files need to live in different folders.",
+            ["Pattern"] =
+                "3–8 files, often one or two folders. A coordinated set of files solving one bounded problem. " +
+                "Typical shapes: an event subscriber + the table/page it modifies; a setup table + setup page + install " +
+                "codeunit so a feature has somewhere to keep its configuration; a factbox + its subscriber + the " +
+                "pageextensions that surface it. May use RelativePath to group related objects (Setup/, Events/). " +
+                "Extends existing surfaces; doesn't introduce a new top-level namespace. " +
+                "Not a Pattern if: it's just one file (use Snippet), or it carries its own namespace, permission sets, " +
+                "and a recognisable feature surface (use Module).",
+            ["Module"] =
+                "10+ files across multiple folders. A near-complete feature area with its own top-level namespace, " +
+                "typically including its own permission sets and often translations. Drops into an existing workspace " +
+                "as a self-contained subfolder — bigger than a Pattern (own surface, not just an extension to existing " +
+                "surfaces), smaller than a full BC app (no app.json of its own; it contributes to a workspace's existing " +
+                "extension). " +
+                "Not a Module if: it's a coordinated handful of files extending existing functionality (use Pattern), " +
+                "or it's intended as a standalone app rather than something to integrate.",
         };
 
     [McpServerTool(Name = "search_recipes", ReadOnly = true)]
