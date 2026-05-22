@@ -269,6 +269,196 @@ public sealed class SnippetSuggestionWorkflowTests : IDisposable
         ex.Which.Errors.Should().ContainKey("Decision");
     }
 
+    [Fact]
+    public async Task Update_replaces_fields_and_reconciles_files_for_pending_suggestion()
+    {
+        var user = await SeedUserAsync(userId: 720);
+        _db.OrgContext.CurrentUserId = user.Id;
+
+        int suggestionId;
+        await using (var ctx = _db.NewContext())
+        {
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new SnippetSuggestionInput(
+                Title: "Original Title",
+                Description: "Original body.",
+                Keywords: "alpha",
+                Files: new[]
+                {
+                    new SnippetFileInput("Keep.al", "// original keep"),
+                    new SnippetFileInput("Drop.al", "// goes away"),
+                }));
+        }
+
+        await using (var ctx = _db.NewContext())
+        {
+            await NewSuggestionService(ctx).UpdateAsync(suggestionId, new SnippetSuggestionInput(
+                Title: "Revised Title",
+                Description: "Revised body.",
+                Keywords: "alpha beta",
+                Files: new[]
+                {
+                    new SnippetFileInput("Keep.al", "// revised keep"),
+                    new SnippetFileInput("New.al", "// brand new"),
+                }));
+        }
+
+        await using var read = _db.NewContext();
+        var row = await read.SnippetSuggestions
+            .Include(s => s.Files.OrderBy(f => f.Ordering))
+            .SingleAsync(s => s.Id == suggestionId);
+        row.Title.Should().Be("Revised Title");
+        row.Description.Should().Be("Revised body.");
+        row.Keywords.Should().Be("alpha beta");
+        row.Decision.Should().Be(SnippetSuggestionDecision.Pending);
+        row.Files.Select(f => f.FileName).Should().Equal("Keep.al", "New.al");
+        row.Files[0].Content.Should().Be("// revised keep");
+        row.Files[1].Content.Should().Be("// brand new");
+    }
+
+    [Fact]
+    public async Task Update_rejects_when_caller_is_not_the_submitter()
+    {
+        var owner = await SeedUserAsync(userId: 721);
+        _db.OrgContext.CurrentUserId = owner.Id;
+
+        int suggestionId;
+        await using (var ctx = _db.NewContext())
+        {
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new SnippetSuggestionInput(
+                Title: "Owned By 721",
+                Description: "Body.",
+                Keywords: "",
+                Files: new[] { new SnippetFileInput("a.al", "// hi") }));
+        }
+
+        var other = await SeedUserAsync(userId: 722, display: "Someone Else");
+        _db.OrgContext.CurrentUserId = other.Id;
+
+        await using var ctx2 = _db.NewContext();
+        Func<Task> act = () => NewSuggestionService(ctx2).UpdateAsync(suggestionId, new SnippetSuggestionInput(
+            Title: "Hijacked",
+            Description: "Body.",
+            Keywords: "",
+            Files: new[] { new SnippetFileInput("a.al", "// hi") }));
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("SuggestedByUserId");
+    }
+
+    [Fact]
+    public async Task Update_rejects_when_suggestion_is_already_approved()
+    {
+        var user = await SeedUserAsync(userId: 723);
+        _db.OrgContext.CurrentUserId = user.Id;
+
+        int suggestionId;
+        await using (var ctx = _db.NewContext())
+        {
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new SnippetSuggestionInput(
+                Title: "Will Be Approved",
+                Description: "Body.",
+                Keywords: "",
+                Files: new[] { new SnippetFileInput("a.al", "// hi") }));
+        }
+
+        var admin = await SeedUserAsync(userId: 724, display: "Admin", role: UserRole.Admin);
+        _db.OrgContext.CurrentUserId = admin.Id;
+        await using (var ctx = _db.NewContext())
+        {
+            await NewSuggestionService(ctx).ApproveAsync(suggestionId);
+        }
+
+        _db.OrgContext.CurrentUserId = user.Id;
+        await using var ctx2 = _db.NewContext();
+        Func<Task> act = () => NewSuggestionService(ctx2).UpdateAsync(suggestionId, new SnippetSuggestionInput(
+            Title: "Will Be Approved",
+            Description: "Updated body.",
+            Keywords: "",
+            Files: new[] { new SnippetFileInput("a.al", "// hi") }));
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("Decision");
+    }
+
+    [Fact]
+    public async Task Update_rejects_when_suggestion_is_already_rejected()
+    {
+        var user = await SeedUserAsync(userId: 725);
+        _db.OrgContext.CurrentUserId = user.Id;
+
+        int suggestionId;
+        await using (var ctx = _db.NewContext())
+        {
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new SnippetSuggestionInput(
+                Title: "Will Be Rejected",
+                Description: "Body.",
+                Keywords: "",
+                Files: new[] { new SnippetFileInput("a.al", "// hi") }));
+        }
+
+        var admin = await SeedUserAsync(userId: 726, display: "Admin", role: UserRole.Admin);
+        _db.OrgContext.CurrentUserId = admin.Id;
+        await using (var ctx = _db.NewContext())
+        {
+            await NewSuggestionService(ctx).RejectAsync(suggestionId, note: "no thanks");
+        }
+
+        _db.OrgContext.CurrentUserId = user.Id;
+        await using var ctx2 = _db.NewContext();
+        Func<Task> act = () => NewSuggestionService(ctx2).UpdateAsync(suggestionId, new SnippetSuggestionInput(
+            Title: "Will Be Rejected",
+            Description: "Updated body.",
+            Keywords: "",
+            Files: new[] { new SnippetFileInput("a.al", "// hi") }));
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("Decision");
+    }
+
+    [Fact]
+    public async Task Update_runs_field_validation()
+    {
+        var user = await SeedUserAsync(userId: 727);
+        _db.OrgContext.CurrentUserId = user.Id;
+
+        int suggestionId;
+        await using (var ctx = _db.NewContext())
+        {
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new SnippetSuggestionInput(
+                Title: "Original",
+                Description: "Body.",
+                Keywords: "",
+                Files: new[] { new SnippetFileInput("a.al", "// hi") }));
+        }
+
+        await using var ctx2 = _db.NewContext();
+        Func<Task> act = () => NewSuggestionService(ctx2).UpdateAsync(suggestionId, new SnippetSuggestionInput(
+            Title: "",
+            Description: "Body.",
+            Keywords: "",
+            Files: new[] { new SnippetFileInput("a.al", "// hi") }));
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("Title");
+    }
+
+    [Fact]
+    public async Task Update_returns_validation_error_when_id_unknown()
+    {
+        var user = await SeedUserAsync(userId: 728);
+        _db.OrgContext.CurrentUserId = user.Id;
+
+        await using var ctx = _db.NewContext();
+        Func<Task> act = () => NewSuggestionService(ctx).UpdateAsync(9_999_999, new SnippetSuggestionInput(
+            Title: "X",
+            Description: "Y",
+            Keywords: "",
+            Files: new[] { new SnippetFileInput("a.al", "// hi") }));
+
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("Id");
+    }
+
     private SnippetSuggestionService NewSuggestionService(ALDevToolbox.Data.AppDbContext ctx) =>
         new(ctx, NullLogger<SnippetSuggestionService>.Instance, _db.OrgContext);
 }

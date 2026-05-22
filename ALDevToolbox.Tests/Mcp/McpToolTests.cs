@@ -191,6 +191,87 @@ public sealed class McpToolTests : IDisposable
             .Should().ThrowAsync<McpException>();
     }
 
+    [Fact]
+    public async Task UpdateSnippetSuggestion_round_trips_the_change()
+    {
+        await SeedSubmitterAsync(userId: 803);
+
+        int suggestionId;
+        await using (var ctx = _db.NewContext())
+        {
+            var tools = NewSnippetTools(ctx);
+            var created = await tools.SuggestAsync(new SuggestSnippetInput(
+                Title: "First Draft",
+                Description: "Initial body.",
+                Keywords: "",
+                Files: new[] { new SnippetFileInputDto("a.al", "// v1") }));
+            suggestionId = created.SuggestionId;
+        }
+
+        await using (var ctx = _db.NewContext())
+        {
+            var tools = NewSnippetTools(ctx);
+            var result = await tools.UpdateSuggestionAsync(new UpdateSnippetSuggestionInput(
+                SuggestionId: suggestionId,
+                Title: "Revised Draft",
+                Description: "Tightened body.",
+                Keywords: "alpha",
+                Files: new[]
+                {
+                    new SnippetFileInputDto("a.al", "// v2"),
+                    new SnippetFileInputDto("b.al", "// added"),
+                }));
+            result.SuggestionId.Should().Be(suggestionId);
+            result.Message.Should().Contain("Pending");
+        }
+
+        await using var verify = _db.NewContext();
+        var row = await verify.SnippetSuggestions
+            .Include(s => s.Files.OrderBy(f => f.Ordering))
+            .SingleAsync(s => s.Id == suggestionId);
+        row.Title.Should().Be("Revised Draft");
+        row.Description.Should().Be("Tightened body.");
+        row.Decision.Should().Be(SnippetSuggestionDecision.Pending);
+        row.Files.Select(f => f.FileName).Should().Equal("a.al", "b.al");
+        row.Files[0].Content.Should().Be("// v2");
+    }
+
+    [Fact]
+    public async Task UpdateSnippetSuggestion_returns_McpException_when_caller_is_not_submitter()
+    {
+        var ownerId = await SeedSubmitterAsync(userId: 804);
+
+        int suggestionId;
+        await using (var ctx = _db.NewContext())
+        {
+            var created = await NewSnippetTools(ctx).SuggestAsync(new SuggestSnippetInput(
+                Title: "Owned",
+                Description: "Body.",
+                Keywords: "",
+                Files: new[] { new SnippetFileInputDto("a.al", "// hi") }));
+            suggestionId = created.SuggestionId;
+        }
+
+        await SeedSubmitterAsync(userId: 805);
+
+        await using var ctx2 = _db.NewContext();
+        var tools = NewSnippetTools(ctx2);
+
+        await FluentActions.Awaiting(() => tools.UpdateSuggestionAsync(new UpdateSnippetSuggestionInput(
+                SuggestionId: suggestionId,
+                Title: "Hijacked",
+                Description: "Body.",
+                Keywords: "",
+                Files: new[] { new SnippetFileInputDto("a.al", "// hi") })))
+            .Should().ThrowAsync<McpException>();
+    }
+
+    private SnippetTools NewSnippetTools(ALDevToolbox.Data.AppDbContext ctx) =>
+        new(
+            new SnippetService(ctx, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx)),
+            ctx,
+            new SnippetSuggestionService(ctx, NullLogger<SnippetSuggestionService>.Instance, _db.OrgContext));
+
     // ---- WorkspaceTools ----------------------------------------------------
 
     [Fact]
