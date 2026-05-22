@@ -443,6 +443,26 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         outline.Where(i => i.ObjectId is null).Should()
             .OnlyContain(s => s.LineNumber > 0,
                 because: "sub-symbol rows must carry the line they were declared on");
+
+        // EndLine surfaces oe_module_symbols.end_line so the source viewer's
+        // status bar can scope the cursor to a containing procedure. The
+        // post-#181 walker populates it for every procedure-like symbol; if
+        // a fixture procedure shows up without one the status-bar lookup
+        // silently falls back to "next procedure − 1", which is a useful
+        // fallback but not the canonical signal.
+        var procedureLike = outline
+            .Where(i => i.ObjectId is null
+                && (i.Kind == "procedure"
+                    || i.Kind == "internal_procedure"
+                    || i.Kind == "protected_procedure"
+                    || i.Kind == "local_procedure"
+                    || i.Kind == "trigger"
+                    || i.Kind == "event_publisher"
+                    || i.Kind == "event_subscriber"))
+            .ToList();
+        procedureLike.Should().NotBeEmpty();
+        procedureLike.Should().OnlyContain(p => p.EndLine == null || p.EndLine.Value >= p.LineNumber,
+            because: "EndLine, when set, must bracket the start line — never trail before it");
     }
 
     [Fact]

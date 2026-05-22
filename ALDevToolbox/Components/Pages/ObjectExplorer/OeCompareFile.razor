@@ -5,6 +5,7 @@
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Services.ObjectExplorer
 @using DiffPlex.DiffBuilder
+@using System.Text.Json
 
 @*
     Side-by-side file diff for two oe_module_files rows. Loads both file
@@ -50,6 +51,7 @@
                      data-language="al"
                      data-content="@_left.Content"
                      data-diff="@_leftDiffJson"
+                     data-procedures="@_leftProceduresJson"
                      spellcheck="false"></div>
             </div>
             <div class="source-viewer source-viewer--compare"
@@ -59,6 +61,7 @@
                      data-language="al"
                      data-content="@_right.Content"
                      data-diff="@_rightDiffJson"
+                     data-procedures="@_rightProceduresJson"
                      spellcheck="false"></div>
             </div>
         </div>
@@ -72,6 +75,8 @@
     private SourceFileHeader? _rightHeader;
     private string _leftDiffJson = "[]";
     private string _rightDiffJson = "[]";
+    private string _leftProceduresJson = "[]";
+    private string _rightProceduresJson = "[]";
 
     protected override async Task OnInitializedAsync()
     {
@@ -91,5 +96,43 @@
         var model = SideBySideDiffBuilder.Diff(_left.Content, _right.Content);
         _leftDiffJson = CompareFileDiffSerializer.SerializeSide(model.OldText);
         _rightDiffJson = CompareFileDiffSerializer.SerializeSide(model.NewText);
+
+        var leftOutline = await ObjectExplorer.GetFileOutlineAsync(leftId);
+        var rightOutline = await ObjectExplorer.GetFileOutlineAsync(rightId);
+        _leftProceduresJson = SerializeProcedures(leftOutline);
+        _rightProceduresJson = SerializeProcedures(rightOutline);
     }
+
+    /// <summary>
+    /// Mirrors <c>SourceFileViewer.SerializeProcedures</c>: emits the
+    /// procedure-like outline rows as JSON for the status-bar lookup in
+    /// <c>code-editor.js</c>. Kept local to the compare page so the two
+    /// surfaces can evolve independently without sharing a helper class.
+    /// </summary>
+    private static string SerializeProcedures(IReadOnlyList<SourceFileOutlineItem>? outline)
+    {
+        if (outline is null || outline.Count == 0) return "[]";
+        var procs = new List<ProcedureRange>(outline.Count);
+        foreach (var item in outline)
+        {
+            if (!IsProcedureLikeKind(item.Kind)) continue;
+            procs.Add(new ProcedureRange(item.LineNumber, item.EndLine, item.Name, item.Kind));
+        }
+        if (procs.Count == 0) return "[]";
+        return JsonSerializer.Serialize(procs, ProcedureJsonOptions);
+    }
+
+    private static bool IsProcedureLikeKind(string kind) => kind switch
+    {
+        "procedure" or "internal_procedure" or "protected_procedure" or "local_procedure"
+            or "trigger" or "event_publisher" or "event_subscriber" => true,
+        _ => false,
+    };
+
+    private sealed record ProcedureRange(int StartLine, int? EndLine, string Name, string Kind);
+
+    private static readonly JsonSerializerOptions ProcedureJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
 }

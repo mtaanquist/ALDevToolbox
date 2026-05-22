@@ -86,6 +86,7 @@
                  data-content="@_file.Content"
                  data-declarations="@SerializeDeclarations(FilterNavigableDeclarations(_declarations))"
                  data-resolvables="@SerializeResolvables(_resolvables)"
+                 data-procedures="@SerializeProcedures(_outline)"
                  spellcheck="false"></div>
 
             @* Drag handle between the editor and the outline. source-viewer.js
@@ -478,6 +479,44 @@
         if (resolvables is null || resolvables.Count == 0) return "[]";
         return JsonSerializer.Serialize(resolvables, DeclarationJsonOptions);
     }
+
+    /// <summary>
+    /// Serialises the procedure-like rows of the outline into the JSON shape
+    /// code-editor.js's status-bar lookup expects on the
+    /// <c>data-procedures</c> attribute — camelCase keys, plain array. Drives
+    /// the "in CheckDates (line 13)" suffix that maps absolute editor lines
+    /// to Business Central's procedure-relative stack-trace numbering (where
+    /// the <c>procedure</c> declaration is line 0). Only kinds that BC can
+    /// surface in a stack trace are included; fields, actions, labels and
+    /// object headers are filtered out.
+    /// </summary>
+    private static string SerializeProcedures(IReadOnlyList<SourceFileOutlineItem>? outline)
+    {
+        if (outline is null || outline.Count == 0) return "[]";
+        var procs = new List<ProcedureRange>(outline.Count);
+        foreach (var item in outline)
+        {
+            if (!IsProcedureLikeKind(item.Kind)) continue;
+            procs.Add(new ProcedureRange(item.LineNumber, item.EndLine, item.Name, item.Kind));
+        }
+        if (procs.Count == 0) return "[]";
+        return JsonSerializer.Serialize(procs, DeclarationJsonOptions);
+    }
+
+    /// <summary>
+    /// Kinds that produce a BC stack-trace frame. Mirrors the procedure-like
+    /// branches in <see cref="SourceFileOutlineGrouper"/>: regular,
+    /// internal, protected and local procedures; triggers; event publishers
+    /// and subscribers.
+    /// </summary>
+    private static bool IsProcedureLikeKind(string kind) => kind switch
+    {
+        "procedure" or "internal_procedure" or "protected_procedure" or "local_procedure"
+            or "trigger" or "event_publisher" or "event_subscriber" => true,
+        _ => false,
+    };
+
+    private sealed record ProcedureRange(int StartLine, int? EndLine, string Name, string Kind);
 
     /// <summary>
     /// Drops <b>field</b> and <b>trigger</b> declarations from the list

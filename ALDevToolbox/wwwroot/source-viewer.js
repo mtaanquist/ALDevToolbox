@@ -73,6 +73,11 @@ function initOne(root) {
 
     const declarations = parseJsonAttr(codeHost.dataset.declarations) ?? [];
     const resolvables = parseJsonAttr(codeHost.dataset.resolvables) ?? [];
+    // Procedure-like outline rows (start line + optional end line + name + kind)
+    // drive the "in CheckDates (line 13)" suffix in the status bar. Maps the
+    // editor's absolute line number to BC's procedure-relative stack-trace
+    // numbering, where the `procedure` declaration counts as line 0.
+    const procedures = parseJsonAttr(codeHost.dataset.procedures) ?? [];
     const content = codeHost.dataset.content ?? "";
     const language = codeHost.dataset.language ?? "al";
 
@@ -80,6 +85,7 @@ function initOne(root) {
     codeHost.removeAttribute("data-content");
     codeHost.removeAttribute("data-declarations");
     codeHost.removeAttribute("data-resolvables");
+    codeHost.removeAttribute("data-procedures");
 
     const notice = root.querySelector(".source-viewer__notice");
     const tabs = new TabController(root);
@@ -135,11 +141,13 @@ function initOne(root) {
         declarations,
         resolvables,
         lineDecorations,
+        procedures,
         dotNetRef: jsBridge,
         // VS Code-style status bar at the bottom of the editor. Shows
-        // cursor line/col, total lines, and selection size when a range
-        // is active. The static "1,073 line(s)" caption under the page
-        // heading moves into this live readout.
+        // cursor line/col, total lines, selection size when a range is
+        // active, and — when the cursor sits inside a procedure — the
+        // containing procedure name plus the BC stack-trace-style
+        // procedure-relative line number ("in CheckDates (line 13)").
         statusBar: true,
     });
 
