@@ -109,9 +109,9 @@ public sealed class McpToolTests : IDisposable
     }
 
     [Fact]
-    public async Task GetCookbookGuidance_returns_org_text_and_builtin_type_descriptions()
+    public async Task GetCookbookGuidance_returns_org_text_builtin_type_descriptions_and_a_token()
     {
-        // No row yet — built-in copy still surfaces.
+        // No row yet — built-in copy still surfaces, and we still get a token.
         await using (var ctx = _db.NewContext())
         {
             var tools = NewCookbookTools(ctx);
@@ -119,6 +119,9 @@ public sealed class McpToolTests : IDisposable
             defaults.Guidance.Should().BeEmpty();
             defaults.RecipeTypes.Should().BeEquivalentTo(new[] { "Snippet", "Pattern", "Module" });
             defaults.TypeDescriptions.Should().ContainKey("Pattern");
+            defaults.GuidanceToken.Should().NotBeNullOrWhiteSpace(
+                "the write tools require a token from this call");
+            defaults.GuidanceTokenExpiresInSeconds.Should().BeGreaterThan(0);
         }
 
         // Saved org guidance comes back verbatim.
@@ -143,14 +146,16 @@ public sealed class McpToolTests : IDisposable
     }
 
     [Fact]
-    public async Task SuggestRecipe_creates_pending_row_in_caller_org()
+    public async Task SuggestRecipe_creates_pending_row_in_caller_org_when_token_is_valid()
     {
         var userId = await SeedSubmitterAsync();
 
         await using var ctx = _db.NewContext();
         var tools = NewCookbookTools(ctx);
+        var token = (await tools.GetCookbookGuidanceAsync()).GuidanceToken;
 
         var input = new SuggestRecipeInput(
+            GuidanceToken: token,
             Title: "Posting Validation Override",
             Description: "Stub override for posting validation.",
             Keywords: "posting, validation",
@@ -179,13 +184,113 @@ public sealed class McpToolTests : IDisposable
     }
 
     [Fact]
+    public async Task SuggestRecipe_rejects_when_guidance_token_is_missing()
+    {
+        await SeedSubmitterAsync(userId: 820);
+        await using var ctx = _db.NewContext();
+        var tools = NewCookbookTools(ctx);
+
+        var input = new SuggestRecipeInput(
+            GuidanceToken: "",
+            Title: "No Token",
+            Description: "Body.",
+            Keywords: "",
+            Type: "Snippet",
+            Files: new[] { new RecipeFileInputDto("a.al", "// hi") });
+
+        var ex = await FluentActions.Awaiting(() => tools.SuggestAsync(input))
+            .Should().ThrowAsync<McpException>();
+        ex.Which.Message.Should().Contain("get_cookbook_guidance",
+            "the error must name the recovery action so the agent knows what to call next");
+    }
+
+    [Fact]
+    public async Task SuggestRecipe_rejects_when_guidance_token_is_tampered()
+    {
+        await SeedSubmitterAsync(userId: 821);
+        await using var ctx = _db.NewContext();
+        var tools = NewCookbookTools(ctx);
+        var realToken = (await tools.GetCookbookGuidanceAsync()).GuidanceToken;
+        // Flip the last character; signed payload must reject.
+        var bad = realToken[..^1] + (realToken[^1] == 'A' ? 'B' : 'A');
+
+        var input = new SuggestRecipeInput(
+            GuidanceToken: bad,
+            Title: "Tampered",
+            Description: "Body.",
+            Keywords: "",
+            Type: "Snippet",
+            Files: new[] { new RecipeFileInputDto("a.al", "// hi") });
+
+        await FluentActions.Awaiting(() => tools.SuggestAsync(input))
+            .Should().ThrowAsync<McpException>();
+    }
+
+    [Fact]
+    public async Task SuggestRecipe_rejects_when_guidance_token_has_expired()
+    {
+        await SeedSubmitterAsync(userId: 822);
+        await using var ctx = _db.NewContext();
+        var tools = NewCookbookTools(ctx);
+        var token = (await tools.GetCookbookGuidanceAsync()).GuidanceToken;
+
+        // Advance past the token's lifetime.
+        _clock.Advance(CookbookTools.GuidanceTokenLifetime + TimeSpan.FromSeconds(1));
+
+        var input = new SuggestRecipeInput(
+            GuidanceToken: token,
+            Title: "Stale",
+            Description: "Body.",
+            Keywords: "",
+            Type: "Snippet",
+            Files: new[] { new RecipeFileInputDto("a.al", "// hi") });
+
+        var ex = await FluentActions.Awaiting(() => tools.SuggestAsync(input))
+            .Should().ThrowAsync<McpException>();
+        ex.Which.Message.Should().Contain("expired");
+    }
+
+    [Fact]
+    public async Task SuggestRecipe_rejects_token_issued_for_a_different_organisation()
+    {
+        await SeedSubmitterAsync(userId: 823);
+
+        // Mint a token under OtherOrgId, then switch back to DefaultOrgId
+        // and try to submit. The token's signed org id no longer matches.
+        _db.OrgContext.CurrentOrganizationId = TestDb.OtherOrgId;
+        string otherOrgToken;
+        await using (var ctx = _db.NewContext())
+        {
+            var tools = NewCookbookTools(ctx);
+            otherOrgToken = (await tools.GetCookbookGuidanceAsync()).GuidanceToken;
+        }
+        _db.OrgContext.CurrentOrganizationId = TestDb.DefaultOrgId;
+
+        await using var ctx2 = _db.NewContext();
+        var defaultTools = NewCookbookTools(ctx2);
+        var input = new SuggestRecipeInput(
+            GuidanceToken: otherOrgToken,
+            Title: "Wrong Org Token",
+            Description: "Body.",
+            Keywords: "",
+            Type: "Snippet",
+            Files: new[] { new RecipeFileInputDto("a.al", "// hi") });
+
+        var ex = await FluentActions.Awaiting(() => defaultTools.SuggestAsync(input))
+            .Should().ThrowAsync<McpException>();
+        ex.Which.Message.Should().Contain("different organisation");
+    }
+
+    [Fact]
     public async Task SuggestRecipe_returns_McpException_when_title_blank()
     {
         await SeedSubmitterAsync(userId: 801);
         await using var ctx = _db.NewContext();
         var tools = NewCookbookTools(ctx);
+        var token = (await tools.GetCookbookGuidanceAsync()).GuidanceToken;
 
         var input = new SuggestRecipeInput(
+            GuidanceToken: token,
             Title: "",
             Description: "Anything",
             Keywords: "",
@@ -203,8 +308,10 @@ public sealed class McpToolTests : IDisposable
         await SeedSubmitterAsync(userId: 802);
         await using var ctx = _db.NewContext();
         var tools = NewCookbookTools(ctx);
+        var token = (await tools.GetCookbookGuidanceAsync()).GuidanceToken;
 
         var input = new SuggestRecipeInput(
+            GuidanceToken: token,
             Title: "Has Slash",
             Description: "Description",
             Keywords: "",
@@ -221,8 +328,10 @@ public sealed class McpToolTests : IDisposable
         await SeedSubmitterAsync(userId: 810);
         await using var ctx = _db.NewContext();
         var tools = NewCookbookTools(ctx);
+        var token = (await tools.GetCookbookGuidanceAsync()).GuidanceToken;
 
         var input = new SuggestRecipeInput(
+            GuidanceToken: token,
             Title: "Bad Type",
             Description: "Body.",
             Keywords: "",
@@ -242,7 +351,9 @@ public sealed class McpToolTests : IDisposable
         await using (var ctx = _db.NewContext())
         {
             var tools = NewCookbookTools(ctx);
+            var token = (await tools.GetCookbookGuidanceAsync()).GuidanceToken;
             var created = await tools.SuggestAsync(new SuggestRecipeInput(
+                GuidanceToken: token,
                 Title: "First Draft",
                 Description: "Initial body.",
                 Keywords: "",
@@ -254,8 +365,10 @@ public sealed class McpToolTests : IDisposable
         await using (var ctx = _db.NewContext())
         {
             var tools = NewCookbookTools(ctx);
+            var token = (await tools.GetCookbookGuidanceAsync()).GuidanceToken;
             var result = await tools.UpdateSuggestionAsync(new UpdateRecipeSuggestionInput(
                 SuggestionId: suggestionId,
+                GuidanceToken: token,
                 Title: "Revised Draft",
                 Description: "Tightened body.",
                 Keywords: "alpha",
@@ -282,6 +395,40 @@ public sealed class McpToolTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdateRecipeSuggestion_also_rejects_a_missing_guidance_token()
+    {
+        await SeedSubmitterAsync(userId: 830);
+
+        int suggestionId;
+        await using (var ctx = _db.NewContext())
+        {
+            var tools = NewCookbookTools(ctx);
+            var token = (await tools.GetCookbookGuidanceAsync()).GuidanceToken;
+            var created = await tools.SuggestAsync(new SuggestRecipeInput(
+                GuidanceToken: token,
+                Title: "First Draft",
+                Description: "Body.",
+                Keywords: "",
+                Type: "Snippet",
+                Files: new[] { new RecipeFileInputDto("a.al", "// v1") }));
+            suggestionId = created.SuggestionId;
+        }
+
+        await using var ctx2 = _db.NewContext();
+        var tools2 = NewCookbookTools(ctx2);
+        await FluentActions.Awaiting(() => tools2.UpdateSuggestionAsync(new UpdateRecipeSuggestionInput(
+                SuggestionId: suggestionId,
+                GuidanceToken: "",
+                Title: "Revised",
+                Description: "Body.",
+                Keywords: "",
+                Type: "Snippet",
+                Files: new[] { new RecipeFileInputDto("a.al", "// v2") })))
+            .Should().ThrowAsync<McpException>()
+            .Where(ex => ex.Message.Contains("get_cookbook_guidance"));
+    }
+
+    [Fact]
     public async Task UpdateRecipeSuggestion_returns_McpException_when_caller_is_not_submitter()
     {
         await SeedSubmitterAsync(userId: 804);
@@ -289,7 +436,10 @@ public sealed class McpToolTests : IDisposable
         int suggestionId;
         await using (var ctx = _db.NewContext())
         {
-            var created = await NewCookbookTools(ctx).SuggestAsync(new SuggestRecipeInput(
+            var tools = NewCookbookTools(ctx);
+            var token = (await tools.GetCookbookGuidanceAsync()).GuidanceToken;
+            var created = await tools.SuggestAsync(new SuggestRecipeInput(
+                GuidanceToken: token,
                 Title: "Owned",
                 Description: "Body.",
                 Keywords: "",
@@ -301,10 +451,12 @@ public sealed class McpToolTests : IDisposable
         await SeedSubmitterAsync(userId: 805);
 
         await using var ctx2 = _db.NewContext();
-        var tools = NewCookbookTools(ctx2);
+        var tools2 = NewCookbookTools(ctx2);
+        var token2 = (await tools2.GetCookbookGuidanceAsync()).GuidanceToken;
 
-        await FluentActions.Awaiting(() => tools.UpdateSuggestionAsync(new UpdateRecipeSuggestionInput(
+        await FluentActions.Awaiting(() => tools2.UpdateSuggestionAsync(new UpdateRecipeSuggestionInput(
                 SuggestionId: suggestionId,
+                GuidanceToken: token2,
                 Title: "Hijacked",
                 Description: "Body.",
                 Keywords: "",
@@ -313,12 +465,28 @@ public sealed class McpToolTests : IDisposable
             .Should().ThrowAsync<McpException>();
     }
 
+    /// <summary>
+    /// Mutable clock that lets the expiry test fast-forward past
+    /// <see cref="CookbookTools.GuidanceTokenLifetime"/> without sleeping.
+    /// </summary>
+    private sealed class MutableClock : TimeProvider
+    {
+        private DateTimeOffset _now;
+        public MutableClock(DateTimeOffset now) { _now = now; }
+        public override DateTimeOffset GetUtcNow() => _now;
+        public void Advance(TimeSpan by) => _now = _now.Add(by);
+    }
+
+    private readonly MutableClock _clock = new(new DateTimeOffset(2026, 5, 22, 12, 0, 0, TimeSpan.Zero));
+
     private CookbookTools NewCookbookTools(ALDevToolbox.Data.AppDbContext ctx) =>
         new(
             new RecipeService(ctx, NullLogger<RecipeService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx)),
             ctx,
             new RecipeSuggestionService(ctx, NullLogger<RecipeSuggestionService>.Instance, _db.OrgContext),
-            _db.OrgContext);
+            _db.OrgContext,
+            _db.DataProtectionProvider,
+            _clock);
 
     // ---- WorkspaceTools ----------------------------------------------------
 

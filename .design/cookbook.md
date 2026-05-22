@@ -70,23 +70,43 @@ Tools live in `Services/Mcp/Tools/CookbookTools.cs`:
 - `get_recipe(id)` — returns the full payload; each file's `Path` already
   joins `RelativePath` and `FileName`.
 - `get_cookbook_guidance()` — returns the org's authored Markdown
-  conventions (from `organization_settings.cookbook_guidance`) plus a
-  built-in dictionary describing what each `RecipeType` means. **The
-  `suggest_recipe` tool's description explicitly tells agents to call
-  this first.** Built-in type descriptions live in code so an empty
-  org-level guidance still steers the agent.
-- `suggest_recipe(input)` — submits to the admin queue. Agents pass
-  `Type` as a string (`"Snippet"` / `"Pattern"` / `"Module"`); each file
-  carries its own `RelativePath`.
-- `update_recipe_suggestion(input)` — edit a pending suggestion.
+  conventions (from `organization_settings.cookbook_guidance`), a
+  built-in dictionary describing what each `RecipeType` means, **and a
+  short-lived signed `GuidanceToken`** the write tools require. Built-in
+  type descriptions live in code so an empty org-level guidance still
+  steers the agent.
+- `suggest_recipe(input)` — submits to the admin queue. Input includes a
+  `GuidanceToken` from `get_cookbook_guidance`, plus `Type` as a string
+  (`"Snippet"` / `"Pattern"` / `"Module"`) and a list of files each with
+  its own `RelativePath`.
+- `update_recipe_suggestion(input)` — edit a pending suggestion; same
+  `GuidanceToken` gate.
 
-There is no enforced "call guidance first" gate — agents pick tools by
-description, and the description language is the steering mechanism. If
-this proves insufficient in practice the medium-strength option is a
-short-lived token returned by `get_cookbook_guidance` that
-`suggest_recipe` must echo back; we have not added that yet because the
-description-level hint is the standard MCP idiom (see also
-`list_templates` / `list_modules` cross-references in `WorkspaceTools`).
+### Mandatory two-step protocol
+
+Both `suggest_recipe` and `update_recipe_suggestion` refuse to run
+without a valid `GuidanceToken` from a recent `get_cookbook_guidance`.
+This makes the ordering mandatory rather than suggested — the steering
+doesn't depend on the agent model being well-behaved.
+
+The token is built and verified by `CookbookTools` via
+`IDataProtectionProvider` with purpose
+`ALDevToolbox.Cookbook.GuidanceToken.v1`:
+
+- **Payload**: `"{organizationId}|{expiresAtUnix}"`.
+- **Protection**: Data Protection's HMAC + AES + key rotation, sharing
+  the `app-keys` volume the rest of the app uses for the SMTP password
+  and off-site backup credentials.
+- **Lifetime**: 30 minutes (`CookbookTools.GuidanceTokenLifetime`). Long
+  enough for an agent to draft after reading the guidance; short enough
+  to force a fresh consultation per session. Tokens are reusable inside
+  the window — submitting two recipes after one consultation works.
+- **Org-binding**: the token signs the issuing organisation's id, so a
+  token from org A leaked into a session in org B is refused.
+
+Error messages are deliberately specific so the agent knows the
+recovery action: every refusal includes "Call get_cookbook_guidance and
+pass the returned GuidanceToken to this tool."
 
 ## Org-level authoring guidance
 

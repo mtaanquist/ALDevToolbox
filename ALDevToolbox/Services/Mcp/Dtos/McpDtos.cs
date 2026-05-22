@@ -143,8 +143,12 @@ public sealed record RecipeFileInputDto(string FileName, string Content, string 
 /// boundary; <see cref="ToDomain"/> is the one-liner mapping. <c>Type</c>
 /// is a string (<c>Snippet</c>, <c>Pattern</c>, or <c>Module</c>) so the
 /// agent reads the same name humans see on the cookbook chip-row.
+/// <c>GuidanceToken</c> is the short-lived signed token returned by
+/// <c>get_cookbook_guidance</c>; the write tool refuses to run without
+/// a valid one.
 /// </summary>
 public sealed record SuggestRecipeInput(
+    string GuidanceToken,
     string Title,
     string Description,
     string Keywords,
@@ -182,10 +186,12 @@ public sealed record SuggestRecipeResult(int SuggestionId, string Message);
 /// id of the suggestion being edited alongside the same fields
 /// <see cref="SuggestRecipeInput"/> accepts; <see cref="ToDomain"/> drops
 /// the id when handing off to the service layer (which already takes the
-/// id as a separate argument).
+/// id as a separate argument). Requires the same <c>GuidanceToken</c>
+/// gate as <see cref="SuggestRecipeInput"/>.
 /// </summary>
 public sealed record UpdateRecipeSuggestionInput(
     int SuggestionId,
+    string GuidanceToken,
     string Title,
     string Description,
     string Keywords,
@@ -210,12 +216,15 @@ public sealed record UpdateRecipeSuggestionInput(
 public sealed record UpdateRecipeSuggestionResult(int SuggestionId, string Message);
 
 /// <summary>
-/// What <c>get_cookbook_guidance</c> returns: the org's authored markdown
-/// plus built-in type taxonomy copy so an empty org-level guidance still
-/// gives the agent something to anchor on. The tool description tells
-/// agents to call this before <c>suggest_recipe</c>.
+/// What <c>get_cookbook_guidance</c> returns: the org's authored markdown,
+/// the built-in type taxonomy (so an empty org-level guidance still gives
+/// the agent something to anchor on), and a short-lived signed
+/// <c>GuidanceToken</c> the write tools require. <c>GuidanceTokenExpiresInSeconds</c>
+/// is the lifetime in seconds; tokens older than that are refused.
 /// </summary>
 public sealed record CookbookGuidance(
     string Guidance,
     IReadOnlyList<string> RecipeTypes,
-    IReadOnlyDictionary<string, string> TypeDescriptions);
+    IReadOnlyDictionary<string, string> TypeDescriptions,
+    string GuidanceToken,
+    int GuidanceTokenExpiresInSeconds);
