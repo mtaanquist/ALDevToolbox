@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using ALDevToolbox.Endpoints;
 using Microsoft.Extensions.Logging;
+using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
 using OpenIddict.Server;
 using static OpenIddict.Server.OpenIddictServerEvents;
@@ -10,14 +11,29 @@ namespace ALDevToolbox.Services.OAuth;
 
 /// <summary>
 /// Resolves a Client ID Metadata Document (CIMD) into a registered OAuth
-/// application on the fly, so Claude's hosted surfaces can use
-/// <c>https://claude.ai/oauth/mcp-oauth-client-metadata</c> as their
-/// <c>client_id</c> instead of pre-registering via DCR.
+/// application on the fly, so hosted MCP surfaces (Claude, ChatGPT, …) can
+/// use an HTTPS URL as their <c>client_id</c> instead of pre-registering
+/// via DCR.
 ///
 /// <para>
-/// Claude picks CIMD over DCR whenever our discovery metadata advertises
-/// <c>client_id_metadata_document_supported: true</c> and <c>"none"</c> in
-/// <c>token_endpoint_auth_methods_supported</c>. Both are set in
+/// Two client-authentication shapes are accepted:
+/// <list type="bullet">
+///   <item><c>token_endpoint_auth_method=none</c> — public PKCE client.
+///   Claude's hosted surfaces use this with
+///   <c>https://claude.ai/oauth/mcp-oauth-client-metadata</c>.</item>
+///   <item><c>token_endpoint_auth_method=private_key_jwt</c> — confidential
+///   client that signs a JWT assertion at the token endpoint. ChatGPT's
+///   custom connectors use this with a per-connector
+///   <c>https://chatgpt.com/oauth/&lt;id&gt;/client.json</c> URL and a
+///   <c>jwks_uri</c> we fetch to seed OpenIddict's signature validator.</item>
+/// </list>
+/// </para>
+///
+/// <para>
+/// The MCP client picks CIMD over DCR when our discovery metadata advertises
+/// <c>client_id_metadata_document_supported: true</c> and the auth method
+/// the client wants to use. Both <c>"none"</c> and <c>"private_key_jwt"</c>
+/// are advertised in <c>token_endpoint_auth_methods_supported</c> from
 /// <c>Program.cs</c>. Without this resolver in place OpenIddict's standard
 /// validator fails the authorisation request with
 /// <c>ID2052: The specified 'client_id' is invalid</c> because no row in
@@ -25,15 +41,20 @@ namespace ALDevToolbox.Services.OAuth;
 /// <see href="https://documentation.openiddict.com/errors/ID2052"/>.
 /// </para>
 ///
+/// <para>
 /// The resolver runs at <see cref="OpenIddictServerHandlerType.Custom"/>
-/// before OpenIddict's <c>ValidateClientId</c> handler. If the <c>client_id</c>
-/// is an HTTPS URL and no matching application exists yet, it fetches the
-/// metadata document, validates the basic shape per the
+/// before OpenIddict's <c>ValidateClientId</c> handler. On every authorize
+/// request whose <c>client_id</c> is an HTTPS URL it fetches the metadata
+/// document, validates the basic shape per the
 /// <see href="https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#client-id-metadata-documents">MCP CIMD spec</see>,
-/// and creates the application via
-/// <see cref="IOpenIddictApplicationManager"/> so the rest of the pipeline
-/// sees a normal client. Subsequent connections from the same URL skip the
-/// fetch — the row is already there.
+/// and either creates the application via
+/// <see cref="IOpenIddictApplicationManager"/> or updates the existing row.
+/// Always re-fetching is what lets us survive the issuer rotating its JWKS
+/// or amending its <c>redirect_uris</c> without an admin intervention:
+/// /authorize is rare (once per consent grant) so the extra HTTPS GET is
+/// affordable, and a stale JWKS would otherwise break every refresh attempt
+/// until someone deleted the application row by hand.
+/// </para>
 /// </summary>
 public sealed class CimdClientResolver : IOpenIddictServerHandler<ValidateAuthorizationRequestContext>
 {
@@ -62,14 +83,10 @@ public sealed class CimdClientResolver : IOpenIddictServerHandler<ValidateAuthor
         if (!Uri.TryCreate(clientId, UriKind.Absolute, out var url)) return;
         if (!string.Equals(url.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal)) return;
 
-        // Already resolved? OpenIddict's own validator picks it up from here.
-        var existing = await _applications.FindByClientIdAsync(clientId, context.CancellationToken);
-        if (existing is not null) return;
-
         CimdMetadata? metadata;
         try
         {
-            metadata = await FetchAsync(url, context.CancellationToken);
+            metadata = await FetchMetadataAsync(url, context.CancellationToken);
         }
         catch (Exception ex)
         {
@@ -103,21 +120,17 @@ public sealed class CimdClientResolver : IOpenIddictServerHandler<ValidateAuthor
                 description: "Client metadata document must declare at least one redirect_uri.");
             return;
         }
-        // CIMD is for public clients only — the spec uses "none" as the
-        // token-endpoint auth method, which is what tells OpenIddict the
-        // client doesn't carry a secret.
-        if (!string.Equals(metadata.TokenEndpointAuthMethod, "none", StringComparison.Ordinal))
-        {
-            context.Reject(
-                error: OpenIddictConstants.Errors.InvalidClient,
-                description: "Client metadata document must declare token_endpoint_auth_method=none.");
-            return;
-        }
+        // Default per RFC 7591 is client_secret_basic, but CIMD documents
+        // SHOULD set this explicitly; we treat a missing value as "none"
+        // for compatibility with documents that follow the spirit of CIMD
+        // but skip the field.
+        var authMethod = string.IsNullOrWhiteSpace(metadata.TokenEndpointAuthMethod)
+            ? "none"
+            : metadata.TokenEndpointAuthMethod!.Trim();
 
         var descriptor = new OpenIddictApplicationDescriptor
         {
             ClientId = clientId,
-            ClientType = OpenIddictConstants.ClientTypes.Public,
             ConsentType = OpenIddictConstants.ConsentTypes.Explicit,
             DisplayName = string.IsNullOrWhiteSpace(metadata.ClientName) ? clientId : metadata.ClientName!.Trim(),
             Permissions =
@@ -136,6 +149,68 @@ public sealed class CimdClientResolver : IOpenIddictServerHandler<ValidateAuthor
                 OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange,
             },
         };
+
+        switch (authMethod)
+        {
+            case "none":
+                descriptor.ClientType = OpenIddictConstants.ClientTypes.Public;
+                break;
+
+            case "private_key_jwt":
+                if (string.IsNullOrWhiteSpace(metadata.JwksUri))
+                {
+                    context.Reject(
+                        error: OpenIddictConstants.Errors.InvalidClient,
+                        description: "Client metadata document declares private_key_jwt but is missing jwks_uri.");
+                    return;
+                }
+                if (!Uri.TryCreate(metadata.JwksUri, UriKind.Absolute, out var jwksUrl) ||
+                    !string.Equals(jwksUrl.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal))
+                {
+                    context.Reject(
+                        error: OpenIddictConstants.Errors.InvalidClient,
+                        description: "Client metadata document's jwks_uri must be an HTTPS URL.");
+                    return;
+                }
+                JsonWebKeySet keys;
+                try
+                {
+                    keys = await FetchJwksAsync(jwksUrl, context.CancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "CIMD JWKS fetch failed for {ClientId} from {JwksUri}", clientId, jwksUrl);
+                    context.Reject(
+                        error: OpenIddictConstants.Errors.InvalidClient,
+                        description: $"Failed to fetch JWKS document from '{jwksUrl}'.");
+                    return;
+                }
+                if (keys.Keys.Count == 0)
+                {
+                    context.Reject(
+                        error: OpenIddictConstants.Errors.InvalidClient,
+                        description: $"JWKS document at '{jwksUrl}' contained no keys.");
+                    return;
+                }
+                descriptor.ClientType = OpenIddictConstants.ClientTypes.Confidential;
+                descriptor.JsonWebKeySet = keys;
+                descriptor.Permissions.Add("cam:" + OpenIddictConstants.ClientAuthenticationMethods.PrivateKeyJwt);
+                if (!string.IsNullOrWhiteSpace(metadata.TokenEndpointAuthSigningAlg))
+                {
+                    descriptor.Properties["token_endpoint_auth_signing_alg"] =
+                        JsonSerializer.SerializeToElement(metadata.TokenEndpointAuthSigningAlg);
+                }
+                descriptor.Properties["jwks_uri"] = JsonSerializer.SerializeToElement(metadata.JwksUri);
+                break;
+
+            default:
+                context.Reject(
+                    error: OpenIddictConstants.Errors.InvalidClient,
+                    description: $"Unsupported token_endpoint_auth_method '{authMethod}'. " +
+                                 "Only 'none' (public PKCE) and 'private_key_jwt' are accepted.");
+                return;
+        }
+
         foreach (var uri in metadata.RedirectUris)
         {
             if (Uri.TryCreate(uri, UriKind.Absolute, out var parsed))
@@ -152,28 +227,64 @@ public sealed class CimdClientResolver : IOpenIddictServerHandler<ValidateAuthor
         }
         descriptor.Properties["registration_source"] = JsonSerializer.SerializeToElement("cimd");
         descriptor.Properties["registered_at"] = JsonSerializer.SerializeToElement(DateTime.UtcNow);
+        descriptor.Properties["token_endpoint_auth_method"] = JsonSerializer.SerializeToElement(authMethod);
         if (!string.IsNullOrWhiteSpace(metadata.ClientUri))
         {
             descriptor.Properties["client_uri"] = JsonSerializer.SerializeToElement(metadata.ClientUri);
         }
 
+        // Re-fetch every time so the issuer can rotate its JWKS or amend its
+        // redirect_uris without an admin nuking the application row. The
+        // earlier short-circuit on existence is gone; we always create or
+        // update from the freshly-fetched document.
+        var existing = await _applications.FindByClientIdAsync(clientId, context.CancellationToken);
         try
         {
-            await _applications.CreateAsync(descriptor, context.CancellationToken);
-            _logger.LogInformation(
-                "Resolved CIMD client {ClientId} ({DisplayName}) with {RedirectCount} redirect_uri(s).",
-                clientId, descriptor.DisplayName, descriptor.RedirectUris.Count);
+            if (existing is null)
+            {
+                await _applications.CreateAsync(descriptor, context.CancellationToken);
+                _logger.LogInformation(
+                    "Resolved CIMD client {ClientId} ({DisplayName}) with {RedirectCount} redirect_uri(s), auth_method={AuthMethod}.",
+                    clientId, descriptor.DisplayName, descriptor.RedirectUris.Count, authMethod);
+            }
+            else
+            {
+                await _applications.UpdateAsync(existing, descriptor, context.CancellationToken);
+                _logger.LogInformation(
+                    "Refreshed CIMD client {ClientId} ({DisplayName}) with {RedirectCount} redirect_uri(s), auth_method={AuthMethod}.",
+                    clientId, descriptor.DisplayName, descriptor.RedirectUris.Count, authMethod);
+            }
         }
         catch (Exception ex)
         {
-            // Race: a parallel request created the same row first.
-            // FindByClientIdAsync will succeed for the next handler, so we
-            // log and continue rather than fail the request.
-            _logger.LogInformation(ex, "CIMD client {ClientId} appeared concurrently — using existing row.", clientId);
+            // Race: a parallel request mutated the same row first. The
+            // standard validator will pick up whichever row landed in the
+            // DB, so log and continue rather than fail the request.
+            _logger.LogInformation(ex, "CIMD client {ClientId} changed concurrently — using whichever row landed.", clientId);
         }
     }
 
-    private async Task<CimdMetadata?> FetchAsync(Uri url, CancellationToken cancellationToken)
+    private Task<CimdMetadata?> FetchMetadataAsync(Uri url, CancellationToken cancellationToken) =>
+        FetchJsonAsync<CimdMetadata>(url, cancellationToken);
+
+    private async Task<JsonWebKeySet> FetchJwksAsync(Uri url, CancellationToken cancellationToken)
+    {
+        var body = await FetchBodyAsync(url, cancellationToken);
+        // JsonWebKeySet's constructor parses the JWKS shape and skips keys
+        // it doesn't understand, so the resolver doesn't have to know
+        // anything about RSA vs EC key encodings.
+        return new JsonWebKeySet(body);
+    }
+
+    private async Task<T?> FetchJsonAsync<T>(Uri url, CancellationToken cancellationToken) where T : class
+    {
+        var body = await FetchBodyAsync(url, cancellationToken);
+        return JsonSerializer.Deserialize<T>(
+            body,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+    }
+
+    private async Task<string> FetchBodyAsync(Uri url, CancellationToken cancellationToken)
     {
         using var client = _httpClientFactory.CreateClient(nameof(CimdClientResolver));
         client.Timeout = FetchTimeout;
@@ -182,7 +293,7 @@ public sealed class CimdClientResolver : IOpenIddictServerHandler<ValidateAuthor
         using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (response.StatusCode != HttpStatusCode.OK)
         {
-            throw new HttpRequestException($"Metadata document returned HTTP {(int)response.StatusCode}.");
+            throw new HttpRequestException($"Document at '{url}' returned HTTP {(int)response.StatusCode}.");
         }
         // Cap the read so a hostile document can't exhaust memory.
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -196,11 +307,9 @@ public sealed class CimdClientResolver : IOpenIddictServerHandler<ValidateAuthor
         }
         if (total > MaxBodyBytes)
         {
-            throw new InvalidOperationException($"Metadata document exceeded {MaxBodyBytes} bytes.");
+            throw new InvalidOperationException($"Document at '{url}' exceeded {MaxBodyBytes} bytes.");
         }
-        return JsonSerializer.Deserialize<CimdMetadata>(
-            buffer.AsSpan(0, total),
-            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        return System.Text.Encoding.UTF8.GetString(buffer, 0, total);
     }
 
     /// <summary>
@@ -223,5 +332,11 @@ public sealed class CimdClientResolver : IOpenIddictServerHandler<ValidateAuthor
 
         [System.Text.Json.Serialization.JsonPropertyName("token_endpoint_auth_method")]
         public string? TokenEndpointAuthMethod { get; init; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("token_endpoint_auth_signing_alg")]
+        public string? TokenEndpointAuthSigningAlg { get; init; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("jwks_uri")]
+        public string? JwksUri { get; init; }
     }
 }

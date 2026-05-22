@@ -63,20 +63,24 @@
             immediately. Treat tokens like passwords.
         </p>
 
-        <h3>2. Connect with AL Dev Toolbox (Claude on the web &amp; mobile)</h3>
+        <h3>2. Connect with AL Dev Toolbox (Claude on the web &amp; mobile, ChatGPT)</h3>
         <p>
             Claude's directory and custom-connector flow on
-            <a href="https://claude.ai/" target="_blank" rel="noopener">claude.ai</a> can
-            connect on its own. There's no token to paste — Claude pops up a permission
-            screen, you click <strong>Allow</strong>, and that's it. You can take the
-            access back any time from
+            <a href="https://claude.ai/" target="_blank" rel="noopener">claude.ai</a>, and
+            ChatGPT's custom-connector flow on
+            <a href="https://chatgpt.com/" target="_blank" rel="noopener">chatgpt.com</a>,
+            can both connect on their own. There's no token to paste — the assistant
+            pops up a permission screen, you click <strong>Allow</strong>, and that's
+            it. You can take the access back any time from
             <a href="/account/oauth-clients">Account &rarr; Connected assistants</a>.
         </p>
         <p class="muted">
             Under the hood this is OAuth — the same kind of sign-in you'd use to let a
             third-party site read your Google Calendar. You stay signed in for as long as
-            Claude is connected; when you revoke from the Connected assistants page, the
-            connection is severed for real (not just hidden).
+            the assistant is connected; when you revoke from the Connected assistants page,
+            the connection is severed for real (not just hidden). ChatGPT occasionally
+            rotates its signing keys — if a refresh happens to land during a rotation,
+            ChatGPT will prompt you to reconnect; clicking through gets you back in.
         </p>
 
         <h3>Which should I use?</h3>
@@ -87,6 +91,7 @@
             <tbody>
                 <tr><td>Claude on the web (claude.ai)</td><td>Connect with AL Dev Toolbox</td></tr>
                 <tr><td>Claude mobile</td><td>Connect with AL Dev Toolbox</td></tr>
+                <tr><td>ChatGPT (custom connector)</td><td>Connect with AL Dev Toolbox</td></tr>
                 <tr><td>Claude Desktop</td><td>Personal access token</td></tr>
                 <tr><td>Claude Code (CLI)</td><td>Personal access token</td></tr>
                 <tr><td>Cursor</td><td>Personal access token</td></tr>
@@ -126,6 +131,23 @@
                 <li>Tap <strong>Add custom connector</strong>.</li>
                 <li>Enter <code>https://YOUR-SERVER/mcp</code> as the server URL.</li>
                 <li>Sign in and tap <strong>Allow</strong> on the permission screen.</li>
+            </ol>
+        </details>
+
+        <details>
+            <summary><strong>ChatGPT (custom connector)</strong></summary>
+            <ol>
+                <li>Open ChatGPT and go to <strong>Settings &rarr; Connectors &rarr; Add custom connector</strong> (or your workspace admin panel's equivalent).</li>
+                <li>Enter <code>https://YOUR-SERVER/mcp</code> as the server URL.</li>
+                <li>
+                    Sign in to AL Dev Toolbox in the popup and click <strong>Allow</strong>
+                    on the permission screen.
+                </li>
+                <li>
+                    If ChatGPT later prompts you to reconnect out of the blue, that's
+                    typically a signing-key rotation on their side. Clicking through the
+                    same flow re-syncs and gets you back in.
+                </li>
             </ol>
         </details>
 
