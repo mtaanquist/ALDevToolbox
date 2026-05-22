@@ -163,6 +163,9 @@ public sealed class TestDb : IDisposable
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<DatabaseUsageService>();
         services.AddScoped<StorageQuotaGuard>();
+        // OrganizationConfigService depends on AuthService for the
+        // strong-auth foot-gun guard on SetRequireStrongAuthAsync.
+        services.AddScoped<ALDevToolbox.Services.Account.AuthService>();
     }
 
     /// <summary>
