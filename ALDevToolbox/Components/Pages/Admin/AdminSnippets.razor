@@ -1,5 +1,5 @@
 @page "/admin/snippets"
-@attribute [Authorize(Roles = "Admin")]
+@attribute [Authorize(Roles = "Admin,Editor")]
 @rendermode InteractiveServer
 @inject SnippetService Snippets
 @inject SnippetSuggestionService Suggestions

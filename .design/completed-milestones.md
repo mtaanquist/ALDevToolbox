@@ -268,4 +268,4 @@ A few decisions throughout the design exist to keep this small. If you find your
 - TOML is an authoring format on top of the DB, never a peer persistence path. `Templates.seed/` bootstraps an empty *organisation* (templates, modules, catalogue, per-folder file contents, organisation defaults, logo, always-included files); nothing watches it or writes back to it.
 - JSON columns for `defaults` and `app_source_cop` instead of normalised tables.
 - Admin UI edits structured data and TOML; AL file contents stay in the repo's seed folder until an admin first edits them.
-- Two roles (`User`, `Admin`); admin-approved signups; no superuser.
+- Three roles (`User`, `Editor`, `Admin`); admin-approved signups; no superuser. (`Editor` was added after M13 as a content-authoring role between `User` and `Admin`.)

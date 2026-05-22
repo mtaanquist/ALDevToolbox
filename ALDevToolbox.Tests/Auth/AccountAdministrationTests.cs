@@ -138,6 +138,52 @@ public sealed class AccountAdministrationTests : IDisposable
     }
 
     [Fact]
+    public async Task ChangeRole_promotes_user_to_editor_without_tripping_last_admin_guard()
+    {
+        var orgId = TestDb.OtherOrgId;
+        await SeedActiveAdminAsync(orgId, "primary@example.com");
+        var subjectId = await SeedActiveUserAsync(orgId, "subject@example.com", UserRole.User);
+
+        await using (var ctx = _db.NewContext())
+        {
+            await NewUserAdmin(ctx).ChangeRoleAsync(subjectId, UserRole.Editor, orgId);
+        }
+
+        await using var read = _db.NewContext();
+        (await read.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == subjectId)).Role
+            .Should().Be(UserRole.Editor);
+    }
+
+    [Fact]
+    public async Task ChangeRole_refuses_to_demote_the_last_admin_to_editor()
+    {
+        var orgId = TestDb.OtherOrgId;
+        var soloAdmin = await SeedActiveAdminAsync(orgId, "lonely@example.com");
+
+        await using var ctx = _db.NewContext();
+        Func<Task> act = () => NewUserAdmin(ctx).ChangeRoleAsync(soloAdmin, UserRole.Editor, orgId);
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("LastAdmin");
+    }
+
+    [Fact]
+    public async Task ChangeRole_allows_demotion_to_editor_when_another_admin_remains()
+    {
+        var orgId = TestDb.OtherOrgId;
+        var demoted = await SeedActiveAdminAsync(orgId, "one@example.com");
+        await SeedActiveAdminAsync(orgId, "two@example.com");
+
+        await using (var ctx = _db.NewContext())
+        {
+            await NewUserAdmin(ctx).ChangeRoleAsync(demoted, UserRole.Editor, orgId);
+        }
+
+        await using var read = _db.NewContext();
+        (await read.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == demoted)).Role
+            .Should().Be(UserRole.Editor);
+    }
+
+    [Fact]
     public async Task Singleton_actions_refuse_to_cross_organisation_boundaries()
     {
         // Acting in DefaultOrg, target is in OtherOrg: must refuse.

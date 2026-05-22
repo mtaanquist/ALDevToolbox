@@ -85,22 +85,26 @@
         </ul>
     </div>
 
-    <AuthorizeView Roles="Admin">
+    <AuthorizeView Roles="Admin,Editor">
         <Authorized Context="adminCtx">
             @{
                 var isSiteAdmin = adminCtx.User.IsInRole(HttpOrganizationContext.SiteAdminRole);
                 var isSystemOrg = OrgContext.IsSystemOrganization;
+                var isAdmin = adminCtx.User.IsInRole("Admin");
             }
             <div class="nav-section">
                 <div class="nav-divider"></div>
                 <div class="nav-section__label">Admin</div>
                 <ul class="nav-list">
-                    <li>
-                        <NavLink class="nav-link" href="/admin" Match="NavLinkMatch.All" ActiveClass="active">
-                            <Icon Name="layout-dashboard" Width="18" Height="18" Css="nav-link__icon" />
-                            <span>Dashboard</span>
-                        </NavLink>
-                    </li>
+                    @if (isAdmin)
+                    {
+                        <li>
+                            <NavLink class="nav-link" href="/admin" Match="NavLinkMatch.All" ActiveClass="active">
+                                <Icon Name="layout-dashboard" Width="18" Height="18" Css="nav-link__icon" />
+                                <span>Dashboard</span>
+                            </NavLink>
+                        </li>
+                    }
                     @if (!isSystemOrg)
                     {
                         <li>
@@ -171,7 +175,7 @@
                         </NavLink>
                     </li>
 
-                    @if (!isSystemOrg)
+                    @if (isAdmin && !isSystemOrg)
                     {
                         <li>
                             <NavLink class="nav-link" href="/admin/administration" Match="NavLinkMatch.Prefix" ActiveClass="active">
@@ -183,8 +187,9 @@
                     @* Per-org Admin still owns its own audit-log entry for
                        non-SiteAdmins. SiteAdmins see the cross-org audit log
                        in their own section below; their org-scoped audit
-                       link stays accessible by URL. *@
-                    @if (!isSiteAdmin)
+                       link stays accessible by URL. Editors do not see the
+                       audit log at all. *@
+                    @if (isAdmin && !isSiteAdmin)
                     {
                         <li>
                             <NavLink class="nav-link" href="/admin/audit" Match="NavLinkMatch.Prefix" ActiveClass="active">
