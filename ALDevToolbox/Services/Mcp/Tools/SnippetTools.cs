@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using ALDevToolbox.Data;
+using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services.Mcp.Dtos;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol;
@@ -17,11 +18,13 @@ public sealed class SnippetTools
 {
     private readonly SnippetService _snippets;
     private readonly AppDbContext _db;
+    private readonly SnippetSuggestionService _suggestions;
 
-    public SnippetTools(SnippetService snippets, AppDbContext db)
+    public SnippetTools(SnippetService snippets, AppDbContext db, SnippetSuggestionService suggestions)
     {
         _snippets = snippets;
         _db = db;
+        _suggestions = suggestions;
     }
 
     [McpServerTool(Name = "search_snippets", ReadOnly = true)]
@@ -64,4 +67,32 @@ public sealed class SnippetTools
             row.MinimumApplicationVersion?.Name,
             row.MinimumApplicationVersion?.Application);
     }
+
+    [McpServerTool(Name = "suggest_snippet", ReadOnly = false, Idempotent = false)]
+    [Description(
+        "Submits a draft snippet to the caller organisation's admin review queue at /admin/snippets/suggestions. " +
+        "The submission is NOT immediately visible from search_snippets — an admin must approve it first. " +
+        "Use this when you have a useful AL pattern (e.g. extracted and generalised from a customer codebase, " +
+        "with customer-specific names stripped) that the team's snippet library is missing. " +
+        "Provide a descriptive Title, a 1–3 sentence Description of when to use it, comma-separated Keywords, " +
+        "and one or more flat-named files (no slashes or '..'). Returns the new SuggestionId.")]
+    public async Task<SuggestSnippetResult> SuggestAsync(
+        [Description("The draft snippet payload. Title and Description are required; Files must contain at least one entry with a flat file name (no path separators) and the file body in Content.")] SuggestSnippetInput input,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var id = await _suggestions.SubmitAsync(input.ToDomain(), ct);
+            return new SuggestSnippetResult(
+                id,
+                "Submitted for review. An admin will approve or reject it at /admin/snippets/suggestions.");
+        }
+        catch (PlanValidationException ex)
+        {
+            throw new McpException("Validation failed: " + FormatErrors(ex.Errors));
+        }
+    }
+
+    private static string FormatErrors(IReadOnlyDictionary<string, string> errors) =>
+        string.Join("; ", errors.Select(kv => $"{kv.Key}: {kv.Value}"));
 }
