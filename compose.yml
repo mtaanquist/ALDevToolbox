@@ -49,7 +49,6 @@ services:
       # operator only manages credentials in one place. The `db` host name is
       # the compose service name above.
       ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:-aldevtoolbox};Username=${POSTGRES_USER:-aldevtoolbox};Password=${POSTGRES_PASSWORD:-aldevtoolbox}"
-      SEED_PATH: /app/Templates.seed
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
       # Data Protection key ring (M17). Persists cookie auth keys and the
