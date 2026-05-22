@@ -185,7 +185,10 @@
                                                     {
                                                         <span class="source-viewer__outline-sig muted">@FormatSignature(entry.Item.Signature)</span>
                                                     }
-                                                    <span class="source-viewer__outline-line muted">L@(entry.Item.LineNumber)</span>
+                                                    @if (entry.Item.Kind != "implemented_by")
+                                                    {
+                                                        <span class="source-viewer__outline-line muted">L@(entry.Item.LineNumber)</span>
+                                                    }
                                                 </a>
                                             }
                                             else
@@ -200,7 +203,10 @@
                                                     {
                                                         <span class="source-viewer__outline-sig muted">@FormatSignature(entry.Item.Signature)</span>
                                                     }
-                                                    <span class="source-viewer__outline-line muted">L@(entry.Item.LineNumber)</span>
+                                                    @if (entry.Item.Kind != "implemented_by")
+                                                    {
+                                                        <span class="source-viewer__outline-line muted">L@(entry.Item.LineNumber)</span>
+                                                    }
                                                 </a>
                                             }
                                         </li>
@@ -422,6 +428,7 @@
         "permissionset" => "permset",
         "permissionsetextension" => "permset ext",
         "profile" => "profile",
+        "implemented_by" => "codeunit",
         _ => kind,
     };
 

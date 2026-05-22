@@ -266,4 +266,28 @@ public sealed class SourceFileOutlineGrouperTests
         labelGroup.Items.Select(e => e.Item.Name)
             .Should().BeEquivalentTo(new[] { "UnsupportedTypeErr", "MissingValueErr" });
     }
+
+    [Fact]
+    public void Implemented_by_rows_group_into_their_own_section()
+    {
+        // Synthetic `implemented_by` rows are minted by
+        // GetFileOutlineAsync for interface files — one per codeunit
+        // that lists this interface in its `implements` clause. They
+        // share the kind so the grouper buckets them together.
+        var input = new[]
+        {
+            Item("interface", "Inventory Adjustment", 1, objectId: 99),
+            Item("procedure", "MakeMultiLevelAdjmt", 5, "()"),
+            Item("implemented_by", "Inventory Adjustment Impl.", int.MaxValue, signature: "Base Application", objectId: 5895),
+            Item("implemented_by", "Partner Implementation",     int.MaxValue, signature: "Partner App",      objectId: 50500),
+        };
+
+        var groups = SourceFileOutlineGrouper.Build(input, filter: null);
+
+        groups.Select(g => g.Title).Should().Contain("IMPLEMENTED BY");
+        var implGroup = groups.Single(g => g.Key == "implemented-by");
+        implGroup.Items.Select(e => e.Item.Name)
+            .Should().BeEquivalentTo(new[] { "Inventory Adjustment Impl.", "Partner Implementation" });
+        implGroup.Items.Should().OnlyContain(e => !e.IsChild);
+    }
 }

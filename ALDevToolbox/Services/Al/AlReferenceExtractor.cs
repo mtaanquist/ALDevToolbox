@@ -188,6 +188,20 @@ public static class AlReferenceExtractor
                 return;
             }
 
+            // Object-header `implements "Iface1", "Iface2"` clause on a
+            // codeunit. Appears between the object name and the opening
+            // `{`, at object scope, before any procedure body has been
+            // entered. Emit one `implements_interface` reference per
+            // listed interface so Find References on the interface (or
+            // its methods) can walk back to the implementing codeunit.
+            if (_state.ScopeStack.Count == 1
+                && tok.Kind == AlTokenKind.Identifier
+                && string.Equals(tok.Value, "implements", StringComparison.OrdinalIgnoreCase))
+            {
+                TryConsumeImplementsClause();
+                return;
+            }
+
             // Object-scope `var` keyword: scan label declarations
             // (`Name: Label '…';`) into the bottom frame so bare uses
             // of label vars in procedure bodies resolve through the
@@ -447,6 +461,62 @@ public static class AlReferenceExtractor
         /// emitted at the line/column of the NAME token (not the keyword)
         /// so the source-viewer underline targets the clickable text.
         /// </summary>
+        /// <summary>
+        /// Consumes a codeunit header's <c>implements "Iface1", "Iface2"</c>
+        /// clause and emits one <c>implements_interface</c> reference per
+        /// listed interface. Cursor is positioned on the <c>implements</c>
+        /// keyword on entry; on return it sits on the next non-name token
+        /// (typically the opening <c>{</c>).
+        ///
+        /// Same-app interfaces resolve through the catalog; cross-app
+        /// interfaces (e.g. a partner codeunit implementing a Base App
+        /// interface) come back from <see cref="IAlTypeResolver.ResolveTypeByName"/>
+        /// with the declaring app's AppId stamped on the row. When the
+        /// catalog doesn't know the name we still emit a row with the
+        /// owner's AppId — find-references will resolve through the
+        /// reference's name fallback the same way <c>extends_target</c>
+        /// does for same-app extensions.
+        /// </summary>
+        private void TryConsumeImplementsClause()
+        {
+            _state.Pos++; // past `implements`
+
+            while (_state.Pos < _state.Tokens.Count)
+            {
+                var tok = _state.Tokens[_state.Pos];
+                if (tok.Kind != AlTokenKind.Identifier && tok.Kind != AlTokenKind.QuotedIdentifier)
+                {
+                    // Header ends at `{` or any other punctuation.
+                    return;
+                }
+
+                var resolved = _state.Ctx.Resolver.ResolveTypeByName(tok.Value, "interface");
+                var targetAppId = resolved?.AppId ?? _state.Ctx.OwnerAppId;
+                var targetName = resolved?.Name ?? tok.Value;
+                _state.EmitReference(new ExtractedReference(
+                    Line: tok.Line,
+                    Column: tok.Column,
+                    TargetAppId: targetAppId,
+                    TargetObjectKind: "interface",
+                    TargetObjectId: null,
+                    TargetObjectName: targetName,
+                    TargetMemberName: null,
+                    TargetMemberKind: null,
+                    ReferenceKind: "implements_interface"));
+                _state.Resolved++;
+                _state.Pos++;
+
+                // Skip an optional comma to the next interface name.
+                if (_state.At(","))
+                {
+                    _state.Pos++;
+                    continue;
+                }
+
+                return;
+            }
+        }
+
         private bool TryConsumeObjectReferenceProperty(string propertyName)
         {
             _state.Pos++; // property name

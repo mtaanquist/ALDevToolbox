@@ -1,0 +1,23 @@
+{
+  "References": [
+    {
+      "Line": 1,
+      "Column": 50,
+      "ReferenceKind": "implements_interface",
+      "TargetObjectKind": "interface",
+      "TargetObjectName": "Inventory Adjustment"
+    },
+    {
+      "Line": 1,
+      "Column": 74,
+      "ReferenceKind": "implements_interface",
+      "TargetObjectKind": "interface",
+      "TargetObjectName": "Cost Adjustment With Params"
+    }
+  ],
+  "Stats": {
+    "ResolvedReferences": 2,
+    "UnresolvedReceivers": 0,
+    "UnresolvedSamples": []
+  }
+}
