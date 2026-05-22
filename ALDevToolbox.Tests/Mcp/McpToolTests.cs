@@ -30,6 +30,25 @@ public sealed class McpToolTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
+    private async Task<int> SeedSubmitterAsync(int userId = 800)
+    {
+        await using var ctx = _db.NewContext();
+        ctx.Users.Add(new User
+        {
+            Id = userId,
+            OrganizationId = TestDb.DefaultOrgId,
+            Email = $"mcp{userId}@example.com",
+            PasswordHash = "x",
+            DisplayName = "MCP Submitter",
+            Role = UserRole.User,
+            Status = UserStatus.Active,
+            CreatedAt = new DateTime(2026, 5, 11, 0, 0, 0, DateTimeKind.Utc),
+        });
+        await ctx.SaveChangesAsync();
+        _db.OrgContext.CurrentUserId = userId;
+        return userId;
+    }
+
     // ---- SnippetTools ------------------------------------------------------
 
     [Fact]
@@ -45,7 +64,10 @@ public sealed class McpToolTests : IDisposable
         }
 
         await using var ctx2 = _db.NewContext();
-        var tools = new SnippetTools(new SnippetService(ctx2, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx2)), ctx2);
+        var tools = new SnippetTools(
+            new SnippetService(ctx2, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx2)),
+            ctx2,
+            new SnippetSuggestionService(ctx2, NullLogger<SnippetSuggestionService>.Instance, _db.OrgContext));
 
         var rows = await tools.SearchAsync(query: "posting");
 
@@ -67,7 +89,10 @@ public sealed class McpToolTests : IDisposable
         }
 
         await using var ctx2 = _db.NewContext();
-        var tools = new SnippetTools(new SnippetService(ctx2, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx2)), ctx2);
+        var tools = new SnippetTools(
+            new SnippetService(ctx2, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx2)),
+            ctx2,
+            new SnippetSuggestionService(ctx2, NullLogger<SnippetSuggestionService>.Instance, _db.OrgContext));
 
         var detail = await tools.GetAsync(snippetId);
         detail.Title.Should().Be("Sample");
@@ -80,9 +105,89 @@ public sealed class McpToolTests : IDisposable
     public async Task GetSnippet_throws_McpException_for_unknown_id()
     {
         await using var ctx = _db.NewContext();
-        var tools = new SnippetTools(new SnippetService(ctx, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx)), ctx);
+        var tools = new SnippetTools(
+            new SnippetService(ctx, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx)),
+            ctx,
+            new SnippetSuggestionService(ctx, NullLogger<SnippetSuggestionService>.Instance, _db.OrgContext));
 
         await FluentActions.Awaiting(() => tools.GetAsync(999_999))
+            .Should().ThrowAsync<McpException>();
+    }
+
+    [Fact]
+    public async Task SuggestSnippet_creates_pending_row_in_caller_org()
+    {
+        var userId = await SeedSubmitterAsync();
+
+        await using var ctx = _db.NewContext();
+        var tools = new SnippetTools(
+            new SnippetService(ctx, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx)),
+            ctx,
+            new SnippetSuggestionService(ctx, NullLogger<SnippetSuggestionService>.Instance, _db.OrgContext));
+
+        var input = new SuggestSnippetInput(
+            Title: "Posting Validation Override",
+            Description: "Stub override for posting validation.",
+            Keywords: "posting, validation",
+            Files: new[] { new SnippetFileInputDto("Codeunit.al", "// body") },
+            Instructions: "Drop into your project and rename the codeunit.");
+
+        var result = await tools.SuggestAsync(input);
+
+        result.SuggestionId.Should().BeGreaterThan(0);
+        result.Message.Should().Contain("/admin/snippets/suggestions");
+
+        await using var verify = _db.NewContext();
+        var row = await verify.SnippetSuggestions
+            .Include(s => s.Files)
+            .FirstAsync(s => s.Id == result.SuggestionId);
+        row.Decision.Should().Be(SnippetSuggestionDecision.Pending);
+        row.OrganizationId.Should().Be(_db.OrgContext.CurrentOrganizationId);
+        row.Title.Should().Be("Posting Validation Override");
+        row.Files.Should().ContainSingle();
+        row.Files[0].FileName.Should().Be("Codeunit.al");
+        row.Files[0].Content.Should().Be("// body");
+        row.SuggestedByUserId.Should().Be(userId);
+    }
+
+    [Fact]
+    public async Task SuggestSnippet_returns_McpException_when_title_blank()
+    {
+        await SeedSubmitterAsync(userId: 801);
+        await using var ctx = _db.NewContext();
+        var tools = new SnippetTools(
+            new SnippetService(ctx, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx)),
+            ctx,
+            new SnippetSuggestionService(ctx, NullLogger<SnippetSuggestionService>.Instance, _db.OrgContext));
+
+        var input = new SuggestSnippetInput(
+            Title: "",
+            Description: "Anything",
+            Keywords: "",
+            Files: new[] { new SnippetFileInputDto("a.al", "// hi") });
+
+        (await FluentActions.Awaiting(() => tools.SuggestAsync(input))
+            .Should().ThrowAsync<McpException>())
+            .Which.Message.Should().Contain("Title");
+    }
+
+    [Fact]
+    public async Task SuggestSnippet_rejects_files_with_slashes()
+    {
+        await SeedSubmitterAsync(userId: 802);
+        await using var ctx = _db.NewContext();
+        var tools = new SnippetTools(
+            new SnippetService(ctx, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx)),
+            ctx,
+            new SnippetSuggestionService(ctx, NullLogger<SnippetSuggestionService>.Instance, _db.OrgContext));
+
+        var input = new SuggestSnippetInput(
+            Title: "Has Slash",
+            Description: "Description",
+            Keywords: "",
+            Files: new[] { new SnippetFileInputDto("sub/x.al", "// nope") });
+
+        await FluentActions.Awaiting(() => tools.SuggestAsync(input))
             .Should().ThrowAsync<McpException>();
     }
 
