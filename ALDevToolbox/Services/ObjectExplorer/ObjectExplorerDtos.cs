@@ -326,6 +326,10 @@ public sealed record ReleaseContentMatch(
 /// symbol rows and drives the outline's right-click "Find references"
 /// menu — clicking a procedure row mints a member-scoped session
 /// without having to first click the declaration in the editor.
+/// <see cref="EndLine"/> mirrors <c>oe_module_symbols.end_line</c> for
+/// procedure-like symbols imported with the post-#181 walker; null for
+/// objects and for legacy imports that pre-date the column. Drives the
+/// status-bar "current procedure" lookup in the source viewer.
 /// </summary>
 public sealed record SourceFileOutlineItem(
     string Kind,
@@ -333,7 +337,8 @@ public sealed record SourceFileOutlineItem(
     string? Signature,
     int LineNumber,
     long? ObjectId,
-    long? SymbolId = null);
+    long? SymbolId = null,
+    int? EndLine = null);
 
 /// <summary>
 /// Minimal Module summary used by the search-filter dropdown. Lighter than

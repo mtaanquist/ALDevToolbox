@@ -384,6 +384,12 @@ export function mount(container, initialValue, language) {
 //                     show the resolvable-token underline (object references,
 //                     procedure calls). Cosmetic only; the actual Go to
 //                     definition still runs through the server.
+//   procedures:      [{ startLine, endLine?, name, kind }] — procedure-like
+//                     symbol ranges. Drives the status bar's "in CheckDates
+//                     (line 13)" suffix, mapping the absolute editor line to
+//                     BC's procedure-relative stack-trace numbering (the
+//                     `procedure` declaration line counts as line 0).
+//                     Only used when `statusBar: true`.
 //   dotNetRef:        Blazor DotNetObjectReference; callbacks fire `OnFindReferences(symbolId)`
 //   scrollToLine:     1-based line to scroll to + flash after mount (deep-link from references)
 export function mountReadOnly(container, value, language, options) {
@@ -400,7 +406,7 @@ export function mountReadOnly(container, value, language, options) {
     // Opt-in status bar: only the source-file viewer asks for it today.
     // The diff viewer and the admin TOML/JSON editors keep their existing
     // chrome unchanged.
-    const statusBarExtensions = opts.statusBar ? [buildStatusBarExtension()] : [];
+    const statusBarExtensions = opts.statusBar ? [buildStatusBarExtension(opts.procedures)] : [];
     // Sticky "current line" highlight survives CodeMirror's row
     // virtualisation because the decoration lives in editor state rather
     // than on a DOM node. scrollToLine() dispatches setCurrentLineEffect
@@ -886,9 +892,51 @@ const currentLineTheme = EditorView.baseTheme({
 /// (cursor moves and document changes both flow through `update`), but
 /// the DOM is cached on the panel so we only touch textContent.
 ///
+/// When `procedures` is supplied, the bar also shows the containing
+/// procedure name and a BC stack-trace-style procedure-relative line
+/// number — e.g. `Ln 1247, Col 9 · in CheckDates (line 13)`. BC reports
+/// stack frames as `<procedure> line N` where the `procedure`
+/// declaration counts as line 0, so the relative number is
+/// `cursorLine - procedure.startLine`. End of a procedure is taken
+/// from `endLine` when present (modern imports) or from the next
+/// procedure's `startLine - 1` (legacy fallback). When the cursor
+/// doesn't sit inside any procedure the suffix is omitted entirely.
+///
 /// Opt-in via `mountReadOnly(..., { statusBar: true })`. The diff and
 /// admin editors don't ask for it and stay untouched.
-function buildStatusBarExtension() {
+function buildStatusBarExtension(procedures) {
+    // Pre-sort once; callers usually hand us a list already ordered by
+    // line, but a defensive copy + sort means a single misordered entry
+    // can't desync the lookup.
+    const procs = Array.isArray(procedures) ? [...procedures] : [];
+    procs.sort((a, b) => (a.startLine | 0) - (b.startLine | 0));
+
+    /// Find the procedure that brackets the given 1-based line. Uses a
+    /// linear scan from the end — for a single-cursor click there's no
+    /// observable difference vs. a binary search, and outlines top out
+    /// in the low thousands of procedures even for the largest BC
+    /// codeunits. Returns null when the cursor sits before the first
+    /// procedure, between two procedures of a legacy file (no
+    /// `endLine`) where the gap doesn't belong to either, or after the
+    /// last procedure's explicit `endLine`.
+    const findContaining = (line) => {
+        for (let i = procs.length - 1; i >= 0; i--) {
+            const p = procs[i];
+            const start = p.startLine | 0;
+            if (line < start) continue;
+            // Explicit end-line wins when present. Otherwise fall back
+            // to the next procedure's start − 1; the gap above that
+            // (after the last procedure) is treated as in-scope.
+            if (typeof p.endLine === "number" && p.endLine > 0) {
+                return line <= p.endLine ? p : null;
+            }
+            const next = procs[i + 1];
+            if (next && line >= (next.startLine | 0)) return null;
+            return p;
+        }
+        return null;
+    };
+
     return showPanel.of(view => {
         const dom = document.createElement("div");
         dom.className = "cm-status-bar";
@@ -906,6 +954,17 @@ function buildStatusBarExtension() {
             const totalLines = state.doc.lines;
             const selLen = sel.to - sel.from;
             let pos = `Ln ${line.number.toLocaleString()}, Col ${col.toLocaleString()}`;
+            if (procs.length > 0) {
+                const proc = findContaining(line.number);
+                if (proc) {
+                    // BC stack-trace convention: declaration line is 0,
+                    // body counts upward from there. cursorLine -
+                    // startLine reproduces the number printed in the
+                    // server-side stack trace.
+                    const relative = line.number - (proc.startLine | 0);
+                    pos += ` · in ${proc.name} (line ${relative.toLocaleString()})`;
+                }
+            }
             if (selLen > 0) {
                 pos += ` · ${selLen.toLocaleString()} selected`;
             }
