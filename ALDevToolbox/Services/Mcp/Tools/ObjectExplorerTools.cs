@@ -123,7 +123,13 @@ public sealed class ObjectExplorerTools
             TargetMemberName: memberName,
             TargetMemberKind: memberKind);
 
-        var matches = await _explorer.FindReferencesAsync(releaseId, query, ct);
+        // Member-scoped queries flow through the symbol-aware variant so
+        // additional buckets — sibling declarations across the chain and
+        // the "implementation" set for interface methods — surface in
+        // the response. Object-only queries stay on the lighter path.
+        var matches = memberName is null
+            ? await _explorer.FindReferencesAsync(releaseId, query, ct)
+            : await _explorer.FindReferencesForSymbolAsync(releaseId, query, ct);
         return matches.Count > MaxResults ? matches.Take(MaxResults).ToList() : matches;
     }
 

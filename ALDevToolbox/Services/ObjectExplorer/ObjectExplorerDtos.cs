@@ -130,7 +130,20 @@ public sealed record ObjectOutline(
     long? SourceFileId,
     string? SourceFilePath,
     int LineNumber,
-    IReadOnlyList<ObjectSymbolRow> Symbols);
+    IReadOnlyList<ObjectSymbolRow> Symbols,
+    IReadOnlyList<InterfaceImplementer>? ImplementedBy = null);
+
+/// <summary>
+/// One codeunit that implements an interface (via the codeunit's
+/// <c>implements "X"</c> header clause). Populated on
+/// <see cref="ObjectOutline.ImplementedBy"/> when the outlined object is
+/// an interface, derived from <c>implements_interface</c> reference
+/// rows across the visible module chain. Empty for non-interface kinds.
+/// </summary>
+public sealed record InterfaceImplementer(
+    long ObjectId,
+    string ObjectName,
+    string ModuleName);
 
 /// <summary>
 /// Slice of an AL procedure / trigger body returned by the

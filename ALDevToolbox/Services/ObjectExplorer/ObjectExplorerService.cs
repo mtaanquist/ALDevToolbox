@@ -299,6 +299,18 @@ public class ObjectExplorerService
                 s.Id, s.Kind, s.Name, s.Signature, s.ReturnType, s.FieldId, s.LineNumber))
             .ToListAsync(ct).ConfigureAwait(false);
 
+        // For interface targets, attach the implementing codeunits so
+        // MCP agents calling get_object_outline on an interface get the
+        // same "implemented by" surface the source-viewer outline shows.
+        IReadOnlyList<InterfaceImplementer>? implementedBy = null;
+        if (string.Equals(header.Kind, "interface", StringComparison.OrdinalIgnoreCase))
+        {
+            var rows = await FindInterfaceImplementersAsync(header.ModuleId, header.Name, ct);
+            implementedBy = rows
+                .Select(r => new InterfaceImplementer(r.SourceObjectId, r.SourceObjectName, r.SourceModuleName))
+                .ToList();
+        }
+
         return new ObjectOutline(
             Id: header.Id,
             Kind: header.Kind,
@@ -309,7 +321,8 @@ public class ObjectExplorerService
             SourceFileId: header.SourceFileId,
             SourceFilePath: header.SourceFilePath,
             LineNumber: header.LineNumber,
-            Symbols: symbols);
+            Symbols: symbols,
+            ImplementedBy: implementedBy);
     }
 
     /// <summary>
