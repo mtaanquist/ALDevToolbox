@@ -58,13 +58,15 @@ public sealed class AccountService
 
     private readonly AppDbContext _db;
     private readonly AuthService _auth;
+    private readonly SystemSettingsService _settings;
     private readonly ILogger<AccountService> _logger;
     private readonly TimeProvider _clock;
 
-    public AccountService(AppDbContext db, AuthService auth, ILogger<AccountService> logger, TimeProvider clock)
+    public AccountService(AppDbContext db, AuthService auth, SystemSettingsService settings, ILogger<AccountService> logger, TimeProvider clock)
     {
         _db = db;
         _auth = auth;
+        _settings = settings;
         _logger = logger;
         _clock = clock;
     }
@@ -104,6 +106,25 @@ public sealed class AccountService
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
         var normalised = AuthService.NormaliseEmail(email);
+
+        // Site-wide email-domain allow-list. When the SiteAdmin has filled it
+        // in, every signup route (new-org, slug-join, claimed-domain) must
+        // come from a listed domain. Empty/null list = feature off. Run after
+        // shape validation so users see "valid email" before "wrong domain".
+        var allowed = await _settings.GetSignupAllowedDomainsAsync(ct);
+        if (allowed is not null)
+        {
+            var at = normalised.LastIndexOf('@');
+            var domain = at >= 0 && at < normalised.Length - 1 ? normalised[(at + 1)..] : string.Empty;
+            if (!allowed.Contains(domain))
+            {
+                throw new PlanValidationException(new Dictionary<string, string>
+                {
+                    ["Email"] = "Sign-ups from this email domain are not allowed on this site. Contact the site administrator if you believe this is a mistake.",
+                });
+            }
+        }
+
         var existingUser = await _db.Users
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Email == normalised, ct);

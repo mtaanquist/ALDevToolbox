@@ -151,6 +151,7 @@ public sealed class OAuthMetadataTests : IDisposable
             PerTenantBackupRetentionCount: 30,
             DefaultStorageQuotaMb: null,
             IndexSizeMultiplier: 0.5m,
-            McpEnabled: true));
+            McpEnabled: true,
+            SignupEmailDomainAllowlist: null));
     }
 }

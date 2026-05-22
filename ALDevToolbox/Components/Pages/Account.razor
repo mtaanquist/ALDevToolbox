@@ -38,6 +38,13 @@
         {
             <p class="form-success" role="status">@FlashFor(Ok)</p>
         }
+        @if (Required == "1")
+        {
+            <p class="form-error" role="alert">
+                Your organisation requires either two-factor authentication or a passkey.
+                Set one up below — you won't be able to reach the rest of the site until you do.
+            </p>
+        }
 
         @if (!string.IsNullOrEmpty(_user.PendingEmail))
         {
@@ -299,6 +306,7 @@
     [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }
     [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
     [SupplyParameterFromQuery(Name = "ok")] public string? Ok { get; set; }
+    [SupplyParameterFromQuery(Name = "required")] public string? Required { get; set; }
 
     private User? _user;
     private Organization? _organization;

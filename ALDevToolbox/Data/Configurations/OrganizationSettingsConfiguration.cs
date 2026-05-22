@@ -28,6 +28,7 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
         entity.Property(e => e.DefaultBrief).HasColumnName("default_brief").IsRequired();
         entity.Property(e => e.DefaultCoreDescription).HasColumnName("default_core_description").IsRequired();
         entity.Property(e => e.CodeWorkspaceJson).HasColumnName("code_workspace_json").IsRequired();
+        entity.Property(e => e.RequireStrongAuth).HasColumnName("require_strong_auth").IsRequired();
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.HasIndex(e => e.OrganizationId).IsUnique();
         entity.HasOne(e => e.Organization)

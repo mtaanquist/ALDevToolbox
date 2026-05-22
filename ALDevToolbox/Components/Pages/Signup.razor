@@ -13,11 +13,7 @@
         be signed in as their first admin.
     </p>
 
-    @if (Error == "email-taken")
-    {
-        <p class="form-error" role="alert">An account with that email already exists. Try signing in or resetting your password.</p>
-    }
-    else if (Error == "invalid" && !string.IsNullOrEmpty(Field))
+    @if (Error == "invalid" && !string.IsNullOrEmpty(Field))
     {
         <p class="form-error" role="alert"><strong>@Field:</strong> @Message</p>
     }

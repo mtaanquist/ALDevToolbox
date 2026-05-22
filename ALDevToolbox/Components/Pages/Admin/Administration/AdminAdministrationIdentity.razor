@@ -70,6 +70,30 @@
         </section>
 
         <section class="admin-section">
+            <h2>Strong authentication</h2>
+            <p class="muted">
+                Require every member of this organisation to have either two-factor
+                authentication (authenticator app or email codes) or a passkey
+                configured. Users without one will be sent to
+                <a href="/account">your account</a> at the next request and can't
+                reach anything else until they enrol.
+            </p>
+            @if (!string.IsNullOrEmpty(_strongAuthOkMessage))
+            {
+                <p class="form-success" role="status">@_strongAuthOkMessage</p>
+            }
+            @if (!string.IsNullOrEmpty(_strongAuthErrMessage))
+            {
+                <div class="form-error" role="alert"><p>@_strongAuthErrMessage</p></div>
+            }
+            <label class="checkbox-label">
+                <input type="checkbox" @bind="_requireStrongAuth" @bind:after="SaveRequireStrongAuthAsync"
+                       disabled="@_savingStrongAuth" />
+                Require strong authentication for everyone in this organisation
+            </label>
+        </section>
+
+        <section class="admin-section">
             <h2>Email domains</h2>
             <p class="muted">
                 When someone signs up with an email at one of these domains we
@@ -130,15 +154,19 @@
     private bool _loading = true;
     private bool _savingName;
     private bool _savingDomain;
+    private bool _savingStrongAuth;
     private string? _nameOkMessage;
     private string? _nameErrMessage;
     private string? _domainOkMessage;
     private string? _domainErrMessage;
+    private string? _strongAuthOkMessage;
+    private string? _strongAuthErrMessage;
 
     private string _name = string.Empty;
     private string _baseName = string.Empty;
     private string _slug = string.Empty;
     private string _newDomain = string.Empty;
+    private bool _requireStrongAuth;
     private List<OrganizationEmailDomain> _domains = new();
 
     protected override async Task OnInitializedAsync()
@@ -153,8 +181,43 @@
         var org = await Db.Organizations.AsNoTracking().FirstAsync(o => o.Id == orgId);
         _name = _baseName = org.Name;
         _slug = org.Slug;
+        _requireStrongAuth = await Db.OrganizationSettings.AsNoTracking()
+            .Where(s => s.OrganizationId == orgId)
+            .Select(s => s.RequireStrongAuth)
+            .FirstOrDefaultAsync();
         _domains = await Config.ListEmailDomainsAsync();
         _loading = false;
+    }
+
+    private async Task SaveRequireStrongAuthAsync()
+    {
+        if (_savingStrongAuth) return;
+        _savingStrongAuth = true;
+        _strongAuthOkMessage = null;
+        _strongAuthErrMessage = null;
+        try
+        {
+            await Config.SetRequireStrongAuthAsync(_requireStrongAuth);
+            _strongAuthOkMessage = _requireStrongAuth
+                ? "Strong-auth requirement is now on. Members without a 2FA method or passkey will be redirected to /account on their next request."
+                : "Strong-auth requirement is now off.";
+        }
+        catch (PlanValidationException ex)
+        {
+            // Revert the toggle so the UI reflects the unchanged DB state.
+            _requireStrongAuth = !_requireStrongAuth;
+            _strongAuthErrMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+        }
+        catch (Exception ex)
+        {
+            _requireStrongAuth = !_requireStrongAuth;
+            Log.LogError(ex, "Failed to toggle strong-auth requirement.");
+            _strongAuthErrMessage = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _savingStrongAuth = false;
+        }
     }
 
     private async Task SaveNameAsync()

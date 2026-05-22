@@ -22,8 +22,10 @@ public sealed class AccountSecurityFlowTests : IDisposable
 
     private AuthService NewAuth(Data.AppDbContext ctx) =>
         new(ctx, NullLogger<AuthService>.Instance, _clock);
+    private SystemSettingsService NewSettings(Data.AppDbContext ctx) =>
+        new(ctx, _db.DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, _clock);
     private AccountService NewAccounts(Data.AppDbContext ctx) =>
-        new(ctx, NewAuth(ctx), NullLogger<AccountService>.Instance, _clock);
+        new(ctx, NewAuth(ctx), NewSettings(ctx), NullLogger<AccountService>.Instance, _clock);
     private UserAdministrationService NewUserAdmin(Data.AppDbContext ctx) =>
         new(ctx, _clock);
 

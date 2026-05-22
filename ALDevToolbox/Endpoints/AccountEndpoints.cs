@@ -116,7 +116,12 @@ internal static class AccountEndpoints
 
                 if (outcome == SignupOutcome.EmailAlreadyTaken)
                 {
-                    ctx.Response.Redirect("/signup?err=email-taken");
+                    // Don't leak account existence. Return the same response
+                    // shape as a queued-pending signup so an attacker can't
+                    // tell a registered email apart from a fresh one. The
+                    // info-level log retains the discriminator for forensics.
+                    logger.LogInformation("Signup attempt with already-registered email — returning generic pending response.");
+                    ctx.Response.Redirect("/signup?ok=pending");
                     return;
                 }
 

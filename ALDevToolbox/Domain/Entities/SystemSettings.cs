@@ -133,5 +133,14 @@ public class SystemSettings
     /// </summary>
     public bool McpEnabled { get; set; }
 
+    /// <summary>
+    /// Newline-delimited list of bare email domains permitted to sign up
+    /// (e.g. <c>"acme.com\nexample.dk"</c>). <see langword="null"/> or empty
+    /// means "feature off, any email domain is allowed" — the SiteAdmin
+    /// opts in by filling the form. Exact-match only; subdomains must be
+    /// listed explicitly.
+    /// </summary>
+    public string? SignupEmailDomainAllowlist { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }

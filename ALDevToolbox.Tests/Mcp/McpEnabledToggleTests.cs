@@ -47,7 +47,8 @@ public sealed class McpEnabledToggleTests : IDisposable
                 PerTenantBackupRetentionCount: 30,
                 DefaultStorageQuotaMb: null,
                 IndexSizeMultiplier: 0.5m,
-                McpEnabled: true));
+                McpEnabled: true,
+                SignupEmailDomainAllowlist: null));
         }
 
         await using var readCtx = _db.NewContext();
@@ -123,7 +124,8 @@ public sealed class McpEnabledToggleTests : IDisposable
             PerTenantBackupRetentionCount: 30,
             DefaultStorageQuotaMb: null,
             IndexSizeMultiplier: 0.5m,
-            McpEnabled: true));
+            McpEnabled: true,
+            SignupEmailDomainAllowlist: null));
     }
 
     private async Task<string> IssuePatAsync(IServiceProvider services)
