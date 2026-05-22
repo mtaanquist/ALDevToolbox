@@ -291,15 +291,18 @@ builder.Services.AddOpenIddict()
             o.UseAspNetCore().DisableTransportSecurityRequirement();
         }
 
-        // Discovery customisation. Two additions Claude needs:
+        // Discovery customisation. Three additions MCP clients need:
         //   (1) Advertise the hand-rolled DCR endpoint (OpenIddict 7.5.0
         //       doesn't surface registration_endpoint itself).
-        //   (2) Declare CIMD support — Claude only picks the CIMD path
+        //   (2) Declare CIMD support — MCP clients pick the CIMD path
         //       (URL-as-client_id) when client_id_metadata_document_supported
-        //       is true AND token_endpoint_auth_methods_supported contains
-        //       "none". Both already follow from running public-only PKCE
-        //       clients, but we set them explicitly so the contract is
-        //       readable from the metadata document.
+        //       is true AND token_endpoint_auth_methods_supported lists the
+        //       method they want to use.
+        //   (3) Advertise both "none" (Claude's public PKCE clients) and
+        //       "private_key_jwt" (ChatGPT's signed-assertion clients), plus
+        //       the RS256 signing algorithm ChatGPT's CIMD documents declare.
+        //       Missing either silently demotes that vendor to DCR-only or
+        //       refuses outright.
         o.AddEventHandler<OpenIddict.Server.OpenIddictServerEvents.HandleConfigurationRequestContext>(b =>
             b.UseInlineHandler(context =>
             {
@@ -310,6 +313,9 @@ builder.Services.AddOpenIddict()
                     context.Metadata["registration_endpoint"] = new Uri(issuer, "/oauth/register").AbsoluteUri;
                 }
                 context.TokenEndpointAuthenticationMethods.Add(OpenIddict.Abstractions.OpenIddictConstants.ClientAuthenticationMethods.None);
+                context.TokenEndpointAuthenticationMethods.Add(OpenIddict.Abstractions.OpenIddictConstants.ClientAuthenticationMethods.PrivateKeyJwt);
+                context.Metadata["token_endpoint_auth_signing_alg_values_supported"] = new OpenIddict.Abstractions.OpenIddictParameter(
+                    System.Text.Json.JsonSerializer.SerializeToElement(new[] { "RS256" }));
                 context.CodeChallengeMethods.Add(OpenIddict.Abstractions.OpenIddictConstants.CodeChallengeMethods.Sha256);
                 return default;
             }));

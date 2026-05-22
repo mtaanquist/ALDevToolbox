@@ -21,8 +21,10 @@ namespace ALDevToolbox.Tests.OAuth;
 ///         shape (resource, authorization_servers, scopes_supported).</item>
 ///   <item>The OpenIddict-managed AS metadata at
 ///         <c>/.well-known/oauth-authorization-server</c> advertises CIMD
-///         (<c>client_id_metadata_document_supported: true</c> +
-///         <c>"none"</c> in <c>token_endpoint_auth_methods_supported</c>),
+///         (<c>client_id_metadata_document_supported: true</c>), both
+///         <c>"none"</c> (Claude) and <c>"private_key_jwt"</c> (ChatGPT)
+///         in <c>token_endpoint_auth_methods_supported</c> alongside
+///         <c>RS256</c> in <c>token_endpoint_auth_signing_alg_values_supported</c>,
 ///         the DCR endpoint, and S256 PKCE.</item>
 /// </list>
 ///
@@ -120,14 +122,26 @@ public sealed class OAuthMetadataTests : IDisposable
         root.TryGetProperty("registration_endpoint", out var registration).Should().BeTrue();
         registration.GetString().Should().EndWith("/oauth/register");
 
-        // CIMD trigger: Claude picks CIMD over DCR only when both of these
+        // CIMD trigger: clients pick CIMD over DCR only when both of these
         // are present. Missing either silently demotes us to DCR-only.
         root.TryGetProperty("client_id_metadata_document_supported", out var cimd).Should().BeTrue();
         cimd.GetBoolean().Should().BeTrue();
         var authMethods = root.GetProperty("token_endpoint_auth_methods_supported").EnumerateArray()
             .Select(e => e.GetString())
             .ToArray();
+        // "none" — Claude's public PKCE clients.
         authMethods.Should().Contain("none");
+        // "private_key_jwt" — ChatGPT's signed-assertion clients. Without
+        // this advertised, ChatGPT refuses to pick the CIMD path.
+        authMethods.Should().Contain("private_key_jwt");
+
+        // ChatGPT's CIMD documents declare RS256 as the signing algorithm
+        // for their JWT client assertions; the AS must advertise it as
+        // supported, otherwise ChatGPT's discovery step rejects us.
+        var signingAlgs = root.GetProperty("token_endpoint_auth_signing_alg_values_supported").EnumerateArray()
+            .Select(e => e.GetString())
+            .ToArray();
+        signingAlgs.Should().Contain("RS256");
 
         // S256 PKCE is mandatory per the MCP spec.
         var pkceMethods = root.GetProperty("code_challenge_methods_supported").EnumerateArray()

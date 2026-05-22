@@ -9,6 +9,7 @@ you pick depends on the assistant:
 |------------------------------------|------------------------------|
 | Claude on the web (claude.ai)      | OAuth (custom connector)     |
 | Claude mobile                      | OAuth (custom connector)     |
+| ChatGPT (custom connector)         | OAuth (custom connector)     |
 | Claude Desktop                     | Personal access token        |
 | Claude Code (CLI)                  | Personal access token        |
 | Cursor                             | Personal access token        |
@@ -37,6 +38,30 @@ connect.
 
 To take access back, go to **Account → Connected assistants** at
 `/account/oauth-clients`.
+
+## Connect with AL Dev Toolbox (ChatGPT custom connectors)
+
+ChatGPT's custom-connector flow uses the same OAuth 2.1 server, but the
+client-authentication shape differs: instead of registering as a public
+PKCE client, ChatGPT publishes a per-connector Client ID Metadata Document
+(CIMD) at `https://chatgpt.com/oauth/<id>/client.json` and authenticates
+the token endpoint by signing a JWT with a private key whose public half
+lives at `https://chatgpt.com/oauth/jwks.json`. AL Dev Toolbox accepts
+both shapes — `token_endpoint_auth_method=none` (Claude) and
+`token_endpoint_auth_method=private_key_jwt` (ChatGPT) — and fetches the
+JWKS on every authorize so a key rotation only requires the user to
+reconnect, not an administrator to intervene.
+
+1. Open ChatGPT → **Settings → Connectors → Add custom connector** (or
+   the equivalent in your workspace's admin panel).
+2. Enter `https://YOUR-SERVER/mcp` as the URL.
+3. Sign in to AL Dev Toolbox in the popup, click **Allow** on the
+   permission screen, and you're connected.
+
+As with Claude, revoke access at **Account → Connected assistants**
+(`/account/oauth-clients`). If ChatGPT rotates its signing keys mid-flight
+the next refresh fails and ChatGPT will prompt you to reconnect — clicking
+through re-fetches the JWKS and gets you back in.
 
 ## Personal access tokens (desktop & CLI)
 

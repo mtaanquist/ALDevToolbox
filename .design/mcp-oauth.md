@@ -24,17 +24,20 @@ PAT stays. OAuth is added. The MCP endpoint accepts either.
 
 ## Auth modes
 
-| Mode  | What Claude does                                              | When                                                                 |
+| Mode  | What the client does                                          | When                                                                 |
 |-------|---------------------------------------------------------------|----------------------------------------------------------------------|
 | PAT   | Reads `Authorization: Bearer aldt_pat_…` from its config file | Desktop apps, CLI tools, scripts                                     |
 | OAuth | DCR-registers itself as a public client, runs the auth-code   | claude.ai, Claude mobile, Cowork — the hosted Claude surfaces        |
-| OAuth | Identifies itself with a CIMD URL                             | Claude prefers this when the AS metadata advertises CIMD support     |
+| OAuth | Identifies itself with a CIMD URL (`token_endpoint_auth_method=none`)            | Claude prefers this when the AS metadata advertises CIMD support     |
+| OAuth | Identifies itself with a CIMD URL (`token_endpoint_auth_method=private_key_jwt`) | ChatGPT custom connectors. The CIMD document points at a `jwks_uri` we fetch every authorize so key rotation is self-healing. |
 
-Claude picks CIMD over DCR only when the AS metadata advertises **both**
-`client_id_metadata_document_supported: true` **and** `"none"` in
-`token_endpoint_auth_methods_supported`. Otherwise it falls back to DCR.
-ALDevToolbox advertises both, so high-traffic CIMD clients avoid the per-
-connection DCR registration.
+Hosted MCP clients pick CIMD over DCR only when the AS metadata advertises
+`client_id_metadata_document_supported: true` **and** the client-auth method
+they want to use in `token_endpoint_auth_methods_supported`. ALDevToolbox
+advertises both `"none"` and `"private_key_jwt"`, plus `"RS256"` in
+`token_endpoint_auth_signing_alg_values_supported` for the JWT-assertion
+path, so high-traffic CIMD clients (both Anthropic's and OpenAI's flavours)
+avoid the per-connection DCR registration.
 
 `client_credentials` is **not** supported. The MCP authorization spec
 forbids pure machine-to-machine grants — every connection needs user
@@ -155,27 +158,48 @@ The discovery metadata customisation in `Program.cs` adds
 
 ## CIMD resolver
 
-Claude's hosted surfaces (claude.ai, mobile, Cowork) skip DCR entirely and
-identify themselves with an HTTPS URL as their `client_id` — for example
-`https://claude.ai/oauth/mcp-oauth-client-metadata`. The URL is the
-identity; the JSON document at that URL is the client's metadata.
+Hosted MCP clients (claude.ai, Claude mobile, ChatGPT custom connectors)
+skip DCR entirely and identify themselves with an HTTPS URL as their
+`client_id` — for example `https://claude.ai/oauth/mcp-oauth-client-metadata`
+or `https://chatgpt.com/oauth/<id>/client.json`. The URL is the identity;
+the JSON document at that URL is the client's metadata.
 
 `Services/OAuth/CimdClientResolver.cs` is an
 `IOpenIddictServerHandler<ValidateAuthorizationRequestContext>` registered
 with `int.MinValue + 100_000` so it runs ahead of every built-in
-OpenIddict validator. When `client_id` is an HTTPS URL with no matching
-`oauth_applications` row, the resolver:
+OpenIddict validator. On every authorize whose `client_id` is an HTTPS URL,
+the resolver:
 
 1. Fetches the URL with a 5 s timeout and a 64 KB body cap.
 2. Validates the document's `client_id` self-reference, `redirect_uris`,
-   and `token_endpoint_auth_method=none`.
-3. Creates a public PKCE client via `IOpenIddictApplicationManager` with
-   `registration_source: "cimd"` stamped into `properties` JSON.
+   and accepts one of two `token_endpoint_auth_method` values:
+   - `none` — registers as a public PKCE client (Claude).
+   - `private_key_jwt` — fetches the document's `jwks_uri` (same timeout
+     and body cap), builds a `JsonWebKeySet` from the JWKS, and registers
+     as a confidential client with that key material attached
+     (ChatGPT). Other values are rejected with `invalid_client`.
+3. Creates or **updates** the application via `IOpenIddictApplicationManager`
+   with `registration_source: "cimd"` and the auth method stamped into
+   `properties` JSON.
 
-Subsequent connections from the same URL skip the fetch — the row exists
-and OpenIddict's standard validator finds it directly. Resolver failures
-reject the authorise request with RFC 6749 `invalid_client`, which Claude
-surfaces with the metadata-fetch error rather than a generic timeout.
+The resolver re-fetches on **every** authorize request, not just the
+first one. That's what lets ChatGPT (or any issuer) rotate its signing
+keys or amend its `redirect_uris` without an admin nuking the application
+row: a stale snapshot would otherwise break every refresh attempt until
+someone deleted the row by hand. /authorize is rare enough (once per
+consent grant per device, not once per API call) that the extra HTTPS GET
+is affordable.
+
+Recovery flow when the issuer rotates: the user's refresh fails because
+the JWKS attached to the application no longer matches the assertion key
+→ the client prompts the user to reconnect → /authorize fires → the
+resolver re-fetches the CIMD document and the JWKS → the row is updated
+in place via `UpdateAsync` → consent screen → fresh tokens issued. No
+admin needed.
+
+Resolver failures reject the authorise request with RFC 6749
+`invalid_client`, which the client surfaces with the metadata-fetch
+error rather than a generic timeout.
 
 Without the resolver, OpenIddict rejects every CIMD client with
 `ID2052: The specified 'client_id' is invalid` — see
