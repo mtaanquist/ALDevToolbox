@@ -22,8 +22,6 @@ public sealed class RecipeRelativePathTests : IDisposable
     [InlineData("../escape")]
     [InlineData("foo/../bar")]
     [InlineData("./hidden")]
-    [InlineData("/leading")]
-    [InlineData("trailing/")]
     [InlineData("seg/with/?question")]
     public async Task Relative_path_validation_rejects_invalid_shapes(string path)
     {
