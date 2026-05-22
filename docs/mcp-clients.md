@@ -13,6 +13,8 @@ you pick depends on the assistant:
 | Claude Code (CLI)                  | Personal access token        |
 | Cursor                             | Personal access token        |
 | VS Code Copilot agent mode         | Personal access token        |
+| Microsoft 365 Copilot / Copilot Studio | Personal access token    |
+| OpenWebUI                          | Personal access token        |
 
 The in-app docs hub at **`/docs/mcp`** is the long-form, layman-friendly
 walkthrough — link signed-in users there. This file is the same content in
@@ -132,6 +134,44 @@ claude mcp add aldevtoolbox \
 ```
 
 The server is then available in any Claude Code session in that directory.
+
+### Microsoft 365 Copilot / Copilot Studio
+
+You author the connection in **Copilot Studio**; once you publish the agent
+it surfaces in M365 Copilot. The connector runs from Microsoft's cloud, so
+the AL Dev Toolbox deployment has to be reachable over HTTPS from the
+public internet (same constraint as Claude.ai).
+
+1. Open Copilot Studio, pick (or create) an agent, then go to
+   **Tools → Add a tool → Model Context Protocol**.
+2. Set the **Server URL** to `${SERVER}/mcp`.
+3. Under **Authentication**, choose `API key`. Set the header name to
+   `Authorization` and the value to `Bearer ${PAT}`.
+4. Save the tool, then **Publish** the agent.
+
+The agent acts as the user who issued the PAT — same organisation, same
+role — regardless of which Copilot channel it's surfaced in.
+
+### OpenWebUI
+
+OpenWebUI's native MCP client lives under **Admin Panel → Settings → Tools
+→ MCP Servers → Add server** (or per-user under **Settings → Tools** for a
+personal connection). It accepts the same server shape as Claude Desktop:
+
+```json
+{
+  "aldevtoolbox": {
+    "type": "http",
+    "url": "${SERVER}/mcp",
+    "headers": {
+      "Authorization": "Bearer ${PAT}"
+    }
+  }
+}
+```
+
+OpenWebUI hot-reloads MCP servers. Pick a model that supports tool calling
+— the toolbox's tools only fire on tool-aware chat models.
 
 ## What you can ask
 

@@ -54,6 +54,8 @@
             <li>Cursor</li>
             <li>VS Code Copilot agent mode</li>
             <li>Claude Code (the command-line tool)</li>
+            <li>Microsoft 365 Copilot / Copilot Studio</li>
+            <li>OpenWebUI</li>
             <li>Anything else that takes an <em>Authorization: Bearer …</em> header</li>
         </ul>
         <p class="muted">
@@ -89,6 +91,8 @@
                 <tr><td>Claude Code (CLI)</td><td>Personal access token</td></tr>
                 <tr><td>Cursor</td><td>Personal access token</td></tr>
                 <tr><td>VS Code Copilot agent mode</td><td>Personal access token</td></tr>
+                <tr><td>Microsoft 365 Copilot / Copilot Studio</td><td>Personal access token</td></tr>
+                <tr><td>OpenWebUI</td><td>Personal access token</td></tr>
             </tbody>
         </table>
     </section>
@@ -211,6 +215,62 @@
 }</code></pre>
                 </li>
                 <li>Reload the window. Copilot agent mode picks it up.</li>
+            </ol>
+        </details>
+
+        <details>
+            <summary><strong>Microsoft 365 Copilot / Copilot Studio</strong></summary>
+            <p>
+                You author the connection in Copilot Studio; once you publish the agent it
+                surfaces in M365 Copilot. The connector runs from Microsoft's cloud, so the
+                AL Dev Toolbox deployment has to be reachable over HTTPS from the public
+                internet (same constraint as Claude on the web).
+            </p>
+            <ol>
+                <li>Create a token on <a href="/account/access-tokens">Account &rarr; Personal access tokens</a>.</li>
+                <li>
+                    In Copilot Studio, open (or create) an agent and go to
+                    <strong>Tools &rarr; Add a tool &rarr; Model Context Protocol</strong>.
+                </li>
+                <li>Set the <strong>Server URL</strong> to <code>https://YOUR-SERVER/mcp</code>.</li>
+                <li>
+                    Under <strong>Authentication</strong>, choose <em>API key</em>. Set the
+                    header name to <code>Authorization</code> and the value to
+                    <code>Bearer YOUR-TOKEN</code>.
+                </li>
+                <li>Save the tool, then <strong>Publish</strong> the agent.</li>
+            </ol>
+            <p class="muted">
+                The agent acts as the user who issued the token — same organisation, same
+                role — regardless of which Copilot channel it's surfaced in.
+            </p>
+        </details>
+
+        <details>
+            <summary><strong>OpenWebUI</strong></summary>
+            <ol>
+                <li>Create a token on <a href="/account/access-tokens">Account &rarr; Personal access tokens</a>.</li>
+                <li>
+                    Open OpenWebUI's <strong>Admin Panel &rarr; Settings &rarr; Tools &rarr;
+                    MCP Servers &rarr; Add server</strong> (or, for a personal connection,
+                    your own <strong>Settings &rarr; Tools</strong>).
+                </li>
+                <li>
+                    Add the toolbox with the same shape Claude Desktop uses:
+<pre><code>{
+  "aldevtoolbox": {
+    "type": "http",
+    "url": "https://YOUR-SERVER/mcp",
+    "headers": {
+      "Authorization": "Bearer YOUR-TOKEN"
+    }
+  }
+}</code></pre>
+                </li>
+                <li>
+                    Save. OpenWebUI hot-reloads MCP servers — pick a model that supports
+                    tool calling, then ask it to use the toolbox.
+                </li>
             </ol>
         </details>
     </section>
