@@ -43,11 +43,11 @@ public class EndpointAmbiguityTests : IClassFixture<TestDb>
             using var factory = new WebApplicationFactory<Program>()
                 .WithWebHostBuilder(builder =>
                 {
-                    // The project's content root carries wwwroot and Templates.seed;
-                    // MapStaticAssets and SeedService both read from there. The
-                    // SDK normally injects this via WebApplicationFactoryContentRoot,
-                    // but pinning it explicitly keeps the test resilient to the
-                    // test bin folder drifting from the project layout.
+                    // The project's content root carries wwwroot, which
+                    // MapStaticAssets reads from. The SDK normally injects this
+                    // via WebApplicationFactoryContentRoot, but pinning it
+                    // explicitly keeps the test resilient to the test bin
+                    // folder drifting from the project layout.
                     builder.UseContentRoot(LocateProjectFolder());
                     builder.UseEnvironment("Test");
                 });

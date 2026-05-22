@@ -14,8 +14,9 @@ The design lives under [`.design/`](./.design/). Read those before non-trivial c
 ## Stack
 
 - .NET 10, Blazor Server (interactive server render mode where needed).
-- EF Core 10 + Npgsql against PostgreSQL 18. App + db as sibling compose services, named volumes for data and (later, M17/M18) keys / backups.
-- Tomlyn for the seed format. MailKit for SMTP. Lucide.Blazor for icons.
+- EF Core 10 + Npgsql against PostgreSQL 18. App + db as sibling compose services, named volumes for data, Data Protection keys, and `pg_dump` backups.
+- Tomlyn for the TOML import/export format. MailKit for SMTP. Lucide icons vendored as embedded SVGs under `Resources/Icons/` (no NuGet dependency).
+- OpenIddict for the MCP OAuth surface, `Fido2.AspNet` for passkey/WebAuthn login, `AWSSDK.S3` for off-site backups.
 - No client-side framework beyond Blazor itself.
 
 ## Quickstart
@@ -29,7 +30,7 @@ BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars \
 docker compose up --build
 ```
 
-This brings up Postgres and the app, runs migrations, seeds the Default organisation, and creates the bootstrap admin on a fresh database. Visit <http://localhost:8080> and sign in with the bootstrap credentials.
+This brings up Postgres and the app, runs migrations, ensures the singleton **system org** (`Default`, flagged `IsSystem = true` — the canonical templates other orgs fork from) exists, and creates the bootstrap admin on a fresh database. Visit <http://localhost:8080> and sign in with the bootstrap credentials.
 
 Run the operator runbook in [`docs/operator-runbook.md`](./docs/operator-runbook.md) for every other deployment flow — fresh deploy, backup and restore, SMTP rotation, SiteAdmin promotion, key-ring recovery.
 
@@ -57,21 +58,37 @@ Run the tests with `dotnet test` from the repo root — same workflow CI uses. T
 On first start the app:
 
 1. Runs EF Core migrations against the configured Postgres database.
-2. Creates the **Default** organisation and seeds its templates, modules, catalogue, and organisation defaults from `Templates.seed/`.
-3. Creates the bootstrap admin account from `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` (only if no users exist yet).
+2. Ensures the **Default** organisation exists and carries `IsSystem = true` — it's the singleton system org that holds the canonical templates other orgs fork from via `TemplateImportService`.
+3. Backfills the platform per-extension files (e.g. canonical `app.json`) for every organisation that's missing them.
+4. Creates the bootstrap admin from `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` (only if no users exist yet). The bootstrap admin is stamped `IsSiteAdmin = true` so the **Site Admin** console is reachable out of the box.
 
 Re-runs reuse the same database. Drop the database (or `docker compose down -v`) to start over.
 
 ## Accounts and signup
 
-Authentication is email + password, scoped to organisations. Two roles: `User` (uses the generators) and `Admin` (manages templates, modules, catalogue, application versions, the audit log, organisation configuration, and other users in the same org).
+Authentication is email + password, scoped to organisations. Three org-scoped roles:
+
+- **`User`** — uses the generators only.
+- **`Editor`** — additionally sees the content-authoring admin pages (templates, modules, catalogue, snippets, app versions, object explorer). Does not see the Administration tab, Dashboard, or audit log.
+- **`Admin`** — sees everything in the org: the audit log, organisation configuration, user management, backups exposed to org admins, and everything an Editor sees.
+
+**SiteAdmin** is a separate cross-org flag for hosting operators. It surfaces the `/site-admin/*` console (system settings, all-orgs user management, backups, MCP toggle) regardless of which org the user belongs to. Granted explicitly via `/site-admin/users`, or stamped on the bootstrap admin on a fresh database. The "last SiteAdmin" guard refuses to demote the final one.
 
 - **Bootstrap admin.** Set `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` on first boot. The values are read once on a fresh database and ignored after a user exists. See `.design/auth-and-audit.md` for the full lifecycle.
 - **Existing-org signups** land as `Pending` and need an admin in the same org to approve them via `/admin/users`. SMTP, if configured, notifies the org's admins.
-- **New-org signups** auto-approve, seed the org from `Templates.seed/`, and sign the user in as that org's admin. There is no superuser. To suppress public signup, hide `/signup` at the proxy.
+- **New-org signups** auto-approve and sign the user in as that org's admin. New orgs start empty — admins import templates on demand from `/admin/templates`, which forks the canonical content from the system org via `TemplateImportService`. There is no superuser. To suppress public signup, hide `/signup` at the proxy.
 - **Password reset** uses single-use tokens emailed via SMTP. Tokens expire after one hour.
+- **Passkeys / WebAuthn.** Available when `Auth__WebAuthn__RpId` and `Auth__WebAuthn__OriginsCsv` are configured (compose passes these through from `AUTH_WEBAUTHN_RP_ID` / `AUTH_WEBAUTHN_ORIGINS`). Leave blank to disable the passkey UI; users fall back to password + optional TOTP / email MFA.
 
 The end-user generators (`/projects/new`, `/projects/extension`, `/templates`) require a signed-in user — anonymous traffic redirects to `/login`.
+
+## Beyond the generators
+
+The codebase has grown a few read-and-author surfaces alongside the workspace and extension generators. Each has its own design doc; the summary below is just orientation.
+
+- **MCP server.** Read-only AL knowledge tools (search objects, find references, get procedure source, list templates / snippets / well-known deps, generate workspace and extension ZIPs) exposed at `/mcp` over OAuth. SiteAdmins toggle availability on `/site-admin/settings`. See [`docs/mcp-clients.md`](./docs/mcp-clients.md) for client setup and [`.design/mcp-oauth.md`](./.design/mcp-oauth.md) for the auth model.
+- **Object Explorer.** Browse imported BC symbol packages, jump between objects, and follow references and implementations across an org's installed app versions. Editors and admins import releases under `/admin/object-explorer`. See [`.design/object-explorer.md`](./.design/object-explorer.md).
+- **Snippets.** Reusable AL snippets at `/snippets` with admin curation under `/admin/snippets`. Also surfaced through the MCP `search_snippets` / `get_snippet` tools so agents can reach the same content humans do.
 
 ## SMTP configuration
 
@@ -107,9 +124,10 @@ That starts the app on <http://localhost:8080>, with the database in the `pg-dat
 | `BOOTSTRAP_ADMIN_PASSWORD`                    | First admin password (only on a fresh database)           | none                   |
 | `ConnectionStrings__DefaultConnection`        | Postgres connection string (Npgsql format). Built from `POSTGRES_*` by compose. | none — required |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Read by the `db` compose service. Set at least `POSTGRES_PASSWORD`. | `aldevtoolbox` |
-| `SEED_PATH`                                   | First-run seed directory                                  | `./Templates.seed` / `/app/Templates.seed` in Docker |
+| `DATA_PROTECTION_KEY_DIR`                     | Where the Data Protection key ring lives (cookie auth keys, SMTP-password ciphertext). Mounted on the `app-keys` volume. | `/var/lib/aldevtoolbox/dp-keys` |
 | `BACKUPS_DIR`                                 | Where `pg_dump` files land (mounted on the `app-backups` volume) | `/var/lib/aldevtoolbox/backups` |
 | `DISABLE_BACKUP_SCHEDULER`                    | `1` to disable the daily backup scheduler (tests / CI)    | unset                  |
+| `AUTH_WEBAUTHN_RP_ID` / `AUTH_WEBAUTHN_ORIGINS` | Passkey relying-party id and comma-separated allowed origins. Leave blank to disable the passkey UI. | unset |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD_FILE` / `SMTP_FROM` / `SMTP_USE_STARTTLS` | SMTP relay used for signup and password-reset emails | none                   |
 | `ASPNETCORE_URLS`                             | Standard ASP.NET Core binding                             | `http://+:8080`        |
 | `ASPNETCORE_ENVIRONMENT`                      | Standard ASP.NET Core environment                         | `Production`           |
@@ -129,7 +147,9 @@ SiteAdmins drive backup tooling from `/site-admin/backups`:
 - **Retention.** Configurable on the same settings page (default 14). After each backup, the service prunes the oldest *unpinned* files past the retention count. Pinned backups are exempt — pin a backup to keep it indefinitely.
 - **Download / restore.** Per-row actions on the backups page. *Restore* drops the `public` schema and replays the dump in place; the app enters maintenance mode (503 for non-SiteAdmin) for the duration. Restores are audited.
 
-`pg_dump` / `pg_restore` ship inside the runtime image via `postgresql-client` (Debian default, currently v16). The compose db service runs `postgres:18`, so the default tools warn or refuse on the version mismatch — if you actually run scheduled backups in production, swap the Dockerfile's `postgresql-client` for `postgresql-client-18` from pgdg. For local UI/UX testing, ad-hoc backups against the v18 server will not succeed with v16 tools, but the list / pin / unpin / delete UI all work against the row metadata regardless.
+`pg_dump` / `pg_restore` v18 ship inside the runtime image (installed from the pgdg apt repo in the Dockerfile) so they match the `postgres:18` server in the compose stack.
+
+**Off-site backups.** Configure an S3-compatible destination (bucket, endpoint, credentials, prefix) on `/site-admin/settings`; each successful local backup is then uploaded asynchronously, and off-site retention is enforced independently of the local volume. Restore from off-site uses the same `/site-admin/backups` page. See [`docs/offsite-backups.md`](./docs/offsite-backups.md) for the full setup, including MinIO / Backblaze / R2 worked examples.
 
 To test the full surface end-to-end:
 
@@ -150,20 +170,24 @@ For a logical export, signed-in admins can hit **Export to TOML** under `/admin/
 Two unauthenticated endpoints, suitable for a load balancer or `docker compose` healthcheck:
 
 - `GET /healthz` — liveness. 200 if the database is reachable **and** the Data Protection key ring round-trips. A node that loses either should drop out of rotation.
-- `GET /readyz` — readiness. 200 once startup work (EF migrations + first-run seed + bootstrap admin) has finished. Until then it returns 503 so reverse proxies don't send traffic to a half-initialised container.
+- `GET /readyz` — readiness. 200 once startup work (EF migrations + system-org / platform-files backfill + bootstrap admin) has finished. Until then it returns 503 so reverse proxies don't send traffic to a half-initialised container.
 
 The Dockerfile's `HEALTHCHECK` polls `/healthz`. The container is whole as long as it can reach the database and decrypt cookies; readiness gating lives in the reverse proxy.
 
 ## Project layout
 
+Two projects at the repo root, wired up through `ALDevToolbox.slnx`:
+
 ```
-Components/      Razor pages, layout, shared components
-Services/        Application services (generation, seed, accounts, admin CRUD)
-Domain/          EF entities, value objects, plans
-Data/            AppDbContext, design-time factory, migrations
-Resources/       Embedded static assets (ruleset, .gitignore template)
-Templates.seed/  First-run seed data (templates, modules, catalogue, organisation defaults)
-wwwroot/         Global CSS, theme + generate companion JS
+ALDevToolbox/                The Blazor Server app
+  Components/                Razor pages, layout, shared components
+  Endpoints/                 Minimal-API endpoint groups (Generation, MCP, OAuth, SiteAdmin, …)
+  Services/                  Application services (generation, accounts, admin CRUD, MCP tools, Object Explorer)
+  Domain/                    EF entities, value objects, plans
+  Data/                      AppDbContext, design-time factory, migrations
+  Resources/                 Embedded static assets (ruleset, .gitignore template, Lucide SVGs)
+  wwwroot/                   Global CSS, theme + companion JS
+ALDevToolbox.Tests/          xUnit + FluentAssertions; Testcontainers Postgres fixture
 ```
 
 See [`.design/architecture.md`](./.design/architecture.md) for what belongs where, and [`CLAUDE.md`](./CLAUDE.md) for the conventions new code should match.
@@ -172,7 +196,8 @@ See [`.design/architecture.md`](./.design/architecture.md) for what belongs wher
 
 - **Template / module / catalogue / application-version edits** happen in the admin UI. The DB is the source of truth at runtime.
 - **Organisation defaults / logo / always-included files** also live in the DB, edited from `/admin/configuration`.
-- **`Templates.seed/`** seeds an empty organisation on first contact and is the target of the **Export to TOML** button. Nothing watches it at runtime.
+- **TOML round-trip.** The **Export to TOML** button under `/admin/configuration` downloads a ZIP of the org's templates, modules, catalogue, application versions, organisation settings, logo, and always-included files; the same screen accepts the import direction for backup or org-to-org transfer.
+- **System-org import.** New or empty orgs pull canonical templates / modules / catalogue from the singleton system org (`Default`, `IsSystem = true`) via `/admin/templates`. There is no on-disk seed directory — the system org is the source of truth.
 - **Migrations** are committed to the repo. New schema changes are added via `dotnet ef migrations add <Name>`.
 
 ## Contributing
