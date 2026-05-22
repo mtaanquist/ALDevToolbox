@@ -128,6 +128,28 @@ public sealed class InviteServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Accept_activates_a_new_user_with_the_editor_role()
+    {
+        var admin = await SeedAdminAsync(TestDb.DefaultOrgId);
+        string token;
+        await using (var ctx = _db.NewContext())
+        {
+            var svc = NewService(ctx, admin.Id, TestDb.DefaultOrgId);
+            (token, _) = await svc.CreateAsync("editor@example.com", UserRole.Editor, null);
+        }
+
+        await using (var ctx = _db.NewContext())
+        {
+            var svc = new InviteService(ctx, new AmbientOrganizationContext(), _clock, NullLogger<InviteService>.Instance);
+            var user = await svc.AcceptAsync(token, "New Editor", "verylongpassword1!");
+            user.Email.Should().Be("editor@example.com");
+            user.Role.Should().Be(UserRole.Editor);
+            user.Status.Should().Be(UserStatus.Active);
+            user.OrganizationId.Should().Be(TestDb.DefaultOrgId);
+        }
+    }
+
+    [Fact]
     public async Task Accept_rejects_a_second_use_of_the_same_token()
     {
         var admin = await SeedAdminAsync(TestDb.DefaultOrgId);

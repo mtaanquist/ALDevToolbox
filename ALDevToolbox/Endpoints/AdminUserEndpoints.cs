@@ -125,7 +125,7 @@ internal static class AdminUserEndpoints
             }
             var form = await ctx.Request.ReadFormAsync(ct);
             var emailAddr = form["Email"].ToString();
-            var role = form["Role"].ToString() == "Admin" ? UserRole.Admin : UserRole.User;
+            var role = ParseInviteRole(form["Role"].ToString());
             var message = form["WelcomeMessage"].ToString();
             try
             {
@@ -135,7 +135,7 @@ internal static class AdminUserEndpoints
                     .Include(u => u.Organization)
                     .FirstAsync(u => u.Id == orgCtx.CurrentUserId!.Value, ct);
                 var orgName = inviter.Organization?.Name ?? "your organisation";
-                var roleLabel = role == UserRole.Admin ? "Administrator" : "User";
+                var roleLabel = FormatRoleLabel(role);
                 var (subject, body) = EmailTemplates.Invite(inviter.DisplayName, orgName, roleLabel, message, url);
                 try
                 {
@@ -190,7 +190,7 @@ internal static class AdminUserEndpoints
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
             var form = await ctx.Request.ReadFormAsync(ct);
             var emailAddr = form["Email"].ToString();
-            var role = form["Role"].ToString() == "Admin" ? UserRole.Admin : UserRole.User;
+            var role = ParseInviteRole(form["Role"].ToString());
             var message = form["WelcomeMessage"].ToString();
             var sendEmail = form["SendEmail"] == "true" || form["SendEmail"] == "on";
             try
@@ -205,7 +205,7 @@ internal static class AdminUserEndpoints
                             .Include(u => u.Organization)
                             .FirstAsync(u => u.Id == orgCtx.CurrentUserId!.Value, ct);
                         var orgName = inviter.Organization?.Name ?? "your organisation";
-                        var roleLabel = role == UserRole.Admin ? "Administrator" : "User";
+                        var roleLabel = FormatRoleLabel(role);
                         var (subject, body) = EmailTemplates.Invite(inviter.DisplayName, orgName, roleLabel, message, url);
                         await email.SendAsync(emailAddr.Trim(), subject, body, ct);
                     }
@@ -277,4 +277,14 @@ internal static class AdminUserEndpoints
 
         return app;
     }
+
+    private static UserRole ParseInviteRole(string raw) =>
+        Enum.TryParse<UserRole>(raw, ignoreCase: true, out var r) ? r : UserRole.User;
+
+    private static string FormatRoleLabel(UserRole role) => role switch
+    {
+        UserRole.Admin => "Administrator",
+        UserRole.Editor => "Editor",
+        _ => "User",
+    };
 }

@@ -26,16 +26,18 @@ public sealed class PatAuthenticationHandlerTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
-    private async Task<User> SeedUserAsync()
+    private Task<User> SeedUserAsync() => SeedUserAsync(UserRole.Admin, "alice@example.com");
+
+    private async Task<User> SeedUserAsync(UserRole role, string email)
     {
         await using var ctx = _db.NewContext();
         var user = new User
         {
             OrganizationId = TestDb.DefaultOrgId,
-            Email = "alice@example.com",
-            DisplayName = "Alice",
+            Email = email,
+            DisplayName = email,
             PasswordHash = "ignored",
-            Role = UserRole.Admin,
+            Role = role,
             Status = UserStatus.Active,
             CreatedAt = _clock.GetUtcNow().UtcDateTime,
         };
@@ -83,6 +85,30 @@ public sealed class PatAuthenticationHandlerTests : IDisposable
         principal.FindFirst(ClaimTypes.Role)!.Value.Should().Be(UserRole.Admin.ToString());
         principal.FindFirst("pat_id")!.Value.Should().Be(issued.Id.ToString());
         principal.Identity!.AuthenticationType.Should().Be(PatAuthenticationHandler.AuthenticationScheme);
+    }
+
+    [Fact]
+    public async Task Editor_pat_mounts_editor_role_claim()
+    {
+        var user = await SeedUserAsync(UserRole.Editor, "ed@example.com");
+        IssuedToken issued;
+        await using (var ctx = _db.NewContext())
+        {
+            var svc = new PersonalAccessTokenService(ctx, _clock, NullLogger<PersonalAccessTokenService>.Instance);
+            issued = await svc.IssueAsync(user.Id, user.OrganizationId, "cursor", expiresAt: null);
+        }
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["Authorization"] = "Bearer " + issued.Plaintext;
+
+        var handler = await NewHandlerAsync(httpContext);
+        var result = await handler.AuthenticateAsync();
+
+        result.Succeeded.Should().BeTrue();
+        var principal = result.Principal!;
+        principal.FindFirst(ClaimTypes.Role)!.Value.Should().Be("Editor");
+        principal.IsInRole("Editor").Should().BeTrue();
+        principal.IsInRole("Admin").Should().BeFalse();
     }
 
     [Fact]

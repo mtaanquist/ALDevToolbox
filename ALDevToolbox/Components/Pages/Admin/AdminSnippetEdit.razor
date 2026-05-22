@@ -1,6 +1,6 @@
 @page "/admin/snippets/new"
 @page "/admin/snippets/{Id:int}"
-@attribute [Authorize(Roles = "Admin")]
+@attribute [Authorize(Roles = "Admin,Editor")]
 @rendermode InteractiveServer
 @inject SnippetService Snippets
 @inject ApplicationVersionService ApplicationVersions

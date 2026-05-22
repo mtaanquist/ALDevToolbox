@@ -1,6 +1,6 @@
 @page "/admin/modules/new"
 @page "/admin/modules/{Key}"
-@attribute [Authorize(Roles = "Admin")]
+@attribute [Authorize(Roles = "Admin,Editor")]
 @rendermode InteractiveServer
 @inject ModuleService Modules
 @inject CatalogService Catalog

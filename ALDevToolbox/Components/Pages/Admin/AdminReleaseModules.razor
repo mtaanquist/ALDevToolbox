@@ -1,5 +1,5 @@
 @page "/admin/object-explorer/release/{ReleaseId:int}/modules"
-@attribute [Authorize(Roles = "Admin")]
+@attribute [Authorize(Roles = "Admin,Editor")]
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @inject IAntiforgery Antiforgery
 @inject IHttpContextAccessor Http

@@ -2,7 +2,13 @@
 
 ## Auth model
 
-Email/password accounts scoped to organisations. Two roles: `User` (can use the project generator) and `Admin` (can manage templates, modules, catalogue, application versions, audit log, and other users in the same organisation). There is no superuser; an admin only ever sees their own organisation.
+Email/password accounts scoped to organisations. Three roles:
+
+- `User` — can use the project generator.
+- `Editor` — additionally sees the content-authoring admin pages (templates, modules, catalogue, snippets, application versions, object explorer including releases import), but **not** the Administration tab, the Admin dashboard, the audit log, or the storage-quota footer.
+- `Admin` — full control of the organisation, including users, invites, identity, MCP, OAuth clients, export, audit, and content authoring.
+
+There is no superuser; an admin only ever sees their own organisation. The "last active admin" guard in `UserAdministrationService.ChangeRoleAsync` blocks any demotion away from `Admin` (to `Editor` or `User`) when the row is the sole active admin in the org — Editors do not count as admins for that guard.
 
 **Multi-tenancy.** Every editable entity carries an `organization_id`. EF Core query filters on `AppDbContext` scope reads to the acting user's organisation; the only paths that bypass them with `IgnoreQueryFilters()` are the ones that *can't* know an organisation yet (login, signup, password reset, bootstrap). Cross-org reads from a signed-in session return nothing — verified by `CrossOrgIsolationTests`.
 

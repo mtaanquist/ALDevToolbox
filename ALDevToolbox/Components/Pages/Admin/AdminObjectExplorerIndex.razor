@@ -1,5 +1,5 @@
 @page "/admin/object-explorer"
-@attribute [Authorize(Roles = "Admin")]
+@attribute [Authorize(Roles = "Admin,Editor")]
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Services.ObjectExplorer

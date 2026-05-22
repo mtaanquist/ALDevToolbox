@@ -103,11 +103,11 @@ public sealed class UserAdministrationService
         await _db.SaveChangesAsync(ct);
     }
 
-    /// <summary>Promotes / demotes a user. Last-admin protection on demotion.</summary>
+    /// <summary>Promotes / demotes a user. Last-admin protection on any demotion away from Admin (User or Editor).</summary>
     public async Task ChangeRoleAsync(int userId, UserRole newRole, int actingOrgId, CancellationToken ct = default)
     {
         var user = await LoadUserAsync(userId, actingOrgId, ct);
-        if (user.Role == UserRole.Admin && newRole == UserRole.User
+        if (user.Role == UserRole.Admin && newRole != UserRole.Admin
             && user.Status == UserStatus.Active
             && await CountActiveAdminsAsync(actingOrgId, ct) <= 1)
         {

@@ -31,7 +31,7 @@
     {
         <p class="caption muted">
             You've been invited to join <strong>@_invite.Organization?.Name</strong>
-            as a <strong>@(_invite.Role == UserRole.Admin ? "Administrator" : "User")</strong>.
+            as a <strong>@FormatRoleLabel(_invite.Role)</strong>.
             Pick a display name and password to activate your account.
         </p>
 
@@ -76,6 +76,13 @@
 
     private Invite? _invite;
     private bool _loaded;
+
+    private static string FormatRoleLabel(UserRole role) => role switch
+    {
+        UserRole.Admin => "Administrator",
+        UserRole.Editor => "Editor",
+        _ => "User",
+    };
 
     protected override async Task OnInitializedAsync()
     {

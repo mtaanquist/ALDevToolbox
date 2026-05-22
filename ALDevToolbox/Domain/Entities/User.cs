@@ -4,6 +4,7 @@ namespace ALDevToolbox.Domain.Entities;
 public enum UserRole
 {
     User,
+    Editor,
     Admin,
 }
 

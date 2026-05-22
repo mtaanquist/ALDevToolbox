@@ -1,5 +1,5 @@
 @page "/admin/application-versions"
-@attribute [Authorize(Roles = "Admin")]
+@attribute [Authorize(Roles = "Admin,Editor")]
 @rendermode InteractiveServer
 @inject ApplicationVersionService Versions
 @inject ILogger<AdminApplicationVersions> Log

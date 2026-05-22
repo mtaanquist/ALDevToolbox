@@ -1,5 +1,5 @@
 @page "/admin/templates"
-@attribute [Authorize(Roles = "Admin")]
+@attribute [Authorize(Roles = "Admin,Editor")]
 @rendermode InteractiveServer
 @inject TemplateService Templates
 @inject TemplateImportService Imports
