@@ -110,7 +110,12 @@ namespace ALDevToolbox.Data.Migrations
                 ALTER TABLE recipe_suggestions RENAME CONSTRAINT "FK_snippet_suggestions_users_suggested_by_user_id" TO "FK_recipe_suggestions_users_suggested_by_user_id";
                 ALTER TABLE recipe_suggestions RENAME CONSTRAINT "FK_snippet_suggestions_users_decided_by_user_id" TO "FK_recipe_suggestions_users_decided_by_user_id";
                 ALTER TABLE recipe_suggestions RENAME CONSTRAINT "FK_snippet_suggestions_snippets_approved_snippet_id" TO "FK_recipe_suggestions_recipes_approved_recipe_id";
-                ALTER TABLE recipe_suggestions RENAME CONSTRAINT "FK_snippet_suggestions_application_versions_minimum_application_version_id" TO "FK_recipe_suggestions_application_versions_minimum_application_version_id";
+                -- AddSnippetInstructionsAndMinimumApplicationVersion (20260616)
+                -- emitted this FK pre-truncated with a `~` marker, so the
+                -- stored name in Postgres ends with `~`; rename to a likewise
+                -- pre-truncated target so the snapshot stays internally
+                -- consistent with that migration's convention.
+                ALTER TABLE recipe_suggestions RENAME CONSTRAINT "FK_snippet_suggestions_application_versions_minimum_applicatio~" TO "FK_recipe_suggestions_application_versions_minimum_application~";
                 ALTER TABLE recipe_suggestion_files RENAME CONSTRAINT "FK_snippet_suggestion_files_snippet_suggestions_snippet_suggestion_id" TO "FK_recipe_suggestion_files_recipe_suggestions_recipe_suggestion_id";
                 """);
 
@@ -129,7 +134,7 @@ namespace ALDevToolbox.Data.Migrations
 
             migrationBuilder.Sql("""
                 ALTER TABLE recipe_suggestion_files RENAME CONSTRAINT "FK_recipe_suggestion_files_recipe_suggestions_recipe_suggestion_id" TO "FK_snippet_suggestion_files_snippet_suggestions_snippet_suggestion_id";
-                ALTER TABLE recipe_suggestions RENAME CONSTRAINT "FK_recipe_suggestions_application_versions_minimum_application_version_id" TO "FK_snippet_suggestions_application_versions_minimum_application_version_id";
+                ALTER TABLE recipe_suggestions RENAME CONSTRAINT "FK_recipe_suggestions_application_versions_minimum_application~" TO "FK_snippet_suggestions_application_versions_minimum_applicatio~";
                 ALTER TABLE recipe_suggestions RENAME CONSTRAINT "FK_recipe_suggestions_recipes_approved_recipe_id" TO "FK_snippet_suggestions_snippets_approved_snippet_id";
                 ALTER TABLE recipe_suggestions RENAME CONSTRAINT "FK_recipe_suggestions_users_decided_by_user_id" TO "FK_snippet_suggestions_users_decided_by_user_id";
                 ALTER TABLE recipe_suggestions RENAME CONSTRAINT "FK_recipe_suggestions_users_suggested_by_user_id" TO "FK_snippet_suggestions_users_suggested_by_user_id";
