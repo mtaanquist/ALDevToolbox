@@ -52,6 +52,7 @@ public static class SourceFileOutlineGrouper
         var eventSubscribers = new List<OutlineEntry>();
         var objectTriggers = new List<OutlineEntry>();
         var labels = new List<OutlineEntry>();
+        var implementedBy = new List<OutlineEntry>();
 
         // Track which field / action is "active" so a field-bound or
         // action-bound trigger nests under it. When the parent is filtered
@@ -183,10 +184,17 @@ public static class SourceFileOutlineGrouper
                     // discoverability.
                     if (Matches(item)) labels.Add(new OutlineEntry(item, IsChild: false));
                     break;
+
+                case "implemented_by":
+                    // Synthetic rows minted by GetFileOutlineAsync for
+                    // interface files — one per codeunit that declares
+                    // this interface in its `implements` clause.
+                    if (Matches(item)) implementedBy.Add(new OutlineEntry(item, IsChild: false));
+                    break;
             }
         }
 
-        var groups = new List<OutlineGroup>(9);
+        var groups = new List<OutlineGroup>(10);
         AddIfAny(groups, "object", "OBJECT", objectItems);
         AddIfAny(groups, "fields", "FIELDS", fieldItems);
         AddIfAny(groups, "actions", "ACTIONS", actionItems);
@@ -196,6 +204,7 @@ public static class SourceFileOutlineGrouper
         AddIfAny(groups, "event-subscribers", "EVENT SUBSCRIBERS", eventSubscribers);
         AddIfAny(groups, "triggers", "TRIGGERS", objectTriggers);
         AddIfAny(groups, "labels", "LABELS", labels);
+        AddIfAny(groups, "implemented-by", "IMPLEMENTED BY", implementedBy);
         return groups;
     }
 

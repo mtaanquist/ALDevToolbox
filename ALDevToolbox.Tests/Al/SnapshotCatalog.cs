@@ -118,6 +118,15 @@ internal static class SnapshotCatalog
             new AlMember("Document Type", "table_field", "Enum", "Sales Document Type"));
         r.AddMember("Assembly Line Sample", new AlMember("No.", "table_field", null, null));
 
+        // ── Interfaces ───────────────────────────────────────────
+        // Interfaces have no numeric object id; the catalog still keys
+        // them by name so codeunit `implements "X"` clauses resolve to
+        // the right (AppId, name) tuple in the emitted reference row.
+        r.AddType("Inventory Adjustment",
+            new AlTypeRef(OwnerAppId, "interface", null, "Inventory Adjustment"));
+        r.AddType("Cost Adjustment With Params",
+            new AlTypeRef(OwnerAppId, "interface", null, "Cost Adjustment With Params"));
+
         // ── Reports / queries / xmlports / enums ─────────────────
         r.AddType("Customer List Report", new AlTypeRef(OwnerAppId, "report", 101, "Customer List Report"));
         r.AddType("Customer Query", new AlTypeRef(OwnerAppId, "query", 101, "Customer Query"));

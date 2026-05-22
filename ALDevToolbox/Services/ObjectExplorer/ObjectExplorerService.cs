@@ -740,7 +740,7 @@ public class ObjectExplorerService
     {
         var objects = await _db.OeModuleObjects.AsNoTracking()
             .Where(o => o.SourceFileId == fileId)
-            .Select(o => new { o.Id, o.Kind, o.Name, o.LineNumber })
+            .Select(o => new { o.Id, o.Kind, o.Name, o.LineNumber, o.ModuleId })
             .ToListAsync(ct);
 
         var symbols = await _db.OeModuleSymbols.AsNoTracking()
@@ -758,8 +758,90 @@ public class ObjectExplorerService
         {
             items.Add(new SourceFileOutlineItem(s.Kind, s.Name, s.Signature, s.LineNumber, null, s.Id));
         }
+
+        // For interface files, append synthetic "implemented_by" rows
+        // for every codeunit in the visible module chain that declares
+        // this interface in its `implements` clause. Synthetic items
+        // carry LineNumber = int.MaxValue so they sort to the bottom of
+        // the outline; the source-viewer's outline grouper buckets them
+        // into a dedicated "IMPLEMENTED BY" section.
+        var interfaceObj = objects.FirstOrDefault(o => string.Equals(o.Kind, "interface", StringComparison.OrdinalIgnoreCase));
+        if (interfaceObj is not null)
+        {
+            var implementers = await FindInterfaceImplementersAsync(
+                interfaceObj.ModuleId, interfaceObj.Name, ct);
+            foreach (var impl in implementers)
+            {
+                items.Add(new SourceFileOutlineItem(
+                    Kind: "implemented_by",
+                    Name: impl.SourceObjectName,
+                    Signature: impl.SourceModuleName,
+                    LineNumber: int.MaxValue,
+                    ObjectId: impl.SourceObjectId));
+            }
+        }
+
         return items.OrderBy(i => i.LineNumber).ToList();
     }
+
+    /// <summary>
+    /// Returns the codeunits (across the visible module chain seeded by
+    /// the interface's defining module) that declare themselves as
+    /// implementing the named interface. Backed by the
+    /// <c>implements_interface</c> reference rows emitted at import.
+    /// </summary>
+    private async Task<List<InterfaceImplementerRow>> FindInterfaceImplementersAsync(
+        long interfaceModuleId, string interfaceName, CancellationToken ct)
+    {
+        // Resolve the release the interface lives in so we can seed the
+        // recursive CTE with it — same shadowing rule as the rest of the
+        // family.
+        var seed = await _db.OeModules.AsNoTracking()
+            .Where(m => m.Id == interfaceModuleId)
+            .Select(m => new { m.ReleaseId, m.AppId })
+            .FirstOrDefaultAsync(ct);
+        if (seed is null) return new();
+
+        const string sql = """
+            WITH RECURSIVE chain AS (
+                SELECT id, parent_release_id, 0 AS depth
+                FROM oe_releases
+                WHERE id = {0}
+                UNION ALL
+                SELECT r.id, r.parent_release_id, c.depth + 1
+                FROM oe_releases r
+                JOIN chain c ON r.id = c.parent_release_id
+            ),
+            winning AS (
+                SELECT DISTINCT ON (m.app_id) m.id, m.app_id
+                FROM oe_modules m
+                JOIN chain c ON c.id = m.release_id
+                ORDER BY m.app_id, c.depth ASC
+            )
+            SELECT
+                so.id                    AS "SourceObjectId",
+                so.name                  AS "SourceObjectName",
+                sm.name                  AS "SourceModuleName"
+            FROM oe_module_references mr
+            JOIN oe_module_objects    so ON so.id = mr.source_object_id
+            JOIN oe_modules           sm ON sm.id = mr.module_id
+            JOIN winning              w  ON w.id  = mr.module_id
+            WHERE mr.reference_kind     = 'implements_interface'
+              AND mr.target_app_id      = {1}::uuid
+              AND mr.target_object_kind = 'interface'
+              AND mr.target_object_name = {2}::text
+            ORDER BY sm.name, so.name
+            """;
+
+        return await _db.Database
+            .SqlQueryRaw<InterfaceImplementerRow>(sql, seed.ReleaseId, seed.AppId, interfaceName)
+            .ToListAsync(ct);
+    }
+
+    private sealed record InterfaceImplementerRow(
+        long SourceObjectId,
+        string SourceObjectName,
+        string SourceModuleName);
 
     /// <summary>
     /// Lightweight module list used by the search-filter dropdown on the
@@ -1965,6 +2047,18 @@ public class ObjectExplorerService
         // // "indirect references" rather than "calls".
         // ownerRefs = ownerRefs.Select(r => r with { Category = "owner_type" }).ToList();
 
+        // (4) Interface implementations. When the target owner is an
+        // interface, also pull procedures of matching (name, kind) on
+        // codeunits whose header declares them as implementing this
+        // interface. Source: the `implements_interface` reference rows
+        // emitted at import time. Tagged with Category = "implementation"
+        // so the UI can group them under their own header.
+        List<ReferenceMatch> implementations = new();
+        if (string.Equals(query.TargetObjectKind, "interface", StringComparison.OrdinalIgnoreCase))
+        {
+            implementations = await FindInterfaceMethodImplementationsAsync(releaseId, query, ct);
+        }
+
         // Concatenate. Declarations first (most direct), then concrete
         // member calls (phase-2 will fill this). The owner-type bucket
         // would have gone here.  EnrichReferencesWithSnippetsAsync
@@ -1972,18 +2066,90 @@ public class ObjectExplorerService
         // set; do it once for the declarations bucket so every row has
         // a snippet.
         declarations = await EnrichReferencesWithSnippetsAsync(declarations, ct);
+        implementations = await EnrichReferencesWithSnippetsAsync(implementations, ct);
 
-        var all = new List<ReferenceMatch>(declarations.Count + memberRefs.Count);
+        var all = new List<ReferenceMatch>(declarations.Count + memberRefs.Count + implementations.Count);
         all.AddRange(declarations);
         all.AddRange(memberRefs);
+        all.AddRange(implementations);
 
         _logger.LogInformation(
-            "FindReferencesForSymbol ReleaseId={ReleaseId} Owner={Kind}/{Id}/{Name} Member={Member}/{MemberKind} Decl={DeclCount} Call={CallCount}",
+            "FindReferencesForSymbol ReleaseId={ReleaseId} Owner={Kind}/{Id}/{Name} Member={Member}/{MemberKind} Decl={DeclCount} Call={CallCount} Impl={ImplCount}",
             releaseId, query.TargetObjectKind, query.TargetObjectId, query.TargetObjectName,
             query.TargetMemberName, query.TargetMemberKind,
-            declarations.Count, memberRefs.Count);
+            declarations.Count, memberRefs.Count, implementations.Count);
 
         return all;
+    }
+
+    /// <summary>
+    /// Returns implementing-codeunit procedure declarations for an
+    /// interface method. Joins <c>oe_module_references</c> rows where
+    /// <c>reference_kind = 'implements_interface'</c> targets the given
+    /// interface (by name; interfaces have no numeric object id) to the
+    /// referencing codeunit's <c>oe_module_symbols</c> rows of matching
+    /// (name, kind). Uses the same recursive-CTE shadowing as the rest
+    /// of the find-references family so results respect the visible
+    /// module chain.
+    /// </summary>
+    private async Task<List<ReferenceMatch>> FindInterfaceMethodImplementationsAsync(
+        int releaseId, FindReferencesQuery query, CancellationToken ct)
+    {
+        const string sql = """
+            WITH RECURSIVE chain AS (
+                SELECT id, parent_release_id, 0 AS depth
+                FROM oe_releases
+                WHERE id = {0}
+                UNION ALL
+                SELECT r.id, r.parent_release_id, c.depth + 1
+                FROM oe_releases r
+                JOIN chain c ON r.id = c.parent_release_id
+            ),
+            winning AS (
+                SELECT DISTINCT ON (m.app_id) m.id, m.app_id
+                FROM oe_modules m
+                JOIN chain c ON c.id = m.release_id
+                ORDER BY m.app_id, c.depth ASC
+            )
+            SELECT
+                s.id                     AS "Id",
+                so.module_id             AS "SourceModuleId",
+                sm.name                  AS "SourceModuleName",
+                so.id                    AS "SourceObjectId",
+                so.kind                  AS "SourceObjectKind",
+                so.name                  AS "SourceObjectName",
+                'implementation'::text   AS "ReferenceKind",
+                s.line_number            AS "LineNumber",
+                so.source_file_id        AS "SourceFileId",
+                NULL::text               AS "SourceFilePath",
+                NULL::text               AS "Snippet",
+                'implementation'::text   AS "Category",
+                s.name                   AS "MemberName",
+                s.kind                   AS "MemberKind",
+                s.signature              AS "MemberSignature"
+            FROM oe_module_references mr
+            JOIN oe_module_objects    so ON so.id = mr.source_object_id
+            JOIN oe_modules           sm ON sm.id = mr.module_id
+            JOIN winning              w  ON w.id  = mr.module_id
+            JOIN oe_module_symbols    s  ON s.object_id = so.id
+            WHERE mr.reference_kind     = 'implements_interface'
+              AND mr.target_app_id      = {1}::uuid
+              AND mr.target_object_kind = 'interface'
+              AND mr.target_object_name = {2}::text
+              AND s.name                = {3}::text
+              AND ({4}::text IS NULL OR s.kind = {4}::text)
+            ORDER BY sm.name, so.name, s.line_number
+            """;
+
+        return await _db.Database
+            .SqlQueryRaw<ReferenceMatch>(
+                sql,
+                releaseId,
+                query.TargetAppId,
+                query.TargetObjectName,
+                query.TargetMemberName!,
+                (object?)query.TargetMemberKind ?? DBNull.Value)
+            .ToListAsync(ct);
     }
 
     /// <summary>

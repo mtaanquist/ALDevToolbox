@@ -11,6 +11,8 @@ namespace ALDevToolbox.Domain.Entities.ObjectExplorer;
 /// Reference kinds (string-valued so new ones don't require a migration):
 ///   - <c>variable_type</c>      — object-scoped variable typed to an AL object
 ///   - <c>extends_target</c>     — tableextension/pageextension/... target
+///   - <c>implements_interface</c> — codeunit declared in its header as
+///                                 implementing the named interface
 ///   - <c>table_no</c>           — codeunit <c>TableNo</c> property
 ///   - <c>return_type</c>        — procedure return type
 ///   - <c>parameter_type</c>     — procedure parameter type
