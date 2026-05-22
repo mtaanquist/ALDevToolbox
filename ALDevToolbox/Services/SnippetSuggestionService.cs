@@ -96,6 +96,60 @@ public class SnippetSuggestionService
     }
 
     /// <summary>
+    /// Updates a pending suggestion in place. Only the user who originally
+    /// submitted it can edit; approved or rejected suggestions are
+    /// terminal and refuse the update. Reconciles the file list against
+    /// the new input by position (existing rows are reused, extras are
+    /// added, surplus rows are removed) so the audit trail attributes
+    /// the change to the file rows rather than recording delete+create.
+    /// </summary>
+    public async Task UpdateAsync(int suggestionId, SnippetSuggestionInput input, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        var userId = RequireUserId();
+
+        var existing = await _db.SnippetSuggestions
+            .Include(s => s.Files)
+            .FirstOrDefaultAsync(s => s.Id == suggestionId, ct)
+            ?? throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Id"] = $"Suggestion with id {suggestionId} was not found.",
+            });
+
+        if (existing.Decision != SnippetSuggestionDecision.Pending)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Decision"] = $"Suggestion is already {existing.Decision.ToString().ToLowerInvariant()} and can no longer be edited.",
+            });
+        }
+
+        if (existing.SuggestedByUserId != userId)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["SuggestedByUserId"] = "Only the user who submitted a suggestion can edit it.",
+            });
+        }
+
+        await ValidateAsync(input, ct);
+
+        existing.Title = input.Title.Trim();
+        existing.Description = input.Description.Trim();
+        existing.Keywords = SnippetService.NormaliseKeywords(input.Keywords);
+        existing.Instructions = SnippetService.NullIfBlank(input.Instructions);
+        existing.MinimumApplicationVersionId = input.MinimumApplicationVersionId;
+
+        ReconcileFiles(existing, input.Files, orgId);
+
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "User {UserId} updated snippet suggestion '{Title}' (id={Id}); now has {FileCount} file(s).",
+            userId, existing.Title, existing.Id, existing.Files.Count);
+    }
+
+    /// <summary>
     /// Promotes a pending suggestion to a real <see cref="Snippet"/>. Runs
     /// inside a transaction so the snippet, its files, and the suggestion's
     /// decision columns either all land or none do.
@@ -250,6 +304,41 @@ public class SnippetSuggestionService
         if (errors.Count > 0)
         {
             throw new PlanValidationException(errors);
+        }
+    }
+
+    private static void ReconcileFiles(SnippetSuggestion existing, IReadOnlyList<SnippetFileInput> inputs, int orgId)
+    {
+        var existingFiles = existing.Files.OrderBy(f => f.Ordering).ToList();
+
+        for (var i = 0; i < inputs.Count; i++)
+        {
+            var input = inputs[i];
+            var name = input.FileName.Trim();
+            var content = input.Content ?? string.Empty;
+
+            if (i < existingFiles.Count)
+            {
+                var file = existingFiles[i];
+                file.Ordering = i;
+                file.FileName = name;
+                file.Content = content;
+            }
+            else
+            {
+                existing.Files.Add(new SnippetSuggestionFile
+                {
+                    OrganizationId = orgId,
+                    Ordering = i,
+                    FileName = name,
+                    Content = content,
+                });
+            }
+        }
+
+        for (var i = inputs.Count; i < existingFiles.Count; i++)
+        {
+            existing.Files.Remove(existingFiles[i]);
         }
     }
 }

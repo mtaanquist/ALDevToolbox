@@ -161,3 +161,33 @@ public sealed record SuggestSnippetInput(
 
 /// <summary>What <c>suggest_snippet</c> returns: the new suggestion's id plus a confirmation pointing the agent at the admin queue.</summary>
 public sealed record SuggestSnippetResult(int SuggestionId, string Message);
+
+/// <summary>
+/// Input shape for the <c>update_snippet_suggestion</c> tool. Carries the
+/// id of the suggestion being edited alongside the same fields
+/// <see cref="SuggestSnippetInput"/> accepts; <see cref="ToDomain"/> drops
+/// the id when handing off to the service layer (which already takes the
+/// id as a separate argument).
+/// </summary>
+public sealed record UpdateSnippetSuggestionInput(
+    int SuggestionId,
+    string Title,
+    string Description,
+    string Keywords,
+    IReadOnlyList<SnippetFileInputDto> Files,
+    string? Instructions = null,
+    int? MinimumApplicationVersionId = null)
+{
+    public ALDevToolbox.Services.SnippetSuggestionInput ToDomain() => new(
+        Title,
+        Description,
+        Keywords,
+        Files
+            .Select(f => new ALDevToolbox.Services.SnippetFileInput(f.FileName, f.Content))
+            .ToList(),
+        Instructions,
+        MinimumApplicationVersionId);
+}
+
+/// <summary>What <c>update_snippet_suggestion</c> returns: the updated suggestion's id plus a confirmation.</summary>
+public sealed record UpdateSnippetSuggestionResult(int SuggestionId, string Message);

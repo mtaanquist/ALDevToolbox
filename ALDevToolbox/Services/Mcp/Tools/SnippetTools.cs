@@ -93,6 +93,31 @@ public sealed class SnippetTools
         }
     }
 
+    [McpServerTool(Name = "update_snippet_suggestion", ReadOnly = false, Idempotent = true)]
+    [Description(
+        "Edits a pending snippet suggestion that the caller previously submitted via suggest_snippet. " +
+        "Only the original submitter can edit, and only while the suggestion is still Pending — " +
+        "approved or rejected suggestions are terminal and refuse the update (rejected suggestions " +
+        "should be re-submitted as a new draft). The full payload replaces the existing fields and " +
+        "file list, so include every file you want the suggestion to end up with, not just the ones " +
+        "you're changing. Returns the unchanged SuggestionId on success.")]
+    public async Task<UpdateSnippetSuggestionResult> UpdateSuggestionAsync(
+        [Description("The replacement payload, including the id of the suggestion to update. Same field rules as suggest_snippet: Title and Description required, Files non-empty, file names flat (no slashes or '..').")] UpdateSnippetSuggestionInput input,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            await _suggestions.UpdateAsync(input.SuggestionId, input.ToDomain(), ct);
+            return new UpdateSnippetSuggestionResult(
+                input.SuggestionId,
+                "Updated. The suggestion is still Pending at /admin/snippets/suggestions.");
+        }
+        catch (PlanValidationException ex)
+        {
+            throw new McpException("Validation failed: " + FormatErrors(ex.Errors));
+        }
+    }
+
     private static string FormatErrors(IReadOnlyDictionary<string, string> errors) =>
         string.Join("; ", errors.Select(kv => $"{kv.Key}: {kv.Value}"));
 }
