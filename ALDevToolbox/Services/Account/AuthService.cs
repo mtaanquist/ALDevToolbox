@@ -136,6 +136,22 @@ public sealed class AuthService
         return user;
     }
 
+    /// <summary>
+    /// True when the user has at least one strong-auth method enrolled:
+    /// confirmed TOTP, email-MFA, or any non-revoked passkey credential.
+    /// The org-level <c>RequireStrongAuth</c> gate consults this on login
+    /// and on every authenticated request via <c>StrongAuthGate</c>.
+    /// </summary>
+    public async Task<bool> HasStrongAuthAsync(int userId, CancellationToken ct = default)
+    {
+        var totpOrEmail = await _db.Users.IgnoreQueryFilters()
+            .Where(u => u.Id == userId)
+            .Select(u => u.TotpEnabled || u.EmailMfaEnabled)
+            .FirstOrDefaultAsync(ct);
+        if (totpOrEmail) return true;
+        return await _db.UserPasskeys.IgnoreQueryFilters().AnyAsync(p => p.UserId == userId, ct);
+    }
+
     public string HashPassword(string password) => BCrypt.Net.BCrypt.HashPassword(password, BcryptWorkFactor);
 
     public bool VerifyPassword(string candidate, string hash)

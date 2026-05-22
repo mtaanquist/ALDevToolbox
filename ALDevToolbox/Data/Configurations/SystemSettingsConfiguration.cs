@@ -38,6 +38,7 @@ internal sealed class SystemSettingsConfiguration : IEntityTypeConfiguration<Sys
         entity.Property(e => e.OffsiteForcePathStyle).HasColumnName("offsite_force_path_style").IsRequired();
         entity.Property(e => e.OffsiteRetentionDays).HasColumnName("offsite_retention_days").IsRequired();
         entity.Property(e => e.McpEnabled).HasColumnName("mcp_enabled").IsRequired();
+        entity.Property(e => e.SignupEmailDomainAllowlist).HasColumnName("signup_email_domain_allowlist");
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         // Cross-org table: no organization_id and no scoping query filter;
         // SiteAdminService gates mutations.

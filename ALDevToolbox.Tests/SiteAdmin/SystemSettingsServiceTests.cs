@@ -170,6 +170,43 @@ public sealed class SystemSettingsServiceTests : IDisposable
         view.BackupRetentionCount.Should().Be(7);
     }
 
+    [Fact]
+    public async Task Allowlist_normalises_and_persists_lowercased_domains()
+    {
+        var svc = NewService();
+        await svc.SaveAsync(NewInput() with
+        {
+            SignupEmailDomainAllowlist = "Acme.com\nexample.dk\n  acme.com  ",
+        });
+
+        var stored = await svc.GetSignupAllowedDomainsAsync();
+        stored.Should().NotBeNull().And.BeEquivalentTo(new[] { "acme.com", "example.dk" });
+
+        var view = await svc.GetViewAsync();
+        view.SignupEmailDomainAllowlist.Should().Be("acme.com\nexample.dk");
+    }
+
+    [Fact]
+    public async Task Allowlist_rejects_invalid_entries_with_field_keyed_error()
+    {
+        var svc = NewService();
+        var act = async () => await svc.SaveAsync(NewInput() with
+        {
+            SignupEmailDomainAllowlist = "not a domain",
+        });
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("SignupEmailDomainAllowlist");
+    }
+
+    [Fact]
+    public async Task Allowlist_blank_means_feature_off()
+    {
+        var svc = NewService();
+        await svc.SaveAsync(NewInput() with { SignupEmailDomainAllowlist = "   " });
+        (await svc.GetSignupAllowedDomainsAsync()).Should().BeNull();
+        (await svc.GetViewAsync()).SignupEmailDomainAllowlist.Should().BeNull();
+    }
+
     private SystemSettingsService NewService()
     {
         var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor());
@@ -198,5 +235,6 @@ public sealed class SystemSettingsServiceTests : IDisposable
             PerTenantBackupRetentionCount: 30,
             DefaultStorageQuotaMb: null,
             IndexSizeMultiplier: 0.5m,
-            McpEnabled: false);
+            McpEnabled: false,
+            SignupEmailDomainAllowlist: null);
 }

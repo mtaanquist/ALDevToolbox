@@ -128,7 +128,8 @@ public sealed class TestDb : IDisposable
     /// for the failure mode this isolation prevents.
     /// </summary>
     public OrganizationConfigService NewOrganizationConfigService(AppDbContext ctx) =>
-        new(ctx, OrgContext, NewQuotaGuard(ctx), NullLogger<OrganizationConfigService>.Instance, _memoryCache, McpAvailability);
+        new(ctx, OrgContext, NewQuotaGuard(ctx), NullLogger<OrganizationConfigService>.Instance, _memoryCache, McpAvailability,
+            new ALDevToolbox.Services.Account.AuthService(ctx, NullLogger<ALDevToolbox.Services.Account.AuthService>.Instance, TimeProvider.System));
 
     /// <summary>
     /// Per-fixture MCP availability state. Defaults to enabled so tests that
@@ -162,6 +163,9 @@ public sealed class TestDb : IDisposable
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<DatabaseUsageService>();
         services.AddScoped<StorageQuotaGuard>();
+        // OrganizationConfigService depends on AuthService for the
+        // strong-auth foot-gun guard on SetRequireStrongAuthAsync.
+        services.AddScoped<ALDevToolbox.Services.Account.AuthService>();
     }
 
     /// <summary>

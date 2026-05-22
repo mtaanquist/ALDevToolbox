@@ -52,5 +52,16 @@ public class OrganizationSettings
     /// </summary>
     public string CodeWorkspaceJson { get; set; } = OrganizationDefaults.CodeWorkspaceJson;
 
+    /// <summary>
+    /// When <see langword="true"/>, every active member of this organisation
+    /// must have at least one strong-auth method enrolled (TOTP, email-MFA,
+    /// or a passkey). Users without one land on <c>/account?required=1</c>
+    /// on their next request and can't reach anything else until they
+    /// enrol. The toggle itself refuses to flip on if the saving admin
+    /// doesn't yet satisfy the requirement — a small foot-gun guard so an
+    /// admin can't lock themselves out by accident.
+    /// </summary>
+    public bool RequireStrongAuth { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }

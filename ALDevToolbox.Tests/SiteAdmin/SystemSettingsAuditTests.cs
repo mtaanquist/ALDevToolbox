@@ -72,5 +72,6 @@ public sealed class SystemSettingsAuditTests : IDisposable
         PerTenantBackupRetentionCount: 30,
         DefaultStorageQuotaMb: null,
         IndexSizeMultiplier: 0.5m,
-        McpEnabled: false);
+        McpEnabled: false,
+        SignupEmailDomainAllowlist: null);
 }

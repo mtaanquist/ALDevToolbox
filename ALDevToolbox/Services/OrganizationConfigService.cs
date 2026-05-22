@@ -6,6 +6,7 @@ using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.Seed;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services.Account;
 using ALDevToolbox.Services.Mcp;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -47,6 +48,7 @@ public class OrganizationConfigService
     private readonly ILogger<OrganizationConfigService> _logger;
     private readonly IMemoryCache _cache;
     private readonly IMcpAvailability _mcpAvailability;
+    private readonly AuthService _auth;
 
     public OrganizationConfigService(
         AppDbContext db,
@@ -54,7 +56,8 @@ public class OrganizationConfigService
         StorageQuotaGuard quotaGuard,
         ILogger<OrganizationConfigService> logger,
         IMemoryCache cache,
-        IMcpAvailability mcpAvailability)
+        IMcpAvailability mcpAvailability,
+        AuthService auth)
     {
         _db = db;
         _orgContext = orgContext;
@@ -62,6 +65,7 @@ public class OrganizationConfigService
         _logger = logger;
         _cache = cache;
         _mcpAvailability = mcpAvailability;
+        _auth = auth;
     }
 
     private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
@@ -329,6 +333,40 @@ public class OrganizationConfigService
         org.McpEnabled = enabled;
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation("Org {OrgId} set MCP enabled = {Enabled}.", orgId, enabled);
+    }
+
+    /// <summary>
+    /// Flips the per-org strong-auth requirement. The toggling admin must
+    /// themselves satisfy the requirement when turning it on, so an admin
+    /// can't accidentally lock themselves out by saving the form before
+    /// enrolling a TOTP / passkey. Disabling is unconditional.
+    /// </summary>
+    public async Task SetRequireStrongAuthAsync(bool enabled, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        var userId = _orgContext.CurrentUserId
+            ?? throw new InvalidOperationException("No user in scope; SetRequireStrongAuthAsync called outside an authenticated request.");
+
+        if (enabled && !await _auth.HasStrongAuthAsync(userId, ct))
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["RequireStrongAuth"] = "Set up an authenticator app, email codes or a passkey on your own account before turning this on — otherwise your next request would lock you out of the admin tools.",
+            });
+        }
+
+        var row = await _db.OrganizationSettings.FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
+        if (row is null)
+        {
+            row = new OrganizationSettings { OrganizationId = orgId };
+            _db.OrganizationSettings.Add(row);
+        }
+        if (row.RequireStrongAuth == enabled) return;
+        row.RequireStrongAuth = enabled;
+        row.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        InvalidateCache(orgId);
+        _logger.LogInformation("Org {OrgId} set require_strong_auth = {Enabled}.", orgId, enabled);
     }
 
     private static string NormaliseDomain(string? input)

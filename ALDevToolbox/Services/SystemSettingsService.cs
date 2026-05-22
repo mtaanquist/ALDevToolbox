@@ -28,6 +28,7 @@ public sealed record SystemSettingsView(
     int? DefaultStorageQuotaMb,
     decimal IndexSizeMultiplier,
     bool McpEnabled,
+    string? SignupEmailDomainAllowlist,
     DateTime UpdatedAt);
 
 /// <summary>
@@ -53,7 +54,8 @@ public sealed record SystemSettingsInput(
     int PerTenantBackupRetentionCount,
     int? DefaultStorageQuotaMb,
     decimal IndexSizeMultiplier,
-    bool McpEnabled);
+    bool McpEnabled,
+    string? SignupEmailDomainAllowlist);
 
 /// <summary>
 /// SiteAdmin-facing view of the off-site backup settings. Carries flags
@@ -200,6 +202,7 @@ public sealed class SystemSettingsService
             DefaultStorageQuotaMb: row.DefaultStorageQuotaMb,
             IndexSizeMultiplier: row.IndexSizeMultiplier,
             McpEnabled: row.McpEnabled,
+            SignupEmailDomainAllowlist: row.SignupEmailDomainAllowlist,
             UpdatedAt: row.UpdatedAt);
     }
 
@@ -242,6 +245,7 @@ public sealed class SystemSettingsService
         {
             errors["IndexSizeMultiplier"] = "Multiplier must be between 0 and 10.";
         }
+        var normalisedAllowlist = NormaliseDomainAllowlist(input.SignupEmailDomainAllowlist, errors);
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
         var row = await LoadAsync(ct);
@@ -260,6 +264,7 @@ public sealed class SystemSettingsService
         row.DefaultStorageQuotaMb = input.DefaultStorageQuotaMb;
         row.IndexSizeMultiplier = input.IndexSizeMultiplier;
         row.McpEnabled = input.McpEnabled;
+        row.SignupEmailDomainAllowlist = normalisedAllowlist;
         row.UpdatedAt = _clock.GetUtcNow().UtcDateTime;
 
         if (input.ClearSmtpPassword)
@@ -446,6 +451,23 @@ public sealed class SystemSettingsService
         return string.IsNullOrWhiteSpace(row?.BannerText) ? null : row!.BannerText;
     }
 
+    /// <summary>
+    /// Returns the configured site-wide email-domain allow-list, or
+    /// <see langword="null"/> when the SiteAdmin hasn't set one (feature off
+    /// — any email domain may sign up). Domains are returned lowercased and
+    /// trimmed; callers compare with ordinal equality.
+    /// </summary>
+    public async Task<IReadOnlyList<string>?> GetSignupAllowedDomainsAsync(CancellationToken ct = default)
+    {
+        var raw = await _db.SystemSettings.AsNoTracking()
+            .Where(s => s.Id == 1)
+            .Select(s => s.SignupEmailDomainAllowlist)
+            .FirstOrDefaultAsync(ct);
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var list = raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return list.Length == 0 ? null : list;
+    }
+
     /// <summary>True when admin approval should be skipped for new signups into existing organisations.</summary>
     public async Task<bool> ShouldAutoApproveSignupAsync(CancellationToken ct = default)
     {
@@ -491,6 +513,41 @@ public sealed class SystemSettingsService
 
     private static string? NullIfBlank(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static readonly System.Text.RegularExpressions.Regex AllowlistDomainRegex = new(
+        "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$",
+        System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Parses the raw textarea contents into a canonical newline-joined
+    /// list of lowercased domains. Splits on newlines / commas / whitespace,
+    /// trims, drops blanks, and rejects entries that don't look like a bare
+    /// domain. Errors are keyed on
+    /// <c>SignupEmailDomainAllowlist</c> so the form can render them inline.
+    /// Returns <see langword="null"/> for blank input (feature off).
+    /// </summary>
+    private static string? NormaliseDomainAllowlist(string? raw, Dictionary<string, string> errors)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var tokens = raw.Split(new[] { '\n', '\r', ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var keep = new List<string>(tokens.Length);
+        foreach (var token in tokens)
+        {
+            var lowered = token.ToLowerInvariant();
+            if (lowered.StartsWith('@')) lowered = lowered[1..];
+            if (!AllowlistDomainRegex.IsMatch(lowered) || lowered.Length > 253)
+            {
+                errors["SignupEmailDomainAllowlist"] = $"'{token}' isn't a valid bare domain. Use entries like 'acme.com', one per line.";
+                return null;
+            }
+            if (seen.Add(lowered))
+            {
+                keep.Add(lowered);
+            }
+        }
+        return keep.Count == 0 ? null : string.Join('\n', keep);
+    }
 
     private static bool? ParseBool(string? value) =>
         string.IsNullOrEmpty(value) ? null : value.Equals("true", StringComparison.OrdinalIgnoreCase);

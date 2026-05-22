@@ -26,8 +26,11 @@ public sealed class AccountServiceTests : IDisposable
     private AuthService NewAuth(Data.AppDbContext ctx) =>
         new(ctx, NullLogger<AuthService>.Instance, _clock);
 
+    private SystemSettingsService NewSettings(Data.AppDbContext ctx) =>
+        new(ctx, _db.DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, _clock);
+
     private AccountService NewAccounts(Data.AppDbContext ctx) =>
-        new(ctx, NewAuth(ctx), NullLogger<AccountService>.Instance, _clock);
+        new(ctx, NewAuth(ctx), NewSettings(ctx), NullLogger<AccountService>.Instance, _clock);
 
     private UserAdministrationService NewUserAdmin(Data.AppDbContext ctx) =>
         new(ctx, _clock);
@@ -102,6 +105,140 @@ public sealed class AccountServiceTests : IDisposable
         Func<Task> act = () => svc.SignupAsync("c@example.com", "Carol", "short", null, "Carol's Org");
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("Password");
+    }
+
+    [Fact]
+    public async Task Signup_blocked_when_email_domain_not_in_allowlist()
+    {
+        await SetAllowlistAsync("allowed.com");
+
+        var ctx = _db.NewContext();
+        var svc = NewAccounts(ctx);
+        Func<Task> act = () => svc.SignupAsync(
+            "intruder@blocked.com", "Mallory", "verylongpassword12345",
+            organizationSlug: null, organizationName: "Mallory Inc");
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("Email");
+    }
+
+    [Fact]
+    public async Task Signup_allowed_when_email_domain_matches_allowlist_exactly()
+    {
+        await SetAllowlistAsync("allowed.com");
+
+        var ctx = _db.NewContext();
+        var svc = NewAccounts(ctx);
+        var (outcome, user, org) = await svc.SignupAsync(
+            "alice@allowed.com", "Alice", "verylongpassword12345",
+            organizationSlug: null, organizationName: "Alice Org");
+        outcome.Should().Be(SignupOutcome.OrganizationProvisioned);
+        user.Should().NotBeNull();
+        org.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Signup_allowlist_does_not_grant_subdomains()
+    {
+        await SetAllowlistAsync("allowed.com");
+
+        var ctx = _db.NewContext();
+        var svc = NewAccounts(ctx);
+        Func<Task> act = () => svc.SignupAsync(
+            "user@sub.allowed.com", "User", "verylongpassword12345",
+            organizationSlug: null, organizationName: "Sub Org");
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("Email");
+    }
+
+    [Fact]
+    public async Task Signup_open_when_allowlist_empty()
+    {
+        // No allowlist row touched — feature off, any domain accepted.
+        var ctx = _db.NewContext();
+        var svc = NewAccounts(ctx);
+        var (outcome, _, _) = await svc.SignupAsync(
+            "anyone@anywhere.example", "Anyone", "verylongpassword12345",
+            organizationSlug: null, organizationName: "Anyone Org");
+        outcome.Should().Be(SignupOutcome.OrganizationProvisioned);
+    }
+
+    [Fact]
+    public async Task HasStrongAuth_true_when_totp_enabled()
+    {
+        var userId = await SeedUserAsync(totp: true, emailMfa: false, passkey: false);
+        await using var ctx = _db.NewContext();
+        (await NewAuth(ctx).HasStrongAuthAsync(userId)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task HasStrongAuth_true_when_email_mfa_enabled()
+    {
+        var userId = await SeedUserAsync(totp: false, emailMfa: true, passkey: false);
+        await using var ctx = _db.NewContext();
+        (await NewAuth(ctx).HasStrongAuthAsync(userId)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task HasStrongAuth_true_when_passkey_registered()
+    {
+        var userId = await SeedUserAsync(totp: false, emailMfa: false, passkey: true);
+        await using var ctx = _db.NewContext();
+        (await NewAuth(ctx).HasStrongAuthAsync(userId)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task HasStrongAuth_false_when_none_enrolled()
+    {
+        var userId = await SeedUserAsync(totp: false, emailMfa: false, passkey: false);
+        await using var ctx = _db.NewContext();
+        (await NewAuth(ctx).HasStrongAuthAsync(userId)).Should().BeFalse();
+    }
+
+    private async Task<int> SeedUserAsync(bool totp, bool emailMfa, bool passkey)
+    {
+        var now = _clock.GetUtcNow().UtcDateTime;
+        await using var ctx = _db.NewContext();
+        var user = new User
+        {
+            OrganizationId = TestDb.DefaultOrgId,
+            Email = $"strongauth-{Guid.NewGuid():N}@example.com",
+            DisplayName = "StrongAuth Tester",
+            PasswordHash = "ignored",
+            Role = UserRole.User,
+            Status = UserStatus.Active,
+            CreatedAt = now,
+            TotpEnabled = totp,
+            EmailMfaEnabled = emailMfa,
+        };
+        ctx.Users.Add(user);
+        await ctx.SaveChangesAsync();
+        if (passkey)
+        {
+            ctx.UserPasskeys.Add(new UserPasskey
+            {
+                UserId = user.Id,
+                CredentialId = Guid.NewGuid().ToByteArray(),
+                PublicKey = new byte[] { 1, 2, 3 },
+                SignCounter = 0,
+                Transports = "internal",
+                CreatedAt = now,
+            });
+            await ctx.SaveChangesAsync();
+        }
+        return user.Id;
+    }
+
+    private async Task SetAllowlistAsync(params string[] domains)
+    {
+        await using var ctx = _db.NewContext();
+        var row = await ctx.SystemSettings.FirstOrDefaultAsync(s => s.Id == 1);
+        if (row is null)
+        {
+            row = new Domain.Entities.SystemSettings { Id = 1, UpdatedAt = _clock.GetUtcNow().UtcDateTime };
+            ctx.SystemSettings.Add(row);
+        }
+        row.SignupEmailDomainAllowlist = string.Join('\n', domains);
+        await ctx.SaveChangesAsync();
     }
 
     [Fact]

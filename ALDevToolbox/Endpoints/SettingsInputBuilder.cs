@@ -54,6 +54,7 @@ internal static class SettingsInputBuilder
     {
         BannerText = form["BannerText"].ToString(),
         DefaultSignupAutoApprove = IsChecked(form, "DefaultSignupAutoApprove"),
+        SignupEmailDomainAllowlist = form["SignupEmailDomainAllowlist"].ToString(),
     };
 
     public static SystemSettingsInput WithMcp(SystemSettingsView current, IFormCollection form) => Base(current) with
@@ -84,7 +85,8 @@ internal static class SettingsInputBuilder
         PerTenantBackupRetentionCount: current.PerTenantBackupRetentionCount,
         DefaultStorageQuotaMb: current.DefaultStorageQuotaMb,
         IndexSizeMultiplier: current.IndexSizeMultiplier,
-        McpEnabled: current.McpEnabled);
+        McpEnabled: current.McpEnabled,
+        SignupEmailDomainAllowlist: current.SignupEmailDomainAllowlist);
 
     private static bool IsChecked(IFormCollection form, string name)
     {
