@@ -1,7 +1,9 @@
+using ALDevToolbox.Domain.ValueObjects;
+
 namespace ALDevToolbox.Domain.Entities;
 
-/// <summary>Outcome an admin recorded against a snippet suggestion.</summary>
-public enum SnippetSuggestionDecision
+/// <summary>Outcome an admin recorded against a recipe suggestion.</summary>
+public enum RecipeSuggestionDecision
 {
     Pending,
     Approved,
@@ -9,11 +11,12 @@ public enum SnippetSuggestionDecision
 }
 
 /// <summary>
-/// A user-submitted draft snippet awaiting admin review. Carries the full
-/// proposed payload (title, description, keywords, files); on approval the
-/// admin promotes it to a real <see cref="Snippet"/> in one atomic write.
+/// A user-submitted draft recipe awaiting admin review. Carries the full
+/// proposed payload (type, title, description, keywords, files); on
+/// approval the admin promotes it to a real <see cref="Recipe"/> in one
+/// atomic write.
 /// </summary>
-public class SnippetSuggestion
+public class RecipeSuggestion
 {
     public int Id { get; set; }
 
@@ -32,9 +35,12 @@ public class SnippetSuggestion
     public string Description { get; set; } = string.Empty;
     public string Keywords { get; set; } = string.Empty;
 
+    /// <summary>Proposed recipe type. Carried through on approval.</summary>
+    public RecipeType Type { get; set; }
+
     /// <summary>
     /// Proposed Markdown instructions. Carried through to the created
-    /// <see cref="Snippet"/> on approval.
+    /// <see cref="Recipe"/> on approval.
     /// </summary>
     public string? Instructions { get; set; }
 
@@ -44,7 +50,7 @@ public class SnippetSuggestion
     public int? MinimumApplicationVersionId { get; set; }
     public ApplicationVersion? MinimumApplicationVersion { get; set; }
 
-    public SnippetSuggestionDecision Decision { get; set; }
+    public RecipeSuggestionDecision Decision { get; set; }
     public DateTime RequestedAt { get; set; }
     public DateTime? DecidedAt { get; set; }
     public int? DecidedByUserId { get; set; }
@@ -53,10 +59,10 @@ public class SnippetSuggestion
     /// <summary>Optional note left by the admin when rejecting. Surfaced in the audit trail.</summary>
     public string? DecisionNote { get; set; }
 
-    /// <summary>FK to the <see cref="Snippet"/> created on approval. <c>null</c> while pending or after a rejection.</summary>
-    public int? ApprovedSnippetId { get; set; }
-    public Snippet? ApprovedSnippet { get; set; }
+    /// <summary>FK to the <see cref="Recipe"/> created on approval. <c>null</c> while pending or after a rejection.</summary>
+    public int? ApprovedRecipeId { get; set; }
+    public Recipe? ApprovedRecipe { get; set; }
 
     /// <summary>Proposed files. Cascade-deleted with the suggestion.</summary>
-    public List<SnippetSuggestionFile> Files { get; set; } = new();
+    public List<RecipeSuggestionFile> Files { get; set; } = new();
 }

@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
@@ -6,14 +7,15 @@ using Microsoft.EntityFrameworkCore;
 namespace ALDevToolbox.Services;
 
 /// <summary>
-/// Read- and write-side service for <see cref="Snippet"/>s. Reads back the
-/// browser pages at <c>/snippets</c> and the admin CRUD pages at
-/// <c>/admin/snippets</c>; writes validate via field-keyed
+/// Read- and write-side service for <see cref="Recipe"/>s. Reads back the
+/// browser pages at <c>/cookbook</c> and the admin CRUD pages at
+/// <c>/admin/cookbook</c>; writes validate via field-keyed
 /// <see cref="PlanValidationException"/> so the form can render errors inline.
 /// Search uses Postgres <c>ILIKE</c> with the trigram index added by the
-/// <c>AddSnippets</c> migration.
+/// <c>AddSnippets</c> migration (carried across the
+/// <c>RenameSnippetsToCookbook</c> table rename).
 /// </summary>
-public class SnippetService
+public class RecipeService
 {
     /// <summary>Cap on per-file content size so a runaway paste can't blow up the DB row.</summary>
     public const int MaxFileContentLength = 100_000;
@@ -21,19 +23,31 @@ public class SnippetService
     public const int MaxDescriptionLength = 2000;
     public const int MaxKeywordsLength = 500;
     public const int MaxFileNameLength = 260;
+    /// <summary>Cap on the combined <c>RelativePath/FileName</c> length per row, matching the column index.</summary>
+    public const int MaxRelativePathLength = 260;
+    /// <summary>Cap on folder nesting depth inside a recipe.</summary>
+    public const int MaxRelativePathSegments = 8;
     /// <summary>
     /// Generous Markdown body cap. Big enough for multi-section setup notes
     /// with code fences; small enough that a runaway paste can't bloat the
-    /// row (a single snippet would have to be quite pathological to top this).
+    /// row (a single recipe would have to be quite pathological to top this).
     /// </summary>
     public const int MaxInstructionsLength = 10_000;
 
+    // One segment in a recipe file's RelativePath. Letters/digits/`._-`,
+    // plus space anywhere but the first character. Matches the same shape
+    // we use for organisation file paths (see OrganizationConfigService),
+    // tightened by the no-leading-space rule so segments like " Foo"
+    // don't slip in.
+    private static readonly Regex PathSegmentRegex =
+        new(@"^[A-Za-z0-9._-][A-Za-z0-9._ -]*$", RegexOptions.Compiled);
+
     private readonly AppDbContext _db;
-    private readonly ILogger<SnippetService> _logger;
+    private readonly ILogger<RecipeService> _logger;
     private readonly IOrganizationContext _orgContext;
     private readonly StorageQuotaGuard _quotaGuard;
 
-    public SnippetService(AppDbContext db, ILogger<SnippetService> logger, IOrganizationContext orgContext, StorageQuotaGuard quotaGuard)
+    public RecipeService(AppDbContext db, ILogger<RecipeService> logger, IOrganizationContext orgContext, StorageQuotaGuard quotaGuard)
     {
         _db = db;
         _logger = logger;
@@ -45,15 +59,17 @@ public class SnippetService
         ?? throw new InvalidOperationException("No organization in scope; service mutation called outside an authenticated request.");
 
     /// <summary>
-    /// Returns snippets matching the fuzzy <paramref name="query"/> over title,
+    /// Returns recipes matching the fuzzy <paramref name="query"/> over title,
     /// description, and keywords (case-insensitive, substring). An empty query
-    /// returns every active snippet. Soft-deleted rows are always excluded;
+    /// returns every active recipe. Soft-deleted rows are always excluded;
     /// deprecated rows are excluded unless <paramref name="includeDeprecated"/> is set.
+    /// Recipe type is deliberately NOT part of the search expression — the
+    /// browser uses it as a post-filter chip-row instead.
     /// </summary>
-    public async Task<List<Snippet>> SearchAsync(string? query, bool includeDeprecated = false, CancellationToken ct = default)
+    public async Task<List<Recipe>> SearchAsync(string? query, bool includeDeprecated = false, CancellationToken ct = default)
     {
         var trimmed = (query ?? string.Empty).Trim();
-        var rows = _db.Snippets
+        var rows = _db.Recipes
             .AsNoTracking()
             .Include(s => s.MinimumApplicationVersion)
             .Where(s => s.DeletedAt == null);
@@ -77,10 +93,10 @@ public class SnippetService
             .ToListAsync(ct);
     }
 
-    /// <summary>Returns every snippet (optionally including soft-deleted), with files. Drives the admin list.</summary>
-    public Task<List<Snippet>> GetAllForAdminAsync(bool includeDeleted, CancellationToken ct = default)
+    /// <summary>Returns every recipe (optionally including soft-deleted), with files. Drives the admin list.</summary>
+    public Task<List<Recipe>> GetAllForAdminAsync(bool includeDeleted, CancellationToken ct = default)
     {
-        var query = _db.Snippets.AsNoTracking();
+        var query = _db.Recipes.AsNoTracking();
         if (!includeDeleted)
         {
             query = query.Where(s => s.DeletedAt == null);
@@ -94,66 +110,68 @@ public class SnippetService
             .ToListAsync(ct);
     }
 
-    /// <summary>Returns a single snippet with its files. <c>null</c> when not found in this org.</summary>
-    public Task<Snippet?> GetAsync(int id, CancellationToken ct = default)
+    /// <summary>Returns a single recipe with its files. <c>null</c> when not found in this org.</summary>
+    public Task<Recipe?> GetAsync(int id, CancellationToken ct = default)
     {
-        return _db.Snippets
+        return _db.Recipes
             .AsNoTracking()
             .Include(s => s.Files.OrderBy(f => f.Ordering))
             .Include(s => s.MinimumApplicationVersion)
             .FirstOrDefaultAsync(s => s.Id == id, ct);
     }
 
-    /// <summary>Creates a snippet plus its files. Throws <see cref="PlanValidationException"/> on validation failure.</summary>
-    public async Task<Snippet> CreateAsync(SnippetInput input, CancellationToken ct = default)
+    /// <summary>Creates a recipe plus its files. Throws <see cref="PlanValidationException"/> on validation failure.</summary>
+    public async Task<Recipe> CreateAsync(RecipeInput input, CancellationToken ct = default)
     {
         await _quotaGuard.EnsureCanWriteAsync(ct);
         var orgId = RequireOrganizationId();
         await ValidateAsync(input, existingId: null, orgId, ct);
 
         var now = DateTime.UtcNow;
-        var snippet = new Snippet
+        var recipe = new Recipe
         {
             OrganizationId = orgId,
             Title = input.Title.Trim(),
             Description = input.Description.Trim(),
             Keywords = NormaliseKeywords(input.Keywords),
+            Type = input.Type,
             Deprecated = input.Deprecated,
             Instructions = NullIfBlank(input.Instructions),
             MinimumApplicationVersionId = input.MinimumApplicationVersionId,
             CreatedAt = now,
             UpdatedAt = now,
             Files = input.Files
-                .Select((f, i) => new SnippetFile
+                .Select((f, i) => new RecipeFile
                 {
                     OrganizationId = orgId,
                     Ordering = i,
+                    RelativePath = NormaliseRelativePath(f.RelativePath),
                     FileName = f.FileName.Trim(),
                     Content = f.Content ?? string.Empty,
                 })
                 .ToList(),
         };
 
-        _db.Snippets.Add(snippet);
+        _db.Recipes.Add(recipe);
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Created snippet '{Title}' (id={Id}) with {FileCount} file(s).",
-            snippet.Title, snippet.Id, snippet.Files.Count);
-        return snippet;
+            "Created recipe '{Title}' (id={Id}, type={Type}) with {FileCount} file(s).",
+            recipe.Title, recipe.Id, recipe.Type, recipe.Files.Count);
+        return recipe;
     }
 
-    /// <summary>Updates a snippet's fields and reconciles its file list.</summary>
-    public async Task UpdateAsync(int id, SnippetInput input, CancellationToken ct = default)
+    /// <summary>Updates a recipe's fields and reconciles its file list.</summary>
+    public async Task UpdateAsync(int id, RecipeInput input, CancellationToken ct = default)
     {
         await _quotaGuard.EnsureCanWriteAsync(ct);
         var orgId = RequireOrganizationId();
-        var existing = await _db.Snippets
+        var existing = await _db.Recipes
             .Include(s => s.Files)
             .FirstOrDefaultAsync(s => s.Id == id, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
             {
-                ["Id"] = $"Snippet with id {id} was not found.",
+                ["Id"] = $"Recipe with id {id} was not found.",
             });
 
         await ValidateAsync(input, existingId: id, orgId, ct);
@@ -161,6 +179,7 @@ public class SnippetService
         existing.Title = input.Title.Trim();
         existing.Description = input.Description.Trim();
         existing.Keywords = NormaliseKeywords(input.Keywords);
+        existing.Type = input.Type;
         existing.Deprecated = input.Deprecated;
         existing.Instructions = NullIfBlank(input.Instructions);
         existing.MinimumApplicationVersionId = input.MinimumApplicationVersionId;
@@ -171,18 +190,18 @@ public class SnippetService
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Updated snippet '{Title}' (id={Id}); now has {FileCount} file(s).",
-            existing.Title, existing.Id, existing.Files.Count);
+            "Updated recipe '{Title}' (id={Id}, type={Type}); now has {FileCount} file(s).",
+            existing.Title, existing.Id, existing.Type, existing.Files.Count);
     }
 
-    /// <summary>Soft-deletes a snippet by stamping <see cref="Snippet.DeletedAt"/>.</summary>
+    /// <summary>Soft-deletes a recipe by stamping <see cref="Recipe.DeletedAt"/>.</summary>
     public async Task SoftDeleteAsync(int id, CancellationToken ct = default)
     {
         RequireOrganizationId();
-        var existing = await _db.Snippets.FirstOrDefaultAsync(s => s.Id == id, ct)
+        var existing = await _db.Recipes.FirstOrDefaultAsync(s => s.Id == id, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
             {
-                ["Id"] = $"Snippet with id {id} was not found.",
+                ["Id"] = $"Recipe with id {id} was not found.",
             });
 
         if (existing.DeletedAt is not null) return;
@@ -190,17 +209,17 @@ public class SnippetService
         existing.DeletedAt = DateTime.UtcNow;
         existing.UpdatedAt = existing.DeletedAt.Value;
         await _db.SaveChangesAsync(ct);
-        _logger.LogInformation("Soft-deleted snippet '{Title}' (id={Id}).", existing.Title, existing.Id);
+        _logger.LogInformation("Soft-deleted recipe '{Title}' (id={Id}).", existing.Title, existing.Id);
     }
 
-    /// <summary>Clears <see cref="Snippet.DeletedAt"/> on a previously soft-deleted snippet.</summary>
+    /// <summary>Clears <see cref="Recipe.DeletedAt"/> on a previously soft-deleted recipe.</summary>
     public async Task RestoreAsync(int id, CancellationToken ct = default)
     {
         RequireOrganizationId();
-        var existing = await _db.Snippets.FirstOrDefaultAsync(s => s.Id == id, ct)
+        var existing = await _db.Recipes.FirstOrDefaultAsync(s => s.Id == id, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
             {
-                ["Id"] = $"Snippet with id {id} was not found.",
+                ["Id"] = $"Recipe with id {id} was not found.",
             });
 
         if (existing.DeletedAt is null) return;
@@ -208,17 +227,17 @@ public class SnippetService
         existing.DeletedAt = null;
         existing.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
-        _logger.LogInformation("Restored snippet '{Title}' (id={Id}).", existing.Title, existing.Id);
+        _logger.LogInformation("Restored recipe '{Title}' (id={Id}).", existing.Title, existing.Id);
     }
 
-    /// <summary>Flips the <see cref="Snippet.Deprecated"/> flag.</summary>
+    /// <summary>Flips the <see cref="Recipe.Deprecated"/> flag.</summary>
     public async Task SetDeprecatedAsync(int id, bool deprecated, CancellationToken ct = default)
     {
         RequireOrganizationId();
-        var existing = await _db.Snippets.FirstOrDefaultAsync(s => s.Id == id, ct)
+        var existing = await _db.Recipes.FirstOrDefaultAsync(s => s.Id == id, ct)
             ?? throw new PlanValidationException(new Dictionary<string, string>
             {
-                ["Id"] = $"Snippet with id {id} was not found.",
+                ["Id"] = $"Recipe with id {id} was not found.",
             });
 
         if (existing.Deprecated == deprecated) return;
@@ -227,7 +246,7 @@ public class SnippetService
         existing.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation(
-            "Set snippet '{Title}' (id={Id}) deprecated={Deprecated}.",
+            "Set recipe '{Title}' (id={Id}) deprecated={Deprecated}.",
             existing.Title, existing.Id, deprecated);
     }
 
@@ -246,7 +265,22 @@ public class SnippetService
         return string.IsNullOrEmpty(trimmed) ? null : trimmed;
     }
 
-    private async Task ValidateAsync(SnippetInput input, int? existingId, int orgId, CancellationToken ct)
+    /// <summary>
+    /// Normalises a user-typed relative path: trims whitespace, collapses
+    /// backslashes to forward slashes, strips a leading or trailing
+    /// <c>/</c>. Doesn't validate — leave that to <see cref="ValidateFiles"/>
+    /// so a malformed path surfaces with a field-keyed error rather than
+    /// silently mutating.
+    /// </summary>
+    internal static string NormaliseRelativePath(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+        var path = raw.Trim().Replace('\\', '/');
+        path = path.Trim('/');
+        return path;
+    }
+
+    private async Task ValidateAsync(RecipeInput input, int? existingId, int orgId, CancellationToken ct)
     {
         var errors = new Dictionary<string, string>();
 
@@ -261,14 +295,14 @@ public class SnippetService
         }
         else
         {
-            var existingTitleOwner = await _db.Snippets
+            var existingTitleOwner = await _db.Recipes
                 .AsNoTracking()
                 .Where(s => s.OrganizationId == orgId && s.Title == title && s.DeletedAt == null)
                 .Select(s => (int?)s.Id)
                 .FirstOrDefaultAsync(ct);
             if (existingTitleOwner is not null && existingTitleOwner != existingId)
             {
-                errors[nameof(input.Title)] = $"A snippet with title '{title}' already exists.";
+                errors[nameof(input.Title)] = $"A recipe with title '{title}' already exists.";
             }
         }
 
@@ -287,6 +321,11 @@ public class SnippetService
             errors[nameof(input.Keywords)] = $"Keywords must be {MaxKeywordsLength} characters or fewer.";
         }
 
+        if (!Enum.IsDefined(typeof(RecipeType), input.Type))
+        {
+            errors[nameof(input.Type)] = "Unknown recipe type.";
+        }
+
         await ValidateMetadataAsync(_db, input.Instructions, input.MinimumApplicationVersionId, errors, ct);
 
         ValidateFiles(input.Files, errors);
@@ -300,7 +339,7 @@ public class SnippetService
     /// <summary>
     /// Validates the optional Markdown instructions length and that the picked
     /// <see cref="ApplicationVersion"/> exists and isn't soft-deleted. Shared
-    /// with <see cref="SnippetSuggestionService"/> so both surfaces enforce
+    /// with <see cref="RecipeSuggestionService"/> so both surfaces enforce
     /// the same rules.
     /// </summary>
     internal static async Task ValidateMetadataAsync(
@@ -322,7 +361,7 @@ public class SnippetService
             // that was soft-deleted between page load and save would
             // otherwise produce an opaque FK error). Soft-deleted rows are
             // refused with a friendly message; deprecated rows are accepted
-            // so an existing snippet stays valid after a catalogue cleanup.
+            // so an existing recipe stays valid after a catalogue cleanup.
             var row = await db.ApplicationVersions
                 .AsNoTracking()
                 .Where(a => a.Id == versionId)
@@ -340,11 +379,11 @@ public class SnippetService
     }
 
     /// <summary>
-    /// Shared file-list validation reused by <see cref="SnippetService"/> and
-    /// <see cref="SnippetSuggestionService"/> so both surfaces enforce the same
-    /// rules on file names, content size and duplicates.
+    /// Shared file-list validation reused by <see cref="RecipeService"/> and
+    /// <see cref="RecipeSuggestionService"/> so both surfaces enforce the same
+    /// rules on relative paths, file names, content size and duplicates.
     /// </summary>
-    internal static void ValidateFiles(IReadOnlyList<SnippetFileInput> files, IDictionary<string, string> errors)
+    internal static void ValidateFiles(IReadOnlyList<RecipeFileInput> files, IDictionary<string, string> errors)
     {
         if (files.Count == 0)
         {
@@ -357,7 +396,9 @@ public class SnippetService
         {
             var file = files[i];
             var name = file.FileName?.Trim() ?? string.Empty;
+            var relPath = NormaliseRelativePath(file.RelativePath);
             var fileFieldKey = $"Files[{i}].FileName";
+            var pathFieldKey = $"Files[{i}].RelativePath";
             var contentFieldKey = $"Files[{i}].Content";
 
             if (string.IsNullOrEmpty(name))
@@ -372,9 +413,41 @@ public class SnippetService
             {
                 errors[fileFieldKey] = "File name must be a flat file name — no slashes, no '..', no control characters.";
             }
-            else if (!seen.Add(name))
+
+            if (relPath.Length > 0)
             {
-                errors[fileFieldKey] = $"Duplicate file name '{name}' (case-insensitive).";
+                if (relPath.Length > MaxRelativePathLength)
+                {
+                    errors[pathFieldKey] = $"Folder path must be {MaxRelativePathLength} characters or fewer.";
+                }
+                else
+                {
+                    var segments = relPath.Split('/');
+                    if (segments.Length > MaxRelativePathSegments)
+                    {
+                        errors[pathFieldKey] = $"Folder path must have at most {MaxRelativePathSegments} segments.";
+                    }
+                    else
+                    {
+                        foreach (var segment in segments)
+                        {
+                            if (segment.Length == 0 || segment == "." || segment == ".." || !PathSegmentRegex.IsMatch(segment))
+                            {
+                                errors[pathFieldKey] = "Folder path segments must use letters, digits, spaces, '.', '_' or '-' — no '..', '.', or empty segments.";
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!errors.ContainsKey(fileFieldKey) && !errors.ContainsKey(pathFieldKey))
+            {
+                var key = relPath.Length == 0 ? name : relPath + "/" + name;
+                if (!seen.Add(key))
+                {
+                    errors[fileFieldKey] = $"Duplicate path '{key}' (case-insensitive).";
+                }
             }
 
             var content = file.Content ?? string.Empty;
@@ -385,7 +458,7 @@ public class SnippetService
         }
     }
 
-    private static void ReconcileFiles(Snippet existing, IReadOnlyList<SnippetFileInput> inputs, int orgId)
+    private static void ReconcileFiles(Recipe existing, IReadOnlyList<RecipeFileInput> inputs, int orgId)
     {
         var existingFiles = existing.Files.OrderBy(f => f.Ordering).ToList();
 
@@ -393,21 +466,24 @@ public class SnippetService
         {
             var input = inputs[i];
             var name = input.FileName.Trim();
+            var relPath = NormaliseRelativePath(input.RelativePath);
             var content = input.Content ?? string.Empty;
 
             if (i < existingFiles.Count)
             {
                 var file = existingFiles[i];
                 file.Ordering = i;
+                file.RelativePath = relPath;
                 file.FileName = name;
                 file.Content = content;
             }
             else
             {
-                existing.Files.Add(new SnippetFile
+                existing.Files.Add(new RecipeFile
                 {
                     OrganizationId = orgId,
                     Ordering = i,
+                    RelativePath = relPath,
                     FileName = name,
                     Content = content,
                 });
@@ -421,15 +497,16 @@ public class SnippetService
     }
 }
 
-/// <summary>Form-shaped admin input for snippet create/update.</summary>
-public record SnippetInput(
+/// <summary>Form-shaped admin input for recipe create/update.</summary>
+public record RecipeInput(
     string Title,
     string Description,
     string Keywords,
+    RecipeType Type,
     bool Deprecated,
-    IReadOnlyList<SnippetFileInput> Files,
+    IReadOnlyList<RecipeFileInput> Files,
     string? Instructions = null,
     int? MinimumApplicationVersionId = null);
 
-/// <summary>One file row submitted by the snippet file editor.</summary>
-public record SnippetFileInput(string FileName, string Content);
+/// <summary>One file row submitted by the recipe file editor.</summary>
+public record RecipeFileInput(string FileName, string Content, string RelativePath = "");

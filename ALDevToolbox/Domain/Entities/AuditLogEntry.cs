@@ -38,10 +38,10 @@ public enum AuditEntityType
     SystemSettings,
     Backup,
     Invite,
-    Snippet,
-    SnippetFile,
-    SnippetSuggestion,
-    SnippetSuggestionFile,
+    Recipe,
+    RecipeFile,
+    RecipeSuggestion,
+    RecipeSuggestionFile,
     PersonalAccessToken,
 }
 

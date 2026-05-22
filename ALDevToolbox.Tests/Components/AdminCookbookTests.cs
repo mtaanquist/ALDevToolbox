@@ -12,16 +12,17 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace ALDevToolbox.Tests.Components;
 
 /// <summary>
-/// Smoke test for <c>/admin/snippets</c>. The page hosts two independent
-/// lists — the snippet table and the suggestions queue — so the three-state
-/// rule applies twice. Both empty states must render their own useful copy.
+/// Smoke test for <c>/admin/cookbook</c>. The page hosts three independent
+/// surfaces — the recipe table, the cookbook-guidance editor, and the
+/// suggestions queue — so the three-state rule applies to each. Both empty
+/// states (recipes, suggestions) must render their own useful copy.
 /// </summary>
-public sealed class AdminSnippetsTests : IDisposable
+public sealed class AdminCookbookTests : IDisposable
 {
     private readonly TestDb _db = new();
     private readonly TestContext _ctx = new();
 
-    public AdminSnippetsTests()
+    public AdminCookbookTests()
     {
         var auth = _ctx.AddTestAuthorization();
         auth.SetAuthorized("admin@example.com");
@@ -31,8 +32,9 @@ public sealed class AdminSnippetsTests : IDisposable
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString));
         _db.AddStorageServices(_ctx.Services);
-        _ctx.Services.AddScoped<SnippetService>();
-        _ctx.Services.AddScoped<SnippetSuggestionService>();
+        _ctx.Services.AddScoped<RecipeService>();
+        _ctx.Services.AddScoped<RecipeSuggestionService>();
+        _ctx.Services.AddScoped<OrganizationConfigService>();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),
@@ -46,55 +48,55 @@ public sealed class AdminSnippetsTests : IDisposable
     }
 
     [Fact]
-    public void Both_lists_render_useful_empty_states_when_the_org_has_nothing_yet()
+    public void Empty_org_renders_useful_empty_states_for_both_lists()
     {
-        var cut = _ctx.RenderComponent<AdminSnippets>();
+        var cut = _ctx.RenderComponent<AdminCookbook>();
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("No snippets yet");
+            cut.Markup.Should().Contain("No recipes yet");
             cut.Markup.Should().Contain("No pending suggestions",
                 "the suggestions queue gets its own empty-state copy — admins "
                 + "should not see an empty table");
-            cut.Find("a[href='/admin/snippets/new']").Should().NotBeNull();
+            cut.Find("a[href='/admin/cookbook/new']").Should().NotBeNull();
         });
     }
 
     [Fact]
-    public async Task Populated_snippet_list_renders_one_row_per_snippet_with_an_edit_link()
+    public async Task Populated_recipe_list_renders_one_row_per_recipe_with_an_edit_link()
     {
         await using (var seed = _db.NewContext())
         {
-            seed.Snippets.Add(SnippetBuilder.Default("Generic table proxy"));
-            seed.Snippets.Add(SnippetBuilder.Default("Posting routine"));
+            seed.Recipes.Add(RecipeBuilder.Default("Generic table proxy"));
+            seed.Recipes.Add(RecipeBuilder.Default("Posting routine"));
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminSnippets>();
+        var cut = _ctx.RenderComponent<AdminCookbook>();
 
         cut.WaitForAssertion(() =>
         {
             var rows = cut.FindAll("table.data-table tbody tr");
             rows.Should().HaveCount(2);
-            cut.FindAll("a.btn[href^='/admin/snippets/']")
-                .Where(a => (a.GetAttribute("href") ?? string.Empty) != "/admin/snippets/new")
+            cut.FindAll("a.btn[href^='/admin/cookbook/']")
+                .Where(a => (a.GetAttribute("href") ?? string.Empty) != "/admin/cookbook/new")
                 .Should().HaveCount(2, "every row gets an edit link to its detail page");
         });
     }
 
     [Fact]
-    public async Task Soft_deleted_snippets_are_hidden_until_the_show_deleted_checkbox_is_ticked()
+    public async Task Soft_deleted_recipes_are_hidden_until_the_show_deleted_checkbox_is_ticked()
     {
         await using (var seed = _db.NewContext())
         {
-            seed.Snippets.Add(SnippetBuilder.Default("Active"));
-            var trashed = SnippetBuilder.Default("Trashed");
+            seed.Recipes.Add(RecipeBuilder.Default("Active"));
+            var trashed = RecipeBuilder.Default("Trashed");
             trashed.DeletedAt = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc);
-            seed.Snippets.Add(trashed);
+            seed.Recipes.Add(trashed);
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<AdminSnippets>();
+        var cut = _ctx.RenderComponent<AdminCookbook>();
 
         cut.WaitForAssertion(() =>
             cut.FindAll("table.data-table tbody tr").Should().HaveCount(1));
@@ -104,4 +106,5 @@ public sealed class AdminSnippetsTests : IDisposable
         cut.WaitForAssertion(() =>
             cut.FindAll("table.data-table tbody tr").Should().HaveCount(2));
     }
+
 }

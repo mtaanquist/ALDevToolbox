@@ -1,15 +1,16 @@
 
 @*
-    Reusable file-list editor for the snippet admin form and the suggest-a-snippet
+    Reusable file-list editor for the recipe admin form and the suggest-a-recipe
     page. Two-way binds the file list passed in; both surfaces own a list of
     EditableFile rows so they can pass it straight to the service input record
     on submit.
 
-    Rows are collapsible: only the filename input + actions are shown by
+    Rows carry a RelativePath (folder, empty = root) and a flat FileName, in
+    that order — the path validates as relative, the file name as a basename.
+    Rows are collapsible: only the path/filename inputs + actions are shown by
     default. Click the row (or the expand button) to reveal the content
     textarea. Empty rows start expanded so freshly-added files don't hide
-    their empty content area. Reorder uses up/down buttons (HTML5
-    drag-and-drop would need .razor.js plumbing for v1).
+    their empty content area. Reorder uses up/down buttons.
 *@
 
 <div class="snippet-files">
@@ -30,6 +31,14 @@
                         title="@(expanded ? "Collapse" : "Expand")">
                     <Icon Name="@(expanded ? "chevron-down" : "chevron-right")" Width="14" Height="14" />
                 </button>
+                <label class="snippet-file__name">
+                    <span class="section-label">Folder (optional)</span>
+                    <input type="text" value="@file.RelativePath"
+                           @oninput="e => file.RelativePath = e.Value?.ToString() ?? string.Empty"
+                           maxlength="260"
+                           placeholder="e.g. Sales/Posting (leave blank for root)" />
+                    <FieldError Field="@($"Files[{i}].RelativePath")" Errors="Errors" />
+                </label>
                 <label class="snippet-file__name">
                     <span class="section-label">File name</span>
                     <input type="text" value="@file.FileName"
@@ -74,6 +83,7 @@
     /// <summary>Editable file row used by both authoring surfaces.</summary>
     public class EditableFile
     {
+        public string RelativePath { get; set; } = string.Empty;
         public string FileName { get; set; } = string.Empty;
         public string Content { get; set; } = string.Empty;
     }

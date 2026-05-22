@@ -55,10 +55,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             [typeof(SystemSettings)] = AuditEntityType.SystemSettings,
             [typeof(Backup)] = AuditEntityType.Backup,
             [typeof(Invite)] = AuditEntityType.Invite,
-            [typeof(Snippet)] = AuditEntityType.Snippet,
-            [typeof(SnippetFile)] = AuditEntityType.SnippetFile,
-            [typeof(SnippetSuggestion)] = AuditEntityType.SnippetSuggestion,
-            [typeof(SnippetSuggestionFile)] = AuditEntityType.SnippetSuggestionFile,
+            [typeof(Recipe)] = AuditEntityType.Recipe,
+            [typeof(RecipeFile)] = AuditEntityType.RecipeFile,
+            [typeof(RecipeSuggestion)] = AuditEntityType.RecipeSuggestion,
+            [typeof(RecipeSuggestionFile)] = AuditEntityType.RecipeSuggestionFile,
             [typeof(PersonalAccessToken)] = AuditEntityType.PersonalAccessToken,
         };
 
@@ -218,11 +218,11 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                 snapshot["dependencies"] = CollectChildren<ModuleDependency>(allEntries, "ModuleId", parentId);
                 snapshot["extension_folders"] = CollectChildren<ModuleExtensionFolder>(allEntries, "ModuleId", parentId);
                 break;
-            case Snippet:
-                snapshot["files"] = CollectChildren<SnippetFile>(allEntries, "SnippetId", parentId);
+            case Recipe:
+                snapshot["files"] = CollectChildren<RecipeFile>(allEntries, "RecipeId", parentId);
                 break;
-            case SnippetSuggestion:
-                snapshot["files"] = CollectChildren<SnippetSuggestionFile>(allEntries, "SnippetSuggestionId", parentId);
+            case RecipeSuggestion:
+                snapshot["files"] = CollectChildren<RecipeSuggestionFile>(allEntries, "RecipeSuggestionId", parentId);
                 break;
         }
 
@@ -257,7 +257,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     {
         var dict = new Dictionary<string, object?>();
         var hashContent = entry.Entity is WorkspaceExtensionFile or ModuleExtensionFile or OrganizationFile;
-        var hashSnippetContent = entry.Entity is SnippetFile or SnippetSuggestionFile;
+        var hashRecipeContent = entry.Entity is RecipeFile or RecipeSuggestionFile;
         var hashAssetBytes = entry.Entity is OrganizationAsset;
         var redactSmtpPassword = entry.Entity is SystemSettings;
         foreach (var property in entry.OriginalValues.Properties)
@@ -267,7 +267,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             {
                 dict["ContentSha256"] = Sha256(s);
             }
-            else if (hashSnippetContent && property.Name == nameof(SnippetFile.Content) && value is string sc)
+            else if (hashRecipeContent && property.Name == nameof(RecipeFile.Content) && value is string sc)
             {
                 dict["ContentSha256"] = Sha256(sc);
             }

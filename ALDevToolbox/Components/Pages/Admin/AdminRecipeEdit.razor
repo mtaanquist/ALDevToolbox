@@ -1,36 +1,36 @@
-@page "/admin/snippets/new"
-@page "/admin/snippets/{Id:int}"
+@page "/admin/cookbook/new"
+@page "/admin/cookbook/{Id:int}"
 @attribute [Authorize(Roles = "Admin,Editor")]
 @rendermode InteractiveServer
-@inject SnippetService Snippets
+@inject RecipeService Recipes
 @inject ApplicationVersionService ApplicationVersions
 @inject NavigationManager Nav
-@inject ILogger<AdminSnippetEdit> Log
+@inject ILogger<AdminRecipeEdit> Log
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 
-<PageTitle>@(IsEdit ? "Edit snippet" : "New snippet") · Admin · AL Dev Toolbox</PageTitle>
+<PageTitle>@(IsEdit ? "Edit recipe" : "New recipe") · Admin · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page">
     <header class="admin-page__header">
         <div>
-            <h1>@(IsEdit ? "Edit snippet" : "New snippet")</h1>
+            <h1>@(IsEdit ? "Edit recipe" : "New recipe")</h1>
             <p class="muted">
                 @(IsEdit
-                    ? "Update the published snippet. Changes apply on next reload of the user-facing browser."
-                    : "Add a new snippet to the published library for this organisation.")
+                    ? "Update the published recipe. Changes apply on next reload of the user-facing cookbook."
+                    : "Add a new recipe to the published cookbook for this organisation.")
             </p>
         </div>
         <div class="admin-page__header-actions">
-            <a class="btn btn--sm" href="/admin/snippets">
+            <a class="btn btn--sm" href="/admin/cookbook">
                 <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to snippets</span>
+                <span>Back to cookbook</span>
             </a>
             @if (!IsEdit || !_loadFailed)
             {
                 <button type="button" class="btn btn--sm btn--primary" @onclick="SaveAsync" disabled="@_busy">
                     <Icon Name="save" Width="14" Height="14" />
-                    <span>@(_busy ? "Saving…" : IsEdit ? "Save changes" : "Create snippet")</span>
+                    <span>@(_busy ? "Saving…" : IsEdit ? "Save changes" : "Create recipe")</span>
                 </button>
             }
         </div>
@@ -38,7 +38,7 @@
 
     @if (IsEdit && _loadFailed)
     {
-        <p class="form-error" role="alert">Snippet @Id was not found.</p>
+        <p class="form-error" role="alert">Recipe @Id was not found.</p>
     }
     else
     {
@@ -46,32 +46,42 @@
             <h2>Details</h2>
             <div class="form-grid form-grid--narrow">
                 <section class="form-section">
-                    <label class="section-label" for="snippet-title">Title</label>
-                    <input id="snippet-title" type="text" maxlength="200"
+                    <label class="section-label" for="recipe-title">Title</label>
+                    <input id="recipe-title" type="text" maxlength="200"
                            @bind="_title" @bind:event="oninput"
                            placeholder="e.g. Doc. Attachment List Factbox for an unsupported table" />
                     <FieldError Field="Title" Errors="_errors" />
                 </section>
 
                 <section class="form-section">
-                    <label class="section-label" for="snippet-description">Description</label>
-                    <textarea id="snippet-description" rows="4" maxlength="2000"
+                    <label class="section-label" for="recipe-type">Type</label>
+                    <select id="recipe-type" @bind="_type">
+                        <option value="@RecipeType.Snippet">Snippet — small, one or two files</option>
+                        <option value="@RecipeType.Pattern">Pattern — a few related files</option>
+                        <option value="@RecipeType.Module">Module — near-complete feature</option>
+                    </select>
+                    <FieldError Field="Type" Errors="_errors" />
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label" for="recipe-description">Description</label>
+                    <textarea id="recipe-description" rows="4" maxlength="2000"
                               @bind="_description" @bind:event="oninput"
-                              placeholder="What does this snippet do, and when would you use it?"></textarea>
+                              placeholder="What does this recipe do, and when would you use it?"></textarea>
                     <FieldError Field="Description" Errors="_errors" />
                 </section>
 
                 <section class="form-section">
-                    <label class="section-label" for="snippet-keywords">Keywords</label>
-                    <input id="snippet-keywords" type="text" maxlength="500"
+                    <label class="section-label" for="recipe-keywords">Keywords</label>
+                    <input id="recipe-keywords" type="text" maxlength="500"
                            @bind="_keywords" @bind:event="oninput"
                            placeholder="space-separated, e.g. factbox attachment subscriber" />
                     <FieldError Field="Keywords" Errors="_errors" />
                 </section>
 
                 <section class="form-section">
-                    <label class="section-label" for="snippet-min-version">Minimum BC application version</label>
-                    <select id="snippet-min-version" @bind="_minimumApplicationVersionId">
+                    <label class="section-label" for="recipe-min-version">Minimum BC application version</label>
+                    <select id="recipe-min-version" @bind="_minimumApplicationVersionId">
                         <option value="">No minimum</option>
                         @foreach (var v in _applicationVersions)
                         {
@@ -80,14 +90,14 @@
                     </select>
                     <small class="muted">
                         Shown as a badge on the browser card and detail page so users can
-                        tell at a glance whether this snippet targets their runtime.
+                        tell at a glance whether this recipe targets their runtime.
                     </small>
                     <FieldError Field="MinimumApplicationVersionId" Errors="_errors" />
                 </section>
 
                 <section class="form-section">
-                    <label class="section-label" for="snippet-instructions">Instructions (Markdown)</label>
-                    <textarea id="snippet-instructions" rows="6" maxlength="10000"
+                    <label class="section-label" for="recipe-instructions">Instructions (Markdown)</label>
+                    <textarea id="recipe-instructions" rows="6" maxlength="10000"
                               @bind="_instructions" @bind:event="oninput"
                               placeholder="Optional setup notes. Markdown is rendered on the public detail page (headings, lists, code fences, links)."></textarea>
                     <FieldError Field="Instructions" Errors="_errors" />
@@ -95,7 +105,7 @@
 
                 <label class="check-row">
                     <input type="checkbox" @bind="_deprecated" />
-                    <span>Deprecated (hidden from the user-facing browser)</span>
+                    <span>Deprecated (hidden from the user-facing cookbook)</span>
                 </label>
             </div>
         </section>
@@ -103,10 +113,11 @@
         <section class="admin-section">
             <h2>Files</h2>
             <p class="muted">
-                Each file becomes one AL object. Existing rows collapse to the
-                file name — click to expand and edit the content.
+                Each file becomes one AL object. Set <strong>Folder</strong> to
+                put the file inside a directory in the ZIP — leave it blank for
+                files at the recipe's root.
             </p>
-            <SnippetFileEditor Files="_files" Errors="_errors" />
+            <RecipeFileEditor Files="_files" Errors="_errors" />
         </section>
 
         @if (_lastError is not null)
@@ -123,11 +134,12 @@
     private string _title = string.Empty;
     private string _description = string.Empty;
     private string _keywords = string.Empty;
+    private RecipeType _type = RecipeType.Snippet;
     private bool _deprecated;
     private string _instructions = string.Empty;
     private string _minimumApplicationVersionId = string.Empty;
     private List<ApplicationVersion> _applicationVersions = new();
-    private List<SnippetFileEditor.EditableFile> _files = new() { new SnippetFileEditor.EditableFile() };
+    private List<RecipeFileEditor.EditableFile> _files = new() { new RecipeFileEditor.EditableFile() };
     private IReadOnlyDictionary<string, string>? _errors;
     private string? _lastError;
     private bool _busy;
@@ -137,7 +149,7 @@
     {
         _applicationVersions = await ApplicationVersions.GetActiveAsync();
         if (Id is null) return;
-        var existing = await Snippets.GetAsync(Id.Value);
+        var existing = await Recipes.GetAsync(Id.Value);
         if (existing is null)
         {
             _loadFailed = true;
@@ -146,10 +158,11 @@
         _title = existing.Title;
         _description = existing.Description;
         _keywords = existing.Keywords;
+        _type = existing.Type;
         _deprecated = existing.Deprecated;
         _instructions = existing.Instructions ?? string.Empty;
         _minimumApplicationVersionId = existing.MinimumApplicationVersionId?.ToString() ?? string.Empty;
-        // If the snippet points at a deprecated or soft-deleted catalogue row
+        // If the recipe points at a deprecated or soft-deleted catalogue row
         // the active-only list wouldn't include it; surface the existing
         // navigation entity as a synthetic option so the dropdown stays
         // consistent with what's persisted.
@@ -160,11 +173,16 @@
         }
         _files = existing.Files
             .OrderBy(f => f.Ordering)
-            .Select(f => new SnippetFileEditor.EditableFile { FileName = f.FileName, Content = f.Content })
+            .Select(f => new RecipeFileEditor.EditableFile
+            {
+                RelativePath = f.RelativePath,
+                FileName = f.FileName,
+                Content = f.Content,
+            })
             .ToList();
         if (_files.Count == 0)
         {
-            _files.Add(new SnippetFileEditor.EditableFile());
+            _files.Add(new RecipeFileEditor.EditableFile());
         }
     }
 
@@ -176,23 +194,24 @@
         _lastError = null;
         try
         {
-            var input = new SnippetInput(
+            var input = new RecipeInput(
                 _title,
                 _description,
                 _keywords,
+                _type,
                 _deprecated,
-                _files.Select(f => new SnippetFileInput(f.FileName, f.Content)).ToList(),
+                _files.Select(f => new RecipeFileInput(f.FileName, f.Content, f.RelativePath)).ToList(),
                 Instructions: _instructions,
                 MinimumApplicationVersionId: int.TryParse(_minimumApplicationVersionId, out var avId) ? avId : null);
             if (Id is null)
             {
-                var created = await Snippets.CreateAsync(input);
-                Nav.NavigateTo($"/admin/snippets/{created.Id}");
+                var created = await Recipes.CreateAsync(input);
+                Nav.NavigateTo($"/admin/cookbook/{created.Id}");
             }
             else
             {
-                await Snippets.UpdateAsync(Id.Value, input);
-                Nav.NavigateTo("/admin/snippets");
+                await Recipes.UpdateAsync(Id.Value, input);
+                Nav.NavigateTo("/admin/cookbook");
             }
         }
         catch (PlanValidationException ex)
@@ -201,8 +220,8 @@
         }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Failed to save snippet.");
-            _lastError = "An unexpected error occurred. The snippet was not saved.";
+            Log.LogError(ex, "Failed to save recipe.");
+            _lastError = "An unexpected error occurred. The recipe was not saved.";
         }
         finally
         {

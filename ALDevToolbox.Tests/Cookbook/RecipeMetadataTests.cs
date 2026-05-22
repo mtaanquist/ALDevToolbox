@@ -7,16 +7,16 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace ALDevToolbox.Tests.Snippets;
+namespace ALDevToolbox.Tests.Cookbook;
 
 /// <summary>
-/// Coverage for the Instructions + MinimumApplicationVersion fields added in
-/// the snippets-metadata change: round-trip on create/update, validation of
+/// Coverage for the Instructions + MinimumApplicationVersion + Type fields on
+/// <see cref="Recipe"/>: round-trip on create/update, validation of
 /// missing / soft-deleted application versions, and that
-/// <see cref="SnippetService.GetAsync"/> eagerly loads the navigation entity
+/// <see cref="RecipeService.GetAsync"/> eagerly loads the navigation entity
 /// so the badge can render without an extra round-trip.
 /// </summary>
-public sealed class SnippetMetadataTests : IDisposable
+public sealed class RecipeMetadataTests : IDisposable
 {
     private readonly TestDb _db = new();
 
@@ -56,19 +56,20 @@ public sealed class SnippetMetadataTests : IDisposable
 
         await using var ctx = _db.NewContext();
         var svc = NewService(ctx);
-        var snippet = await svc.CreateAsync(new SnippetInput(
+        var recipe = await svc.CreateAsync(new RecipeInput(
             Title: "With metadata",
             Description: "Carries the new fields.",
             Keywords: "meta",
+            Type: RecipeType.Snippet,
             Deprecated: false,
-            Files: new[] { new SnippetFileInput("A.al", "// a") },
+            Files: new[] { new RecipeFileInput("A.al", "// a") },
             Instructions: "  ## Setup\n\nDrop into `src/`.  ",
             MinimumApplicationVersionId: version.Id));
 
         await using var verify = _db.NewContext();
-        var persisted = await verify.Snippets
+        var persisted = await verify.Recipes
             .Include(s => s.MinimumApplicationVersion)
-            .SingleAsync(s => s.Id == snippet.Id);
+            .SingleAsync(s => s.Id == recipe.Id);
         persisted.Instructions.Should().Be("## Setup\n\nDrop into `src/`.",
             "instructions are trimmed but otherwise preserved verbatim");
         persisted.MinimumApplicationVersionId.Should().Be(version.Id);
@@ -80,14 +81,14 @@ public sealed class SnippetMetadataTests : IDisposable
     {
         await using var ctx = _db.NewContext();
         var svc = NewService(ctx);
-        var snippet = await svc.CreateAsync(new SnippetInput(
-            "Empty instructions", "Body.", "", false,
-            new[] { new SnippetFileInput("A.al", "// a") },
+        var recipe = await svc.CreateAsync(new RecipeInput(
+            "Empty instructions", "Body.", "", RecipeType.Snippet, false,
+            new[] { new RecipeFileInput("A.al", "// a") },
             Instructions: "   \n  ",
             MinimumApplicationVersionId: null));
 
         await using var verify = _db.NewContext();
-        (await verify.Snippets.SingleAsync(s => s.Id == snippet.Id))
+        (await verify.Recipes.SingleAsync(s => s.Id == recipe.Id))
             .Instructions.Should().BeNull();
     }
 
@@ -95,29 +96,29 @@ public sealed class SnippetMetadataTests : IDisposable
     public async Task Update_round_trips_metadata_and_clears_it_back_to_null()
     {
         var version = await SeedApplicationVersionAsync();
-        int snippetId;
+        int recipeId;
         await using (var ctx = _db.NewContext())
         {
-            var s = SnippetBuilder.Default("Round Trip").WithFile("A.al", "// a");
+            var s = RecipeBuilder.Default("Round Trip").WithFile("A.al", "// a");
             s.Instructions = "first version";
             s.MinimumApplicationVersionId = version.Id;
-            ctx.Snippets.Add(s);
+            ctx.Recipes.Add(s);
             await ctx.SaveChangesAsync();
-            snippetId = s.Id;
+            recipeId = s.Id;
         }
 
         // Clear both fields back to null.
         await using (var ctx = _db.NewContext())
         {
-            await NewService(ctx).UpdateAsync(snippetId, new SnippetInput(
-                "Round Trip", "Body.", "", false,
-                new[] { new SnippetFileInput("A.al", "// a") },
+            await NewService(ctx).UpdateAsync(recipeId, new RecipeInput(
+                "Round Trip", "Body.", "", RecipeType.Snippet, false,
+                new[] { new RecipeFileInput("A.al", "// a") },
                 Instructions: null,
                 MinimumApplicationVersionId: null));
         }
 
         await using var verify = _db.NewContext();
-        var row = await verify.Snippets.SingleAsync(s => s.Id == snippetId);
+        var row = await verify.Recipes.SingleAsync(s => s.Id == recipeId);
         row.Instructions.Should().BeNull();
         row.MinimumApplicationVersionId.Should().BeNull();
     }
@@ -127,12 +128,12 @@ public sealed class SnippetMetadataTests : IDisposable
     {
         await using var ctx = _db.NewContext();
         var svc = NewService(ctx);
-        var oversized = new string('x', SnippetService.MaxInstructionsLength + 1);
+        var oversized = new string('x', RecipeService.MaxInstructionsLength + 1);
 
         var ex = await Assert.ThrowsAsync<PlanValidationException>(() =>
-            svc.CreateAsync(new SnippetInput(
-                "Too long", "Body.", "", false,
-                new[] { new SnippetFileInput("A.al", "// a") },
+            svc.CreateAsync(new RecipeInput(
+                "Too long", "Body.", "", RecipeType.Snippet, false,
+                new[] { new RecipeFileInput("A.al", "// a") },
                 Instructions: oversized)));
 
         ex.Errors.Should().ContainKey("Instructions");
@@ -144,9 +145,9 @@ public sealed class SnippetMetadataTests : IDisposable
         await using var ctx = _db.NewContext();
         var svc = NewService(ctx);
         var ex = await Assert.ThrowsAsync<PlanValidationException>(() =>
-            svc.CreateAsync(new SnippetInput(
-                "Bad FK", "Body.", "", false,
-                new[] { new SnippetFileInput("A.al", "// a") },
+            svc.CreateAsync(new RecipeInput(
+                "Bad FK", "Body.", "", RecipeType.Snippet, false,
+                new[] { new RecipeFileInput("A.al", "// a") },
                 MinimumApplicationVersionId: 9999)));
 
         ex.Errors.Should().ContainKey("MinimumApplicationVersionId");
@@ -160,9 +161,9 @@ public sealed class SnippetMetadataTests : IDisposable
         var svc = NewService(ctx);
 
         var ex = await Assert.ThrowsAsync<PlanValidationException>(() =>
-            svc.CreateAsync(new SnippetInput(
-                "Soft-deleted FK", "Body.", "", false,
-                new[] { new SnippetFileInput("A.al", "// a") },
+            svc.CreateAsync(new RecipeInput(
+                "Soft-deleted FK", "Body.", "", RecipeType.Snippet, false,
+                new[] { new RecipeFileInput("A.al", "// a") },
                 MinimumApplicationVersionId: deleted.Id)));
 
         ex.Errors.Should().ContainKey("MinimumApplicationVersionId");
@@ -171,42 +172,70 @@ public sealed class SnippetMetadataTests : IDisposable
     [Fact]
     public async Task Create_accepts_deprecated_minimum_application_version()
     {
-        // Deprecated rows must stay assignable so an existing snippet doesn't
+        // Deprecated rows must stay assignable so an existing recipe doesn't
         // break when admins clean up the catalogue.
         var deprecated = await SeedApplicationVersionAsync(deprecated: true);
         await using var ctx = _db.NewContext();
         var svc = NewService(ctx);
 
-        var snippet = await svc.CreateAsync(new SnippetInput(
-            "Deprecated FK is fine", "Body.", "", false,
-            new[] { new SnippetFileInput("A.al", "// a") },
+        var recipe = await svc.CreateAsync(new RecipeInput(
+            "Deprecated FK is fine", "Body.", "", RecipeType.Snippet, false,
+            new[] { new RecipeFileInput("A.al", "// a") },
             MinimumApplicationVersionId: deprecated.Id));
 
-        snippet.MinimumApplicationVersionId.Should().Be(deprecated.Id);
+        recipe.MinimumApplicationVersionId.Should().Be(deprecated.Id);
     }
 
     [Fact]
     public async Task Get_eagerly_loads_minimum_application_version()
     {
         var version = await SeedApplicationVersionAsync();
-        int snippetId;
+        int recipeId;
         await using (var ctx = _db.NewContext())
         {
-            var s = SnippetBuilder.Default("Eager").WithFile("A.al", "// a");
+            var s = RecipeBuilder.Default("Eager").WithFile("A.al", "// a");
             s.MinimumApplicationVersionId = version.Id;
-            ctx.Snippets.Add(s);
+            ctx.Recipes.Add(s);
             await ctx.SaveChangesAsync();
-            snippetId = s.Id;
+            recipeId = s.Id;
         }
 
         await using var ctx2 = _db.NewContext();
-        var loaded = await NewService(ctx2).GetAsync(snippetId);
+        var loaded = await NewService(ctx2).GetAsync(recipeId);
         loaded.Should().NotBeNull();
         loaded!.MinimumApplicationVersion.Should().NotBeNull(
             "GetAsync includes the navigation so the badge can render without N+1");
         loaded.MinimumApplicationVersion!.Name.Should().Be("BC 2026 Wave 1");
     }
 
-    private SnippetService NewService(ALDevToolbox.Data.AppDbContext ctx) =>
-        new(ctx, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx));
+    [Fact]
+    public async Task Type_round_trips_through_create_and_update()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+
+        var created = await svc.CreateAsync(new RecipeInput(
+            "Type Test", "Body.", "", RecipeType.Module, false,
+            new[] { new RecipeFileInput("A.al", "// a") }));
+
+        await using (var verify = _db.NewContext())
+        {
+            (await verify.Recipes.SingleAsync(s => s.Id == created.Id))
+                .Type.Should().Be(RecipeType.Module);
+        }
+
+        await using (var update = _db.NewContext())
+        {
+            await NewService(update).UpdateAsync(created.Id, new RecipeInput(
+                "Type Test", "Body.", "", RecipeType.Pattern, false,
+                new[] { new RecipeFileInput("A.al", "// a") }));
+        }
+
+        await using var verifyUpdate = _db.NewContext();
+        (await verifyUpdate.Recipes.SingleAsync(s => s.Id == created.Id))
+            .Type.Should().Be(RecipeType.Pattern);
+    }
+
+    private RecipeService NewService(ALDevToolbox.Data.AppDbContext ctx) =>
+        new(ctx, NullLogger<RecipeService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx));
 }

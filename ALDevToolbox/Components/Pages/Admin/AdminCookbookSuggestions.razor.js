@@ -1,5 +1,5 @@
 // Scroll the suggestion identified by `id` into view. Used by the Review
-// links on /admin/snippets, which navigate here with ?focus={id}. The Razor
+// links on /admin/cookbook, which navigate here with ?focus={id}. The Razor
 // page already attaches a `data-suggestion-id` attribute on each row so the
 // lookup survives DOM restructuring.
 export function focusSuggestion(id) {

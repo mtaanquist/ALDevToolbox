@@ -155,10 +155,10 @@ public class AppDbContext : DbContext
     public DbSet<OeModuleVariable> OeModuleVariables => Set<OeModuleVariable>();
     public DbSet<OeModuleReference> OeModuleReferences => Set<OeModuleReference>();
     public DbSet<OeModuleTranslation> OeModuleTranslations => Set<OeModuleTranslation>();
-    public DbSet<Snippet> Snippets => Set<Snippet>();
-    public DbSet<SnippetFile> SnippetFiles => Set<SnippetFile>();
-    public DbSet<SnippetSuggestion> SnippetSuggestions => Set<SnippetSuggestion>();
-    public DbSet<SnippetSuggestionFile> SnippetSuggestionFiles => Set<SnippetSuggestionFile>();
+    public DbSet<Recipe> Recipes => Set<Recipe>();
+    public DbSet<RecipeFile> RecipeFiles => Set<RecipeFile>();
+    public DbSet<RecipeSuggestion> RecipeSuggestions => Set<RecipeSuggestion>();
+    public DbSet<RecipeSuggestionFile> RecipeSuggestionFiles => Set<RecipeSuggestionFile>();
     public DbSet<AuditLogEntry> AuditLog => Set<AuditLogEntry>();
 
     /// <summary>
@@ -223,10 +223,10 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OeModuleVariable>(modelBuilder);
         ScopeToOrganization<OeModuleReference>(modelBuilder);
         ScopeToOrganization<OeModuleTranslation>(modelBuilder);
-        ScopeToOrganization<Snippet>(modelBuilder);
-        ScopeToOrganization<SnippetFile>(modelBuilder);
-        ScopeToOrganization<SnippetSuggestion>(modelBuilder);
-        ScopeToOrganization<SnippetSuggestionFile>(modelBuilder);
+        ScopeToOrganization<Recipe>(modelBuilder);
+        ScopeToOrganization<RecipeFile>(modelBuilder);
+        ScopeToOrganization<RecipeSuggestion>(modelBuilder);
+        ScopeToOrganization<RecipeSuggestionFile>(modelBuilder);
         ScopeToOrganization<PersonalAccessToken>(modelBuilder);
         ScopeToOrganization<OAuthConsent>(modelBuilder);
 

@@ -29,7 +29,7 @@
     <PackageReference Include="Fido2.AspNet" Version="4.*" />
     <!-- 4.* floats over CVE-patched releases (GHSA-9j88-vvj5-vhgr, GHSA-g7hc-96xr-gvvx). -->
     <PackageReference Include="MailKit" Version="4.*" />
-    <!-- Markdown renderer for snippet authoring instructions. CommonMark + GFM
+    <!-- Markdown renderer for recipe authoring instructions. CommonMark + GFM
          (autolinks, fenced code, tables). Safe HTML output by default; we
          render through a sanitising pipeline in MarkdownRenderer. -->
     <PackageReference Include="Markdig" Version="0.42.0" />

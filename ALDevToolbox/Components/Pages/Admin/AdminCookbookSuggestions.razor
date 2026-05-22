@@ -1,26 +1,26 @@
-@page "/admin/snippets/suggestions"
+@page "/admin/cookbook/suggestions"
 @attribute [Authorize(Roles = "Admin,Editor")]
 @rendermode InteractiveServer
-@inject SnippetSuggestionService Suggestions
+@inject RecipeSuggestionService Suggestions
 @inject MarkdownRenderer Markdown
 @inject NavigationManager Nav
 @inject IJSRuntime JS
-@inject ILogger<AdminSnippetSuggestions> Log
+@inject ILogger<AdminCookbookSuggestions> Log
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 
-<PageTitle>Snippet suggestions · Admin · AL Dev Toolbox</PageTitle>
+<PageTitle>Recipe suggestions · Admin · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page">
-    <a class="btn btn--sm" href="/admin/snippets">
+    <a class="btn btn--sm" href="/admin/cookbook">
         <Icon Name="arrow-left" Width="14" Height="14" />
-        <span>Back to snippets</span>
+        <span>Back to cookbook</span>
     </a>
 
-    <h1>Snippet suggestions</h1>
+    <h1>Recipe suggestions</h1>
     <p class="muted">
         Drafts submitted by users. Approving promotes the suggestion into the
-        published snippet library; rejecting closes it with an optional note.
+        published cookbook; rejecting closes it with an optional note.
     </p>
 
     @if (!string.IsNullOrEmpty(_lastError))
@@ -50,6 +50,7 @@
                     data-suggestion-id="@s.Id">
                     <header class="snippet-suggestion__header">
                         <h2>@s.Title</h2>
+                        <span class="snippet-card__badge" title="Suggested recipe type">@s.Type</span>
                         <span class="muted">
                             from @(s.SuggestedByUser?.DisplayName ?? "unknown user")
                             on @s.RequestedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")
@@ -86,9 +87,10 @@
                         <ol class="snippet-detail__files">
                             @foreach (var f in s.Files.OrderBy(f => f.Ordering))
                             {
+                                var displayPath = string.IsNullOrEmpty(f.RelativePath) ? f.FileName : f.RelativePath + "/" + f.FileName;
                                 <li class="snippet-file-view">
                                     <div class="snippet-file-view__header">
-                                        <code>@f.FileName</code>
+                                        <code>@displayPath</code>
                                     </div>
                                     <pre class="snippet-file-view__content"><code>@f.Content</code></pre>
                                 </li>
@@ -130,14 +132,14 @@
 @code {
     /// <summary>
     /// Id of the suggestion to scroll into view and highlight on first render
-    /// after navigation. Set by the `/admin/snippets` Review link via
+    /// after navigation. Set by the `/admin/cookbook` Review link via
     /// <c>?focus={id}</c>; falling back to the lookup-by-data-attribute means
     /// the link survives DOM restructuring as long as each rendered row
     /// continues to carry <c>data-suggestion-id</c>.
     /// </summary>
     [SupplyParameterFromQuery(Name = "focus")] public int? Focus { get; set; }
 
-    private List<SnippetSuggestion>? _pending;
+    private List<RecipeSuggestion>? _pending;
     private bool _busy;
     private string? _lastError;
     private string? _lastSuccess;
@@ -153,7 +155,7 @@
         if (!_pending.Any(s => s.Id == Focus.Value)) return;
         _focusScrolled = true;
         var module = await JS.InvokeAsync<IJSObjectReference>(
-            "import", "./Components/Pages/Admin/AdminSnippetSuggestions.razor.js");
+            "import", "./Components/Pages/Admin/AdminCookbookSuggestions.razor.js");
         await module.InvokeVoidAsync("focusSuggestion", Focus.Value);
         await module.DisposeAsync();
     }
@@ -163,7 +165,7 @@
         _pending = await Suggestions.GetPendingAsync();
     }
 
-    private async Task ApproveAsync(SnippetSuggestion s)
+    private async Task ApproveAsync(RecipeSuggestion s)
     {
         if (_busy) return;
         _busy = true;
@@ -171,8 +173,8 @@
         _lastSuccess = null;
         try
         {
-            var snippet = await Suggestions.ApproveAsync(s.Id);
-            Nav.NavigateTo($"/admin/snippets/{snippet.Id}");
+            var recipe = await Suggestions.ApproveAsync(s.Id);
+            Nav.NavigateTo($"/admin/cookbook/{recipe.Id}");
         }
         catch (PlanValidationException ex)
         {
@@ -180,7 +182,7 @@
         }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Failed to approve snippet suggestion {Id}.", s.Id);
+            Log.LogError(ex, "Failed to approve recipe suggestion {Id}.", s.Id);
             _lastError = "An unexpected error occurred. The suggestion was not approved.";
         }
         finally
@@ -189,7 +191,7 @@
         }
     }
 
-    private void StartReject(SnippetSuggestion s)
+    private void StartReject(RecipeSuggestion s)
     {
         _rejecting = s.Id;
         _rejectNote = string.Empty;
@@ -201,7 +203,7 @@
         _rejectNote = string.Empty;
     }
 
-    private async Task RejectAsync(SnippetSuggestion s)
+    private async Task RejectAsync(RecipeSuggestion s)
     {
         if (_busy) return;
         _busy = true;
@@ -221,7 +223,7 @@
         }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Failed to reject snippet suggestion {Id}.", s.Id);
+            Log.LogError(ex, "Failed to reject recipe suggestion {Id}.", s.Id);
             _lastError = "An unexpected error occurred. The suggestion was not rejected.";
         }
         finally

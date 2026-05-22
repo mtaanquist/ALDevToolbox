@@ -20,7 +20,7 @@ namespace ALDevToolbox.Tests.Mcp;
 /// The tools are thin shims over existing services — the tests guard the
 /// contract at the MCP boundary: input mapping, error surfacing as
 /// <see cref="McpException"/> instead of raw <see cref="PlanValidationException"/>,
-/// the inline-base64 ZIP, and the snippet org filter.
+/// the inline-base64 ZIP, and the cookbook org filter.
 /// </summary>
 public sealed class McpToolTests : IDisposable
 {
@@ -49,122 +49,148 @@ public sealed class McpToolTests : IDisposable
         return userId;
     }
 
-    // ---- SnippetTools ------------------------------------------------------
+    // ---- CookbookTools -----------------------------------------------------
 
     [Fact]
-    public async Task SearchSnippets_returns_summaries_for_active_rows_in_caller_org()
+    public async Task SearchRecipes_returns_summaries_for_active_rows_in_caller_org()
     {
         await using (var ctx = _db.NewContext())
         {
-            ctx.Snippets.Add(SnippetBuilder.Default("Posting Validation Override")
+            ctx.Recipes.Add(RecipeBuilder.Default("Posting Validation Override", type: RecipeType.Pattern)
                 .WithFile("Codeunit.al", "// override")
                 .WithFile("Test.al", "// test"));
-            ctx.Snippets.Add(SnippetBuilder.Default("Item Lookup Helper"));
+            ctx.Recipes.Add(RecipeBuilder.Default("Item Lookup Helper"));
             await ctx.SaveChangesAsync();
         }
 
         await using var ctx2 = _db.NewContext();
-        var tools = new SnippetTools(
-            new SnippetService(ctx2, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx2)),
-            ctx2,
-            new SnippetSuggestionService(ctx2, NullLogger<SnippetSuggestionService>.Instance, _db.OrgContext));
+        var tools = NewCookbookTools(ctx2);
 
         var rows = await tools.SearchAsync(query: "posting");
 
         rows.Should().ContainSingle();
         rows[0].Title.Should().Be("Posting Validation Override");
+        rows[0].Type.Should().Be("Pattern");
         rows[0].FileCount.Should().Be(2);
     }
 
     [Fact]
-    public async Task GetSnippet_returns_file_payload_when_visible()
+    public async Task GetRecipe_returns_file_payload_with_relative_path_joined()
     {
-        int snippetId;
+        int recipeId;
         await using (var ctx = _db.NewContext())
         {
-            var s = SnippetBuilder.Default("Sample").WithFile("a.al", "// hello");
-            ctx.Snippets.Add(s);
+            var s = RecipeBuilder.Default("Sample")
+                .WithFile("a.al", "// hello")
+                .WithFile("b.al", "// nested", relativePath: "sub");
+            ctx.Recipes.Add(s);
             await ctx.SaveChangesAsync();
-            snippetId = s.Id;
+            recipeId = s.Id;
         }
 
         await using var ctx2 = _db.NewContext();
-        var tools = new SnippetTools(
-            new SnippetService(ctx2, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx2)),
-            ctx2,
-            new SnippetSuggestionService(ctx2, NullLogger<SnippetSuggestionService>.Instance, _db.OrgContext));
+        var tools = NewCookbookTools(ctx2);
 
-        var detail = await tools.GetAsync(snippetId);
+        var detail = await tools.GetAsync(recipeId);
         detail.Title.Should().Be("Sample");
-        detail.Files.Should().HaveCount(1);
-        detail.Files[0].Path.Should().Be("a.al");
-        detail.Files[0].Content.Should().Be("// hello");
+        detail.Type.Should().Be("Snippet");
+        detail.Files.Should().HaveCount(2);
+        detail.Files.Select(f => f.Path).Should().Contain(new[] { "a.al", "sub/b.al" });
     }
 
     [Fact]
-    public async Task GetSnippet_throws_McpException_for_unknown_id()
+    public async Task GetRecipe_throws_McpException_for_unknown_id()
     {
         await using var ctx = _db.NewContext();
-        var tools = new SnippetTools(
-            new SnippetService(ctx, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx)),
-            ctx,
-            new SnippetSuggestionService(ctx, NullLogger<SnippetSuggestionService>.Instance, _db.OrgContext));
+        var tools = NewCookbookTools(ctx);
 
         await FluentActions.Awaiting(() => tools.GetAsync(999_999))
             .Should().ThrowAsync<McpException>();
     }
 
     [Fact]
-    public async Task SuggestSnippet_creates_pending_row_in_caller_org()
+    public async Task GetCookbookGuidance_returns_org_text_and_builtin_type_descriptions()
+    {
+        // No row yet — built-in copy still surfaces.
+        await using (var ctx = _db.NewContext())
+        {
+            var tools = NewCookbookTools(ctx);
+            var defaults = await tools.GetCookbookGuidanceAsync();
+            defaults.Guidance.Should().BeEmpty();
+            defaults.RecipeTypes.Should().BeEquivalentTo(new[] { "Snippet", "Pattern", "Module" });
+            defaults.TypeDescriptions.Should().ContainKey("Pattern");
+        }
+
+        // Saved org guidance comes back verbatim.
+        await using (var ctx = _db.NewContext())
+        {
+            ctx.OrganizationSettings.Add(new ALDevToolbox.Domain.Entities.OrganizationSettings
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                DefaultPublisher = "Acme",
+                DefaultIdRangeFrom = 50_000,
+                DefaultIdRangeTo = 50_999,
+                CookbookGuidance = "Use the **ACME** prefix on every object name.",
+                UpdatedAt = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var ctx2 = _db.NewContext();
+        var withSettings = NewCookbookTools(ctx2);
+        var result = await withSettings.GetCookbookGuidanceAsync();
+        result.Guidance.Should().Be("Use the **ACME** prefix on every object name.");
+    }
+
+    [Fact]
+    public async Task SuggestRecipe_creates_pending_row_in_caller_org()
     {
         var userId = await SeedSubmitterAsync();
 
         await using var ctx = _db.NewContext();
-        var tools = new SnippetTools(
-            new SnippetService(ctx, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx)),
-            ctx,
-            new SnippetSuggestionService(ctx, NullLogger<SnippetSuggestionService>.Instance, _db.OrgContext));
+        var tools = NewCookbookTools(ctx);
 
-        var input = new SuggestSnippetInput(
+        var input = new SuggestRecipeInput(
             Title: "Posting Validation Override",
             Description: "Stub override for posting validation.",
             Keywords: "posting, validation",
-            Files: new[] { new SnippetFileInputDto("Codeunit.al", "// body") },
+            Type: "Pattern",
+            Files: new[] { new RecipeFileInputDto("Codeunit.al", "// body", "src") },
             Instructions: "Drop into your project and rename the codeunit.");
 
         var result = await tools.SuggestAsync(input);
 
         result.SuggestionId.Should().BeGreaterThan(0);
-        result.Message.Should().Contain("/admin/snippets/suggestions");
+        result.Message.Should().Contain("/admin/cookbook/suggestions");
 
         await using var verify = _db.NewContext();
-        var row = await verify.SnippetSuggestions
+        var row = await verify.RecipeSuggestions
             .Include(s => s.Files)
             .FirstAsync(s => s.Id == result.SuggestionId);
-        row.Decision.Should().Be(SnippetSuggestionDecision.Pending);
+        row.Decision.Should().Be(RecipeSuggestionDecision.Pending);
+        row.Type.Should().Be(RecipeType.Pattern);
         row.OrganizationId.Should().Be(_db.OrgContext.CurrentOrganizationId);
         row.Title.Should().Be("Posting Validation Override");
         row.Files.Should().ContainSingle();
         row.Files[0].FileName.Should().Be("Codeunit.al");
+        row.Files[0].RelativePath.Should().Be("src");
         row.Files[0].Content.Should().Be("// body");
         row.SuggestedByUserId.Should().Be(userId);
     }
 
     [Fact]
-    public async Task SuggestSnippet_returns_McpException_when_title_blank()
+    public async Task SuggestRecipe_returns_McpException_when_title_blank()
     {
         await SeedSubmitterAsync(userId: 801);
         await using var ctx = _db.NewContext();
-        var tools = new SnippetTools(
-            new SnippetService(ctx, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx)),
-            ctx,
-            new SnippetSuggestionService(ctx, NullLogger<SnippetSuggestionService>.Instance, _db.OrgContext));
+        var tools = NewCookbookTools(ctx);
 
-        var input = new SuggestSnippetInput(
+        var input = new SuggestRecipeInput(
             Title: "",
             Description: "Anything",
             Keywords: "",
-            Files: new[] { new SnippetFileInputDto("a.al", "// hi") });
+            Type: "Snippet",
+            Files: new[] { new RecipeFileInputDto("a.al", "// hi") });
 
         (await FluentActions.Awaiting(() => tools.SuggestAsync(input))
             .Should().ThrowAsync<McpException>())
@@ -172,105 +198,127 @@ public sealed class McpToolTests : IDisposable
     }
 
     [Fact]
-    public async Task SuggestSnippet_rejects_files_with_slashes()
+    public async Task SuggestRecipe_rejects_files_with_slashes_in_filename()
     {
         await SeedSubmitterAsync(userId: 802);
         await using var ctx = _db.NewContext();
-        var tools = new SnippetTools(
-            new SnippetService(ctx, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx)),
-            ctx,
-            new SnippetSuggestionService(ctx, NullLogger<SnippetSuggestionService>.Instance, _db.OrgContext));
+        var tools = NewCookbookTools(ctx);
 
-        var input = new SuggestSnippetInput(
+        var input = new SuggestRecipeInput(
             Title: "Has Slash",
             Description: "Description",
             Keywords: "",
-            Files: new[] { new SnippetFileInputDto("sub/x.al", "// nope") });
+            Type: "Snippet",
+            Files: new[] { new RecipeFileInputDto("sub/x.al", "// nope") });
 
         await FluentActions.Awaiting(() => tools.SuggestAsync(input))
             .Should().ThrowAsync<McpException>();
     }
 
     [Fact]
-    public async Task UpdateSnippetSuggestion_round_trips_the_change()
+    public async Task SuggestRecipe_rejects_unknown_type_string()
+    {
+        await SeedSubmitterAsync(userId: 810);
+        await using var ctx = _db.NewContext();
+        var tools = NewCookbookTools(ctx);
+
+        var input = new SuggestRecipeInput(
+            Title: "Bad Type",
+            Description: "Body.",
+            Keywords: "",
+            Type: "Megamodule",
+            Files: new[] { new RecipeFileInputDto("a.al", "// hi") });
+
+        await FluentActions.Awaiting(() => tools.SuggestAsync(input))
+            .Should().ThrowAsync<McpException>();
+    }
+
+    [Fact]
+    public async Task UpdateRecipeSuggestion_round_trips_the_change()
     {
         await SeedSubmitterAsync(userId: 803);
 
         int suggestionId;
         await using (var ctx = _db.NewContext())
         {
-            var tools = NewSnippetTools(ctx);
-            var created = await tools.SuggestAsync(new SuggestSnippetInput(
+            var tools = NewCookbookTools(ctx);
+            var created = await tools.SuggestAsync(new SuggestRecipeInput(
                 Title: "First Draft",
                 Description: "Initial body.",
                 Keywords: "",
-                Files: new[] { new SnippetFileInputDto("a.al", "// v1") }));
+                Type: "Snippet",
+                Files: new[] { new RecipeFileInputDto("a.al", "// v1") }));
             suggestionId = created.SuggestionId;
         }
 
         await using (var ctx = _db.NewContext())
         {
-            var tools = NewSnippetTools(ctx);
-            var result = await tools.UpdateSuggestionAsync(new UpdateSnippetSuggestionInput(
+            var tools = NewCookbookTools(ctx);
+            var result = await tools.UpdateSuggestionAsync(new UpdateRecipeSuggestionInput(
                 SuggestionId: suggestionId,
                 Title: "Revised Draft",
                 Description: "Tightened body.",
                 Keywords: "alpha",
+                Type: "Pattern",
                 Files: new[]
                 {
-                    new SnippetFileInputDto("a.al", "// v2"),
-                    new SnippetFileInputDto("b.al", "// added"),
+                    new RecipeFileInputDto("a.al", "// v2"),
+                    new RecipeFileInputDto("b.al", "// added"),
                 }));
             result.SuggestionId.Should().Be(suggestionId);
             result.Message.Should().Contain("Pending");
         }
 
         await using var verify = _db.NewContext();
-        var row = await verify.SnippetSuggestions
+        var row = await verify.RecipeSuggestions
             .Include(s => s.Files.OrderBy(f => f.Ordering))
             .SingleAsync(s => s.Id == suggestionId);
         row.Title.Should().Be("Revised Draft");
         row.Description.Should().Be("Tightened body.");
-        row.Decision.Should().Be(SnippetSuggestionDecision.Pending);
+        row.Type.Should().Be(RecipeType.Pattern);
+        row.Decision.Should().Be(RecipeSuggestionDecision.Pending);
         row.Files.Select(f => f.FileName).Should().Equal("a.al", "b.al");
         row.Files[0].Content.Should().Be("// v2");
     }
 
     [Fact]
-    public async Task UpdateSnippetSuggestion_returns_McpException_when_caller_is_not_submitter()
+    public async Task UpdateRecipeSuggestion_returns_McpException_when_caller_is_not_submitter()
     {
-        var ownerId = await SeedSubmitterAsync(userId: 804);
+        await SeedSubmitterAsync(userId: 804);
 
         int suggestionId;
         await using (var ctx = _db.NewContext())
         {
-            var created = await NewSnippetTools(ctx).SuggestAsync(new SuggestSnippetInput(
+            var created = await NewCookbookTools(ctx).SuggestAsync(new SuggestRecipeInput(
                 Title: "Owned",
                 Description: "Body.",
                 Keywords: "",
-                Files: new[] { new SnippetFileInputDto("a.al", "// hi") }));
+                Type: "Snippet",
+                Files: new[] { new RecipeFileInputDto("a.al", "// hi") }));
             suggestionId = created.SuggestionId;
         }
 
         await SeedSubmitterAsync(userId: 805);
 
         await using var ctx2 = _db.NewContext();
-        var tools = NewSnippetTools(ctx2);
+        var tools = NewCookbookTools(ctx2);
 
-        await FluentActions.Awaiting(() => tools.UpdateSuggestionAsync(new UpdateSnippetSuggestionInput(
+        await FluentActions.Awaiting(() => tools.UpdateSuggestionAsync(new UpdateRecipeSuggestionInput(
                 SuggestionId: suggestionId,
                 Title: "Hijacked",
                 Description: "Body.",
                 Keywords: "",
-                Files: new[] { new SnippetFileInputDto("a.al", "// hi") })))
+                Type: "Snippet",
+                Files: new[] { new RecipeFileInputDto("a.al", "// hi") })))
             .Should().ThrowAsync<McpException>();
     }
 
-    private SnippetTools NewSnippetTools(ALDevToolbox.Data.AppDbContext ctx) =>
+    private CookbookTools NewCookbookTools(ALDevToolbox.Data.AppDbContext ctx) =>
         new(
-            new SnippetService(ctx, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx)),
+            new RecipeService(ctx, NullLogger<RecipeService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx)),
             ctx,
-            new SnippetSuggestionService(ctx, NullLogger<SnippetSuggestionService>.Instance, _db.OrgContext));
+            new RecipeSuggestionService(ctx, NullLogger<RecipeSuggestionService>.Instance, _db.OrgContext),
+            _db.OrgContext);
 
     // ---- WorkspaceTools ----------------------------------------------------
 
