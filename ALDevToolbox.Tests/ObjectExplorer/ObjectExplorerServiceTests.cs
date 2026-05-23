@@ -39,6 +39,9 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     private ReleaseComparisonService NewComparison(Data.AppDbContext ctx) =>
         new(ctx, NullLogger<ReleaseComparisonService>.Instance);
 
+    private ObjectSearchService NewSearch(Data.AppDbContext ctx) =>
+        new(ctx);
+
     /// <summary>
     /// Imports the two fixtures into one Release. Returns the Release id so
     /// follow-up assertions can navigate it without re-seeding.
@@ -126,7 +129,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     {
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewSearch(read);
 
         // OIOUBL declares "OIOUBL-Profile" (table 13630). DK Core has no table
         // named like that. A release-wide search for "OIOUBL-Profile" should
@@ -142,7 +145,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     {
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewSearch(read);
 
         // Both modules contribute codeunits. With kind=codeunit and no name
         // filter, we should get every codeunit in the Release.
@@ -163,7 +166,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
 
-        var hits = await NewQuery(read).SearchObjectsInReleaseAsync(
+        var hits = await NewSearch(read).SearchObjectsInReleaseAsync(
             releaseId,
             new ObjectListFilter(),
             moduleId: null,
@@ -223,7 +226,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var releaseId = await SeedSingleReleaseAsync();
         await SeedObjectsAsync(releaseId, ("Sales & Receivables Setup", 9000050));
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewSearch(read);
 
         var hits = await query.SearchObjectsInReleaseAsync(releaseId,
             new ObjectListFilter(Search: "sal set"));
@@ -245,7 +248,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         await SeedObjectsAsync(releaseId, ("Posted Sales Invoice", 9000060));
         await using var read = _db.NewContext();
 
-        var hits = await NewQuery(read).SearchObjectsInReleaseAsync(releaseId,
+        var hits = await NewSearch(read).SearchObjectsInReleaseAsync(releaseId,
             new ObjectListFilter(Search: "9000060"));
         hits.Should().Contain(h => h.ObjectId == 9000060 && h.Name == "Posted Sales Invoice");
     }
@@ -263,7 +266,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             ("Header Field", 9000002));
 
         await using var read = _db.NewContext();
-        var hits = await NewQuery(read).SearchObjectsInReleaseAsync(releaseId,
+        var hits = await NewSearch(read).SearchObjectsInReleaseAsync(releaseId,
             new ObjectListFilter(Search: "head"));
 
         var boundaryIdx = hits.FindIndex(h => h.Name == "Header Field");
@@ -287,7 +290,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             ("unsalesheaderwrap", 9000011));
 
         await using var read = _db.NewContext();
-        var hits = await NewQuery(read).SearchObjectsInReleaseAsync(releaseId,
+        var hits = await NewSearch(read).SearchObjectsInReleaseAsync(releaseId,
             new ObjectListFilter(Search: "head"));
 
         var pascalIdx = hits.FindIndex(h => h.Name == "SalesHeader");
@@ -310,7 +313,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             ("Sales Header", 9000070),
             ("Sales Invoice Header", 9000071));
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewSearch(read);
 
         var quoted = await query.SearchObjectsInReleaseAsync(releaseId,
             new ObjectListFilter(Search: "\"sales header\""));
@@ -335,7 +338,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             ("Sales Setup Temp", 9000081));
         await using var read = _db.NewContext();
 
-        var hits = await NewQuery(read).SearchObjectsInReleaseAsync(releaseId,
+        var hits = await NewSearch(read).SearchObjectsInReleaseAsync(releaseId,
             new ObjectListFilter(Search: "sales -temp"));
         hits.Should().Contain(h => h.Name == "Sales Setup");
         hits.Should().NotContain(h => h.Name == "Sales Setup Temp");
@@ -363,7 +366,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     {
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
-        var hits = await NewQuery(read).SearchProceduresInReleaseAsync(
+        var hits = await NewSearch(read).SearchProceduresInReleaseAsync(
             releaseId, search: null, moduleId: null, take: 500);
 
         hits.Should().NotBeEmpty();
@@ -380,7 +383,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
 
-        var hits = await NewQuery(read).SearchContentInReleaseAsync(
+        var hits = await NewSearch(read).SearchContentInReleaseAsync(
             releaseId, search: "codeunit", moduleId: null);
         hits.Should().NotBeEmpty(
             because: "every codeunit's source line starts with the 'codeunit' keyword");

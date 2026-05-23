@@ -21,12 +21,14 @@ public sealed class ObjectExplorerTools
     private const int MaxResults = 200;
 
     private readonly ObjectExplorerService _explorer;
+    private readonly ObjectSearchService _search;
     private readonly TranslationQueryService _translations;
     private readonly AppDbContext _db;
 
-    public ObjectExplorerTools(ObjectExplorerService explorer, TranslationQueryService translations, AppDbContext db)
+    public ObjectExplorerTools(ObjectExplorerService explorer, ObjectSearchService search, TranslationQueryService translations, AppDbContext db)
     {
         _explorer = explorer;
+        _search = search;
         _translations = translations;
         _db = db;
     }
@@ -45,7 +47,7 @@ public sealed class ObjectExplorerTools
         CancellationToken ct = default)
     {
         var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
-        return await _explorer.SearchObjectsInReleaseAsync(
+        return await _search.SearchObjectsInReleaseAsync(
             releaseId,
             new ObjectListFilter(Kind: kind, Search: namePattern),
             MaxResults,
@@ -61,7 +63,7 @@ public sealed class ObjectExplorerTools
         CancellationToken ct = default)
     {
         var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
-        return await _explorer.SearchProceduresInReleaseAsync(releaseId, namePattern, moduleId, MaxResults, ct);
+        return await _search.SearchProceduresInReleaseAsync(releaseId, namePattern, moduleId, MaxResults, ct);
     }
 
     [McpServerTool(Name = "search_content", ReadOnly = true)]
@@ -73,7 +75,7 @@ public sealed class ObjectExplorerTools
         CancellationToken ct = default)
     {
         var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
-        var rows = await _explorer.SearchContentInReleaseAsync(releaseId, query, moduleId, MaxResults, 3, ct);
+        var rows = await _search.SearchContentInReleaseAsync(releaseId, query, moduleId, MaxResults, 3, ct);
         // Snippet is whatever the line carries; cap to keep responses bounded.
         return rows.Select(r => r.Snippet.Length > 500
             ? r with { Snippet = r.Snippet[..500] + "…" }
