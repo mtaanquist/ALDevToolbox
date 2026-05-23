@@ -68,12 +68,10 @@ public sealed class UserAdministrationService
         if (req.UserId is int userId)
         {
             var user = await _db.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId, ct);
-            // Audit FKs are Restrict (#74). Pending users rarely have audit
-            // rows pointing at them, but anonymise defensively rather than
-            // gamble on the rejection failing at SaveChanges.
-            await _db.Database.ExecuteSqlRawAsync(
-                "UPDATE audit_log SET changed_by_user_id = NULL WHERE changed_by_user_id = {0}",
-                new object[] { user.Id }, ct);
+            // Pending users rarely have audit rows pointing at them, but
+            // anonymise defensively rather than gamble on the rejection
+            // failing at SaveChanges.
+            await _db.AnonymiseActorAsync(user.Id, ct);
             _db.Users.Remove(user);
         }
         req.Decision = SignupDecision.Rejected;
