@@ -76,7 +76,7 @@ public sealed class AccountService
     /// brand-new organisation. Resolution order:
     /// <list type="number">
     ///   <item>If the email matches a domain claimed by an org via
-    ///         <see cref="OrganizationConfigService.AddEmailDomainAsync"/>,
+    ///         <see cref="OrganizationAdminService.AddEmailDomainAsync"/>,
     ///         the user is routed to that org as Pending — typed slug and
     ///         org name are ignored (the admin-claimed domain is
     ///         authoritative, so a domain squatter can't spin up a fake

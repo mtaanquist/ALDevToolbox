@@ -157,6 +157,7 @@ builder.Services.AddScoped<GenerationService>();
 builder.Services.AddScoped<ExportService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<OrganizationConfigService>();
+builder.Services.AddScoped<OrganizationAdminService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.AuthService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.UserAdministrationService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.PasswordResetService>();

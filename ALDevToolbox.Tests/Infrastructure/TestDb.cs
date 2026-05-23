@@ -128,8 +128,18 @@ public sealed class TestDb : IDisposable
     /// for the failure mode this isolation prevents.
     /// </summary>
     public OrganizationConfigService NewOrganizationConfigService(AppDbContext ctx) =>
-        new(ctx, OrgContext, NewQuotaGuard(ctx), NullLogger<OrganizationConfigService>.Instance, _memoryCache, McpAvailability,
-            new ALDevToolbox.Services.Account.AuthService(ctx, NullLogger<ALDevToolbox.Services.Account.AuthService>.Instance, TimeProvider.System));
+        new(ctx, OrgContext, NewQuotaGuard(ctx), NullLogger<OrganizationConfigService>.Instance, _memoryCache);
+
+    /// <summary>
+    /// Per-org admin toggles + email-domain allow-list, split out of
+    /// <see cref="OrganizationConfigService"/>. Shares the same per-fixture
+    /// cache (via the config service it delegates invalidation to) so the
+    /// isolation note above still holds.
+    /// </summary>
+    public OrganizationAdminService NewOrganizationAdminService(AppDbContext ctx) =>
+        new(ctx, OrgContext, McpAvailability,
+            new ALDevToolbox.Services.Account.AuthService(ctx, NullLogger<ALDevToolbox.Services.Account.AuthService>.Instance, TimeProvider.System),
+            NewOrganizationConfigService(ctx), NullLogger<OrganizationAdminService>.Instance);
 
     /// <summary>
     /// Per-fixture MCP availability state. Defaults to enabled so tests that

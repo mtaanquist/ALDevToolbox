@@ -66,7 +66,7 @@ public sealed class OrganizationIdentityTests : IDisposable
     public async Task Add_normalises_case_and_strips_leading_at()
     {
         var ctx = _db.NewContext();
-        var svc = _db.NewOrganizationConfigService(ctx);
+        var svc = _db.NewOrganizationAdminService(ctx);
 
         await svc.AddEmailDomainAsync("@Acme.COM");
 
@@ -92,7 +92,7 @@ public sealed class OrganizationIdentityTests : IDisposable
         }
 
         var ctx = _db.NewContext();
-        var svc = _db.NewOrganizationConfigService(ctx);
+        var svc = _db.NewOrganizationAdminService(ctx);
 
         Func<Task> act = () => svc.AddEmailDomainAsync("shared.example");
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
@@ -104,7 +104,7 @@ public sealed class OrganizationIdentityTests : IDisposable
     public async Task Add_rejects_garbage_domains_with_a_friendly_error()
     {
         var ctx = _db.NewContext();
-        var svc = _db.NewOrganizationConfigService(ctx);
+        var svc = _db.NewOrganizationAdminService(ctx);
 
         Func<Task> act = () => svc.AddEmailDomainAsync("not a domain");
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
@@ -129,7 +129,7 @@ public sealed class OrganizationIdentityTests : IDisposable
         }
 
         var ctx = _db.NewContext();
-        var svc = _db.NewOrganizationConfigService(ctx);
+        var svc = _db.NewOrganizationAdminService(ctx);
 
         // Service is scoped to the Default org (TestDb.OrgContext). The query
         // filter prevents it from seeing the row, so the call is a silent no-op.
@@ -148,7 +148,7 @@ public sealed class OrganizationIdentityTests : IDisposable
         _db.McpAvailability.Set(false);
 
         var ctx = _db.NewContext();
-        var svc = _db.NewOrganizationConfigService(ctx);
+        var svc = _db.NewOrganizationAdminService(ctx);
 
         Func<Task> act = () => svc.SetMcpEnabledAsync(true);
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
@@ -161,7 +161,7 @@ public sealed class OrganizationIdentityTests : IDisposable
         _db.McpAvailability.Set(true);
 
         var ctx = _db.NewContext();
-        var svc = _db.NewOrganizationConfigService(ctx);
+        var svc = _db.NewOrganizationAdminService(ctx);
         await svc.SetMcpEnabledAsync(false);
 
         await using var read = _db.NewContext();

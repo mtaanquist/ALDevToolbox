@@ -2,6 +2,7 @@
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @inject OrganizationConfigService Config
+@inject OrganizationAdminService OrgAdmin
 @inject AppDbContext Db
 @inject IOrganizationContext OrgCtx
 @inject NavigationManager Nav
@@ -185,7 +186,7 @@
             .Where(s => s.OrganizationId == orgId)
             .Select(s => s.RequireStrongAuth)
             .FirstOrDefaultAsync();
-        _domains = await Config.ListEmailDomainsAsync();
+        _domains = await OrgAdmin.ListEmailDomainsAsync();
         _loading = false;
     }
 
@@ -197,7 +198,7 @@
         _strongAuthErrMessage = null;
         try
         {
-            await Config.SetRequireStrongAuthAsync(_requireStrongAuth);
+            await OrgAdmin.SetRequireStrongAuthAsync(_requireStrongAuth);
             _strongAuthOkMessage = _requireStrongAuth
                 ? "Strong-auth requirement is now on. Members without a 2FA method or passkey will be redirected to /account on their next request."
                 : "Strong-auth requirement is now off.";
@@ -256,9 +257,9 @@
         _domainErrMessage = null;
         try
         {
-            await Config.AddEmailDomainAsync(_newDomain);
+            await OrgAdmin.AddEmailDomainAsync(_newDomain);
             _newDomain = string.Empty;
-            _domains = await Config.ListEmailDomainsAsync();
+            _domains = await OrgAdmin.ListEmailDomainsAsync();
             _domainOkMessage = "Domain added.";
         }
         catch (PlanValidationException ex)
@@ -284,8 +285,8 @@
         _domainErrMessage = null;
         try
         {
-            await Config.RemoveEmailDomainAsync(domainId);
-            _domains = await Config.ListEmailDomainsAsync();
+            await OrgAdmin.RemoveEmailDomainAsync(domainId);
+            _domains = await OrgAdmin.ListEmailDomainsAsync();
             _domainOkMessage = "Domain removed.";
         }
         catch (Exception ex)
