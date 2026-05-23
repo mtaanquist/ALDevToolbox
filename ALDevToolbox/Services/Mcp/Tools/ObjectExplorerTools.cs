@@ -22,13 +22,15 @@ public sealed class ObjectExplorerTools
 
     private readonly ObjectExplorerService _explorer;
     private readonly ObjectSearchService _search;
+    private readonly ReferenceQueryService _references;
     private readonly TranslationQueryService _translations;
     private readonly AppDbContext _db;
 
-    public ObjectExplorerTools(ObjectExplorerService explorer, ObjectSearchService search, TranslationQueryService translations, AppDbContext db)
+    public ObjectExplorerTools(ObjectExplorerService explorer, ObjectSearchService search, ReferenceQueryService references, TranslationQueryService translations, AppDbContext db)
     {
         _explorer = explorer;
         _search = search;
+        _references = references;
         _translations = translations;
         _db = db;
     }
@@ -132,8 +134,8 @@ public sealed class ObjectExplorerTools
         // the "implementation" set for interface methods — surface in
         // the response. Object-only queries stay on the lighter path.
         var matches = memberName is null
-            ? await _explorer.FindReferencesAsync(releaseId, query, ct)
-            : await _explorer.FindReferencesForSymbolAsync(releaseId, query, ct);
+            ? await _references.FindReferencesAsync(releaseId, query, ct)
+            : await _references.FindReferencesForSymbolAsync(releaseId, query, ct);
         return matches.Count > MaxResults ? matches.Take(MaxResults).ToList() : matches;
     }
 

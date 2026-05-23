@@ -42,6 +42,9 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     private ObjectSearchService NewSearch(Data.AppDbContext ctx) =>
         new(ctx);
 
+    private ReferenceQueryService NewReferences(Data.AppDbContext ctx) =>
+        new(ctx, NullLogger<ReferenceQueryService>.Instance);
+
     /// <summary>
     /// Imports the two fixtures into one Release. Returns the Release id so
     /// follow-up assertions can navigate it without re-seeding.
@@ -681,7 +684,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
 
-        var matches = await NewQuery(read).FindReferencesAsync(releaseId, new FindReferencesQuery(
+        var matches = await NewReferences(read).FindReferencesAsync(releaseId, new FindReferencesQuery(
             TargetAppId: BaseAppId,
             TargetObjectKind: "codeunit",
             TargetObjectId: 5624,
@@ -709,7 +712,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         // extends_target rows have TargetObjectId=null (the symbol package
         // doesn't carry the base object's id on the Target string — only the
         // AppId + name). Querying by name only must still find them.
-        var matches = await NewQuery(read).FindReferencesAsync(releaseId, new FindReferencesQuery(
+        var matches = await NewReferences(read).FindReferencesAsync(releaseId, new FindReferencesQuery(
             TargetAppId: BaseAppId,
             TargetObjectKind: "table",
             TargetObjectId: null,
@@ -726,7 +729,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
 
-        var matches = await NewQuery(read).FindReferencesAsync(releaseId, new FindReferencesQuery(
+        var matches = await NewReferences(read).FindReferencesAsync(releaseId, new FindReferencesQuery(
             TargetAppId: BaseAppId,
             TargetObjectKind: "codeunit",
             TargetObjectId: 99999999,
@@ -760,7 +763,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewReferences(read);
 
         var fromChild = await query.FindReferencesAsync(childId, new FindReferencesQuery(
             BaseAppId, "codeunit", 5624, "Cancel FA Ledger Entries"));
@@ -793,7 +796,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewReferences(read);
 
         // OIOUBL's extends_target → Base App's "Finance Charge Memo Line".
         // From the PARENT release (DK Core only) we must NOT see this row.
@@ -830,7 +833,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         // only (shadowing), so we should get exactly the child's count, not
         // double-counted across parent + child.
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewReferences(read);
 
         var matches = await query.FindReferencesAsync(child.ReleaseId, new FindReferencesQuery(
             BaseAppId, "codeunit", 5624, "Cancel FA Ledger Entries"));
@@ -875,7 +878,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             })
             .FirstAsync();
 
-        var matches = await NewQuery(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
+        var matches = await NewReferences(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
             TargetAppId: pair.AppId,
             TargetObjectKind: pair.OwnerKind,
             TargetObjectId: pair.OwnerObjectId,
@@ -895,12 +898,12 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         // Owner-type rows (variable_type, parameter_type, …) dominated the
         // result set on large releases and most users found them noise
         // rather than signal, so the bucket is currently disabled — see
-        // ObjectExplorerService.FindReferencesForSymbolAsync. If the
+        // ReferenceQueryService.FindReferencesForSymbolAsync. If the
         // bucket comes back, flip this test back to assert containment.
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
 
-        var matches = await NewQuery(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
+        var matches = await NewReferences(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
             TargetAppId: BaseAppId,
             TargetObjectKind: "codeunit",
             TargetObjectId: 5624,
@@ -920,7 +923,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
 
-        var matches = await NewQuery(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
+        var matches = await NewReferences(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
             TargetAppId: BaseAppId,
             TargetObjectKind: "codeunit",
             TargetObjectId: 5624,
@@ -1114,7 +1117,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     public async Task GetFileDependencies_returns_null_for_unknown_file_id()
     {
         await using var read = _db.NewContext();
-        var deps = await NewQuery(read).GetFileDependenciesAsync(fileId: 999_999);
+        var deps = await NewReferences(read).GetFileDependenciesAsync(fileId: 999_999);
         deps.Should().BeNull();
     }
 
@@ -1132,7 +1135,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             .OrderBy(f => f.Id)
             .FirstAsync();
 
-        var deps = await NewQuery(read).GetFileDependenciesAsync(file.Id);
+        var deps = await NewReferences(read).GetFileDependenciesAsync(file.Id);
         deps.Should().NotBeNull();
         // No guarantee either list is non-empty for an arbitrary fixture
         // file — but the call must succeed without throwing, and both
@@ -1162,7 +1165,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             })
             .FirstAsync();
 
-        var deps = await NewQuery(read).GetFileDependenciesAsync(fileAndObjects.Id);
+        var deps = await NewReferences(read).GetFileDependenciesAsync(fileAndObjects.Id);
         deps.Should().NotBeNull();
         foreach (var own in fileAndObjects.Objects)
         {

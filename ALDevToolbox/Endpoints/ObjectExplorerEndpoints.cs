@@ -258,10 +258,10 @@ internal static class ObjectExplorerEndpoints
         // round-trip per page load.
         app.MapGet("/api/object-explorer/files/{fileId:long}/dependencies", async (
             long fileId,
-            ObjectExplorerService oe,
+            ReferenceQueryService references,
             CancellationToken ct) =>
         {
-            var result = await oe.GetFileDependenciesAsync(fileId, ct);
+            var result = await references.GetFileDependenciesAsync(fileId, ct);
             return result is null ? Results.NotFound() : Results.Ok(result);
         }).RequireAuthorization();
 

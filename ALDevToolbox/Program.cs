@@ -148,6 +148,7 @@ builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerSe
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationQueryService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectSearchService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReferenceQueryService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReferenceResolver>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReferenceSessionService>();
 builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks>();
