@@ -56,7 +56,7 @@ public sealed class InviteService
 
         var errors = new Dictionary<string, string>();
         var normalised = (email ?? string.Empty).Trim().ToLowerInvariant();
-        if (string.IsNullOrEmpty(normalised) || !normalised.Contains('@') || normalised.Length > 254)
+        if (!EmailAddress.HasValidShape(normalised))
         {
             errors["Email"] = "Enter a valid email address.";
         }

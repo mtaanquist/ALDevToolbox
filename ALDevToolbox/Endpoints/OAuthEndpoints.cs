@@ -196,7 +196,7 @@ internal static class OAuthEndpoints
                 roleType: OpenIddictConstants.Claims.Role);
             identity.AddClaim(new Claim(OpenIddictConstants.Claims.Subject, userId.ToString())
                 .SetDestinations(OpenIddictConstants.Destinations.AccessToken, OpenIddictConstants.Destinations.IdentityToken));
-            identity.AddClaim(new Claim("org", orgId.ToString())
+            identity.AddClaim(new Claim(OAuthClaimsTransformer.OrgClaim, orgId.ToString())
                 .SetDestinations(OpenIddictConstants.Destinations.AccessToken));
             identity.AddClaim(new Claim(OpenIddictConstants.Claims.Email,
                     cookieResult.Principal.FindFirstValue(ClaimTypes.Email) ?? string.Empty)

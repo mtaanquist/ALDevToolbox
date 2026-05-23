@@ -15,7 +15,7 @@ namespace ALDevToolbox.Services;
 /// <c>AddSnippets</c> migration (carried across the
 /// <c>RenameSnippetsToCookbook</c> table rename).
 /// </summary>
-public class RecipeService
+public sealed class RecipeService
 {
     /// <summary>Cap on per-file content size so a runaway paste can't blow up the DB row.</summary>
     public const int MaxFileContentLength = 100_000;

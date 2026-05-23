@@ -79,7 +79,7 @@ public class GenerationService
         ValidateIdRanges(extensions);
 
         var (stream, fileCount) = await _zipBuilder.BuildWorkspaceAsync(plan, template, extensions, orgConfig, ct);
-        var shortName = StripWhitespace(plan.WorkspaceName);
+        var shortName = GenerationNaming.StripWhitespace(plan.WorkspaceName);
         stopwatch.Stop();
 
         _logger.LogInformation(
@@ -406,7 +406,7 @@ public class GenerationService
         var ctx = new MustacheContext(
             Name: source,
             WorkspaceName: plan.WorkspaceName,
-            ShortName: StripWhitespace(plan.WorkspaceName),
+            ShortName: GenerationNaming.StripWhitespace(plan.WorkspaceName),
             ModuleName: source,
             Publisher: template.Defaults.Publisher,
             ExtensionPrefix: plan.ExtensionPrefix,
@@ -415,9 +415,6 @@ public class GenerationService
             TenantId: plan.TenantId);
         return _mustache.Render(source, ctx);
     }
-
-    private static string StripWhitespace(string value) =>
-        Regex.Replace(value ?? string.Empty, @"\s+", string.Empty);
 }
 
 /// <summary>Container for a finished archive. The stream is rewound and ready to copy to the HTTP response body.</summary>

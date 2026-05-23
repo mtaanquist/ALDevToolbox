@@ -208,7 +208,7 @@ public sealed class OAuthClientAdminService
     private async Task<string?> ReadSourcePropertyAsync(object application, CancellationToken cancellationToken)
     {
         var properties = await _applications.GetPropertiesAsync(application, cancellationToken);
-        if (properties.TryGetValue("registration_source", out var element)
+        if (properties.TryGetValue(CimdClientResolver.RegistrationSourceProperty, out var element)
             && element.ValueKind == System.Text.Json.JsonValueKind.String)
         {
             return element.GetString();

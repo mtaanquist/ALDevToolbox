@@ -508,43 +508,9 @@ app.UseAntiforgery();
 // cookie's user_id claim. See Endpoints/StrongAuthGate.cs.
 app.UseStrongAuthGate();
 
-// Maintenance mode (M18). While BackupService.RestoreAsync is mid-flight,
-// every non-SiteAdmin request gets 503 + a tiny static body. SiteAdmin
-// requests still go through so the operator can watch the restore page.
-// Health-check endpoints also remain reachable so reverse proxies don't
-// flap the container during a long restore.
-app.Use(async (ctx, next) =>
-{
-    var maintenance = ctx.RequestServices.GetRequiredService<MaintenanceModeState>();
-    if (!maintenance.IsActive)
-    {
-        await next();
-        return;
-    }
-    var path = ctx.Request.Path;
-    if (path.StartsWithSegments("/healthz")
-        || path.StartsWithSegments("/readyz")
-        || path.StartsWithSegments("/site-admin"))
-    {
-        await next();
-        return;
-    }
-    if (ctx.User?.FindFirst(HttpOrganizationContext.SiteAdminClaim)?.Value == "true")
-    {
-        await next();
-        return;
-    }
-    ctx.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-    ctx.Response.Headers.RetryAfter = "30";
-    ctx.Response.ContentType = "text/html; charset=utf-8";
-    await ctx.Response.WriteAsync(
-        $"<!doctype html><html><head><title>Maintenance · AL Dev Toolbox</title></head>"
-        + $"<body style=\"font-family: system-ui, sans-serif; padding: 2rem;\">"
-        + $"<h1>Maintenance in progress</h1>"
-        + $"<p>{System.Net.WebUtility.HtmlEncode(maintenance.Reason ?? "The application is restoring from a backup.")}</p>"
-        + $"<p>Started: {maintenance.StartedAtUtc:yyyy-MM-dd HH:mm 'UTC'}. The service will return shortly.</p>"
-        + $"</body></html>");
-});
+// Maintenance mode (M18): 503 every non-SiteAdmin request while a restore
+// is mid-flight. See Endpoints/MaintenanceModeMiddleware.cs.
+app.UseMaintenanceMode();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
@@ -569,22 +535,7 @@ app.MapAccountEndpoints();
 app.MapAdminUserEndpoints();
 app.MapObjectExplorerEndpoints();
 app.MapCookbookEndpoints();
-// Compatibility redirects so old `/snippets` and `/api/snippets/{id}/download`
-// links continue to land in the right place after the Cookbook rename.
-app.MapGet("/snippets", () => Results.LocalRedirect("/cookbook", permanent: true));
-app.MapGet("/snippets/suggest", () => Results.LocalRedirect("/cookbook/suggest", permanent: true));
-app.MapGet("/snippets/{id:int}", (int id) => Results.LocalRedirect($"/cookbook/{id}", permanent: true));
-app.MapGet("/admin/snippets", () => Results.LocalRedirect("/admin/cookbook", permanent: true));
-app.MapGet("/admin/snippets/new", () => Results.LocalRedirect("/admin/cookbook/new", permanent: true));
-app.MapGet("/admin/snippets/{id:int}", (int id) => Results.LocalRedirect($"/admin/cookbook/{id}", permanent: true));
-app.MapGet("/admin/snippets/suggestions", (HttpContext ctx) =>
-{
-    var focus = ctx.Request.Query["focus"].ToString();
-    var query = string.IsNullOrEmpty(focus) ? string.Empty : $"?focus={focus}";
-    return Results.LocalRedirect("/admin/cookbook/suggestions" + query, permanent: true);
-});
-app.MapGet("/api/snippets/{id:int}/download", (int id) =>
-    Results.LocalRedirect($"/api/cookbook/{id}/download", permanent: true));
+app.MapLegacyRedirects();
 app.MapSiteAdminEndpoints();
 app.MapMcpEndpoints();
 app.MapOAuthEndpoints();

@@ -232,14 +232,7 @@ public sealed class OffsiteBackupService
 
             foreach (var obj in resp.S3Objects)
             {
-                var fileName = StripPrefix(obj.Key, prefix);
-                // Skip the per-tenant namespace and anything that doesn't
-                // look like one of our whole-DB dumps — the bucket may
-                // hold neighbour deployments' files, logs, or per-tenant
-                // ZIPs (which belong to a separate catalogue).
-                if (fileName.StartsWith(PerTenantKeyPrefix, StringComparison.Ordinal)) continue;
-                if (!fileName.EndsWith(BackupService.BackupFileSuffix, StringComparison.Ordinal)) continue;
-                if (fileName.Contains('/') || fileName.Contains('\\') || fileName.Contains("..", StringComparison.Ordinal)) continue;
+                if (!IsWholeDbDumpKey(obj.Key, prefix, out var fileName)) continue;
                 results.Add(new OffsiteObjectInfo(obj.Key, fileName, obj.Size, obj.LastModified.ToUniversalTime()));
                 if (results.Count >= maxObjects) break;
             }
@@ -381,22 +374,7 @@ public sealed class OffsiteBackupService
                 "Verify it belongs to this deployment before restoring.", objectKey);
         }
 
-        var total = response.ContentLength > 0 ? response.ContentLength : (long?)null;
-        progress?.Report((0L, total));
-
-        long bytes = 0;
-        await using (var source = response.ResponseStream)
-        await using (var destination = new FileStream(stagingPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 64 * 1024, useAsync: true))
-        {
-            var buffer = new byte[64 * 1024];
-            int read;
-            while ((read = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), ct)) > 0)
-            {
-                await destination.WriteAsync(buffer.AsMemory(0, read), ct);
-                bytes += read;
-                progress?.Report((bytes, total));
-            }
-        }
+        await StreamToStagingAsync(response, stagingPath, progress, ct);
 
         File.Move(stagingPath, finalPath);
         var size = new FileInfo(finalPath).Length;
@@ -513,22 +491,7 @@ public sealed class OffsiteBackupService
             Key = objectKey,
         }, ct);
 
-        var total = response.ContentLength > 0 ? response.ContentLength : (long?)null;
-        progress?.Report((0L, total));
-
-        long bytes = 0;
-        await using (var source = response.ResponseStream)
-        await using (var destination = new FileStream(stagingPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 64 * 1024, useAsync: true))
-        {
-            var buffer = new byte[64 * 1024];
-            int read;
-            while ((read = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), ct)) > 0)
-            {
-                await destination.WriteAsync(buffer.AsMemory(0, read), ct);
-                bytes += read;
-                progress?.Report((bytes, total));
-            }
-        }
+        await StreamToStagingAsync(response, stagingPath, progress, ct);
 
         // Verify the manifest before promoting the staging file to a row —
         // an object that doesn't carry a manifest, or whose manifest names
@@ -593,7 +556,15 @@ public sealed class OffsiteBackupService
                 ContinuationToken = continuation,
             }, ct);
 
-            var stale = resp.S3Objects.Where(o => o.LastModified.ToUniversalTime() < cutoff).ToList();
+            // Prune only this deployment's whole-DB dumps. The bucket may hold
+            // neighbour deployments' files and per-tenant ZIPs (a separate
+            // catalogue with its own lifecycle) — deleting those by age would
+            // be cross-catalogue data loss, so reuse the same filter ListAsync
+            // applies to decide what belongs to us.
+            var stale = resp.S3Objects
+                .Where(o => o.LastModified.ToUniversalTime() < cutoff
+                    && IsWholeDbDumpKey(o.Key, settings.Prefix ?? string.Empty, out _))
+                .ToList();
             if (stale.Count > 0)
             {
                 await client.DeleteObjectsAsync(new DeleteObjectsRequest
@@ -649,6 +620,23 @@ public sealed class OffsiteBackupService
         return head + PerTenantKeyPrefix + slug + "/" + fileName;
     }
 
+    /// <summary>
+    /// True when <paramref name="objectKey"/> is one of this deployment's
+    /// whole-DB dumps under <paramref name="prefix"/> — i.e. it sits directly
+    /// in the prefix (not the per-tenant namespace), carries the dump suffix,
+    /// and has no path-traversal characters in its leaf. The off-site catalogue
+    /// listing and the retention prune share this so they can't disagree about
+    /// what belongs to us versus a neighbour deployment or the per-tenant ZIPs.
+    /// </summary>
+    private static bool IsWholeDbDumpKey(string objectKey, string prefix, out string fileName)
+    {
+        fileName = StripPrefix(objectKey, prefix);
+        if (fileName.StartsWith(PerTenantKeyPrefix, StringComparison.Ordinal)) return false;
+        if (!fileName.EndsWith(BackupService.BackupFileSuffix, StringComparison.Ordinal)) return false;
+        if (fileName.Contains('/') || fileName.Contains('\\') || fileName.Contains("..", StringComparison.Ordinal)) return false;
+        return true;
+    }
+
     private static string EnsureTrailingSlash(string value) =>
         value.EndsWith('/') ? value : value + "/";
 
@@ -662,11 +650,33 @@ public sealed class OffsiteBackupService
     }
 
     /// <summary>
-    /// Best-effort recovery of the original UTC timestamp from a filename
-    /// shaped like <c>aldevtoolbox-yyyyMMddTHHmmssZ-(scheduled|adhoc).dump</c>.
-    /// Returns <see langword="null"/> if the shape doesn't match — the
-    /// caller falls back to "now" so the row still saves.
+    /// Streams an S3 object body into <paramref name="stagingPath"/> (created
+    /// fresh — never overwriting) in 64 KB chunks, reporting byte-level
+    /// progress. Both the whole-DB and per-tenant download paths stage their
+    /// bodies the same way before the atomic rename to the final path.
     /// </summary>
+    private static async Task StreamToStagingAsync(
+        GetObjectResponse response,
+        string stagingPath,
+        IProgress<(long BytesDownloaded, long? TotalBytes)>? progress,
+        CancellationToken ct)
+    {
+        var total = response.ContentLength > 0 ? response.ContentLength : (long?)null;
+        progress?.Report((0L, total));
+
+        long bytes = 0;
+        await using var source = response.ResponseStream;
+        await using var destination = new FileStream(stagingPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 64 * 1024, useAsync: true);
+        var buffer = new byte[64 * 1024];
+        int read;
+        while ((read = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), ct)) > 0)
+        {
+            await destination.WriteAsync(buffer.AsMemory(0, read), ct);
+            bytes += read;
+            progress?.Report((bytes, total));
+        }
+    }
+
     private void TryDeleteFile(string path)
     {
         try
@@ -679,6 +689,12 @@ public sealed class OffsiteBackupService
         }
     }
 
+    /// <summary>
+    /// Best-effort recovery of the original UTC timestamp from a filename
+    /// shaped like <c>aldevtoolbox-yyyyMMddTHHmmssZ-(scheduled|adhoc).dump</c>.
+    /// Returns <see langword="null"/> if the shape doesn't match — the
+    /// caller falls back to "now" so the row still saves.
+    /// </summary>
     private static DateTime? TryParseTimestamp(string fileName)
     {
         const string prefix = "aldevtoolbox-";

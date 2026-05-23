@@ -12,7 +12,7 @@ namespace ALDevToolbox.Services;
 /// <see cref="Recipe"/>) or <see cref="RejectAsync"/> from the queue at
 /// <c>/admin/cookbook/suggestions</c>.
 /// </summary>
-public class RecipeSuggestionService
+public sealed class RecipeSuggestionService
 {
     private readonly AppDbContext _db;
     private readonly ILogger<RecipeSuggestionService> _logger;
