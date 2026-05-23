@@ -29,7 +29,6 @@ public class TemplateService
     /// <c>workspace_extension_folders.path</c> and
     /// <c>workspace_extension_files.path</c>.
     /// </summary>
-    private static readonly Regex PathSegmentRegex = new(@"^[^/\\\s][^/\\]*[^/\\\s]$|^[^/\\\s]$", RegexOptions.Compiled);
 
     /// <summary>
     /// Valid extension <c>path</c> (the stable identifier and ZIP folder name).
@@ -37,7 +36,6 @@ public class TemplateService
     /// Matches the convention in <c>.design/unified-extensions.md</c> sample
     /// templates (<c>Core</c>, <c>Hotfix</c>, <c>document-capture</c>).
     /// </summary>
-    private static readonly Regex ExtensionPathRegex = new(@"^[A-Za-z][A-Za-z0-9_-]*$", RegexOptions.Compiled);
 
     private static readonly JsonSerializerOptions JsonOptions = PersistenceJson.Options;
 
@@ -285,7 +283,7 @@ public class TemplateService
 
         var extensions = template.WorkspaceExtensions
             .OrderBy(e => e.Ordering)
-            .Select(BuildExtensionAuthoring)
+            .Select(TemplateAuthoringMapper.BuildExtensionAuthoring)
             .ToList();
 
         return new TemplateAuthoring(
@@ -321,40 +319,6 @@ public class TemplateService
 
     private Task HydrateExtensionFolderTreeAsync(RuntimeTemplate template, CancellationToken ct)
         => HydrateExtensionFolderTreeAsync(new[] { template }, ct);
-
-    private static ExtensionAuthoring BuildExtensionAuthoring(WorkspaceExtension ext) => new(
-        Path: ext.Path,
-        NameTemplate: ext.NameTemplate,
-        Required: ext.Required,
-        Application: ext.Application,
-        Runtime: ext.Runtime,
-        IdRangeFrom: ext.IdRangeFrom,
-        IdRangeTo: ext.IdRangeTo,
-        Folders: ext.Folders
-            .OrderBy(f => f.Ordering)
-            .Select(BuildFolderAuthoring)
-            .ToList(),
-        Dependencies: ext.Dependencies
-            .OrderBy(d => d.Ordering)
-            .Select(d => new DependencyAuthoring(
-                RefExtensionPath: d.RefExtensionPath,
-                RefModuleKey: d.RefModuleKey,
-                LitId: d.LitId,
-                LitName: d.LitName,
-                LitPublisher: d.LitPublisher,
-                LitVersion: d.LitVersion))
-            .ToList());
-
-    private static FolderAuthoring BuildFolderAuthoring(WorkspaceExtensionFolder folder) => new(
-        Path: folder.Path,
-        Folders: folder.Folders
-            .OrderBy(f => f.Ordering)
-            .Select(BuildFolderAuthoring)
-            .ToList(),
-        Files: folder.Files
-            .OrderBy(f => f.Ordering)
-            .Select(f => new FileAuthoring(f.Path, f.Content, f.IsExample))
-            .ToList());
 
     public Task<List<Module>> GetModulesAsync(bool includeDeprecated = true, CancellationToken ct = default)
     {
@@ -409,7 +373,7 @@ public class TemplateService
             Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim(),
             Defaults = defaults,
             AppSourceCop = appSourceCop,
-            CodeWorkspaceJson = NormaliseCodeWorkspaceJson(input.CodeWorkspaceJson),
+            CodeWorkspaceJson = TemplateAuthoringMapper.NormaliseCodeWorkspaceJson(input.CodeWorkspaceJson),
             CoreIdRangeFrom = input.CoreIdRangeFrom,
             CoreIdRangeTo = input.CoreIdRangeTo,
             ModuleIdRangeStart = input.ModuleIdRangeStart,
@@ -420,7 +384,7 @@ public class TemplateService
             CreatedAt = now,
             UpdatedAt = now,
             WorkspaceExtensions = input.Extensions
-                .Select((e, i) => BuildExtension(e, orgId, ordering: i))
+                .Select((e, i) => TemplateAuthoringMapper.BuildExtension(e, orgId, ordering: i))
                 .ToList(),
             DefaultModules = defaultModuleIds
                 .Select((moduleId, i) => new RuntimeTemplateDefaultModule
@@ -480,7 +444,7 @@ public class TemplateService
         existing.Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim();
         existing.Defaults = defaults;
         existing.AppSourceCop = appSourceCop;
-        existing.CodeWorkspaceJson = NormaliseCodeWorkspaceJson(input.CodeWorkspaceJson);
+        existing.CodeWorkspaceJson = TemplateAuthoringMapper.NormaliseCodeWorkspaceJson(input.CodeWorkspaceJson);
         existing.CoreIdRangeFrom = input.CoreIdRangeFrom;
         existing.CoreIdRangeTo = input.CoreIdRangeTo;
         existing.ModuleIdRangeStart = input.ModuleIdRangeStart;
@@ -499,7 +463,7 @@ public class TemplateService
         existing.WorkspaceExtensions.Clear();
         var orgId = existing.OrganizationId;
         var fresh = input.Extensions
-            .Select((e, i) => BuildExtension(e, orgId, ordering: i))
+            .Select((e, i) => TemplateAuthoringMapper.BuildExtension(e, orgId, ordering: i))
             .ToList();
         foreach (var ext in fresh) existing.WorkspaceExtensions.Add(ext);
 
@@ -512,69 +476,6 @@ public class TemplateService
             "Updated runtime template '{Key}' (id={Id}); now has {Extensions} extension(s).",
             existing.Key, existing.Id, existing.WorkspaceExtensions.Count);
     }
-
-    // ===== Builders =====
-
-    private static WorkspaceExtension BuildExtension(ExtensionAuthoring src, int orgId, int ordering) => new()
-    {
-        OrganizationId = orgId,
-        Ordering = ordering,
-        Path = src.Path.Trim(),
-        NameTemplate = src.NameTemplate.Trim(),
-        Required = src.Required,
-        Application = string.IsNullOrEmpty(src.Application) ? null : src.Application.Trim(),
-        Runtime = string.IsNullOrEmpty(src.Runtime) ? null : src.Runtime.Trim(),
-        IdRangeFrom = src.IdRangeFrom,
-        IdRangeTo = src.IdRangeTo,
-        Folders = src.Folders
-            .Select((f, i) => BuildFolder(f, orgId, ordering: i))
-            .ToList(),
-        Dependencies = src.Dependencies
-            .Select((d, i) => BuildDependency(d, orgId, ordering: i))
-            .ToList(),
-    };
-
-    /// <summary>
-    /// Maps the admin form's input into the storage shape for
-    /// <see cref="RuntimeTemplate.CodeWorkspaceJson"/>: empty / whitespace
-    /// becomes <c>null</c> so "no override" round-trips cleanly through the
-    /// DB and the audit log, otherwise the input is trimmed verbatim. The
-    /// validator already proved any non-empty value parses to a JSON object.
-    /// </summary>
-    private static string? NormaliseCodeWorkspaceJson(string? raw) =>
-        string.IsNullOrWhiteSpace(raw) ? null : raw.Trim();
-
-    private static WorkspaceExtensionFolder BuildFolder(FolderAuthoring src, int orgId, int ordering) => new()
-    {
-        OrganizationId = orgId,
-        Ordering = ordering,
-        Path = src.Path.Trim(),
-        Files = src.Files
-            .Select((f, i) => new WorkspaceExtensionFile
-            {
-                OrganizationId = orgId,
-                Ordering = i,
-                Path = f.Path.Trim(),
-                Content = f.Content ?? string.Empty,
-                IsExample = f.IsExample,
-            })
-            .ToList(),
-        Folders = src.Folders
-            .Select((f, i) => BuildFolder(f, orgId, ordering: i))
-            .ToList(),
-    };
-
-    private static WorkspaceExtensionDependency BuildDependency(DependencyAuthoring src, int orgId, int ordering) => new()
-    {
-        OrganizationId = orgId,
-        Ordering = ordering,
-        RefExtensionPath = src.RefExtensionPath?.Trim(),
-        RefModuleKey = src.RefModuleKey?.Trim(),
-        LitId = src.LitId?.Trim(),
-        LitName = src.LitName?.Trim(),
-        LitPublisher = src.LitPublisher?.Trim(),
-        LitVersion = src.LitVersion?.Trim(),
-    };
 
     /// <summary>
     /// Reconciles the join rows for the per-org default-modules list. Matches
@@ -839,8 +740,8 @@ public class TemplateService
         var errors = new Dictionary<string, string>();
 
         await ValidateMetadataAsync(input, existingId, errors, ct);
-        var (defaults, appSourceCop) = ParseJsonOverrides(input, errors);
-        ValidateExtensions(input.Extensions, errors);
+        var (defaults, appSourceCop) = TemplateValidation.ParseJsonOverrides(input, errors);
+        TemplateValidation.ValidateExtensions(input.Extensions, errors);
         var defaultModuleIds = await ResolveDefaultModuleIdsAsync(input, errors, ct);
         var defaultApplicationVersionId = await ResolveApplicationVersionIdAsync(input, errors, ct);
         var includedFileIds = await ResolveIncludedFileIdsAsync(input, errors, ct);
@@ -935,60 +836,6 @@ public class TemplateService
     }
 
     /// <summary>
-    /// Deserialises the three JSON columns (defaults, app-source-cop, optional
-    /// code-workspace overlay). Field-keyed errors are collected; deserialised
-    /// shapes are returned for the caller to assign onto the entity.
-    /// </summary>
-    private static (TemplateDefaults Defaults, AppSourceCopSettings AppSourceCop) ParseJsonOverrides(
-        TemplateAuthoring input, Dictionary<string, string> errors)
-    {
-        TemplateDefaults defaults = new();
-        try
-        {
-            defaults = string.IsNullOrWhiteSpace(input.DefaultsJson)
-                ? new TemplateDefaults()
-                : JsonSerializer.Deserialize<TemplateDefaults>(input.DefaultsJson, JsonOptions) ?? new TemplateDefaults();
-        }
-        catch (JsonException ex)
-        {
-            errors[nameof(input.DefaultsJson)] = $"Defaults JSON is invalid: {ex.Message}";
-        }
-
-        AppSourceCopSettings appSourceCop = new();
-        try
-        {
-            appSourceCop = string.IsNullOrWhiteSpace(input.AppSourceCopJson)
-                ? new AppSourceCopSettings()
-                : JsonSerializer.Deserialize<AppSourceCopSettings>(input.AppSourceCopJson, JsonOptions) ?? new AppSourceCopSettings();
-        }
-        catch (JsonException ex)
-        {
-            errors[nameof(input.AppSourceCopJson)] = $"AppSourceCop JSON is invalid: {ex.Message}";
-        }
-
-        // Optional per-template workspace JSON: empty / whitespace is treated
-        // as "inherit org base", anything else must parse to a JSON object.
-        if (!string.IsNullOrWhiteSpace(input.CodeWorkspaceJson))
-        {
-            try
-            {
-                var node = System.Text.Json.Nodes.JsonNode.Parse(input.CodeWorkspaceJson);
-                if (node is not System.Text.Json.Nodes.JsonObject)
-                {
-                    errors[nameof(input.CodeWorkspaceJson)] =
-                        "Workspace JSON template must be a JSON object (e.g. { \"settings\": {...} }).";
-                }
-            }
-            catch (JsonException ex)
-            {
-                errors[nameof(input.CodeWorkspaceJson)] = $"Workspace JSON template is invalid: {ex.Message}";
-            }
-        }
-
-        return (defaults, appSourceCop);
-    }
-
-    /// <summary>
     /// Resolves the requested default-module keys to ids. Unknown / soft-
     /// deleted keys land in <paramref name="errors"/>; on success the returned
     /// list preserves the caller's order (deduplicated).
@@ -1077,169 +924,6 @@ public class TemplateService
             return null;
         }
         return resolved;
-    }
-
-    /// <summary>
-    /// Walks every <c>[[extensions]]</c> entry and checks: extension <c>path</c>
-    /// non-empty + unique + filesystem-safe; <c>name</c> template non-empty;
-    /// id-range pair both-or-neither; recursive folder/file paths are
-    /// single-segment + sibling-unique; each dependency sets exactly one
-    /// reference shape, and any intra-template extension ref resolves to
-    /// another path in this template.
-    /// </summary>
-    private static void ValidateExtensions(IReadOnlyList<ExtensionAuthoring> extensions, IDictionary<string, string> errors)
-    {
-        var pathsSeen = new HashSet<string>(StringComparer.Ordinal);
-        var pathsCaseInsensitive = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < extensions.Count; i++)
-        {
-            var ext = extensions[i];
-            var prefix = $"Extensions[{i}]";
-
-            var path = ext.Path?.Trim() ?? string.Empty;
-            if (string.IsNullOrEmpty(path))
-            {
-                errors[$"{prefix}.Path"] = "Extension path is required.";
-            }
-            else if (!ExtensionPathRegex.IsMatch(path))
-            {
-                errors[$"{prefix}.Path"] = "Extension path must start with a letter and contain only letters, digits, hyphens, or underscores.";
-            }
-            else if (!pathsSeen.Add(path))
-            {
-                errors[$"{prefix}.Path"] = $"Duplicate extension path '{path}'.";
-            }
-            else if (!pathsCaseInsensitive.Add(path))
-            {
-                errors[$"{prefix}.Path"] = $"Extension path '{path}' collides case-insensitively with another extension. Windows treats them as the same folder.";
-            }
-
-            if (string.IsNullOrWhiteSpace(ext.NameTemplate))
-            {
-                errors[$"{prefix}.NameTemplate"] = "Extension name template is required.";
-            }
-
-            // Both id-range bounds must be set together (or both omitted).
-            // Half-set ranges would silently break the generator's auto-allocator.
-            if (ext.IdRangeFrom is int from && ext.IdRangeTo is int to)
-            {
-                if (from <= 0) errors[$"{prefix}.IdRangeFrom"] = "Id range start must be greater than zero.";
-                if (to <= from) errors[$"{prefix}.IdRangeTo"] = "Id range end must be greater than 'from'.";
-            }
-            else if (ext.IdRangeFrom is not null || ext.IdRangeTo is not null)
-            {
-                errors[$"{prefix}.IdRange"] = "Set both id_range_from and id_range_to, or neither.";
-            }
-
-            ValidateFolderTree(ext.Folders, prefix + ".Folders", errors);
-            ValidateDependencies(ext.Dependencies, prefix + ".Dependencies", pathsSeen, errors);
-        }
-    }
-
-    private static void ValidateFolderTree(IReadOnlyList<FolderAuthoring> folders, string prefix, IDictionary<string, string> errors)
-    {
-        var siblingPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < folders.Count; i++)
-        {
-            var folder = folders[i];
-            var folderPrefix = $"{prefix}[{i}]";
-            var path = folder.Path?.Trim() ?? string.Empty;
-
-            if (string.IsNullOrEmpty(path))
-            {
-                errors[$"{folderPrefix}.Path"] = "Folder path is required.";
-            }
-            else if (!PathSegmentRegex.IsMatch(path) || path == "." || path == "..")
-            {
-                errors[$"{folderPrefix}.Path"] =
-                    "Folder path must be a single segment — no slashes, no '..', no leading/trailing whitespace.";
-            }
-            else if (!siblingPaths.Add(path))
-            {
-                errors[$"{folderPrefix}.Path"] = $"Duplicate sibling folder '{path}' (case-insensitive).";
-            }
-
-            var fileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            for (var f = 0; f < folder.Files.Count; f++)
-            {
-                var file = folder.Files[f];
-                var filePrefix = $"{folderPrefix}.Files[{f}]";
-                var filePath = file.Path?.Trim() ?? string.Empty;
-                if (string.IsNullOrEmpty(filePath))
-                {
-                    errors[$"{filePrefix}.Path"] = "File path is required.";
-                }
-                else if (!PathSegmentRegex.IsMatch(filePath) || filePath == "." || filePath == "..")
-                {
-                    errors[$"{filePrefix}.Path"] =
-                        "File path must be a basename — no slashes, no '..', no leading/trailing whitespace.";
-                }
-                else if (!fileNames.Add(filePath))
-                {
-                    errors[$"{filePrefix}.Path"] = $"Duplicate file '{filePath}' in this folder (case-insensitive).";
-                }
-            }
-
-            ValidateFolderTree(folder.Folders, folderPrefix + ".Folders", errors);
-        }
-    }
-
-    private static void ValidateDependencies(
-        IReadOnlyList<DependencyAuthoring> deps,
-        string prefix,
-        IReadOnlySet<string> knownExtensionPaths,
-        IDictionary<string, string> errors)
-    {
-        for (var i = 0; i < deps.Count; i++)
-        {
-            var dep = deps[i];
-            var depPrefix = $"{prefix}[{i}]";
-
-            // Exactly one of the three reference shapes must be set. The DB
-            // CHECK constraint enforces this too, but field-keyed messages are
-            // friendlier than a Postgres error string in the editor.
-            var setCount = (dep.RefExtensionPath is not null ? 1 : 0)
-                + (dep.RefModuleKey is not null ? 1 : 0)
-                + (dep.LitId is not null ? 1 : 0);
-            if (setCount == 0)
-            {
-                errors[depPrefix] = "Each dependency must set one of: extension, module, or id.";
-                continue;
-            }
-            if (setCount > 1)
-            {
-                errors[depPrefix] = "A dependency must use only one of: extension, module, or id (not several).";
-                continue;
-            }
-
-            if (dep.RefExtensionPath is string refPath
-                && !knownExtensionPaths.Contains(refPath))
-            {
-                errors[$"{depPrefix}.Extension"] =
-                    $"Dependency references extension '{refPath}', which isn't declared by this template.";
-            }
-            else if (dep.LitId is string litId)
-            {
-                // Lightweight GUID sanity check — the dep_id field is otherwise
-                // free-form because AL accepts wrapped {GUID} and bare forms.
-                if (litId.Length < 4)
-                {
-                    errors[$"{depPrefix}.Id"] = "Literal dependency id is too short.";
-                }
-                if (string.IsNullOrWhiteSpace(dep.LitName))
-                {
-                    errors[$"{depPrefix}.Name"] = "Literal dependency name is required.";
-                }
-                if (string.IsNullOrWhiteSpace(dep.LitPublisher))
-                {
-                    errors[$"{depPrefix}.Publisher"] = "Literal dependency publisher is required.";
-                }
-                if (string.IsNullOrWhiteSpace(dep.LitVersion))
-                {
-                    errors[$"{depPrefix}.Version"] = "Literal dependency version is required.";
-                }
-            }
-        }
     }
 
 }
