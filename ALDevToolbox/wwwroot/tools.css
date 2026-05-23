@@ -717,19 +717,6 @@ button.pill-tab:hover { text-decoration: none; }
 a.pill-tab.pill-tab--active,
 button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 
-/* Keyboard-shortcut hint shown after the label. Quietly recessed so it
-   doesn't compete with the tab name; the parent button still owns the
-   click target. */
-.pill-tab__hint {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--color-text-muted, #808080);
-    background: transparent;
-    padding: 0;
-    margin-left: 2px;
-    opacity: 0.7;
-}
-
 .admin-template-edit__toml-form { max-width: 880px; }
 
 /* The CodeMirror 6 editor mounts into this div. We give it a fixed height
@@ -3491,6 +3478,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 .source-viewer__header-actions > .btn {
     width: 100%;
+    justify-content: center;
     text-align: center;
 }
 .source-viewer__header-actions .field__label {

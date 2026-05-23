@@ -28,7 +28,6 @@
                         @onclick="() => SetMode(InputMode.Text)">
                     <Icon Name="type" Width="14" Height="14" />
                     <span>Text</span>
-                    <kbd class="pill-tab__hint">Alt+1</kbd>
                 </button>
                 <button type="button"
                         class="pill-tab @(_mode == InputMode.Table ? "pill-tab--active" : "")"
@@ -38,7 +37,6 @@
                         @onclick="() => SetMode(InputMode.Table)">
                     <Icon Name="table" Width="14" Height="14" />
                     <span>Table</span>
-                    <kbd class="pill-tab__hint">Alt+2</kbd>
                 </button>
             </nav>
 
