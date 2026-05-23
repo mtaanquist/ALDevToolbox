@@ -32,6 +32,48 @@ public class ObjectExplorerService
         _logger = logger;
     }
 
+    // ── Shared release-ancestry SQL ──────────────────────────────────────
+    // Every find-references / dependency / interface-implementer query walks
+    // the same release-ancestry chain and resolves each AppId to the module at
+    // the smallest depth (closest to the current release) — that "winning"
+    // selection is the shadowing rule a child release sees an ancestor's module
+    // only when it doesn't ship its own copy. Defining the chain + winning CTEs
+    // once keeps the six queries from drifting; {0} is the seed release id, and
+    // each query appends its own SELECT tail. WinningModules omits m.name;
+    // WinningModulesWithName includes it for queries that report the module.
+
+    private const string ChainCte = """
+        WITH RECURSIVE chain AS (
+            SELECT id, parent_release_id, 0 AS depth
+            FROM oe_releases
+            WHERE id = {0}
+            UNION ALL
+            SELECT r.id, r.parent_release_id, c.depth + 1
+            FROM oe_releases r
+            JOIN chain c ON r.id = c.parent_release_id
+        )
+        """;
+
+    private const string WinningModulesCte = ChainCte + """
+        ,
+        winning AS (
+            SELECT DISTINCT ON (m.app_id) m.id, m.app_id
+            FROM oe_modules m
+            JOIN chain c ON c.id = m.release_id
+            ORDER BY m.app_id, c.depth ASC
+        )
+        """;
+
+    private const string WinningModulesWithNameCte = ChainCte + """
+        ,
+        winning AS (
+            SELECT DISTINCT ON (m.app_id) m.id, m.app_id, m.name
+            FROM oe_modules m
+            JOIN chain c ON c.id = m.release_id
+            ORDER BY m.app_id, c.depth ASC
+        )
+        """;
+
     // ── Releases ────────────────────────────────────────────────────────
 
     /// <summary>
@@ -955,22 +997,7 @@ public class ObjectExplorerService
             .FirstOrDefaultAsync(ct);
         if (seed is null) return new();
 
-        const string sql = """
-            WITH RECURSIVE chain AS (
-                SELECT id, parent_release_id, 0 AS depth
-                FROM oe_releases
-                WHERE id = {0}
-                UNION ALL
-                SELECT r.id, r.parent_release_id, c.depth + 1
-                FROM oe_releases r
-                JOIN chain c ON r.id = c.parent_release_id
-            ),
-            winning AS (
-                SELECT DISTINCT ON (m.app_id) m.id, m.app_id
-                FROM oe_modules m
-                JOIN chain c ON c.id = m.release_id
-                ORDER BY m.app_id, c.depth ASC
-            )
+        const string sql = WinningModulesCte + "\n" + """
             SELECT
                 so.id                    AS "SourceObjectId",
                 so.name                  AS "SourceObjectName",
@@ -1370,22 +1397,8 @@ public class ObjectExplorerService
     {
         if (ownObjectIds.Count == 0) return new();
 
-        const string sql = """
-            WITH RECURSIVE chain AS (
-                SELECT id, parent_release_id, 0 AS depth
-                FROM oe_releases
-                WHERE id = {0}
-                UNION ALL
-                SELECT r.id, r.parent_release_id, c.depth + 1
-                FROM oe_releases r
-                JOIN chain c ON r.id = c.parent_release_id
-            ),
-            winning AS (
-                SELECT DISTINCT ON (m.app_id) m.id, m.app_id, m.name
-                FROM oe_modules m
-                JOIN chain c ON c.id = m.release_id
-                ORDER BY m.app_id, c.depth ASC
-            ),
+        const string sql = WinningModulesWithNameCte + "\n" + """
+            ,
             outgoing AS (
                 SELECT mv.target_app_id, mv.target_object_kind,
                        mv.target_object_id, mv.target_object_name,
@@ -1477,22 +1490,7 @@ public class ObjectExplorerService
         // FindReferencesAsync. A child release sees its parent's callers; a
         // parent release doesn't see hits from un-attached children (matches
         // the existing find-references contract).
-        const string callerSql = """
-            WITH RECURSIVE chain AS (
-                SELECT id, parent_release_id, 0 AS depth
-                FROM oe_releases
-                WHERE id = {0}
-                UNION ALL
-                SELECT r.id, r.parent_release_id, c.depth + 1
-                FROM oe_releases r
-                JOIN chain c ON r.id = c.parent_release_id
-            ),
-            winning AS (
-                SELECT DISTINCT ON (m.app_id) m.id, m.app_id, m.name
-                FROM oe_modules m
-                JOIN chain c ON c.id = m.release_id
-                ORDER BY m.app_id, c.depth ASC
-            )
+        const string callerSql = WinningModulesWithNameCte + "\n" + """
             SELECT DISTINCT ON (m.app_id, so.kind, COALESCE(so.object_id, -1), so.name)
                 m.app_id              AS "TargetAppId",
                 m.name                AS "TargetModuleName",
@@ -2011,24 +2009,7 @@ public class ObjectExplorerService
         // recursive CTE neatly. The SQL is bounded, documented, and lives
         // here in one place — see the class doc-comment for the resolution
         // algorithm it implements.
-        const string sql = """
-            WITH RECURSIVE chain AS (
-                SELECT id, parent_release_id, 0 AS depth
-                FROM oe_releases
-                WHERE id = {0}
-                UNION ALL
-                SELECT r.id, r.parent_release_id, c.depth + 1
-                FROM oe_releases r
-                JOIN chain c ON r.id = c.parent_release_id
-            ),
-            -- Same AppId at multiple depths: keep the one at the smallest
-            -- depth, i.e. closest to the current release.
-            winning AS (
-                SELECT DISTINCT ON (m.app_id) m.id, m.app_id
-                FROM oe_modules m
-                JOIN chain c ON c.id = m.release_id
-                ORDER BY m.app_id, c.depth ASC
-            )
+        const string sql = WinningModulesCte + "\n" + """
             SELECT
                 mr.id                    AS "Id",
                 mr.module_id             AS "SourceModuleId",
@@ -2144,22 +2125,7 @@ public class ObjectExplorerService
         // Same recursive-CTE + winning-module shadowing the object-level
         // query uses; we then join through to oe_module_symbols by owner +
         // member name.
-        const string declarationSql = """
-            WITH RECURSIVE chain AS (
-                SELECT id, parent_release_id, 0 AS depth
-                FROM oe_releases
-                WHERE id = {0}
-                UNION ALL
-                SELECT r.id, r.parent_release_id, c.depth + 1
-                FROM oe_releases r
-                JOIN chain c ON r.id = c.parent_release_id
-            ),
-            winning AS (
-                SELECT DISTINCT ON (m.app_id) m.id, m.app_id
-                FROM oe_modules m
-                JOIN chain c ON c.id = m.release_id
-                ORDER BY m.app_id, c.depth ASC
-            )
+        const string declarationSql = WinningModulesCte + "\n" + """
             SELECT
                 s.id                     AS "Id",
                 o.module_id              AS "SourceModuleId",
@@ -2270,22 +2236,7 @@ public class ObjectExplorerService
     private async Task<List<ReferenceMatch>> FindInterfaceMethodImplementationsAsync(
         int releaseId, FindReferencesQuery query, CancellationToken ct)
     {
-        const string sql = """
-            WITH RECURSIVE chain AS (
-                SELECT id, parent_release_id, 0 AS depth
-                FROM oe_releases
-                WHERE id = {0}
-                UNION ALL
-                SELECT r.id, r.parent_release_id, c.depth + 1
-                FROM oe_releases r
-                JOIN chain c ON r.id = c.parent_release_id
-            ),
-            winning AS (
-                SELECT DISTINCT ON (m.app_id) m.id, m.app_id
-                FROM oe_modules m
-                JOIN chain c ON c.id = m.release_id
-                ORDER BY m.app_id, c.depth ASC
-            )
+        const string sql = WinningModulesCte + "\n" + """
             SELECT
                 s.id                     AS "Id",
                 so.module_id             AS "SourceModuleId",
