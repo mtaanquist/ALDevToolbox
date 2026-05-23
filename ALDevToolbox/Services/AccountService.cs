@@ -114,8 +114,7 @@ public sealed class AccountService
         var allowed = await _settings.GetSignupAllowedDomainsAsync(ct);
         if (allowed is not null)
         {
-            var at = normalised.LastIndexOf('@');
-            var domain = at >= 0 && at < normalised.Length - 1 ? normalised[(at + 1)..] : string.Empty;
+            var domain = EmailAddress.DomainOf(normalised) ?? string.Empty;
             if (!allowed.Contains(domain))
             {
                 throw new PlanValidationException(new Dictionary<string, string>
@@ -292,7 +291,7 @@ public sealed class AccountService
 
     private static void ValidateEmail(string? value, Dictionary<string, string> errors)
     {
-        if (string.IsNullOrWhiteSpace(value) || !value.Contains('@') || value.Length > 254)
+        if (!EmailAddress.HasValidShape(value))
         {
             errors["Email"] = "Enter a valid email address.";
         }
@@ -318,10 +317,8 @@ public sealed class AccountService
 
     private async Task<Organization?> ResolveOrganizationByEmailDomainAsync(string normalisedEmail, CancellationToken ct)
     {
-        var at = normalisedEmail.LastIndexOf('@');
-        if (at < 0 || at == normalisedEmail.Length - 1) return null;
-        var domain = normalisedEmail[(at + 1)..];
-        if (domain.Length == 0) return null;
+        var domain = EmailAddress.DomainOf(normalisedEmail);
+        if (domain is null) return null;
         return await _db.OrganizationEmailDomains
             .IgnoreQueryFilters()
             .AsNoTracking()

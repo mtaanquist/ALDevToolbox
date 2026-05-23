@@ -213,7 +213,7 @@ public sealed class UserAdministrationService
     {
         var errors = new Dictionary<string, string>();
         var normalised = (newEmail ?? string.Empty).Trim().ToLowerInvariant();
-        if (string.IsNullOrEmpty(normalised) || !normalised.Contains('@') || normalised.Length > 254)
+        if (!EmailAddress.HasValidShape(normalised))
         {
             errors["NewEmail"] = "Enter a valid email address.";
         }
