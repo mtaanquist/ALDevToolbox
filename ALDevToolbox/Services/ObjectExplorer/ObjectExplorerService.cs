@@ -572,13 +572,22 @@ public class ObjectExplorerService
     }
 
     /// <summary>
-    /// BC "Tell Me" style query parser: splits the search string on
-    /// whitespace and returns one <c>Name.Contains(token)</c> predicate per
-    /// token AND'd onto the queryable. Every token must appear (case-
-    /// insensitive substring) in the object name for a row to match, so
-    /// "sal set" finds "Sales &amp; Receivables Setup" but "sal xyz" finds
-    /// nothing. A single numeric token preserves the legacy id-or-name
-    /// behaviour the query API has always offered.
+    /// BC "Tell Me" style query parser. Splits the search string into tokens
+    /// and AND's one predicate per token onto the queryable, so every token
+    /// must appear (case-insensitive substring) in the object name for a row
+    /// to match — "sal set" finds "Sales &amp; Receivables Setup" but
+    /// "sal xyz" finds nothing. Three modifiers refine that base behaviour:
+    /// <list type="bullet">
+    ///   <item>a double-quoted run is one literal token with its spaces
+    ///   preserved, so <c>"sales header"</c> matches that exact phrase rather
+    ///   than the two words anywhere in the name;</item>
+    ///   <item>a <c>-</c> prefix negates a token (<c>setup -temp</c> keeps
+    ///   Setup objects but drops any whose name contains "temp");</item>
+    ///   <item>a single bare numeric token preserves the legacy id-or-name
+    ///   behaviour the query API has always offered.</item>
+    /// </list>
+    /// Returns the positive (non-negated) token texts so the caller can rank
+    /// matches; negated tokens only filter and never contribute to the score.
     /// </summary>
     private static (IQueryable<ModuleObject> Query, IReadOnlyList<string> Tokens)
         ApplySearchTokens(IQueryable<ModuleObject> q, string? search)
@@ -586,29 +595,84 @@ public class ObjectExplorerService
         if (string.IsNullOrWhiteSpace(search))
             return (q, Array.Empty<string>());
 
-        var trimmed = search.Trim();
-        var tokens = trimmed.Split(
-                (char[]?)null,
-                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(t => t.ToLowerInvariant())
-            .ToArray();
+        var tokens = TokenizeSearch(search);
+        if (tokens.Count == 0)
+            return (q, Array.Empty<string>());
 
-        if (tokens.Length == 1 && int.TryParse(tokens[0], out var asInt))
+        if (tokens.Count == 1 && tokens[0] is { Negated: false, Quoted: false } single
+            && int.TryParse(single.Text, out var asInt))
         {
-            var lower = tokens[0];
+            var lower = single.Text;
             q = q.Where(o => o.ObjectId == asInt || o.Name.ToLower().Contains(lower));
             // Numeric path: ranking by name tokens would be misleading
             // because the id branch matched without a name hit.
             return (q, Array.Empty<string>());
         }
 
+        var rankTokens = new List<string>();
         foreach (var token in tokens)
         {
-            var captured = token;
-            q = q.Where(o => o.Name.ToLower().Contains(captured));
+            var text = token.Text;
+            if (token.Negated)
+            {
+                q = q.Where(o => !o.Name.ToLower().Contains(text));
+            }
+            else
+            {
+                q = q.Where(o => o.Name.ToLower().Contains(text));
+                rankTokens.Add(text);
+            }
         }
-        return (q, tokens);
+        return (q, rankTokens);
     }
+
+    private readonly record struct SearchToken(string Text, bool Negated, bool Quoted);
+
+    /// <summary>
+    /// Hand-rolled tokenizer for the search box. Walks the string once,
+    /// honouring an optional leading <c>-</c> (negation) and double-quoted
+    /// runs (a literal phrase, spaces and all). Tokens are lower-cased for
+    /// case-insensitive matching; empty tokens (a lone <c>-</c> or <c>""</c>)
+    /// are dropped.
+    /// </summary>
+    private static List<SearchToken> TokenizeSearch(string search)
+    {
+        var tokens = new List<SearchToken>();
+        var i = 0;
+        var n = search.Length;
+        while (i < n)
+        {
+            while (i < n && char.IsWhiteSpace(search[i])) i++;
+            if (i >= n) break;
+
+            var negated = search[i] == '-';
+            if (negated) i++;
+
+            string text;
+            bool quoted;
+            if (i < n && search[i] == '"')
+            {
+                quoted = true;
+                i++; // opening quote
+                var start = i;
+                while (i < n && search[i] != '"') i++;
+                text = search[start..i];
+                if (i < n) i++; // closing quote
+            }
+            else
+            {
+                quoted = false;
+                var start = i;
+                while (i < n && !char.IsWhiteSpace(search[i])) i++;
+                text = search[start..i];
+            }
+
+            if (text.Length == 0) continue;
+            tokens.Add(new SearchToken(text.ToLowerInvariant(), negated, quoted));
+        }
+        return tokens;
+    }
+
 
     /// <summary>
     /// Materialises the filtered query under the legacy (Kind, ObjectId,

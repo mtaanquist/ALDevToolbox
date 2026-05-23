@@ -296,6 +296,49 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchObjectsInReleaseAsync_double_quoted_phrase_matches_literally()
+    {
+        // A quoted run is one literal token: "sales header" must match the
+        // adjacent phrase, not the two words scattered through the name.
+        // "Sales Invoice Header" has both words but not the phrase, so the
+        // quoted search excludes it while the unquoted search keeps it.
+        var releaseId = await SeedSingleReleaseAsync();
+        await SeedObjectsAsync(releaseId,
+            ("Sales Header", 9000070),
+            ("Sales Invoice Header", 9000071));
+        await using var read = _db.NewContext();
+        var query = NewQuery(read);
+
+        var quoted = await query.SearchObjectsInReleaseAsync(releaseId,
+            new ObjectListFilter(Search: "\"sales header\""));
+        quoted.Should().Contain(h => h.Name == "Sales Header");
+        quoted.Should().NotContain(h => h.Name == "Sales Invoice Header");
+
+        var unquoted = await query.SearchObjectsInReleaseAsync(releaseId,
+            new ObjectListFilter(Search: "sales header"));
+        unquoted.Should().Contain(h => h.Name == "Sales Header");
+        unquoted.Should().Contain(h => h.Name == "Sales Invoice Header");
+    }
+
+    [Fact]
+    public async Task SearchObjectsInReleaseAsync_negated_token_excludes_matches()
+    {
+        // "sales -temp" keeps the rows whose name contains "sales" but drops
+        // any that also contain "temp", so a negated token filters without
+        // contributing to ranking.
+        var releaseId = await SeedSingleReleaseAsync();
+        await SeedObjectsAsync(releaseId,
+            ("Sales Setup", 9000080),
+            ("Sales Setup Temp", 9000081));
+        await using var read = _db.NewContext();
+
+        var hits = await NewQuery(read).SearchObjectsInReleaseAsync(releaseId,
+            new ObjectListFilter(Search: "sales -temp"));
+        hits.Should().Contain(h => h.Name == "Sales Setup");
+        hits.Should().NotContain(h => h.Name == "Sales Setup Temp");
+    }
+
+    [Fact]
     public async Task GetFileHeaderAsync_returns_release_and_module_context_without_loading_content()
     {
         await SeedSingleReleaseAsync();

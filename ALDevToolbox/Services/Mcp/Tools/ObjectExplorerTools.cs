@@ -35,10 +35,10 @@ public sealed class ObjectExplorerTools
         await _explorer.ListReleasesAsync(includeSoftDeleted: false, ct);
 
     [McpServerTool(Name = "search_objects", ReadOnly = true)]
-    [Description("Searches a BC release for AL objects (tables, pages, codeunits, reports, etc.) by name or id. Tokens in the pattern are split on whitespace; every token must appear as a case-insensitive substring of the object name (BC \"Tell Me\" style), so 'sal set' finds 'Sales & Receivables Setup'. Returns the owning module name + source file pointer for each hit, with word-boundary matches ranked first.")]
+    [Description("Searches a BC release for AL objects (tables, pages, codeunits, reports, etc.) by name or id. Tokens in the pattern are split on whitespace; every token must appear as a case-insensitive substring of the object name (BC \"Tell Me\" style), so 'sal set' finds 'Sales & Receivables Setup'. Wrap a phrase in double quotes for a literal match (\"sales header\"), and prefix a token with '-' to exclude it (setup -temp). Returns the owning module name + source file pointer for each hit, with word-boundary matches ranked first.")]
     public async Task<IReadOnlyList<ReleaseObjectMatch>> SearchObjectsAsync(
         [Description("Release Label ('BC 28.1') or numeric id from list_releases.")] string releaseLabelOrId,
-        [Description("Whitespace-separated tokens; every token must appear (case-insensitive substring) in the object name. A single numeric token still matches by object id.")] string namePattern,
+        [Description("Whitespace-separated tokens; every token must appear (case-insensitive substring) in the object name. Use \"quotes\" for a literal phrase and a -prefix to exclude a token. A single bare numeric token still matches by object id.")] string namePattern,
         [Description("Optional AL kind filter ('table', 'page', 'codeunit', 'report', 'query', 'enum', 'interface', 'tableextension', 'pageextension'). Null returns every kind.")] string? kind = null,
         CancellationToken ct = default)
     {
