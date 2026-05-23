@@ -8,7 +8,7 @@ namespace ALDevToolbox.Services;
 /// Read-side queries over the audit log. Mutation of the log itself happens via
 /// <see cref="AuditInterceptor"/>; nothing in the application writes to it directly.
 /// </summary>
-public class AuditService
+public sealed class AuditService
 {
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;

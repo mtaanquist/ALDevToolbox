@@ -2,7 +2,6 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 
@@ -22,6 +21,11 @@ public sealed class WorkspaceZipBuilder
     {
         WriteIndented = true,
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never,
+    };
+
+    private static readonly JsonSerializerOptions CompactJsonOptions = new()
+    {
+        WriteIndented = false,
     };
 
     private readonly MustacheRenderer _mustache;
@@ -44,7 +48,7 @@ public sealed class WorkspaceZipBuilder
         OrganizationConfig orgConfig,
         CancellationToken ct)
     {
-        var shortName = StripWhitespace(plan.WorkspaceName);
+        var shortName = GenerationNaming.StripWhitespace(plan.WorkspaceName);
         var rootFolder = shortName;
         var stream = new MemoryStream();
         var fileCount = 0;
@@ -126,7 +130,7 @@ public sealed class WorkspaceZipBuilder
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        var folderName = StripWhitespace(plan.ExtensionName);
+        var folderName = GenerationNaming.StripWhitespace(plan.ExtensionName);
         var stream = new MemoryStream();
         var fileCount = 0;
 
@@ -188,18 +192,16 @@ public sealed class WorkspaceZipBuilder
             WriteString(archive, $"{folderName}/{WorkspaceConfigService.FileName}", _config.BuildExtension(plan));
             fileCount++;
 
-            if (sibling is not null && orgConfig is not null)
+            if (sibling is not null)
             {
-                var workspaceFile = $"{StripWhitespace(sibling.WorkspaceName)}.code-workspace";
-                var existing = sibling.ExistingFolders.Count > 0
-                    ? sibling.ExistingFolders.ToList()
-                    : new List<string>();
+                var workspaceFile = $"{GenerationNaming.StripWhitespace(sibling.WorkspaceName)}.code-workspace";
+                var existing = sibling.ExistingFolders.ToList();
                 existing.Add(folderName);
 
                 // Rewriting the sibling workspace's .code-workspace file: pull
                 // the admin's JSON template from the org config so the result
                 // matches what the workspace was originally generated with.
-                var siblingShort = StripWhitespace(sibling.WorkspaceName);
+                var siblingShort = GenerationNaming.StripWhitespace(sibling.WorkspaceName);
                 var siblingCtx = new MustacheContext(
                     Name: sibling.WorkspaceName,
                     WorkspaceName: sibling.WorkspaceName,
@@ -274,7 +276,7 @@ public sealed class WorkspaceZipBuilder
         return new MustacheContext(
             Name: ext.Name,
             WorkspaceName: plan.WorkspaceName,
-            ShortName: StripWhitespace(plan.WorkspaceName),
+            ShortName: GenerationNaming.StripWhitespace(plan.WorkspaceName),
             ModuleName: ext.ModuleName,
             Publisher: ext.Publisher,
             ExtensionPrefix: plan.ExtensionPrefix,
@@ -308,11 +310,6 @@ public sealed class WorkspaceZipBuilder
         }
         return string.Empty;
     }
-
-    private static readonly JsonSerializerOptions CompactJsonOptions = new()
-    {
-        WriteIndented = false,
-    };
 
     /// <summary>
     /// Recursively emit every folder + file under <paramref name="parentPath"/>.
@@ -523,7 +520,7 @@ public sealed class WorkspaceZipBuilder
         var ctx = new MustacheContext(
             Name: plan.WorkspaceName,
             WorkspaceName: plan.WorkspaceName,
-            ShortName: StripWhitespace(plan.WorkspaceName),
+            ShortName: GenerationNaming.StripWhitespace(plan.WorkspaceName),
             ModuleName: plan.WorkspaceName,
             Publisher: template.Defaults.Publisher,
             ExtensionPrefix: plan.ExtensionPrefix,
@@ -706,7 +703,4 @@ public sealed class WorkspaceZipBuilder
 
     private static string SerializeIndented(JsonNode node) =>
         JsonSerializer.Serialize(node, JsonOptions);
-
-    private static string StripWhitespace(string value) =>
-        Regex.Replace(value ?? string.Empty, @"\s+", string.Empty);
 }

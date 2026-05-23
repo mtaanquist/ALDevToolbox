@@ -14,7 +14,7 @@ namespace ALDevToolbox.Services;
 /// missing from the input are soft-deleted so existing template foreign keys
 /// stay resolvable.
 /// </summary>
-public class ApplicationVersionService
+public sealed class ApplicationVersionService
 {
     /// <summary>
     /// Sentinel value that means "resolve to the highest-ordered active
@@ -28,6 +28,7 @@ public class ApplicationVersionService
 
     private static readonly Regex ApplicationVersionRegex = new(@"^\d+\.\d+\.\d+\.\d+$", RegexOptions.Compiled);
     private static readonly Regex RuntimeFormatRegex = new(@"^\d+(\.\d+)?$", RegexOptions.Compiled);
+    private static readonly Regex NumericVersionRegex = new(@"^\d+(\.\d+)*$", RegexOptions.Compiled);
 
     private readonly AppDbContext _db;
     private readonly ILogger<ApplicationVersionService> _logger;
@@ -189,11 +190,10 @@ public class ApplicationVersionService
 
         var now = DateTime.UtcNow;
         var orgId = RequireOrganizationId();
-        inputs = normalised;
 
-        for (var i = 0; i < inputs.Count; i++)
+        for (var i = 0; i < normalised.Count; i++)
         {
-            var input = inputs[i];
+            var input = normalised[i];
             var key = input.Key.Trim();
             var name = input.Name.Trim();
             var application = input.Application.Trim();
@@ -246,7 +246,7 @@ public class ApplicationVersionService
 
         _logger.LogInformation(
             "Saved application-version catalogue: {Count} active entries.",
-            inputs.Count);
+            normalised.Count);
     }
 
     /// <summary>
@@ -260,7 +260,7 @@ public class ApplicationVersionService
     {
         var trimmed = raw?.Trim() ?? string.Empty;
         if (trimmed.Length == 0) return trimmed;
-        if (!System.Text.RegularExpressions.Regex.IsMatch(trimmed, @"^\d+(\.\d+)*$")) return trimmed;
+        if (!NumericVersionRegex.IsMatch(trimmed)) return trimmed;
         var segments = trimmed.Split('.').ToList();
         while (segments.Count < parts) segments.Add("0");
         return string.Join('.', segments);

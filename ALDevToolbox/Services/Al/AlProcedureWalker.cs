@@ -495,13 +495,10 @@ internal sealed class AlProcedureWalker
             symbolKind = "trigger";
         }
 
-        // Skip past `procedure` / `trigger` keyword.
+        // Skip past `procedure` / `trigger` keyword, then any whitespace
+        // before the name. (Scope modifiers like local/internal/protected sit
+        // BEFORE `procedure`, so they're already behind us here.)
         _state.Pos++;
-
-        // Skip scope keyword if procedure is annotated (local /
-        // internal / protected). Actually the keyword sits BEFORE
-        // `procedure`, so we don't expect to see it here; included
-        // defensively for variant grammars.
         _state.SkipWhitespaceTokens();
 
         // Procedure / trigger name — for triggers like `OnValidate`
@@ -1112,7 +1109,7 @@ internal sealed class AlProcedureWalker
                 }
                 _state.Unresolved++;
                 _state.CaptureUnresolved("chain-step", memberTok, receiverType);
-                AdvancePastRemainingChain();
+                AdvancePastChain();
                 return;
             }
 
@@ -1844,8 +1841,6 @@ internal sealed class AlProcedureWalker
             if (_state.Pos < _state.Tokens.Count && _state.At("(")) _state.SkipBalancedParens();
         }
     }
-
-    private void AdvancePastRemainingChain() => AdvancePastChain();
 
     /// <summary>
     /// Emits a <c>field_access</c> reference at <paramref name="tok"/>
