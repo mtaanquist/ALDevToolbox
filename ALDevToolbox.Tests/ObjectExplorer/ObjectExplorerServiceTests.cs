@@ -36,6 +36,9 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     private ObjectExplorerService NewQuery(Data.AppDbContext ctx) =>
         new(ctx, NullLogger<ObjectExplorerService>.Instance);
 
+    private ReleaseComparisonService NewComparison(Data.AppDbContext ctx) =>
+        new(ctx, NullLogger<ReleaseComparisonService>.Instance);
+
     /// <summary>
     /// Imports the two fixtures into one Release. Returns the Release id so
     /// follow-up assertions can navigate it without re-seeding.
@@ -980,7 +983,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var summary = await NewQuery(read).CompareReleasesAsync(leftId, rightId);
+        var summary = await NewComparison(read).CompareReleasesAsync(leftId, rightId);
 
         summary.Should().NotBeNull();
         summary!.Added.Should().ContainSingle(m => m.Name == "OIOUBL");
@@ -994,7 +997,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     {
         var (leftId, rightId) = await SeedTwoIdenticalReleasesAsync();
         await using var read = _db.NewContext();
-        var summary = await NewQuery(read).CompareReleasesAsync(leftId, rightId);
+        var summary = await NewComparison(read).CompareReleasesAsync(leftId, rightId);
 
         summary.Should().NotBeNull();
         summary!.Added.Should().BeEmpty();
@@ -1008,7 +1011,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
 
-        var bad = await NewQuery(read).CompareReleasesAsync(releaseId, releaseId + 999);
+        var bad = await NewComparison(read).CompareReleasesAsync(releaseId, releaseId + 999);
         bad.Should().BeNull();
     }
 
@@ -1023,7 +1026,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var leftMod = await read.OeModules.AsNoTracking().Where(m => m.ReleaseId == leftId).SingleAsync();
         var rightMod = await read.OeModules.AsNoTracking().Where(m => m.ReleaseId == rightId).SingleAsync();
 
-        var result = await NewQuery(read).CompareModuleFilesAsync(leftMod.Id, rightMod.Id);
+        var result = await NewComparison(read).CompareModuleFilesAsync(leftMod.Id, rightMod.Id);
         result.Should().NotBeNull();
         result!.Added.Should().BeEmpty();
         result.Removed.Should().BeEmpty();
@@ -1052,7 +1055,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var summary = await NewQuery(read).CompareReleasesAsync(leftId, rightId);
+        var summary = await NewComparison(read).CompareReleasesAsync(leftId, rightId);
 
         summary.Should().NotBeNull();
         summary!.Added.Should().BeEmpty();
@@ -1063,7 +1066,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
 
         var leftMod = await read.OeModules.AsNoTracking().Where(m => m.ReleaseId == leftId).SingleAsync();
         var rightMod = await read.OeModules.AsNoTracking().Where(m => m.ReleaseId == rightId).SingleAsync();
-        var pairs = await NewQuery(read).CompareModuleFilesAsync(leftMod.Id, rightMod.Id);
+        var pairs = await NewComparison(read).CompareModuleFilesAsync(leftMod.Id, rightMod.Id);
         pairs.Should().NotBeNull();
         pairs!.Changed.Should().ContainSingle();
         pairs.Added.Should().BeEmpty();
@@ -1083,7 +1086,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             .OrderBy(f => f.Path)
             .FirstAsync();
 
-        var targets = await NewQuery(read).GetCompareTargetsAsync(leftFile.Id);
+        var targets = await NewComparison(read).GetCompareTargetsAsync(leftFile.Id);
         targets.Should().ContainSingle(t => t.ReleaseId == rightId,
             "the right release holds DK Core at the same canonical path");
     }
@@ -1098,7 +1101,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             .OrderBy(f => f.Id)
             .FirstAsync();
 
-        var targets = await NewQuery(read).GetCompareTargetsAsync(anyFile.Id);
+        var targets = await NewComparison(read).GetCompareTargetsAsync(anyFile.Id);
         targets.Should().NotContain(t => t.ReleaseId == releaseId);
     }
 

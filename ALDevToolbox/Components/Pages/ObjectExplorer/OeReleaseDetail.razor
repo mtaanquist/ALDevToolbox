@@ -8,6 +8,7 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @implements IAsyncDisposable
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService Comparison
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
 @inject NavigationManager Nav
 @inject IJSRuntime JS
@@ -520,7 +521,7 @@
                     var (leftId, rightId) = _compareDirection == "ba"
                         ? (otherId, ReleaseId)
                         : (ReleaseId, otherId);
-                    _compareResults = await ObjectExplorer.CompareReleaseFilesFlatAsync(leftId, rightId);
+                    _compareResults = await Comparison.CompareReleaseFilesFlatAsync(leftId, rightId);
                 }
                 break;
         }
