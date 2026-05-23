@@ -569,9 +569,9 @@ public class ObjectExplorerService
             var k = filter.Kind.Trim().ToLowerInvariant();
             q = q.Where(o => o.Kind == k);
         }
-        (q, var tokens) = ApplySearchTokens(q, filter.Search);
+        (q, var tokens) = ObjectSearchRanking.ApplySearchTokens(q, filter.Search);
 
-        return await ExecuteAndRankAsync(q, tokens, take, ct);
+        return await ObjectSearchRanking.ExecuteAndRankAsync(q, tokens, take, ct);
     }
 
     /// <summary>
@@ -608,188 +608,9 @@ public class ObjectExplorerService
             var ns = namespacePrefix.Trim();
             q = q.Where(o => o.Namespace != null && o.Namespace.StartsWith(ns));
         }
-        (q, var tokens) = ApplySearchTokens(q, filter.Search);
+        (q, var tokens) = ObjectSearchRanking.ApplySearchTokens(q, filter.Search);
 
-        return await ExecuteAndRankAsync(q, tokens, take, ct);
-    }
-
-    /// <summary>
-    /// BC "Tell Me" style query parser. Splits the search string into tokens
-    /// and AND's one predicate per token onto the queryable, so every token
-    /// must appear (case-insensitive substring) in the object name for a row
-    /// to match — "sal set" finds "Sales &amp; Receivables Setup" but
-    /// "sal xyz" finds nothing. Three modifiers refine that base behaviour:
-    /// <list type="bullet">
-    ///   <item>a double-quoted run is one literal token with its spaces
-    ///   preserved, so <c>"sales header"</c> matches that exact phrase rather
-    ///   than the two words anywhere in the name;</item>
-    ///   <item>a <c>-</c> prefix negates a token (<c>setup -temp</c> keeps
-    ///   Setup objects but drops any whose name contains "temp");</item>
-    ///   <item>a single bare numeric token preserves the legacy id-or-name
-    ///   behaviour the query API has always offered.</item>
-    /// </list>
-    /// Returns the positive (non-negated) token texts so the caller can rank
-    /// matches; negated tokens only filter and never contribute to the score.
-    /// </summary>
-    private static (IQueryable<ModuleObject> Query, IReadOnlyList<string> Tokens)
-        ApplySearchTokens(IQueryable<ModuleObject> q, string? search)
-    {
-        if (string.IsNullOrWhiteSpace(search))
-            return (q, Array.Empty<string>());
-
-        var tokens = TokenizeSearch(search);
-        if (tokens.Count == 0)
-            return (q, Array.Empty<string>());
-
-        if (tokens.Count == 1 && tokens[0] is { Negated: false, Quoted: false } single
-            && int.TryParse(single.Text, out var asInt))
-        {
-            var lower = single.Text;
-            q = q.Where(o => o.ObjectId == asInt || o.Name.ToLower().Contains(lower));
-            // Numeric path: ranking by name tokens would be misleading
-            // because the id branch matched without a name hit.
-            return (q, Array.Empty<string>());
-        }
-
-        var rankTokens = new List<string>();
-        foreach (var token in tokens)
-        {
-            var text = token.Text;
-            if (token.Negated)
-            {
-                q = q.Where(o => !o.Name.ToLower().Contains(text));
-            }
-            else
-            {
-                q = q.Where(o => o.Name.ToLower().Contains(text));
-                rankTokens.Add(text);
-            }
-        }
-        return (q, rankTokens);
-    }
-
-    private readonly record struct SearchToken(string Text, bool Negated, bool Quoted);
-
-    /// <summary>
-    /// Hand-rolled tokenizer for the search box. Walks the string once,
-    /// honouring an optional leading <c>-</c> (negation) and double-quoted
-    /// runs (a literal phrase, spaces and all). Tokens are lower-cased for
-    /// case-insensitive matching; empty tokens (a lone <c>-</c> or <c>""</c>)
-    /// are dropped.
-    /// </summary>
-    private static List<SearchToken> TokenizeSearch(string search)
-    {
-        var tokens = new List<SearchToken>();
-        var i = 0;
-        var n = search.Length;
-        while (i < n)
-        {
-            while (i < n && char.IsWhiteSpace(search[i])) i++;
-            if (i >= n) break;
-
-            var negated = search[i] == '-';
-            if (negated) i++;
-
-            string text;
-            bool quoted;
-            if (i < n && search[i] == '"')
-            {
-                quoted = true;
-                i++; // opening quote
-                var start = i;
-                while (i < n && search[i] != '"') i++;
-                text = search[start..i];
-                if (i < n) i++; // closing quote
-            }
-            else
-            {
-                quoted = false;
-                var start = i;
-                while (i < n && !char.IsWhiteSpace(search[i])) i++;
-                text = search[start..i];
-            }
-
-            if (text.Length == 0) continue;
-            tokens.Add(new SearchToken(text.ToLowerInvariant(), negated, quoted));
-        }
-        return tokens;
-    }
-
-
-    /// <summary>
-    /// Materialises the filtered query under the legacy (Kind, ObjectId,
-    /// Name) DB order — that order remains the result contract when no
-    /// search is supplied — and, when search tokens are present, re-ranks
-    /// the page in memory so word-boundary hits float above mid-word hits.
-    /// The in-memory pass is bounded by <paramref name="take"/>, so the
-    /// extra work is small even on releases with thousands of objects.
-    /// </summary>
-    private static async Task<List<ReleaseObjectMatch>> ExecuteAndRankAsync(
-        IQueryable<ModuleObject> q,
-        IReadOnlyList<string> tokens,
-        int take,
-        CancellationToken ct)
-    {
-        var rows = await q
-            .OrderBy(o => o.Kind).ThenBy(o => o.ObjectId).ThenBy(o => o.Name)
-            .Take(take)
-            .Select(o => new ReleaseObjectMatch(
-                o.Id, o.Kind, o.ObjectId, o.Name, o.Namespace,
-                o.ModuleId, o.Module!.Name,
-                o.SourceFileId, o.LineNumber,
-                o.SourceFile != null ? o.SourceFile.LineCount : 0))
-            .ToListAsync(ct);
-
-        if (tokens.Count == 0)
-            return rows;
-
-        return rows
-            .Select(r => (Row: r, Score: ScoreNameMatch(r.Name, tokens)))
-            .OrderByDescending(x => x.Score.BoundaryHits)
-            .ThenByDescending(x => x.Score.Earliness)
-            .ThenBy(x => x.Row.Kind)
-            .ThenBy(x => x.Row.ObjectId)
-            .ThenBy(x => x.Row.Name)
-            .Select(x => x.Row)
-            .ToList();
-    }
-
-    /// <summary>
-    /// Scores a candidate name against the parsed search tokens. Returns
-    /// (a) the number of tokens whose first occurrence starts on a word
-    /// boundary (start of name, after a separator, or at a lower→upper
-    /// PascalCase transition), and (b) an "earliness" tally that favours
-    /// tokens appearing near the front of the name. Higher is better on
-    /// both axes; ties fall through to the Kind/ObjectId/Name tiebreakers.
-    /// </summary>
-    private static (int BoundaryHits, int Earliness) ScoreNameMatch(
-        string name, IReadOnlyList<string> tokens)
-    {
-        var lower = name.ToLowerInvariant();
-        var boundaryHits = 0;
-        var earliness = 0;
-        foreach (var token in tokens)
-        {
-            var idx = lower.IndexOf(token, StringComparison.Ordinal);
-            if (idx < 0) continue;
-            earliness -= idx;
-            if (IsWordBoundary(name, idx))
-                boundaryHits++;
-        }
-        return (boundaryHits, earliness);
-    }
-
-    private static bool IsWordBoundary(string original, int index)
-    {
-        if (index == 0) return true;
-        if (index >= original.Length) return false;
-        var prev = original[index - 1];
-        if (prev is ' ' or '.' or '-' or '_' or '&' or '/' or ',' or '(' or ')')
-            return true;
-        // PascalCase boundary: a lowercase character followed by an
-        // uppercase one acts like a word boundary for identifiers such as
-        // SalesHeader, where "Header" should rank like a fresh word.
-        return char.IsLower(prev) && char.IsUpper(original[index]);
+        return await ObjectSearchRanking.ExecuteAndRankAsync(q, tokens, take, ct);
     }
 
     /// <summary>Distinct object kinds in a Release — feeds the "Object type" dropdown.</summary>
@@ -1830,7 +1651,7 @@ public class ObjectExplorerService
                 }
                 else
                 {
-                    idx = IndexOfWord(lineText, row.Name!, cursor);
+                    idx = Services.Al.AlGoToDefinitionLocator.IndexOfWord(lineText, row.Name!, cursor);
                     if (idx < 0) continue;
                     fallbackLen = row.Name!.Length;
                 }
@@ -1864,7 +1685,7 @@ public class ObjectExplorerService
         foreach (var row in extendsRows)
         {
             if (row.Line < 1 || row.Line > lines.Length) continue;
-            var span = FindExtendsTargetSpan(lines[row.Line - 1], row.Name);
+            var span = Services.Al.AlGoToDefinitionLocator.FindExtendsTargetSpan(lines[row.Line - 1], row.Name);
             if (span is null) continue;
             result.Add(new ALDevToolbox.Components.Shared.CodeViewerResolvable(
                 Line: row.Line,
@@ -1874,71 +1695,6 @@ public class ObjectExplorerService
 
         return result;
     }
-
-    /// <summary>
-    /// Finds the column span of <paramref name="targetName"/> within an
-    /// object-header line, but only when it appears after the
-    /// <c>extends</c> keyword. The name may be quoted (the common
-    /// case for AL names with spaces, dots, or other special
-    /// characters) or bare; both forms are returned with their
-    /// 1-based ColumnStart and exclusive-end column. Returns null
-    /// when the line doesn't actually contain an <c>extends</c>
-    /// followed by this target — defensive in case the header was
-    /// reformatted between import and source storage.
-    /// </summary>
-    private static (int Start, int End)? FindExtendsTargetSpan(string lineText, string targetName)
-    {
-        const string keyword = "extends";
-        var kwIdx = lineText.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
-        if (kwIdx < 0) return null;
-        var after = kwIdx + keyword.Length;
-        // `extends` must be followed by whitespace, then the name. If
-        // the keyword appears as part of another identifier (very
-        // unlikely on an object-header line, but cheap to guard
-        // against) bail out.
-        if (after < lineText.Length && IsIdentChar(lineText[after])) return null;
-        while (after < lineText.Length && char.IsWhiteSpace(lineText[after])) after++;
-        if (after >= lineText.Length) return null;
-
-        var quotedTarget = "\"" + targetName + "\"";
-        var quotedIdx = lineText.IndexOf(quotedTarget, after, StringComparison.Ordinal);
-        if (quotedIdx >= 0)
-        {
-            return (quotedIdx + 1, quotedIdx + 1 + quotedTarget.Length);
-        }
-        var bareIdx = IndexOfWord(lineText, targetName, after);
-        if (bareIdx >= 0)
-        {
-            return (bareIdx + 1, bareIdx + 1 + targetName.Length);
-        }
-        return null;
-    }
-
-    /// <summary>
-    /// Word-boundary aware IndexOf — finds <paramref name="word"/> in
-    /// <paramref name="haystack"/> starting at <paramref name="start"/> only
-    /// when the surrounding characters aren't AL identifier characters
-    /// (letter, digit, underscore). Stops <c>Insert</c> from matching inside
-    /// <c>InsertRecord</c>.
-    /// </summary>
-    private static int IndexOfWord(string haystack, string word, int start)
-    {
-        var i = start;
-        while (i <= haystack.Length - word.Length)
-        {
-            var idx = haystack.IndexOf(word, i, StringComparison.Ordinal);
-            if (idx < 0) return -1;
-            var before = idx == 0 || !IsIdentChar(haystack[idx - 1]);
-            var after = idx + word.Length == haystack.Length
-                || !IsIdentChar(haystack[idx + word.Length]);
-            if (before && after) return idx;
-            i = idx + 1;
-        }
-        return -1;
-    }
-
-    private static bool IsIdentChar(char c) =>
-        char.IsLetterOrDigit(c) || c == '_';
 
     /// <summary>
     /// "Find in this file" — extracts the word at the supplied click position

@@ -291,6 +291,67 @@ public static class AlGoToDefinitionLocator
         => char.IsLetterOrDigit(c) || c == '_';
 
     /// <summary>
+    /// Finds the column span of <paramref name="targetName"/> within an
+    /// object-header line, but only when it appears after the <c>extends</c>
+    /// keyword. The name may be quoted (the common case for AL names with
+    /// spaces, dots, or other special characters) or bare; both forms are
+    /// returned with their 1-based ColumnStart and exclusive-end column.
+    /// Returns null when the line doesn't actually contain an <c>extends</c>
+    /// followed by this target — defensive in case the header was reformatted
+    /// between import and source storage.
+    /// </summary>
+    internal static (int Start, int End)? FindExtendsTargetSpan(string lineText, string targetName)
+    {
+        const string keyword = "extends";
+        var kwIdx = lineText.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
+        if (kwIdx < 0) return null;
+        var after = kwIdx + keyword.Length;
+        // `extends` must be followed by whitespace, then the name. If
+        // the keyword appears as part of another identifier (very
+        // unlikely on an object-header line, but cheap to guard
+        // against) bail out.
+        if (after < lineText.Length && IsIdentifierChar(lineText[after])) return null;
+        while (after < lineText.Length && char.IsWhiteSpace(lineText[after])) after++;
+        if (after >= lineText.Length) return null;
+
+        var quotedTarget = "\"" + targetName + "\"";
+        var quotedIdx = lineText.IndexOf(quotedTarget, after, StringComparison.Ordinal);
+        if (quotedIdx >= 0)
+        {
+            return (quotedIdx + 1, quotedIdx + 1 + quotedTarget.Length);
+        }
+        var bareIdx = IndexOfWord(lineText, targetName, after);
+        if (bareIdx >= 0)
+        {
+            return (bareIdx + 1, bareIdx + 1 + targetName.Length);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Word-boundary aware IndexOf — finds <paramref name="word"/> in
+    /// <paramref name="haystack"/> starting at <paramref name="start"/> only
+    /// when the surrounding characters aren't AL identifier characters
+    /// (letter, digit, underscore). Stops <c>Insert</c> from matching inside
+    /// <c>InsertRecord</c>.
+    /// </summary>
+    internal static int IndexOfWord(string haystack, string word, int start)
+    {
+        var i = start;
+        while (i <= haystack.Length - word.Length)
+        {
+            var idx = haystack.IndexOf(word, i, StringComparison.Ordinal);
+            if (idx < 0) return -1;
+            var before = idx == 0 || !IsIdentifierChar(haystack[idx - 1]);
+            var after = idx + word.Length == haystack.Length
+                || !IsIdentifierChar(haystack[idx + word.Length]);
+            if (before && after) return idx;
+            i = idx + 1;
+        }
+        return -1;
+    }
+
+    /// <summary>
     /// Reads the meaningful characters immediately before <paramref name="wordStart"/>
     /// on the line. Used to decide whether the click landed on
     /// <c>X.Word</c> (qualified call), <c>Codeunit::"Word"</c> (typed
