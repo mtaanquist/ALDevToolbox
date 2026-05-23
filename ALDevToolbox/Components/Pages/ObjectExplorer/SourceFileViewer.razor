@@ -1,6 +1,6 @@
 @page "/object-explorer/file/{FileId:long}"
 @attribute [Authorize]
-@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Services.ObjectExplorer.SourceViewerService SourceViewer
 @inject ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService Comparison
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
 @inject ALDevToolbox.Services.ObjectExplorer.ReferenceSessionService ReferenceSessions
@@ -304,12 +304,12 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _header = await ObjectExplorer.GetFileHeaderAsync(FileId);
+        _header = await SourceViewer.GetFileHeaderAsync(FileId);
         if (_header is null) return;
-        _file = await ObjectExplorer.GetFileAsync(FileId);
-        _outline = await ObjectExplorer.GetFileOutlineAsync(FileId);
-        _declarations = await ObjectExplorer.ListDeclarationsInFileAsync(FileId);
-        _resolvables = await ObjectExplorer.ListResolvablesInFileAsync(FileId);
+        _file = await SourceViewer.GetFileAsync(FileId);
+        _outline = await SourceViewer.GetFileOutlineAsync(FileId);
+        _declarations = await SourceViewer.ListDeclarationsInFileAsync(FileId);
+        _resolvables = await SourceViewer.ListResolvablesInFileAsync(FileId);
         _compareTargets = await Comparison.GetCompareTargetsAsync(FileId);
 
         var ctx = Http.HttpContext;

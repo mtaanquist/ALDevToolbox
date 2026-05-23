@@ -626,11 +626,11 @@ public sealed class McpToolTests : IDisposable
 
     private ObjectExplorerTools NewOeTools(Data.AppDbContext ctx)
     {
-        var explorer = new ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService(
-            ctx, NullLogger<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>.Instance);
-        var search = new ALDevToolbox.Services.ObjectExplorer.ObjectSearchService(ctx);
         var references = new ALDevToolbox.Services.ObjectExplorer.ReferenceQueryService(
             ctx, NullLogger<ALDevToolbox.Services.ObjectExplorer.ReferenceQueryService>.Instance);
+        var explorer = new ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService(
+            ctx, references, NullLogger<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>.Instance);
+        var search = new ALDevToolbox.Services.ObjectExplorer.ObjectSearchService(ctx);
         var translations = new ALDevToolbox.Services.ObjectExplorer.TranslationQueryService(ctx);
         return new ObjectExplorerTools(explorer, search, references, translations, ctx);
     }

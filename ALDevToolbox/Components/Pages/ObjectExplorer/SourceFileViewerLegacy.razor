@@ -1,7 +1,7 @@
 @page "/object-explorer/file-legacy/{FileId:long}"
 @attribute [Authorize]
 @rendermode InteractiveServer
-@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Services.ObjectExplorer.SourceViewerService SourceViewer
 @inject IHttpContextAccessor Http
 @inject NavigationManager Nav
 @inject IJSRuntime JS
@@ -178,11 +178,11 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _header = await ObjectExplorer.GetFileHeaderAsync(FileId);
+        _header = await SourceViewer.GetFileHeaderAsync(FileId);
         if (_header is null) return;
-        _file = await ObjectExplorer.GetFileAsync(FileId);
-        _outline = await ObjectExplorer.GetFileOutlineAsync(FileId);
-        _declarations = await ObjectExplorer.ListDeclarationsInFileAsync(FileId);
+        _file = await SourceViewer.GetFileAsync(FileId);
+        _outline = await SourceViewer.GetFileOutlineAsync(FileId);
+        _declarations = await SourceViewer.ListDeclarationsInFileAsync(FileId);
 
         var ctx = Http.HttpContext;
         if (ctx is not null && int.TryParse(ctx.Request.Query["line"], out var line) && line > 0)
@@ -199,7 +199,7 @@
 
     private async Task HandleGoToDefinition(CodeViewerClick click)
     {
-        var target = await ObjectExplorer.GoToDefinitionAsync(FileId, click.Line, click.Column);
+        var target = await SourceViewer.GoToDefinitionAsync(FileId, click.Line, click.Column);
         if (target is null)
         {
             _lastNavigationNotice = "No definition found for that token.";
@@ -238,7 +238,7 @@
 
     private async Task HandleFindInFile(CodeViewerClick click)
     {
-        _findInFile = await ObjectExplorer.FindInFileAsync(FileId, click.Line, click.Column);
+        _findInFile = await SourceViewer.FindInFileAsync(FileId, click.Line, click.Column);
         _lastNavigationNotice = null;
     }
 

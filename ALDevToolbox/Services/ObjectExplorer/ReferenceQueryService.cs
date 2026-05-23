@@ -596,4 +596,53 @@ public sealed class ReferenceQueryService
         string.IsNullOrEmpty(content)
             ? Array.Empty<string>()
             : content.Replace("\r\n", "\n").Split('\n');
+
+    /// <summary>
+    /// Returns the codeunits (across the visible module chain seeded by
+    /// the interface's defining module) that declare themselves as
+    /// implementing the named interface. Backed by the
+    /// <c>implements_interface</c> reference rows emitted at import. Feeds the
+    /// "implemented by" enrichment on both the object outline
+    /// (<see cref="ObjectExplorerService"/>) and the source-file outline
+    /// (<see cref="SourceViewerService"/>).
+    /// </summary>
+    public async Task<List<InterfaceImplementerRow>> FindInterfaceImplementersAsync(
+        long interfaceModuleId, string interfaceName, CancellationToken ct)
+    {
+        // Resolve the release the interface lives in so we can seed the
+        // recursive CTE with it — same shadowing rule as the rest of the
+        // family.
+        var seed = await _db.OeModules.AsNoTracking()
+            .Where(m => m.Id == interfaceModuleId)
+            .Select(m => new { m.ReleaseId, m.AppId })
+            .FirstOrDefaultAsync(ct);
+        if (seed is null) return new();
+
+        const string sql = ReleaseAncestrySql.WinningModules + "\n" + """
+            SELECT
+                so.id                    AS "SourceObjectId",
+                so.name                  AS "SourceObjectName",
+                sm.name                  AS "SourceModuleName"
+            FROM oe_module_references mr
+            JOIN oe_module_objects    so ON so.id = mr.source_object_id
+            JOIN oe_modules           sm ON sm.id = mr.module_id
+            JOIN winning              w  ON w.id  = mr.module_id
+            WHERE mr.reference_kind     = 'implements_interface'
+              AND mr.target_app_id      = {1}::uuid
+              AND mr.target_object_kind = 'interface'
+              AND mr.target_object_name = {2}::text
+            ORDER BY sm.name, so.name
+            """;
+
+        return await _db.Database
+            .SqlQueryRaw<InterfaceImplementerRow>(sql, seed.ReleaseId, seed.AppId, interfaceName)
+            .ToListAsync(ct);
+    }
 }
+
+/// <summary>One codeunit that implements an interface — see
+/// <see cref="ReferenceQueryService.FindInterfaceImplementersAsync"/>.</summary>
+public sealed record InterfaceImplementerRow(
+    long SourceObjectId,
+    string SourceObjectName,
+    string SourceModuleName);

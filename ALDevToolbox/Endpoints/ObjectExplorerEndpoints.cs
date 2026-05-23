@@ -217,10 +217,10 @@ internal static class ObjectExplorerEndpoints
             long fileId,
             int line,
             int column,
-            ObjectExplorerService oe,
+            SourceViewerService viewer,
             CancellationToken ct) =>
         {
-            var target = await oe.GoToDefinitionAsync(fileId, line, column, ct);
+            var target = await viewer.GoToDefinitionAsync(fileId, line, column, ct);
             return target is null ? Results.NoContent() : Results.Ok(target);
         }).RequireAuthorization();
 
@@ -228,10 +228,10 @@ internal static class ObjectExplorerEndpoints
             long fileId,
             int line,
             int column,
-            ObjectExplorerService oe,
+            SourceViewerService viewer,
             CancellationToken ct) =>
         {
-            var result = await oe.FindInFileAsync(fileId, line, column, ct);
+            var result = await viewer.FindInFileAsync(fileId, line, column, ct);
             return result is null ? Results.NoContent() : Results.Ok(result);
         }).RequireAuthorization();
 
@@ -240,10 +240,10 @@ internal static class ObjectExplorerEndpoints
         // under the file's path basename rather than rendering it inline.
         app.MapGet("/api/object-explorer/files/{fileId:long}/download", async (
             long fileId,
-            ObjectExplorerService oe,
+            SourceViewerService viewer,
             CancellationToken ct) =>
         {
-            var file = await oe.GetFileAsync(fileId, ct);
+            var file = await viewer.GetFileAsync(fileId, ct);
             if (file is null) return Results.NotFound();
             var fileName = file.Path;
             var slash = fileName.LastIndexOf('/');

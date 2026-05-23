@@ -1,6 +1,6 @@
 @page "/object-explorer/compare/file"
 @attribute [Authorize]
-@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Services.ObjectExplorer.SourceViewerService SourceViewer
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Services.ObjectExplorer
@@ -85,20 +85,20 @@
         if (!long.TryParse(ctx.Request.Query["left"], out var leftId)) return;
         if (!long.TryParse(ctx.Request.Query["right"], out var rightId)) return;
 
-        _leftHeader = await ObjectExplorer.GetFileHeaderAsync(leftId);
-        _rightHeader = await ObjectExplorer.GetFileHeaderAsync(rightId);
+        _leftHeader = await SourceViewer.GetFileHeaderAsync(leftId);
+        _rightHeader = await SourceViewer.GetFileHeaderAsync(rightId);
         if (_leftHeader is null || _rightHeader is null) return;
 
-        _left = await ObjectExplorer.GetFileAsync(leftId);
-        _right = await ObjectExplorer.GetFileAsync(rightId);
+        _left = await SourceViewer.GetFileAsync(leftId);
+        _right = await SourceViewer.GetFileAsync(rightId);
         if (_left is null || _right is null) return;
 
         var model = SideBySideDiffBuilder.Diff(_left.Content, _right.Content);
         _leftDiffJson = CompareFileDiffSerializer.SerializeSide(model.OldText);
         _rightDiffJson = CompareFileDiffSerializer.SerializeSide(model.NewText);
 
-        var leftOutline = await ObjectExplorer.GetFileOutlineAsync(leftId);
-        var rightOutline = await ObjectExplorer.GetFileOutlineAsync(rightId);
+        var leftOutline = await SourceViewer.GetFileOutlineAsync(leftId);
+        var rightOutline = await SourceViewer.GetFileOutlineAsync(rightId);
         _leftProceduresJson = SerializeProcedures(leftOutline);
         _rightProceduresJson = SerializeProcedures(rightOutline);
     }

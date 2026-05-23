@@ -34,7 +34,10 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             NullLogger<ReleaseImportService>.Instance);
 
     private ObjectExplorerService NewQuery(Data.AppDbContext ctx) =>
-        new(ctx, NullLogger<ObjectExplorerService>.Instance);
+        new(ctx, NewReferences(ctx), NullLogger<ObjectExplorerService>.Instance);
+
+    private SourceViewerService NewSourceViewer(Data.AppDbContext ctx) =>
+        new(ctx, NewReferences(ctx));
 
     private ReleaseComparisonService NewComparison(Data.AppDbContext ctx) =>
         new(ctx, NullLogger<ReleaseComparisonService>.Instance);
@@ -357,7 +360,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var fileId = ctx.OeModuleFiles.AsQueryable()
             .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
 
-        var header = await NewQuery(ctx).GetFileHeaderAsync(fileId);
+        var header = await NewSourceViewer(ctx).GetFileHeaderAsync(fileId);
         header.Should().NotBeNull();
         header!.ModuleName.Should().Be("DK Core");
         header.ReleaseLabel.Should().Be("BC 25.18 DK");
@@ -402,7 +405,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var fileId = read.OeModuleFiles.AsQueryable()
             .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
 
-        var decls = await NewQuery(read).ListDeclarationsInFileAsync(fileId);
+        var decls = await NewSourceViewer(read).ListDeclarationsInFileAsync(fileId);
         decls.Should().NotBeEmpty();
         // The codeunit name lives on its declaration line; the helper must
         // surface columns matching the quoted-or-bare token.
@@ -428,7 +431,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var fileId = read.OeModuleFiles.AsQueryable()
             .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
 
-        var decls = await NewQuery(read).ListDeclarationsInFileAsync(fileId);
+        var decls = await NewSourceViewer(read).ListDeclarationsInFileAsync(fileId);
 
         decls.Where(d => d.IsMemberSymbol).Should().NotBeEmpty(
             because: "the event subscribers codeunit declares procedures / event subscribers");
@@ -448,7 +451,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     {
         await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewSourceViewer(read);
 
         // Find the declarations on DK Core's event-subscribers file, then
         // simulate a click on the codeunit's name token there. The resolver
@@ -472,7 +475,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         // a declaration token) lands on the procedure's source line.
         await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewSourceViewer(read);
 
         // Pick any resolved method_call row from the fixture so the test is
         // robust against the fixture's churn — we assert behaviour, not a
@@ -519,7 +522,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     {
         await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewSourceViewer(read);
 
         // Find a file that has at least one resolved member-access row so
         // we know the resolvables list won't be trivially empty.
@@ -559,7 +562,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     {
         await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewSourceViewer(read);
         var fileId = read.OeModuleFiles.AsQueryable()
             .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
         var decl = (await query.ListDeclarationsInFileAsync(fileId)).First();
@@ -578,7 +581,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var fileId = read.OeModuleFiles.AsQueryable()
             .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
 
-        var outline = await NewQuery(read).GetFileOutlineAsync(fileId);
+        var outline = await NewSourceViewer(read).GetFileOutlineAsync(fileId);
         outline.Should().NotBeEmpty();
         outline.Select(o => o.LineNumber).Should().BeInAscendingOrder();
     }
@@ -597,7 +600,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var fileId = read.OeModuleFiles.AsQueryable()
             .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
 
-        var outline = await NewQuery(read).GetFileOutlineAsync(fileId);
+        var outline = await NewSourceViewer(read).GetFileOutlineAsync(fileId);
 
         outline.Should().Contain(i =>
                 i.Kind == "procedure"
