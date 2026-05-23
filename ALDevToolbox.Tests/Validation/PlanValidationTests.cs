@@ -159,7 +159,7 @@ public sealed class PlanValidationTests : IDisposable
         return new GenerationService(
             ctx,
             _db.NewOrganizationConfigService(ctx),
-            new TemplateService(ctx, NullLogger<TemplateService>.Instance, _db.OrgContext),
+            new FolderTreeHydrator(ctx),
             _db.OrgContext,
             mustache,
             new ALDevToolbox.Services.Generation.WorkspaceZipBuilder(mustache, new WorkspaceConfigService(ctx)),

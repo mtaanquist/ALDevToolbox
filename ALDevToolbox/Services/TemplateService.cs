@@ -23,20 +23,6 @@ public class TemplateService
     /// <summary>Accepts BC's runtime formats: bare major (<c>15</c>) or Major.Minor (<c>15.2</c>).</summary>
     private static readonly Regex RuntimeFormatRegex = new(@"^\d+(\.\d+)?$", RegexOptions.Compiled);
 
-    /// <summary>
-    /// Valid path-segment for a folder or file. No slashes, no <c>..</c>, no
-    /// leading/trailing whitespace, non-empty. Used for every recursive
-    /// <c>workspace_extension_folders.path</c> and
-    /// <c>workspace_extension_files.path</c>.
-    /// </summary>
-
-    /// <summary>
-    /// Valid extension <c>path</c> (the stable identifier and ZIP folder name).
-    /// Letters / digits / hyphens / underscores, must start with a letter.
-    /// Matches the convention in <c>.design/unified-extensions.md</c> sample
-    /// templates (<c>Core</c>, <c>Hotfix</c>, <c>document-capture</c>).
-    /// </summary>
-
     private static readonly JsonSerializerOptions JsonOptions = PersistenceJson.Options;
 
     /// <summary>
@@ -54,12 +40,14 @@ public class TemplateService
     private readonly AppDbContext _db;
     private readonly ILogger<TemplateService> _logger;
     private readonly IOrganizationContext _orgContext;
+    private readonly FolderTreeHydrator _folderTree;
 
-    public TemplateService(AppDbContext db, ILogger<TemplateService> logger, IOrganizationContext orgContext)
+    public TemplateService(AppDbContext db, ILogger<TemplateService> logger, IOrganizationContext orgContext, FolderTreeHydrator folderTree)
     {
         _db = db;
         _logger = logger;
         _orgContext = orgContext;
+        _folderTree = folderTree;
     }
 
     private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
@@ -130,132 +118,6 @@ public class TemplateService
             .FirstOrDefaultAsync(ct);
 
     /// <summary>
-    /// Hydrates the recursive folder/file tree on every <see cref="WorkspaceExtension"/>
-    /// of every supplied template. Issues two flat queries and reassembles
-    /// parent/child links client-side — the same pattern <c>GenerationService</c>
-    /// uses, because EF's <c>ThenInclude</c> only recurses two hops. Safe to
-    /// call on <c>AsNoTracking</c> reads.
-    /// </summary>
-    public async Task HydrateExtensionFolderTreeAsync(
-        IEnumerable<RuntimeTemplate> templates,
-        CancellationToken ct = default,
-        bool ignoreOrgFilter = false)
-    {
-        var allExtensions = templates.SelectMany(t => t.WorkspaceExtensions).ToList();
-        if (allExtensions.Count == 0) return;
-
-        var extensionIds = allExtensions.Select(e => e.Id).ToList();
-        IQueryable<WorkspaceExtensionFolder> folderQuery = _db.WorkspaceExtensionFolders.AsNoTracking();
-        IQueryable<WorkspaceExtensionFile> fileQuery = _db.WorkspaceExtensionFiles.AsNoTracking();
-        if (ignoreOrgFilter)
-        {
-            folderQuery = folderQuery.IgnoreQueryFilters();
-            fileQuery = fileQuery.IgnoreQueryFilters();
-        }
-        var folders = await folderQuery
-            .Where(f => extensionIds.Contains(f.WorkspaceExtensionId))
-            .OrderBy(f => f.Ordering)
-            .ToListAsync(ct);
-        var folderIds = folders.Select(f => f.Id).ToList();
-        var files = folderIds.Count == 0
-            ? new List<WorkspaceExtensionFile>()
-            : await fileQuery
-                .Where(f => folderIds.Contains(f.WorkspaceExtensionFolderId))
-                .OrderBy(f => f.Ordering)
-                .ToListAsync(ct);
-
-        var foldersById = folders.ToDictionary(f => f.Id);
-        var extensionsById = allExtensions.ToDictionary(e => e.Id);
-
-        foreach (var ext in allExtensions) ext.Folders.Clear();
-        foreach (var folder in folders)
-        {
-            folder.Folders.Clear();
-            folder.Files.Clear();
-        }
-        foreach (var folder in folders)
-        {
-            if (folder.ParentFolderId is int parentId && foldersById.TryGetValue(parentId, out var parent))
-            {
-                parent.Folders.Add(folder);
-            }
-            else if (extensionsById.TryGetValue(folder.WorkspaceExtensionId, out var ext))
-            {
-                ext.Folders.Add(folder);
-            }
-        }
-        foreach (var file in files)
-        {
-            if (foldersById.TryGetValue(file.WorkspaceExtensionFolderId, out var folder))
-            {
-                folder.Files.Add(file);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Hydrates the recursive <see cref="Module.ExtensionFolders"/> tree on
-    /// every supplied module. Same flat-query + client-side reassembly pattern
-    /// as <see cref="HydrateExtensionFolderTreeAsync(IEnumerable{RuntimeTemplate}, CancellationToken)"/>.
-    /// </summary>
-    public async Task HydrateModuleExtensionFolderTreeAsync(
-        IEnumerable<Module> modules,
-        CancellationToken ct = default,
-        bool ignoreOrgFilter = false)
-    {
-        var moduleList = modules.ToList();
-        if (moduleList.Count == 0) return;
-
-        var moduleIds = moduleList.Select(m => m.Id).ToList();
-        IQueryable<ModuleExtensionFolder> folderQuery = _db.ModuleExtensionFolders.AsNoTracking();
-        IQueryable<ModuleExtensionFile> fileQuery = _db.ModuleExtensionFiles.AsNoTracking();
-        if (ignoreOrgFilter)
-        {
-            folderQuery = folderQuery.IgnoreQueryFilters();
-            fileQuery = fileQuery.IgnoreQueryFilters();
-        }
-        var folders = await folderQuery
-            .Where(f => moduleIds.Contains(f.ModuleId))
-            .OrderBy(f => f.Ordering)
-            .ToListAsync(ct);
-        var folderIds = folders.Select(f => f.Id).ToList();
-        var files = folderIds.Count == 0
-            ? new List<ModuleExtensionFile>()
-            : await fileQuery
-                .Where(f => folderIds.Contains(f.ModuleExtensionFolderId))
-                .OrderBy(f => f.Ordering)
-                .ToListAsync(ct);
-
-        var foldersById = folders.ToDictionary(f => f.Id);
-        var modulesById = moduleList.ToDictionary(m => m.Id);
-
-        foreach (var module in moduleList) module.ExtensionFolders.Clear();
-        foreach (var folder in folders)
-        {
-            folder.Folders.Clear();
-            folder.Files.Clear();
-        }
-        foreach (var folder in folders)
-        {
-            if (folder.ParentFolderId is int parentId && foldersById.TryGetValue(parentId, out var parent))
-            {
-                parent.Folders.Add(folder);
-            }
-            else if (modulesById.TryGetValue(folder.ModuleId, out var module))
-            {
-                module.ExtensionFolders.Add(folder);
-            }
-        }
-        foreach (var file in files)
-        {
-            if (foldersById.TryGetValue(file.ModuleExtensionFolderId, out var folder))
-            {
-                folder.Files.Add(file);
-            }
-        }
-    }
-
-    /// <summary>
     /// Loads an existing template into its <see cref="TemplateAuthoring"/>
     /// representation — the same shape the TOML mapper produces — so the
     /// structured admin form binds to a single canonical model regardless of
@@ -279,7 +141,7 @@ public class TemplateService
 
         if (template is null) return null;
 
-        await HydrateExtensionFolderTreeAsync(template, ct);
+        await _folderTree.HydrateExtensionFolderTreeAsync(new[] { template }, ct);
 
         var extensions = template.WorkspaceExtensions
             .OrderBy(e => e.Ordering)
@@ -316,9 +178,6 @@ public class TemplateService
                 .ToList(),
             DefaultApplicationVersionLatest: template.DefaultApplicationVersionLatest);
     }
-
-    private Task HydrateExtensionFolderTreeAsync(RuntimeTemplate template, CancellationToken ct)
-        => HydrateExtensionFolderTreeAsync(new[] { template }, ct);
 
     public Task<List<Module>> GetModulesAsync(bool includeDeprecated = true, CancellationToken ct = default)
     {

@@ -89,7 +89,7 @@ public sealed class CrossOrgConfigIsolationTests : IDisposable
         var gen = new GenerationService(
             genCtx,
             _db.NewOrganizationConfigService(genCtx),
-            new TemplateService(genCtx, NullLogger<TemplateService>.Instance, _db.OrgContext),
+            new FolderTreeHydrator(genCtx),
             _db.OrgContext,
             mustache,
             new ALDevToolbox.Services.Generation.WorkspaceZipBuilder(mustache, new WorkspaceConfigService(genCtx)),

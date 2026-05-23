@@ -22,20 +22,20 @@ public sealed class TemplateImportService
 {
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
-    private readonly TemplateService _templates;
+    private readonly FolderTreeHydrator _folderTree;
     private readonly StorageQuotaGuard _quotaGuard;
     private readonly ILogger<TemplateImportService> _logger;
 
     public TemplateImportService(
         AppDbContext db,
         IOrganizationContext orgContext,
-        TemplateService templates,
+        FolderTreeHydrator folderTree,
         StorageQuotaGuard quotaGuard,
         ILogger<TemplateImportService> logger)
     {
         _db = db;
         _orgContext = orgContext;
-        _templates = templates;
+        _folderTree = folderTree;
         _quotaGuard = quotaGuard;
         _logger = logger;
     }
@@ -180,10 +180,10 @@ public sealed class TemplateImportService
         // Source extensions only carry their dependencies via Include. The
         // recursive folder/file tree is loaded flat below and reassembled —
         // EF doesn't recurse on Include and AsNoTracking doesn't do fixup.
-        // Delegate to TemplateService so workspace generation, template
+        // Delegate to FolderTreeHydrator so workspace generation, template
         // authoring, and cross-org imports share one implementation (#77).
         // ignoreOrgFilter: the source is the system org, not the acting one.
-        await _templates.HydrateExtensionFolderTreeAsync(new[] { source }, ct, ignoreOrgFilter: true);
+        await _folderTree.HydrateExtensionFolderTreeAsync(new[] { source }, ct, ignoreOrgFilter: true);
 
         var localModulesByKey = new Dictionary<string, Module>(StringComparer.Ordinal);
         var sourceModules = source.DefaultModules
@@ -191,7 +191,7 @@ public sealed class TemplateImportService
             .GroupBy(m => m.Key)
             .Select(g => g.First())
             .ToList();
-        await _templates.HydrateModuleExtensionFolderTreeAsync(sourceModules, ct, ignoreOrgFilter: true);
+        await _folderTree.HydrateModuleExtensionFolderTreeAsync(sourceModules, ct, ignoreOrgFilter: true);
         foreach (var sourceModule in sourceModules)
         {
             localModulesByKey[sourceModule.Key] = await EnsureModuleAsync(sourceModule, actingOrgId, now, ct);

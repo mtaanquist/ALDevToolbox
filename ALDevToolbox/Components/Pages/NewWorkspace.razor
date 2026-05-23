@@ -2,6 +2,7 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode InteractiveServer
 @inject TemplateService Templates
+@inject FolderTreeHydrator FolderTree
 @inject ApplicationVersionService Versions
 @inject OrganizationConfigService OrgConfig
 @using ALDevToolbox.Components.Shared
@@ -290,8 +291,8 @@
         // top so the live preview can walk each extension's real layout
         // without an extra round-trip when the user picks a template or
         // toggles a module.
-        await Templates.HydrateExtensionFolderTreeAsync(_templates);
-        await Templates.HydrateModuleExtensionFolderTreeAsync(_modules);
+        await FolderTree.HydrateExtensionFolderTreeAsync(_templates);
+        await FolderTree.HydrateModuleExtensionFolderTreeAsync(_modules);
         _applicationVersions = await Versions.GetActiveAsync(includeDeprecated: false);
         _orgConfig = await OrgConfig.GetCurrentAsync();
         // Pre-fill the brief / description from the org's defaults block

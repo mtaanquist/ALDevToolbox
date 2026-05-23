@@ -187,7 +187,7 @@ public sealed class BulkActionTests : IDisposable
     }
 
     private TemplateService NewTemplateService(AppDbContext ctx) =>
-        new(ctx, NullLogger<TemplateService>.Instance, _db.OrgContext);
+        new(ctx, NullLogger<TemplateService>.Instance, _db.OrgContext, new FolderTreeHydrator(ctx));
 
     private ModuleService NewModuleService(AppDbContext ctx) =>
         new(ctx, NullLogger<ModuleService>.Instance, _db.OrgContext);

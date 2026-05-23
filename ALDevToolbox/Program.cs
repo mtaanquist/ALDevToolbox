@@ -134,6 +134,7 @@ builder.Services.AddDbContext<AppDbContext>((sp, options) =>
         .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
         .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
 
+builder.Services.AddScoped<FolderTreeHydrator>();
 builder.Services.AddScoped<TemplateService>();
 builder.Services.AddScoped<RecipeService>();
 builder.Services.AddScoped<RecipeSuggestionService>();

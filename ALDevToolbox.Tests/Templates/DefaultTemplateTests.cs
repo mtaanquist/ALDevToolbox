@@ -191,5 +191,5 @@ public sealed class DefaultTemplateTests : IDisposable
     }
 
     private TemplateService NewTemplateService(ALDevToolbox.Data.AppDbContext ctx) =>
-        new(ctx, NullLogger<TemplateService>.Instance, _db.OrgContext);
+        new(ctx, NullLogger<TemplateService>.Instance, _db.OrgContext, new FolderTreeHydrator(ctx));
 }

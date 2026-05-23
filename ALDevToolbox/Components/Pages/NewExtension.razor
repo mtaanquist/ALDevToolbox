@@ -2,6 +2,7 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode InteractiveServer
 @inject TemplateService Templates
+@inject FolderTreeHydrator FolderTree
 @inject ApplicationVersionService Versions
 @inject WorkspaceConfigService Configs
 @inject OrganizationConfigService OrgConfig
@@ -322,8 +323,8 @@
         // top so the standalone preview can walk the template's scaffold
         // extension and the sibling-workspace preview can render real module
         // trees alongside the new extension.
-        await Templates.HydrateExtensionFolderTreeAsync(_templates);
-        await Templates.HydrateModuleExtensionFolderTreeAsync(_modules);
+        await FolderTree.HydrateExtensionFolderTreeAsync(_templates);
+        await FolderTree.HydrateModuleExtensionFolderTreeAsync(_modules);
         _applicationVersions = await Versions.GetActiveAsync(includeDeprecated: false);
         _orgConfig = await OrgConfig.GetCurrentAsync();
         // Prefer the per-org default template; fall back to the first row so
