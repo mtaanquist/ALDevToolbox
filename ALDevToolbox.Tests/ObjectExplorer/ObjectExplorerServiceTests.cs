@@ -1,3 +1,4 @@
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using ALDevToolbox.Services.ObjectExplorer;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
@@ -180,6 +181,118 @@ public sealed class ObjectExplorerServiceTests : IDisposable
                     "within a Kind block, results are ordered by ObjectId");
             }
         }
+    }
+
+    /// <summary>
+    /// Adds synthetic objects to the first module of <paramref name="releaseId"/>
+    /// so the search-ranking tests have deterministic names to assert on
+    /// rather than leaning on fixture-specific object naming.
+    /// </summary>
+    private async Task SeedObjectsAsync(int releaseId, params (string Name, int ObjectId)[] objects)
+    {
+        await using var write = _db.NewContext();
+        var moduleId = await write.OeModules
+            .Where(m => m.ReleaseId == releaseId)
+            .Select(m => m.Id)
+            .FirstAsync();
+        foreach (var (name, objectId) in objects)
+        {
+            write.OeModuleObjects.Add(new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = moduleId,
+                Kind = "table",
+                ObjectId = objectId,
+                Name = name,
+                LineNumber = 1,
+            });
+        }
+        await write.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task SearchObjectsInReleaseAsync_matches_all_whitespace_separated_tokens()
+    {
+        // BC "Tell Me" style: the search box splits on whitespace and every
+        // token has to appear (case-insensitive substring) in the object
+        // name. "sal set" finds "Sales & Receivables Setup"; flipping one
+        // token to garbage drops the row from the result set.
+        var releaseId = await SeedSingleReleaseAsync();
+        await SeedObjectsAsync(releaseId, ("Sales & Receivables Setup", 9000050));
+        await using var read = _db.NewContext();
+        var query = NewQuery(read);
+
+        var hits = await query.SearchObjectsInReleaseAsync(releaseId,
+            new ObjectListFilter(Search: "sal set"));
+        hits.Should().Contain(h => h.Name == "Sales & Receivables Setup");
+
+        var miss = await query.SearchObjectsInReleaseAsync(releaseId,
+            new ObjectListFilter(Search: "sal xyz"));
+        miss.Should().NotContain(h => h.Name == "Sales & Receivables Setup");
+    }
+
+    [Fact]
+    public async Task SearchObjectsInReleaseAsync_single_numeric_token_still_matches_by_id()
+    {
+        // The numeric-id path is the long-standing contract for the search
+        // box: typing an object number finds the row with that ObjectId
+        // even when no name token matches. The token parser must keep
+        // routing single-number queries through that path.
+        var releaseId = await SeedSingleReleaseAsync();
+        await SeedObjectsAsync(releaseId, ("Posted Sales Invoice", 9000060));
+        await using var read = _db.NewContext();
+
+        var hits = await NewQuery(read).SearchObjectsInReleaseAsync(releaseId,
+            new ObjectListFilter(Search: "9000060"));
+        hits.Should().Contain(h => h.ObjectId == 9000060 && h.Name == "Posted Sales Invoice");
+    }
+
+    [Fact]
+    public async Task SearchObjectsInReleaseAsync_ranks_word_boundary_hits_above_mid_word_hits()
+    {
+        // Two rows share a token but differ on where it lands: "Header
+        // Field" starts with "head" (boundary hit); "subheaderness widget"
+        // buries "head" mid-word. The ranker must surface the boundary hit
+        // first.
+        var releaseId = await SeedSingleReleaseAsync();
+        await SeedObjectsAsync(releaseId,
+            ("subheaderness widget", 9000001),
+            ("Header Field", 9000002));
+
+        await using var read = _db.NewContext();
+        var hits = await NewQuery(read).SearchObjectsInReleaseAsync(releaseId,
+            new ObjectListFilter(Search: "head"));
+
+        var boundaryIdx = hits.FindIndex(h => h.Name == "Header Field");
+        var midWordIdx = hits.FindIndex(h => h.Name == "subheaderness widget");
+        boundaryIdx.Should().BeGreaterOrEqualTo(0);
+        midWordIdx.Should().BeGreaterOrEqualTo(0);
+        boundaryIdx.Should().BeLessThan(midWordIdx,
+            because: "word-boundary token hits rank above mid-word hits");
+    }
+
+    [Fact]
+    public async Task SearchObjectsInReleaseAsync_pascal_case_boundaries_count_as_word_boundaries()
+    {
+        // Identifier-style names ("SalesHeader") have no separator, but
+        // the lower→upper transition reads like a word boundary to a BC
+        // dev. "head" in "SalesHeader" should outrank "head" buried in
+        // "unsalesheaderwrap".
+        var releaseId = await SeedSingleReleaseAsync();
+        await SeedObjectsAsync(releaseId,
+            ("SalesHeader", 9000010),
+            ("unsalesheaderwrap", 9000011));
+
+        await using var read = _db.NewContext();
+        var hits = await NewQuery(read).SearchObjectsInReleaseAsync(releaseId,
+            new ObjectListFilter(Search: "head"));
+
+        var pascalIdx = hits.FindIndex(h => h.Name == "SalesHeader");
+        var nonBoundaryIdx = hits.FindIndex(h => h.Name == "unsalesheaderwrap");
+        pascalIdx.Should().BeGreaterOrEqualTo(0);
+        nonBoundaryIdx.Should().BeGreaterOrEqualTo(0);
+        pascalIdx.Should().BeLessThan(nonBoundaryIdx,
+            because: "lower→upper PascalCase transitions count as word boundaries");
     }
 
     [Fact]
