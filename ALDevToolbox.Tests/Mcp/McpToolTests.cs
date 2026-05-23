@@ -628,7 +628,8 @@ public sealed class McpToolTests : IDisposable
     {
         var explorer = new ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService(
             ctx, NullLogger<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>.Instance);
-        return new ObjectExplorerTools(explorer, ctx);
+        var translations = new ALDevToolbox.Services.ObjectExplorer.TranslationQueryService(ctx);
+        return new ObjectExplorerTools(explorer, translations, ctx);
     }
 
     [Fact]

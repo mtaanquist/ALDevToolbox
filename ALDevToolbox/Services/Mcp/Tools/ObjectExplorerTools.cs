@@ -21,11 +21,13 @@ public sealed class ObjectExplorerTools
     private const int MaxResults = 200;
 
     private readonly ObjectExplorerService _explorer;
+    private readonly TranslationQueryService _translations;
     private readonly AppDbContext _db;
 
-    public ObjectExplorerTools(ObjectExplorerService explorer, AppDbContext db)
+    public ObjectExplorerTools(ObjectExplorerService explorer, TranslationQueryService translations, AppDbContext db)
     {
         _explorer = explorer;
+        _translations = translations;
         _db = db;
     }
 
@@ -195,7 +197,7 @@ public sealed class ObjectExplorerTools
         CancellationToken ct = default)
     {
         var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
-        return await _explorer.ListTranslationLanguagesAsync(releaseId, ct);
+        return await _translations.ListTranslationLanguagesAsync(releaseId, ct);
     }
 
     [McpServerTool(Name = "search_translations", ReadOnly = true)]
@@ -218,7 +220,7 @@ public sealed class ObjectExplorerTools
         {
             set.Add(raw);
         }
-        return await _explorer.SearchTranslationsInReleaseAsync(
+        return await _translations.SearchTranslationsInReleaseAsync(
             releaseId, query, language, set, moduleNamePattern, MaxResults, ct);
     }
 

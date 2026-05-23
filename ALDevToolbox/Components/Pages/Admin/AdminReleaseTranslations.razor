@@ -1,6 +1,7 @@
 @page "/admin/object-explorer/release/{ReleaseId:int}/translations"
 @attribute [Authorize(Roles = "Admin,Editor")]
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Services.ObjectExplorer.TranslationQueryService Translations
 @inject IAntiforgery Antiforgery
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Services.ObjectExplorer
@@ -209,9 +210,9 @@
                 IncludeTest: true,
                 IncludeInternal: true,
                 IncludeLanguagePack: true));
-        _languages = await ObjectExplorer.ListTranslationLanguagesAsync(ReleaseId);
+        _languages = await Translations.ListTranslationLanguagesAsync(ReleaseId);
 
-        var perModule = await ObjectExplorer.ListModuleTranslationLanguagesAsync(ReleaseId);
+        var perModule = await Translations.ListModuleTranslationLanguagesAsync(ReleaseId);
         _languagesByModule = perModule
             .GroupBy(r => r.ModuleId)
             .ToDictionary(g => g.Key, g => g.OrderBy(r => r.LanguageCode).ToList());
