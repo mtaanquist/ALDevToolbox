@@ -165,7 +165,7 @@ public static class AppPackageReader
                 "a root-level nested .app inside the Ready2Run wrapper");
         }
 
-        using var innerStream = inner.Open();
+        using var innerStream = OpenCapped(inner);
         using var buffer = new MemoryStream();
         await innerStream.CopyToAsync(buffer, ct).ConfigureAwait(false);
         return buffer.ToArray();
@@ -242,6 +242,92 @@ public static class AppPackageReader
         using var buffer = new MemoryStream();
         await s.CopyToAsync(buffer, ct).ConfigureAwait(false);
         return buffer.ToArray();
+    }
+
+    /// <summary>
+    /// Per-entry uncompressed ceiling for nested archive entries. The upload
+    /// is capped (MaxUploadBytes), but a single ZIP entry can deflate at a
+    /// huge ratio, so a bomb inside an otherwise-small <c>.app</c> could still
+    /// exhaust memory. Bound each entry well above any real BC payload (a
+    /// base-app source file is a few hundred KB; the nested <c>.app</c> a few
+    /// hundred MB) yet far below "exhaust the host".
+    /// </summary>
+    public const long MaxEntryBytes = 1L * 1024 * 1024 * 1024; // 1 GiB
+
+    /// <summary>
+    /// Opens <paramref name="entry"/> for reading through a wrapper that aborts
+    /// once <see cref="MaxEntryBytes"/> bytes have been produced. Also rejects
+    /// up front when the central-directory <see cref="ZipArchiveEntry.Length"/>
+    /// already declares an over-limit entry — but the streaming guard is the
+    /// real defence, because that declared length can lie. Preserves the
+    /// behaviour of callers that wrap the result in a <see cref="StreamReader"/>
+    /// or <see cref="Stream.CopyToAsync(Stream)"/>.
+    /// </summary>
+    public static Stream OpenCapped(ZipArchiveEntry entry, long maxBytes = MaxEntryBytes)
+    {
+        if (entry.Length > maxBytes)
+        {
+            throw new InvalidOperationException(
+                $"Archive entry '{entry.FullName}' reports {entry.Length:N0} bytes, over the {maxBytes:N0}-byte limit.");
+        }
+        return new LengthCappedStream(entry.Open(), maxBytes, entry.FullName);
+    }
+
+    /// <summary>
+    /// Read-only pass-through stream that throws once more than
+    /// <c>maxBytes</c> have been read from the inner (decompressing) stream —
+    /// a zip-bomb tripwire that doesn't trust the archive's declared sizes.
+    /// </summary>
+    private sealed class LengthCappedStream : Stream
+    {
+        private readonly Stream _inner;
+        private readonly long _maxBytes;
+        private readonly string _entryName;
+        private long _read;
+
+        public LengthCappedStream(Stream inner, long maxBytes, string entryName)
+        {
+            _inner = inner;
+            _maxBytes = maxBytes;
+            _entryName = entryName;
+        }
+
+        private int Track(int read)
+        {
+            _read += read;
+            if (_read > _maxBytes)
+            {
+                throw new InvalidOperationException(
+                    $"Archive entry '{_entryName}' exceeded the {_maxBytes:N0}-byte limit while decompressing (possible zip bomb).");
+            }
+            return read;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => Track(_inner.Read(buffer, offset, count));
+
+        public override int Read(Span<byte> buffer) => Track(_inner.Read(buffer));
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            => Track(await _inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false));
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => _inner.Length;
+        public override long Position { get => _inner.Position; set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _inner.Dispose();
+            base.Dispose(disposing);
+        }
     }
 
     // ── Manifest ────────────────────────────────────────────────────────
@@ -567,7 +653,7 @@ public static class AppPackageReader
             // shape.
             var rel = NormalizeSourcePath(entry.FullName);
 
-            using var s = entry.Open();
+            using var s = OpenCapped(entry);
             using var reader = new StreamReader(s);
             var content = reader.ReadToEnd();
             files.Add(new AppSourceFile(rel, content));

@@ -45,31 +45,42 @@ internal static class PerTenantBackupJson
 
         var batch = new StringBuilder();
         batch.Append('[');
+        // The budget is a *byte* ceiling (PostgreSQL's jsonb limit is in bytes),
+        // so track UTF-8 byte counts — not StringBuilder.Length, which counts
+        // UTF-16 chars and undercounts multibyte content (CJK, emoji, accented
+        // text) by up to ~3x. Start at 1 for the opening '['.
+        long batchBytes = 1;
         var count = 0;
 
         await foreach (var element in JsonSerializer.DeserializeAsyncEnumerable<JsonElement>(
             source, cancellationToken: ct).ConfigureAwait(false))
         {
             var raw = element.GetRawText();
-            // Adding 2 for the brackets and 1 for the leading comma when not first.
-            var addedLength = raw.Length + (count == 0 ? 0 : 1);
-            if (raw.Length + 2L > maxBatchBytes)
+            var rawBytes = Encoding.UTF8.GetByteCount(raw);
+            // A single row plus the enclosing brackets must fit in a batch.
+            if (rawBytes + 2L > maxBatchBytes)
             {
                 throw new InvalidOperationException(
-                    $"A single row's serialised JSON is {raw.Length:N0} bytes, exceeding the batch limit of {maxBatchBytes:N0}. "
+                    $"A single row's serialised JSON is {rawBytes:N0} bytes, exceeding the batch limit of {maxBatchBytes:N0}. "
                     + "Reduce row size or raise the limit (but stay below PostgreSQL's 256 MB jsonb ceiling).");
             }
-            if (count > 0 && batch.Length + addedLength + 1L > maxBatchBytes)
+            // Bytes this row adds: the row itself plus a leading comma when it
+            // isn't the first in the batch.
+            var addedBytes = rawBytes + (count == 0 ? 0 : 1);
+            // +1 leaves room for the closing ']'.
+            if (count > 0 && batchBytes + addedBytes + 1L > maxBatchBytes)
             {
                 batch.Append(']');
                 yield return batch.ToString();
                 batch.Clear();
                 batch.Append('[');
+                batchBytes = 1;
                 count = 0;
-                addedLength = raw.Length;
+                addedBytes = rawBytes;
             }
             if (count > 0) batch.Append(',');
             batch.Append(raw);
+            batchBytes += addedBytes;
             count++;
         }
 

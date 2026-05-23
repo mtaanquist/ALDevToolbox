@@ -187,6 +187,12 @@ var oauthKeyLogger = LoggerFactory.Create(b => b.AddSimpleConsole(o => { o.Singl
     .CreateLogger(typeof(ALDevToolbox.Services.OAuth.OAuthKeyMaterial).FullName!);
 var (oauthSigningKey, oauthEncryptionKey) = ALDevToolbox.Services.OAuth.OAuthKeyMaterial.LoadOrCreate(oauthKeyDir, oauthKeyLogger);
 
+// Stable per-deployment id (same volume as the keys) used to fingerprint
+// off-site dumps so a restore won't clobber the DB with a neighbour
+// deployment's dump from a shared bucket. Registered as a singleton.
+var deploymentIdentity = ALDevToolbox.Services.DeploymentIdentity.LoadOrCreate(oauthKeyDir, oauthKeyLogger);
+builder.Services.AddSingleton(deploymentIdentity);
+
 builder.Services.AddOpenIddict()
     .AddCore(o => o.UseEntityFrameworkCore().UseDbContext<AppDbContext>())
     .AddServer(o =>
@@ -234,10 +240,14 @@ builder.Services.AddOpenIddict()
         // source of truth), and attempts to mutate state dynamically from
         // pre-validator event handlers didn't take effect — see the
         // PR #191 / #192 retrospectives. Both checks are defence-in-depth
-        // for servers fronting multiple resources; ALDevToolbox only ever
-        // issues tokens for /mcp, the bearer-token audience is still bound
-        // on issue, and McpBearerPolicy already enforces audience on every
-        // incoming /mcp request.
+        // for servers fronting multiple resources; ALDevToolbox exposes a
+        // single protected resource (/mcp), so disabling them only removes a
+        // cross-resource confused-deputy guard that doesn't apply here.
+        // NB: McpBearerPolicy gates /mcp on authentication + the user/org
+        // claims — it does NOT separately assert the token audience, so don't
+        // rely on it as an audience check. If a second protected resource is
+        // ever added, re-enable resource validation (or add an explicit
+        // audience requirement) before doing so.
         //
         // TODO: Revisit once OpenIddict ships native DCR / CIMD support
         // (tracked in openiddict/openiddict-core#2404, targeted at 7.6.0)
@@ -347,7 +357,16 @@ builder.Services.AddScoped<ALDevToolbox.Services.OAuth.OAuthClientAdminService>(
 // The CIMD resolver fetches a client metadata document over HTTPS. Named
 // HttpClient gives us per-call timeout/UA control without leaking the
 // configuration to every other caller.
-builder.Services.AddHttpClient(nameof(ALDevToolbox.Services.OAuth.CimdClientResolver));
+// SSRF guard: the resolver fetches attacker-supplied URLs, so dial only
+// publicly routable IPs (defeats DNS rebinding because the check runs on the
+// address we actually connect to) and refuse redirects (an HTTPS URL must not
+// be able to 302 us onto an internal http:// target).
+builder.Services.AddHttpClient(nameof(ALDevToolbox.Services.OAuth.CimdClientResolver))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        ConnectCallback = ALDevToolbox.Services.OAuth.SsrfGuard.ConnectAsync,
+    });
 builder.Services.AddScoped<ALDevToolbox.Services.OAuth.CimdClientResolver>();
 
 // MCP server (Model Context Protocol). Mounted at /mcp by McpEndpoints; the

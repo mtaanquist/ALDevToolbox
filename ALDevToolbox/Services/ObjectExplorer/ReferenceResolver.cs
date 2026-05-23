@@ -63,15 +63,11 @@ public sealed class ReferenceResolver
         // click on the underlined type-name token (`"Bank Account"`,
         // whose word is the type name not the variable name) still
         // resolves through extracted-ref / object-name below.
-        if (!string.IsNullOrEmpty(ctx.LeftQualifier))
-        {
-            // Skip when the user clicked a member chain's RIGHT side
-            // (`var.Member` / `Var::Y`) — those should always go
-            // through the member resolver paths. Only bare-context
-            // clicks engage the local-variable check.
-        }
-        else if (AlGoToDefinitionLocator
-                    .ResolveVariableDeclarationLine(ctx.FileContent, ctx.Word) is not null)
+        // Only bare-context clicks engage the local-variable check. Skip it
+        // when the user clicked a member chain's RIGHT side (`var.Member` /
+        // `Var::Y`) — those always go through the member resolver paths below.
+        if (string.IsNullOrEmpty(ctx.LeftQualifier)
+            && AlGoToDefinitionLocator.ResolveVariableDeclarationLine(ctx.FileContent, ctx.Word) is not null)
         {
             return new ReferenceResolution(
                 new ResolutionTarget.LocalVariable(ctx.FileId, ctx.Word),

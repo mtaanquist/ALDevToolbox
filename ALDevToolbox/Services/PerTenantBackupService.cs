@@ -152,6 +152,15 @@ public sealed class PerTenantBackupService
     /// </summary>
     public async Task<PerTenantBackup> CreateAsync(int organizationId, BackupKind kind, CancellationToken ct)
     {
+        // Authorisation hinges entirely on `kind`: AdHoc is the only
+        // request-reachable path and requires a SiteAdmin caller, while
+        // Scheduled both skips that gate AND backs up an arbitrary
+        // `organizationId` (not derived from the org context). Scheduled MUST
+        // therefore only ever be passed by the background BackupScheduler,
+        // which runs without an authenticated principal — never wire a request
+        // endpoint to forward a caller-controlled `kind`, or it would let any
+        // user snapshot any org. (Verified: the only Scheduled call site is
+        // BackupScheduler; every endpoint passes AdHoc.)
         if (kind == BackupKind.AdHoc) _orgContext.RequireSiteAdmin();
         var org = await _db.Organizations.IgnoreQueryFilters().AsNoTracking()
             .FirstOrDefaultAsync(o => o.Id == organizationId, ct)

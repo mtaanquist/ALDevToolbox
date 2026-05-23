@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using ALDevToolbox.Services.ObjectExplorer;
 using FluentAssertions;
 
@@ -69,6 +70,56 @@ public sealed class AppPackageReaderTests
         pageExt.ExtendsObjectName.Should().Be("Company Information");
         pageExt.ExtendsAppId.Should().Be(Guid.Parse("437dbf0e-84ff-417a-965d-ed2bb9650972"),
             because: "the #...# prefix on TargetObject decodes to Base App's AppId");
+    }
+
+    [Fact]
+    public void OpenCapped_aborts_a_decompression_bomb_mid_stream()
+    {
+        // A tiny compressed entry that expands far past the cap (zeros deflate
+        // to almost nothing). The guard must trip while decompressing rather
+        // than buffering the whole expansion.
+        using var zipBytes = new MemoryStream();
+        using (var archive = new ZipArchive(zipBytes, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var entry = archive.CreateEntry("bomb.bin", CompressionLevel.Optimal);
+            using var s = entry.Open();
+            s.Write(new byte[200_000]); // 200 KB of zeros, compresses tiny
+        }
+        zipBytes.Position = 0;
+
+        using var readArchive = new ZipArchive(zipBytes, ZipArchiveMode.Read);
+        var bombEntry = readArchive.GetEntry("bomb.bin")!;
+
+        var act = () =>
+        {
+            using var capped = AppPackageReader.OpenCapped(bombEntry, maxBytes: 10_000);
+            using var sink = new MemoryStream();
+            capped.CopyTo(sink);
+        };
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*limit*");
+    }
+
+    [Fact]
+    public void OpenCapped_allows_an_entry_within_the_cap()
+    {
+        using var zipBytes = new MemoryStream();
+        using (var archive = new ZipArchive(zipBytes, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var entry = archive.CreateEntry("ok.txt", CompressionLevel.Optimal);
+            using var s = entry.Open();
+            s.Write(new byte[500]);
+        }
+        zipBytes.Position = 0;
+
+        using var readArchive = new ZipArchive(zipBytes, ZipArchiveMode.Read);
+        var okEntry = readArchive.GetEntry("ok.txt")!;
+
+        using var capped = AppPackageReader.OpenCapped(okEntry, maxBytes: 10_000);
+        using var sink = new MemoryStream();
+        capped.CopyTo(sink);
+        sink.Length.Should().Be(500);
     }
 
     [Fact]
