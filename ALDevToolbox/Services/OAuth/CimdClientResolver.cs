@@ -238,6 +238,31 @@ public sealed class CimdClientResolver : IOpenIddictServerHandler<ValidateAuthor
         // earlier short-circuit on existence is gone; we always create or
         // update from the freshly-fetched document.
         var existing = await _applications.FindByClientIdAsync(clientId, context.CancellationToken);
+
+        // Only ever overwrite a row that we ourselves created from a CIMD
+        // document. A DCR- or admin-registered client that happens to use a
+        // URL-shaped client_id must NOT be silently rewritten from an
+        // attacker-controllable metadata document — that would let whoever can
+        // serve (or transiently spoof) that URL replace its redirect_uris,
+        // JWKS, and client type.
+        if (existing is not null)
+        {
+            var properties = await _applications.GetPropertiesAsync(existing, context.CancellationToken);
+            var isCimdRow = properties.TryGetValue("registration_source", out var source)
+                            && source.ValueKind == JsonValueKind.String
+                            && string.Equals(source.GetString(), "cimd", StringComparison.Ordinal);
+            if (!isCimdRow)
+            {
+                _logger.LogWarning(
+                    "Refusing to overwrite client {ClientId} from a CIMD document — it was registered through another channel.",
+                    clientId);
+                context.Reject(
+                    error: OpenIddictConstants.Errors.InvalidClient,
+                    description: "A client with this id is already registered through another channel.");
+                return;
+            }
+        }
+
         try
         {
             if (existing is null)

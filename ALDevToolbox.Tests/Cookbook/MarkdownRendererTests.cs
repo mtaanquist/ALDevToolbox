@@ -49,4 +49,54 @@ public sealed class MarkdownRendererTests
         html.Should().Contain("<pre");
         html.Should().Contain("<code");
     }
+
+    [Theory]
+    [InlineData("[click](javascript:alert(1))")]
+    [InlineData("[click](JavaScript:alert(1))")]
+    [InlineData("[click](  javascript:alert(1))")]
+    [InlineData("[click](data:text/html;base64,PHNjcmlwdD4=)")]
+    [InlineData("[click](vbscript:msgbox(1))")]
+    public void Render_neutralises_dangerous_link_schemes(string markdown)
+    {
+        var html = _sut.Render(markdown).Value;
+        html.Should().NotContainEquivalentOf("javascript:");
+        html.Should().NotContainEquivalentOf("vbscript:");
+        html.Should().NotContain("data:text/html");
+        html.Should().Contain("about:blank");
+    }
+
+    [Fact]
+    public void IsSafeUrl_strips_control_chars_before_scheme_check()
+    {
+        // Belt-and-suspenders: even if a destination reaches the renderer with
+        // embedded control characters a browser would ignore (e.g. a tab inside
+        // "java<TAB>script:"), the scheme check still classifies it as unsafe.
+        MarkdownRenderer.IsSafeUrl("java\tscript:alert(1)").Should().BeFalse();
+        MarkdownRenderer.IsSafeUrl("  JAVASCRIPT:alert(1)").Should().BeFalse();
+        MarkdownRenderer.IsSafeUrl("https://example.com").Should().BeTrue();
+        MarkdownRenderer.IsSafeUrl("/relative").Should().BeTrue();
+        MarkdownRenderer.IsSafeUrl("#anchor").Should().BeTrue();
+    }
+
+    [Fact]
+    public void Render_neutralises_dangerous_image_source()
+    {
+        var html = _sut.Render("![x](javascript:alert(1))").Value;
+        html.Should().NotContainEquivalentOf("javascript:");
+        html.Should().Contain("about:blank");
+    }
+
+    [Theory]
+    [InlineData("[ok](https://example.com/page)", "https://example.com/page")]
+    [InlineData("[ok](http://example.com)", "http://example.com")]
+    [InlineData("[ok](mailto:dev@example.com)", "mailto:dev@example.com")]
+    [InlineData("[ok](/relative/path)", "/relative/path")]
+    [InlineData("[ok](#anchor)", "#anchor")]
+    [InlineData("[ok](page/with:colon)", "page/with:colon")]
+    public void Render_preserves_safe_link_destinations(string markdown, string expectedHref)
+    {
+        var html = _sut.Render(markdown).Value;
+        html.Should().Contain($"href=\"{expectedHref}\"");
+        html.Should().NotContain("about:blank");
+    }
 }

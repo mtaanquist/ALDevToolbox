@@ -11,7 +11,7 @@ internal static class GenerationEndpoints
     {
         // File download endpoint for the New Workspace flow. Requires a
         // signed-in user — anonymous access to the generators stopped with M13.
-        app.MapPost("/generate/workspace", async (HttpContext ctx, GenerationService gen, ApplicationVersionService versions, IAntiforgery antiforgery, CancellationToken ct) =>
+        app.MapPost("/generate/workspace", async (HttpContext ctx, GenerationService gen, ApplicationVersionService versions, IAntiforgery antiforgery, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
             var form = await ctx.Request.ReadFormAsync(ct);
@@ -19,7 +19,10 @@ internal static class GenerationEndpoints
                 form["ApplicationVersion"].ToString().Trim(),
                 form["RuntimeVersion"].ToString().Trim(),
                 versions, ctx, form, ct);
-            if (resolvedApp is null) return;
+            // Application and runtime resolve in lock-step (both null on the
+            // error path, both set otherwise). Check both so the assignment
+            // below doesn't need a null-forgiving `!`.
+            if (resolvedApp is null || resolvedRuntime is null) return;
             var plan = new ProjectPlan(
                 TemplateKey: form["TemplateKey"].ToString(),
                 WorkspaceName: form["WorkspaceName"].ToString().Trim(),
@@ -27,7 +30,7 @@ internal static class GenerationEndpoints
                 Brief: form["Brief"].ToString().Trim(),
                 Description: form["Description"].ToString().Trim(),
                 ApplicationVersion: resolvedApp,
-                RuntimeVersion: resolvedRuntime!,
+                RuntimeVersion: resolvedRuntime,
                 CoreIdRangeFrom: int.TryParse(form["CoreIdRangeFrom"], out var cf) ? cf : 0,
                 CoreIdRangeTo: int.TryParse(form["CoreIdRangeTo"], out var ctn) ? ctn : 0,
                 IncludeExamples: form["IncludeExamples"] == "true" || form["IncludeExamples"] == "on",
@@ -58,9 +61,22 @@ internal static class GenerationEndpoints
                     + string.Join("\n", ex.Errors.Select(e => $"  - {e.Key}: {e.Value}"));
                 await ctx.Response.WriteAsync(body, ct);
             }
+            catch (Exception ex) when (!ctx.Response.HasStarted)
+            {
+                // A non-validation fault before the ZIP started streaming —
+                // surface a clean 500 instead of letting a half-written
+                // attachment reach the client. Once the body has started we
+                // can't change the status, so that case falls through to the
+                // framework (which logs and aborts the response).
+                loggerFactory.CreateLogger(typeof(GenerationEndpoints)).LogError(ex, "Workspace generation failed.");
+                ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                ctx.Response.ContentType = "text/plain; charset=utf-8";
+                SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
+                await ctx.Response.WriteAsync("Generation failed unexpectedly. Please try again or contact an administrator.", ct);
+            }
         }).RequireAuthorization();
 
-        app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen, OrganizationConfigService orgConfig, ApplicationVersionService appVersions, IAntiforgery antiforgery, CancellationToken ct) =>
+        app.MapPost("/generate/extension", async (HttpContext ctx, GenerationService gen, OrganizationConfigService orgConfig, ApplicationVersionService appVersions, IAntiforgery antiforgery, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
             var form = await ctx.Request.ReadFormAsync(ct);
@@ -68,7 +84,9 @@ internal static class GenerationEndpoints
                 form["ApplicationVersion"].ToString().Trim(),
                 form["RuntimeVersion"].ToString().Trim(),
                 appVersions, ctx, form, ct);
-            if (resolvedApp is null) return;
+            // App + runtime resolve in lock-step; check both to avoid a
+            // null-forgiving `!` on the assignment below.
+            if (resolvedApp is null || resolvedRuntime is null) return;
 
             var ids = form["DependencyIds"];
             var names = form["DependencyNames"];
@@ -97,7 +115,7 @@ internal static class GenerationEndpoints
                 Brief: form["Brief"].ToString().Trim(),
                 Description: form["Description"].ToString().Trim(),
                 ApplicationVersion: resolvedApp,
-                RuntimeVersion: resolvedRuntime!,
+                RuntimeVersion: resolvedRuntime,
                 IdRangeFrom: int.TryParse(form["IdRangeFrom"], out var idFrom) ? idFrom : 0,
                 IdRangeTo: int.TryParse(form["IdRangeTo"], out var idTo) ? idTo : 0,
                 IncludeExamples: form["IncludeExamples"] == "true" || form["IncludeExamples"] == "on",
@@ -135,6 +153,17 @@ internal static class GenerationEndpoints
                 var body = "The submitted form failed validation:\n\n"
                     + string.Join("\n", ex.Errors.Select(e => $"  - {e.Key}: {e.Value}"));
                 await ctx.Response.WriteAsync(body, ct);
+            }
+            catch (Exception ex) when (!ctx.Response.HasStarted)
+            {
+                // Non-validation fault before the ZIP started streaming — clean
+                // 500 rather than a half-written attachment. See the workspace
+                // endpoint for the streaming-already-started caveat.
+                loggerFactory.CreateLogger(typeof(GenerationEndpoints)).LogError(ex, "Extension generation failed.");
+                ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                ctx.Response.ContentType = "text/plain; charset=utf-8";
+                SetGenerationCompleteCookie(ctx, form["GenToken"].ToString());
+                await ctx.Response.WriteAsync("Generation failed unexpectedly. Please try again or contact an administrator.", ct);
             }
         }).RequireAuthorization();
 

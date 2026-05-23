@@ -102,11 +102,27 @@ public static class PiperTransform
     private static readonly string[] FullCandidates = { "\r\n", "\n", "\r", "\t", ",", ";", "|" };
     private static readonly string[] NewlineOnlyCandidates = { "\r\n", "\n", "\r" };
 
+    /// <summary>
+    /// Upper bound on the input the transform will process in one call. Run
+    /// fires per-keystroke on a Blazor Server circuit (server-side CPU + memory
+    /// per user), and the pipeline makes several full passes plus dedup/sort
+    /// allocations, so an unbounded multi-MB paste is a cheap way to spike a
+    /// server thread. 5 MB is far beyond any realistic ID/filter list.
+    /// </summary>
+    public const int MaxInputLength = 5 * 1024 * 1024;
+
     public static PiperResult Run(string input, PiperOptions options)
     {
         if (string.IsNullOrEmpty(input))
         {
             return new PiperResult("", 0, "Awaiting input…", null);
+        }
+        if (input.Length > MaxInputLength)
+        {
+            return new PiperResult(
+                "", 0,
+                $"Input is too large ({input.Length:N0} characters). Trim it under {MaxInputLength:N0} and try again.",
+                null);
         }
 
         var (items, delimiterDesc, detectedDisplay) = Split(input, options);

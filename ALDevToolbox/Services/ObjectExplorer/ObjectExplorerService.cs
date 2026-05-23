@@ -1976,6 +1976,16 @@ public class ObjectExplorerService
     // ── Find references ────────────────────────────────────────────────
 
     /// <summary>
+    /// True when <paramref name="releaseId"/> is visible in the current
+    /// organisation. Hits <c>_db.OeReleases</c>, which carries the EF org
+    /// query filter, so it returns false for another tenant's release — the
+    /// hard fence the raw-SQL reference/dependency CTEs rely on, since those
+    /// run unfiltered.
+    /// </summary>
+    private Task<bool> ReleaseVisibleAsync(int releaseId, CancellationToken ct) =>
+        _db.OeReleases.AsNoTracking().AnyAsync(r => r.Id == releaseId, ct);
+
+    /// <summary>
     /// Finds every reference in the visible module-chain of <paramref name="releaseId"/>
     /// that targets the supplied object. "Visible module chain" =
     /// <list type="number">
@@ -1991,6 +2001,12 @@ public class ObjectExplorerService
     public async Task<List<ReferenceMatch>> FindReferencesAsync(
         int releaseId, FindReferencesQuery query, CancellationToken ct = default)
     {
+        // Tenant fence: the recursive CTE below runs as raw SQL and so bypasses
+        // the EF query filter. Confirm the seed release is visible in the
+        // caller's org first, otherwise return empty rather than leaking
+        // another tenant's reference graph. See ReleaseVisibleAsync.
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return new();
+
         // Use a parameterised raw SQL because LINQ to SQL can't express the
         // recursive CTE neatly. The SQL is bounded, documented, and lives
         // here in one place — see the class doc-comment for the resolution
@@ -2117,6 +2133,12 @@ public class ObjectExplorerService
             throw new ArgumentException(
                 "Member-scoped find requires TargetMemberName.", nameof(query));
         }
+
+        // Tenant fence for the raw-SQL CTEs below (and the private member /
+        // interface-implementation queries this method fans out to, which
+        // reuse releaseId): bail out for a release not visible in the caller's
+        // org. See ReleaseVisibleAsync.
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return new();
 
         // (1) Sibling declarations of the matched member across the chain.
         // Same recursive-CTE + winning-module shadowing the object-level

@@ -160,7 +160,8 @@ public sealed class BackupSchedulerTests : IDisposable
         var systemSettings = new SystemSettingsService(
             ctx, _db.DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, _clock);
         var offsite = new OffsiteBackupService(
-            ctx, systemSettings, backups, perTenant, NullLogger<OffsiteBackupService>.Instance, _clock);
+            ctx, systemSettings, backups, perTenant, NullLogger<OffsiteBackupService>.Instance, _clock,
+            DeploymentIdentity.LoadOrCreate(Path.Combine(Path.GetTempPath(), "aldt-test-" + Guid.NewGuid().ToString("N")), NullLogger.Instance));
         await scheduler.TickOnceAsync(ctx, backups, perTenant, offsite, CancellationToken.None);
     }
 }

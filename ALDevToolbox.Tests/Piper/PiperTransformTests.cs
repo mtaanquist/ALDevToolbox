@@ -21,6 +21,21 @@ public sealed class PiperTransformTests
         result.DetectedSeparatorDisplay.Should().BeNull();
     }
 
+    [Fact]
+    public void Oversized_input_is_rejected_without_processing()
+    {
+        // Run fires per-keystroke on a server circuit; an unbounded paste is a
+        // cheap CPU/memory spike. Inputs over the cap return a clear message
+        // instead of running the multi-pass pipeline.
+        var huge = new string('a', PiperTransform.MaxInputLength + 1);
+
+        var result = PiperTransform.Run(huge, new PiperOptions());
+
+        result.Output.Should().BeEmpty();
+        result.ItemCount.Should().Be(0);
+        result.DelimiterDescription.Should().Contain("too large");
+    }
+
     // ---------- Format presets ----------
 
     [Fact]

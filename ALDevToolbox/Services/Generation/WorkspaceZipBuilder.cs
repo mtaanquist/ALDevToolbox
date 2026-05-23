@@ -67,6 +67,7 @@ public sealed class WorkspaceZipBuilder
             // Per-extension folders.
             foreach (var ext in extensions)
             {
+                ct.ThrowIfCancellationRequested();
                 fileCount += WriteExtension(archive, rootFolder, ext, extensions, template, plan, orgConfig, includedFiles);
             }
 
@@ -124,6 +125,7 @@ public sealed class WorkspaceZipBuilder
         OrganizationConfig orgConfig,
         CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         var folderName = StripWhitespace(plan.ExtensionName);
         var stream = new MemoryStream();
         var fileCount = 0;

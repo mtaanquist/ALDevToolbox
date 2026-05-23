@@ -47,12 +47,20 @@ public sealed class OffsiteBackupService
     /// <summary>Sub-prefix under the configured bucket prefix where per-tenant snapshots live.</summary>
     public const string PerTenantKeyPrefix = "tenants/";
 
+    /// <summary>
+    /// S3 user-metadata key (sent as <c>x-amz-meta-deployment-id</c>) stamped
+    /// on whole-DB dumps so a restore can verify the dump came from this
+    /// deployment rather than a neighbour sharing the bucket.
+    /// </summary>
+    public const string DeploymentMetadataKey = "deployment-id";
+
     private readonly AppDbContext _db;
     private readonly SystemSettingsService _systemSettings;
     private readonly BackupService _backups;
     private readonly PerTenantBackupService _perTenantBackups;
     private readonly ILogger<OffsiteBackupService> _logger;
     private readonly TimeProvider _clock;
+    private readonly DeploymentIdentity _deployment;
 
     public OffsiteBackupService(
         AppDbContext db,
@@ -60,7 +68,8 @@ public sealed class OffsiteBackupService
         BackupService backups,
         PerTenantBackupService perTenantBackups,
         ILogger<OffsiteBackupService> logger,
-        TimeProvider clock)
+        TimeProvider clock,
+        DeploymentIdentity deployment)
     {
         _db = db;
         _systemSettings = systemSettings;
@@ -68,6 +77,7 @@ public sealed class OffsiteBackupService
         _perTenantBackups = perTenantBackups;
         _logger = logger;
         _clock = clock;
+        _deployment = deployment;
     }
 
     /// <summary>HEADs the configured bucket as a connection test. Returns a structured result for the UI to render inline.</summary>
@@ -117,7 +127,7 @@ public sealed class OffsiteBackupService
         var objectKey = BuildObjectKey(settings.Prefix, row.FileName);
         using var client = CreateClient(settings);
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true);
-        await client.PutObjectAsync(new PutObjectRequest
+        var putRequest = new PutObjectRequest
         {
             BucketName = settings.Bucket,
             Key = objectKey,
@@ -125,7 +135,11 @@ public sealed class OffsiteBackupService
             AutoCloseStream = false,
             ContentType = "application/octet-stream",
             DisablePayloadSigning = settings.ForcePathStyle,
-        }, ct);
+        };
+        // Fingerprint the dump with this deployment's id so a later restore can
+        // refuse a neighbour deployment's dump found under the same prefix.
+        putRequest.Metadata.Add(DeploymentMetadataKey, _deployment.Id);
+        await client.PutObjectAsync(putRequest, ct);
 
         row.OffsiteUploadedAt = _clock.GetUtcNow().UtcDateTime;
         row.OffsiteObjectKey = objectKey;
@@ -347,6 +361,26 @@ public sealed class OffsiteBackupService
             Key = objectKey,
         }, ct);
 
+        // Provenance: refuse a dump another deployment stamped. A missing stamp
+        // is treated as legacy (uploaded before fingerprinting existed) and
+        // allowed with a warning; enforcement is skipped when our own id is
+        // ephemeral, since it would otherwise spuriously reject after a restart.
+        var stampedDeployment = response.Metadata[DeploymentMetadataKey];
+        if (_deployment.IsPersistent && !string.IsNullOrEmpty(stampedDeployment)
+            && !string.Equals(stampedDeployment, _deployment.Id, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Refusing to import '{fileName}': it was created by a different deployment " +
+                "(deployment-id mismatch). Restoring it would overwrite this database with " +
+                "another deployment's data.");
+        }
+        if (string.IsNullOrEmpty(stampedDeployment))
+        {
+            _logger.LogWarning(
+                "Off-site object {Key} carries no deployment-id stamp; importing it anyway (legacy upload). " +
+                "Verify it belongs to this deployment before restoring.", objectKey);
+        }
+
         var total = response.ContentLength > 0 ? response.ContentLength : (long?)null;
         progress?.Report((0L, total));
 
@@ -387,7 +421,18 @@ public sealed class OffsiteBackupService
             OffsiteUploadedAt = _clock.GetUtcNow().UtcDateTime,
         };
         _db.Backups.Add(row);
-        await _db.SaveChangesAsync(ct);
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch
+        {
+            // Don't leave a downloaded dump on disk with no backups row — a
+            // retry would otherwise trip the "a local backup already exists"
+            // guard and force a manual cleanup.
+            TryDeleteFile(finalPath);
+            throw;
+        }
 
         _logger.LogInformation(
             "Downloaded off-site backup s3://{Bucket}/{Key} ({Bytes} bytes) into local row {BackupId}.",
@@ -591,6 +636,15 @@ public sealed class OffsiteBackupService
 
     private static string BuildPerTenantObjectKey(string? prefix, string slug, string fileName)
     {
+        // Slugs are validated at org-creation time, but a stray '/' or ".."
+        // here would silently write outside the tenants/<slug>/ namespace (the
+        // download side already rejects such leaf names) — so fail closed
+        // rather than compose a key that escapes the convention.
+        if (string.IsNullOrEmpty(slug)
+            || slug.Contains('/') || slug.Contains('\\') || slug.Contains("..", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Refusing to build an off-site key for suspicious slug: '{slug}'.");
+        }
         var head = string.IsNullOrEmpty(prefix) ? string.Empty : prefix.TrimEnd('/') + "/";
         return head + PerTenantKeyPrefix + slug + "/" + fileName;
     }
@@ -613,6 +667,18 @@ public sealed class OffsiteBackupService
     /// Returns <see langword="null"/> if the shape doesn't match — the
     /// caller falls back to "now" so the row still saves.
     /// </summary>
+    private void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Could not remove orphaned download {Path} after a failed import.", path);
+        }
+    }
+
     private static DateTime? TryParseTimestamp(string fileName)
     {
         const string prefix = "aldevtoolbox-";

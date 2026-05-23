@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.ValueObjects;
@@ -1158,16 +1159,18 @@ public class ReleaseImportService
     private static string SerializeDeps(IReadOnlyList<AppDependency> deps)
     {
         if (deps.Count == 0) return "[]";
-        var parts = deps.Select(d => $"{{\"id\":\"{d.AppId}\",\"name\":{JsonString(d.Name)},\"publisher\":{JsonString(d.Publisher)},\"version\":{JsonString(d.Version)}}}");
-        return "[" + string.Join(",", parts) + "]";
-    }
-
-    private static string JsonString(string s)
-    {
-        // Tight enough for our subset — manifests have well-behaved names,
-        // and we'd rather not pull a full JsonSerializer call for a 4-field
-        // record per dependency.
-        return "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+        // Name / Publisher / Version are free-form text from an untrusted .app
+        // manifest and can carry control characters that a hand-rolled escaper
+        // (which only handled \ and ") would emit as invalid JSON, breaking the
+        // later deserialize. Let System.Text.Json escape correctly.
+        var projected = deps.Select(d => new
+        {
+            id = d.AppId.ToString(),
+            name = d.Name,
+            publisher = d.Publisher,
+            version = d.Version,
+        });
+        return JsonSerializer.Serialize(projected);
     }
 
     private static string HashHex(string content)
@@ -1201,7 +1204,7 @@ public class ReleaseImportService
             // ReferenceSourceFileName.
             var path = AppPackageReader.CanonicalizeSourcePath(entry.FullName);
 
-            using var s = entry.Open();
+            using var s = AppPackageReader.OpenCapped(entry);
             using var reader = new StreamReader(s);
             yield return (path, reader.ReadToEnd());
         }
