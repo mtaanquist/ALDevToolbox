@@ -4,12 +4,12 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace ALDevToolbox.Data.Configurations;
 
-internal sealed class SnippetSuggestionConfiguration : IEntityTypeConfiguration<SnippetSuggestion>
+internal sealed class RecipeSuggestionConfiguration : IEntityTypeConfiguration<RecipeSuggestion>
 {
 
-    public void Configure(EntityTypeBuilder<SnippetSuggestion> entity)
+    public void Configure(EntityTypeBuilder<RecipeSuggestion> entity)
     {
-        entity.ToTable("snippet_suggestions");
+        entity.ToTable("recipe_suggestions");
         entity.HasKey(e => e.Id);
         entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
         entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
@@ -17,6 +17,7 @@ internal sealed class SnippetSuggestionConfiguration : IEntityTypeConfiguration<
         entity.Property(e => e.Title).HasColumnName("title").IsRequired();
         entity.Property(e => e.Description).HasColumnName("description").IsRequired();
         entity.Property(e => e.Keywords).HasColumnName("keywords").IsRequired();
+        entity.Property(e => e.Type).HasColumnName("type").HasConversion<int>().IsRequired();
         entity.Property(e => e.Instructions).HasColumnName("instructions");
         entity.Property(e => e.MinimumApplicationVersionId).HasColumnName("minimum_application_version_id");
         entity.Property(e => e.Decision).HasColumnName("decision").HasConversion<string>().IsRequired();
@@ -24,7 +25,7 @@ internal sealed class SnippetSuggestionConfiguration : IEntityTypeConfiguration<
         entity.Property(e => e.DecidedAt).HasColumnName("decided_at");
         entity.Property(e => e.DecidedByUserId).HasColumnName("decided_by_user_id");
         entity.Property(e => e.DecisionNote).HasColumnName("decision_note");
-        entity.Property(e => e.ApprovedSnippetId).HasColumnName("approved_snippet_id");
+        entity.Property(e => e.ApprovedRecipeId).HasColumnName("approved_recipe_id");
         entity.HasIndex(e => new { e.OrganizationId, e.Decision });
         entity.HasOne(e => e.Organization)
             .WithMany()
@@ -38,9 +39,9 @@ internal sealed class SnippetSuggestionConfiguration : IEntityTypeConfiguration<
             .WithMany()
             .HasForeignKey(e => e.DecidedByUserId)
             .OnDelete(DeleteBehavior.SetNull);
-        entity.HasOne(e => e.ApprovedSnippet)
+        entity.HasOne(e => e.ApprovedRecipe)
             .WithMany()
-            .HasForeignKey(e => e.ApprovedSnippetId)
+            .HasForeignKey(e => e.ApprovedRecipeId)
             .OnDelete(DeleteBehavior.SetNull);
         entity.HasOne(e => e.MinimumApplicationVersion)
             .WithMany()
@@ -48,7 +49,7 @@ internal sealed class SnippetSuggestionConfiguration : IEntityTypeConfiguration<
             .OnDelete(DeleteBehavior.SetNull);
         entity.HasMany(e => e.Files)
             .WithOne(f => f.Suggestion!)
-            .HasForeignKey(f => f.SnippetSuggestionId)
+            .HasForeignKey(f => f.RecipeSuggestionId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

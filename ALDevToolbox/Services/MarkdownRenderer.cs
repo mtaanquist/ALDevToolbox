@@ -5,10 +5,10 @@ namespace ALDevToolbox.Services;
 
 /// <summary>
 /// Singleton wrapper around <see cref="Markdig"/> for the few places in the UI
-/// that render user-authored Markdown (snippet instructions, for now). The
+/// that render user-authored Markdown (recipe instructions, for now). The
 /// pipeline is configured once on construction so the parser tables aren't
 /// rebuilt per request, and raw HTML is stripped at the parser level so a
-/// pasted <c>&lt;script&gt;</c> tag in a snippet's instructions can't escape
+/// pasted <c>&lt;script&gt;</c> tag in a recipe's instructions can't escape
 /// into the published page.
 /// </summary>
 public sealed class MarkdownRenderer

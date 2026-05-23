@@ -1,32 +1,34 @@
+using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Builders;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace ALDevToolbox.Tests.Snippets;
+namespace ALDevToolbox.Tests.Cookbook;
 
 /// <summary>
-/// Search behaviour for <see cref="SnippetService.SearchAsync"/>: case-insensitive
+/// Search behaviour for <see cref="RecipeService.SearchAsync"/>: case-insensitive
 /// substring match across title, description, and keywords; empty queries
 /// return everything; deprecated and soft-deleted rows respect their flags.
+/// Recipe Type is deliberately NOT part of the search expression.
 /// </summary>
-public sealed class SnippetServiceSearchTests : IDisposable
+public sealed class RecipeServiceSearchTests : IDisposable
 {
     private readonly TestDb _db = new();
 
     public void Dispose() => _db.Dispose();
 
     [Fact]
-    public async Task Empty_query_returns_every_active_snippet_excluding_soft_deleted()
+    public async Task Empty_query_returns_every_active_recipe_excluding_soft_deleted()
     {
         await using (var ctx = _db.NewContext())
         {
-            ctx.Snippets.Add(SnippetBuilder.Default("Alpha").WithFile("a.al", "// a"));
-            ctx.Snippets.Add(SnippetBuilder.Default("Beta").WithFile("b.al", "// b"));
-            var deleted = SnippetBuilder.Default("Gone").WithFile("g.al", "// g");
+            ctx.Recipes.Add(RecipeBuilder.Default("Alpha").WithFile("a.al", "// a"));
+            ctx.Recipes.Add(RecipeBuilder.Default("Beta").WithFile("b.al", "// b"));
+            var deleted = RecipeBuilder.Default("Gone").WithFile("g.al", "// g");
             deleted.DeletedAt = new DateTime(2026, 5, 11, 0, 0, 0, DateTimeKind.Utc);
-            ctx.Snippets.Add(deleted);
+            ctx.Recipes.Add(deleted);
             await ctx.SaveChangesAsync();
         }
 
@@ -41,8 +43,8 @@ public sealed class SnippetServiceSearchTests : IDisposable
     {
         await using (var ctx = _db.NewContext())
         {
-            ctx.Snippets.Add(SnippetBuilder.Default("Doc Attachment Factbox").WithFile("a.al", "// a"));
-            ctx.Snippets.Add(SnippetBuilder.Default("Item Lookup Helper").WithFile("b.al", "// b"));
+            ctx.Recipes.Add(RecipeBuilder.Default("Doc Attachment Factbox").WithFile("a.al", "// a"));
+            ctx.Recipes.Add(RecipeBuilder.Default("Item Lookup Helper").WithFile("b.al", "// b"));
             await ctx.SaveChangesAsync();
         }
 
@@ -56,9 +58,9 @@ public sealed class SnippetServiceSearchTests : IDisposable
     {
         await using (var ctx = _db.NewContext())
         {
-            var s = SnippetBuilder.Default("Hidden Title").WithFile("a.al", "// a");
+            var s = RecipeBuilder.Default("Hidden Title").WithFile("a.al", "// a");
             s.Description = "Use this to wire up subscriber events.";
-            ctx.Snippets.Add(s);
+            ctx.Recipes.Add(s);
             await ctx.SaveChangesAsync();
         }
 
@@ -72,9 +74,9 @@ public sealed class SnippetServiceSearchTests : IDisposable
     {
         await using (var ctx = _db.NewContext())
         {
-            var s = SnippetBuilder.Default("Tagged").WithFile("a.al", "// a");
+            var s = RecipeBuilder.Default("Tagged").WithFile("a.al", "// a");
             s.Keywords = "permissions tableextension";
-            ctx.Snippets.Add(s);
+            ctx.Recipes.Add(s);
             await ctx.SaveChangesAsync();
         }
 
@@ -88,10 +90,10 @@ public sealed class SnippetServiceSearchTests : IDisposable
     {
         await using (var ctx = _db.NewContext())
         {
-            var depr = SnippetBuilder.Default("Old Way").WithFile("a.al", "// a");
+            var depr = RecipeBuilder.Default("Old Way").WithFile("a.al", "// a");
             depr.Deprecated = true;
-            ctx.Snippets.Add(depr);
-            ctx.Snippets.Add(SnippetBuilder.Default("New Way").WithFile("b.al", "// b"));
+            ctx.Recipes.Add(depr);
+            ctx.Recipes.Add(RecipeBuilder.Default("New Way").WithFile("b.al", "// b"));
             await ctx.SaveChangesAsync();
         }
 
@@ -104,6 +106,23 @@ public sealed class SnippetServiceSearchTests : IDisposable
         withDeprecated.Select(r => r.Title).Should().BeEquivalentTo(new[] { "Old Way", "New Way" });
     }
 
-    private SnippetService NewService(ALDevToolbox.Data.AppDbContext ctx) =>
-        new(ctx, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx));
+    [Fact]
+    public async Task Search_ignores_recipe_type_and_returns_all_types()
+    {
+        // Type is a post-filter on the UI side, never feeding the query.
+        await using (var ctx = _db.NewContext())
+        {
+            ctx.Recipes.Add(RecipeBuilder.Default("Snip", type: RecipeType.Snippet).WithFile("a.al", "// a"));
+            ctx.Recipes.Add(RecipeBuilder.Default("Pat", type: RecipeType.Pattern).WithFile("b.al", "// b"));
+            ctx.Recipes.Add(RecipeBuilder.Default("Mod", type: RecipeType.Module).WithFile("c.al", "// c"));
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var ctx2 = _db.NewContext();
+        var rows = await NewService(ctx2).SearchAsync(query: null);
+        rows.Select(r => r.Title).Should().BeEquivalentTo(new[] { "Snip", "Pat", "Mod" });
+    }
+
+    private RecipeService NewService(ALDevToolbox.Data.AppDbContext ctx) =>
+        new(ctx, NullLogger<RecipeService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx));
 }

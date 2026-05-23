@@ -103,91 +103,128 @@ public sealed record WellKnownDependencySummary(
     string DepPublisher,
     string DepVersion);
 
-public sealed record SnippetSummary(
+public sealed record RecipeSummary(
     int Id,
     string Title,
     string Description,
     string Keywords,
+    string Type,
     bool Deprecated,
     int FileCount,
     string? MinimumApplicationVersionName = null,
     string? MinimumApplication = null);
 
-public sealed record SnippetFileDto(string Path, string Content);
+public sealed record RecipeFileDto(string Path, string Content);
 
-public sealed record SnippetDetail(
+public sealed record RecipeDetail(
     int Id,
     string Title,
     string Description,
     string Keywords,
+    string Type,
     bool Deprecated,
-    IReadOnlyList<SnippetFileDto> Files,
+    IReadOnlyList<RecipeFileDto> Files,
     string? Instructions = null,
     string? MinimumApplicationVersionName = null,
     string? MinimumApplication = null);
 
 /// <summary>
-/// One file body submitted as part of a <see cref="SuggestSnippetInput"/>.
-/// Distinct from the read-side <see cref="SnippetFileDto"/> (which uses
-/// <c>Path</c>) so the MCP-facing field name matches the domain's
-/// <c>SnippetFileInput</c> and the agent isn't asked to pick between
-/// near-synonyms.
+/// One file body submitted as part of a <see cref="SuggestRecipeInput"/>.
+/// Distinct from the read-side <see cref="RecipeFileDto"/> (which uses a
+/// single <c>Path</c> field combining folder + name) so the MCP-facing
+/// field names match the domain's <c>RecipeFileInput</c>. <c>RelativePath</c>
+/// is empty for files at the recipe's root.
 /// </summary>
-public sealed record SnippetFileInputDto(string FileName, string Content);
+public sealed record RecipeFileInputDto(string FileName, string Content, string RelativePath = "");
 
 /// <summary>
-/// Input shape for the <c>suggest_snippet</c> tool. Mirrors
-/// <see cref="ALDevToolbox.Services.SnippetSuggestionInput"/> for the MCP
-/// boundary; <see cref="ToDomain"/> is the one-liner mapping.
+/// Input shape for the <c>suggest_recipe</c> tool. Mirrors
+/// <see cref="ALDevToolbox.Services.RecipeSuggestionInput"/> for the MCP
+/// boundary; <see cref="ToDomain"/> is the one-liner mapping. <c>Type</c>
+/// is a string (<c>Snippet</c>, <c>Pattern</c>, or <c>Module</c>) so the
+/// agent reads the same name humans see on the cookbook chip-row.
+/// <c>GuidanceToken</c> is the short-lived signed token returned by
+/// <c>get_cookbook_guidance</c>; the write tool refuses to run without
+/// a valid one.
 /// </summary>
-public sealed record SuggestSnippetInput(
+public sealed record SuggestRecipeInput(
+    string GuidanceToken,
     string Title,
     string Description,
     string Keywords,
-    IReadOnlyList<SnippetFileInputDto> Files,
+    string Type,
+    IReadOnlyList<RecipeFileInputDto> Files,
     string? Instructions = null,
     int? MinimumApplicationVersionId = null)
 {
-    public ALDevToolbox.Services.SnippetSuggestionInput ToDomain() => new(
+    public ALDevToolbox.Services.RecipeSuggestionInput ToDomain() => new(
         Title,
         Description,
         Keywords,
+        ParseType(Type),
         Files
-            .Select(f => new ALDevToolbox.Services.SnippetFileInput(f.FileName, f.Content))
+            .Select(f => new ALDevToolbox.Services.RecipeFileInput(f.FileName, f.Content, f.RelativePath))
             .ToList(),
         Instructions,
         MinimumApplicationVersionId);
+
+    internal static ALDevToolbox.Domain.ValueObjects.RecipeType ParseType(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return ALDevToolbox.Domain.ValueObjects.RecipeType.Snippet;
+        return Enum.TryParse<ALDevToolbox.Domain.ValueObjects.RecipeType>(raw.Trim(), ignoreCase: true, out var t)
+            ? t
+            : throw new ModelContextProtocol.McpException(
+                $"Unknown recipe Type '{raw}'. Use one of: Snippet, Pattern, Module.");
+    }
 }
 
-/// <summary>What <c>suggest_snippet</c> returns: the new suggestion's id plus a confirmation pointing the agent at the admin queue.</summary>
-public sealed record SuggestSnippetResult(int SuggestionId, string Message);
+/// <summary>What <c>suggest_recipe</c> returns: the new suggestion's id plus a confirmation pointing the agent at the admin queue.</summary>
+public sealed record SuggestRecipeResult(int SuggestionId, string Message);
 
 /// <summary>
-/// Input shape for the <c>update_snippet_suggestion</c> tool. Carries the
+/// Input shape for the <c>update_recipe_suggestion</c> tool. Carries the
 /// id of the suggestion being edited alongside the same fields
-/// <see cref="SuggestSnippetInput"/> accepts; <see cref="ToDomain"/> drops
+/// <see cref="SuggestRecipeInput"/> accepts; <see cref="ToDomain"/> drops
 /// the id when handing off to the service layer (which already takes the
-/// id as a separate argument).
+/// id as a separate argument). Requires the same <c>GuidanceToken</c>
+/// gate as <see cref="SuggestRecipeInput"/>.
 /// </summary>
-public sealed record UpdateSnippetSuggestionInput(
+public sealed record UpdateRecipeSuggestionInput(
     int SuggestionId,
+    string GuidanceToken,
     string Title,
     string Description,
     string Keywords,
-    IReadOnlyList<SnippetFileInputDto> Files,
+    string Type,
+    IReadOnlyList<RecipeFileInputDto> Files,
     string? Instructions = null,
     int? MinimumApplicationVersionId = null)
 {
-    public ALDevToolbox.Services.SnippetSuggestionInput ToDomain() => new(
+    public ALDevToolbox.Services.RecipeSuggestionInput ToDomain() => new(
         Title,
         Description,
         Keywords,
+        SuggestRecipeInput.ParseType(Type),
         Files
-            .Select(f => new ALDevToolbox.Services.SnippetFileInput(f.FileName, f.Content))
+            .Select(f => new ALDevToolbox.Services.RecipeFileInput(f.FileName, f.Content, f.RelativePath))
             .ToList(),
         Instructions,
         MinimumApplicationVersionId);
 }
 
-/// <summary>What <c>update_snippet_suggestion</c> returns: the updated suggestion's id plus a confirmation.</summary>
-public sealed record UpdateSnippetSuggestionResult(int SuggestionId, string Message);
+/// <summary>What <c>update_recipe_suggestion</c> returns: the updated suggestion's id plus a confirmation.</summary>
+public sealed record UpdateRecipeSuggestionResult(int SuggestionId, string Message);
+
+/// <summary>
+/// What <c>get_cookbook_guidance</c> returns: the org's authored markdown,
+/// the built-in type taxonomy (so an empty org-level guidance still gives
+/// the agent something to anchor on), and a short-lived signed
+/// <c>GuidanceToken</c> the write tools require. <c>GuidanceTokenExpiresInSeconds</c>
+/// is the lifetime in seconds; tokens older than that are refused.
+/// </summary>
+public sealed record CookbookGuidance(
+    string Guidance,
+    IReadOnlyList<string> RecipeTypes,
+    IReadOnlyDictionary<string, string> TypeDescriptions,
+    string GuidanceToken,
+    int GuidanceTokenExpiresInSeconds);

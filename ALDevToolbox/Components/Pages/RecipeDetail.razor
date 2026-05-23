@@ -1,100 +1,102 @@
-@page "/snippets/{Id:int}"
+@page "/cookbook/{Id:int}"
 @attribute [Authorize]
 @rendermode InteractiveServer
 @implements IDisposable
-@inject SnippetService Snippets
+@inject RecipeService Recipes
 @inject MarkdownRenderer Markdown
 @inject IJSRuntime JS
 @using ALDevToolbox.Domain.Entities
 
-<PageTitle>@(_snippet?.Title ?? "Snippet") · AL Dev Toolbox</PageTitle>
+<PageTitle>@(_recipe?.Title ?? "Recipe") · AL Dev Toolbox</PageTitle>
 
 <div class="snippet-detail @(HasOutline ? "snippet-detail--with-outline" : null)">
     <div class="snippet-detail__main">
         <div class="snippet-detail__topbar">
-            <a class="btn btn--sm" href="/snippets">
+            <a class="btn btn--sm" href="/cookbook">
                 <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to snippets</span>
+                <span>Back to cookbook</span>
             </a>
-            @if (_snippet is not null && _snippet.Files.Count > 0)
+            @if (_recipe is not null && _recipe.Files.Count > 0)
             {
-                <a class="btn btn--sm" href="@($"/api/snippets/{_snippet.Id}/download")"
-                   title="Download all files in this snippet as a ZIP archive">
+                <a class="btn btn--sm" href="@($"/api/cookbook/{_recipe.Id}/download")"
+                   title="Download all files in this recipe as a ZIP archive (folders preserved)">
                     <Icon Name="download" Width="14" Height="14" />
                     <span>Download all</span>
                 </a>
             }
         </div>
 
-        @if (_loaded && _snippet is null)
+        @if (_loaded && _recipe is null)
         {
-            <p class="form-error" role="alert">Snippet not found.</p>
+            <p class="form-error" role="alert">Recipe not found.</p>
         }
-        else if (_snippet is null)
+        else if (_recipe is null)
         {
             <p class="muted">Loading…</p>
         }
         else
         {
             <header class="snippet-detail__header">
-                <h1>@_snippet.Title</h1>
-                @if (_snippet.Deprecated)
+                <h1>@_recipe.Title</h1>
+                <span class="snippet-card__badge" title="Recipe type">@_recipe.Type</span>
+                @if (_recipe.Deprecated)
                 {
                     <span class="snippet-card__badge">Deprecated</span>
                 }
-                @if (_snippet.MinimumApplicationVersion is { } minV)
+                @if (_recipe.MinimumApplicationVersion is { } minV)
                 {
-                    <span class="snippet-card__badge" title="Minimum BC application version this snippet targets">
+                    <span class="snippet-card__badge" title="Minimum BC application version this recipe targets">
                         Min: @minV.Name (@minV.Application)
                     </span>
                 }
             </header>
-            <p class="snippet-detail__description">@_snippet.Description</p>
-            @if (!string.IsNullOrWhiteSpace(_snippet.Keywords))
+            <p class="snippet-detail__description">@_recipe.Description</p>
+            @if (!string.IsNullOrWhiteSpace(_recipe.Keywords))
             {
                 <div class="snippet-card__keywords">
-                    @foreach (var kw in _snippet.Keywords.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                    @foreach (var kw in _recipe.Keywords.Split(' ', StringSplitOptions.RemoveEmptyEntries))
                     {
                         <span class="snippet-card__keyword">@kw</span>
                     }
                 </div>
             }
 
-            @if (!string.IsNullOrWhiteSpace(_snippet.Instructions))
+            @if (!string.IsNullOrWhiteSpace(_recipe.Instructions))
             {
                 <section class="snippet-detail__instructions">
                     <h2>Instructions</h2>
                     <div class="snippet-detail__instructions-body">
-                        @Markdown.Render(_snippet.Instructions)
+                        @Markdown.Render(_recipe.Instructions)
                     </div>
                 </section>
             }
 
             <h2>Files</h2>
-            @if (_snippet.Files.Count == 0)
+            @if (_recipe.Files.Count == 0)
             {
                 <p class="muted">No files attached.</p>
             }
             else
             {
                 <ol class="snippet-detail__files">
-                    @foreach (var file in _snippet.Files)
+                    @foreach (var file in _recipe.Files)
                     {
-                        var anchor = AnchorFor(file.FileName);
-                        var isCollapsed = _collapsed.Contains(file.FileName);
+                        var displayPath = DisplayPath(file);
+                        var anchor = AnchorFor(displayPath);
+                        var isCollapsed = _collapsed.Contains(displayPath);
                         <li id="@anchor" class="snippet-file-view @(isCollapsed ? "snippet-file-view--collapsed" : null)">
                             <div class="snippet-file-view__header">
                                 <button type="button"
                                         class="snippet-file-view__toggle"
                                         aria-expanded="@((!isCollapsed).ToString().ToLowerInvariant())"
                                         aria-controls="@($"{anchor}-content")"
-                                        @onclick="() => ToggleCollapsed(file.FileName)">
+                                        @onclick="() => ToggleCollapsed(displayPath)">
                                     <Icon Name="@(isCollapsed ? "chevron-right" : "chevron-down")" Width="14" Height="14" />
-                                    <code>@file.FileName</code>
+                                    <code>@displayPath</code>
                                 </button>
-                                <button type="button" class="btn btn--sm" @onclick="() => CopyAsync(file.Content, file.FileName)">
+                                <button type="button" class="btn btn--sm" @onclick="() => CopyAsync(file.Content, displayPath)">
                                     <Icon Name="copy" Width="14" Height="14" />
-                                    <span>@(IsJustCopied(file.FileName) ? "Copied!" : "Copy")</span>
+                                    <span>@(IsJustCopied(displayPath) ? "Copied!" : "Copy")</span>
                                 </button>
                             </div>
                             <pre id="@($"{anchor}-content")" class="snippet-file-view__content"><code>@file.Content</code></pre>
@@ -107,18 +109,19 @@
 
     @if (HasOutline)
     {
-        <aside class="snippet-outline" aria-label="Files in this snippet">
+        <aside class="snippet-outline" aria-label="Files in this recipe">
             <div class="snippet-outline__inner">
                 <h2 class="snippet-outline__title">Files</h2>
                 <ul class="snippet-outline__list">
-                    @foreach (var file in _snippet!.Files)
+                    @foreach (var file in _recipe!.Files)
                     {
-                        var anchor = AnchorFor(file.FileName);
+                        var displayPath = DisplayPath(file);
+                        var anchor = AnchorFor(displayPath);
                         <li>
                             <a class="snippet-outline__link"
                                href="@($"#{anchor}")"
-                               @onclick="() => ExpandForJump(file.FileName)"
-                               @onclick:preventDefault="false">@file.FileName</a>
+                               @onclick="() => ExpandForJump(displayPath)"
+                               @onclick:preventDefault="false">@displayPath</a>
                         </li>
                     }
                 </ul>
@@ -130,27 +133,30 @@
 @code {
     [Parameter] public int Id { get; set; }
 
-    private Snippet? _snippet;
+    private Recipe? _recipe;
     private bool _loaded;
     private string? _justCopied;
     private CancellationTokenSource? _copyTimer;
     private readonly HashSet<string> _collapsed = new(StringComparer.Ordinal);
 
-    private bool HasOutline => _snippet is not null && _snippet.Files.Count > 1;
+    private bool HasOutline => _recipe is not null && _recipe.Files.Count > 1;
 
     protected override async Task OnInitializedAsync()
     {
-        _snippet = await Snippets.GetAsync(Id);
+        _recipe = await Recipes.GetAsync(Id);
         _loaded = true;
     }
 
-    private bool IsJustCopied(string fileName) => _justCopied == fileName;
+    private static string DisplayPath(RecipeFile file) =>
+        string.IsNullOrEmpty(file.RelativePath) ? file.FileName : file.RelativePath + "/" + file.FileName;
 
-    private void ToggleCollapsed(string fileName)
+    private bool IsJustCopied(string path) => _justCopied == path;
+
+    private void ToggleCollapsed(string path)
     {
-        if (!_collapsed.Add(fileName))
+        if (!_collapsed.Add(path))
         {
-            _collapsed.Remove(fileName);
+            _collapsed.Remove(path);
         }
     }
 
@@ -159,24 +165,24 @@
     /// collapsed) so the browser's hash-scroll lands on visible content
     /// instead of a collapsed stub.
     /// </summary>
-    private void ExpandForJump(string fileName) => _collapsed.Remove(fileName);
+    private void ExpandForJump(string path) => _collapsed.Remove(path);
 
-    private static string AnchorFor(string fileName)
+    private static string AnchorFor(string path)
     {
-        var sb = new System.Text.StringBuilder("snippet-file-");
-        foreach (var c in fileName)
+        var sb = new System.Text.StringBuilder("recipe-file-");
+        foreach (var c in path)
         {
             sb.Append(char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-');
         }
         return sb.ToString().TrimEnd('-');
     }
 
-    private async Task CopyAsync(string content, string fileName)
+    private async Task CopyAsync(string content, string path)
     {
         try
         {
             await JS.InvokeVoidAsync("navigator.clipboard.writeText", content);
-            _justCopied = fileName;
+            _justCopied = path;
             _copyTimer?.Cancel();
             _copyTimer?.Dispose();
             _copyTimer = new CancellationTokenSource();

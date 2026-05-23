@@ -219,6 +219,46 @@ public class OrganizationConfigService
             orgId, codeWorkspaceJson.Length);
     }
 
+    /// <summary>Cap on the Cookbook authoring guidance markdown body.</summary>
+    public const int MaxCookbookGuidanceLength = 10_000;
+
+    /// <summary>
+    /// Persists the Cookbook authoring guidance returned by the
+    /// <c>get_cookbook_guidance</c> MCP tool. Markdown; empty allowed
+    /// (the tool still returns the built-in type descriptions).
+    /// </summary>
+    public async Task SaveCookbookGuidanceAsync(string? guidance, CancellationToken ct = default)
+    {
+        var body = guidance?.Trim() ?? string.Empty;
+        if (body.Length > MaxCookbookGuidanceLength)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["CookbookGuidance"] = $"Guidance must be {MaxCookbookGuidanceLength} characters or fewer.",
+            });
+        }
+
+        await _quotaGuard.EnsureCanWriteAsync(ct);
+        var orgId = RequireOrganizationId();
+        var now = DateTime.UtcNow;
+
+        var row = await _db.OrganizationSettings
+            .FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
+        if (row is null)
+        {
+            row = new OrganizationSettings { OrganizationId = orgId };
+            _db.OrganizationSettings.Add(row);
+        }
+        row.CookbookGuidance = body;
+        row.UpdatedAt = now;
+
+        await _db.SaveChangesAsync(ct);
+        InvalidateCache(orgId);
+        _logger.LogInformation(
+            "Saved cookbook authoring guidance for org {OrgId} ({Bytes} chars).",
+            orgId, body.Length);
+    }
+
     /// <summary>
     /// Renames the current organisation. The slug is intentionally not
     /// editable — it's baked into the <c>org_id</c>/<c>org_name</c> claim set

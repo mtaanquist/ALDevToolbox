@@ -14,17 +14,17 @@ namespace ALDevToolbox.Tests.Components;
 /// <summary>
 /// Pins the "three states: loading, empty, populated" contract from
 /// CLAUDE.md §"Always have the end user in mind" for the user-facing
-/// snippets page. Specifically guards the two empty-state branches —
-/// the "no snippets in this org" copy points to <c>/snippets/suggest</c>
+/// cookbook page. Specifically guards the two empty-state branches —
+/// the "no recipes in this org" copy points to <c>/cookbook/suggest</c>
 /// (the recovery action) and is distinct from the "no match for query"
 /// copy, which name-checks the search term.
 /// </summary>
-public sealed class SnippetsBrowserTests : IDisposable
+public sealed class CookbookBrowserTests : IDisposable
 {
     private readonly TestDb _db = new();
     private readonly TestContext _ctx = new();
 
-    public SnippetsBrowserTests()
+    public CookbookBrowserTests()
     {
         var auth = _ctx.AddTestAuthorization();
         auth.SetAuthorized("tester@example.com");
@@ -33,7 +33,7 @@ public sealed class SnippetsBrowserTests : IDisposable
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString));
         _db.AddStorageServices(_ctx.Services);
-        _ctx.Services.AddScoped<SnippetService>();
+        _ctx.Services.AddScoped<RecipeService>();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),
@@ -49,28 +49,28 @@ public sealed class SnippetsBrowserTests : IDisposable
     [Fact]
     public void Empty_org_renders_the_recovery_link_to_the_suggest_page()
     {
-        var cut = _ctx.RenderComponent<SnippetsBrowser>();
+        var cut = _ctx.RenderComponent<CookbookBrowser>();
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("No snippets in this organisation yet");
-            cut.Find("a[href='/snippets/suggest']").Should().NotBeNull(
+            cut.Markup.Should().Contain("No recipes in this organisation yet");
+            cut.Find("a[href='/cookbook/suggest']").Should().NotBeNull(
                 "the empty-state copy must offer a path to the recovery action — "
                 + "CLAUDE.md §\"three states\" rule");
         });
     }
 
     [Fact]
-    public async Task Populated_org_renders_snippet_cards_with_links_to_the_detail_page()
+    public async Task Populated_org_renders_recipe_cards_with_links_to_the_detail_page()
     {
         await using (var seed = _db.NewContext())
         {
-            seed.Snippets.Add(SnippetBuilder.Default("Generic table proxy"));
-            seed.Snippets.Add(SnippetBuilder.Default("Posting routine skeleton"));
+            seed.Recipes.Add(RecipeBuilder.Default("Generic table proxy"));
+            seed.Recipes.Add(RecipeBuilder.Default("Posting routine skeleton"));
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<SnippetsBrowser>();
+        var cut = _ctx.RenderComponent<CookbookBrowser>();
 
         cut.WaitForAssertion(() =>
         {
@@ -79,28 +79,28 @@ public sealed class SnippetsBrowserTests : IDisposable
             cards.Select(c => c.TextContent).Should().BeEquivalentTo(
                 new[] { "Generic table proxy", "Posting routine skeleton" });
             cards.Select(c => c.GetAttribute("href"))
-                .Should().AllSatisfy(h => h!.StartsWith("/snippets/").Should().BeTrue());
+                .Should().AllSatisfy(h => h!.StartsWith("/cookbook/").Should().BeTrue());
         });
     }
 
     [Fact]
-    public async Task Deprecated_snippets_are_hidden_until_the_include_deprecated_checkbox_is_ticked()
+    public async Task Deprecated_recipes_are_hidden_until_the_include_deprecated_checkbox_is_ticked()
     {
         await using (var seed = _db.NewContext())
         {
-            seed.Snippets.Add(SnippetBuilder.Default("Active pattern"));
-            var deprecated = SnippetBuilder.Default("Old pattern");
+            seed.Recipes.Add(RecipeBuilder.Default("Active pattern"));
+            var deprecated = RecipeBuilder.Default("Old pattern");
             deprecated.Deprecated = true;
-            seed.Snippets.Add(deprecated);
+            seed.Recipes.Add(deprecated);
             await seed.SaveChangesAsync();
         }
 
-        var cut = _ctx.RenderComponent<SnippetsBrowser>();
+        var cut = _ctx.RenderComponent<CookbookBrowser>();
 
         cut.WaitForAssertion(() =>
         {
             cut.FindAll("a.snippet-card__title").Should().HaveCount(1,
-                "deprecated rows are hidden by default — SnippetService.SearchAsync's "
+                "deprecated rows are hidden by default — RecipeService.SearchAsync's "
                 + "includeDeprecated parameter defaults to false");
             cut.Markup.Should().Contain("Active pattern");
             cut.Markup.Should().NotContain("Old pattern");

@@ -1,23 +1,25 @@
-@page "/admin/snippets"
+@page "/admin/cookbook"
 @attribute [Authorize(Roles = "Admin,Editor")]
 @rendermode InteractiveServer
-@inject SnippetService Snippets
-@inject SnippetSuggestionService Suggestions
+@inject RecipeService Recipes
+@inject RecipeSuggestionService Suggestions
+@inject OrganizationConfigService Config
 @inject NavigationManager Nav
-@inject ILogger<AdminSnippets> Log
+@inject ILogger<AdminCookbook> Log
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services
 @using static ALDevToolbox.Components.Shared.AdminPageHelpers
 
-<PageTitle>Snippets · Admin · AL Dev Toolbox</PageTitle>
+<PageTitle>Cookbook · Admin · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page">
     <header class="admin-page__header">
         <div>
-            <h1>Snippets</h1>
+            <h1>Cookbook</h1>
             <p class="muted">
-                Curate the snippet library for this organisation. End users see
-                the published list at <code>/snippets</code>; user-submitted
+                Curate the recipe library for this organisation. End users see
+                the published list at <code>/cookbook</code>; user-submitted
                 suggestions appear in the queue below.
             </p>
         </div>
@@ -49,7 +51,7 @@
     }
     else if (_rows.Count == 0)
     {
-        <p class="muted">No snippets yet. Click <strong>New snippet</strong> below to create one.</p>
+        <p class="muted">No recipes yet. Click <strong>New recipe</strong> below to create one.</p>
     }
     else
     {
@@ -57,6 +59,7 @@
             <thead>
                 <tr>
                     <th>Title</th>
+                    <th>Type</th>
                     <th>Files</th>
                     <th>Keywords</th>
                     <th>Status</th>
@@ -69,12 +72,13 @@
                 {
                     <tr class="@(s.DeletedAt is not null ? "data-table__row--muted" : null)">
                         <td>@s.Title</td>
+                        <td>@s.Type</td>
                         <td>@s.Files.Count</td>
                         <td class="muted">@s.Keywords</td>
                         <td>@SoftDeleteStatus(s.DeletedAt, s.Deprecated)</td>
                         <td><time datetime="@s.UpdatedAt.ToString("O")">@s.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                         <td class="data-table__actions">
-                            <a class="btn btn--sm" href="@($"/admin/snippets/{s.Id}")">
+                            <a class="btn btn--sm" href="@($"/admin/cookbook/{s.Id}")">
                                 <Icon Name="pencil" Width="14" Height="14" />
                                 <span>Edit</span>
                             </a>
@@ -104,11 +108,39 @@
     }
 
     <div class="admin-page__footer-actions">
-        <a class="btn btn--primary" href="/admin/snippets/new">
+        <a class="btn btn--primary" href="/admin/cookbook/new">
             <Icon Name="plus" Width="16" Height="16" />
-            <span>New snippet</span>
+            <span>New recipe</span>
         </a>
     </div>
+
+    <section class="admin-section">
+        <h2>Cookbook authoring guidance</h2>
+        <p class="muted">
+            Shown to MCP agents by the <code>get_cookbook_guidance</code> tool
+            before they call <code>suggest_recipe</code>. Document the
+            conventions you want submitted recipes to follow — naming, prefixes,
+            preferred event-subscriber style, anything specific to this
+            organisation. Markdown. Built-in descriptions of each recipe Type
+            are appended automatically.
+        </p>
+        <div class="form-grid form-grid--narrow">
+            <section class="form-section">
+                <textarea id="cookbook-guidance" rows="10" maxlength="@OrganizationConfigService.MaxCookbookGuidanceLength"
+                          @bind="_guidance" @bind:event="oninput"
+                          placeholder="Recipes in this organisation use the 'ACME' prefix on every object name. Pattern recipes should include a setup permission set. ..."></textarea>
+                <FieldError Field="CookbookGuidance" Errors="_guidanceErrors" />
+            </section>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn--primary"
+                    @onclick="SaveGuidanceAsync"
+                    disabled="@(_savingGuidance || _guidance == _guidanceBaseline)">
+                <Icon Name="save" Width="14" Height="14" />
+                <span>@(_savingGuidance ? "Saving…" : "Save guidance")</span>
+            </button>
+        </div>
+    </section>
 
     <section class="admin-section">
         <h2>Suggestions</h2>
@@ -130,6 +162,7 @@
                 <thead>
                     <tr>
                         <th>Title</th>
+                        <th>Type</th>
                         <th>Submitted by</th>
                         <th>Files</th>
                         <th>Submitted (UTC)</th>
@@ -141,11 +174,12 @@
                     {
                         <tr>
                             <td>@s.Title</td>
+                            <td>@s.Type</td>
                             <td class="muted">@(s.SuggestedByUser?.DisplayName ?? "unknown user")</td>
                             <td>@s.Files.Count</td>
                             <td><time datetime="@s.RequestedAt.ToString("O")">@s.RequestedAt.ToString("yyyy-MM-dd HH:mm:ss")</time></td>
                             <td class="data-table__actions">
-                                <a class="btn btn--sm" href="@($"/admin/snippets/suggestions?focus={s.Id}")">
+                                <a class="btn btn--sm" href="@($"/admin/cookbook/suggestions?focus={s.Id}")">
                                     <Icon Name="inbox" Width="14" Height="14" />
                                     <span>Review</span>
                                 </a>
@@ -160,8 +194,8 @@
 
 @code {
     private bool _showDeleted;
-    private List<Snippet>? _rows;
-    private List<SnippetSuggestion>? _suggestions;
+    private List<Recipe>? _rows;
+    private List<RecipeSuggestion>? _suggestions;
     private bool _busy;
     private string? _lastError;
     private string? _lastSuccess;
@@ -169,15 +203,25 @@
     // delete. Switching to a different row resets the arming.
     private int? _pendingDeleteId;
 
-    protected override Task OnInitializedAsync() => ReloadAsync();
+    private string _guidance = string.Empty;
+    private string _guidanceBaseline = string.Empty;
+    private bool _savingGuidance;
+    private IReadOnlyDictionary<string, string>? _guidanceErrors;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var config = await Config.GetCurrentAsync();
+        _guidance = _guidanceBaseline = config.Settings.CookbookGuidance ?? string.Empty;
+        await ReloadAsync();
+    }
 
     private async Task ReloadAsync()
     {
-        _rows = await Snippets.GetAllForAdminAsync(includeDeleted: _showDeleted);
+        _rows = await Recipes.GetAllForAdminAsync(includeDeleted: _showDeleted);
         _suggestions = await Suggestions.GetPendingAsync();
     }
 
-    private async Task DeleteClickAsync(Snippet s)
+    private async Task DeleteClickAsync(Recipe s)
     {
         if (_pendingDeleteId != s.Id)
         {
@@ -185,18 +229,18 @@
             return;
         }
         _pendingDeleteId = null;
-        await RunActionAsync(() => Snippets.SoftDeleteAsync(s.Id), $"Snippet '{s.Title}' deleted.");
+        await RunActionAsync(() => Recipes.SoftDeleteAsync(s.Id), $"Recipe '{s.Title}' deleted.");
     }
 
-    private async Task RestoreAsync(Snippet s)
+    private async Task RestoreAsync(Recipe s)
     {
-        await RunActionAsync(() => Snippets.RestoreAsync(s.Id), $"Snippet '{s.Title}' restored.");
+        await RunActionAsync(() => Recipes.RestoreAsync(s.Id), $"Recipe '{s.Title}' restored.");
     }
 
-    private async Task SetDeprecatedAsync(Snippet s, bool deprecated)
+    private async Task SetDeprecatedAsync(Recipe s, bool deprecated)
     {
         var label = deprecated ? "deprecated" : "un-deprecated";
-        await RunActionAsync(() => Snippets.SetDeprecatedAsync(s.Id, deprecated), $"Snippet '{s.Title}' {label}.");
+        await RunActionAsync(() => Recipes.SetDeprecatedAsync(s.Id, deprecated), $"Recipe '{s.Title}' {label}.");
     }
 
     private async Task RunActionAsync(Func<Task> action, string successMessage)
@@ -218,7 +262,7 @@
         }
         catch (Exception ex)
         {
-            Log.LogError(ex, "Snippet admin action failed.");
+            Log.LogError(ex, "Cookbook admin action failed.");
             _lastError = "An unexpected error occurred. The change was not saved.";
         }
         finally
@@ -227,4 +271,31 @@
         }
     }
 
+    private async Task SaveGuidanceAsync()
+    {
+        if (_savingGuidance) return;
+        _savingGuidance = true;
+        _guidanceErrors = null;
+        _lastError = null;
+        _lastSuccess = null;
+        try
+        {
+            await Config.SaveCookbookGuidanceAsync(_guidance);
+            _guidanceBaseline = _guidance;
+            _lastSuccess = "Cookbook guidance saved.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _guidanceErrors = ex.Errors;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save cookbook guidance.");
+            _lastError = "An unexpected error occurred. Guidance was not saved.";
+        }
+        finally
+        {
+            _savingGuidance = false;
+        }
+    }
 }

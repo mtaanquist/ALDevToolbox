@@ -7,16 +7,16 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace ALDevToolbox.Tests.Snippets;
+namespace ALDevToolbox.Tests.Cookbook;
 
 /// <summary>
-/// Approval workflow for <see cref="SnippetSuggestionService"/>: submit creates
-/// a pending row, approve promotes it to a real <see cref="Snippet"/>
+/// Approval workflow for <see cref="RecipeSuggestionService"/>: submit creates
+/// a pending row, approve promotes it to a real <see cref="Recipe"/>
 /// atomically with the decision columns, reject closes it with an optional
-/// note. The title-clash guard on approval prevents a duplicate snippet
+/// note. The title-clash guard on approval prevents a duplicate recipe
 /// landing if another suggestion was approved with the same title in between.
 /// </summary>
-public sealed class SnippetSuggestionWorkflowTests : IDisposable
+public sealed class RecipeSuggestionWorkflowTests : IDisposable
 {
     private readonly TestDb _db = new();
 
@@ -49,24 +49,26 @@ public sealed class SnippetSuggestionWorkflowTests : IDisposable
 
         await using var ctx = _db.NewContext();
         var svc = NewSuggestionService(ctx);
-        var id = await svc.SubmitAsync(new SnippetSuggestionInput(
+        var id = await svc.SubmitAsync(new RecipeSuggestionInput(
             Title: "Idea",
             Description: "A useful pattern.",
             Keywords: "alpha beta",
+            Type: RecipeType.Pattern,
             Files: new[]
             {
-                new SnippetFileInput("Sub.Codeunit.al", "// sub"),
-                new SnippetFileInput("Ext.PageExt.al", "// ext"),
+                new RecipeFileInput("Sub.Codeunit.al", "// sub"),
+                new RecipeFileInput("Ext.PageExt.al", "// ext"),
             }));
 
         await using var read = _db.NewContext();
-        var row = await read.SnippetSuggestions
+        var row = await read.RecipeSuggestions
             .Include(s => s.Files.OrderBy(f => f.Ordering))
             .SingleAsync(s => s.Id == id);
-        row.Decision.Should().Be(SnippetSuggestionDecision.Pending);
+        row.Decision.Should().Be(RecipeSuggestionDecision.Pending);
+        row.Type.Should().Be(RecipeType.Pattern);
         row.SuggestedByUserId.Should().Be(user.Id);
         row.DecidedAt.Should().BeNull();
-        row.ApprovedSnippetId.Should().BeNull();
+        row.ApprovedRecipeId.Should().BeNull();
         row.Files.Select(f => f.FileName).Should().Equal("Sub.Codeunit.al", "Ext.PageExt.al");
     }
 
@@ -78,15 +80,15 @@ public sealed class SnippetSuggestionWorkflowTests : IDisposable
 
         await using var ctx = _db.NewContext();
         var svc = NewSuggestionService(ctx);
-        Func<Task> act = () => svc.SubmitAsync(new SnippetSuggestionInput(
-            "Idea", "Body.", "", Array.Empty<SnippetFileInput>()));
+        Func<Task> act = () => svc.SubmitAsync(new RecipeSuggestionInput(
+            "Idea", "Body.", "", RecipeType.Snippet, Array.Empty<RecipeFileInput>()));
 
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("Files");
     }
 
     [Fact]
-    public async Task Approve_promotes_suggestion_to_snippet_and_stamps_decision()
+    public async Task Approve_promotes_suggestion_to_recipe_and_stamps_decision()
     {
         var user = await SeedUserAsync(userId: 702);
         _db.OrgContext.CurrentUserId = user.Id;
@@ -94,56 +96,61 @@ public sealed class SnippetSuggestionWorkflowTests : IDisposable
         int suggestionId;
         await using (var ctx = _db.NewContext())
         {
-            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new SnippetSuggestionInput(
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new RecipeSuggestionInput(
                 Title: "Approve Me",
                 Description: "Pending body.",
                 Keywords: "approve",
-                Files: new[] { new SnippetFileInput("Sample.al", "// content") }));
+                Type: RecipeType.Pattern,
+                Files: new[] { new RecipeFileInput("Sample.al", "// content", "src") }));
         }
 
         var admin = await SeedUserAsync(userId: 703, display: "Admin", role: UserRole.Admin);
         _db.OrgContext.CurrentUserId = admin.Id;
 
-        Snippet snippet;
+        Recipe recipe;
         await using (var ctx = _db.NewContext())
         {
-            snippet = await NewSuggestionService(ctx).ApproveAsync(suggestionId);
+            recipe = await NewSuggestionService(ctx).ApproveAsync(suggestionId);
         }
 
         await using var verify = _db.NewContext();
-        var persistedSnippet = await verify.Snippets
+        var persistedRecipe = await verify.Recipes
             .Include(s => s.Files)
-            .SingleAsync(s => s.Id == snippet.Id);
-        persistedSnippet.Title.Should().Be("Approve Me");
-        persistedSnippet.Files.Should().ContainSingle(f => f.FileName == "Sample.al" && f.Content == "// content");
+            .SingleAsync(s => s.Id == recipe.Id);
+        persistedRecipe.Title.Should().Be("Approve Me");
+        persistedRecipe.Type.Should().Be(RecipeType.Pattern,
+            "Type is carried through from the suggestion on approval");
+        persistedRecipe.Files.Should().ContainSingle(f =>
+            f.FileName == "Sample.al" && f.Content == "// content" && f.RelativePath == "src");
 
-        var persistedSuggestion = await verify.SnippetSuggestions.SingleAsync(s => s.Id == suggestionId);
-        persistedSuggestion.Decision.Should().Be(SnippetSuggestionDecision.Approved);
-        persistedSuggestion.ApprovedSnippetId.Should().Be(snippet.Id);
+        var persistedSuggestion = await verify.RecipeSuggestions.SingleAsync(s => s.Id == suggestionId);
+        persistedSuggestion.Decision.Should().Be(RecipeSuggestionDecision.Approved);
+        persistedSuggestion.ApprovedRecipeId.Should().Be(recipe.Id);
         persistedSuggestion.DecidedByUserId.Should().Be(admin.Id);
         persistedSuggestion.DecidedAt.Should().NotBeNull();
     }
 
     [Fact]
-    public async Task Approve_refuses_when_title_already_taken_by_existing_snippet()
+    public async Task Approve_refuses_when_title_already_taken_by_existing_recipe()
     {
         var user = await SeedUserAsync(userId: 704);
         _db.OrgContext.CurrentUserId = user.Id;
 
         await using (var ctx = _db.NewContext())
         {
-            ctx.Snippets.Add(SnippetBuilder.Default("Taken").WithFile("A.al", "// existing"));
+            ctx.Recipes.Add(RecipeBuilder.Default("Taken").WithFile("A.al", "// existing"));
             await ctx.SaveChangesAsync();
         }
 
         int suggestionId;
         await using (var ctx = _db.NewContext())
         {
-            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new SnippetSuggestionInput(
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new RecipeSuggestionInput(
                 Title: "Taken",
                 Description: "Same name, different body.",
                 Keywords: "",
-                Files: new[] { new SnippetFileInput("B.al", "// new") }));
+                Type: RecipeType.Snippet,
+                Files: new[] { new RecipeFileInput("B.al", "// new") }));
         }
 
         var admin = await SeedUserAsync(userId: 705, display: "Admin", role: UserRole.Admin);
@@ -154,10 +161,10 @@ public sealed class SnippetSuggestionWorkflowTests : IDisposable
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("Title");
 
-        // Suggestion remains pending — no snippet was created from it.
+        // Suggestion remains pending — no recipe was created from it.
         await using var verify = _db.NewContext();
-        (await verify.SnippetSuggestions.SingleAsync(s => s.Id == suggestionId))
-            .Decision.Should().Be(SnippetSuggestionDecision.Pending);
+        (await verify.RecipeSuggestions.SingleAsync(s => s.Id == suggestionId))
+            .Decision.Should().Be(RecipeSuggestionDecision.Pending);
     }
 
     [Fact]
@@ -169,8 +176,8 @@ public sealed class SnippetSuggestionWorkflowTests : IDisposable
         int suggestionId;
         await using (var ctx = _db.NewContext())
         {
-            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new SnippetSuggestionInput(
-                "Drop Me", "Body.", "", new[] { new SnippetFileInput("A.al", "// a") }));
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new RecipeSuggestionInput(
+                "Drop Me", "Body.", "", RecipeType.Snippet, new[] { new RecipeFileInput("A.al", "// a") }));
         }
 
         var admin = await SeedUserAsync(userId: 707, role: UserRole.Admin);
@@ -182,17 +189,17 @@ public sealed class SnippetSuggestionWorkflowTests : IDisposable
         }
 
         await using var verify = _db.NewContext();
-        var row = await verify.SnippetSuggestions.SingleAsync(s => s.Id == suggestionId);
-        row.Decision.Should().Be(SnippetSuggestionDecision.Rejected);
+        var row = await verify.RecipeSuggestions.SingleAsync(s => s.Id == suggestionId);
+        row.Decision.Should().Be(RecipeSuggestionDecision.Rejected);
         row.DecidedByUserId.Should().Be(admin.Id);
         row.DecisionNote.Should().Be("Too narrow.");
-        row.ApprovedSnippetId.Should().BeNull();
+        row.ApprovedRecipeId.Should().BeNull();
 
-        (await verify.Snippets.AnyAsync()).Should().BeFalse();
+        (await verify.Recipes.AnyAsync()).Should().BeFalse();
     }
 
     [Fact]
-    public async Task Approve_carries_instructions_and_minimum_application_version_to_snippet()
+    public async Task Approve_carries_instructions_and_minimum_application_version_to_recipe()
     {
         ApplicationVersion version;
         await using (var ctx = _db.NewContext())
@@ -217,27 +224,28 @@ public sealed class SnippetSuggestionWorkflowTests : IDisposable
         int suggestionId;
         await using (var ctx = _db.NewContext())
         {
-            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new SnippetSuggestionInput(
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new RecipeSuggestionInput(
                 Title: "Carry metadata",
                 Description: "Body.",
                 Keywords: "",
-                Files: new[] { new SnippetFileInput("A.al", "// a") },
+                Type: RecipeType.Snippet,
+                Files: new[] { new RecipeFileInput("A.al", "// a") },
                 Instructions: "## Setup\n\nDrop into `src/`.",
                 MinimumApplicationVersionId: version.Id));
         }
 
         var admin = await SeedUserAsync(userId: 721, role: UserRole.Admin);
         _db.OrgContext.CurrentUserId = admin.Id;
-        Snippet snippet;
+        Recipe recipe;
         await using (var ctx = _db.NewContext())
         {
-            snippet = await NewSuggestionService(ctx).ApproveAsync(suggestionId);
+            recipe = await NewSuggestionService(ctx).ApproveAsync(suggestionId);
         }
 
         await using var verify = _db.NewContext();
-        var promoted = await verify.Snippets
+        var promoted = await verify.Recipes
             .Include(s => s.MinimumApplicationVersion)
-            .SingleAsync(s => s.Id == snippet.Id);
+            .SingleAsync(s => s.Id == recipe.Id);
         promoted.Instructions.Should().Be("## Setup\n\nDrop into `src/`.");
         promoted.MinimumApplicationVersionId.Should().Be(version.Id);
         promoted.MinimumApplicationVersion!.Name.Should().Be("BC 2026 Wave 1");
@@ -251,8 +259,8 @@ public sealed class SnippetSuggestionWorkflowTests : IDisposable
         int suggestionId;
         await using (var ctx = _db.NewContext())
         {
-            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new SnippetSuggestionInput(
-                "Once", "Body.", "", new[] { new SnippetFileInput("A.al", "// a") }));
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new RecipeSuggestionInput(
+                "Once", "Body.", "", RecipeType.Snippet, new[] { new RecipeFileInput("A.al", "// a") }));
         }
 
         var admin = await SeedUserAsync(userId: 709, role: UserRole.Admin);
@@ -278,38 +286,41 @@ public sealed class SnippetSuggestionWorkflowTests : IDisposable
         int suggestionId;
         await using (var ctx = _db.NewContext())
         {
-            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new SnippetSuggestionInput(
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new RecipeSuggestionInput(
                 Title: "Original Title",
                 Description: "Original body.",
                 Keywords: "alpha",
+                Type: RecipeType.Snippet,
                 Files: new[]
                 {
-                    new SnippetFileInput("Keep.al", "// original keep"),
-                    new SnippetFileInput("Drop.al", "// goes away"),
+                    new RecipeFileInput("Keep.al", "// original keep"),
+                    new RecipeFileInput("Drop.al", "// goes away"),
                 }));
         }
 
         await using (var ctx = _db.NewContext())
         {
-            await NewSuggestionService(ctx).UpdateAsync(suggestionId, new SnippetSuggestionInput(
+            await NewSuggestionService(ctx).UpdateAsync(suggestionId, new RecipeSuggestionInput(
                 Title: "Revised Title",
                 Description: "Revised body.",
                 Keywords: "alpha beta",
+                Type: RecipeType.Pattern,
                 Files: new[]
                 {
-                    new SnippetFileInput("Keep.al", "// revised keep"),
-                    new SnippetFileInput("New.al", "// brand new"),
+                    new RecipeFileInput("Keep.al", "// revised keep"),
+                    new RecipeFileInput("New.al", "// brand new"),
                 }));
         }
 
         await using var read = _db.NewContext();
-        var row = await read.SnippetSuggestions
+        var row = await read.RecipeSuggestions
             .Include(s => s.Files.OrderBy(f => f.Ordering))
             .SingleAsync(s => s.Id == suggestionId);
         row.Title.Should().Be("Revised Title");
         row.Description.Should().Be("Revised body.");
         row.Keywords.Should().Be("alpha beta");
-        row.Decision.Should().Be(SnippetSuggestionDecision.Pending);
+        row.Type.Should().Be(RecipeType.Pattern);
+        row.Decision.Should().Be(RecipeSuggestionDecision.Pending);
         row.Files.Select(f => f.FileName).Should().Equal("Keep.al", "New.al");
         row.Files[0].Content.Should().Be("// revised keep");
         row.Files[1].Content.Should().Be("// brand new");
@@ -324,22 +335,24 @@ public sealed class SnippetSuggestionWorkflowTests : IDisposable
         int suggestionId;
         await using (var ctx = _db.NewContext())
         {
-            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new SnippetSuggestionInput(
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new RecipeSuggestionInput(
                 Title: "Owned By 721",
                 Description: "Body.",
                 Keywords: "",
-                Files: new[] { new SnippetFileInput("a.al", "// hi") }));
+                Type: RecipeType.Snippet,
+                Files: new[] { new RecipeFileInput("a.al", "// hi") }));
         }
 
         var other = await SeedUserAsync(userId: 722, display: "Someone Else");
         _db.OrgContext.CurrentUserId = other.Id;
 
         await using var ctx2 = _db.NewContext();
-        Func<Task> act = () => NewSuggestionService(ctx2).UpdateAsync(suggestionId, new SnippetSuggestionInput(
+        Func<Task> act = () => NewSuggestionService(ctx2).UpdateAsync(suggestionId, new RecipeSuggestionInput(
             Title: "Hijacked",
             Description: "Body.",
             Keywords: "",
-            Files: new[] { new SnippetFileInput("a.al", "// hi") }));
+            Type: RecipeType.Snippet,
+            Files: new[] { new RecipeFileInput("a.al", "// hi") }));
 
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("SuggestedByUserId");
@@ -354,11 +367,12 @@ public sealed class SnippetSuggestionWorkflowTests : IDisposable
         int suggestionId;
         await using (var ctx = _db.NewContext())
         {
-            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new SnippetSuggestionInput(
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new RecipeSuggestionInput(
                 Title: "Will Be Approved",
                 Description: "Body.",
                 Keywords: "",
-                Files: new[] { new SnippetFileInput("a.al", "// hi") }));
+                Type: RecipeType.Snippet,
+                Files: new[] { new RecipeFileInput("a.al", "// hi") }));
         }
 
         var admin = await SeedUserAsync(userId: 724, display: "Admin", role: UserRole.Admin);
@@ -370,11 +384,12 @@ public sealed class SnippetSuggestionWorkflowTests : IDisposable
 
         _db.OrgContext.CurrentUserId = user.Id;
         await using var ctx2 = _db.NewContext();
-        Func<Task> act = () => NewSuggestionService(ctx2).UpdateAsync(suggestionId, new SnippetSuggestionInput(
+        Func<Task> act = () => NewSuggestionService(ctx2).UpdateAsync(suggestionId, new RecipeSuggestionInput(
             Title: "Will Be Approved",
             Description: "Updated body.",
             Keywords: "",
-            Files: new[] { new SnippetFileInput("a.al", "// hi") }));
+            Type: RecipeType.Snippet,
+            Files: new[] { new RecipeFileInput("a.al", "// hi") }));
 
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("Decision");
@@ -389,11 +404,12 @@ public sealed class SnippetSuggestionWorkflowTests : IDisposable
         int suggestionId;
         await using (var ctx = _db.NewContext())
         {
-            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new SnippetSuggestionInput(
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new RecipeSuggestionInput(
                 Title: "Will Be Rejected",
                 Description: "Body.",
                 Keywords: "",
-                Files: new[] { new SnippetFileInput("a.al", "// hi") }));
+                Type: RecipeType.Snippet,
+                Files: new[] { new RecipeFileInput("a.al", "// hi") }));
         }
 
         var admin = await SeedUserAsync(userId: 726, display: "Admin", role: UserRole.Admin);
@@ -405,11 +421,12 @@ public sealed class SnippetSuggestionWorkflowTests : IDisposable
 
         _db.OrgContext.CurrentUserId = user.Id;
         await using var ctx2 = _db.NewContext();
-        Func<Task> act = () => NewSuggestionService(ctx2).UpdateAsync(suggestionId, new SnippetSuggestionInput(
+        Func<Task> act = () => NewSuggestionService(ctx2).UpdateAsync(suggestionId, new RecipeSuggestionInput(
             Title: "Will Be Rejected",
             Description: "Updated body.",
             Keywords: "",
-            Files: new[] { new SnippetFileInput("a.al", "// hi") }));
+            Type: RecipeType.Snippet,
+            Files: new[] { new RecipeFileInput("a.al", "// hi") }));
 
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("Decision");
@@ -424,19 +441,21 @@ public sealed class SnippetSuggestionWorkflowTests : IDisposable
         int suggestionId;
         await using (var ctx = _db.NewContext())
         {
-            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new SnippetSuggestionInput(
+            suggestionId = await NewSuggestionService(ctx).SubmitAsync(new RecipeSuggestionInput(
                 Title: "Original",
                 Description: "Body.",
                 Keywords: "",
-                Files: new[] { new SnippetFileInput("a.al", "// hi") }));
+                Type: RecipeType.Snippet,
+                Files: new[] { new RecipeFileInput("a.al", "// hi") }));
         }
 
         await using var ctx2 = _db.NewContext();
-        Func<Task> act = () => NewSuggestionService(ctx2).UpdateAsync(suggestionId, new SnippetSuggestionInput(
+        Func<Task> act = () => NewSuggestionService(ctx2).UpdateAsync(suggestionId, new RecipeSuggestionInput(
             Title: "",
             Description: "Body.",
             Keywords: "",
-            Files: new[] { new SnippetFileInput("a.al", "// hi") }));
+            Type: RecipeType.Snippet,
+            Files: new[] { new RecipeFileInput("a.al", "// hi") }));
 
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("Title");
@@ -449,16 +468,17 @@ public sealed class SnippetSuggestionWorkflowTests : IDisposable
         _db.OrgContext.CurrentUserId = user.Id;
 
         await using var ctx = _db.NewContext();
-        Func<Task> act = () => NewSuggestionService(ctx).UpdateAsync(9_999_999, new SnippetSuggestionInput(
+        Func<Task> act = () => NewSuggestionService(ctx).UpdateAsync(9_999_999, new RecipeSuggestionInput(
             Title: "X",
             Description: "Y",
             Keywords: "",
-            Files: new[] { new SnippetFileInput("a.al", "// hi") }));
+            Type: RecipeType.Snippet,
+            Files: new[] { new RecipeFileInput("a.al", "// hi") }));
 
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("Id");
     }
 
-    private SnippetSuggestionService NewSuggestionService(ALDevToolbox.Data.AppDbContext ctx) =>
-        new(ctx, NullLogger<SnippetSuggestionService>.Instance, _db.OrgContext);
+    private RecipeSuggestionService NewSuggestionService(ALDevToolbox.Data.AppDbContext ctx) =>
+        new(ctx, NullLogger<RecipeSuggestionService>.Instance, _db.OrgContext);
 }

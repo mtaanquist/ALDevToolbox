@@ -4,19 +4,20 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace ALDevToolbox.Data.Configurations;
 
-internal sealed class SnippetSuggestionFileConfiguration : IEntityTypeConfiguration<SnippetSuggestionFile>
+internal sealed class RecipeSuggestionFileConfiguration : IEntityTypeConfiguration<RecipeSuggestionFile>
 {
 
-    public void Configure(EntityTypeBuilder<SnippetSuggestionFile> entity)
+    public void Configure(EntityTypeBuilder<RecipeSuggestionFile> entity)
     {
-        entity.ToTable("snippet_suggestion_files");
+        entity.ToTable("recipe_suggestion_files");
         entity.HasKey(e => e.Id);
         entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd();
         entity.Property(e => e.OrganizationId).HasColumnName("organization_id").IsRequired();
-        entity.Property(e => e.SnippetSuggestionId).HasColumnName("snippet_suggestion_id").IsRequired();
+        entity.Property(e => e.RecipeSuggestionId).HasColumnName("recipe_suggestion_id").IsRequired();
         entity.Property(e => e.Ordering).HasColumnName("ordering").IsRequired();
+        entity.Property(e => e.RelativePath).HasColumnName("relative_path").IsRequired();
         entity.Property(e => e.FileName).HasColumnName("file_name").IsRequired();
         entity.Property(e => e.Content).HasColumnName("content").IsRequired();
-        entity.HasIndex(e => new { e.OrganizationId, e.SnippetSuggestionId, e.Ordering });
+        entity.HasIndex(e => new { e.OrganizationId, e.RecipeSuggestionId, e.Ordering });
     }
 }

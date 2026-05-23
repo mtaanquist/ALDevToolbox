@@ -135,8 +135,8 @@ builder.Services.AddDbContext<AppDbContext>((sp, options) =>
         .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
 
 builder.Services.AddScoped<TemplateService>();
-builder.Services.AddScoped<SnippetService>();
-builder.Services.AddScoped<SnippetSuggestionService>();
+builder.Services.AddScoped<RecipeService>();
+builder.Services.AddScoped<RecipeSuggestionService>();
 builder.Services.AddScoped<ModuleService>();
 builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<ApplicationVersionService>();
@@ -364,7 +364,7 @@ builder.Services.AddSingleton<ALDevToolbox.Services.Mcp.McpAvailabilityState>();
 builder.Services.AddSingleton<ALDevToolbox.Services.Mcp.IMcpAvailability>(
     sp => sp.GetRequiredService<ALDevToolbox.Services.Mcp.McpAvailabilityState>());
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.WorkspaceTools>();
-builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.SnippetTools>();
+builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.CookbookTools>();
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.ObjectExplorerTools>();
 builder.Services
     .AddMcpServer()
@@ -549,7 +549,23 @@ app.MapAdminEndpoints();
 app.MapAccountEndpoints();
 app.MapAdminUserEndpoints();
 app.MapObjectExplorerEndpoints();
-app.MapSnippetEndpoints();
+app.MapCookbookEndpoints();
+// Compatibility redirects so old `/snippets` and `/api/snippets/{id}/download`
+// links continue to land in the right place after the Cookbook rename.
+app.MapGet("/snippets", () => Results.LocalRedirect("/cookbook", permanent: true));
+app.MapGet("/snippets/suggest", () => Results.LocalRedirect("/cookbook/suggest", permanent: true));
+app.MapGet("/snippets/{id:int}", (int id) => Results.LocalRedirect($"/cookbook/{id}", permanent: true));
+app.MapGet("/admin/snippets", () => Results.LocalRedirect("/admin/cookbook", permanent: true));
+app.MapGet("/admin/snippets/new", () => Results.LocalRedirect("/admin/cookbook/new", permanent: true));
+app.MapGet("/admin/snippets/{id:int}", (int id) => Results.LocalRedirect($"/admin/cookbook/{id}", permanent: true));
+app.MapGet("/admin/snippets/suggestions", (HttpContext ctx) =>
+{
+    var focus = ctx.Request.Query["focus"].ToString();
+    var query = string.IsNullOrEmpty(focus) ? string.Empty : $"?focus={focus}";
+    return Results.LocalRedirect("/admin/cookbook/suggestions" + query, permanent: true);
+});
+app.MapGet("/api/snippets/{id:int}/download", (int id) =>
+    Results.LocalRedirect($"/api/cookbook/{id}/download", permanent: true));
 app.MapSiteAdminEndpoints();
 app.MapMcpEndpoints();
 app.MapOAuthEndpoints();

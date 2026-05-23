@@ -7,43 +7,45 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace ALDevToolbox.Tests.Snippets;
+namespace ALDevToolbox.Tests.Cookbook;
 
 /// <summary>
-/// Happy-path and validation coverage for <see cref="SnippetService"/>:
+/// Happy-path and validation coverage for <see cref="RecipeService"/>:
 /// create, update (file reconcile), soft-delete/restore, deprecate, and the
 /// validation rules that protect the API contract.
 /// </summary>
-public sealed class SnippetServiceTests : IDisposable
+public sealed class RecipeServiceTests : IDisposable
 {
     private readonly TestDb _db = new();
 
     public void Dispose() => _db.Dispose();
 
     [Fact]
-    public async Task Create_persists_snippet_and_files_in_order()
+    public async Task Create_persists_recipe_and_files_in_order()
     {
         await using var ctx = _db.NewContext();
         var svc = NewService(ctx);
 
-        var input = new SnippetInput(
+        var input = new RecipeInput(
             Title: "Doc Attachment Factbox",
             Description: "Expose the standard factbox on an unsupported table.",
             Keywords: "  Factbox Attachment Subscriber ",
+            Type: RecipeType.Pattern,
             Deprecated: false,
             Files: new[]
             {
-                new SnippetFileInput("EventSub.Codeunit.al", "// subscriber"),
-                new SnippetFileInput("MyPageExt.PageExt.al", "// page ext"),
+                new RecipeFileInput("EventSub.Codeunit.al", "// subscriber"),
+                new RecipeFileInput("MyPageExt.PageExt.al", "// page ext"),
             });
 
-        var snippet = await svc.CreateAsync(input);
+        var recipe = await svc.CreateAsync(input);
 
         await using var read = _db.NewContext();
-        var persisted = await read.Snippets
+        var persisted = await read.Recipes
             .Include(s => s.Files.OrderBy(f => f.Ordering))
-            .SingleAsync(s => s.Id == snippet.Id);
+            .SingleAsync(s => s.Id == recipe.Id);
         persisted.Title.Should().Be("Doc Attachment Factbox");
+        persisted.Type.Should().Be(RecipeType.Pattern);
         persisted.Keywords.Should().Be("factbox attachment subscriber", "keywords are normalised to lower-case");
         persisted.Files.Select(f => f.FileName).Should().Equal(
             "EventSub.Codeunit.al", "MyPageExt.PageExt.al");
@@ -53,39 +55,40 @@ public sealed class SnippetServiceTests : IDisposable
     [Fact]
     public async Task Update_reconciles_files_in_place_and_preserves_ids()
     {
-        int snippetId;
+        int recipeId;
         int fileAId, fileBId;
         await using (var ctx = _db.NewContext())
         {
-            var s = SnippetBuilder.Default("Reorder Me")
+            var s = RecipeBuilder.Default("Reorder Me")
                 .WithFile("A.al", "// a")
                 .WithFile("B.al", "// b");
-            ctx.Snippets.Add(s);
+            ctx.Recipes.Add(s);
             await ctx.SaveChangesAsync();
-            snippetId = s.Id;
+            recipeId = s.Id;
             fileAId = s.Files.Single(f => f.FileName == "A.al").Id;
             fileBId = s.Files.Single(f => f.FileName == "B.al").Id;
         }
 
-        var input = new SnippetInput(
+        var input = new RecipeInput(
             Title: "Reorder Me",
-            Description: "Synthetic snippet used in tests.",
+            Description: "Synthetic recipe used in tests.",
             Keywords: "test",
+            Type: RecipeType.Snippet,
             Deprecated: false,
             Files: new[]
             {
-                new SnippetFileInput("B.al", "// b edited"),
-                new SnippetFileInput("A.al", "// a"),
+                new RecipeFileInput("B.al", "// b edited"),
+                new RecipeFileInput("A.al", "// a"),
             });
 
         await using (var ctx = _db.NewContext())
         {
-            await NewService(ctx).UpdateAsync(snippetId, input);
+            await NewService(ctx).UpdateAsync(recipeId, input);
         }
 
         await using var verify = _db.NewContext();
-        var files = await verify.SnippetFiles
-            .Where(f => f.SnippetId == snippetId)
+        var files = await verify.RecipeFiles
+            .Where(f => f.RecipeId == recipeId)
             .OrderBy(f => f.Ordering)
             .ToListAsync();
         files.Select(f => f.FileName).Should().Equal("B.al", "A.al");
@@ -97,33 +100,33 @@ public sealed class SnippetServiceTests : IDisposable
     [Fact]
     public async Task Update_appends_and_removes_files_when_list_shape_changes()
     {
-        int snippetId;
+        int recipeId;
         await using (var ctx = _db.NewContext())
         {
-            var s = SnippetBuilder.Default("Resize Me")
+            var s = RecipeBuilder.Default("Resize Me")
                 .WithFile("A.al", "// a")
                 .WithFile("B.al", "// b");
-            ctx.Snippets.Add(s);
+            ctx.Recipes.Add(s);
             await ctx.SaveChangesAsync();
-            snippetId = s.Id;
+            recipeId = s.Id;
         }
 
         // Drop B, add C.
-        var input = new SnippetInput(
-            "Resize Me", "Synthetic snippet used in tests.", "test", false,
+        var input = new RecipeInput(
+            "Resize Me", "Synthetic recipe used in tests.", "test", RecipeType.Snippet, false,
             new[]
             {
-                new SnippetFileInput("A.al", "// a"),
-                new SnippetFileInput("C.al", "// c"),
+                new RecipeFileInput("A.al", "// a"),
+                new RecipeFileInput("C.al", "// c"),
             });
         await using (var ctx = _db.NewContext())
         {
-            await NewService(ctx).UpdateAsync(snippetId, input);
+            await NewService(ctx).UpdateAsync(recipeId, input);
         }
 
         await using var verify = _db.NewContext();
-        var names = await verify.SnippetFiles
-            .Where(f => f.SnippetId == snippetId)
+        var names = await verify.RecipeFiles
+            .Where(f => f.RecipeId == recipeId)
             .OrderBy(f => f.Ordering)
             .Select(f => f.FileName)
             .ToListAsync();
@@ -133,52 +136,52 @@ public sealed class SnippetServiceTests : IDisposable
     [Fact]
     public async Task SoftDelete_then_restore_round_trips_DeletedAt()
     {
-        int snippetId;
+        int recipeId;
         await using (var ctx = _db.NewContext())
         {
-            var s = SnippetBuilder.Default("Delete Me").WithFile("A.al", "// a");
-            ctx.Snippets.Add(s);
+            var s = RecipeBuilder.Default("Delete Me").WithFile("A.al", "// a");
+            ctx.Recipes.Add(s);
             await ctx.SaveChangesAsync();
-            snippetId = s.Id;
+            recipeId = s.Id;
         }
 
         await using (var ctx = _db.NewContext())
         {
-            await NewService(ctx).SoftDeleteAsync(snippetId);
+            await NewService(ctx).SoftDeleteAsync(recipeId);
         }
         await using (var verify = _db.NewContext())
         {
-            (await verify.Snippets.SingleAsync(s => s.Id == snippetId)).DeletedAt.Should().NotBeNull();
+            (await verify.Recipes.SingleAsync(s => s.Id == recipeId)).DeletedAt.Should().NotBeNull();
         }
 
         await using (var ctx = _db.NewContext())
         {
-            await NewService(ctx).RestoreAsync(snippetId);
+            await NewService(ctx).RestoreAsync(recipeId);
         }
         await using (var verify = _db.NewContext())
         {
-            (await verify.Snippets.SingleAsync(s => s.Id == snippetId)).DeletedAt.Should().BeNull();
+            (await verify.Recipes.SingleAsync(s => s.Id == recipeId)).DeletedAt.Should().BeNull();
         }
     }
 
     [Fact]
     public async Task SetDeprecated_flips_the_flag()
     {
-        int snippetId;
+        int recipeId;
         await using (var ctx = _db.NewContext())
         {
-            var s = SnippetBuilder.Default("Deprecate Me").WithFile("A.al", "// a");
-            ctx.Snippets.Add(s);
+            var s = RecipeBuilder.Default("Deprecate Me").WithFile("A.al", "// a");
+            ctx.Recipes.Add(s);
             await ctx.SaveChangesAsync();
-            snippetId = s.Id;
+            recipeId = s.Id;
         }
 
         await using (var ctx = _db.NewContext())
         {
-            await NewService(ctx).SetDeprecatedAsync(snippetId, deprecated: true);
+            await NewService(ctx).SetDeprecatedAsync(recipeId, deprecated: true);
         }
         await using var verify = _db.NewContext();
-        (await verify.Snippets.SingleAsync(s => s.Id == snippetId)).Deprecated.Should().BeTrue();
+        (await verify.Recipes.SingleAsync(s => s.Id == recipeId)).Deprecated.Should().BeTrue();
     }
 
     [Fact]
@@ -186,12 +189,13 @@ public sealed class SnippetServiceTests : IDisposable
     {
         await using var ctx = _db.NewContext();
         var svc = NewService(ctx);
-        var input = new SnippetInput(
+        var input = new RecipeInput(
             Title: "  ",
             Description: "Whatever",
             Keywords: "",
+            Type: RecipeType.Snippet,
             Deprecated: false,
-            Files: new[] { new SnippetFileInput("A.al", "// a") });
+            Files: new[] { new RecipeFileInput("A.al", "// a") });
 
         Func<Task> act = () => svc.CreateAsync(input);
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
@@ -203,18 +207,19 @@ public sealed class SnippetServiceTests : IDisposable
     {
         await using (var ctx = _db.NewContext())
         {
-            ctx.Snippets.Add(SnippetBuilder.Default("Taken").WithFile("A.al", "// a"));
+            ctx.Recipes.Add(RecipeBuilder.Default("Taken").WithFile("A.al", "// a"));
             await ctx.SaveChangesAsync();
         }
 
         await using var ctx2 = _db.NewContext();
         var svc = NewService(ctx2);
-        Func<Task> act = () => svc.CreateAsync(new SnippetInput(
+        Func<Task> act = () => svc.CreateAsync(new RecipeInput(
             Title: "Taken",
             Description: "Different body, same title.",
             Keywords: "",
+            Type: RecipeType.Snippet,
             Deprecated: false,
-            Files: new[] { new SnippetFileInput("B.al", "// b") }));
+            Files: new[] { new RecipeFileInput("B.al", "// b") }));
 
         var ex = await act.Should().ThrowAsync<PlanValidationException>();
         ex.Which.Errors.Should().ContainKey("Title");
@@ -225,15 +230,16 @@ public sealed class SnippetServiceTests : IDisposable
     {
         await using var ctx = _db.NewContext();
         var svc = NewService(ctx);
-        var input = new SnippetInput(
+        var input = new RecipeInput(
             Title: "Bad Names",
             Description: "Bad file names should fail.",
             Keywords: "",
+            Type: RecipeType.Snippet,
             Deprecated: false,
             Files: new[]
             {
-                new SnippetFileInput("src/A.al", "// nope"),
-                new SnippetFileInput("..\\B.al", "// nope"),
+                new RecipeFileInput("src/A.al", "// nope"),
+                new RecipeFileInput("..\\B.al", "// nope"),
             });
 
         var ex = await Assert.ThrowsAsync<PlanValidationException>(() => svc.CreateAsync(input));
@@ -246,28 +252,47 @@ public sealed class SnippetServiceTests : IDisposable
     {
         await using var ctx = _db.NewContext();
         var svc = NewService(ctx);
-        var input = new SnippetInput(
-            "Empty", "No files at all.", "", false, Array.Empty<SnippetFileInput>());
+        var input = new RecipeInput(
+            "Empty", "No files at all.", "", RecipeType.Snippet, false, Array.Empty<RecipeFileInput>());
 
         var ex = await Assert.ThrowsAsync<PlanValidationException>(() => svc.CreateAsync(input));
         ex.Errors.Should().ContainKey("Files");
     }
 
     [Fact]
-    public async Task Create_rejects_duplicate_file_names_case_insensitively()
+    public async Task Create_rejects_duplicate_file_paths_case_insensitively()
     {
+        // Two files with the same RelativePath/FileName are a duplicate. The
+        // pre-rename "duplicate file name" rule generalises to the full path.
         await using var ctx = _db.NewContext();
         var svc = NewService(ctx);
-        var input = new SnippetInput(
-            "Dupes", "Two files with the same name.", "", false,
+        var input = new RecipeInput(
+            "Dupes", "Two files with the same name.", "", RecipeType.Snippet, false,
             new[]
             {
-                new SnippetFileInput("Sample.al", "// 1"),
-                new SnippetFileInput("sample.AL", "// 2"),
+                new RecipeFileInput("Sample.al", "// 1"),
+                new RecipeFileInput("sample.AL", "// 2"),
             });
 
         var ex = await Assert.ThrowsAsync<PlanValidationException>(() => svc.CreateAsync(input));
         ex.Errors.Should().ContainKey("Files[1].FileName");
+    }
+
+    [Fact]
+    public async Task Create_allows_same_file_name_in_different_folders()
+    {
+        // The duplicate guard now keys on the joined RelativePath/FileName,
+        // so an Init.al at the root and another in src/ are not a clash.
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        var recipe = await svc.CreateAsync(new RecipeInput(
+            "Same Name Diff Folder", "Body.", "", RecipeType.Pattern, false,
+            new[]
+            {
+                new RecipeFileInput("Init.al", "// root"),
+                new RecipeFileInput("Init.al", "// nested", "Sales"),
+            }));
+        recipe.Files.Should().HaveCount(2);
     }
 
     [Fact]
@@ -284,9 +309,9 @@ public sealed class SnippetServiceTests : IDisposable
     {
         await using (var ctx = _db.NewContext())
         {
-            ctx.Snippets.Add(SnippetBuilder.Default("Org1", organizationId: TestDb.DefaultOrgId)
+            ctx.Recipes.Add(RecipeBuilder.Default("Org1", organizationId: TestDb.DefaultOrgId)
                 .WithFile("A.al", "// a"));
-            ctx.Snippets.Add(SnippetBuilder.Default("Org2", organizationId: TestDb.OtherOrgId)
+            ctx.Recipes.Add(RecipeBuilder.Default("Org2", organizationId: TestDb.OtherOrgId)
                 .WithFile("B.al", "// b"));
             await ctx.SaveChangesAsync();
         }
@@ -298,6 +323,6 @@ public sealed class SnippetServiceTests : IDisposable
         rows[0].Title.Should().Be("Org1");
     }
 
-    private SnippetService NewService(ALDevToolbox.Data.AppDbContext ctx) =>
-        new(ctx, NullLogger<SnippetService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx));
+    private RecipeService NewService(ALDevToolbox.Data.AppDbContext ctx) =>
+        new(ctx, NullLogger<RecipeService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx));
 }

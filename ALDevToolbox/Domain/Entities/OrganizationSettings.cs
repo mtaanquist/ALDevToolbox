@@ -53,6 +53,15 @@ public class OrganizationSettings
     public string CodeWorkspaceJson { get; set; } = OrganizationDefaults.CodeWorkspaceJson;
 
     /// <summary>
+    /// Admin-authored Markdown shown to MCP agents by the
+    /// <c>get_cookbook_guidance</c> tool before they call
+    /// <c>suggest_recipe</c>. Empty by default; the guidance tool always
+    /// returns built-in copy describing what each <c>RecipeType</c> means
+    /// so an empty org-level guidance still steers the agent.
+    /// </summary>
+    public string CookbookGuidance { get; set; } = string.Empty;
+
+    /// <summary>
     /// When <see langword="true"/>, every active member of this organisation
     /// must have at least one strong-auth method enrolled (TOTP, email-MFA,
     /// or a passkey). Users without one land on <c>/account?required=1</c>

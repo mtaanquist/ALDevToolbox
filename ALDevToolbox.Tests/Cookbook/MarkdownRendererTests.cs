@@ -1,13 +1,13 @@
 using ALDevToolbox.Services;
 using FluentAssertions;
 
-namespace ALDevToolbox.Tests.Snippets;
+namespace ALDevToolbox.Tests.Cookbook;
 
 /// <summary>
 /// Sanity coverage for <see cref="MarkdownRenderer"/>: empty input yields
 /// empty output, headings / fenced code render, and raw HTML in the source
 /// is stripped at the parser level so a pasted script tag can't escape into
-/// a published snippet's instructions section.
+/// a published recipe's instructions section.
 /// </summary>
 public sealed class MarkdownRendererTests
 {

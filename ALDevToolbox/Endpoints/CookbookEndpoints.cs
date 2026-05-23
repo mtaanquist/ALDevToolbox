@@ -5,35 +5,39 @@ using static ALDevToolbox.Endpoints.EndpointHelpers;
 
 namespace ALDevToolbox.Endpoints;
 
-internal static class SnippetEndpoints
+internal static class CookbookEndpoints
 {
-    public static IEndpointRouteBuilder MapSnippetEndpoints(this IEndpointRouteBuilder app)
+    public static IEndpointRouteBuilder MapCookbookEndpoints(this IEndpointRouteBuilder app)
     {
-        // ZIP download for all files in a snippet. GETs don't need
+        // ZIP download for all files in a recipe. GETs don't need
         // antiforgery; the route runs under the standard cookie auth +
-        // EF tenant filter, so a user can only see snippets in their own
+        // EF tenant filter, so a user can only see recipes in their own
         // org. 404 collapses both "doesn't exist" and "exists in another
-        // org" into the same response.
-        app.MapGet("/api/snippets/{id:int}/download", async (
+        // org" into the same response. Each file's RelativePath is joined
+        // with `/` so ZipArchive materialises folders automatically.
+        app.MapGet("/api/cookbook/{id:int}/download", async (
             int id,
             HttpContext ctx,
-            SnippetService snippets,
+            RecipeService recipes,
             CancellationToken ct) =>
         {
-            var snippet = await snippets.GetAsync(id, ct);
-            if (snippet is null)
+            var recipe = await recipes.GetAsync(id, ct);
+            if (recipe is null)
             {
                 ctx.Response.StatusCode = StatusCodes.Status404NotFound;
                 return;
             }
 
-            var fileName = BuildArchiveFileName(snippet.Title, snippet.Id);
+            var fileName = BuildArchiveFileName(recipe.Title, recipe.Id);
             WriteAttachmentHeaders(ctx, fileName);
 
             using var archive = new ZipArchive(ctx.Response.Body, ZipArchiveMode.Create, leaveOpen: true);
-            foreach (var file in snippet.Files)
+            foreach (var file in recipe.Files)
             {
-                var entry = archive.CreateEntry(file.FileName, CompressionLevel.Optimal);
+                var entryPath = string.IsNullOrEmpty(file.RelativePath)
+                    ? file.FileName
+                    : file.RelativePath + "/" + file.FileName;
+                var entry = archive.CreateEntry(entryPath, CompressionLevel.Optimal);
                 await using var entryStream = entry.Open();
                 await using var writer = new StreamWriter(entryStream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
                 await writer.WriteAsync(file.Content);
@@ -44,8 +48,8 @@ internal static class SnippetEndpoints
     }
 
     /// <summary>
-    /// Lower-cases and slugifies the snippet title for the ZIP filename.
-    /// Falls back to <c>snippet-{id}</c> when the title slugifies to empty
+    /// Lower-cases and slugifies the recipe title for the ZIP filename.
+    /// Falls back to <c>recipe-{id}</c> when the title slugifies to empty
     /// (titles made entirely of non-ASCII letters, punctuation, etc).
     /// </summary>
     internal static string BuildArchiveFileName(string title, int id)
@@ -53,7 +57,7 @@ internal static class SnippetEndpoints
         var slug = Slugify(title);
         if (string.IsNullOrEmpty(slug))
         {
-            slug = $"snippet-{id}";
+            slug = $"recipe-{id}";
         }
         return slug + ".zip";
     }
