@@ -8,6 +8,8 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @implements IAsyncDisposable
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService Comparison
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectSearchService Search
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks Links
 @inject NavigationManager Nav
 @inject IJSRuntime JS
@@ -264,8 +266,8 @@
         if (_release is null) return;
 
         _modules = await ObjectExplorer.ListModuleSummariesAsync(ReleaseId);
-        _kinds = await ObjectExplorer.ListObjectKindsInReleaseAsync(ReleaseId);
-        _namespaces = await ObjectExplorer.ListNamespacesInReleaseAsync(ReleaseId);
+        _kinds = await Search.ListObjectKindsInReleaseAsync(ReleaseId);
+        _namespaces = await Search.ListNamespacesInReleaseAsync(ReleaseId);
         var allReleases = await ObjectExplorer.ListReleasesAsync();
         _otherReleases = allReleases
             .Where(r => r.Id != ReleaseId && r.Status == "ready" && r.DeletedAt is null)
@@ -488,7 +490,7 @@
         switch (_scope)
         {
             case SearchScope.Objects:
-                _objectResults = await ObjectExplorer.SearchObjectsInReleaseAsync(
+                _objectResults = await Search.SearchObjectsInReleaseAsync(
                     ReleaseId,
                     new ObjectListFilter(
                         Kind: string.IsNullOrEmpty(_kind) ? null : _kind,
@@ -499,14 +501,14 @@
                 break;
 
             case SearchScope.Procedures:
-                _procedureResults = await ObjectExplorer.SearchProceduresInReleaseAsync(
+                _procedureResults = await Search.SearchProceduresInReleaseAsync(
                     ReleaseId, trimmedSearch, moduleId, take: 500);
                 break;
 
             case SearchScope.Content:
                 _contentResults = string.IsNullOrEmpty(trimmedSearch)
                     ? new()
-                    : await ObjectExplorer.SearchContentInReleaseAsync(
+                    : await Search.SearchContentInReleaseAsync(
                         ReleaseId, trimmedSearch, moduleId, take: 200);
                 break;
 
@@ -520,7 +522,7 @@
                     var (leftId, rightId) = _compareDirection == "ba"
                         ? (otherId, ReleaseId)
                         : (ReleaseId, otherId);
-                    _compareResults = await ObjectExplorer.CompareReleaseFilesFlatAsync(leftId, rightId);
+                    _compareResults = await Comparison.CompareReleaseFilesFlatAsync(leftId, rightId);
                 }
                 break;
         }

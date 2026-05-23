@@ -20,20 +20,20 @@ public sealed class ReferenceSessionService
 {
     private static readonly TimeSpan SessionTtl = TimeSpan.FromMinutes(30);
     private readonly IMemoryCache _cache;
-    private readonly ObjectExplorerService _objectExplorer;
+    private readonly ReferenceQueryService _references;
     private readonly Data.AppDbContext _db;
     private readonly ReferenceResolver _resolver;
     private readonly ILogger<ReferenceSessionService> _logger;
 
     public ReferenceSessionService(
         IMemoryCache cache,
-        ObjectExplorerService objectExplorer,
+        ReferenceQueryService references,
         Data.AppDbContext db,
         ReferenceResolver resolver,
         ILogger<ReferenceSessionService> logger)
     {
         _cache = cache;
-        _objectExplorer = objectExplorer;
+        _references = references;
         _db = db;
         _resolver = resolver;
         _logger = logger;
@@ -42,7 +42,7 @@ public sealed class ReferenceSessionService
     /// <summary>
     /// Mints a session keyed off a source-object id. Resolves the object's
     /// owning Module to get the <c>AppId</c> + <c>ReleaseId</c> for the
-    /// underlying <see cref="ObjectExplorerService.FindReferencesAsync"/>
+    /// underlying <see cref="ReferenceQueryService.FindReferencesAsync"/>
     /// call. Returns null when the object id is unknown.
     /// </summary>
     public async Task<ReferenceSession?> CreateFromSymbolAsync(
@@ -67,7 +67,7 @@ public sealed class ReferenceSessionService
             TargetObjectId: head.ObjectId,
             TargetObjectName: head.Name);
 
-        var results = await _objectExplorer.FindReferencesAsync(head.ReleaseId, query, ct);
+        var results = await _references.FindReferencesAsync(head.ReleaseId, query, ct);
         var label = head.ObjectId is { } oid
             ? $"references to {head.Kind} {oid} {head.Name}"
             : $"references to {head.Kind} {head.Name}";
@@ -113,7 +113,7 @@ public sealed class ReferenceSessionService
             TargetMemberName: head.Name,
             TargetMemberKind: head.Kind);
 
-        var results = await _objectExplorer.FindReferencesForSymbolAsync(
+        var results = await _references.FindReferencesForSymbolAsync(
             head.ReleaseId, query, ct);
 
         var sigPart = string.IsNullOrEmpty(head.Signature) ? "" : head.Signature;

@@ -40,6 +40,7 @@ public sealed class AdminTemplateEditTests : IDisposable
         _ctx.Services.AddSingleton<IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString));
+        _ctx.Services.AddScoped<FolderTreeHydrator>();
         _ctx.Services.AddScoped<TemplateService>();
         _ctx.Services.AddScoped<ApplicationVersionService>();
         // The page now lists the org's always-included files via a checkbox

@@ -38,6 +38,7 @@ public sealed class TemplatesBrowserTests : IDisposable
         _ctx.Services.AddSingleton<ALDevToolbox.Services.IOrganizationContext>(_db.OrgContext);
         _ctx.Services.AddDbContext<ALDevToolbox.Data.AppDbContext>(opts =>
             opts.UseNpgsql(_db.ConnectionString));
+        _ctx.Services.AddScoped<FolderTreeHydrator>();
         _ctx.Services.AddScoped<TemplateService>();
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),

@@ -28,7 +28,7 @@ public class GenerationService
 
     private readonly AppDbContext _db;
     private readonly OrganizationConfigService _orgConfig;
-    private readonly TemplateService _templates;
+    private readonly FolderTreeHydrator _folderTree;
     private readonly IOrganizationContext _orgContext;
     private readonly MustacheRenderer _mustache;
     private readonly WorkspaceZipBuilder _zipBuilder;
@@ -37,7 +37,7 @@ public class GenerationService
     public GenerationService(
         AppDbContext db,
         OrganizationConfigService orgConfig,
-        TemplateService templates,
+        FolderTreeHydrator folderTree,
         IOrganizationContext orgContext,
         MustacheRenderer mustache,
         WorkspaceZipBuilder zipBuilder,
@@ -45,7 +45,7 @@ public class GenerationService
     {
         _db = db;
         _orgConfig = orgConfig;
-        _templates = templates;
+        _folderTree = folderTree;
         _orgContext = orgContext;
         _mustache = mustache;
         _zipBuilder = zipBuilder;
@@ -165,10 +165,10 @@ public class GenerationService
                 ["TemplateKey"] = $"Template '{key}' was not found.",
             });
 
-        // Folder tree hydration is delegated to TemplateService so workspace
+        // Folder tree hydration is delegated to FolderTreeHydrator so workspace
         // generation, template authoring loads, and cross-org imports share
         // one implementation (#77).
-        await _templates.HydrateExtensionFolderTreeAsync(new[] { template }, ct);
+        await _folderTree.HydrateExtensionFolderTreeAsync(new[] { template }, ct);
         return template;
     }
 
@@ -182,7 +182,7 @@ public class GenerationService
             .Include(m => m.Dependencies.OrderBy(d => d.Ordering))
             .ToListAsync(ct);
 
-        await _templates.HydrateModuleExtensionFolderTreeAsync(modules, ct);
+        await _folderTree.HydrateModuleExtensionFolderTreeAsync(modules, ct);
 
         // Preserve user-selected ordering — EF returns them in whatever
         // order the IN-clause matched.

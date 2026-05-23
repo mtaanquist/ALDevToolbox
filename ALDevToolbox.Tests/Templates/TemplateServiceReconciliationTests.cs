@@ -323,7 +323,7 @@ public sealed class TemplateServiceWriteSideTests : IDisposable
     // ===== Helpers =====
 
     private TemplateService NewService(Data.AppDbContext ctx) =>
-        new(ctx, NullLogger<TemplateService>.Instance, _db.OrgContext);
+        new(ctx, NullLogger<TemplateService>.Instance, _db.OrgContext, new FolderTreeHydrator(ctx));
 
     private static IReadOnlyList<ExtensionAuthoring> SingleCoreExtension() => new[]
     {

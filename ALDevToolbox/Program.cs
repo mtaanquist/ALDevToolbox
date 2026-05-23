@@ -134,6 +134,7 @@ builder.Services.AddDbContext<AppDbContext>((sp, options) =>
         .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
         .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
 
+builder.Services.AddScoped<FolderTreeHydrator>();
 builder.Services.AddScoped<TemplateService>();
 builder.Services.AddScoped<RecipeService>();
 builder.Services.AddScoped<RecipeSuggestionService>();
@@ -144,6 +145,11 @@ builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationImpor
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseImportService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseManagementService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationQueryService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseComparisonService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectSearchService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReferenceQueryService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.SourceViewerService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReferenceResolver>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReferenceSessionService>();
 builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerLinks>();
@@ -157,6 +163,7 @@ builder.Services.AddScoped<GenerationService>();
 builder.Services.AddScoped<ExportService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<OrganizationConfigService>();
+builder.Services.AddScoped<OrganizationAdminService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.AuthService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.UserAdministrationService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.PasswordResetService>();

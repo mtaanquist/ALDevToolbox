@@ -1,7 +1,7 @@
 @page "/admin/administration/mcp"
 @attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
-@inject OrganizationConfigService Config
+@inject OrganizationAdminService OrgAdmin
 @inject AppDbContext Db
 @inject IOrganizationContext OrgCtx
 @inject IMcpAvailability McpAvailability
@@ -112,7 +112,7 @@
         _errMessage = null;
         try
         {
-            await Config.SetMcpEnabledAsync(_enabled);
+            await OrgAdmin.SetMcpEnabledAsync(_enabled);
             _baseEnabled = _enabled;
             _okMessage = "MCP setting saved. Users in this organisation see the change on their next sign-in.";
         }

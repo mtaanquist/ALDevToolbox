@@ -21,11 +21,17 @@ public sealed class ObjectExplorerTools
     private const int MaxResults = 200;
 
     private readonly ObjectExplorerService _explorer;
+    private readonly ObjectSearchService _search;
+    private readonly ReferenceQueryService _references;
+    private readonly TranslationQueryService _translations;
     private readonly AppDbContext _db;
 
-    public ObjectExplorerTools(ObjectExplorerService explorer, AppDbContext db)
+    public ObjectExplorerTools(ObjectExplorerService explorer, ObjectSearchService search, ReferenceQueryService references, TranslationQueryService translations, AppDbContext db)
     {
         _explorer = explorer;
+        _search = search;
+        _references = references;
+        _translations = translations;
         _db = db;
     }
 
@@ -43,7 +49,7 @@ public sealed class ObjectExplorerTools
         CancellationToken ct = default)
     {
         var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
-        return await _explorer.SearchObjectsInReleaseAsync(
+        return await _search.SearchObjectsInReleaseAsync(
             releaseId,
             new ObjectListFilter(Kind: kind, Search: namePattern),
             MaxResults,
@@ -59,7 +65,7 @@ public sealed class ObjectExplorerTools
         CancellationToken ct = default)
     {
         var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
-        return await _explorer.SearchProceduresInReleaseAsync(releaseId, namePattern, moduleId, MaxResults, ct);
+        return await _search.SearchProceduresInReleaseAsync(releaseId, namePattern, moduleId, MaxResults, ct);
     }
 
     [McpServerTool(Name = "search_content", ReadOnly = true)]
@@ -71,7 +77,7 @@ public sealed class ObjectExplorerTools
         CancellationToken ct = default)
     {
         var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
-        var rows = await _explorer.SearchContentInReleaseAsync(releaseId, query, moduleId, MaxResults, 3, ct);
+        var rows = await _search.SearchContentInReleaseAsync(releaseId, query, moduleId, MaxResults, 3, ct);
         // Snippet is whatever the line carries; cap to keep responses bounded.
         return rows.Select(r => r.Snippet.Length > 500
             ? r with { Snippet = r.Snippet[..500] + "…" }
@@ -128,8 +134,8 @@ public sealed class ObjectExplorerTools
         // the "implementation" set for interface methods — surface in
         // the response. Object-only queries stay on the lighter path.
         var matches = memberName is null
-            ? await _explorer.FindReferencesAsync(releaseId, query, ct)
-            : await _explorer.FindReferencesForSymbolAsync(releaseId, query, ct);
+            ? await _references.FindReferencesAsync(releaseId, query, ct)
+            : await _references.FindReferencesForSymbolAsync(releaseId, query, ct);
         return matches.Count > MaxResults ? matches.Take(MaxResults).ToList() : matches;
     }
 
@@ -195,7 +201,7 @@ public sealed class ObjectExplorerTools
         CancellationToken ct = default)
     {
         var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
-        return await _explorer.ListTranslationLanguagesAsync(releaseId, ct);
+        return await _translations.ListTranslationLanguagesAsync(releaseId, ct);
     }
 
     [McpServerTool(Name = "search_translations", ReadOnly = true)]
@@ -218,7 +224,7 @@ public sealed class ObjectExplorerTools
         {
             set.Add(raw);
         }
-        return await _explorer.SearchTranslationsInReleaseAsync(
+        return await _translations.SearchTranslationsInReleaseAsync(
             releaseId, query, language, set, moduleNamePattern, MaxResults, ct);
     }
 

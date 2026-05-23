@@ -34,7 +34,19 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             NullLogger<ReleaseImportService>.Instance);
 
     private ObjectExplorerService NewQuery(Data.AppDbContext ctx) =>
-        new(ctx, NullLogger<ObjectExplorerService>.Instance);
+        new(ctx, NewReferences(ctx), NullLogger<ObjectExplorerService>.Instance);
+
+    private SourceViewerService NewSourceViewer(Data.AppDbContext ctx) =>
+        new(ctx, NewReferences(ctx));
+
+    private ReleaseComparisonService NewComparison(Data.AppDbContext ctx) =>
+        new(ctx, NullLogger<ReleaseComparisonService>.Instance);
+
+    private ObjectSearchService NewSearch(Data.AppDbContext ctx) =>
+        new(ctx);
+
+    private ReferenceQueryService NewReferences(Data.AppDbContext ctx) =>
+        new(ctx, NullLogger<ReferenceQueryService>.Instance);
 
     /// <summary>
     /// Imports the two fixtures into one Release. Returns the Release id so
@@ -123,7 +135,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     {
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewSearch(read);
 
         // OIOUBL declares "OIOUBL-Profile" (table 13630). DK Core has no table
         // named like that. A release-wide search for "OIOUBL-Profile" should
@@ -139,7 +151,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     {
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewSearch(read);
 
         // Both modules contribute codeunits. With kind=codeunit and no name
         // filter, we should get every codeunit in the Release.
@@ -160,7 +172,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
 
-        var hits = await NewQuery(read).SearchObjectsInReleaseAsync(
+        var hits = await NewSearch(read).SearchObjectsInReleaseAsync(
             releaseId,
             new ObjectListFilter(),
             moduleId: null,
@@ -220,7 +232,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var releaseId = await SeedSingleReleaseAsync();
         await SeedObjectsAsync(releaseId, ("Sales & Receivables Setup", 9000050));
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewSearch(read);
 
         var hits = await query.SearchObjectsInReleaseAsync(releaseId,
             new ObjectListFilter(Search: "sal set"));
@@ -242,7 +254,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         await SeedObjectsAsync(releaseId, ("Posted Sales Invoice", 9000060));
         await using var read = _db.NewContext();
 
-        var hits = await NewQuery(read).SearchObjectsInReleaseAsync(releaseId,
+        var hits = await NewSearch(read).SearchObjectsInReleaseAsync(releaseId,
             new ObjectListFilter(Search: "9000060"));
         hits.Should().Contain(h => h.ObjectId == 9000060 && h.Name == "Posted Sales Invoice");
     }
@@ -260,7 +272,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             ("Header Field", 9000002));
 
         await using var read = _db.NewContext();
-        var hits = await NewQuery(read).SearchObjectsInReleaseAsync(releaseId,
+        var hits = await NewSearch(read).SearchObjectsInReleaseAsync(releaseId,
             new ObjectListFilter(Search: "head"));
 
         var boundaryIdx = hits.FindIndex(h => h.Name == "Header Field");
@@ -284,7 +296,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             ("unsalesheaderwrap", 9000011));
 
         await using var read = _db.NewContext();
-        var hits = await NewQuery(read).SearchObjectsInReleaseAsync(releaseId,
+        var hits = await NewSearch(read).SearchObjectsInReleaseAsync(releaseId,
             new ObjectListFilter(Search: "head"));
 
         var pascalIdx = hits.FindIndex(h => h.Name == "SalesHeader");
@@ -307,7 +319,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             ("Sales Header", 9000070),
             ("Sales Invoice Header", 9000071));
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewSearch(read);
 
         var quoted = await query.SearchObjectsInReleaseAsync(releaseId,
             new ObjectListFilter(Search: "\"sales header\""));
@@ -332,7 +344,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             ("Sales Setup Temp", 9000081));
         await using var read = _db.NewContext();
 
-        var hits = await NewQuery(read).SearchObjectsInReleaseAsync(releaseId,
+        var hits = await NewSearch(read).SearchObjectsInReleaseAsync(releaseId,
             new ObjectListFilter(Search: "sales -temp"));
         hits.Should().Contain(h => h.Name == "Sales Setup");
         hits.Should().NotContain(h => h.Name == "Sales Setup Temp");
@@ -348,7 +360,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var fileId = ctx.OeModuleFiles.AsQueryable()
             .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
 
-        var header = await NewQuery(ctx).GetFileHeaderAsync(fileId);
+        var header = await NewSourceViewer(ctx).GetFileHeaderAsync(fileId);
         header.Should().NotBeNull();
         header!.ModuleName.Should().Be("DK Core");
         header.ReleaseLabel.Should().Be("BC 25.18 DK");
@@ -360,7 +372,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     {
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
-        var hits = await NewQuery(read).SearchProceduresInReleaseAsync(
+        var hits = await NewSearch(read).SearchProceduresInReleaseAsync(
             releaseId, search: null, moduleId: null, take: 500);
 
         hits.Should().NotBeEmpty();
@@ -377,7 +389,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
 
-        var hits = await NewQuery(read).SearchContentInReleaseAsync(
+        var hits = await NewSearch(read).SearchContentInReleaseAsync(
             releaseId, search: "codeunit", moduleId: null);
         hits.Should().NotBeEmpty(
             because: "every codeunit's source line starts with the 'codeunit' keyword");
@@ -393,7 +405,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var fileId = read.OeModuleFiles.AsQueryable()
             .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
 
-        var decls = await NewQuery(read).ListDeclarationsInFileAsync(fileId);
+        var decls = await NewSourceViewer(read).ListDeclarationsInFileAsync(fileId);
         decls.Should().NotBeEmpty();
         // The codeunit name lives on its declaration line; the helper must
         // surface columns matching the quoted-or-bare token.
@@ -419,7 +431,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var fileId = read.OeModuleFiles.AsQueryable()
             .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
 
-        var decls = await NewQuery(read).ListDeclarationsInFileAsync(fileId);
+        var decls = await NewSourceViewer(read).ListDeclarationsInFileAsync(fileId);
 
         decls.Where(d => d.IsMemberSymbol).Should().NotBeEmpty(
             because: "the event subscribers codeunit declares procedures / event subscribers");
@@ -439,7 +451,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     {
         await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewSourceViewer(read);
 
         // Find the declarations on DK Core's event-subscribers file, then
         // simulate a click on the codeunit's name token there. The resolver
@@ -463,7 +475,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         // a declaration token) lands on the procedure's source line.
         await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewSourceViewer(read);
 
         // Pick any resolved method_call row from the fixture so the test is
         // robust against the fixture's churn — we assert behaviour, not a
@@ -510,7 +522,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     {
         await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewSourceViewer(read);
 
         // Find a file that has at least one resolved member-access row so
         // we know the resolvables list won't be trivially empty.
@@ -550,7 +562,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     {
         await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewSourceViewer(read);
         var fileId = read.OeModuleFiles.AsQueryable()
             .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
         var decl = (await query.ListDeclarationsInFileAsync(fileId)).First();
@@ -569,7 +581,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var fileId = read.OeModuleFiles.AsQueryable()
             .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
 
-        var outline = await NewQuery(read).GetFileOutlineAsync(fileId);
+        var outline = await NewSourceViewer(read).GetFileOutlineAsync(fileId);
         outline.Should().NotBeEmpty();
         outline.Select(o => o.LineNumber).Should().BeInAscendingOrder();
     }
@@ -588,7 +600,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var fileId = read.OeModuleFiles.AsQueryable()
             .First(f => f.Path.Contains("DKCoreEventSubscribers")).Id;
 
-        var outline = await NewQuery(read).GetFileOutlineAsync(fileId);
+        var outline = await NewSourceViewer(read).GetFileOutlineAsync(fileId);
 
         outline.Should().Contain(i =>
                 i.Kind == "procedure"
@@ -675,7 +687,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
 
-        var matches = await NewQuery(read).FindReferencesAsync(releaseId, new FindReferencesQuery(
+        var matches = await NewReferences(read).FindReferencesAsync(releaseId, new FindReferencesQuery(
             TargetAppId: BaseAppId,
             TargetObjectKind: "codeunit",
             TargetObjectId: 5624,
@@ -703,7 +715,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         // extends_target rows have TargetObjectId=null (the symbol package
         // doesn't carry the base object's id on the Target string — only the
         // AppId + name). Querying by name only must still find them.
-        var matches = await NewQuery(read).FindReferencesAsync(releaseId, new FindReferencesQuery(
+        var matches = await NewReferences(read).FindReferencesAsync(releaseId, new FindReferencesQuery(
             TargetAppId: BaseAppId,
             TargetObjectKind: "table",
             TargetObjectId: null,
@@ -720,7 +732,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
 
-        var matches = await NewQuery(read).FindReferencesAsync(releaseId, new FindReferencesQuery(
+        var matches = await NewReferences(read).FindReferencesAsync(releaseId, new FindReferencesQuery(
             TargetAppId: BaseAppId,
             TargetObjectKind: "codeunit",
             TargetObjectId: 99999999,
@@ -754,7 +766,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewReferences(read);
 
         var fromChild = await query.FindReferencesAsync(childId, new FindReferencesQuery(
             BaseAppId, "codeunit", 5624, "Cancel FA Ledger Entries"));
@@ -787,7 +799,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewReferences(read);
 
         // OIOUBL's extends_target → Base App's "Finance Charge Memo Line".
         // From the PARENT release (DK Core only) we must NOT see this row.
@@ -824,7 +836,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         // only (shadowing), so we should get exactly the child's count, not
         // double-counted across parent + child.
         await using var read = _db.NewContext();
-        var query = NewQuery(read);
+        var query = NewReferences(read);
 
         var matches = await query.FindReferencesAsync(child.ReleaseId, new FindReferencesQuery(
             BaseAppId, "codeunit", 5624, "Cancel FA Ledger Entries"));
@@ -869,7 +881,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             })
             .FirstAsync();
 
-        var matches = await NewQuery(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
+        var matches = await NewReferences(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
             TargetAppId: pair.AppId,
             TargetObjectKind: pair.OwnerKind,
             TargetObjectId: pair.OwnerObjectId,
@@ -889,12 +901,12 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         // Owner-type rows (variable_type, parameter_type, …) dominated the
         // result set on large releases and most users found them noise
         // rather than signal, so the bucket is currently disabled — see
-        // ObjectExplorerService.FindReferencesForSymbolAsync. If the
+        // ReferenceQueryService.FindReferencesForSymbolAsync. If the
         // bucket comes back, flip this test back to assert containment.
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
 
-        var matches = await NewQuery(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
+        var matches = await NewReferences(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
             TargetAppId: BaseAppId,
             TargetObjectKind: "codeunit",
             TargetObjectId: 5624,
@@ -914,7 +926,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
 
-        var matches = await NewQuery(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
+        var matches = await NewReferences(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
             TargetAppId: BaseAppId,
             TargetObjectKind: "codeunit",
             TargetObjectId: 5624,
@@ -980,7 +992,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var summary = await NewQuery(read).CompareReleasesAsync(leftId, rightId);
+        var summary = await NewComparison(read).CompareReleasesAsync(leftId, rightId);
 
         summary.Should().NotBeNull();
         summary!.Added.Should().ContainSingle(m => m.Name == "OIOUBL");
@@ -994,7 +1006,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     {
         var (leftId, rightId) = await SeedTwoIdenticalReleasesAsync();
         await using var read = _db.NewContext();
-        var summary = await NewQuery(read).CompareReleasesAsync(leftId, rightId);
+        var summary = await NewComparison(read).CompareReleasesAsync(leftId, rightId);
 
         summary.Should().NotBeNull();
         summary!.Added.Should().BeEmpty();
@@ -1008,7 +1020,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var releaseId = await SeedSingleReleaseAsync();
         await using var read = _db.NewContext();
 
-        var bad = await NewQuery(read).CompareReleasesAsync(releaseId, releaseId + 999);
+        var bad = await NewComparison(read).CompareReleasesAsync(releaseId, releaseId + 999);
         bad.Should().BeNull();
     }
 
@@ -1023,7 +1035,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var leftMod = await read.OeModules.AsNoTracking().Where(m => m.ReleaseId == leftId).SingleAsync();
         var rightMod = await read.OeModules.AsNoTracking().Where(m => m.ReleaseId == rightId).SingleAsync();
 
-        var result = await NewQuery(read).CompareModuleFilesAsync(leftMod.Id, rightMod.Id);
+        var result = await NewComparison(read).CompareModuleFilesAsync(leftMod.Id, rightMod.Id);
         result.Should().NotBeNull();
         result!.Added.Should().BeEmpty();
         result.Removed.Should().BeEmpty();
@@ -1052,7 +1064,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var summary = await NewQuery(read).CompareReleasesAsync(leftId, rightId);
+        var summary = await NewComparison(read).CompareReleasesAsync(leftId, rightId);
 
         summary.Should().NotBeNull();
         summary!.Added.Should().BeEmpty();
@@ -1063,7 +1075,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
 
         var leftMod = await read.OeModules.AsNoTracking().Where(m => m.ReleaseId == leftId).SingleAsync();
         var rightMod = await read.OeModules.AsNoTracking().Where(m => m.ReleaseId == rightId).SingleAsync();
-        var pairs = await NewQuery(read).CompareModuleFilesAsync(leftMod.Id, rightMod.Id);
+        var pairs = await NewComparison(read).CompareModuleFilesAsync(leftMod.Id, rightMod.Id);
         pairs.Should().NotBeNull();
         pairs!.Changed.Should().ContainSingle();
         pairs.Added.Should().BeEmpty();
@@ -1083,7 +1095,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             .OrderBy(f => f.Path)
             .FirstAsync();
 
-        var targets = await NewQuery(read).GetCompareTargetsAsync(leftFile.Id);
+        var targets = await NewComparison(read).GetCompareTargetsAsync(leftFile.Id);
         targets.Should().ContainSingle(t => t.ReleaseId == rightId,
             "the right release holds DK Core at the same canonical path");
     }
@@ -1098,7 +1110,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             .OrderBy(f => f.Id)
             .FirstAsync();
 
-        var targets = await NewQuery(read).GetCompareTargetsAsync(anyFile.Id);
+        var targets = await NewComparison(read).GetCompareTargetsAsync(anyFile.Id);
         targets.Should().NotContain(t => t.ReleaseId == releaseId);
     }
 
@@ -1108,7 +1120,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     public async Task GetFileDependencies_returns_null_for_unknown_file_id()
     {
         await using var read = _db.NewContext();
-        var deps = await NewQuery(read).GetFileDependenciesAsync(fileId: 999_999);
+        var deps = await NewReferences(read).GetFileDependenciesAsync(fileId: 999_999);
         deps.Should().BeNull();
     }
 
@@ -1126,7 +1138,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             .OrderBy(f => f.Id)
             .FirstAsync();
 
-        var deps = await NewQuery(read).GetFileDependenciesAsync(file.Id);
+        var deps = await NewReferences(read).GetFileDependenciesAsync(file.Id);
         deps.Should().NotBeNull();
         // No guarantee either list is non-empty for an arbitrary fixture
         // file — but the call must succeed without throwing, and both
@@ -1156,7 +1168,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             })
             .FirstAsync();
 
-        var deps = await NewQuery(read).GetFileDependenciesAsync(fileAndObjects.Id);
+        var deps = await NewReferences(read).GetFileDependenciesAsync(fileAndObjects.Id);
         deps.Should().NotBeNull();
         foreach (var own in fileAndObjects.Objects)
         {

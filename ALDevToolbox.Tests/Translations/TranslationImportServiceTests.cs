@@ -214,7 +214,7 @@ public sealed class TranslationImportServiceTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var query = new ObjectExplorerService(read, NullLogger<ObjectExplorerService>.Instance);
+        var query = new TranslationQueryService(read);
         var langs = await query.ListTranslationLanguagesAsync(releaseId);
         langs.Should().ContainSingle()
             .Which.LanguageCode.Should().Be("da-DK");
@@ -233,7 +233,7 @@ public sealed class TranslationImportServiceTests : IDisposable
         }
 
         await using var read = _db.NewContext();
-        var query = new ObjectExplorerService(read, NullLogger<ObjectExplorerService>.Instance);
+        var query = new TranslationQueryService(read);
         // The Danish translation of "The total Line Discount Amount cannot
         // be negative." — pinned because it's the user's headline scenario:
         // a customer pastes a Danish error message into a ticket and the

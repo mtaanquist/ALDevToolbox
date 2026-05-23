@@ -114,7 +114,7 @@ path = "codeunits"
         // 2) Persist through the unified write path.
         await using (var ctx = _db.NewContext())
         {
-            var service = new TemplateService(ctx, NullLogger<TemplateService>.Instance, _db.OrgContext);
+            var service = new TemplateService(ctx, NullLogger<TemplateService>.Instance, _db.OrgContext, new FolderTreeHydrator(ctx));
             await service.CreateAsync(authoring);
         }
 
@@ -220,7 +220,7 @@ path = "codeunits"
         var service = new GenerationService(
             ctx,
             _db.NewOrganizationConfigService(ctx),
-            new TemplateService(ctx, NullLogger<TemplateService>.Instance, _db.OrgContext),
+            new FolderTreeHydrator(ctx),
             _db.OrgContext,
             mustache,
             new ALDevToolbox.Services.Generation.WorkspaceZipBuilder(mustache, new WorkspaceConfigService(ctx)),
