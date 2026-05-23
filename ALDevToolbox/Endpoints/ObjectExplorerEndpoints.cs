@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services;
 using ALDevToolbox.Services.ObjectExplorer;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Mvc;
@@ -118,7 +119,7 @@ internal static class ObjectExplorerEndpoints
                 }
             }
         })
-        .RequireAuthorization(policy => policy.RequireRole("Admin"))
+        .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole))
         .WithMetadata(new RequestSizeLimitAttribute(MaxUploadBytes))
         .WithMetadata(new RequestFormLimitsAttribute
         {
@@ -198,7 +199,7 @@ internal static class ObjectExplorerEndpoints
                 }
             }
         })
-        .RequireAuthorization(policy => policy.RequireRole("Admin"))
+        .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole))
         .WithMetadata(new RequestSizeLimitAttribute(MaxUploadBytes))
         .WithMetadata(new RequestFormLimitsAttribute
         {
@@ -368,7 +369,7 @@ internal static class ObjectExplorerEndpoints
                 RedirectTranslations(ctx, releaseId, first.Key, first.Value);
             }
         })
-        .RequireAuthorization(policy => policy.RequireRole("Admin"))
+        .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole))
         .WithMetadata(new RequestSizeLimitAttribute(64L * 1024 * 1024));
 
         app.MapPost("/admin/object-explorer/release/{releaseId:int}/translations-zip", async (
@@ -402,7 +403,7 @@ internal static class ObjectExplorerEndpoints
                 RedirectTranslations(ctx, releaseId, first.Key, first.Value);
             }
         })
-        .RequireAuthorization(policy => policy.RequireRole("Admin"))
+        .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole))
         .WithMetadata(new RequestSizeLimitAttribute(64L * 1024 * 1024));
 
         app.MapPost("/admin/object-explorer/{id:int}/soft-delete", async (
@@ -424,7 +425,7 @@ internal static class ObjectExplorerEndpoints
                 var first = ex.Errors.First();
                 RedirectAdmin(ctx, first.Key, first.Value);
             }
-        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
         app.MapPost("/admin/object-explorer/{id:int}/restore", async (
             int id,
@@ -445,7 +446,7 @@ internal static class ObjectExplorerEndpoints
                 var first = ex.Errors.First();
                 RedirectAdmin(ctx, first.Key, first.Value);
             }
-        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
         app.MapPost("/admin/object-explorer/{id:int}/hard-delete", async (
             int id,
@@ -468,7 +469,7 @@ internal static class ObjectExplorerEndpoints
                 var first = ex.Errors.First();
                 RedirectAdmin(ctx, first.Key, first.Value);
             }
-        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
         return app;
     }

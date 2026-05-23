@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using ALDevToolbox.Domain.Entities;
 
 namespace ALDevToolbox.Services;
 
@@ -13,6 +14,14 @@ public sealed class HttpOrganizationContext : IOrganizationContext
     public const string SiteAdminClaim = "site_admin";
     public const string SystemOrgClaim = "system_org";
     public const string SiteAdminRole = "SiteAdmin";
+    /// <summary>
+    /// Org-scoped role names as they land in the <see cref="ClaimTypes.Role"/>
+    /// claim — emitted from <c>UserRole.ToString()</c>, so they're bound to the
+    /// enum via <c>nameof</c> rather than re-spelled as literals at every
+    /// <c>RequireRole</c> / <c>[Authorize]</c> call site.
+    /// </summary>
+    public const string AdminRole = nameof(UserRole.Admin);
+    public const string EditorRole = nameof(UserRole.Editor);
     /// <summary>Path prefix for SiteAdmin pages; auth events match against this to return 404 instead of 403.</summary>
     public const string SiteAdminPathPrefix = "/site-admin";
 

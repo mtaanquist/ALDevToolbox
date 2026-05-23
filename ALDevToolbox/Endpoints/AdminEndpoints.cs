@@ -24,7 +24,7 @@ internal static class AdminEndpoints
             ctx.Response.ContentType = snapshot.Logo.ContentType;
             ctx.Response.Headers.CacheControl = "no-store";
             await ctx.Response.Body.WriteAsync(snapshot.Logo.Content, ct);
-        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
         // /admin/export/import — destructive restore from a TOML snapshot.
         // Lives on the Export page, kept as a server POST so the (large)
@@ -56,7 +56,7 @@ internal static class AdminEndpoints
                 ctx.Response.Redirect(
                     $"{RouteConstants.AdminExport}?{RouteConstants.ErrQuery}={Uri.EscapeDataString(first.Key)}&{RouteConstants.MsgQuery}={Uri.EscapeDataString(first.Value)}");
             }
-        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
         app.MapPost("/admin/export/download", async (HttpContext ctx, ExportService export, IAntiforgery antiforgery, CancellationToken ct) =>
         {
@@ -66,7 +66,7 @@ internal static class AdminEndpoints
             WriteAttachmentHeaders(ctx, archive.FileName);
             archive.Stream.Position = 0;
             await archive.Stream.CopyToAsync(ctx.Response.Body, ct);
-        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
         // Marks a single runtime template as the per-organisation default. The
         // service enforces the "active and non-deprecated" rule and clears
@@ -86,7 +86,7 @@ internal static class AdminEndpoints
                 ctx.Response.Redirect(
                     $"{RouteConstants.AdminTemplates}?{RouteConstants.ErrQuery}={Uri.EscapeDataString(first.Key)}&{RouteConstants.MsgQuery}={Uri.EscapeDataString(first.Value)}");
             }
-        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
         return app;
     }

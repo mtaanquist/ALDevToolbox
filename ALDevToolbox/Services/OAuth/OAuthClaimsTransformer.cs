@@ -33,6 +33,15 @@ namespace ALDevToolbox.Services.OAuth;
 /// </summary>
 public sealed class OAuthClaimsTransformer : IClaimsTransformation
 {
+    /// <summary>
+    /// Custom access-token claim carrying the tenant id, stamped by the consent
+    /// flow (<c>OAuthEndpoints.MapAuthorizeComplete</c>) and read back here. Its
+    /// presence is the signal a principal came from an OpenIddict token rather
+    /// than a cookie or PAT; a rename on one side without the other surfaces as
+    /// <c>insufficient_access</c>, so both ends reference this constant.
+    /// </summary>
+    public const string OrgClaim = "org";
+
     private readonly AppDbContext _db;
 
     public OAuthClaimsTransformer(AppDbContext db)
@@ -67,7 +76,7 @@ public sealed class OAuthClaimsTransformer : IClaimsTransformation
         // McpBearer policy will reject them. Its presence is also what tells
         // us this principal came from an OpenIddict access token rather than
         // a cookie or PAT sign-in.
-        var orgClaim = principal.FindFirstValue("org");
+        var orgClaim = principal.FindFirstValue(OrgClaim);
         if (string.IsNullOrEmpty(orgClaim) || !int.TryParse(orgClaim, out var orgId))
         {
             return principal;

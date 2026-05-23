@@ -50,7 +50,7 @@ internal static class AdminUserEndpoints
                 }
             }
             ctx.Response.Redirect(RouteConstants.AdminUsers);
-        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
         app.MapPost("/admin/users/{id:int}/reject", async (
             int id, HttpContext ctx, UserAdministrationService users, AppDbContext db, IEmailService email,
@@ -81,7 +81,7 @@ internal static class AdminUserEndpoints
                 }
             }
             ctx.Response.Redirect(RouteConstants.AdminUsers);
-        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
         app.MapPost("/admin/users/{id:int}/disable", async (
             int id, HttpContext ctx, UserAdministrationService users, IOrganizationContext org, IAntiforgery antiforgery, CancellationToken ct) =>
@@ -95,7 +95,7 @@ internal static class AdminUserEndpoints
                 return;
             }
             ctx.Response.Redirect(RouteConstants.AdminUsers);
-        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
         app.MapPost("/admin/users/{id:int}/enable", async (
             int id, HttpContext ctx, UserAdministrationService users, IOrganizationContext org, IAntiforgery antiforgery, CancellationToken ct) =>
@@ -103,7 +103,7 @@ internal static class AdminUserEndpoints
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
             await users.EnableUserAsync(id, org.CurrentOrganizationId!.Value, ct);
             ctx.Response.Redirect(RouteConstants.AdminUsers);
-        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
         app.MapPost("/admin/users/invite", async (
             HttpContext ctx,
@@ -155,7 +155,7 @@ internal static class AdminUserEndpoints
                 var first = ex.Errors.First();
                 ctx.Response.Redirect($"{RouteConstants.AdminUsersNew}?{RouteConstants.ErrQuery}={Uri.EscapeDataString(first.Value)}");
             }
-        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
         app.MapPost("/admin/users/invites/{id:int}/revoke", async (
             int id, HttpContext ctx, InviteService invites, IAntiforgery antiforgery, CancellationToken ct) =>
@@ -168,7 +168,7 @@ internal static class AdminUserEndpoints
                 return;
             }
             ctx.Response.Redirect($"{RouteConstants.AdminUsers}?{RouteConstants.OkQuery}=invite-revoked");
-        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
         // Admin-initiated user creation without requiring email. Issues an
         // invite the same way /admin/users/invite does, but surfaces the
@@ -222,7 +222,7 @@ internal static class AdminUserEndpoints
                 var first = ex.Errors.First();
                 ctx.Response.Redirect($"{RouteConstants.AdminUsersNew}?{RouteConstants.ErrQuery}={Uri.EscapeDataString(first.Value)}");
             }
-        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
         // Admin-initiated email change. Stamps users.pending_email, issues a
         // 24h EmailChangeConfirm token, sends a link to the NEW address (or
@@ -273,7 +273,7 @@ internal static class AdminUserEndpoints
                 var first = ex.Errors.First();
                 ctx.Response.Redirect($"{RouteConstants.AdminUsers}?{RouteConstants.ErrQuery}={Uri.EscapeDataString(first.Value)}");
             }
-        }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
         return app;
     }

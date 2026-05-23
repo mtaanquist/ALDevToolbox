@@ -58,6 +58,17 @@ namespace ALDevToolbox.Services.OAuth;
 /// </summary>
 public sealed class CimdClientResolver : IOpenIddictServerHandler<ValidateAuthorizationRequestContext>
 {
+    /// <summary>
+    /// Application-property key (and its value for CIMD rows) recording how a
+    /// client was registered. This is a security boundary: only rows we stamped
+    /// from a CIMD document may be overwritten from a freshly-fetched (and
+    /// attacker-influenceable) metadata URL, so the write here and the
+    /// overwrite guards in this class and <see cref="OAuthClientAdminService"/>
+    /// must agree on the exact key/value — hence the shared constants.
+    /// </summary>
+    public const string RegistrationSourceProperty = "registration_source";
+    public const string CimdRegistrationSource = "cimd";
+
     private static readonly TimeSpan FetchTimeout = TimeSpan.FromSeconds(5);
     private const int MaxBodyBytes = 64 * 1024;
 
@@ -225,7 +236,7 @@ public sealed class CimdClientResolver : IOpenIddictServerHandler<ValidateAuthor
                 description: "Client metadata document's redirect_uris are all invalid.");
             return;
         }
-        descriptor.Properties["registration_source"] = JsonSerializer.SerializeToElement("cimd");
+        descriptor.Properties[RegistrationSourceProperty] = JsonSerializer.SerializeToElement(CimdRegistrationSource);
         descriptor.Properties["registered_at"] = JsonSerializer.SerializeToElement(DateTime.UtcNow);
         descriptor.Properties["token_endpoint_auth_method"] = JsonSerializer.SerializeToElement(authMethod);
         if (!string.IsNullOrWhiteSpace(metadata.ClientUri))
@@ -248,9 +259,9 @@ public sealed class CimdClientResolver : IOpenIddictServerHandler<ValidateAuthor
         if (existing is not null)
         {
             var properties = await _applications.GetPropertiesAsync(existing, context.CancellationToken);
-            var isCimdRow = properties.TryGetValue("registration_source", out var source)
+            var isCimdRow = properties.TryGetValue(RegistrationSourceProperty, out var source)
                             && source.ValueKind == JsonValueKind.String
-                            && string.Equals(source.GetString(), "cimd", StringComparison.Ordinal);
+                            && string.Equals(source.GetString(), CimdRegistrationSource, StringComparison.Ordinal);
             if (!isCimdRow)
             {
                 _logger.LogWarning(
