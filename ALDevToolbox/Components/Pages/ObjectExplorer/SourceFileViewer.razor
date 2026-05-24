@@ -52,7 +52,10 @@
                 <a class="btn btn--sm"
                    href="@($"/api/object-explorer/files/{FileId}/download")"
                    download
-                   title="Download the raw source for this file">Download source</a>
+                   title="Download the raw source for this file">
+                    <Icon Name="download" Width="14" Height="14" />
+                    <span>Download source</span>
+                </a>
                 @if (_compareTargets is { Count: > 0 })
                 {
                     <form method="get" action="/object-explorer/compare/file" class="source-viewer__compare-picker">

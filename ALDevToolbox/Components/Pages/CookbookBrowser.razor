@@ -42,7 +42,7 @@
             {
                 var isActive = _typeFilter == option.Value;
                 <button type="button"
-                        class="btn btn--sm @(isActive ? "btn--primary" : null)"
+                        class="btn @(isActive ? "btn--primary" : null)"
                         @onclick="() => SetTypeFilter(option.Value)"
                         aria-pressed="@(isActive ? "true" : "false")">
                     @option.Label
