@@ -46,18 +46,25 @@ internal static class StartupTasks
             await db.SaveChangesAsync(stopping);
         }
 
-        // Ensure every org carries the platform-default workspace files.
-        // The MovePlatformFilesToOrgFiles migration covered existing orgs at
-        // migration time, but new platform files added later (like the
-        // canonical per-extension app.json) need a startup-time backfill so
-        // existing orgs pick them up too. Idempotent: the seeder skips
-        // existing rows by path so reboots are no-ops.
+        // Seed the platform-default workspace files only for orgs that have
+        // none yet. Once an org has any files, its admins own that list:
+        // re-running a per-path backfill here would resurrect platform
+        // defaults they deliberately removed. Genuinely new platform files are
+        // propagated to existing orgs via a one-off migration backfill (see
+        // BackfillAppJsonAsIncludedFile), not on every boot.
         var allOrgIds = await db.Organizations
             .IgnoreQueryFilters()
             .Select(o => o.Id)
             .ToListAsync(stopping);
+        var orgIdsWithFiles = (await db.OrganizationFiles
+            .IgnoreQueryFilters()
+            .Select(f => f.OrganizationId)
+            .Distinct()
+            .ToListAsync(stopping))
+            .ToHashSet();
         foreach (var orgId in allOrgIds)
         {
+            if (orgIdsWithFiles.Contains(orgId)) continue;
             await PlatformOrganizationFileSeeder.EnsureForOrganizationAsync(db, orgId, DateTime.UtcNow, stopping);
         }
         await db.SaveChangesAsync(stopping);
