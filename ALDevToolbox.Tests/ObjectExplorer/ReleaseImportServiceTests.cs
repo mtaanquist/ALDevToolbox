@@ -763,7 +763,7 @@ public sealed class ReleaseImportServiceTests : IDisposable
         var groundTruth = await read.OeModuleFiles.AsNoTracking()
             .Where(f => f.Module!.ReleaseId == releaseId)
             .GroupBy(_ => 1)
-            .Select(g => new { Count = g.Count(), Length = g.Sum(f => (long)f.Content.Length) })
+            .Select(g => new { Count = g.Count(), Length = g.Sum(f => (long)f.FileContent!.ContentLength) })
             .SingleAsync();
         release.SourceFileCount.Should().Be(groundTruth.Count);
         release.SourceContentLength.Should().Be(groundTruth.Length);

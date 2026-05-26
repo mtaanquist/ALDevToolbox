@@ -9,6 +9,14 @@ namespace ALDevToolbox.Services;
 /// New tenanted tables must be added here. The build will keep working
 /// without the entry, but per-org usage and per-tenant backups will be
 /// silently incomplete.
+///
+/// Deliberately absent: <c>oe_file_contents</c>, the content-addressed source
+/// store. It has no <c>organization_id</c> (it's cross-tenant shared) so it
+/// can't be prorated by row share or filtered by org. Its logical size is
+/// attributed via <c>oe_releases.source_content_length</c> in
+/// <see cref="DatabaseUsageService"/>, and the per-tenant backup captures the
+/// org's referenced blobs explicitly (see <c>PerTenantBackupService</c>). Do
+/// not add it here.
 /// </summary>
 internal static class TenantTableCatalog
 {

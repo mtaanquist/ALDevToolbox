@@ -259,6 +259,7 @@ public sealed class AccountService
         // somebody first. The "only member in the org" case still cascades
         // the org (handled in the branch below) because there's nothing left
         // to keep alive.
+        var orgDeleted = false;
         if (isLastActiveAdmin)
         {
             var otherMembersExist = await _db.Users.IgnoreQueryFilters()
@@ -280,6 +281,7 @@ public sealed class AccountService
             var org = await _db.Organizations.IgnoreQueryFilters().FirstAsync(o => o.Id == user.OrganizationId, ct);
             await _db.AnonymiseOrganizationAsync(org.Id, ct);
             _db.Organizations.Remove(org);
+            orgDeleted = true;
         }
         else
         {
@@ -287,6 +289,18 @@ public sealed class AccountService
             _db.Users.Remove(user);
         }
         await _db.SaveChangesAsync(ct);
+
+        if (orgDeleted)
+        {
+            // The org cascade removed its oe_module_files rows, but the shared
+            // oe_file_contents blobs (FK Restrict, possibly used by other orgs)
+            // are left behind. Reclaim any that are now orphaned. Raw SQL so the
+            // NOT EXISTS spans all orgs — blobs still referenced elsewhere stay.
+            await _db.Database.ExecuteSqlRawAsync(
+                "DELETE FROM oe_file_contents c WHERE NOT EXISTS " +
+                "(SELECT 1 FROM oe_module_files f WHERE f.content_hash = c.content_hash)",
+                ct);
+        }
     }
 
     private static void ValidateEmail(string? value, Dictionary<string, string> errors)

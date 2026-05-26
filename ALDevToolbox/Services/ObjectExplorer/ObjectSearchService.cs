@@ -168,7 +168,10 @@ public sealed class ObjectSearchService
 
         var q = _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Module!.ReleaseId == releaseId)
-            .Where(f => f.Content.ToLower().Contains(lower));
+            // Stays org-scoped: the query is rooted at OeModuleFiles (org query
+            // filter applies); the FileContent nav becomes a JOIN to the shared
+            // content store, so no cross-tenant row can leak.
+            .Where(f => f.FileContent!.Content.ToLower().Contains(lower));
 
         if (moduleId is { } mid)
         {
@@ -188,7 +191,7 @@ public sealed class ObjectSearchService
                 f.Path,
                 f.ModuleId,
                 ModuleName = f.Module!.Name,
-                f.Content,
+                Content = f.FileContent!.Content,
             })
             .ToListAsync(ct);
 

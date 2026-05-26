@@ -503,7 +503,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         // text. The extractor stored the line number; the column has to come
         // from a re-scan, same as production resolvables.
         var content = await read.OeModuleFiles.AsNoTracking()
-            .Where(f => f.Id == pick!.FileId).Select(f => f.Content).SingleAsync();
+            .Where(f => f.Id == pick!.FileId).Select(f => f.FileContent!.Content).SingleAsync();
         var lines = content.Replace("\r\n", "\n").Split('\n');
         var lineText = lines[pick!.LineNumber!.Value - 1];
         var idx = lineText.IndexOf(pick.TargetMemberName!, StringComparison.Ordinal);
@@ -545,7 +545,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         // Verify the spans line up with actual source content — the column
         // range should slice an identifier-shaped substring out of its line.
         var content = await read.OeModuleFiles.AsNoTracking()
-            .Where(f => f.Id == fileWithRefs).Select(f => f.Content).SingleAsync();
+            .Where(f => f.Id == fileWithRefs).Select(f => f.FileContent!.Content).SingleAsync();
         var lines = content.Replace("\r\n", "\n").Split('\n');
         foreach (var r in resolvables.Take(20))
         {
@@ -1058,8 +1058,18 @@ public sealed class ObjectExplorerServiceTests : IDisposable
                 .Where(f => f.Module!.ReleaseId == rightId)
                 .OrderBy(f => f.Path)
                 .FirstAsync();
-            anyRightFile.Content += "\n// patched by test\n";
-            anyRightFile.ContentHash = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+            // Point the file at a fresh content blob (distinct hash) to simulate
+            // a vendor patch. Content lives in the shared store now, so insert
+            // the blob first (the content_hash FK requires it to exist).
+            const string patchedHash = "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF";
+            write.OeFileContents.Add(new FileContent
+            {
+                ContentHash = patchedHash,
+                Content = "// patched by test\n",
+                ContentLength = "// patched by test\n".Length,
+                LineCount = 2,
+            });
+            anyRightFile.ContentHash = patchedHash;
             await write.SaveChangesAsync();
         }
 
