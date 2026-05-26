@@ -131,6 +131,7 @@ public sealed class ObjectSearchService
     {
         IOrderedQueryable<ModuleObject> ordered = (column, descending) switch
         {
+            (ObjectSortColumn.Default, _)       => q.OrderBy(o => o.Kind).ThenBy(o => o.ObjectId).ThenBy(o => o.Module!.DependencyCount).ThenBy(o => o.Module!.Name),
             (ObjectSortColumn.Id, false)        => q.OrderBy(o => o.ObjectId),
             (ObjectSortColumn.Id, true)         => q.OrderByDescending(o => o.ObjectId),
             (ObjectSortColumn.Name, false)      => q.OrderBy(o => o.Name),

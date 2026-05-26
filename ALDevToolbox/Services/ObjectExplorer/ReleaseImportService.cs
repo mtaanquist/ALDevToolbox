@@ -548,6 +548,7 @@ public class ReleaseImportService
             IsInternal = upload.IsInternal,
             IsLanguagePack = upload.IsLanguagePack,
             DependenciesJson = SerializeDeps(pkg.Manifest.Dependencies),
+            DependencyCount = pkg.Manifest.Dependencies.Count,
             AppFileHash = pkg.AppFileHash,
             CreatedAt = DateTime.UtcNow,
         };
