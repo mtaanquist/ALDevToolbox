@@ -1,110 +1,130 @@
 @page "/object-explorer"
+@rendermode InteractiveServer
 @attribute [Authorize]
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @using ALDevToolbox.Services.ObjectExplorer
 
-<PageTitle>Releases · AL Dev Toolbox</PageTitle>
+<PageTitle>Object Explorer · AL Dev Toolbox</PageTitle>
 
-<div class="object-explorer">
+<div class="admin-page">
     <header class="admin-page__header">
         <div>
-            <h1>Releases</h1>
-            <p class="muted">
-                Imported snapshots of the Business Central ecosystem. Each Release
-                is a bundle of <code>.app</code> files — pick one to browse its
-                modules and find references across them.
-            </p>
+            <h1>Object Explorer</h1>
         </div>
     </header>
+
+    <nav class="pill-tabs" role="tablist" aria-label="Release category">
+        <button type="button"
+                class="pill-tab @(_kind == "first_party" ? "pill-tab--active" : "")"
+                role="tab" aria-selected="@(_kind == "first_party" ? "true" : "false")"
+                @onclick='() => SetKind("first_party")'>
+            <Icon Name="layers" Width="14" Height="14" />
+            <span>Microsoft</span>
+        </button>
+        <button type="button"
+                class="pill-tab @(_kind == "third_party" ? "pill-tab--active" : "")"
+                role="tab" aria-selected="@(_kind == "third_party" ? "true" : "false")"
+                @onclick='() => SetKind("third_party")'>
+            <Icon Name="package" Width="14" Height="14" />
+            <span>Third-party</span>
+        </button>
+        <button type="button"
+                class="pill-tab @(_kind == "customer" ? "pill-tab--active" : "")"
+                role="tab" aria-selected="@(_kind == "customer" ? "true" : "false")"
+                @onclick='() => SetKind("customer")'>
+            <Icon Name="users" Width="14" Height="14" />
+            <span>Customer</span>
+        </button>
+    </nav>
 
     @if (_releases is null)
     {
         <p class="muted">Loading…</p>
     }
-    else if (_releases.Count == 0)
-    {
-        <p class="muted">
-            No Releases have been imported yet.
-            <AuthorizeView Roles="Admin,Editor">
-                <Authorized>
-                    <a href="/admin/object-explorer/new">Import one now</a>.
-                </Authorized>
-                <NotAuthorized>
-                    Ask an admin to import one.
-                </NotAuthorized>
-            </AuthorizeView>
-        </p>
-    }
     else
     {
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th scope="col">Label</th>
-                    <th scope="col">Kind</th>
-                    <th scope="col">BC version</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Files</th>
-                    <th scope="col">Size</th>
-                    <th scope="col">Imported</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var r in _releases)
-                {
+        var rows = _releases.Where(r => r.Kind == _kind).ToList();
+        @if (rows.Count == 0)
+        {
+            <p class="muted">
+                No @CategoryNoun releases have been imported yet.
+                <AuthorizeView Roles="Admin,Editor">
+                    <Authorized>
+                        <a href="/admin/object-explorer/new">Import one now</a>.
+                    </Authorized>
+                    <NotAuthorized>
+                        Ask an admin to import one.
+                    </NotAuthorized>
+                </AuthorizeView>
+            </p>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
                     <tr>
-                        <td>
-                            <a href="@($"/object-explorer/release/{r.Id}")">
-                                <strong>@r.Label</strong>
-                            </a>
-                        </td>
-                        <td>@FormatKind(r.Kind)</td>
-                        <td>@(r.BcVersion ?? "—")</td>
-                        <td>@FormatStatus(r.Status)</td>
-                        <td>@r.SourceFileCount.ToString("N0")</td>
-                        <td>@FormatBytes(r.SourceContentLength)</td>
-                        <td>@r.ImportedAt.ToString("yyyy-MM-dd")</td>
+                        <th scope="col">Label</th>
+                        @if (_kind == "customer")
+                        {
+                            <th scope="col">Customer</th>
+                        }
+                        @if (_kind != "first_party")
+                        {
+                            <th scope="col">Publisher</th>
+                            <th scope="col">Tied to</th>
+                        }
+                        <th scope="col">BC version</th>
+                        <th scope="col">Files</th>
+                        <th scope="col">Imported</th>
                     </tr>
-                }
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    @foreach (var r in rows)
+                    {
+                        <tr>
+                            <td>
+                                <a href="@($"/object-explorer/release/{r.Id}")">
+                                    <strong>@r.Label</strong>
+                                </a>
+                            </td>
+                            @if (_kind == "customer")
+                            {
+                                <td>@Dash(r.CustomerName)</td>
+                            }
+                            @if (_kind != "first_party")
+                            {
+                                <td>@Dash(r.Publisher)</td>
+                                <td>@Dash(r.ParentLabel)</td>
+                            }
+                            <td>@Dash(r.BcVersion)</td>
+                            <td>@r.SourceFileCount.ToString("N0")</td>
+                            <td>@r.ImportedAt.ToString("yyyy-MM-dd")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
     }
 </div>
 
 @code {
     private List<ReleaseListItem>? _releases;
+    private string _kind = "first_party";
 
     protected override async Task OnInitializedAsync()
     {
         _releases = await ObjectExplorer.ListReleasesAsync();
     }
 
-    private static string FormatKind(string kind) => kind switch
+    private void SetKind(string kind) => _kind = kind;
+
+    private string CategoryNoun => _kind switch
     {
-        "first_party" => "First-party",
-        "third_party" => "Third-party",
-        "customer"    => "Customer",
-        _             => kind,
+        "first_party" => "Microsoft",
+        "third_party" => "third-party",
+        "customer"    => "customer",
+        _             => "",
     };
 
-    private static string FormatStatus(string s) => s switch
-    {
-        "ready"     => "Ready",
-        "ingesting" => "Ingesting…",
-        "failed"    => "Failed",
-        _           => s,
-    };
-
-    /// <summary>
-    /// Compact human-readable size — KB / MB / GB with one decimal. The
-    /// underlying number is character count, not byte count; for ASCII AL
-    /// source those align, so we label the unit literally.
-    /// </summary>
-    private static string FormatBytes(long n)
-    {
-        if (n < 1024) return n + " B";
-        if (n < 1024L * 1024) return (n / 1024d).ToString("0.0") + " KB";
-        if (n < 1024L * 1024 * 1024) return (n / (1024d * 1024)).ToString("0.0") + " MB";
-        return (n / (1024d * 1024 * 1024)).ToString("0.0") + " GB";
-    }
+    private static string Dash(string? value) => string.IsNullOrEmpty(value) ? "—" : value;
 }

@@ -30,6 +30,20 @@ public class Release
     public string Kind { get; set; } = "first_party";
 
     /// <summary>
+    /// Free-text publisher name for third-party / customer Releases. Stored on the
+    /// Release rather than derived from module manifests because we sometimes take
+    /// over an extension someone else built — the manifest publisher no longer
+    /// reflects who owns it now. Null for first-party (Microsoft) Releases.
+    /// </summary>
+    public string? Publisher { get; set; }
+
+    /// <summary>
+    /// Name of the customer a <c>kind = customer</c> Release belongs to. Null for
+    /// first-party / third-party Releases.
+    /// </summary>
+    public string? CustomerName { get; set; }
+
+    /// <summary>
     /// Parent Release this one sits on top of. Null for first-party DVDs. Reference resolution
     /// walks the chain via recursive CTE; same-AppId modules at different versions are
     /// shadowed by the closest-to-current copy. Restricted on delete — a parent can't be

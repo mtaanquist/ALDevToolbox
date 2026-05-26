@@ -48,6 +48,8 @@ internal static class ObjectExplorerEndpoints
             var form = await ctx.Request.ReadFormAsync(ct);
             var label = form["Label"].ToString().Trim();
             var kind = form["Kind"].ToString().Trim();
+            var publisher = form["Publisher"].ToString();
+            var customerName = form["CustomerName"].ToString();
             int? parentReleaseId = null;
             if (int.TryParse(form["ParentReleaseId"].ToString(), out var pr) && pr > 0)
             {
@@ -84,7 +86,9 @@ internal static class ObjectExplorerEndpoints
                     Kind: kind,
                     ParentReleaseId: parentReleaseId,
                     ApplicationVersionId: null,
-                    Uploads: uploads);
+                    Uploads: uploads,
+                    Publisher: publisher,
+                    CustomerName: customerName);
 
                 ReleaseImportSummary summary;
                 try
@@ -440,6 +444,30 @@ internal static class ObjectExplorerEndpoints
             {
                 await management.RestoreAsync(id, ct);
                 ctx.Response.Redirect("/admin/object-explorer?ok=restored&id=" + id);
+            }
+            catch (PlanValidationException ex)
+            {
+                var first = ex.Errors.First();
+                RedirectAdmin(ctx, first.Key, first.Value);
+            }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
+
+        app.MapPost("/admin/object-explorer/{id:int}/metadata", async (
+            int id,
+            HttpContext ctx,
+            ReleaseManagementService management,
+            IAntiforgery antiforgery,
+            CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var publisher = form["Publisher"].ToString();
+            var customerName = form["CustomerName"].ToString();
+
+            try
+            {
+                await management.UpdateMetadataAsync(id, publisher, customerName, ct);
+                ctx.Response.Redirect("/admin/object-explorer?ok=updated&id=" + id);
             }
             catch (PlanValidationException ex)
             {

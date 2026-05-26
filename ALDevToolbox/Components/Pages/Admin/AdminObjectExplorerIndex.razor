@@ -61,6 +61,8 @@
                 <tr>
                     <th scope="col">Label</th>
                     <th scope="col">Kind</th>
+                    <th scope="col">Publisher</th>
+                    <th scope="col">Customer</th>
                     <th scope="col">Status</th>
                     <th scope="col">Files</th>
                     <th scope="col">Size</th>
@@ -82,6 +84,8 @@
                             }
                         </td>
                         <td>@FormatKind(r.Kind)</td>
+                        <td>@(string.IsNullOrEmpty(r.Publisher) ? "—" : r.Publisher)</td>
+                        <td>@(string.IsNullOrEmpty(r.CustomerName) ? "—" : r.CustomerName)</td>
                         <td>@FormatStatus(r.Status)</td>
                         <td>@r.SourceFileCount.ToString("N0")</td>
                         <td>@FormatBytes(r.SourceContentLength)</td>
@@ -89,6 +93,25 @@
                         <td class="row-actions">
                             @if (r.DeletedAt is null)
                             {
+                                <form method="post"
+                                      action="@($"/admin/object-explorer/{r.Id}/metadata")"
+                                      class="metadata-form">
+                                    <AntiforgeryToken />
+                                    <input type="text" name="Publisher" maxlength="200"
+                                           value="@r.Publisher"
+                                           class="field__input metadata-form__input"
+                                           placeholder="Publisher"
+                                           aria-label="Publisher" />
+                                    <input type="text" name="CustomerName" maxlength="200"
+                                           value="@r.CustomerName"
+                                           class="field__input metadata-form__input"
+                                           placeholder="Customer"
+                                           aria-label="Customer" />
+                                    <button type="submit" class="btn btn--sm" title="Save publisher / customer">
+                                        <Icon Name="save" Width="14" Height="14" />
+                                        <span>Save</span>
+                                    </button>
+                                </form>
                                 <a class="btn btn--sm" href="@($"/admin/object-explorer/release/{r.Id}/translations")"
                                    title="Upload XLIFF translation files for this release">
                                     <Icon Name="book-open" Width="14" Height="14" />
@@ -172,6 +195,7 @@
     private static string FormatOkMessage(string ok, string id) => ok switch
     {
         "imported"     => $"Release {id} imported.",
+        "updated"      => $"Release {id} metadata updated.",
         "soft-deleted" => $"Release {id} soft-deleted. Restore from this page if it was a mistake.",
         "restored"     => $"Release {id} restored.",
         "hard-deleted" => $"Release {id} permanently deleted.",
