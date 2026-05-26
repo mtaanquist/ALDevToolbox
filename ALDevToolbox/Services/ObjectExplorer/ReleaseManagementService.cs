@@ -114,12 +114,37 @@ public class ReleaseManagementService
             });
         }
 
+        // Capture the distinct content hashes this Release's files reference
+        // BEFORE the cascade removes the oe_module_files rows. The shared
+        // oe_file_contents blobs aren't cascade-deleted (the FK is Restrict, and
+        // they may be shared with other releases/orgs), so we reclaim the ones
+        // that become orphaned afterwards. Org-scoped read here is fine — we
+        // only need this org's referenced hashes as GC candidates.
+        var candidateHashes = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Module!.ReleaseId == releaseId)
+            .Select(f => f.ContentHash)
+            .Distinct()
+            .ToListAsync(ct).ConfigureAwait(false);
+
         _db.OeReleases.Remove(release);
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
+        var reclaimed = 0;
+        if (candidateHashes.Count > 0)
+        {
+            // Bounded anti-join: delete only the candidate blobs that no
+            // oe_module_files row references any more. Raw SQL so the NOT EXISTS
+            // check sees ALL orgs (the EF query filter doesn't apply) — a blob
+            // still used by another tenant must survive.
+            reclaimed = await _db.Database.ExecuteSqlRawAsync(
+                "DELETE FROM oe_file_contents c WHERE c.content_hash = ANY({0}) " +
+                "AND NOT EXISTS (SELECT 1 FROM oe_module_files f WHERE f.content_hash = c.content_hash)",
+                new object[] { candidateHashes.ToArray() }, ct).ConfigureAwait(false);
+        }
+
         _logger.LogWarning(
-            "Hard-deleted Release {ReleaseId} ({Label}). All dependent oe_* rows were cascade-removed; ObjectExplorerVacuumScheduler reclaims storage on its next nightly tick.",
-            release.Id, release.Label);
+            "Hard-deleted Release {ReleaseId} ({Label}). Dependent oe_* rows cascade-removed; reclaimed {Reclaimed} orphaned shared content blob(s) of {Candidates} candidate(s).",
+            release.Id, release.Label, reclaimed, candidateHashes.Count);
     }
 
     private static PlanValidationException NotFound(int releaseId) =>

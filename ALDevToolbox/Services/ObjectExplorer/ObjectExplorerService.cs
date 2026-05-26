@@ -382,7 +382,7 @@ public class ObjectExplorerService
 
         var fileContent = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == row.SourceFileId)
-            .Select(f => f.Content)
+            .Select(f => f.FileContent!.Content)
             .SingleOrDefaultAsync(ct).ConfigureAwait(false);
         if (fileContent is null) return null;
 

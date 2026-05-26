@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
 using OeRelease = ALDevToolbox.Domain.Entities.ObjectExplorer.Release;
 using OeModuleFile = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleFile;
+using OeFileContent = ALDevToolbox.Domain.Entities.ObjectExplorer.FileContent;
 using OeModuleObject = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject;
 using OeModuleSymbol = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol;
 using OeModuleVariable = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleVariable;
@@ -150,6 +151,7 @@ public class AppDbContext : DbContext
     public DbSet<OeRelease> OeReleases => Set<OeRelease>();
     public DbSet<OeModule> OeModules => Set<OeModule>();
     public DbSet<OeModuleFile> OeModuleFiles => Set<OeModuleFile>();
+    public DbSet<OeFileContent> OeFileContents => Set<OeFileContent>();
     public DbSet<OeModuleObject> OeModuleObjects => Set<OeModuleObject>();
     public DbSet<OeModuleSymbol> OeModuleSymbols => Set<OeModuleSymbol>();
     public DbSet<OeModuleVariable> OeModuleVariables => Set<OeModuleVariable>();
@@ -223,6 +225,11 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OeModuleVariable>(modelBuilder);
         ScopeToOrganization<OeModuleReference>(modelBuilder);
         ScopeToOrganization<OeModuleTranslation>(modelBuilder);
+        // NOTE: OeFileContent (oe_file_contents) is deliberately NOT scoped.
+        // It is the content-addressable, cross-tenant-shared source-blob store;
+        // it has no organization_id. Isolation holds because it is only ever
+        // reached via the OeModuleFile.FileContent nav from an org-scoped file
+        // row — never queried as a root. Do not add a filter here.
         ScopeToOrganization<Recipe>(modelBuilder);
         ScopeToOrganization<RecipeFile>(modelBuilder);
         ScopeToOrganization<RecipeSuggestion>(modelBuilder);

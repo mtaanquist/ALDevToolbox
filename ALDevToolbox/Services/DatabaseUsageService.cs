@@ -68,6 +68,7 @@ public sealed class DatabaseUsageService
 
         var tableSizes = await ReadTableSizesAsync(ct);
         var perOrgCounts = await ReadPerOrgRowCountsAsync(orgs.Select(o => o.Id).ToList(), ct);
+        var oeSourceBytes = await ReadOeSourceLogicalBytesAsync(orgs.Select(o => o.Id).ToList(), ct);
 
         var rows = new List<OrgUsageRow>(orgs.Count);
         foreach (var org in orgs)
@@ -83,6 +84,7 @@ public sealed class DatabaseUsageService
                 logical += (long)(size.LogicalBytes * share);
                 index += (long)(size.IndexBytes * share);
             }
+            if (oeSourceBytes.TryGetValue(org.Id, out var oeBytes)) logical += oeBytes;
 
             var total = logical + index;
             var billable = logical + (long)(index * (double)multiplier);
@@ -116,6 +118,7 @@ public sealed class DatabaseUsageService
 
         var tableSizes = await ReadTableSizesAsync(ct);
         var perOrgCounts = await ReadPerOrgRowCountsAsync([orgId.Value], ct);
+        var oeSourceBytes = await ReadOeSourceLogicalBytesAsync([orgId.Value], ct);
 
         long logical = 0, index = 0;
         foreach (var table in TenantTableCatalog.AllTenantedTables)
@@ -127,6 +130,7 @@ public sealed class DatabaseUsageService
             logical += (long)(size.LogicalBytes * share);
             index += (long)(size.IndexBytes * share);
         }
+        if (oeSourceBytes.TryGetValue(orgId.Value, out var oeBytes)) logical += oeBytes;
 
         var total = logical + index;
         var billable = logical + (long)(index * (double)settings.IndexSizeMultiplier);
@@ -244,6 +248,45 @@ public sealed class DatabaseUsageService
         }
 
         return counts;
+    }
+
+    /// <summary>
+    /// Per-org logical size of Object Explorer source text, read from the
+    /// denormalised <c>oe_releases.source_content_length</c> (the full footprint
+    /// each org imported, duplicates included). Object Explorer source blobs are
+    /// physically deduplicated into the shared, org-less <c>oe_file_contents</c>
+    /// store, which therefore can't be prorated by row share. Attributing the
+    /// logical size keeps each org's bill identical to the pre-dedup world (when
+    /// content was stored per-org); the platform simply reaps the physical
+    /// saving. The dedup'd <c>oe_file_contents</c> heap and its indexes are
+    /// intentionally unattributed platform overhead.
+    /// </summary>
+    private async Task<Dictionary<int, long>> ReadOeSourceLogicalBytesAsync(
+        IReadOnlyList<int> orgIds, CancellationToken ct)
+    {
+        var result = new Dictionary<int, long>();
+        if (orgIds.Count == 0) return result;
+
+        var connection = _db.Database.GetDbConnection();
+        await EnsureOpenAsync(connection, ct);
+        await using var cmd = connection.CreateCommand();
+        // No deleted_at filter: soft-deleted releases still occupy storage until
+        // hard-purged, matching the prior per-row proration which counted them.
+        cmd.CommandText =
+            "SELECT organization_id, COALESCE(SUM(source_content_length), 0) FROM oe_releases "
+            + "WHERE organization_id = ANY(@ids) GROUP BY organization_id";
+        var param = cmd.CreateParameter();
+        param.ParameterName = "@ids";
+        ((NpgsqlParameter)param).NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Integer;
+        param.Value = orgIds.ToArray();
+        cmd.Parameters.Add(param);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            if (await reader.IsDBNullAsync(0, ct)) continue;
+            result[reader.GetInt32(0)] = reader.GetInt64(1);
+        }
+        return result;
     }
 
     private static async Task EnsureOpenAsync(System.Data.Common.DbConnection connection, CancellationToken ct)

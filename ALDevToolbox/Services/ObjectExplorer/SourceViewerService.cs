@@ -31,7 +31,7 @@ public sealed class SourceViewerService
     public Task<SourceFileDetail?> GetFileAsync(long fileId, CancellationToken ct = default)
         => _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
-            .Select(f => new SourceFileDetail(f.Id, f.ModuleId, f.Path, f.Content, f.LineCount))
+            .Select(f => new SourceFileDetail(f.Id, f.ModuleId, f.Path, f.FileContent!.Content, f.LineCount))
             .SingleOrDefaultAsync(ct)!;
 
     /// <summary>
@@ -125,7 +125,7 @@ public sealed class SourceViewerService
     {
         var content = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
-            .Select(f => f.Content)
+            .Select(f => f.FileContent!.Content)
             .SingleOrDefaultAsync(ct);
         if (string.IsNullOrEmpty(content)) return new();
 
@@ -225,7 +225,7 @@ public sealed class SourceViewerService
     {
         var meta = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
-            .Select(f => new { f.Content, ReleaseId = f.Module!.ReleaseId })
+            .Select(f => new { Content = f.FileContent!.Content, ReleaseId = f.Module!.ReleaseId })
             .SingleOrDefaultAsync(ct);
         if (meta is null) return null;
 
@@ -327,7 +327,7 @@ public sealed class SourceViewerService
     {
         var content = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
-            .Select(f => f.Content)
+            .Select(f => f.FileContent!.Content)
             .SingleOrDefaultAsync(ct);
         if (string.IsNullOrEmpty(content)) return new();
 
@@ -463,7 +463,7 @@ public sealed class SourceViewerService
     {
         var content = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
-            .Select(f => f.Content)
+            .Select(f => f.FileContent!.Content)
             .SingleOrDefaultAsync(ct);
         if (string.IsNullOrEmpty(content)) return null;
 
