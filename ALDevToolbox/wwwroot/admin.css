@@ -419,6 +419,89 @@
     min-width: 9rem;
 }
 
+/* File pickers: style the native control's button portion to match our
+   outline .btn instead of the browser default grey chrome. The input keeps
+   a light frame; the ::file-selector-button carries the button look. */
+.field__input--file {
+    padding: 6px;
+    cursor: pointer;
+}
+
+.field__input--file::file-selector-button {
+    margin-right: 12px;
+    padding: 7px 14px;
+    border-radius: var(--radius);
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+.field__input--file::file-selector-button:hover {
+    background: var(--color-bg);
+}
+
+/* Upload + ingest feedback on the Import Release form. The bar runs
+   determinate while bytes upload (driven by object-explorer-import.js), then
+   drops its value attribute to go indeterminate for the server-side parse. */
+.upload-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 14px;
+    max-width: 480px;
+}
+
+.upload-progress__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.upload-progress__pct {
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-muted, var(--color-text));
+}
+
+.upload-progress__bar {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 10px;
+    border: none;
+    border-radius: 999px;
+    background: var(--color-bg);
+    overflow: hidden;
+}
+
+.upload-progress__bar::-webkit-progress-bar {
+    background: var(--color-bg);
+    border-radius: 999px;
+}
+
+.upload-progress__bar::-webkit-progress-value {
+    background: var(--color-accent);
+    border-radius: 999px;
+    transition: width 0.15s linear;
+}
+
+.upload-progress__bar::-moz-progress-bar {
+    background: var(--color-accent);
+    border-radius: 999px;
+}
+
+.upload-progress__hint {
+    margin: 0;
+    font-size: 12px;
+}
+
 /* Bottom-of-table pagination strip used by /admin/audit. Counter on the
    left, prev/next on the right; disabled state is presentational so the
    anchor still renders for the keyboard tab order. */

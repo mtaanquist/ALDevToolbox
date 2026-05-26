@@ -44,7 +44,8 @@
     <form method="post"
           action="/admin/object-explorer/import"
           enctype="multipart/form-data"
-          class="form-grid">
+          class="form-grid"
+          data-oe-import-form>
         @if (_antiforgeryToken is not null)
         {
             <input type="hidden" name="@_antiforgeryToken.FormFieldName" value="@_antiforgeryToken.RequestToken" />
@@ -94,7 +95,7 @@
                 </small>
             </label>
 
-            <label class="field">
+            <label class="field" data-oe-field-publisher>
                 <span class="field__label">Publisher (optional)</span>
                 <input type="text" name="Publisher" maxlength="200"
                        placeholder="e.g. Continia Software"
@@ -105,7 +106,7 @@
                 </small>
             </label>
 
-            <label class="field">
+            <label class="field" data-oe-field-customer>
                 <span class="field__label">Customer (optional)</span>
                 <input type="text" name="CustomerName" maxlength="200"
                        placeholder="e.g. Acme Co"
@@ -120,7 +121,7 @@
         <section class="form-section">
             <label class="field">
                 <span class="field__label">Application folder ZIP (recommended)</span>
-                <input type="file" name="FolderZip" accept=".zip" class="field__input" />
+                <input type="file" name="FolderZip" accept=".zip" class="field__input field__input--file" />
                 <small class="field__caption muted">
                     Drop the DVD's <code>applications/</code> folder as one ZIP.
                     We walk every <code>.app</code> entry, pair it with its
@@ -141,7 +142,7 @@
             <label class="field">
                 <span class="field__label">.app files</span>
                 <input type="file" name="AppFiles" accept=".app" multiple
-                       class="field__input" />
+                       class="field__input field__input--file" />
                 <small class="field__caption muted">
                     Pick every <code>.app</code> for this Release in one go. We
                     deduplicate by (AppId, Version) and SHA-256 the bytes — re-uploads
@@ -152,7 +153,7 @@
             <label class="field">
                 <span class="field__label">.Source.zip files (optional)</span>
                 <input type="file" name="SourceZips" accept=".zip,.Source.zip" multiple
-                       class="field__input" />
+                       class="field__input field__input--file" />
                 <small class="field__caption muted">
                     Only needed when an .app was built without
                     <code>IncludeSourceInSymbolFile=true</code>. We pair each zip
@@ -162,10 +163,19 @@
         </section>
 
         <section class="form-section">
-            <button type="submit" class="btn btn--primary">
+            <button type="submit" class="btn btn--primary" data-oe-import-submit>
                 <Icon Name="upload" Width="16" Height="16" />
                 <span>Import Release</span>
             </button>
+
+            <div class="upload-progress" data-oe-import-progress hidden role="status" aria-live="polite">
+                <div class="upload-progress__head">
+                    <span class="upload-progress__label" data-oe-import-label>Uploading…</span>
+                    <span class="upload-progress__pct" data-oe-import-pct></span>
+                </div>
+                <progress class="upload-progress__bar" data-oe-import-bar max="100" value="0"></progress>
+                <p class="upload-progress__hint muted" data-oe-import-hint></p>
+            </div>
         </section>
     </form>
 </div>
