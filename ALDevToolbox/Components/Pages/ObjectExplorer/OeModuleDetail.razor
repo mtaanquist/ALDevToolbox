@@ -176,7 +176,7 @@
             _objects = await ObjectExplorer.ListObjectsAsync(
                 ModuleId,
                 new ObjectListFilter(
-                    Kind: string.IsNullOrEmpty(_kind) ? null : _kind,
+                    Kinds: string.IsNullOrEmpty(_kind) ? null : new[] { _kind },
                     Search: string.IsNullOrWhiteSpace(_search) ? null : _search),
                 skip: 0,
                 take: PageSize);

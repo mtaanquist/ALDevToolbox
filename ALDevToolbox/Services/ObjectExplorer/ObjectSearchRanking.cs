@@ -15,6 +15,21 @@ internal static class ObjectSearchRanking
     private readonly record struct SearchToken(string Text, bool Negated, bool Quoted);
 
     /// <summary>
+    /// Trims, lower-cases, and de-duplicates a kind filter list, collapsing an
+    /// empty/all-blank list to null so callers can treat "no kinds" uniformly.
+    /// </summary>
+    public static IReadOnlyList<string>? NormalizeKinds(IReadOnlyList<string>? kinds)
+    {
+        if (kinds is null) return null;
+        var result = kinds
+            .Where(k => !string.IsNullOrWhiteSpace(k))
+            .Select(k => k.Trim().ToLowerInvariant())
+            .Distinct()
+            .ToList();
+        return result.Count == 0 ? null : result;
+    }
+
+    /// <summary>
     /// Applies the parsed search tokens to <paramref name="q"/> as
     /// case-insensitive name filters (a leading <c>-</c> negates), with one
     /// legacy special case: a single bare numeric token also matches by
