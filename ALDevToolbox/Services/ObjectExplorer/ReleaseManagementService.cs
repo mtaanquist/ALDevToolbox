@@ -80,6 +80,34 @@ public class ReleaseManagementService
     }
 
     /// <summary>
+    /// Updates the editable free-text metadata on a Release — the publisher and
+    /// (for customer Releases) the customer name. Both collapse to null when blank.
+    /// Deliberately does <em>not</em> touch <c>parent_release_id</c>: re-parenting
+    /// after ingest would invalidate the already-resolved cross-module references
+    /// (the chain walk runs at import time), so the parent stays set on import only.
+    /// </summary>
+    public async Task UpdateMetadataAsync(
+        int releaseId, string? publisher, string? customerName, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var release = await _db.OeReleases
+            .SingleOrDefaultAsync(r => r.Id == releaseId, ct).ConfigureAwait(false)
+            ?? throw NotFound(releaseId);
+
+        release.Publisher = NullIfBlank(publisher);
+        release.CustomerName = NullIfBlank(customerName);
+        release.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "Updated Release {ReleaseId} ({Label}) metadata: Publisher={Publisher} CustomerName={CustomerName}",
+            release.Id, release.Label, release.Publisher, release.CustomerName);
+    }
+
+    private static string? NullIfBlank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>
     /// Removes the Release row plus every dependent <c>oe_*</c> row via FK
     /// cascade. Refuses when another Release still points at this one as its
     /// <c>parent_release_id</c> — pre-checked here so the failure message is

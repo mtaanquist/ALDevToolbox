@@ -406,6 +406,19 @@
     min-width: 14rem;
 }
 
+/* Inline publisher / customer editor on the admin Object Explorer list —
+   two text inputs and a save button on one row, mirroring .hard-delete-form. */
+.metadata-form {
+    display: inline-flex;
+    gap: 6px;
+    align-items: stretch;
+    vertical-align: middle;
+}
+
+.metadata-form__input {
+    min-width: 9rem;
+}
+
 /* Bottom-of-table pagination strip used by /admin/audit. Counter on the
    left, prev/next on the right; disabled state is presentational so the
    anchor still renders for the keyboard tab order. */

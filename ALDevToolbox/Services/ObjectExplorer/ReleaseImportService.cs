@@ -99,6 +99,8 @@ public class ReleaseImportService
             OrganizationId = orgId,
             Label = request.Label.Trim(),
             Kind = request.Kind,
+            Publisher = NullIfBlank(request.Publisher),
+            CustomerName = NullIfBlank(request.CustomerName),
             ParentReleaseId = request.ParentReleaseId,
             ApplicationVersionId = request.ApplicationVersionId,
             Status = "ingesting",
@@ -1109,6 +1111,13 @@ public class ReleaseImportService
     /// it from the base page, which a second-pass copy
     /// (<see cref="PropagateSourceTableToPageExtensionsAsync"/>) fills.
     /// </summary>
+    /// <summary>Trims a free-text field and collapses empty / whitespace-only input to null.</summary>
+    private static string? NullIfBlank(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        return value.Trim();
+    }
+
     private static string? ExtractSourceTableName(SymbolObject symObj)
     {
         // Three properties bind Rec to a specific table:

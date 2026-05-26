@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260619000000_AddReleasePublisherAndCustomer")]
+    partial class AddReleasePublisherAndCustomer
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1622,241 +1625,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("personal_access_tokens", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.RuntimeTemplate", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("AppSourceCop")
-                        .IsRequired()
-                        .HasColumnType("jsonb")
-                        .HasColumnName("app_source_cop_json");
-
-                    b.Property<string>("CodeWorkspaceJson")
-                        .HasColumnType("text")
-                        .HasColumnName("code_workspace_json");
-
-                    b.Property<int>("CoreIdRangeFrom")
-                        .HasColumnType("integer")
-                        .HasColumnName("core_id_range_from");
-
-                    b.Property<int>("CoreIdRangeTo")
-                        .HasColumnType("integer")
-                        .HasColumnName("core_id_range_to");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<int?>("DefaultApplicationVersionId")
-                        .HasColumnType("integer")
-                        .HasColumnName("default_application_version_id");
-
-                    b.Property<bool>("DefaultApplicationVersionLatest")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false)
-                        .HasColumnName("default_application_version_latest");
-
-                    b.Property<string>("Defaults")
-                        .IsRequired()
-                        .HasColumnType("jsonb")
-                        .HasColumnName("defaults_json");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("deleted_at");
-
-                    b.Property<bool>("Deprecated")
-                        .HasColumnType("boolean")
-                        .HasColumnName("deprecated");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text")
-                        .HasColumnName("description");
-
-                    b.Property<bool>("IsDefault")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false)
-                        .HasColumnName("is_default");
-
-                    b.Property<string>("Key")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("key");
-
-                    b.Property<int>("ModuleIdRangeSize")
-                        .HasColumnType("integer")
-                        .HasColumnName("module_id_range_size");
-
-                    b.Property<int>("ModuleIdRangeStart")
-                        .HasColumnType("integer")
-                        .HasColumnName("module_id_range_start");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("name");
-
-                    b.Property<int>("OrganizationId")
-                        .HasColumnType("integer")
-                        .HasColumnName("organization_id");
-
-                    b.Property<string>("Runtime")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("runtime");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DefaultApplicationVersionId");
-
-                    b.HasIndex("OrganizationId", "IsDefault")
-                        .IsUnique()
-                        .HasFilter("is_default = true AND deleted_at IS NULL");
-
-                    b.HasIndex("OrganizationId", "Key")
-                        .IsUnique();
-
-                    b.ToTable("runtime_templates", (string)null);
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.RuntimeTemplateDefaultModule", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("ModuleId")
-                        .HasColumnType("integer")
-                        .HasColumnName("module_id");
-
-                    b.Property<int>("Ordering")
-                        .HasColumnType("integer")
-                        .HasColumnName("ordering");
-
-                    b.Property<int>("OrganizationId")
-                        .HasColumnType("integer")
-                        .HasColumnName("organization_id");
-
-                    b.Property<int>("RuntimeTemplateId")
-                        .HasColumnType("integer")
-                        .HasColumnName("runtime_template_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ModuleId");
-
-                    b.HasIndex("RuntimeTemplateId", "ModuleId")
-                        .IsUnique();
-
-                    b.HasIndex("OrganizationId", "RuntimeTemplateId", "Ordering");
-
-                    b.ToTable("runtime_template_default_modules", (string)null);
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.RuntimeTemplateIncludedFile", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("Ordering")
-                        .HasColumnType("integer")
-                        .HasColumnName("ordering");
-
-                    b.Property<int>("OrganizationFileId")
-                        .HasColumnType("integer")
-                        .HasColumnName("organization_file_id");
-
-                    b.Property<int>("OrganizationId")
-                        .HasColumnType("integer")
-                        .HasColumnName("organization_id");
-
-                    b.Property<int>("RuntimeTemplateId")
-                        .HasColumnType("integer")
-                        .HasColumnName("runtime_template_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrganizationFileId");
-
-                    b.HasIndex("RuntimeTemplateId", "OrganizationFileId")
-                        .IsUnique();
-
-                    b.HasIndex("OrganizationId", "RuntimeTemplateId", "Ordering");
-
-                    b.ToTable("runtime_template_included_files", (string)null);
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.SignupRequest", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime?>("DecidedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("decided_at");
-
-                    b.Property<int?>("DecidedByUserId")
-                        .HasColumnType("integer")
-                        .HasColumnName("decided_by_user_id");
-
-                    b.Property<string>("Decision")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("decision");
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("email");
-
-                    b.Property<int>("OrganizationId")
-                        .HasColumnType("integer")
-                        .HasColumnName("organization_id");
-
-                    b.Property<DateTime>("RequestedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("requested_at");
-
-                    b.Property<int?>("UserId")
-                        .HasColumnType("integer")
-                        .HasColumnName("user_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("OrganizationId", "Decision");
-
-                    b.HasIndex("OrganizationId", "Email")
-                        .IsUnique()
-                        .HasDatabaseName("ux_signup_requests_org_email_pending")
-                        .HasFilter("decision = 'Pending'");
-
-                    b.ToTable("signup_requests", (string)null);
-                });
-
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.Recipe", b =>
                 {
                     b.Property<int>("Id")
@@ -2097,6 +1865,241 @@ namespace ALDevToolbox.Data.Migrations
                     b.HasIndex("OrganizationId", "RecipeSuggestionId", "Ordering");
 
                     b.ToTable("recipe_suggestion_files", (string)null);
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.RuntimeTemplate", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AppSourceCop")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("app_source_cop_json");
+
+                    b.Property<string>("CodeWorkspaceJson")
+                        .HasColumnType("text")
+                        .HasColumnName("code_workspace_json");
+
+                    b.Property<int>("CoreIdRangeFrom")
+                        .HasColumnType("integer")
+                        .HasColumnName("core_id_range_from");
+
+                    b.Property<int>("CoreIdRangeTo")
+                        .HasColumnType("integer")
+                        .HasColumnName("core_id_range_to");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int?>("DefaultApplicationVersionId")
+                        .HasColumnType("integer")
+                        .HasColumnName("default_application_version_id");
+
+                    b.Property<bool>("DefaultApplicationVersionLatest")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("default_application_version_latest");
+
+                    b.Property<string>("Defaults")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("defaults_json");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<bool>("Deprecated")
+                        .HasColumnType("boolean")
+                        .HasColumnName("deprecated");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<bool>("IsDefault")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_default");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("key");
+
+                    b.Property<int>("ModuleIdRangeSize")
+                        .HasColumnType("integer")
+                        .HasColumnName("module_id_range_size");
+
+                    b.Property<int>("ModuleIdRangeStart")
+                        .HasColumnType("integer")
+                        .HasColumnName("module_id_range_start");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("Runtime")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("runtime");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DefaultApplicationVersionId");
+
+                    b.HasIndex("OrganizationId", "IsDefault")
+                        .IsUnique()
+                        .HasFilter("is_default = true AND deleted_at IS NULL");
+
+                    b.HasIndex("OrganizationId", "Key")
+                        .IsUnique();
+
+                    b.ToTable("runtime_templates", (string)null);
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.RuntimeTemplateDefaultModule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ModuleId")
+                        .HasColumnType("integer")
+                        .HasColumnName("module_id");
+
+                    b.Property<int>("Ordering")
+                        .HasColumnType("integer")
+                        .HasColumnName("ordering");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<int>("RuntimeTemplateId")
+                        .HasColumnType("integer")
+                        .HasColumnName("runtime_template_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ModuleId");
+
+                    b.HasIndex("RuntimeTemplateId", "ModuleId")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "RuntimeTemplateId", "Ordering");
+
+                    b.ToTable("runtime_template_default_modules", (string)null);
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.RuntimeTemplateIncludedFile", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Ordering")
+                        .HasColumnType("integer")
+                        .HasColumnName("ordering");
+
+                    b.Property<int>("OrganizationFileId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_file_id");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<int>("RuntimeTemplateId")
+                        .HasColumnType("integer")
+                        .HasColumnName("runtime_template_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationFileId");
+
+                    b.HasIndex("RuntimeTemplateId", "OrganizationFileId")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "RuntimeTemplateId", "Ordering");
+
+                    b.ToTable("runtime_template_included_files", (string)null);
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.SignupRequest", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("decided_at");
+
+                    b.Property<int?>("DecidedByUserId")
+                        .HasColumnType("integer")
+                        .HasColumnName("decided_by_user_id");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("decision");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("email");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("integer")
+                        .HasColumnName("organization_id");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("requested_at");
+
+                    b.Property<int?>("UserId")
+                        .HasColumnType("integer")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("OrganizationId", "Decision");
+
+                    b.HasIndex("OrganizationId", "Email")
+                        .IsUnique()
+                        .HasDatabaseName("ux_signup_requests_org_email_pending")
+                        .HasFilter("decision = 'Pending'");
+
+                    b.ToTable("signup_requests", (string)null);
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.SystemSettings", b =>
@@ -3379,6 +3382,85 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.Recipe", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.ApplicationVersion", "MinimumApplicationVersion")
+                        .WithMany()
+                        .HasForeignKey("MinimumApplicationVersionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("MinimumApplicationVersion");
+
+                    b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.RecipeFile", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.Recipe", "Recipe")
+                        .WithMany("Files")
+                        .HasForeignKey("RecipeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Recipe");
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.RecipeSuggestion", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.Recipe", "ApprovedRecipe")
+                        .WithMany()
+                        .HasForeignKey("ApprovedRecipeId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.User", "DecidedByUser")
+                        .WithMany()
+                        .HasForeignKey("DecidedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.ApplicationVersion", "MinimumApplicationVersion")
+                        .WithMany()
+                        .HasForeignKey("MinimumApplicationVersionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ALDevToolbox.Domain.Entities.User", "SuggestedByUser")
+                        .WithMany()
+                        .HasForeignKey("SuggestedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("ApprovedRecipe");
+
+                    b.Navigation("DecidedByUser");
+
+                    b.Navigation("MinimumApplicationVersion");
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("SuggestedByUser");
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.RecipeSuggestionFile", b =>
+                {
+                    b.HasOne("ALDevToolbox.Domain.Entities.RecipeSuggestion", "Suggestion")
+                        .WithMany("Files")
+                        .HasForeignKey("RecipeSuggestionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Suggestion");
+                });
+
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.RuntimeTemplate", b =>
                 {
                     b.HasOne("ALDevToolbox.Domain.Entities.ApplicationVersion", "DefaultApplicationVersion")
@@ -3467,85 +3549,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Organization");
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.Recipe", b =>
-                {
-                    b.HasOne("ALDevToolbox.Domain.Entities.ApplicationVersion", "MinimumApplicationVersion")
-                        .WithMany()
-                        .HasForeignKey("MinimumApplicationVersionId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("MinimumApplicationVersion");
-
-                    b.Navigation("Organization");
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.RecipeFile", b =>
-                {
-                    b.HasOne("ALDevToolbox.Domain.Entities.Recipe", "Recipe")
-                        .WithMany("Files")
-                        .HasForeignKey("RecipeId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Recipe");
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.RecipeSuggestion", b =>
-                {
-                    b.HasOne("ALDevToolbox.Domain.Entities.Recipe", "ApprovedRecipe")
-                        .WithMany()
-                        .HasForeignKey("ApprovedRecipeId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.User", "DecidedByUser")
-                        .WithMany()
-                        .HasForeignKey("DecidedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.ApplicationVersion", "MinimumApplicationVersion")
-                        .WithMany()
-                        .HasForeignKey("MinimumApplicationVersionId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.User", "SuggestedByUser")
-                        .WithMany()
-                        .HasForeignKey("SuggestedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("ApprovedRecipe");
-
-                    b.Navigation("DecidedByUser");
-
-                    b.Navigation("MinimumApplicationVersion");
-
-                    b.Navigation("Organization");
-
-                    b.Navigation("SuggestedByUser");
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.RecipeSuggestionFile", b =>
-                {
-                    b.HasOne("ALDevToolbox.Domain.Entities.RecipeSuggestion", "Suggestion")
-                        .WithMany("Files")
-                        .HasForeignKey("RecipeSuggestionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Suggestion");
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.User", b =>
@@ -3717,15 +3720,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Modules");
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.RuntimeTemplate", b =>
-                {
-                    b.Navigation("DefaultModules");
-
-                    b.Navigation("IncludedFiles");
-
-                    b.Navigation("WorkspaceExtensions");
-                });
-
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.Recipe", b =>
                 {
                     b.Navigation("Files");
@@ -3734,6 +3728,15 @@ namespace ALDevToolbox.Data.Migrations
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.RecipeSuggestion", b =>
                 {
                     b.Navigation("Files");
+                });
+
+            modelBuilder.Entity("ALDevToolbox.Domain.Entities.RuntimeTemplate", b =>
+                {
+                    b.Navigation("DefaultModules");
+
+                    b.Navigation("IncludedFiles");
+
+                    b.Navigation("WorkspaceExtensions");
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.WorkspaceExtension", b =>

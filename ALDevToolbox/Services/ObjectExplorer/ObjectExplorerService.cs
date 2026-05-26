@@ -50,7 +50,11 @@ public class ObjectExplorerService
         }
         var rows = await q
             .Select(r => new ReleaseListItem(
-                r.Id, r.Label, r.Kind, r.Status, r.BcVersion, r.ParentReleaseId, r.ImportedAt,
+                r.Id, r.Label, r.Kind, r.Status, r.BcVersion, r.ParentReleaseId,
+                ParentLabel: r.ParentRelease != null ? r.ParentRelease.Label : null,
+                Publisher: r.Publisher,
+                CustomerName: r.CustomerName,
+                ImportedAt: r.ImportedAt,
                 // Denormalised counters stamped at ingest time. The Releases
                 // picker on a busy org used to spend most of its load budget
                 // here — a correlated subquery summing LENGTH(content) over
