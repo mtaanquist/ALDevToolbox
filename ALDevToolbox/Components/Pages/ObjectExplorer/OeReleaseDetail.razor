@@ -169,20 +169,6 @@
             @if (_scope == SearchScope.Objects)
             {
                 <label class="field">
-                    <span class="field__label">Module</span>
-                    <select class="field__input" @bind="_moduleSegment" @bind:after="ReloadAsync">
-                        <option value="">All</option>
-                        @if (_moduleSegments is not null)
-                        {
-                            @foreach (var m in _moduleSegments)
-                            {
-                                <option value="@m">@m</option>
-                            }
-                        }
-                    </select>
-                </label>
-
-                <label class="field">
                     <span class="field__label">Namespace</span>
                     @*
                         Uncontrolled input — same rationale as the search
@@ -207,6 +193,16 @@
                         </datalist>
                     }
                 </label>
+            }
+
+            @if (_scope != SearchScope.Compare)
+            {
+                <div class="field object-explorer__filters-reset">
+                    <button type="button" class="btn btn--sm" @onclick="ResetFilters" disabled="@(!HasActiveFilters)">
+                        <Icon Name="rotate-ccw" Width="14" Height="14" />
+                        <span>Reset filters</span>
+                    </button>
+                </div>
             }
         </div>
 
@@ -236,7 +232,6 @@
     private ReleaseDetail? _release;
     private List<ReleaseModuleSummary>? _modules;
     private List<string>? _kinds;
-    private List<string>? _moduleSegments;
     private List<string>? _namespaces;
     private List<ReleaseListItem>? _otherReleases;
 
@@ -244,7 +239,6 @@
     private string _search = string.Empty;
     private readonly HashSet<string> _selectedKinds = new(StringComparer.OrdinalIgnoreCase);
     private string _moduleFilter = string.Empty;
-    private string _moduleSegment = string.Empty;
     private string _namespace = string.Empty;
     private string _compareRight = string.Empty;
     private string _compareDirection = "ab";
@@ -287,15 +281,6 @@
         _otherReleases = allReleases
             .Where(r => r.Id != ReleaseId && r.Status == "ready" && r.DeletedAt is null)
             .ToList();
-        // Module = second namespace segment (e.g. Microsoft.Warehouse.ADCS →
-        // "Warehouse"). Derive client-side from the namespace list so a single
-        // query feeds both filters.
-        _moduleSegments = _namespaces
-            .Select(SecondNamespaceSegment)
-            .Where(s => !string.IsNullOrEmpty(s))
-            .Distinct()
-            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
-            .ToList()!;
 
         // Seed filter state from the URL query string so back-navigation
         // from a result detail page restores what the user was searching.
@@ -327,7 +312,6 @@
             _selectedKinds.Add(k);
         }
         _moduleFilter = query["module"] ?? string.Empty;
-        _moduleSegment = query["segment"] ?? string.Empty;
         _namespace = query["namespace"] ?? string.Empty;
         _compareRight = query["right"] ?? string.Empty;
         var dir = query["dir"];
@@ -359,7 +343,6 @@
         if (!string.IsNullOrWhiteSpace(_search)) parts.Add("search=" + Uri.EscapeDataString(_search));
         if (_selectedKinds.Count > 0) parts.Add("kind=" + Uri.EscapeDataString(string.Join(",", _selectedKinds)));
         if (!string.IsNullOrWhiteSpace(_moduleFilter)) parts.Add("module=" + Uri.EscapeDataString(_moduleFilter));
-        if (!string.IsNullOrWhiteSpace(_moduleSegment)) parts.Add("segment=" + Uri.EscapeDataString(_moduleSegment));
         if (!string.IsNullOrWhiteSpace(_namespace)) parts.Add("namespace=" + Uri.EscapeDataString(_namespace));
         if (_scope == SearchScope.Compare && !string.IsNullOrWhiteSpace(_compareRight)) parts.Add("right=" + Uri.EscapeDataString(_compareRight));
         if (_scope == SearchScope.Compare && _compareDirection == "ba") parts.Add("dir=ba");
@@ -511,13 +494,7 @@
 
         long? moduleId = long.TryParse(_moduleFilter, out var m) ? m : null;
         var trimmedSearch = string.IsNullOrWhiteSpace(_search) ? null : _search;
-        // Module segment translates to a namespace-prefix narrow when set;
-        // an explicit namespace input takes precedence.
-        var nsPrefix = !string.IsNullOrWhiteSpace(_namespace)
-            ? _namespace
-            : (string.IsNullOrWhiteSpace(_moduleSegment)
-                ? null
-                : $"Microsoft.{_moduleSegment}");
+        var nsPrefix = string.IsNullOrWhiteSpace(_namespace) ? null : _namespace;
 
         switch (_scope)
         {
@@ -599,6 +576,38 @@
         var n => $"{n} types",
     };
 
+    /// <summary>True when any object filter or sort is in effect — gates the Reset button.</summary>
+    private bool HasActiveFilters =>
+        !string.IsNullOrWhiteSpace(_search)
+        || _selectedKinds.Count > 0
+        || !string.IsNullOrWhiteSpace(_moduleFilter)
+        || !string.IsNullOrWhiteSpace(_namespace)
+        || _sortColumn is not null;
+
+    /// <summary>Clears every filter + sort back to the default view, including the uncontrolled inputs.</summary>
+    private async Task ResetFilters()
+    {
+        _search = string.Empty;
+        _selectedKinds.Clear();
+        _moduleFilter = string.Empty;
+        _namespace = string.Empty;
+        _sortColumn = null;
+        _sortDescending = false;
+        if (_isInteractive)
+        {
+            // Both are uncontrolled inputs; clear their DOM values. The search
+            // box renders in every non-Compare scope; the namespace box only in
+            // Objects, so only seed it there.
+            await JS.InvokeVoidAsync("aldt.seedInput", _searchInputRef, string.Empty);
+            if (_scope == SearchScope.Objects)
+            {
+                await JS.InvokeVoidAsync("aldt.seedInput", _namespaceInputRef, string.Empty);
+            }
+        }
+        await ReloadAsync();
+        StateHasChanged();
+    }
+
     private RenderFragment SortHeader(string label, ObjectSortColumn column) => __builder =>
     {
         var active = _sortColumn == column;
@@ -674,9 +683,7 @@
 
                 long? moduleId = long.TryParse(_moduleFilter, out var m) ? m : null;
                 var trimmedSearch = string.IsNullOrWhiteSpace(_search) ? null : _search;
-                var nsPrefix = !string.IsNullOrWhiteSpace(_namespace)
-                    ? _namespace
-                    : (string.IsNullOrWhiteSpace(_moduleSegment) ? null : $"Microsoft.{_moduleSegment}");
+                var nsPrefix = string.IsNullOrWhiteSpace(_namespace) ? null : _namespace;
                 var filter = new ObjectListFilter(
                     Kinds: _selectedKinds.Count == 0 ? null : _selectedKinds.ToList(),
                     Search: trimmedSearch);
@@ -699,17 +706,6 @@
         StateHasChanged();
     }
 
-    private static string? SecondNamespaceSegment(string ns)
-    {
-        // Split on '.' once, return the segment after the first.
-        // "Microsoft.Warehouse.ADCS" → "Warehouse"; "System" alone → null.
-        var dot = ns.IndexOf('.');
-        if (dot < 0 || dot == ns.Length - 1) return null;
-        var rest = ns[(dot + 1)..];
-        var nextDot = rest.IndexOf('.');
-        return nextDot < 0 ? rest : rest[..nextDot];
-    }
-
     private static string FormatStatus(string s) => s switch
     {
         "ready"     => "Ready",
@@ -725,7 +721,6 @@
         var hasFilters = !string.IsNullOrWhiteSpace(_search)
             || _selectedKinds.Count > 0
             || !string.IsNullOrWhiteSpace(_moduleFilter)
-            || !string.IsNullOrWhiteSpace(_moduleSegment)
             || !string.IsNullOrWhiteSpace(_namespace);
 
         if (_objectResults is null)
@@ -748,14 +743,21 @@
                 <text>Showing @_objectResults.Count.ToString("N0") of @_objectsTotal.ToString("N0") object(s).</text>
             }
         </p>
-        <table class="data-table">
+        <table class="data-table data-table--objects">
+            <colgroup>
+                <col class="col-type" />
+                <col class="col-id" />
+                <col />
+                <col class="col-extension" />
+                <col />
+                <col class="col-lines" />
+            </colgroup>
             <thead>
                 <tr>
                     <th scope="col">@SortHeader("Type", ObjectSortColumn.Type)</th>
                     <th scope="col">@SortHeader("ID", ObjectSortColumn.Id)</th>
                     <th scope="col">@SortHeader("Name", ObjectSortColumn.Name)</th>
-                    <th scope="col">Extension</th>
-                    <th scope="col">@SortHeader("Module", ObjectSortColumn.Module)</th>
+                    <th scope="col">@SortHeader("Extension", ObjectSortColumn.Module)</th>
                     <th scope="col">@SortHeader("Namespace", ObjectSortColumn.Namespace)</th>
                     <th scope="col">@SortHeader("Lines", ObjectSortColumn.Lines)</th>
                 </tr>
@@ -777,7 +779,6 @@
                             }
                         </td>
                         <td>@r.ModuleName</td>
-                        <td>@(SecondNamespaceSegment(r.Namespace ?? string.Empty) ?? "—")</td>
                         <td class="muted">@(r.Namespace ?? "—")</td>
                         <td>@(r.SourceFileId is null ? "—" : r.FileLineCount.ToString("N0"))</td>
                     </tr>

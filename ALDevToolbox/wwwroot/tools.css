@@ -1686,6 +1686,24 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     background: var(--color-bg);
 }
 
+/* Fixed column widths on the objects grid so sorting / lazy-loading new rows
+   can't reflow the table as the content per page changes. Name + Namespace
+   (the two width-less <col>s) share the remaining space; long values wrap
+   rather than widen their column. */
+.data-table--objects {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.data-table--objects td {
+    overflow-wrap: anywhere;
+}
+
+.data-table--objects .col-type { width: 7.5rem; }
+.data-table--objects .col-id { width: 5rem; }
+.data-table--objects .col-extension { width: 12rem; }
+.data-table--objects .col-lines { width: 5rem; }
+
 /* Bottom-of-list sentinel that triggers the next lazy-load page. */
 .oe-scroll-sentinel {
     padding: 12px 0;
