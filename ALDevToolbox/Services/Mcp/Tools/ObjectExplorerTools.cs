@@ -45,13 +45,14 @@ public sealed class ObjectExplorerTools
     public async Task<IReadOnlyList<ReleaseObjectMatch>> SearchObjectsAsync(
         [Description("Release Label ('BC 28.1') or numeric id from list_releases.")] string releaseLabelOrId,
         [Description("Whitespace-separated tokens; every token must appear (case-insensitive substring) in the object name. Use \"quotes\" for a literal phrase and a -prefix to exclude a token. A single bare numeric token still matches by object id.")] string namePattern,
-        [Description("Optional AL kind filter ('table', 'page', 'codeunit', 'report', 'query', 'enum', 'interface', 'tableextension', 'pageextension'). Null returns every kind.")] string? kind = null,
+        [Description("Optional AL kind filter ('table', 'page', 'codeunit', 'report', 'query', 'enum', 'interface', 'tableextension', 'pageextension'). Pass several comma-separated to match any of them ('table,page'). Null returns every kind.")] string? kind = null,
         CancellationToken ct = default)
     {
         var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
+        var kinds = kind?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return await _search.SearchObjectsInReleaseAsync(
             releaseId,
-            new ObjectListFilter(Kind: kind, Search: namePattern),
+            new ObjectListFilter(Kinds: kinds, Search: namePattern),
             MaxResults,
             ct);
     }

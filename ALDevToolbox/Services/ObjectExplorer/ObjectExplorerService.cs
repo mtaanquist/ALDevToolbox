@@ -150,10 +150,10 @@ public class ObjectExplorerService
     {
         var q = _db.OeModuleObjects.AsNoTracking().Where(o => o.ModuleId == moduleId);
 
-        if (!string.IsNullOrWhiteSpace(filter.Kind))
+        var kinds = ObjectSearchRanking.NormalizeKinds(filter.Kinds);
+        if (kinds is { Count: > 0 })
         {
-            var k = filter.Kind.Trim().ToLowerInvariant();
-            q = q.Where(o => o.Kind == k);
+            q = q.Where(o => kinds.Contains(o.Kind));
         }
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {

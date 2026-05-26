@@ -156,9 +156,54 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         // Both modules contribute codeunits. With kind=codeunit and no name
         // filter, we should get every codeunit in the Release.
         var all = await query.SearchObjectsInReleaseAsync(releaseId,
-            new ObjectListFilter(Kind: "codeunit"));
+            new ObjectListFilter(Kinds: new[] { "codeunit" }));
         all.Should().OnlyContain(o => o.Kind == "codeunit");
         all.Select(o => o.ModuleName).Distinct().Should().Contain(new[] { "DK Core", "OIOUBL" });
+    }
+
+    [Fact]
+    public async Task SearchObjectsInReleaseAsync_filters_by_multiple_kinds()
+    {
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+
+        // The multi-select "Object type" filter passes several kinds; results
+        // must be the union (any of them), not the intersection.
+        var hits = await NewSearch(read).SearchObjectsInReleaseAsync(releaseId,
+            new ObjectListFilter(Kinds: new[] { "codeunit", "table" }), take: 1000);
+
+        hits.Should().NotBeEmpty();
+        hits.Should().OnlyContain(o => o.Kind == "codeunit" || o.Kind == "table");
+        hits.Select(o => o.Kind).Distinct().Should().Contain("codeunit").And.Contain("table");
+    }
+
+    [Fact]
+    public async Task SearchObjectsPageInReleaseAsync_returns_contiguous_sorted_windows()
+    {
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var search = NewSearch(read);
+
+        // Fetch the whole name-sorted set, then prove the lazy-load windows are
+        // exact contiguous slices of it (no overlap, no gaps) with a stable
+        // total. Compared by id against the service's own order so the test is
+        // agnostic to the database collation.
+        var all = await search.SearchObjectsPageInReleaseAsync(
+            releaseId, new ObjectListFilter(), moduleId: null, namespacePrefix: null,
+            ObjectSortColumn.Name, descending: false, skip: 0, take: 100_000);
+        all.Rows.Count.Should().BeGreaterThan(20);
+        all.TotalCount.Should().Be(all.Rows.Count);
+
+        var firstTen = await search.SearchObjectsPageInReleaseAsync(
+            releaseId, new ObjectListFilter(), null, null,
+            ObjectSortColumn.Name, descending: false, skip: 0, take: 10);
+        var nextTen = await search.SearchObjectsPageInReleaseAsync(
+            releaseId, new ObjectListFilter(), null, null,
+            ObjectSortColumn.Name, descending: false, skip: 10, take: 10);
+
+        firstTen.Rows.Select(r => r.Id).Should().Equal(all.Rows.Take(10).Select(r => r.Id));
+        nextTen.Rows.Select(r => r.Id).Should().Equal(all.Rows.Skip(10).Take(10).Select(r => r.Id));
+        firstTen.TotalCount.Should().Be(all.TotalCount);
     }
 
     [Fact]
@@ -644,7 +689,7 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         var dkCore = modules.Single(m => m.Name == "DK Core");
 
         // Kind="codeunit" narrows DK Core to its 4 codeunits.
-        var page = await query.ListObjectsAsync(dkCore.Id, new ObjectListFilter(Kind: "codeunit"), skip: 0, take: 50);
+        var page = await query.ListObjectsAsync(dkCore.Id, new ObjectListFilter(Kinds: new[] { "codeunit" }), skip: 0, take: 50);
         page.TotalCount.Should().Be(4);
         page.Rows.Should().OnlyContain(o => o.Kind == "codeunit");
 
