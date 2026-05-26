@@ -743,13 +743,21 @@
                 <text>Showing @_objectResults.Count.ToString("N0") of @_objectsTotal.ToString("N0") object(s).</text>
             }
         </p>
-        <table class="data-table">
+        <table class="data-table data-table--objects">
+            <colgroup>
+                <col class="col-type" />
+                <col class="col-id" />
+                <col />
+                <col class="col-extension" />
+                <col />
+                <col class="col-lines" />
+            </colgroup>
             <thead>
                 <tr>
                     <th scope="col">@SortHeader("Type", ObjectSortColumn.Type)</th>
                     <th scope="col">@SortHeader("ID", ObjectSortColumn.Id)</th>
                     <th scope="col">@SortHeader("Name", ObjectSortColumn.Name)</th>
-                    <th scope="col">Extension</th>
+                    <th scope="col">@SortHeader("Extension", ObjectSortColumn.Module)</th>
                     <th scope="col">@SortHeader("Namespace", ObjectSortColumn.Namespace)</th>
                     <th scope="col">@SortHeader("Lines", ObjectSortColumn.Lines)</th>
                 </tr>
