@@ -19,6 +19,17 @@ export function init(dotNetRef) {
     detach();
     currentRef = dotNetRef;
     keyHandler = (ev) => {
+        // F3 focuses the search box (overriding the browser's find-next), so a
+        // keyboard-first user can jump back to search from anywhere on the page.
+        if (ev.key === "F3" && !ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey) {
+            const search = document.querySelector("input.admin-search-input");
+            if (search) {
+                ev.preventDefault();
+                search.focus();
+                search.select();
+            }
+            return;
+        }
         if (!ev.altKey || ev.ctrlKey || ev.metaKey) return;
         const digit = ev.key in SCOPE_BY_DIGIT
             ? ev.key

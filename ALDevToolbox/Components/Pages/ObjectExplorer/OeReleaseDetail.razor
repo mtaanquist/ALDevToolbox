@@ -583,7 +583,6 @@
                     <th scope="col">Module</th>
                     <th scope="col">Namespace</th>
                     <th scope="col">Lines</th>
-                    <th scope="col"><span class="visually-hidden">Actions</span></th>
                 </tr>
             </thead>
             <tbody>
@@ -606,14 +605,6 @@
                         <td>@(SecondNamespaceSegment(r.Namespace ?? string.Empty) ?? "—")</td>
                         <td class="muted">@(r.Namespace ?? "—")</td>
                         <td>@(r.SourceFileId is null ? "—" : r.FileLineCount.ToString("N0"))</td>
-                        <td class="row-actions">
-                            <a href="@($"/object-explorer/object/{r.Id}#find-references")"
-                               title="Find references"
-                               aria-label="Find references"
-                               class="btn btn--sm">
-                                <Icon Name="search" Width="14" Height="14" />
-                            </a>
-                        </td>
                     </tr>
                 }
             </tbody>
