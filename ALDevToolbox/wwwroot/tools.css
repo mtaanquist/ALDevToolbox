@@ -1699,8 +1699,16 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     overflow-wrap: anywhere;
 }
 
-.data-table--objects .col-type { width: 7.5rem; }
-.data-table--objects .col-id { width: 5rem; }
+/* Type (kind keywords like "reportextension") and ID (negative interface ids
+   like -818523667) must never wrap — give them room and keep them single-line. */
+.data-table--objects td:first-child,
+.data-table--objects td:nth-child(2) {
+    white-space: nowrap;
+    overflow-wrap: normal;
+}
+
+.data-table--objects .col-type { width: 10rem; }
+.data-table--objects .col-id { width: 7rem; }
 .data-table--objects .col-extension { width: 12rem; }
 .data-table--objects .col-lines { width: 5rem; }
 
