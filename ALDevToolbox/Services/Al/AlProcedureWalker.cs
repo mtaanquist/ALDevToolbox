@@ -1344,6 +1344,42 @@ internal sealed class AlProcedureWalker
         var member = _state.Ctx.Resolver.ResolveMember(ownerType, name);
         if (member is null)
         {
+            // Implicit-Rec procedure call. A bare `SavePassword()` on a
+            // page or `BlockDynamicTracking()` in a tableextension is
+            // shorthand for `Rec.<Proc>()`, where Rec is the page's
+            // SourceTable / the extension's base table — NOT the owner
+            // object. The owner lookup above only sees the page's /
+            // extension's own procedures, so a base-table (or
+            // sibling-extension) procedure called bare lands here.
+            // Resolve against Rec's type — ResolveMember walks base →
+            // visible extensions — and emit the call at the declaring
+            // object so Find references on it picks the call up. Only
+            // worthwhile when Rec differs from the owner: for a plain
+            // table owner Rec IS the owner and the lookup above covered
+            // it; for a codeunit with no TableNo RecType() is null.
+            var recType = RecType();
+            if (recType is not null && !recType.Equals(ownerType))
+            {
+                var recMember = _state.Ctx.Resolver.ResolveMember(recType, name);
+                if (recMember is not null)
+                {
+                    var recTarget = recMember.DeclaringType ?? recType;
+                    _state.EmitReference(new ExtractedReference(
+                        Line: head.Line,
+                        Column: head.Column,
+                        TargetAppId: recTarget.AppId,
+                        TargetObjectKind: recTarget.Kind,
+                        TargetObjectId: recTarget.ObjectId,
+                        TargetObjectName: recTarget.Name,
+                        TargetMemberName: recMember.Name,
+                        TargetMemberKind: recMember.Kind,
+                        ReferenceKind: "method_call"));
+                    _state.Resolved++;
+                    _state.Pos++;
+                    return true;
+                }
+            }
+
             // Could be a bare AL system function we don't have on our
             // list yet, or a same-named procedure on a related extension
             // we don't track from this angle. Counted but not emitted.

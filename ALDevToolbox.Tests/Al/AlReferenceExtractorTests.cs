@@ -2856,6 +2856,87 @@ public sealed class AlReferenceExtractorTests
         result.Stats.UnresolvedReceivers.Should().Be(0);
     }
 
+    // ── Implicit-Rec bare calls to base / source-table procedures ───
+
+    [Fact]
+    public void Bare_call_in_tableextension_resolves_to_base_table_procedure()
+    {
+        // `BlockDynamicTracking(true);` bare in a tableextension is
+        // `Rec.BlockDynamicTracking(true)` — the procedure lives on the
+        // base table, not the extension. Must emit a method_call at the
+        // base table, not fire bare-call unresolved.
+        var resolver = MakeResolver();
+        resolver.AddType("Requisition Line", new AlTypeRef(BaseAppId, "table", 246, "Requisition Line"));
+        resolver.AddType("Asm. Requisition Line",
+            new AlTypeRef(BaseAppId, "tableextension", 906, "Asm. Requisition Line"));
+        resolver.AddMember("Requisition Line", new AlMember("BlockDynamicTracking", "procedure", null, null));
+
+        const string src = """
+            procedure SetReplenishment()
+            begin
+                BlockDynamicTracking(true);
+            end;
+            """;
+        var ctx = OwnerTableExtension(resolver, "Asm. Requisition Line", baseTable: "Requisition Line");
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Requisition Line"
+            && r.TargetObjectKind == "table"
+            && r.TargetMemberName == "BlockDynamicTracking");
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Bare_call_on_page_resolves_to_source_table_procedure()
+    {
+        // `SavePassword(Pwd);` bare on a page is `Rec.SavePassword(Pwd)`
+        // — the procedure is on the page's source table. Emit at the
+        // table, not bare-call unresolved.
+        var resolver = MakeResolver();
+        resolver.AddType("Setup Card", new AlTypeRef(BaseAppId, "page", 9000, "Setup Card"));
+        resolver.AddType("Setup Table", new AlTypeRef(BaseAppId, "table", 9001, "Setup Table"));
+        resolver.AddMember("Setup Table", new AlMember("SavePassword", "procedure", null, null));
+
+        const string src = """
+            procedure DoSave()
+            begin
+                SavePassword('secret');
+            end;
+            """;
+        var ctx = OwnerPage(resolver, "Setup Card", sourceTable: "Setup Table");
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Setup Table"
+            && r.TargetMemberName == "SavePassword");
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Bare_call_unknown_on_both_owner_and_rec_stays_unresolved()
+    {
+        // Guard: the implicit-Rec fallback must not silence a genuinely
+        // unknown bare call — when neither the page nor its source table
+        // declares the name, it's still bare-call unresolved.
+        var resolver = MakeResolver();
+        resolver.AddType("Setup Card", new AlTypeRef(BaseAppId, "page", 9000, "Setup Card"));
+        resolver.AddType("Setup Table", new AlTypeRef(BaseAppId, "table", 9001, "Setup Table"));
+
+        const string src = """
+            procedure DoSave()
+            begin
+                TotallyUnknownProc('x');
+            end;
+            """;
+        var ctx = OwnerPage(resolver, "Setup Card", sourceTable: "Setup Table");
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        result.Stats.UnresolvedReceivers.Should().Be(1);
+    }
+
     // ── Stub resolver ───────────────────────────────────────────────
 
     private sealed class StubResolver : IAlTypeResolver
