@@ -1,0 +1,199 @@
+@page "/admin/object-explorer/release/{ReleaseId:int}/manage"
+@attribute [Authorize(Roles = "Admin,Editor")]
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject IHttpContextAccessor Http
+@using ALDevToolbox.Services.ObjectExplorer
+
+@*
+    Per-release admin hub. Consolidates everything that used to crowd the
+    Object Explorer list's action column: editable metadata (publisher /
+    customer), links to the Add-modules and Translations sub-pages, and the
+    soft-delete / restore / hard-delete actions. Statically rendered so the
+    forms post normally to the Object Explorer endpoints.
+*@
+
+<PageTitle>Manage · @(_release?.Label ?? "Release") · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Manage release</h1>
+            @if (_release is not null)
+            {
+                <p class="muted">
+                    @_release.Label · @FormatKind(_release.Kind) · @FormatStatus(_release.Status)
+                    @if (!string.IsNullOrEmpty(_release.BcVersion))
+                    {
+                        <span> · BC @_release.BcVersion</span>
+                    }
+                    <span> · @_release.ModuleCount module(s)</span>
+                    @if (_release.DeletedAt is not null)
+                    {
+                        <span> · soft-deleted</span>
+                    }
+                </p>
+            }
+        </div>
+        <a class="btn btn--sm" href="/admin/object-explorer">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to releases</span>
+        </a>
+    </header>
+
+    @if (Status is { } status)
+    {
+        @if (status.IsError)
+        {
+            <div class="form-error" role="alert"><p>@status.Message</p></div>
+        }
+        else
+        {
+            <p class="form-success" role="status">@status.Message</p>
+        }
+    }
+
+    @if (_release is null)
+    {
+        <p class="muted">Release not found. <a href="/admin/object-explorer">Back to releases</a>.</p>
+    }
+    else
+    {
+        <section class="manage-card">
+            <h2 class="manage-card__title">Details</h2>
+            <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/metadata")" class="form-grid">
+                <AntiforgeryToken />
+                <label class="field">
+                    <span class="field__label">Publisher</span>
+                    <input type="text" name="Publisher" maxlength="200"
+                           value="@_release.Publisher"
+                           placeholder="e.g. Continia Software"
+                           class="field__input" />
+                    <small class="field__caption muted">Who owns this extension — handy when you've taken over an app someone else built.</small>
+                </label>
+                <label class="field">
+                    <span class="field__label">Customer</span>
+                    <input type="text" name="CustomerName" maxlength="200"
+                           value="@_release.CustomerName"
+                           placeholder="e.g. Acme Co"
+                           class="field__input" />
+                    <small class="field__caption muted">The customer a customer-specific bundle belongs to.</small>
+                </label>
+                <div>
+                    <button type="submit" class="btn btn--primary">
+                        <Icon Name="save" Width="16" Height="16" />
+                        <span>Save details</span>
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        <section class="manage-card">
+            <h2 class="manage-card__title">Content</h2>
+            <p class="muted">Amend more <code>.app</code> modules into this release, or attach XLIFF translation files.</p>
+            <div class="manage-card__actions">
+                <a class="btn" href="@($"/admin/object-explorer/release/{ReleaseId}/modules")">
+                    <Icon Name="package-plus" Width="16" Height="16" />
+                    <span>Add modules</span>
+                </a>
+                <a class="btn" href="@($"/admin/object-explorer/release/{ReleaseId}/translations")">
+                    <Icon Name="book-open" Width="16" Height="16" />
+                    <span>Import translations</span>
+                </a>
+            </div>
+        </section>
+
+        <section class="manage-card manage-card--danger">
+            <h2 class="manage-card__title">Danger zone</h2>
+            @if (_release.DeletedAt is null)
+            {
+                <p class="muted">Soft-delete hides this release from the user-facing browser but keeps it queryable here. Reversible.</p>
+                <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/soft-delete")">
+                    <AntiforgeryToken />
+                    <button type="submit" class="btn">
+                        <Icon Name="archive" Width="16" Height="16" />
+                        <span>Soft delete</span>
+                    </button>
+                </form>
+            }
+            else
+            {
+                <p class="muted">This release is soft-deleted. Restore it, or permanently remove it and all its ingested data.</p>
+                <div class="manage-card__actions">
+                    <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/restore")">
+                        <AntiforgeryToken />
+                        <button type="submit" class="btn">
+                            <Icon Name="rotate-ccw" Width="16" Height="16" />
+                            <span>Restore</span>
+                        </button>
+                    </form>
+                </div>
+                <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/hard-delete")" class="hard-delete-form">
+                    <AntiforgeryToken />
+                    <input type="text" name="ConfirmLabel" required
+                           class="field__input hard-delete-form__input"
+                           placeholder="Type the label to confirm"
+                           aria-label="Confirm label" />
+                    <button type="submit" class="btn btn--danger">
+                        <Icon Name="trash-2" Width="16" Height="16" />
+                        <span>Permanently delete</span>
+                    </button>
+                </form>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter] public int ReleaseId { get; set; }
+
+    private ReleaseDetail? _release;
+    private (string Message, bool IsError)? Status { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var ctx = Http.HttpContext;
+        if (ctx is not null)
+        {
+            var err = ctx.Request.Query["err"].ToString();
+            var msg = ctx.Request.Query["msg"].ToString();
+            if (!string.IsNullOrEmpty(err) && !string.IsNullOrEmpty(msg))
+            {
+                Status = ($"{err}: {msg}", true);
+            }
+            else
+            {
+                var ok = ctx.Request.Query["ok"].ToString();
+                if (!string.IsNullOrEmpty(ok))
+                {
+                    Status = (FormatOkMessage(ok), false);
+                }
+            }
+        }
+
+        _release = await ObjectExplorer.GetReleaseAsync(ReleaseId);
+    }
+
+    private static string FormatOkMessage(string ok) => ok switch
+    {
+        "updated"      => "Details saved.",
+        "soft-deleted" => "Release soft-deleted. Restore it below if that was a mistake.",
+        "restored"     => "Release restored.",
+        _              => "Done.",
+    };
+
+    private static string FormatKind(string kind) => kind switch
+    {
+        "first_party" => "First-party",
+        "third_party" => "Third-party",
+        "customer"    => "Customer",
+        _             => kind,
+    };
+
+    private static string FormatStatus(string s) => s switch
+    {
+        "ready"     => "Ready",
+        "ingesting" => "Ingesting…",
+        "failed"    => "Failed",
+        _           => s,
+    };
+}

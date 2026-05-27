@@ -422,12 +422,12 @@ internal static class ObjectExplorerEndpoints
             try
             {
                 await management.SoftDeleteAsync(id, ct);
-                ctx.Response.Redirect("/admin/object-explorer?ok=soft-deleted&id=" + id);
+                ctx.Response.Redirect($"/admin/object-explorer/release/{id}/manage?ok=soft-deleted");
             }
             catch (PlanValidationException ex)
             {
                 var first = ex.Errors.First();
-                RedirectAdmin(ctx, first.Key, first.Value);
+                RedirectManage(ctx, id, first.Key, first.Value);
             }
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
@@ -443,12 +443,12 @@ internal static class ObjectExplorerEndpoints
             try
             {
                 await management.RestoreAsync(id, ct);
-                ctx.Response.Redirect("/admin/object-explorer?ok=restored&id=" + id);
+                ctx.Response.Redirect($"/admin/object-explorer/release/{id}/manage?ok=restored");
             }
             catch (PlanValidationException ex)
             {
                 var first = ex.Errors.First();
-                RedirectAdmin(ctx, first.Key, first.Value);
+                RedirectManage(ctx, id, first.Key, first.Value);
             }
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
@@ -467,12 +467,12 @@ internal static class ObjectExplorerEndpoints
             try
             {
                 await management.UpdateMetadataAsync(id, publisher, customerName, ct);
-                ctx.Response.Redirect("/admin/object-explorer?ok=updated&id=" + id);
+                ctx.Response.Redirect($"/admin/object-explorer/release/{id}/manage?ok=updated");
             }
             catch (PlanValidationException ex)
             {
                 var first = ex.Errors.First();
-                RedirectAdmin(ctx, first.Key, first.Value);
+                RedirectManage(ctx, id, first.Key, first.Value);
             }
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
@@ -490,22 +490,23 @@ internal static class ObjectExplorerEndpoints
             try
             {
                 await management.HardDeleteAsync(id, confirm, ct);
+                // The release is gone, so there's no manage page to return to.
                 ctx.Response.Redirect("/admin/object-explorer?ok=hard-deleted&id=" + id);
             }
             catch (PlanValidationException ex)
             {
                 var first = ex.Errors.First();
-                RedirectAdmin(ctx, first.Key, first.Value);
+                RedirectManage(ctx, id, first.Key, first.Value);
             }
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
         return app;
     }
 
-    private static void RedirectAdmin(HttpContext ctx, string errKey, string message)
+    private static void RedirectManage(HttpContext ctx, int releaseId, string errKey, string message)
     {
         ctx.Response.Redirect(
-            "/admin/object-explorer?err=" + Uri.EscapeDataString(errKey)
+            $"/admin/object-explorer/release/{releaseId}/manage?err=" + Uri.EscapeDataString(errKey)
             + "&msg=" + Uri.EscapeDataString(message));
     }
 

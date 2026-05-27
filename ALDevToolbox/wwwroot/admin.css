@@ -406,17 +406,31 @@
     min-width: 14rem;
 }
 
-/* Inline publisher / customer editor on the admin Object Explorer list —
-   two text inputs and a save button on one row, mirroring .hard-delete-form. */
-.metadata-form {
-    display: inline-flex;
-    gap: 6px;
-    align-items: stretch;
-    vertical-align: middle;
+/* Cards on the per-release Manage page — details / content / danger sections,
+   each a bordered block stacked down the admin-page column. */
+.manage-card {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    padding: 20px;
+    margin-bottom: 20px;
+    max-width: 640px;
 }
 
-.metadata-form__input {
-    min-width: 9rem;
+.manage-card--danger {
+    border-color: color-mix(in srgb, var(--color-danger, #c0233f) 45%, var(--color-border));
+}
+
+.manage-card__title {
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.manage-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
 }
 
 /* File pickers: style the native control's button portion to match our
