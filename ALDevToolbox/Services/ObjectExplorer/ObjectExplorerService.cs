@@ -92,6 +92,7 @@ public class ObjectExplorerService
             .Select(r => new
             {
                 r.Id, r.Label, r.Kind, r.Status, r.BcVersion, r.ParentReleaseId, r.ImportedAt,
+                r.Publisher, r.CustomerName, r.DeletedAt,
                 ParentLabel = r.ParentRelease != null ? r.ParentRelease.Label : null,
             })
             .SingleOrDefaultAsync(ct);
@@ -108,7 +109,10 @@ public class ObjectExplorerService
             BcVersion: row.BcVersion,
             ParentReleaseId: row.ParentReleaseId,
             ParentLabel: row.ParentLabel,
+            Publisher: row.Publisher,
+            CustomerName: row.CustomerName,
             ImportedAt: row.ImportedAt,
+            DeletedAt: row.DeletedAt,
             ModuleCount: moduleCount);
     }
 

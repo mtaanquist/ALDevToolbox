@@ -406,17 +406,31 @@
     min-width: 14rem;
 }
 
-/* Inline publisher / customer editor on the admin Object Explorer list —
-   two text inputs and a save button on one row, mirroring .hard-delete-form. */
-.metadata-form {
-    display: inline-flex;
-    gap: 6px;
-    align-items: stretch;
-    vertical-align: middle;
+/* Cards on the per-release Manage page — details / content / danger sections,
+   each a bordered block stacked down the admin-page column. */
+.manage-card {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    padding: 20px;
+    margin-bottom: 20px;
+    max-width: 640px;
 }
 
-.metadata-form__input {
-    min-width: 9rem;
+.manage-card--danger {
+    border-color: color-mix(in srgb, var(--color-danger, #c0233f) 45%, var(--color-border));
+}
+
+.manage-card__title {
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.manage-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
 }
 
 /* File pickers: style the native control's button portion to match our
@@ -445,31 +459,36 @@
     background: var(--color-bg);
 }
 
-/* Upload + ingest feedback on the Import Release form. The bar runs
-   determinate while bytes upload (driven by object-explorer-import.js), then
-   drops its value attribute to go indeterminate for the server-side parse. */
-.upload-progress {
+/* Upload + ingest feedback on the Import Release form, shown as a top-of-form
+   alert banner while a submit is in flight. The bar runs determinate while
+   bytes upload (driven by object-explorer-import.js), then drops its value
+   attribute to go indeterminate for the server-side parse. Layout is scoped to
+   :not([hidden]) so the `hidden` attribute keeps it off until upload starts. */
+.oe-import-progress:not([hidden]) {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    margin-top: 14px;
-    max-width: 480px;
+    gap: 8px;
+    margin-bottom: 20px;
+    padding: 14px 16px;
+    border: 1px solid var(--color-accent);
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
 }
 
-.upload-progress__head {
+.oe-import-progress__row {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    font-size: 13px;
-    font-weight: 500;
+    font-size: 13.5px;
+    font-weight: 600;
 }
 
-.upload-progress__pct {
+.oe-import-progress__pct {
     font-variant-numeric: tabular-nums;
     color: var(--color-text-muted, var(--color-text));
 }
 
-.upload-progress__bar {
+.oe-import-progress__bar {
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
@@ -481,23 +500,23 @@
     overflow: hidden;
 }
 
-.upload-progress__bar::-webkit-progress-bar {
+.oe-import-progress__bar::-webkit-progress-bar {
     background: var(--color-bg);
     border-radius: 999px;
 }
 
-.upload-progress__bar::-webkit-progress-value {
+.oe-import-progress__bar::-webkit-progress-value {
     background: var(--color-accent);
     border-radius: 999px;
     transition: width 0.15s linear;
 }
 
-.upload-progress__bar::-moz-progress-bar {
+.oe-import-progress__bar::-moz-progress-bar {
     background: var(--color-accent);
     border-radius: 999px;
 }
 
-.upload-progress__hint {
+.oe-import-progress__hint {
     margin: 0;
     font-size: 12px;
 }

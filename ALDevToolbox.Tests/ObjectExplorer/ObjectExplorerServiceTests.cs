@@ -4,6 +4,7 @@ using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
 
 namespace ALDevToolbox.Tests.ObjectExplorer;
 
@@ -204,6 +205,102 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         firstTen.Rows.Select(r => r.Id).Should().Equal(all.Rows.Take(10).Select(r => r.Id));
         nextTen.Rows.Select(r => r.Id).Should().Equal(all.Rows.Skip(10).Take(10).Select(r => r.Id));
         firstTen.TotalCount.Should().Be(all.TotalCount);
+    }
+
+    [Fact]
+    public async Task DependencyCount_is_stamped_from_manifest_at_import()
+    {
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var modules = await read.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == releaseId)
+            .Select(m => new { m.Name, m.DependenciesJson, m.DependencyCount })
+            .ToListAsync();
+
+        modules.Should().NotBeEmpty();
+        foreach (var m in modules)
+        {
+            var expected = System.Text.Json.JsonDocument.Parse(m.DependenciesJson).RootElement.GetArrayLength();
+            m.DependencyCount.Should().Be(expected, "dependency_count mirrors the JSON deps for {0}", m.Name);
+        }
+    }
+
+    [Fact]
+    public async Task Default_sort_floats_fewest_dependency_module_first_on_ties()
+    {
+        // Two modules in one release defining the same (kind, id); the default
+        // grid order should surface the foundational (fewer-dependency) one
+        // first so System/Base content beats partner extensions on a tie.
+        int releaseId;
+        await using (var write = _db.NewContext())
+        {
+            var release = new Release
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Label = "Dep-sort fixture",
+                Kind = "first_party",
+                Status = "ready",
+                ImportedAt = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            write.OeReleases.Add(release);
+            await write.SaveChangesAsync();
+            releaseId = release.Id;
+
+            var baseApp = new OeModule
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ReleaseId = releaseId,
+                AppId = Guid.NewGuid(),
+                Name = "Base Application",
+                Publisher = "Microsoft",
+                Version = "1.0.0.0",
+                CreatedAt = DateTime.UtcNow,
+                DependencyCount = 1,
+            };
+            var partner = new OeModule
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ReleaseId = releaseId,
+                AppId = Guid.NewGuid(),
+                Name = "Partner Extension",
+                Publisher = "Acme",
+                Version = "1.0.0.0",
+                CreatedAt = DateTime.UtcNow,
+                DependencyCount = 6,
+            };
+            write.OeModules.AddRange(baseApp, partner);
+            await write.SaveChangesAsync();
+
+            write.OeModuleObjects.Add(new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = partner.Id,
+                Kind = "table",
+                ObjectId = 18,
+                Name = "Customer (extended)",
+                LineNumber = 1,
+            });
+            write.OeModuleObjects.Add(new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = baseApp.Id,
+                Kind = "table",
+                ObjectId = 18,
+                Name = "Customer",
+                LineNumber = 1,
+            });
+            await write.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var page = await NewSearch(read).SearchObjectsPageInReleaseAsync(
+            releaseId, new ObjectListFilter(), moduleId: null, namespacePrefix: null,
+            ObjectSortColumn.Default, descending: false, skip: 0, take: 10);
+
+        page.Rows.Where(r => r.ObjectId == 18).Select(r => r.ModuleName)
+            .Should().Equal("Base Application", "Partner Extension");
     }
 
     [Fact]

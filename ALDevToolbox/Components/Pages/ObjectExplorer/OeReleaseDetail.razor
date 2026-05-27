@@ -567,7 +567,7 @@
 
     /// <summary>The sort to apply when not ranking — the picked column, or Type ascending by default.</summary>
     private (ObjectSortColumn Column, bool Descending) EffectiveSort()
-        => (_sortColumn ?? ObjectSortColumn.Type, _sortColumn is null ? false : _sortDescending);
+        => _sortColumn is { } c ? (c, _sortDescending) : (ObjectSortColumn.Default, false);
 
     private string KindSummary => _selectedKinds.Count switch
     {

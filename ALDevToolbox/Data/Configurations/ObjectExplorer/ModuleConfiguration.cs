@@ -23,6 +23,7 @@ internal sealed class ModuleConfiguration : IEntityTypeConfiguration<Module>
         entity.Property(e => e.IsInternal).HasColumnName("is_internal").IsRequired();
         entity.Property(e => e.IsLanguagePack).HasColumnName("is_language_pack").IsRequired();
         entity.Property(e => e.DependenciesJson).HasColumnName("dependencies_json").HasColumnType("jsonb").IsRequired();
+        entity.Property(e => e.DependencyCount).HasColumnName("dependency_count").HasDefaultValue(0).IsRequired();
         entity.Property(e => e.AppFileHash).HasColumnName("app_file_hash");
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
 

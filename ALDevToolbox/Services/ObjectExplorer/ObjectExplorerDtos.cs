@@ -35,7 +35,10 @@ public sealed record ReleaseDetail(
     string? BcVersion,
     int? ParentReleaseId,
     string? ParentLabel,
+    string? Publisher,
+    string? CustomerName,
     DateTime ImportedAt,
+    DateTime? DeletedAt,
     int ModuleCount);
 
 /// <summary>Filter for <c>ListModulesAsync</c> — applies a substring search and the test/internal toggles.</summary>
@@ -70,6 +73,12 @@ public sealed record ObjectListFilter(
 /// <summary>Sortable columns on the release-detail objects grid.</summary>
 public enum ObjectSortColumn
 {
+    /// <summary>
+    /// The grid's default order when no header is clicked: kind, then object id,
+    /// then fewest module dependencies (so System / Base Application float above
+    /// partner / customer extensions), then module name.
+    /// </summary>
+    Default,
     Type,
     Id,
     Name,
