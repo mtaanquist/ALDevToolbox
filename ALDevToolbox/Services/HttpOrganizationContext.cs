@@ -32,12 +32,22 @@ public sealed class HttpOrganizationContext : IOrganizationContext
         _http = http;
     }
 
-    public int? CurrentOrganizationId => GetIntClaim(OrganizationIdClaim);
-    public int? CurrentUserId => GetIntClaim(UserIdClaim);
+    // Claims win when present (a real request). The ambient fallback only
+    // applies off-request — i.e. inside the release-import background worker,
+    // which re-installs the submitting user's own org identity. See
+    // AmbientOrganizationScope.
+    public int? CurrentOrganizationId =>
+        GetIntClaim(OrganizationIdClaim) ?? AmbientOrganizationScope.Current?.OrganizationId;
+    public int? CurrentUserId =>
+        GetIntClaim(UserIdClaim) ?? AmbientOrganizationScope.Current?.UserId;
     public bool IsSiteAdmin =>
-        _http.HttpContext?.User?.FindFirst(SiteAdminClaim)?.Value == "true";
+        _http.HttpContext is { } ctx
+            ? ctx.User?.FindFirst(SiteAdminClaim)?.Value == "true"
+            : AmbientOrganizationScope.Current?.IsSiteAdmin ?? false;
     public bool IsSystemOrganization =>
-        _http.HttpContext?.User?.FindFirst(SystemOrgClaim)?.Value == "true";
+        _http.HttpContext is { } ctx
+            ? ctx.User?.FindFirst(SystemOrgClaim)?.Value == "true"
+            : AmbientOrganizationScope.Current?.IsSystemOrganization ?? false;
     public int OrganizationIdForFilter => CurrentOrganizationId ?? 0;
 
     private int? GetIntClaim(string type)

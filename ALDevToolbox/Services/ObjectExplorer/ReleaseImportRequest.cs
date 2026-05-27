@@ -17,6 +17,29 @@ public sealed record ReleaseImportRequest(
     string? CustomerName = null);
 
 /// <summary>
+/// The Release-identity half of an import (everything except the uploads). The
+/// queued DVD-scale paths create the Release row from this synchronously, then
+/// hand the uploads to the background worker — which materialises them from a
+/// downloaded/staged ZIP rather than request-scoped streams.
+/// </summary>
+public sealed record ReleaseImportMetadata(
+    string Label,
+    string Kind,
+    int? ParentReleaseId,
+    int? ApplicationVersionId,
+    string? Publisher = null,
+    string? CustomerName = null)
+{
+    public static ReleaseImportMetadata From(ReleaseImportRequest request) => new(
+        Label: request.Label,
+        Kind: request.Kind,
+        ParentReleaseId: request.ParentReleaseId,
+        ApplicationVersionId: request.ApplicationVersionId,
+        Publisher: request.Publisher,
+        CustomerName: request.CustomerName);
+}
+
+/// <summary>
 /// One <c>.app</c> file + optional paired source zip. Streams are owned by the
 /// caller; the service reads them to completion but does not close them.
 ///

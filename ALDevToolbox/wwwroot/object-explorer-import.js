@@ -68,21 +68,26 @@
         if (pct) pct.textContent = "0%";
 
         const dvdUrlField = form.querySelector("input[name='DvdUrl']");
-        const isUrlImport = !!(dvdUrlField && dvdUrlField.value.trim());
+        const folderZipField = form.querySelector("input[name='FolderZip']");
+        const hasUrl = !!(dvdUrlField && dvdUrlField.value.trim());
+        const hasFolderZip = !!(folderZipField && folderZipField.files && folderZipField.files.length);
+        // The DVD-scale paths ingest in the background and redirect to the
+        // releases list; only the individual-file path runs inline.
+        const isBackground = hasUrl || hasFolderZip;
 
         function switchToIngesting() {
-            if (label) label.textContent = isUrlImport ? "Downloading & ingesting…" : "Ingesting…";
+            if (label) label.textContent = isBackground ? "Queuing…" : "Ingesting…";
             if (pct) pct.textContent = "";
             // Removing the value attribute puts <progress> into its
             // indeterminate (animated) state — we have no byte signal for
-            // the server-side download/parse/resolve phase.
+            // the server-side phase.
             if (bar) bar.removeAttribute("value");
             if (hint) {
-                hint.textContent = isUrlImport
-                    ? "Downloading the DVD and resolving references. The download alone can take "
-                        + "several minutes for a multi-GB file — keep this tab open."
+                hint.textContent = isBackground
+                    ? "This import will finish in the background — taking you to the releases list, "
+                        + "where the status updates on its own."
                     : "Parsing .app files and resolving references. "
-                        + "This can take a few minutes for a full DVD — keep this tab open.";
+                        + "This can take a few minutes — keep this tab open.";
             }
         }
 

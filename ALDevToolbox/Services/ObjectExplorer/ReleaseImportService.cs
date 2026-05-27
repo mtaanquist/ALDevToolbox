@@ -89,20 +89,42 @@ public class ReleaseImportService
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (request.Uploads.Count == 0)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Uploads"] = "At least one .app file is required.",
+            });
+        }
+        var releaseId = await BeginReleaseAsync(ReleaseImportMetadata.From(request), ct).ConfigureAwait(false);
+        return await ProcessReleaseAsync(releaseId, request.Uploads, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Validates the metadata, reserves the label, and inserts the Release row
+    /// in <c>ingesting</c> state — the synchronous half of a queued import, so
+    /// the row shows in the admin list immediately and the user gets inline
+    /// validation errors before any heavy work. The uploads are processed later
+    /// by <see cref="ProcessReleaseAsync"/> (same request for the synchronous
+    /// path, the background worker for the DVD-scale paths).
+    /// </summary>
+    public async Task<int> BeginReleaseAsync(ReleaseImportMetadata metadata, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
         var orgId = RequireOrganizationId();
-        Validate(request);
+        ValidateMetadata(metadata);
         await _quotaGuard.EnsureCanWriteAsync(ct).ConfigureAwait(false);
-        await EnsureLabelAvailableAsync(orgId, request.Label.Trim(), ct).ConfigureAwait(false);
+        await EnsureLabelAvailableAsync(orgId, metadata.Label.Trim(), ct).ConfigureAwait(false);
 
         var release = new OeRelease
         {
             OrganizationId = orgId,
-            Label = request.Label.Trim(),
-            Kind = request.Kind,
-            Publisher = NullIfBlank(request.Publisher),
-            CustomerName = NullIfBlank(request.CustomerName),
-            ParentReleaseId = request.ParentReleaseId,
-            ApplicationVersionId = request.ApplicationVersionId,
+            Label = metadata.Label.Trim(),
+            Kind = metadata.Kind,
+            Publisher = NullIfBlank(metadata.Publisher),
+            CustomerName = NullIfBlank(metadata.CustomerName),
+            ParentReleaseId = metadata.ParentReleaseId,
+            ApplicationVersionId = metadata.ApplicationVersionId,
             Status = "ingesting",
             ImportedAt = DateTime.UtcNow,
             CreatedAt = DateTime.UtcNow,
@@ -112,13 +134,34 @@ public class ReleaseImportService
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
         _logger.LogInformation(
-            "Started Release ingest: ReleaseId={ReleaseId} Label={Label} Kind={Kind} ParentReleaseId={ParentReleaseId} Uploads={UploadCount}",
-            release.Id, release.Label, release.Kind, release.ParentReleaseId, request.Uploads.Count);
+            "Started Release ingest: ReleaseId={ReleaseId} Label={Label} Kind={Kind} ParentReleaseId={ParentReleaseId}",
+            release.Id, release.Label, release.Kind, release.ParentReleaseId);
+        return release.Id;
+    }
+
+    /// <summary>
+    /// Ingests the uploads into an existing <c>ingesting</c> Release row
+    /// (created by <see cref="BeginReleaseAsync"/>) and flips it to
+    /// <c>ready</c>, or to <c>failed</c> (with the message) on any per-module
+    /// exception. Partial modules stay in the DB so an operator can inspect
+    /// what got through.
+    /// </summary>
+    public async Task<ReleaseImportSummary> ProcessReleaseAsync(
+        int releaseId,
+        IReadOnlyList<AppFileUpload> uploads,
+        CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        var release = await _db.OeReleases.FindAsync(new object?[] { releaseId }, ct).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Release {releaseId} not found for processing.");
+
+        _logger.LogInformation(
+            "Processing Release ingest: ReleaseId={ReleaseId} Uploads={UploadCount}", release.Id, uploads.Count);
 
         var totals = new ImportTotals();
         try
         {
-            foreach (var upload in request.Uploads)
+            foreach (var upload in uploads)
             {
                 ct.ThrowIfCancellationRequested();
                 await ImportOneAppAsync(orgId, release, upload, totals, ct).ConfigureAwait(false);
@@ -385,22 +428,34 @@ public class ReleaseImportService
 
     // ── Validation ──────────────────────────────────────────────────────
 
-    private static void Validate(ReleaseImportRequest req)
+    private static void ValidateMetadata(ReleaseImportMetadata m)
     {
         var errors = new Dictionary<string, string>();
-        if (string.IsNullOrWhiteSpace(req.Label))
+        if (string.IsNullOrWhiteSpace(m.Label))
         {
             errors["Label"] = "Label is required.";
         }
-        if (!AllowedKinds.Contains(req.Kind))
+        if (!AllowedKinds.Contains(m.Kind))
         {
             errors["Kind"] = $"Kind must be one of: {string.Join(", ", AllowedKinds)}.";
         }
-        if (req.Uploads.Count == 0)
-        {
-            errors["Uploads"] = "At least one .app file is required.";
-        }
         if (errors.Count > 0) throw new PlanValidationException(errors);
+    }
+
+    /// <summary>
+    /// Marks a queued Release as <c>failed</c> when the background worker hits
+    /// an error <em>before</em> <see cref="ProcessReleaseAsync"/> takes over its
+    /// own status handling — e.g. the URL download fails or the staged ZIP
+    /// holds no application apps. Idempotent and tolerant of a missing row.
+    /// </summary>
+    public async Task MarkFailedAsync(int releaseId, string message, CancellationToken ct = default)
+    {
+        var release = await _db.OeReleases.FindAsync(new object?[] { releaseId }, ct).ConfigureAwait(false);
+        if (release is null) return;
+        release.Status = "failed";
+        release.StatusMessage = message;
+        release.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
     /// <summary>

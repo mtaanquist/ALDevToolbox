@@ -41,6 +41,8 @@ internal static class ObjectExplorerEndpoints
             HttpContext ctx,
             ReleaseImportService importer,
             DvdDownloadService dvdDownloader,
+            ReleaseImportQueue queue,
+            IOrganizationContext orgContext,
             IAntiforgery antiforgery,
             CancellationToken ct) =>
         {
@@ -56,6 +58,7 @@ internal static class ObjectExplorerEndpoints
             {
                 parentReleaseId = pr;
             }
+            var metadata = new ReleaseImportMetadata(label, kind, parentReleaseId, null, publisher, customerName);
 
             var dvdUrl = form["DvdUrl"].ToString().Trim();
             var folderZip = form.Files.GetFile("FolderZip");
@@ -67,73 +70,83 @@ internal static class ObjectExplorerEndpoints
                 return;
             }
 
-            var openedStreams = new List<Stream>();
-            ZipArchive? folderArchive = null;
-            string? tempFolderZipPath = null;
             try
             {
-                List<AppFileUpload> uploads;
-                // Precedence: download URL → uploaded folder ZIP → individual files.
+                // ── URL download: queue, ingest in the background ──────────
                 if (dvdUrl.Length > 0)
                 {
-                    tempFolderZipPath = await dvdDownloader.DownloadToTempAsync(dvdUrl, ct).ConfigureAwait(false);
-                    (uploads, folderArchive) = OpenStagedZip(tempFolderZipPath, isDvd: true, openedStreams);
-                    if (uploads.Count == 0)
+                    await dvdDownloader.ValidateUrlForQueueAsync(dvdUrl, ct).ConfigureAwait(false);
+                    var releaseId = await importer.BeginReleaseAsync(metadata, ct).ConfigureAwait(false);
+                    await queue.EnqueueAsync(
+                        new ReleaseImportJob(releaseId, CaptureIdentity(orgContext), new ReleaseImportSource.Url(dvdUrl)),
+                        ct).ConfigureAwait(false);
+                    RedirectQueued(ctx, releaseId);
+                    return;
+                }
+
+                // ── Folder-ZIP upload: stage to disk, queue, ingest in bg ──
+                if (folderZip is not null && folderZip.Length > 0)
+                {
+                    var releaseId = await importer.BeginReleaseAsync(metadata, ct).ConfigureAwait(false);
+                    string tempPath;
+                    try
                     {
-                        Redirect(ctx, "DvdUrl",
-                            "No application .app files were found in that ZIP. Make sure the URL points to a "
-                            + "Business Central DVD (we keep everything under its Applications folder plus System.app).");
+                        tempPath = await StageFolderZipToTempAsync(folderZip, ct).ConfigureAwait(false);
+                    }
+                    catch (IOException ex)
+                    {
+                        // Out of scratch disk, etc. The row already exists, so
+                        // record the failure on it and send the admin to the
+                        // list rather than a 500.
+                        await importer.MarkFailedAsync(releaseId, "Could not stage the uploaded ZIP to disk: " + ex.Message, ct).ConfigureAwait(false);
+                        RedirectQueued(ctx, releaseId);
                         return;
                     }
+                    await queue.EnqueueAsync(
+                        new ReleaseImportJob(releaseId, CaptureIdentity(orgContext), new ReleaseImportSource.StagedZip(tempPath, IsDvd: false)),
+                        ct).ConfigureAwait(false);
+                    RedirectQueued(ctx, releaseId);
+                    return;
                 }
-                else if (folderZip is not null && folderZip.Length > 0)
+
+                // ── Individual files: small/fast, stays synchronous ────────
+                var openedStreams = new List<Stream>();
+                try
                 {
-                    (uploads, folderArchive, tempFolderZipPath) =
-                        await BuildUploadsFromFolderZipAsync(folderZip, openedStreams, ct).ConfigureAwait(false);
+                    var uploads = BuildUploadsFromIndividualFiles(form, appFiles, openedStreams);
+                    var request = new ReleaseImportRequest(
+                        Label: label,
+                        Kind: kind,
+                        ParentReleaseId: parentReleaseId,
+                        ApplicationVersionId: null,
+                        Uploads: uploads,
+                        Publisher: publisher,
+                        CustomerName: customerName);
+
+                    var summary = await importer.ImportReleaseAsync(request, ct);
+
+                    var query = $"/object-explorer/release/{summary.ReleaseId}"
+                        + $"?ok=imported"
+                        + $"&modules={summary.ModulesImported}"
+                        + $"&skipped={summary.ModulesSkipped}"
+                        + $"&refs={summary.ReferencesImported}"
+                        + $"&translations={summary.TranslationsImported}";
+                    ctx.Response.Redirect(query);
                 }
-                else
+                finally
                 {
-                    uploads = BuildUploadsFromIndividualFiles(form, appFiles, openedStreams);
+                    foreach (var s in openedStreams)
+                    {
+                        try { s.Dispose(); } catch { /* swallow */ }
+                    }
                 }
-
-                var request = new ReleaseImportRequest(
-                    Label: label,
-                    Kind: kind,
-                    ParentReleaseId: parentReleaseId,
-                    ApplicationVersionId: null,
-                    Uploads: uploads,
-                    Publisher: publisher,
-                    CustomerName: customerName);
-
-                var summary = await importer.ImportReleaseAsync(request, ct);
-
-                var query = $"/object-explorer/release/{summary.ReleaseId}"
-                    + $"?ok=imported"
-                    + $"&modules={summary.ModulesImported}"
-                    + $"&skipped={summary.ModulesSkipped}"
-                    + $"&refs={summary.ReferencesImported}"
-                    + $"&translations={summary.TranslationsImported}";
-                ctx.Response.Redirect(query);
             }
             catch (PlanValidationException ex)
             {
-                // Covers URL/allow-list validation from the download service and
-                // the importer's own field-keyed rules — both redirect inline.
+                // URL/allow-list validation, label collisions, quota — all
+                // field-keyed so the form renders them inline.
                 var first = ex.Errors.First();
                 Redirect(ctx, first.Key, first.Value);
-                return;
-            }
-            finally
-            {
-                foreach (var s in openedStreams)
-                {
-                    try { s.Dispose(); } catch { /* swallow */ }
-                }
-                folderArchive?.Dispose();
-                if (tempFolderZipPath is not null && File.Exists(tempFolderZipPath))
-                {
-                    try { File.Delete(tempFolderZipPath); } catch { /* swallow */ }
-                }
             }
         })
         .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole))
@@ -539,11 +552,36 @@ internal static class ObjectExplorerEndpoints
 
     // ── Folder-ZIP path ────────────────────────────────────────────────
 
+    private static AmbientOrganizationScope.OrganizationIdentity CaptureIdentity(IOrganizationContext orgContext) =>
+        new(
+            OrganizationId: orgContext.CurrentOrganizationId
+                ?? throw new InvalidOperationException("No organization in scope when queuing a release import."),
+            UserId: orgContext.CurrentUserId,
+            IsSiteAdmin: orgContext.IsSiteAdmin,
+            IsSystemOrganization: orgContext.IsSystemOrganization);
+
+    private static void RedirectQueued(HttpContext ctx, int releaseId) =>
+        ctx.Response.Redirect($"/admin/object-explorer?ok=queued&id={releaseId}");
+
     /// <summary>
-    /// Stages the uploaded folder ZIP to a temp file (ZipArchive needs a
-    /// seekable stream) and walks every <c>.app</c> entry. Returns the
-    /// staged-archive handle and temp path so the caller can dispose them
-    /// after the import service finishes consuming the entry streams.
+    /// Streams an uploaded folder ZIP to a temp file (ZipArchive needs a
+    /// seekable stream, and the background worker reopens it after the request
+    /// ends). Returns the temp path; the worker deletes it when done.
+    /// </summary>
+    private static async Task<string> StageFolderZipToTempAsync(
+        Microsoft.AspNetCore.Http.IFormFile folderZip, CancellationToken ct)
+    {
+        var tempPath = Path.Combine(Path.GetTempPath(), "oe-folder-" + Guid.NewGuid().ToString("N") + ".zip");
+        await using var fs = File.Create(tempPath);
+        await using var src = folderZip.OpenReadStream();
+        await src.CopyToAsync(fs, ct).ConfigureAwait(false);
+        return tempPath;
+    }
+
+    /// <summary>
+    /// Stages the uploaded folder ZIP to a temp file and walks every
+    /// <c>.app</c> entry — the synchronous amend path (#216) consumes the entry
+    /// streams in-request, so it gets the archive + temp path back to dispose.
     /// </summary>
     private static async Task<(List<AppFileUpload> Uploads, ZipArchive Archive, string TempPath)>
         BuildUploadsFromFolderZipAsync(
@@ -551,55 +589,9 @@ internal static class ObjectExplorerEndpoints
             List<Stream> openedStreams,
             CancellationToken ct)
     {
-        var tempPath = Path.Combine(Path.GetTempPath(), "oe-folder-" + Guid.NewGuid().ToString("N") + ".zip");
-        await using (var fs = File.Create(tempPath))
-        await using (var src = folderZip.OpenReadStream())
-        {
-            await src.CopyToAsync(fs, ct).ConfigureAwait(false);
-        }
-
-        var (uploads, archive) = OpenStagedZip(tempPath, isDvd: false, openedStreams);
+        var tempPath = await StageFolderZipToTempAsync(folderZip, ct).ConfigureAwait(false);
+        var (uploads, archive) = ReleaseZipStaging.OpenStagedZip(tempPath, isDvd: false, openedStreams);
         return (uploads, archive, tempPath);
-    }
-
-    /// <summary>
-    /// Opens a staged ZIP (uploaded folder ZIP or a downloaded DVD) and turns
-    /// the apps it contains into <see cref="AppFileUpload"/>s. When
-    /// <paramref name="isDvd"/> is true only the DVD's <c>Applications/</c>
-    /// apps + <c>System.app</c> are taken and test apps are dropped
-    /// (<see cref="FolderZipWalker.WalkDvd"/>); otherwise every <c>.app</c> is
-    /// taken (<see cref="FolderZipWalker.Walk(ZipArchive, Func{string, bool})"/>).
-    /// The returned archive's lifetime owns the entry streams added to
-    /// <paramref name="openedStreams"/>; the caller disposes both.
-    /// </summary>
-    private static (List<AppFileUpload> Uploads, ZipArchive Archive) OpenStagedZip(
-        string tempZipPath, bool isDvd, List<Stream> openedStreams)
-    {
-        var archive = new ZipArchive(File.OpenRead(tempZipPath), ZipArchiveMode.Read);
-        var entries = isDvd ? FolderZipWalker.WalkDvd(archive) : FolderZipWalker.Walk(archive);
-
-        var uploads = new List<AppFileUpload>(entries.Count);
-        foreach (var entry in entries)
-        {
-            var appStream = entry.AppEntry.Open();
-            openedStreams.Add(appStream);
-
-            Stream? sourceStream = null;
-            if (entry.SourceZipEntry is not null)
-            {
-                sourceStream = entry.SourceZipEntry.Open();
-                openedStreams.Add(sourceStream);
-            }
-
-            uploads.Add(new AppFileUpload(
-                FileName: entry.FileName,
-                AppStream: appStream,
-                SourceZipStream: sourceStream,
-                IsTest: entry.IsTest,
-                IsInternal: entry.IsInternal,
-                IsLanguagePack: entry.IsLanguagePack));
-        }
-        return (uploads, archive);
     }
 
     // ── Individual-file path (legacy / partner extensions) ─────────────

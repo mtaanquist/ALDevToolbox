@@ -54,7 +54,11 @@ public sealed class DvdDownloadService
     public async Task<string> DownloadToTempAsync(string? url, CancellationToken ct = default)
     {
         var uri = await ValidateUrlAsync(url, ct).ConfigureAwait(false);
+        return await DownloadValidatedAsync(uri, ct).ConfigureAwait(false);
+    }
 
+    private async Task<string> DownloadValidatedAsync(Uri uri, CancellationToken ct)
+    {
         var tempPath = Path.Combine(Path.GetTempPath(), TempPrefix + Guid.NewGuid().ToString("N") + ".zip");
         var client = _httpClientFactory.CreateClient(nameof(DvdDownloadService));
 
@@ -88,7 +92,7 @@ public sealed class DvdDownloadService
             // network failures land here too. Surface as an inline form error
             // rather than a 500 — the admin can fix the URL or retry.
             TryDelete(tempPath);
-            _logger.LogWarning(ex, "DVD download from {Url} failed.", url);
+            _logger.LogWarning(ex, "DVD download from {Host} failed.", uri.Host);
             throw Invalid("Couldn't download from that URL — it may be unreachable, blocked, or not a public address.");
         }
         catch
@@ -97,6 +101,15 @@ public sealed class DvdDownloadService
             throw;
         }
     }
+
+    /// <summary>
+    /// Validates the URL synchronously (https + allow-listed host) so the
+    /// import endpoint can reject a bad URL inline before queuing a job, rather
+    /// than surfacing it later as a failed release. Throws
+    /// <see cref="PlanValidationException"/> (field key <c>DvdUrl</c>).
+    /// </summary>
+    public async Task ValidateUrlForQueueAsync(string? url, CancellationToken ct = default) =>
+        await ValidateUrlAsync(url, ct).ConfigureAwait(false);
 
     private async Task<Uri> ValidateUrlAsync(string? url, CancellationToken ct)
     {
