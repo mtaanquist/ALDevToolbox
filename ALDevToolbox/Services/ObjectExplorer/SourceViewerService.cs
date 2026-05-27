@@ -198,7 +198,13 @@ public sealed class SourceViewerService
                 OwnerKind: sym.OwnerKind));
         }
 
-        return result;
+        // Objects are appended before member symbols, so the raw list isn't
+        // ordered by position — a file shipping several objects (an extension
+        // bundling multiple objects in one .al) interleaves their headers and
+        // members out of order. The source viewer feeds these straight into
+        // CodeMirror's RangeSetBuilder, which requires ascending `from`, so
+        // sort by (line, column) before handing them over.
+        return result.OrderBy(d => d.Line).ThenBy(d => d.ColumnStart).ToList();
     }
 
     /// <summary>
