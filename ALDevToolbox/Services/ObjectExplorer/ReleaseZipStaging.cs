@@ -62,11 +62,13 @@ public static class ReleaseZipStaging
         var sawApp = false;
         foreach (var entry in archive.Entries)
         {
-            if (string.IsNullOrEmpty(entry.Name)) continue;
-            if (!entry.FullName.EndsWith(".app", StringComparison.OrdinalIgnoreCase)) continue;
+            // Normalise backslash separators (some DVD ZIPs use them) before
+            // taking the top segment.
+            var full = entry.FullName.Replace('\\', '/');
+            if (!full.EndsWith(".app", StringComparison.OrdinalIgnoreCase)) continue;
             sawApp = true;
-            var slash = entry.FullName.IndexOf('/');
-            topFolders.Add(slash > 0 ? entry.FullName[..slash] : "(archive root)");
+            var slash = full.IndexOf('/');
+            topFolders.Add(slash > 0 ? full[..slash] : "(archive root)");
         }
 
         if (!sawApp) return "the archive contains no .app files at all";

@@ -65,33 +65,40 @@ public static class FolderZipWalker
         ArgumentNullException.ThrowIfNull(archive);
 
         // Index source zips by their containing directory + basename stem so
-        // we can pair them up in one pass.
+        // we can pair them up in one pass. Paths are normalised first because
+        // some Microsoft DVD ZIPs (e.g. BC 26.x) store entries with backslash
+        // separators, which would otherwise collapse every path to a single
+        // segment and break folder matching + name extraction.
         var sourceZips = new Dictionary<(string Directory, string Stem), ZipArchiveEntry>(
             new DirectoryStemComparer());
         foreach (var e in archive.Entries)
         {
-            if (string.IsNullOrEmpty(e.Name)) continue;
-            if (!e.FullName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;
-            var stem = StripSourceSuffix(Path.GetFileNameWithoutExtension(e.Name));
-            sourceZips[(GetDirectory(e.FullName), stem)] = e;
+            var full = Normalize(e.FullName);
+            var name = LeafName(full);
+            if (string.IsNullOrEmpty(name)) continue;
+            if (!full.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;
+            var stem = StripSourceSuffix(Path.GetFileNameWithoutExtension(name));
+            sourceZips[(GetDirectory(full), stem)] = e;
         }
 
         var result = new List<FolderZipEntry>();
         foreach (var entry in archive.Entries)
         {
-            if (string.IsNullOrEmpty(entry.Name)) continue;
-            if (!entry.FullName.EndsWith(".app", StringComparison.OrdinalIgnoreCase)) continue;
-            if (includeApp is not null && !includeApp(entry.FullName)) continue;
+            var full = Normalize(entry.FullName);
+            var name = LeafName(full);
+            if (string.IsNullOrEmpty(name)) continue;
+            if (!full.EndsWith(".app", StringComparison.OrdinalIgnoreCase)) continue;
+            if (includeApp is not null && !includeApp(full)) continue;
 
-            var dir = GetDirectory(entry.FullName);
-            var appStem = StripPublisherPrefix(Path.GetFileNameWithoutExtension(entry.Name));
+            var dir = GetDirectory(full);
+            var appStem = StripPublisherPrefix(Path.GetFileNameWithoutExtension(name));
 
             ZipArchiveEntry? pairedSource = null;
             // Try a few stem variants so common filename conventions on the
             // DVD all pair correctly:
             //   Microsoft_Base Application.app ↔ Base Application.Source.zip
             //   _Exclude_Foo.app               ↔ _Exclude_Foo.Source.zip
-            foreach (var candidate in PairingCandidates(entry.Name, appStem))
+            foreach (var candidate in PairingCandidates(name, appStem))
             {
                 if (sourceZips.TryGetValue((dir, candidate), out var src))
                 {
@@ -101,14 +108,24 @@ public static class FolderZipWalker
             }
 
             result.Add(new FolderZipEntry(
-                FileName: entry.Name,
+                FileName: name,
                 AppEntry: entry,
                 SourceZipEntry: pairedSource,
-                IsTest: HasTestAncestor(entry.FullName),
-                IsInternal: entry.Name.Contains("_Exclude_", StringComparison.OrdinalIgnoreCase),
-                IsLanguagePack: LanguagePackPattern.IsMatch(Path.GetFileNameWithoutExtension(entry.Name))));
+                IsTest: HasTestAncestor(full),
+                IsInternal: name.Contains("_Exclude_", StringComparison.OrdinalIgnoreCase),
+                IsLanguagePack: LanguagePackPattern.IsMatch(Path.GetFileNameWithoutExtension(name))));
         }
         return result;
+    }
+
+    /// <summary>Unifies backslash- and forward-slash-separated ZIP entry paths to '/'.</summary>
+    private static string Normalize(string fullName) => fullName.Replace('\\', '/');
+
+    /// <summary>Last path segment of an already-normalised entry path (the file name).</summary>
+    private static string LeafName(string normalizedFullName)
+    {
+        var slash = normalizedFullName.LastIndexOf('/');
+        return slash >= 0 ? normalizedFullName[(slash + 1)..] : normalizedFullName;
     }
 
     /// <summary>
