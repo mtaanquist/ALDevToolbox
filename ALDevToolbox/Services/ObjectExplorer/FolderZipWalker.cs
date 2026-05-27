@@ -35,6 +35,17 @@ public static class FolderZipWalker
         "TestFramework",
     };
 
+    // The DVD root folder that holds the product apps. Microsoft has used a few
+    // names across BC versions (and the casing varies), so match a set,
+    // case-insensitively. EXTENDING: if a future/older DVD nests its apps under
+    // a different folder, the zero-match diagnostic in ReleaseImportWorker names
+    // the folder it actually found — add that name here.
+    private static readonly HashSet<string> DvdAppFolderNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Applications",
+        "Extensions",
+    };
+
     // Matches "<X> language (<Y>)" at the *end* of an .app filename stem.
     // The Microsoft DVD uses this exact shape for every translation-only
     // app (e.g. "Microsoft_Danish language (Denmark).app"). The leading
@@ -102,19 +113,21 @@ public static class FolderZipWalker
 
     /// <summary>
     /// Walks a full BC DVD ZIP, keeping only the apps that matter for the
-    /// Object Explorer: every <c>.app</c> under an <c>Applications/</c> folder
-    /// plus the platform symbols app named exactly <c>System.app</c> (it lives
-    /// under <c>ModernDev/PFiles/Microsoft Dynamics NAV/&lt;ver&gt;/AL
-    /// Development Environment/</c>). Test extensions and their source are
-    /// dropped entirely — any <c>.app</c> under a <c>Test*</c> folder is
-    /// skipped, unlike <see cref="Walk(ZipArchive, Func{string, bool})"/> which
-    /// imports them flagged.
+    /// Object Explorer: every <c>.app</c> under one of the recognised app
+    /// folders (<see cref="DvdAppFolderNames"/> — <c>Applications/</c> on modern
+    /// DVDs, <c>Extensions/</c> on others, matched case-insensitively) plus the
+    /// platform symbols app named exactly <c>System.app</c> (it lives under
+    /// <c>ModernDev/PFiles/Microsoft Dynamics NAV/&lt;ver&gt;/AL Development
+    /// Environment/</c>). Test extensions and their source are dropped entirely
+    /// — any <c>.app</c> under a <c>Test*</c> folder is skipped, unlike
+    /// <see cref="Walk(ZipArchive, Func{string, bool})"/> which imports them
+    /// flagged.
     ///
-    /// The match deliberately anchors only on the long-standing
-    /// <c>Applications/</c> segment and the literal <c>System.app</c> filename,
-    /// not on the version segment, so a BC version bump needs no code change.
-    /// If Microsoft reorganises the DVD so nothing matches, this returns an
-    /// empty list and the caller surfaces a clear error.
+    /// The match deliberately anchors only on the app-folder name and the
+    /// literal <c>System.app</c> filename, not on the version segment, so a BC
+    /// version bump needs no code change. If Microsoft nests the apps under a
+    /// folder we don't recognise, this returns an empty list and the caller
+    /// surfaces a diagnostic naming the folder it actually found.
     /// </summary>
     public static IReadOnlyList<FolderZipEntry> WalkDvd(ZipArchive archive) =>
         Walk(archive, IsWantedDvdApp);
@@ -126,7 +139,7 @@ public static class FolderZipWalker
         var segments = fullName.Split('/', StringSplitOptions.RemoveEmptyEntries);
         foreach (var segment in segments)
         {
-            if (string.Equals(segment, "Applications", StringComparison.OrdinalIgnoreCase)) return true;
+            if (DvdAppFolderNames.Contains(segment)) return true;
         }
 
         var name = segments.Length > 0 ? segments[^1] : fullName;

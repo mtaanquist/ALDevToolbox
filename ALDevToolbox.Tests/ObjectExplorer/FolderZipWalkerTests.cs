@@ -170,6 +170,18 @@ public sealed class FolderZipWalkerTests
             because: "test extensions and their source are dropped entirely on the DVD path");
     }
 
+    [Theory]
+    [InlineData("BC/Applications/DKCore/Source/Microsoft_DK Core.app")]   // modern, PascalCase
+    [InlineData("BC/applications/DKCore/Source/Microsoft_DK Core.app")]   // lower-case
+    [InlineData("BC/Extensions/DKCore/Source/Microsoft_DK Core.app")]     // older "Extensions" name
+    [InlineData("BC/extensions/DKCore/Source/Microsoft_DK Core.app")]
+    public void WalkDvd_matches_known_app_folders_case_insensitively(string appPath)
+    {
+        using var archive = BuildArchive(appPath);
+        FolderZipWalker.WalkDvd(archive).Select(e => e.FileName)
+            .Should().BeEquivalentTo(new[] { "Microsoft_DK Core.app" });
+    }
+
     [Fact]
     public void WalkDvd_returns_empty_when_no_applications_or_system_app_present()
     {

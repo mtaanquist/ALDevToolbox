@@ -93,10 +93,14 @@ public sealed class ReleaseImportWorker : BackgroundService
 
             if (uploads.Count == 0)
             {
+                var diagnostic = archive is not null
+                    ? " (" + ReleaseZipStaging.DescribeAppLocations(archive) + ")"
+                    : string.Empty;
                 await importer.MarkFailedAsync(
                     job.ReleaseId,
                     "No application .app files were found in the archive. For a DVD we keep everything under "
-                        + "its Applications folder plus System.app — check the URL points to a Business Central DVD.",
+                        + "its Applications (or Extensions) folder plus System.app — check the URL points to a "
+                        + "Business Central DVD." + diagnostic,
                     ct).ConfigureAwait(false);
                 return;
             }

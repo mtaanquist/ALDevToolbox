@@ -48,4 +48,28 @@ public static class ReleaseZipStaging
         }
         return (uploads, archive);
     }
+
+    /// <summary>
+    /// Builds a short human description of where <c>.app</c> files actually sit
+    /// in the archive, for the "no apps found" failure message — so an
+    /// unrecognised DVD layout tells us the folder name to add to
+    /// <c>FolderZipWalker.DvdAppFolderNames</c> instead of failing opaquely.
+    /// Reports the distinct top-level path segments of every <c>.app</c> entry.
+    /// </summary>
+    public static string DescribeAppLocations(ZipArchive archive)
+    {
+        var topFolders = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        var sawApp = false;
+        foreach (var entry in archive.Entries)
+        {
+            if (string.IsNullOrEmpty(entry.Name)) continue;
+            if (!entry.FullName.EndsWith(".app", StringComparison.OrdinalIgnoreCase)) continue;
+            sawApp = true;
+            var slash = entry.FullName.IndexOf('/');
+            topFolders.Add(slash > 0 ? entry.FullName[..slash] : "(archive root)");
+        }
+
+        if (!sawApp) return "the archive contains no .app files at all";
+        return "the .app files are under: " + string.Join(", ", topFolders);
+    }
 }
