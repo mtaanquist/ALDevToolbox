@@ -95,7 +95,13 @@
                         <td>@FormatKind(r.Kind)</td>
                         <td>@(string.IsNullOrEmpty(r.Publisher) ? "—" : r.Publisher)</td>
                         <td>@(string.IsNullOrEmpty(r.CustomerName) ? "—" : r.CustomerName)</td>
-                        <td>@FormatStatus(r.Status)</td>
+                        <td>
+                            @FormatStatus(r.Status)
+                            @if (r.Status == "failed" && !string.IsNullOrEmpty(r.StatusMessage))
+                            {
+                                <p class="oe-status-error" role="alert">@r.StatusMessage</p>
+                            }
+                        </td>
                         <td>@r.SourceFileCount.ToString("N0")</td>
                         <td>@FormatBytes(r.SourceContentLength)</td>
                         <td>@r.ImportedAt.ToString("yyyy-MM-dd")</td>
