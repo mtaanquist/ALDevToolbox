@@ -97,7 +97,7 @@ public class ReleaseImportService
             });
         }
         var releaseId = await BeginReleaseAsync(ReleaseImportMetadata.From(request), ct).ConfigureAwait(false);
-        return await ProcessReleaseAsync(releaseId, request.Uploads, ct).ConfigureAwait(false);
+        return await ProcessReleaseAsync(releaseId, request.Uploads, request.StoreSymbolReference, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -149,6 +149,7 @@ public class ReleaseImportService
     public async Task<ReleaseImportSummary> ProcessReleaseAsync(
         int releaseId,
         IReadOnlyList<AppFileUpload> uploads,
+        bool storeSymbolReference = false,
         CancellationToken ct = default)
     {
         var orgId = RequireOrganizationId();
@@ -156,7 +157,8 @@ public class ReleaseImportService
             ?? throw new InvalidOperationException($"Release {releaseId} not found for processing.");
 
         _logger.LogInformation(
-            "Processing Release ingest: ReleaseId={ReleaseId} Uploads={UploadCount}", release.Id, uploads.Count);
+            "Processing Release ingest: ReleaseId={ReleaseId} Uploads={UploadCount} StoreSymbolReference={StoreSymbolReference}",
+            release.Id, uploads.Count, storeSymbolReference);
 
         var totals = new ImportTotals();
         try
@@ -164,7 +166,7 @@ public class ReleaseImportService
             foreach (var upload in uploads)
             {
                 ct.ThrowIfCancellationRequested();
-                await ImportOneAppAsync(orgId, release, upload, totals, ct).ConfigureAwait(false);
+                await ImportOneAppAsync(orgId, release, upload, totals, storeSymbolReference, ct).ConfigureAwait(false);
             }
 
             // SourceTable propagation for pageextensions. The symbol
@@ -333,7 +335,8 @@ public class ReleaseImportService
             foreach (var upload in uploads)
             {
                 ct.ThrowIfCancellationRequested();
-                await ImportOneAppAsync(orgId, release, upload, totals, ct).ConfigureAwait(false);
+                // Amend (#216) doesn't expose the store-symbol-reference option.
+                await ImportOneAppAsync(orgId, release, upload, totals, storeSymbolReference: false, ct).ConfigureAwait(false);
             }
 
             // Same post-passes as ImportReleaseAsync (lines ~130–147). The
@@ -484,12 +487,13 @@ public class ReleaseImportService
     // ── Per-app ingest ──────────────────────────────────────────────────
 
     private async Task ImportOneAppAsync(
-        int orgId, OeRelease release, AppFileUpload upload, ImportTotals totals, CancellationToken ct)
+        int orgId, OeRelease release, AppFileUpload upload, ImportTotals totals,
+        bool storeSymbolReference, CancellationToken ct)
     {
         AppPackage pkg;
         try
         {
-            pkg = await AppPackageReader.ReadAsync(upload.AppStream, ct).ConfigureAwait(false);
+            pkg = await AppPackageReader.ReadAsync(upload.AppStream, storeSymbolReference, ct).ConfigureAwait(false);
         }
         catch (NeaEncryptedAppException ex)
         {
@@ -574,7 +578,7 @@ public class ReleaseImportService
             sourceFiles = fromEmbedded;
         }
 
-        await WriteModuleAsync(orgId, release, upload, pkg, sourceFiles, totals, ct).ConfigureAwait(false);
+        await WriteModuleAsync(orgId, release, upload, pkg, sourceFiles, storeSymbolReference, totals, ct).ConfigureAwait(false);
     }
 
     private async Task WriteModuleAsync(
@@ -582,9 +586,28 @@ public class ReleaseImportService
         AppFileUpload upload,
         AppPackage pkg,
         IReadOnlyDictionary<string, string> sourceFiles,
+        bool storeSymbolReference,
         ImportTotals totals,
         CancellationToken ct)
     {
+        // Optionally persist the raw SymbolReference.json for resolver
+        // debugging. Upsert the content into the shared store FIRST so the
+        // module's FK on symbol_reference_content_hash is satisfied when the
+        // row is inserted below. Deduped by hash like source files, so a
+        // re-import of the same module version doesn't duplicate the blob.
+        string? symbolReferenceHash = null;
+        if (storeSymbolReference && !string.IsNullOrEmpty(pkg.SymbolReferenceJson))
+        {
+            var json = pkg.SymbolReferenceJson;
+            symbolReferenceHash = HashHex(json);
+            await UpsertFileContentsAsync(
+                new Dictionary<string, (string Content, int Length, int LineCount)>(StringComparer.Ordinal)
+                {
+                    [symbolReferenceHash] = (json, json.Length, CountLines(json)),
+                },
+                ct).ConfigureAwait(false);
+        }
+
         var module = new OeModule
         {
             OrganizationId = orgId,
@@ -595,6 +618,7 @@ public class ReleaseImportService
             Version = pkg.Manifest.Version,
             Target = pkg.Manifest.Target,
             Runtime = pkg.Manifest.Runtime,
+            SymbolReferenceContentHash = symbolReferenceHash,
             // Flags come from the upload-layer inference (folder names,
             // _Exclude_ marker, language-pack name pattern). The per-file
             // upload path leaves all three at false; the folder-ZIP path

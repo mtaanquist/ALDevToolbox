@@ -25,12 +25,22 @@ internal sealed class ModuleConfiguration : IEntityTypeConfiguration<Module>
         entity.Property(e => e.DependenciesJson).HasColumnName("dependencies_json").HasColumnType("jsonb").IsRequired();
         entity.Property(e => e.DependencyCount).HasColumnName("dependency_count").HasDefaultValue(0).IsRequired();
         entity.Property(e => e.AppFileHash).HasColumnName("app_file_hash");
+        entity.Property(e => e.SymbolReferenceContentHash).HasColumnName("symbol_reference_content_hash");
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
 
         entity.HasOne(e => e.Organization)
             .WithMany()
             .HasForeignKey(e => e.OrganizationId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // Optional link into the shared content store for the raw
+        // SymbolReference.json. Restrict (not cascade) so deleting a module
+        // never removes content another module's hash still references.
+        entity.HasOne(e => e.SymbolReferenceContent)
+            .WithMany()
+            .HasForeignKey(e => e.SymbolReferenceContentHash)
+            .HasPrincipalKey(c => c.ContentHash)
+            .OnDelete(DeleteBehavior.Restrict);
 
         entity.HasOne(e => e.Release)
             .WithMany(r => r.Modules)

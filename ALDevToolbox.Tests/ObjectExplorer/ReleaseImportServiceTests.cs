@@ -36,6 +36,59 @@ public sealed class ReleaseImportServiceTests : IDisposable
             new TranslationImportService(ctx, _db.OrgContext, NullLogger<TranslationImportService>.Instance),
             NullLogger<ReleaseImportService>.Instance);
 
+    // ── SymbolReference.json capture (opt-in) ────────────────────────────
+
+    [Fact]
+    public async Task Stores_symbol_reference_json_when_requested()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+
+        await using var appStream = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        var summary = await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "BC 25.18 DK (symbols)",
+            Kind: "first_party",
+            ParentReleaseId: null,
+            ApplicationVersionId: null,
+            Uploads: new[] { new AppFileUpload("Microsoft_DK_Core.app", appStream, SourceZipStream: null) },
+            StoreSymbolReference: true));
+
+        await using var read = _db.NewContext();
+        var module = await read.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == summary.ReleaseId)
+            .Select(m => new { m.SymbolReferenceContentHash, Json = m.SymbolReferenceContent!.Content })
+            .SingleAsync();
+
+        module.SymbolReferenceContentHash.Should().NotBeNullOrEmpty();
+        module.Json.Should().NotBeNullOrEmpty();
+        // Stored as clean JSON (BOM stripped) — parses and looks like the symbol file.
+        module.Json.TrimStart().Should().StartWith("{");
+        var doc = System.Text.Json.JsonDocument.Parse(module.Json);
+        doc.RootElement.ValueKind.Should().Be(System.Text.Json.JsonValueKind.Object);
+    }
+
+    [Fact]
+    public async Task Does_not_store_symbol_reference_json_by_default()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+
+        await using var appStream = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        var summary = await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "BC 25.18 DK (no symbols)",
+            Kind: "first_party",
+            ParentReleaseId: null,
+            ApplicationVersionId: null,
+            Uploads: new[] { new AppFileUpload("Microsoft_DK_Core.app", appStream, SourceZipStream: null) }));
+
+        await using var read = _db.NewContext();
+        var hash = await read.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == summary.ReleaseId)
+            .Select(m => m.SymbolReferenceContentHash)
+            .SingleAsync();
+        hash.Should().BeNull("the store-symbol-reference option defaults to off");
+    }
+
     // ── Queued-import split (BeginReleaseAsync / MarkFailedAsync) ─────────
 
     [Fact]

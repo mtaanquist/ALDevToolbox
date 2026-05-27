@@ -290,6 +290,43 @@ public sealed class ObjectExplorerTools
         return bodied[0].Id;
     }
 
+    [McpServerTool(Name = "download_symbol_reference", ReadOnly = true)]
+    [Description("Downloads the raw SymbolReference.json for one module (extension) in a release, for debugging resolver errors. Only available when the release was imported with the 'store symbol reference' option enabled. The JSON can be large (tens of MB for the base application).")]
+    public async Task<SymbolReferenceDownload> DownloadSymbolReferenceAsync(
+        [Description("Release Label ('BC 28.1') or numeric id.")] string releaseLabelOrId,
+        [Description("Module / extension name, e.g. 'Base Application' (case-insensitive).")] string moduleName,
+        CancellationToken ct = default)
+    {
+        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
+        var name = moduleName.Trim();
+        var match = await _db.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == releaseId && m.Name.ToLower() == name.ToLower())
+            .Select(m => new { m.Name, m.Version, m.SymbolReferenceContentHash, Json = m.SymbolReferenceContent!.Content })
+            .FirstOrDefaultAsync(ct);
+
+        if (match is null)
+        {
+            throw new McpException(
+                $"Module '{moduleName}' was not found in release '{releaseLabelOrId}'. Check the name, or use search_objects to find the owning module.");
+        }
+        if (match.SymbolReferenceContentHash is null)
+        {
+            // Help the caller: list which modules in this release DO have it stored.
+            var stored = await _db.OeModules.AsNoTracking()
+                .Where(m => m.ReleaseId == releaseId && m.SymbolReferenceContentHash != null)
+                .OrderBy(m => m.Name)
+                .Select(m => m.Name)
+                .ToListAsync(ct);
+            var available = stored.Count == 0
+                ? "No modules in this release have a stored SymbolReference.json — re-import the release with the 'store symbol reference' option enabled."
+                : "Modules with a stored SymbolReference.json: " + string.Join(", ", stored);
+            throw new McpException(
+                $"Module '{match.Name}' has no stored SymbolReference.json. {available}");
+        }
+
+        return new SymbolReferenceDownload(match.Name, match.Version, match.Json);
+    }
+
     private async Task<int> ResolveReleaseAsync(string releaseLabelOrId, CancellationToken ct)
     {
         if (int.TryParse(releaseLabelOrId, out var asId))
@@ -310,3 +347,6 @@ public sealed class ObjectExplorerTools
         return row.Id;
     }
 }
+
+/// <summary>Raw <c>SymbolReference.json</c> for one module, returned by the download_symbol_reference tool.</summary>
+public sealed record SymbolReferenceDownload(string ModuleName, string Version, string Json);

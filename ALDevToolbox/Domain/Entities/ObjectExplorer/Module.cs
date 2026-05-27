@@ -77,6 +77,19 @@ public class Module
     /// <summary>SHA-256 of the original <c>.app</c> bytes. Lets the importer skip identical re-uploads.</summary>
     public string? AppFileHash { get; set; }
 
+    /// <summary>
+    /// FK into the shared <see cref="FileContent"/> store holding this module's
+    /// raw <c>SymbolReference.json</c>, or <see langword="null"/> when it wasn't
+    /// captured (the per-import "store symbol reference" option was off, or the
+    /// app shipped no symbol file). Opt-in because a base-app symbol file is
+    /// tens of MB; kept for debugging resolver errors and downloadable via the
+    /// <c>download_symbol_reference</c> MCP tool.
+    /// </summary>
+    public string? SymbolReferenceContentHash { get; set; }
+
+    /// <summary>Navigation to the stored <c>SymbolReference.json</c> text; null when not captured.</summary>
+    public FileContent? SymbolReferenceContent { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public ICollection<ModuleFile> Files { get; set; } = new List<ModuleFile>();

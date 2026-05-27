@@ -602,7 +602,7 @@ public sealed class McpToolTests : IDisposable
     private static readonly string OeFixtureRoot =
         Path.Combine(AppContext.BaseDirectory, "Fixtures", "ObjectExplorer");
 
-    private async Task<int> SeedDkCoreReleaseAsync()
+    private async Task<int> SeedDkCoreReleaseAsync(bool storeSymbolReference = false, string label = "MCP DK Core")
     {
         await using var ctx = _db.NewContext();
         var importer = new ALDevToolbox.Services.ObjectExplorer.ReleaseImportService(
@@ -613,14 +613,15 @@ public sealed class McpToolTests : IDisposable
         await using var s1 = File.OpenRead(Path.Combine(OeFixtureRoot, "Microsoft_DK_Core.app"));
         var summary = await importer.ImportReleaseAsync(
             new ALDevToolbox.Services.ObjectExplorer.ReleaseImportRequest(
-                Label: "MCP DK Core",
+                Label: label,
                 Kind: "first_party",
                 ParentReleaseId: null,
                 ApplicationVersionId: null,
                 Uploads: new[]
                 {
                     new ALDevToolbox.Services.ObjectExplorer.AppFileUpload("dk.app", s1, SourceZipStream: null),
-                }));
+                },
+                StoreSymbolReference: storeSymbolReference));
         return summary.ReleaseId;
     }
 
@@ -633,6 +634,39 @@ public sealed class McpToolTests : IDisposable
         var search = new ALDevToolbox.Services.ObjectExplorer.ObjectSearchService(ctx);
         var translations = new ALDevToolbox.Services.ObjectExplorer.TranslationQueryService(ctx);
         return new ObjectExplorerTools(explorer, search, references, translations, ctx);
+    }
+
+    [Fact]
+    public async Task DownloadSymbolReference_returns_stored_json()
+    {
+        var releaseId = await SeedDkCoreReleaseAsync(storeSymbolReference: true, label: "MCP DK Core symbols");
+        await using var ctx = _db.NewContext();
+        var moduleName = await ctx.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == releaseId)
+            .Select(m => m.Name)
+            .SingleAsync();
+        var tools = NewOeTools(ctx);
+
+        var result = await tools.DownloadSymbolReferenceAsync(releaseId.ToString(), moduleName);
+
+        result.ModuleName.Should().Be(moduleName);
+        result.Json.TrimStart().Should().StartWith("{");
+    }
+
+    [Fact]
+    public async Task DownloadSymbolReference_throws_when_not_stored()
+    {
+        var releaseId = await SeedDkCoreReleaseAsync(label: "MCP DK Core nosym");
+        await using var ctx = _db.NewContext();
+        var moduleName = await ctx.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == releaseId)
+            .Select(m => m.Name)
+            .SingleAsync();
+        var tools = NewOeTools(ctx);
+
+        var act = async () => await tools.DownloadSymbolReferenceAsync(releaseId.ToString(), moduleName);
+        (await act.Should().ThrowAsync<McpException>())
+            .WithMessage("*no stored SymbolReference*");
     }
 
     [Fact]

@@ -16,7 +16,8 @@ public sealed record AppPackage(
     AppManifest Manifest,
     SymbolPackage Symbols,
     IReadOnlyList<AppSourceFile> SourceFiles,
-    string AppFileHash);
+    string AppFileHash,
+    string? SymbolReferenceJson = null);
 
 /// <summary>
 /// Parsed <c>NavxManifest.xml</c>. App identity (AppId / Name / Publisher /
