@@ -170,6 +170,38 @@ public sealed class FolderZipWalkerTests
             because: "test extensions and their source are dropped entirely on the DVD path");
     }
 
+    [Theory]
+    [InlineData("BC/Applications/DKCore/Source/Microsoft_DK Core.app")]   // modern, PascalCase
+    [InlineData("BC/applications/DKCore/Source/Microsoft_DK Core.app")]   // lower-case
+    [InlineData("BC/Extensions/DKCore/Source/Microsoft_DK Core.app")]     // older "Extensions" name
+    [InlineData("BC/extensions/DKCore/Source/Microsoft_DK Core.app")]
+    public void WalkDvd_matches_known_app_folders_case_insensitively(string appPath)
+    {
+        using var archive = BuildArchive(appPath);
+        FolderZipWalker.WalkDvd(archive).Select(e => e.FileName)
+            .Should().BeEquivalentTo(new[] { "Microsoft_DK Core.app" });
+    }
+
+    [Fact]
+    public void WalkDvd_handles_backslash_separated_paths()
+    {
+        // Some Microsoft DVD ZIPs (e.g. BC 26.x, build 38819) store entries with
+        // Windows backslash separators. Splitting on '/' alone would collapse the
+        // whole path to one segment and match nothing.
+        using var archive = BuildArchive(
+            @"applications\BaseApp\Source\Microsoft_Base Application.app",
+            @"applications\BaseApp\Source\Base Application.Source.zip",
+            @"applications\BaseApp\Test\Microsoft_Base Application Test.app",
+            @"ModernDev\PFiles\Microsoft Dynamics NAV\260\AL Development Environment\System.app");
+
+        var entries = FolderZipWalker.WalkDvd(archive);
+
+        entries.Select(e => e.FileName).Should().BeEquivalentTo(
+            new[] { "Microsoft_Base Application.app", "System.app" });
+        entries.Single(e => e.FileName == "Microsoft_Base Application.app")
+            .SourceZipEntry.Should().NotBeNull("the sibling .Source.zip pairs across backslash paths too");
+    }
+
     [Fact]
     public void WalkDvd_returns_empty_when_no_applications_or_system_app_present()
     {

@@ -36,6 +36,67 @@ public sealed class ReleaseImportServiceTests : IDisposable
             new TranslationImportService(ctx, _db.OrgContext, NullLogger<TranslationImportService>.Instance),
             NullLogger<ReleaseImportService>.Instance);
 
+    // ── Queued-import split (BeginReleaseAsync / MarkFailedAsync) ─────────
+
+    [Fact]
+    public async Task BeginReleaseAsync_creates_an_ingesting_row_then_ProcessReleaseAsync_completes_it()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+
+        var releaseId = await svc.BeginReleaseAsync(new ReleaseImportMetadata(
+            Label: "BC 25.18 DK (queued)", Kind: "first_party", ParentReleaseId: null, ApplicationVersionId: null));
+
+        await using (var mid = _db.NewContext())
+        {
+            var pending = await mid.OeReleases.AsNoTracking().SingleAsync(r => r.Id == releaseId);
+            pending.Status.Should().Be("ingesting", "the row is created up front so it shows in the admin list");
+        }
+
+        await using var appStream = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        var summary = await svc.ProcessReleaseAsync(
+            releaseId,
+            new[] { new AppFileUpload("Microsoft_DK_Core.app", appStream, SourceZipStream: null) });
+
+        summary.ReleaseId.Should().Be(releaseId);
+        summary.ModulesImported.Should().Be(1);
+
+        await using var read = _db.NewContext();
+        (await read.OeReleases.AsNoTracking().SingleAsync(r => r.Id == releaseId))
+            .Status.Should().Be("ready");
+    }
+
+    [Fact]
+    public async Task BeginReleaseAsync_rejects_a_duplicate_label_before_creating_a_row()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+
+        await svc.BeginReleaseAsync(new ReleaseImportMetadata(
+            "Dupe", "first_party", null, null));
+
+        var act = async () => await svc.BeginReleaseAsync(new ReleaseImportMetadata(
+            "Dupe", "first_party", null, null));
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("Label");
+    }
+
+    [Fact]
+    public async Task MarkFailedAsync_flips_a_queued_row_to_failed_with_a_message()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+
+        var releaseId = await svc.BeginReleaseAsync(new ReleaseImportMetadata(
+            "Will fail", "first_party", null, null));
+        await svc.MarkFailedAsync(releaseId, "Download was unreachable.");
+
+        await using var read = _db.NewContext();
+        var row = await read.OeReleases.AsNoTracking().SingleAsync(r => r.Id == releaseId);
+        row.Status.Should().Be("failed");
+        row.StatusMessage.Should().Be("Download was unreachable.");
+    }
+
     // ── Happy path ──────────────────────────────────────────────────────
 
     [Fact]

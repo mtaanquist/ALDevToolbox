@@ -100,6 +100,28 @@ internal static class StartupTasks
                 + "These environment variables only take effect on a fresh database; remove them once the bootstrap account is in place.");
         }
 
+        // Reconcile release imports interrupted by a restart. The import queue
+        // is in-process, so a crash/redeploy drops any in-flight or pending
+        // job and would otherwise strand its Release row in "ingesting"
+        // forever. Mark them failed so the admin can re-import. Cross-org by
+        // design (no user in scope at startup) — same blessed startup-maintenance
+        // category as the migration/seed/bootstrap steps above, never a request.
+        var stranded = await db.OeReleases
+            .IgnoreQueryFilters()
+            .Where(r => r.Status == "ingesting")
+            .ToListAsync(stopping);
+        if (stranded.Count > 0)
+        {
+            foreach (var release in stranded)
+            {
+                release.Status = "failed";
+                release.StatusMessage = "Import was interrupted by a server restart. Re-import to try again.";
+                release.UpdatedAt = DateTime.UtcNow;
+            }
+            await db.SaveChangesAsync(stopping);
+            logger.LogWarning("Marked {Count} interrupted release import(s) as failed on startup.", stranded.Count);
+        }
+
         // Prime the in-memory MCP toggle from the singleton system_settings
         // row before any request can read it. Resolved from the root provider
         // because McpAvailabilityState is a singleton — see

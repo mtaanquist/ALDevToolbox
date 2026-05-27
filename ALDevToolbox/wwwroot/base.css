@@ -395,6 +395,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .form-section input[type="text"],
 .form-section input[type="email"],
+.form-section input[type="url"],
 .form-section input[type="number"],
 .form-section input[type="password"],
 .form-section input[type="search"],
@@ -405,6 +406,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .form-section select,
 .form-grid > input[type="text"],
 .form-grid > input[type="email"],
+.form-grid > input[type="url"],
 .form-grid > input[type="number"],
 .form-grid > input[type="password"],
 .form-grid > input[type="search"],
@@ -415,6 +417,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 .form-grid > select,
 .admin-form input[type="text"],
 .admin-form input[type="email"],
+.admin-form input[type="url"],
 .admin-form input[type="number"],
 .admin-form input[type="password"],
 .admin-form input[type="search"],

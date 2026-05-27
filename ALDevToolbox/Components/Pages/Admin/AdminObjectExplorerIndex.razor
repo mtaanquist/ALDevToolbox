@@ -16,6 +16,16 @@
 
 <PageTitle>Object Explorer · Admin · AL Dev Toolbox</PageTitle>
 
+@* While an import is ingesting in the background, poll the page so the row
+   flips to Ready/Failed on its own. Meta-refresh keeps this working on the
+   statically-rendered page with no JS; it stops once nothing is ingesting. *@
+@if (_releases is not null && _releases.Any(r => r.Status == "ingesting"))
+{
+    <HeadContent>
+        <meta http-equiv="refresh" content="6" />
+    </HeadContent>
+}
+
 <div class="admin-page">
     <header class="admin-page__header">
         <div>
@@ -134,6 +144,7 @@
 
     private static string FormatOkMessage(string ok, string id) => ok switch
     {
+        "queued"       => $"Release {id} queued — importing in the background. This page refreshes until it's ready.",
         "imported"     => $"Release {id} imported.",
         "updated"      => $"Release {id} metadata updated.",
         "soft-deleted" => $"Release {id} soft-deleted. Restore from this page if it was a mistake.",
