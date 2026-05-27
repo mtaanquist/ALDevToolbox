@@ -715,11 +715,20 @@ export function clearCurrentLine(id) {
 // with a `cm-symbol-decl` class so users see what's clickable.
 function buildDeclarationDecorationExtensions(declarations) {
     if (!Array.isArray(declarations) || declarations.length === 0) return [];
+    // Defensive sort: the server appends object declarations before member
+    // symbols, so a file shipping multiple objects (e.g. an extension with
+    // several objects in one .al) yields ranges that aren't ascending by
+    // `from`. RangeSetBuilder.add requires ascending order, so normalise here
+    // the same way buildResolvableDecorationExtensions does.
+    const sorted = declarations
+        .filter(d => Number.isInteger(d.line) && d.line >= 1)
+        .slice()
+        .sort((a, b) => (a.line - b.line) || ((a.columnStart ?? 1) - (b.columnStart ?? 1)));
     return [EditorView.decorations.of((view) => {
         const builder = new RangeSetBuilder();
-        for (const decl of declarations) {
+        for (const decl of sorted) {
             const lineNo = decl.line;
-            if (!Number.isInteger(lineNo) || lineNo < 1 || lineNo > view.state.doc.lines) continue;
+            if (lineNo > view.state.doc.lines) continue;
             const line = view.state.doc.line(lineNo);
             const from = line.from + Math.max(0, (decl.columnStart ?? 1) - 1);
             const toCol = decl.columnEnd ?? (decl.columnStart ?? 1);
