@@ -421,6 +421,14 @@ public static class AppPackageReader
             ?? throw new InvalidDataException("SymbolReference.json deserialised to null.");
 
         var objects = new List<SymbolObject>();
+
+        // BC 22 introduced AL namespaces and moved every object collection
+        // under a `Namespaces` tree. Pre-namespace releases (BC 14 through
+        // ~21) put the collections directly on the symbol-file root, with no
+        // `Namespaces` wrapper at all. Emit any root-level objects under the
+        // empty namespace first — a no-op for modern files where those lists
+        // are null — then walk the nested namespace tree for newer files.
+        EmitNamespaceObjects(raw, path: string.Empty, objects);
         if (raw.Namespaces is not null)
         {
             foreach (var ns in raw.Namespaces)
@@ -437,6 +445,19 @@ public static class AppPackageReader
             ? (ns.Name ?? string.Empty)
             : $"{currentPath}.{ns.Name}";
 
+        EmitNamespaceObjects(ns, path, sink);
+
+        if (ns.Namespaces is not null)
+        {
+            foreach (var child in ns.Namespaces)
+            {
+                WalkNamespace(child, path, sink);
+            }
+        }
+    }
+
+    private static void EmitNamespaceObjects(RawNamespace ns, string path, List<SymbolObject> sink)
+    {
         EmitObjects("codeunit",                 ns.Codeunits,               path, sink);
         EmitObjects("table",                    ns.Tables,                  path, sink);
         EmitObjects("page",                     ns.Pages,                   path, sink);
@@ -453,14 +474,6 @@ public static class AppPackageReader
         EmitObjects("pageextension",            ns.PageExtensions,          path, sink);
         EmitObjects("tableextension",           ns.TableExtensions,         path, sink);
         EmitObjects("enumextension",            ns.EnumExtensions,          path, sink);
-
-        if (ns.Namespaces is not null)
-        {
-            foreach (var child in ns.Namespaces)
-            {
-                WalkNamespace(child, path, sink);
-            }
-        }
     }
 
     private static void EmitObjects(string kind, IReadOnlyList<RawObject>? items, string ns, List<SymbolObject> sink)
@@ -705,13 +718,16 @@ public static class AppPackageReader
     // Mirror the SymbolReference.json layout closely; the public records above
     // are the cleaned-up flattened shape we hand to PR 3.
 
-    private sealed class RawSymbolRoot
+    // Pre-namespace BC (≤ ~21, e.g. BC 14) stores object collections directly
+    // on the root; BC 22+ nests them under `Namespaces`. Inheriting from
+    // RawNamespace lets the root be walked as the implicit empty namespace
+    // without a second copy of every collection property.
+    private sealed class RawSymbolRoot : RawNamespace
     {
         public string? RuntimeVersion { get; set; }
-        public List<RawNamespace>? Namespaces { get; set; }
     }
 
-    private sealed class RawNamespace
+    private class RawNamespace
     {
         public string? Name { get; set; }
         public List<RawNamespace>? Namespaces { get; set; }

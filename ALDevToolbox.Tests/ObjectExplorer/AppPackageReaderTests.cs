@@ -367,6 +367,42 @@ public sealed class AppPackageReaderTests
     }
 
     [Fact]
+    public async Task ReadAsync_reads_root_level_objects_from_pre_namespace_symbol_file()
+    {
+        // BC 22 introduced AL namespaces and moved every object collection
+        // under a `Namespaces` tree. Pre-namespace releases (BC 14 through
+        // ~21 — the oldest .apps the Object Explorer supports) put the
+        // collections directly on the symbol-file root, with no `Namespaces`
+        // key at all and no per-object `Namespace`. The reader walked only
+        // `Namespaces`, so these older .apps silently ingested zero objects.
+        // Mirror the BC 14 Microsoft "Application" symbol shape: Tables and
+        // Codeunits hanging straight off the root.
+        const string rootLevelSymbols =
+            "{\"AppId\":\"0de3e48a-c1d6-4d74-a94f-36c8254be8f5\",\"Name\":\"Application\","
+            + "\"Version\":\"14.24.46857.0\","
+            + "\"Tables\":[{\"Id\":3,\"Name\":\"Payment Terms\","
+            + "\"Fields\":[{\"Id\":1,\"Name\":\"Code\",\"TypeDefinition\":{\"Name\":\"Code[10]\"}}]}],"
+            + "\"Codeunits\":[{\"Id\":1,\"Name\":\"ApplicationManagement\"}]}";
+
+        var bytes = BuildSyntheticAppFile(
+            manifestEntryName: "NavxManifest.xml",
+            symbolReferenceJson: rootLevelSymbols);
+        await using var stream = new MemoryStream(bytes);
+
+        var pkg = await AppPackageReader.ReadAsync(stream);
+
+        pkg.Symbols.Objects.Should().HaveCount(2);
+
+        var table = pkg.Symbols.Objects.Single(o => o.Kind == "table");
+        table.ObjectId.Should().Be(3);
+        table.Name.Should().Be("Payment Terms");
+        table.Namespace.Should().BeEmpty("pre-namespace BC has no namespace path");
+        table.Fields.Should().ContainSingle(f => f.Name == "Code");
+
+        pkg.Symbols.Objects.Should().ContainSingle(o => o.Kind == "codeunit" && o.Name == "ApplicationManagement");
+    }
+
+    [Fact]
     public async Task ReadAsync_tolerates_case_drift_on_manifest_filename()
     {
         // Microsoft has shipped .apps with both NavxManifest.xml and the
@@ -403,7 +439,10 @@ public sealed class AppPackageReaderTests
     /// trivial SymbolReference.json. Returns the full byte blob the reader
     /// will see.
     /// </summary>
-    private static byte[] BuildSyntheticAppFile(string? manifestEntryName, bool includeSymbolReference = true)
+    private static byte[] BuildSyntheticAppFile(
+        string? manifestEntryName,
+        bool includeSymbolReference = true,
+        string? symbolReferenceJson = null)
     {
         // Build the ZIP into its own buffer first; ZipArchive in Create mode
         // writes its central directory using offsets relative to the start
@@ -428,7 +467,7 @@ public sealed class AppPackageReaderTests
                 {
                     var sym = zip.CreateEntry("SymbolReference.json");
                     using var sw = new StreamWriter(sym.Open());
-                    sw.Write("{\"RuntimeVersion\":\"14.0\",\"Namespaces\":[]}");
+                    sw.Write(symbolReferenceJson ?? "{\"RuntimeVersion\":\"14.0\",\"Namespaces\":[]}");
                 }
             }
             zipBytes = zipMs.ToArray();
