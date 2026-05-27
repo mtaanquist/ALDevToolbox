@@ -2756,6 +2756,106 @@ public sealed class AlReferenceExtractorTests
         result.SymbolScopes[0].Name.Should().Be("OnRun");
     }
 
+    // ── Built-in receivers the catalog never tracks ─────────────────
+
+    [Fact]
+    public void Bare_File_typed_variable_does_not_resolve_to_the_File_table()
+    {
+        // `var ExportFile: File;` names the AL runtime File type, not the
+        // System "File" table — AL requires `Record File` for the table.
+        // The chain `ExportFile.WriteMode := true; ExportFile.Create(...)`
+        // must silence, not fire chain-step against the colliding table.
+        var resolver = MakeResolver();
+        resolver.AddType("File", new AlTypeRef(BaseAppId, "table", 2000000022, "File"));
+
+        const string src = """
+            procedure Export()
+            var
+                ExportFile: File;
+            begin
+                ExportFile.WriteMode := true;
+                ExportFile.TextMode := true;
+                ExportFile.Create('c:\temp\x.txt');
+                ExportFile.Close();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+        result.References.Should().NotContain(r => r.TargetObjectName == "File");
+    }
+
+    [Fact]
+    public void Three_part_enum_value_literal_silences_the_value_tail()
+    {
+        // `Enum::"Sales Document Type"::Quote.AsInteger()` — the enum type
+        // resolves (and emits a property_object ref), the `::Quote` value is
+        // consumed without emitting, and `.AsInteger()` walks as an enum
+        // built-in. Before the fix the value surfaced as a stray chain head
+        // and fired head-not-a-variable.
+        var resolver = MakeResolver();
+        resolver.AddType("Sales Document Type", new AlTypeRef(BaseAppId, "enum", 39, "Sales Document Type"));
+
+        const string src = """
+            procedure Foo()
+            var
+                I: Integer;
+            begin
+                I := Enum::"Sales Document Type"::Quote.AsInteger();
+                I := Enum::"Sales Document Type"::"Blanket Order".AsInteger();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "property_object"
+            && r.TargetObjectKind == "enum"
+            && r.TargetObjectName == "Sales Document Type");
+    }
+
+    [Fact]
+    public void Record_link_and_consistency_methods_are_builtins()
+    {
+        // HasLinks / DeleteLinks / Consistent are AL-runtime Record methods,
+        // never in the catalog. A chain through them must not fire chain-step.
+        const string src = """
+            procedure Foo()
+            var
+                Cust: Record Customer;
+            begin
+                if Cust.HasLinks() then
+                    Cust.DeleteLinks();
+                Cust.Consistent(true);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Builtin_type_static_factory_receivers_silence()
+    {
+        // `Version.Create(...)` / `ErrorInfo.Create(...)` /
+        // `COMPANYPROPERTY.DisplayName()` use a built-in type as a static
+        // receiver — not a variable, not a catalog object. Must not fire
+        // head-not-a-variable.
+        const string src = """
+            procedure Foo()
+            var
+                T: Text;
+            begin
+                if Version.Create('1.0.0.0') = Version.Create('2.0.0.0') then
+                    T := COMPANYPROPERTY.DisplayName();
+                Error(ErrorInfo.Create('boom'));
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
     // ── Stub resolver ───────────────────────────────────────────────
 
     private sealed class StubResolver : IAlTypeResolver

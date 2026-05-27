@@ -117,6 +117,12 @@ public static class AlBuiltinMethods
         "LockTable", "ReadIsolation", "ReadPermission", "WritePermission",
         // Misc.
         "AddLoadFields", "AddLink", "GetLink", "RemoveLink",
+        // Record-link family + transaction consistency. `HasLinks` /
+        // `DeleteLinks` / `CopyLinks` round out the AddLink/GetLink set;
+        // `Consistent([Boolean])` flags a multi-table posting batch as
+        // (in)consistent. All are AL-runtime Record methods, never in
+        // the catalog.
+        "HasLinks", "DeleteLinks", "CopyLinks", "Consistent",
         "Number", "RecordLevelLocking",
         "RecordId", "GetView", "SetView",
         "Caption", "CaptionClass",
@@ -594,6 +600,15 @@ public static class AlBuiltinMethods
         "JsonObject", "JsonArray", "JsonValue", "JsonToken",
         // Cryptography / encoding helpers.
         "Base64Convert", "CryptographyManagement",
+        // Scalar built-in types used as static factories / receivers,
+        // not as variables: `Version.Create('1.0.0.0')`,
+        // `ErrorInfo.Create('msg')`. They're also in KnownSystemTypes
+        // (for the variable-typed case); listing them here silences the
+        // `Kind.Method(...)` static-call shape too.
+        "Version", "ErrorInfo",
+        // Legacy company-property accessor — `COMPANYPROPERTY.DISPLAYNAME()`,
+        // `.PICTURE()`, etc. A system receiver, never a catalog object.
+        "COMPANYPROPERTY",
     };
 
     /// <summary>

@@ -1042,6 +1042,23 @@ internal sealed class AlProcedureWalker
             ReferenceKind: "property_object"));
         _state.Resolved++;
 
+        // Three-part enum-value literal: `Enum::"Assembly Document Type"::Quote`
+        // or `…::"Blanket Order"`. Once the enum type resolves above, a
+        // SECOND `::` introduces the value. The catalog doesn't track enum
+        // values, so consume the `:: Value` segment without emitting — the
+        // chain tail (`.AsInteger()`, `.AsText()`, …) then walks from the
+        // enum receiver as a built-in. Without this the value token surfaces
+        // as a fresh chain head and fires head-not-a-variable.
+        if ((string.Equals(receiverType.Kind, "enum", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(receiverType.Kind, "enumextension", StringComparison.OrdinalIgnoreCase))
+            && _state.Pos + 1 < _state.Tokens.Count
+            && _state.Tokens[_state.Pos].Kind == AlTokenKind.DoubleColon
+            && (_state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Identifier
+                || _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.QuotedIdentifier))
+        {
+            _state.Pos += 2; // :: Value
+        }
+
         // Walk `.member.member…` from the typed receiver, if any.
         WalkMemberChain(receiverType);
     }
@@ -1804,6 +1821,19 @@ internal sealed class AlProcedureWalker
                 // means "table", `Codeunit` means "codeunit", etc.
                 // Disambiguates name collisions across kinds.
                 if (string.IsNullOrEmpty(declared.TypeName)) return null;
+                // A bare built-in type name (File, View, Version, …) names
+                // the AL runtime type, NOT a same-named catalog table — AL
+                // requires the `Record` keyword for table-typed variables.
+                // Without this guard `var ExportFile: File` resolves to the
+                // System "File" table and every `ExportFile.WriteMode := true`
+                // / `.Create(...)` fires chain-step. Returning null routes
+                // through the KnownSystemType branch in the caller (the
+                // diagnostic still sees declaredAsVar for context).
+                if (string.IsNullOrEmpty(declared.Keyword)
+                    && AlBuiltinMethods.IsKnownSystemType(declared.TypeName))
+                {
+                    return null;
+                }
                 return _state.Ctx.Resolver.ResolveTypeByName(declared.TypeName, declared.Keyword);
             }
         }
