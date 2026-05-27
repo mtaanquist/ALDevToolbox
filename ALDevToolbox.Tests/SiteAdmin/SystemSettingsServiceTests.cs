@@ -207,6 +207,61 @@ public sealed class SystemSettingsServiceTests : IDisposable
         (await svc.GetViewAsync()).SignupEmailDomainAllowlist.Should().BeNull();
     }
 
+    [Fact]
+    public async Task ReleaseDownloadAllowlist_normalises_and_persists_lowercased_hosts()
+    {
+        var svc = NewService();
+        await svc.SaveAsync(NewInput() with
+        {
+            ReleaseDownloadDomainAllowlist = "Download.Microsoft.com\nexample.dk\n  download.microsoft.com  ",
+        });
+
+        var stored = await svc.GetReleaseDownloadAllowedHostsAsync();
+        stored.Should().NotBeNull().And.BeEquivalentTo(new[] { "download.microsoft.com", "example.dk" });
+
+        (await svc.GetViewAsync()).ReleaseDownloadDomainAllowlist
+            .Should().Be("download.microsoft.com\nexample.dk");
+    }
+
+    [Fact]
+    public async Task ReleaseDownloadAllowlist_rejects_invalid_entries_with_field_keyed_error()
+    {
+        var svc = NewService();
+        var act = async () => await svc.SaveAsync(NewInput() with
+        {
+            ReleaseDownloadDomainAllowlist = "not a host",
+        });
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("ReleaseDownloadDomainAllowlist");
+    }
+
+    [Fact]
+    public async Task ReleaseDownloadAllowlist_blank_means_no_host_permitted()
+    {
+        var svc = NewService();
+        await svc.SaveAsync(NewInput() with { ReleaseDownloadDomainAllowlist = "   " });
+        (await svc.GetReleaseDownloadAllowedHostsAsync()).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("download.microsoft.com", true)]   // exact
+    [InlineData("DOWNLOAD.MICROSOFT.COM", true)]   // case-insensitive
+    [InlineData("cdn.download.microsoft.com", true)] // subdomain of an entry
+    [InlineData("microsoft.com.evil.com", false)]  // not a subdomain
+    [InlineData("notmicrosoft.com", false)]
+    public void IsHostAllowed_does_suffix_match(string host, bool expected)
+    {
+        var allowlist = new[] { "download.microsoft.com", "microsoft.com" };
+        SystemSettingsService.IsHostAllowed(host, allowlist).Should().Be(expected);
+    }
+
+    [Fact]
+    public void IsHostAllowed_empty_or_null_list_permits_nothing()
+    {
+        SystemSettingsService.IsHostAllowed("download.microsoft.com", null).Should().BeFalse();
+        SystemSettingsService.IsHostAllowed("download.microsoft.com", System.Array.Empty<string>()).Should().BeFalse();
+    }
+
     private SystemSettingsService NewService()
     {
         var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor());
@@ -236,5 +291,6 @@ public sealed class SystemSettingsServiceTests : IDisposable
             DefaultStorageQuotaMb: null,
             IndexSizeMultiplier: 0.5m,
             McpEnabled: false,
-            SignupEmailDomainAllowlist: null);
+            SignupEmailDomainAllowlist: null,
+            ReleaseDownloadDomainAllowlist: null);
 }

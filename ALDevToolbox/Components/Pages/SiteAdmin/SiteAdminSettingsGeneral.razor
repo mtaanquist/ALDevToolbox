@@ -52,6 +52,18 @@
                     does not match <code>user@dept.acme.com</code>.
                 </small>
             </label>
+            <label>
+                Release download host allow-list
+                <textarea name="ReleaseDownloadDomainAllowlist" rows="3"
+                          placeholder="e.g.&#10;download.microsoft.com">@_view.ReleaseDownloadDomainAllowlist</textarea>
+                <small class="muted">
+                    Hosts the Object Explorer "import release from URL" flow may
+                    download from, one per line. Subdomains are covered —
+                    <code>microsoft.com</code> also permits
+                    <code>download.microsoft.com</code>. Leave blank to disable
+                    URL imports entirely.
+                </small>
+            </label>
         </form>
 
         <p class="muted">Last updated: @_view.UpdatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</p>

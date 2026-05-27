@@ -166,6 +166,7 @@ public sealed class OAuthMetadataTests : IDisposable
             DefaultStorageQuotaMb: null,
             IndexSizeMultiplier: 0.5m,
             McpEnabled: true,
-            SignupEmailDomainAllowlist: null));
+            SignupEmailDomainAllowlist: null,
+            ReleaseDownloadDomainAllowlist: null));
     }
 }

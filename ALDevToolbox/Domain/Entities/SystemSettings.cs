@@ -142,5 +142,16 @@ public class SystemSettings
     /// </summary>
     public string? SignupEmailDomainAllowlist { get; set; }
 
+    /// <summary>
+    /// Newline-delimited list of bare hosts that the Object Explorer release
+    /// "import from URL" flow may download from (e.g.
+    /// <c>"download.microsoft.com"</c>). <see langword="null"/> or empty means
+    /// "no host allowed" — URL import stays disabled until a SiteAdmin opts in.
+    /// Matched by suffix: an entry <c>microsoft.com</c> also permits
+    /// <c>download.microsoft.com</c>. Deliberately looser than
+    /// <see cref="SignupEmailDomainAllowlist"/>'s exact match.
+    /// </summary>
+    public string? ReleaseDownloadDomainAllowlist { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }

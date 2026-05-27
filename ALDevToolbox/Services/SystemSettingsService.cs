@@ -29,6 +29,7 @@ public sealed record SystemSettingsView(
     decimal IndexSizeMultiplier,
     bool McpEnabled,
     string? SignupEmailDomainAllowlist,
+    string? ReleaseDownloadDomainAllowlist,
     DateTime UpdatedAt);
 
 /// <summary>
@@ -55,7 +56,8 @@ public sealed record SystemSettingsInput(
     int? DefaultStorageQuotaMb,
     decimal IndexSizeMultiplier,
     bool McpEnabled,
-    string? SignupEmailDomainAllowlist);
+    string? SignupEmailDomainAllowlist,
+    string? ReleaseDownloadDomainAllowlist);
 
 /// <summary>
 /// SiteAdmin-facing view of the off-site backup settings. Carries flags
@@ -203,6 +205,7 @@ public sealed class SystemSettingsService
             IndexSizeMultiplier: row.IndexSizeMultiplier,
             McpEnabled: row.McpEnabled,
             SignupEmailDomainAllowlist: row.SignupEmailDomainAllowlist,
+            ReleaseDownloadDomainAllowlist: row.ReleaseDownloadDomainAllowlist,
             UpdatedAt: row.UpdatedAt);
     }
 
@@ -245,7 +248,10 @@ public sealed class SystemSettingsService
         {
             errors["IndexSizeMultiplier"] = "Multiplier must be between 0 and 10.";
         }
-        var normalisedAllowlist = NormaliseDomainAllowlist(input.SignupEmailDomainAllowlist, errors);
+        var normalisedAllowlist = NormaliseDomainAllowlist(
+            input.SignupEmailDomainAllowlist, "SignupEmailDomainAllowlist", errors);
+        var normalisedDownloadAllowlist = NormaliseDomainAllowlist(
+            input.ReleaseDownloadDomainAllowlist, "ReleaseDownloadDomainAllowlist", errors);
         if (errors.Count > 0) throw new PlanValidationException(errors);
 
         var row = await LoadAsync(ct);
@@ -265,6 +271,7 @@ public sealed class SystemSettingsService
         row.IndexSizeMultiplier = input.IndexSizeMultiplier;
         row.McpEnabled = input.McpEnabled;
         row.SignupEmailDomainAllowlist = normalisedAllowlist;
+        row.ReleaseDownloadDomainAllowlist = normalisedDownloadAllowlist;
         row.UpdatedAt = _clock.GetUtcNow().UtcDateTime;
 
         if (input.ClearSmtpPassword)
@@ -522,11 +529,11 @@ public sealed class SystemSettingsService
     /// Parses the raw textarea contents into a canonical newline-joined
     /// list of lowercased domains. Splits on newlines / commas / whitespace,
     /// trims, drops blanks, and rejects entries that don't look like a bare
-    /// domain. Errors are keyed on
-    /// <c>SignupEmailDomainAllowlist</c> so the form can render them inline.
-    /// Returns <see langword="null"/> for blank input (feature off).
+    /// domain. Errors are keyed on <paramref name="fieldKey"/> so the form can
+    /// render them inline. Returns <see langword="null"/> for blank input
+    /// (feature off).
     /// </summary>
-    private static string? NormaliseDomainAllowlist(string? raw, Dictionary<string, string> errors)
+    private static string? NormaliseDomainAllowlist(string? raw, string fieldKey, Dictionary<string, string> errors)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
         var tokens = raw.Split(new[] { '\n', '\r', ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -538,7 +545,7 @@ public sealed class SystemSettingsService
             if (lowered.StartsWith('@')) lowered = lowered[1..];
             if (!AllowlistDomainRegex.IsMatch(lowered) || lowered.Length > 253)
             {
-                errors["SignupEmailDomainAllowlist"] = $"'{token}' isn't a valid bare domain. Use entries like 'acme.com', one per line.";
+                errors[fieldKey] = $"'{token}' isn't a valid bare domain. Use entries like 'acme.com', one per line.";
                 return null;
             }
             if (seen.Add(lowered))
@@ -547,6 +554,42 @@ public sealed class SystemSettingsService
             }
         }
         return keep.Count == 0 ? null : string.Join('\n', keep);
+    }
+
+    /// <summary>
+    /// Returns the configured host allow-list for the Object Explorer release
+    /// "import from URL" flow, or <see langword="null"/> when the SiteAdmin
+    /// hasn't set one (feature off — no URL download is permitted). Hosts are
+    /// returned lowercased and trimmed.
+    /// </summary>
+    public async Task<IReadOnlyList<string>?> GetReleaseDownloadAllowedHostsAsync(CancellationToken ct = default)
+    {
+        var raw = await _db.SystemSettings.AsNoTracking()
+            .Where(s => s.Id == 1)
+            .Select(s => s.ReleaseDownloadDomainAllowlist)
+            .FirstOrDefaultAsync(ct);
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var list = raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return list.Length == 0 ? null : list;
+    }
+
+    /// <summary>
+    /// Suffix-matches <paramref name="host"/> against an allow-list entry: the
+    /// host is permitted when it equals an entry or is a subdomain of one
+    /// (so <c>microsoft.com</c> covers <c>download.microsoft.com</c>).
+    /// Comparison is case-insensitive; a null/empty list permits nothing.
+    /// </summary>
+    public static bool IsHostAllowed(string? host, IReadOnlyList<string>? allowlist)
+    {
+        if (string.IsNullOrWhiteSpace(host) || allowlist is null || allowlist.Count == 0) return false;
+        var h = host.Trim().TrimEnd('.').ToLowerInvariant();
+        foreach (var entry in allowlist)
+        {
+            var e = entry.Trim().TrimEnd('.').ToLowerInvariant();
+            if (e.Length == 0) continue;
+            if (h == e || h.EndsWith("." + e, StringComparison.Ordinal)) return true;
+        }
+        return false;
     }
 
     private static bool? ParseBool(string? value) =>

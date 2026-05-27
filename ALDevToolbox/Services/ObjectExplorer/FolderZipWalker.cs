@@ -43,7 +43,13 @@ public static class FolderZipWalker
         @"\blanguage\s*\([^)]+\)\s*$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public static IReadOnlyList<FolderZipEntry> Walk(ZipArchive archive)
+    /// <summary>
+    /// Walks every <c>.app</c> in the archive (the uploaded-folder-ZIP case),
+    /// or only those an optional <paramref name="includeApp"/> predicate
+    /// accepts. The predicate receives each <c>.app</c> entry's full path; when
+    /// <see langword="null"/> every <c>.app</c> is included.
+    /// </summary>
+    public static IReadOnlyList<FolderZipEntry> Walk(ZipArchive archive, Func<string, bool>? includeApp = null)
     {
         ArgumentNullException.ThrowIfNull(archive);
 
@@ -64,6 +70,7 @@ public static class FolderZipWalker
         {
             if (string.IsNullOrEmpty(entry.Name)) continue;
             if (!entry.FullName.EndsWith(".app", StringComparison.OrdinalIgnoreCase)) continue;
+            if (includeApp is not null && !includeApp(entry.FullName)) continue;
 
             var dir = GetDirectory(entry.FullName);
             var appStem = StripPublisherPrefix(Path.GetFileNameWithoutExtension(entry.Name));
@@ -91,6 +98,39 @@ public static class FolderZipWalker
                 IsLanguagePack: LanguagePackPattern.IsMatch(Path.GetFileNameWithoutExtension(entry.Name))));
         }
         return result;
+    }
+
+    /// <summary>
+    /// Walks a full BC DVD ZIP, keeping only the apps that matter for the
+    /// Object Explorer: every <c>.app</c> under an <c>Applications/</c> folder
+    /// plus the platform symbols app named exactly <c>System.app</c> (it lives
+    /// under <c>ModernDev/PFiles/Microsoft Dynamics NAV/&lt;ver&gt;/AL
+    /// Development Environment/</c>). Test extensions and their source are
+    /// dropped entirely — any <c>.app</c> under a <c>Test*</c> folder is
+    /// skipped, unlike <see cref="Walk(ZipArchive, Func{string, bool})"/> which
+    /// imports them flagged.
+    ///
+    /// The match deliberately anchors only on the long-standing
+    /// <c>Applications/</c> segment and the literal <c>System.app</c> filename,
+    /// not on the version segment, so a BC version bump needs no code change.
+    /// If Microsoft reorganises the DVD so nothing matches, this returns an
+    /// empty list and the caller surfaces a clear error.
+    /// </summary>
+    public static IReadOnlyList<FolderZipEntry> WalkDvd(ZipArchive archive) =>
+        Walk(archive, IsWantedDvdApp);
+
+    private static bool IsWantedDvdApp(string fullName)
+    {
+        if (HasTestAncestor(fullName)) return false;
+
+        var segments = fullName.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var segment in segments)
+        {
+            if (string.Equals(segment, "Applications", StringComparison.OrdinalIgnoreCase)) return true;
+        }
+
+        var name = segments.Length > 0 ? segments[^1] : fullName;
+        return string.Equals(name, "System.app", StringComparison.OrdinalIgnoreCase);
     }
 
     private static IEnumerable<string> PairingCandidates(string appName, string stripped)

@@ -129,7 +129,27 @@
 
         <section class="form-section">
             <label class="field">
-                <span class="field__label">Application folder ZIP (recommended)</span>
+                <span class="field__label">Download URL (recommended)</span>
+                <input type="url" name="DvdUrl" inputmode="url"
+                       placeholder="https://download.microsoft.com/…/Dynamics.365.BC.…DVD.zip"
+                       class="field__input" />
+                <small class="field__caption muted">
+                    Paste the link to Microsoft's BC DVD ZIP and we download it
+                    for you — keeping only what the Object Explorer needs
+                    (everything under <code>Applications/</code> plus
+                    <code>System.app</code>; test extensions are skipped). The
+                    host must be on the download allow-list a SiteAdmin
+                    configures under Site administration → Settings. The file is
+                    deleted as soon as the import finishes.
+                </small>
+            </label>
+        </section>
+
+        <section class="form-section">
+            <p class="muted">— or upload the files yourself —</p>
+
+            <label class="field">
+                <span class="field__label">Application folder ZIP</span>
                 <input type="file" name="FolderZip" accept=".zip" class="field__input field__input--file" />
                 <small class="field__caption muted">
                     Drop the DVD's <code>applications/</code> folder as one ZIP.
