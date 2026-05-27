@@ -589,6 +589,116 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ListDeclarationsInFileAsync_returns_declarations_sorted_by_position()
+    {
+        // Regression for the source-viewer crash ("Ranges must be added sorted
+        // by `from` position"): the helper appends object headers before member
+        // symbols, so a file shipping more than one object yields an unsorted
+        // list — object B's header (line 50) lands ahead of object A's member
+        // (line 10). CodeMirror's RangeSetBuilder rejects descending `from`, so
+        // the service must return declarations ordered by (line, column).
+        long fileId;
+        await using (var write = _db.NewContext())
+        {
+            var release = new Release
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Label = "Multi-object fixture",
+                Kind = "first_party",
+                Status = "ready",
+                ImportedAt = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            write.OeReleases.Add(release);
+            await write.SaveChangesAsync();
+
+            var module = new OeModule
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ReleaseId = release.Id,
+                AppId = Guid.NewGuid(),
+                Name = "Bundle",
+                Publisher = "Acme",
+                Version = "1.0.0.0",
+                CreatedAt = DateTime.UtcNow,
+                DependencyCount = 0,
+            };
+            write.OeModules.Add(module);
+            await write.SaveChangesAsync();
+
+            // 55-line source: object A's header on line 1, object B's header on
+            // line 50. The member symbol sits at line 10 — between the two.
+            var contentLines = Enumerable.Repeat("    // filler", 55).ToArray();
+            contentLines[0] = "codeunit 50000 \"Obj A\"";
+            contentLines[49] = "codeunit 50001 \"Obj B\"";
+            var content = string.Join("\n", contentLines);
+            const string hash = "ABCABCABCABCABCABCABCABCABCABCABCABCABCABCABCABCABCABCABCABCABCABC";
+            write.OeFileContents.Add(new FileContent
+            {
+                ContentHash = hash,
+                Content = content,
+                ContentLength = content.Length,
+                LineCount = contentLines.Length,
+            });
+            var file = new ModuleFile
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                Path = "src/Bundle.al",
+                ContentHash = hash,
+                LineCount = contentLines.Length,
+            };
+            write.OeModuleFiles.Add(file);
+            await write.SaveChangesAsync();
+            fileId = file.Id;
+
+            var objA = new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                Kind = "codeunit",
+                ObjectId = 50000,
+                Name = "Obj A",
+                LineNumber = 1,
+                SourceFileId = file.Id,
+            };
+            var objB = new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                Kind = "codeunit",
+                ObjectId = 50001,
+                Name = "Obj B",
+                LineNumber = 50,
+                SourceFileId = file.Id,
+            };
+            write.OeModuleObjects.AddRange(objA, objB);
+            await write.SaveChangesAsync();
+
+            write.OeModuleSymbols.Add(new ModuleSymbol
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                ObjectId = objA.Id,
+                Kind = "procedure",
+                Name = "DoWork",
+                LineNumber = 10,
+                ColumnStart = 5,
+                ColumnEnd = 15,
+            });
+            await write.SaveChangesAsync();
+        }
+
+        await using var read = _db.NewContext();
+        var decls = await NewSourceViewer(read).ListDeclarationsInFileAsync(fileId);
+
+        decls.Should().HaveCount(3, because: "two object headers plus one member symbol");
+        decls.Select(d => d.Line).Should().Equal(new[] { 1, 10, 50 },
+            "RangeSetBuilder needs declarations ascending by position regardless of objects-then-symbols append order");
+    }
+
+    [Fact]
     public async Task GoToDefinitionAsync_resolves_a_click_on_an_object_name_to_its_file()
     {
         await SeedSingleReleaseAsync();
