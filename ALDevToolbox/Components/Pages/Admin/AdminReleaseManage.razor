@@ -62,28 +62,30 @@
             <h2 class="manage-card__title">Details</h2>
             <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/metadata")" class="form-grid">
                 <AntiforgeryToken />
-                <label class="field">
-                    <span class="field__label">Publisher</span>
-                    <input type="text" name="Publisher" maxlength="200"
-                           value="@_release.Publisher"
-                           placeholder="e.g. Continia Software"
-                           class="field__input" />
-                    <small class="field__caption muted">Who owns this extension — handy when you've taken over an app someone else built.</small>
-                </label>
-                <label class="field">
-                    <span class="field__label">Customer</span>
-                    <input type="text" name="CustomerName" maxlength="200"
-                           value="@_release.CustomerName"
-                           placeholder="e.g. Acme Co"
-                           class="field__input" />
-                    <small class="field__caption muted">The customer a customer-specific bundle belongs to.</small>
-                </label>
-                <div>
+                <section class="form-section">
+                    <label class="field">
+                        <span class="field__label">Publisher</span>
+                        <input type="text" name="Publisher" maxlength="200"
+                               value="@_release.Publisher"
+                               placeholder="e.g. Continia Software"
+                               class="field__input" />
+                        <small class="field__caption muted">Who owns this extension — handy when you've taken over an app someone else built.</small>
+                    </label>
+                    <label class="field">
+                        <span class="field__label">Customer</span>
+                        <input type="text" name="CustomerName" maxlength="200"
+                               value="@_release.CustomerName"
+                               placeholder="e.g. Acme Co"
+                               class="field__input" />
+                        <small class="field__caption muted">The customer a customer-specific bundle belongs to.</small>
+                    </label>
+                </section>
+                <section class="form-section">
                     <button type="submit" class="btn btn--primary">
                         <Icon Name="save" Width="16" Height="16" />
                         <span>Save details</span>
                     </button>
-                </div>
+                </section>
             </form>
         </section>
 
