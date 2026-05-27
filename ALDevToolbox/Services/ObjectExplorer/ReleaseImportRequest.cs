@@ -12,7 +12,9 @@ public sealed record ReleaseImportRequest(
     string Kind,
     int? ParentReleaseId,
     int? ApplicationVersionId,
-    IReadOnlyList<AppFileUpload> Uploads);
+    IReadOnlyList<AppFileUpload> Uploads,
+    string? Publisher = null,
+    string? CustomerName = null);
 
 /// <summary>
 /// One <c>.app</c> file + optional paired source zip. Streams are owned by the

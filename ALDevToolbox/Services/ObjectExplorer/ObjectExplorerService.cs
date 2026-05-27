@@ -50,7 +50,11 @@ public class ObjectExplorerService
         }
         var rows = await q
             .Select(r => new ReleaseListItem(
-                r.Id, r.Label, r.Kind, r.Status, r.BcVersion, r.ParentReleaseId, r.ImportedAt,
+                r.Id, r.Label, r.Kind, r.Status, r.BcVersion, r.ParentReleaseId,
+                ParentLabel: r.ParentRelease != null ? r.ParentRelease.Label : null,
+                Publisher: r.Publisher,
+                CustomerName: r.CustomerName,
+                ImportedAt: r.ImportedAt,
                 // Denormalised counters stamped at ingest time. The Releases
                 // picker on a busy org used to spend most of its load budget
                 // here — a correlated subquery summing LENGTH(content) over
@@ -88,6 +92,7 @@ public class ObjectExplorerService
             .Select(r => new
             {
                 r.Id, r.Label, r.Kind, r.Status, r.BcVersion, r.ParentReleaseId, r.ImportedAt,
+                r.Publisher, r.CustomerName, r.DeletedAt,
                 ParentLabel = r.ParentRelease != null ? r.ParentRelease.Label : null,
             })
             .SingleOrDefaultAsync(ct);
@@ -104,7 +109,10 @@ public class ObjectExplorerService
             BcVersion: row.BcVersion,
             ParentReleaseId: row.ParentReleaseId,
             ParentLabel: row.ParentLabel,
+            Publisher: row.Publisher,
+            CustomerName: row.CustomerName,
             ImportedAt: row.ImportedAt,
+            DeletedAt: row.DeletedAt,
             ModuleCount: moduleCount);
     }
 
@@ -146,10 +154,10 @@ public class ObjectExplorerService
     {
         var q = _db.OeModuleObjects.AsNoTracking().Where(o => o.ModuleId == moduleId);
 
-        if (!string.IsNullOrWhiteSpace(filter.Kind))
+        var kinds = ObjectSearchRanking.NormalizeKinds(filter.Kinds);
+        if (kinds is { Count: > 0 })
         {
-            var k = filter.Kind.Trim().ToLowerInvariant();
-            q = q.Where(o => o.Kind == k);
+            q = q.Where(o => kinds.Contains(o.Kind));
         }
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
@@ -382,7 +390,7 @@ public class ObjectExplorerService
 
         var fileContent = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == row.SourceFileId)
-            .Select(f => f.Content)
+            .Select(f => f.FileContent!.Content)
             .SingleOrDefaultAsync(ct).ConfigureAwait(false);
         if (fileContent is null) return null;
 

@@ -15,6 +15,9 @@ public sealed record ReleaseListItem(
     string Status,
     string? BcVersion,
     int? ParentReleaseId,
+    string? ParentLabel,
+    string? Publisher,
+    string? CustomerName,
     DateTime ImportedAt,
     int SourceFileCount,
     long SourceContentLength,
@@ -32,7 +35,10 @@ public sealed record ReleaseDetail(
     string? BcVersion,
     int? ParentReleaseId,
     string? ParentLabel,
+    string? Publisher,
+    string? CustomerName,
     DateTime ImportedAt,
+    DateTime? DeletedAt,
     int ModuleCount);
 
 /// <summary>Filter for <c>ListModulesAsync</c> — applies a substring search and the test/internal toggles.</summary>
@@ -56,13 +62,37 @@ public sealed record ModuleListItem(
     int ObjectCount);
 
 /// <summary>
-/// Filter for the per-module Objects browser. <see cref="Kind"/> narrows to
-/// codeunit/table/etc.; <see cref="Search"/> matches against object name or
-/// (when numeric) object id.
+/// Filter for the per-module Objects browser. <see cref="Kinds"/> narrows to
+/// one or more AL kinds (codeunit/table/etc.) — empty/null means every kind;
+/// <see cref="Search"/> matches against object name or (when numeric) object id.
 /// </summary>
 public sealed record ObjectListFilter(
-    string? Kind = null,
+    IReadOnlyList<string>? Kinds = null,
     string? Search = null);
+
+/// <summary>Sortable columns on the release-detail objects grid.</summary>
+public enum ObjectSortColumn
+{
+    /// <summary>
+    /// The grid's default order when no header is clicked: kind, then object id,
+    /// then fewest module dependencies (so System / Base Application float above
+    /// partner / customer extensions), then module name.
+    /// </summary>
+    Default,
+    Type,
+    Id,
+    Name,
+    Module,
+    Namespace,
+    Lines,
+}
+
+/// <summary>
+/// One page of an object search — the requested window plus the total row
+/// count of the (filtered) result set, so the UI can tell whether more pages
+/// remain as the user scrolls.
+/// </summary>
+public sealed record ObjectSearchPage(IReadOnlyList<ReleaseObjectMatch> Rows, int TotalCount);
 
 /// <summary>One row in the per-module Objects list.</summary>
 public sealed record ObjectListItem(

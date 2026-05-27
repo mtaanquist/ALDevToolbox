@@ -44,11 +44,21 @@
     <form method="post"
           action="/admin/object-explorer/import"
           enctype="multipart/form-data"
-          class="form-grid">
+          class="form-grid"
+          data-oe-import-form>
         @if (_antiforgeryToken is not null)
         {
             <input type="hidden" name="@_antiforgeryToken.FormFieldName" value="@_antiforgeryToken.RequestToken" />
         }
+
+        <div class="oe-import-progress" data-oe-import-progress hidden role="status" aria-live="polite">
+            <div class="oe-import-progress__row">
+                <span class="oe-import-progress__label" data-oe-import-label>Uploading…</span>
+                <span class="oe-import-progress__pct" data-oe-import-pct></span>
+            </div>
+            <progress class="oe-import-progress__bar" data-oe-import-bar max="100" value="0"></progress>
+            <p class="oe-import-progress__hint muted" data-oe-import-hint></p>
+        </div>
 
         <section class="form-section">
             <label class="field">
@@ -75,7 +85,7 @@
                 </small>
             </label>
 
-            <label class="field">
+            <label class="field" data-oe-field-parent>
                 <span class="field__label">Parent Release (optional)</span>
                 <select name="ParentReleaseId" class="field__input">
                     <option value="">— none (first-party, no parent) —</option>
@@ -93,12 +103,34 @@
                     in the parent's modules.
                 </small>
             </label>
+
+            <label class="field" data-oe-field-publisher>
+                <span class="field__label">Publisher (optional)</span>
+                <input type="text" name="Publisher" maxlength="200"
+                       placeholder="e.g. Continia Software"
+                       class="field__input" />
+                <small class="field__caption muted">
+                    For third-party / customer Releases — who owns this extension.
+                    Set it explicitly when you've taken over an app someone else built.
+                </small>
+            </label>
+
+            <label class="field" data-oe-field-customer>
+                <span class="field__label">Customer (optional)</span>
+                <input type="text" name="CustomerName" maxlength="200"
+                       placeholder="e.g. Acme Co"
+                       class="field__input" />
+                <small class="field__caption muted">
+                    Only used for customer Releases — the customer this bundle
+                    belongs to.
+                </small>
+            </label>
         </section>
 
         <section class="form-section">
             <label class="field">
                 <span class="field__label">Application folder ZIP (recommended)</span>
-                <input type="file" name="FolderZip" accept=".zip" class="field__input" />
+                <input type="file" name="FolderZip" accept=".zip" class="field__input field__input--file" />
                 <small class="field__caption muted">
                     Drop the DVD's <code>applications/</code> folder as one ZIP.
                     We walk every <code>.app</code> entry, pair it with its
@@ -119,7 +151,7 @@
             <label class="field">
                 <span class="field__label">.app files</span>
                 <input type="file" name="AppFiles" accept=".app" multiple
-                       class="field__input" />
+                       class="field__input field__input--file" />
                 <small class="field__caption muted">
                     Pick every <code>.app</code> for this Release in one go. We
                     deduplicate by (AppId, Version) and SHA-256 the bytes — re-uploads
@@ -130,7 +162,7 @@
             <label class="field">
                 <span class="field__label">.Source.zip files (optional)</span>
                 <input type="file" name="SourceZips" accept=".zip,.Source.zip" multiple
-                       class="field__input" />
+                       class="field__input field__input--file" />
                 <small class="field__caption muted">
                     Only needed when an .app was built without
                     <code>IncludeSourceInSymbolFile=true</code>. We pair each zip
@@ -140,7 +172,7 @@
         </section>
 
         <section class="form-section">
-            <button type="submit" class="btn btn--primary">
+            <button type="submit" class="btn btn--primary" data-oe-import-submit>
                 <Icon Name="upload" Width="16" Height="16" />
                 <span>Import Release</span>
             </button>

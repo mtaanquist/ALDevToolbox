@@ -61,6 +61,8 @@
                 <tr>
                     <th scope="col">Label</th>
                     <th scope="col">Kind</th>
+                    <th scope="col">Publisher</th>
+                    <th scope="col">Customer</th>
                     <th scope="col">Status</th>
                     <th scope="col">Files</th>
                     <th scope="col">Size</th>
@@ -82,57 +84,18 @@
                             }
                         </td>
                         <td>@FormatKind(r.Kind)</td>
+                        <td>@(string.IsNullOrEmpty(r.Publisher) ? "—" : r.Publisher)</td>
+                        <td>@(string.IsNullOrEmpty(r.CustomerName) ? "—" : r.CustomerName)</td>
                         <td>@FormatStatus(r.Status)</td>
                         <td>@r.SourceFileCount.ToString("N0")</td>
                         <td>@FormatBytes(r.SourceContentLength)</td>
                         <td>@r.ImportedAt.ToString("yyyy-MM-dd")</td>
                         <td class="row-actions">
-                            @if (r.DeletedAt is null)
-                            {
-                                <a class="btn btn--sm" href="@($"/admin/object-explorer/release/{r.Id}/translations")"
-                                   title="Upload XLIFF translation files for this release">
-                                    <Icon Name="book-open" Width="14" Height="14" />
-                                    <span>Translations</span>
-                                </a>
-                                <form method="post"
-                                      action="@($"/admin/object-explorer/{r.Id}/soft-delete")"
-                                      style="display:inline">
-                                    <AntiforgeryToken />
-                                    <button type="submit" class="btn btn--sm" title="Soft delete — reversible">
-                                        <Icon Name="archive" Width="14" Height="14" />
-                                        <span>Soft delete</span>
-                                    </button>
-                                </form>
-                            }
-                            else
-                            {
-                                <form method="post"
-                                      action="@($"/admin/object-explorer/{r.Id}/restore")"
-                                      style="display:inline">
-                                    <AntiforgeryToken />
-                                    <button type="submit" class="btn btn--sm" title="Bring back to the regular list">
-                                        <Icon Name="rotate-ccw" Width="14" Height="14" />
-                                        <span>Restore</span>
-                                    </button>
-                                </form>
-
-                                <form method="post"
-                                      action="@($"/admin/object-explorer/{r.Id}/hard-delete")"
-                                      class="hard-delete-form">
-                                    <AntiforgeryToken />
-                                    <input type="text"
-                                           name="ConfirmLabel"
-                                           required
-                                           class="field__input hard-delete-form__input"
-                                           placeholder="Type label to confirm"
-                                           aria-label="Confirm label" />
-                                    <button type="submit" class="btn btn--sm btn--danger"
-                                            title="Permanently remove this Release and all its data">
-                                        <Icon Name="trash-2" Width="14" Height="14" />
-                                        <span>Permanently delete</span>
-                                    </button>
-                                </form>
-                            }
+                            <a class="btn btn--sm" href="@($"/admin/object-explorer/release/{r.Id}/manage")"
+                               title="Edit details, add modules, translations, delete">
+                                <Icon Name="settings" Width="14" Height="14" />
+                                <span>Manage</span>
+                            </a>
                         </td>
                     </tr>
                 }
@@ -172,6 +135,7 @@
     private static string FormatOkMessage(string ok, string id) => ok switch
     {
         "imported"     => $"Release {id} imported.",
+        "updated"      => $"Release {id} metadata updated.",
         "soft-deleted" => $"Release {id} soft-deleted. Restore from this page if it was a mistake.",
         "restored"     => $"Release {id} restored.",
         "hard-deleted" => $"Release {id} permanently deleted.",

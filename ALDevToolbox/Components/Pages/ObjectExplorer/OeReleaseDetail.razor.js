@@ -7,6 +7,7 @@
 
 let currentRef = null;
 let keyHandler = null;
+let scrollObserver = null;
 
 const SCOPE_BY_DIGIT = {
     "1": "Objects",
@@ -19,6 +20,17 @@ export function init(dotNetRef) {
     detach();
     currentRef = dotNetRef;
     keyHandler = (ev) => {
+        // F3 focuses the search box (overriding the browser's find-next), so a
+        // keyboard-first user can jump back to search from anywhere on the page.
+        if (ev.key === "F3" && !ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey) {
+            const search = document.querySelector("input.admin-search-input");
+            if (search) {
+                ev.preventDefault();
+                search.focus();
+                search.select();
+            }
+            return;
+        }
         if (!ev.altKey || ev.ctrlKey || ev.metaKey) return;
         const digit = ev.key in SCOPE_BY_DIGIT
             ? ev.key
@@ -34,10 +46,35 @@ export function init(dotNetRef) {
     document.addEventListener("keydown", keyHandler);
 }
 
+// Infinite scroll: (re)observe the objects-grid sentinel so it pulls the next
+// page when it scrolls into view. Re-resolved on demand because Blazor recreates
+// the sentinel node when the result set or scope changes. rootMargin pre-fetches
+// a little before the sentinel is actually visible, so scrolling feels seamless.
+export function watchSentinel() {
+    const el = document.getElementById("oe-objects-sentinel");
+    if (scrollObserver) {
+        scrollObserver.disconnect();
+        scrollObserver = null;
+    }
+    if (!el || !currentRef) return;
+    scrollObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+            if (entry.isIntersecting && currentRef) {
+                currentRef.invokeMethodAsync("LoadMoreObjects");
+            }
+        }
+    }, { rootMargin: "300px" });
+    scrollObserver.observe(el);
+}
+
 export function detach() {
     if (keyHandler) {
         document.removeEventListener("keydown", keyHandler);
         keyHandler = null;
+    }
+    if (scrollObserver) {
+        scrollObserver.disconnect();
+        scrollObserver = null;
     }
     currentRef = null;
 }

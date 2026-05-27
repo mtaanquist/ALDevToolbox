@@ -1620,6 +1620,105 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     cursor: pointer;
 }
 
+/* Multi-select "Object type" filter: a <details> disclosure styled as a
+   dropdown. The <summary> reuses .field__input chrome; the panel floats over
+   the rows below with a scrollable checkbox list. */
+.kind-filter {
+    position: relative;
+}
+
+.kind-filter__summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.kind-filter__summary::-webkit-details-marker {
+    display: none;
+}
+
+.kind-filter__summary::after {
+    content: "";
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid var(--color-text-muted);
+    flex: 0 0 auto;
+}
+
+.kind-filter[open] .kind-filter__summary {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -1px;
+    border-color: var(--color-accent);
+}
+
+.kind-filter__panel {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 100%;
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 6px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.kind-filter__option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.kind-filter__option:hover {
+    background: var(--color-bg);
+}
+
+/* Fixed column widths on the objects grid so sorting / lazy-loading new rows
+   can't reflow the table as the content per page changes. Name + Namespace
+   (the two width-less <col>s) share the remaining space; long values wrap
+   rather than widen their column. */
+.data-table--objects {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.data-table--objects td {
+    overflow-wrap: anywhere;
+}
+
+/* Type (kind keywords like "reportextension") and ID (negative interface ids
+   like -818523667) must never wrap — give them room and keep them single-line. */
+.data-table--objects td:first-child,
+.data-table--objects td:nth-child(2) {
+    white-space: nowrap;
+    overflow-wrap: normal;
+}
+
+.data-table--objects .col-type { width: 10rem; }
+.data-table--objects .col-id { width: 7rem; }
+.data-table--objects .col-extension { width: 12rem; }
+.data-table--objects .col-lines { width: 5rem; }
+
+/* Bottom-of-list sentinel that triggers the next lazy-load page. */
+.oe-scroll-sentinel {
+    padding: 12px 0;
+    text-align: center;
+    font-size: 12.5px;
+}
+
 /* Version-compare page sections — each kind of change gets its own
    block under a small heading. Spaced apart so the eye doesn't bleed
    between added / removed / changed rows. */
@@ -1813,6 +1912,12 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     gap: 4px;
     margin-bottom: 16px;
     min-width: 0;
+}
+
+/* Respect the `hidden` attribute — the display:flex above would otherwise beat
+   the UA `[hidden] { display: none }`, leaving JS-toggled fields visible. */
+.field[hidden] {
+    display: none;
 }
 
 .field__label {

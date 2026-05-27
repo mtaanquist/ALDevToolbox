@@ -59,7 +59,7 @@
                 </AuthorizeView>
                 <a class="btn btn--sm" href="/object-explorer">
                     <Icon Name="arrow-left" Width="14" Height="14" />
-                    <span>All Releases</span>
+                    <span>Back to releases</span>
                 </a>
             </div>
         </header>
@@ -127,19 +127,26 @@
 
             @if (_scope == SearchScope.Objects)
             {
-                <label class="field">
+                <div class="field">
                     <span class="field__label">Object type</span>
-                    <select class="field__input" @bind="_kind" @bind:after="ReloadAsync">
-                        <option value="">All</option>
-                        @if (_kinds is not null)
-                        {
-                            @foreach (var k in _kinds)
+                    <details class="kind-filter">
+                        <summary class="field__input kind-filter__summary">@KindSummary</summary>
+                        <div class="kind-filter__panel">
+                            @if (_kinds is not null)
                             {
-                                <option value="@k">@k</option>
+                                @foreach (var k in _kinds)
+                                {
+                                    <label class="kind-filter__option">
+                                        <input type="checkbox"
+                                               checked="@_selectedKinds.Contains(k)"
+                                               @onchange="@(e => OnKindToggled(k, e))" />
+                                        <span>@k</span>
+                                    </label>
+                                }
                             }
-                        }
-                    </select>
-                </label>
+                        </div>
+                    </details>
+                </div>
             }
 
             @if (_scope != SearchScope.Compare)
@@ -161,20 +168,6 @@
 
             @if (_scope == SearchScope.Objects)
             {
-                <label class="field">
-                    <span class="field__label">Module</span>
-                    <select class="field__input" @bind="_moduleSegment" @bind:after="ReloadAsync">
-                        <option value="">All</option>
-                        @if (_moduleSegments is not null)
-                        {
-                            @foreach (var m in _moduleSegments)
-                            {
-                                <option value="@m">@m</option>
-                            }
-                        }
-                    </select>
-                </label>
-
                 <label class="field">
                     <span class="field__label">Namespace</span>
                     @*
@@ -200,6 +193,16 @@
                         </datalist>
                     }
                 </label>
+            }
+
+            @if (_scope != SearchScope.Compare)
+            {
+                <div class="field object-explorer__filters-reset">
+                    <button type="button" class="btn btn--sm" @onclick="ResetFilters" disabled="@(!HasActiveFilters)">
+                        <Icon Name="rotate-ccw" Width="14" Height="14" />
+                        <span>Reset filters</span>
+                    </button>
+                </div>
             }
         </div>
 
@@ -229,20 +232,26 @@
     private ReleaseDetail? _release;
     private List<ReleaseModuleSummary>? _modules;
     private List<string>? _kinds;
-    private List<string>? _moduleSegments;
     private List<string>? _namespaces;
     private List<ReleaseListItem>? _otherReleases;
 
     private SearchScope _scope = SearchScope.Objects;
     private string _search = string.Empty;
-    private string _kind = string.Empty;
+    private readonly HashSet<string> _selectedKinds = new(StringComparer.OrdinalIgnoreCase);
     private string _moduleFilter = string.Empty;
-    private string _moduleSegment = string.Empty;
     private string _namespace = string.Empty;
     private string _compareRight = string.Empty;
     private string _compareDirection = "ab";
 
     private List<ReleaseObjectMatch>? _objectResults;
+    // Objects-grid sort + lazy-load paging state. A null sort column means the
+    // default order: relevance when a search term is present (ObjectsRankedMode),
+    // otherwise by Type ascending. Lazy paging only runs when not ranked.
+    private ObjectSortColumn? _sortColumn;
+    private bool _sortDescending;
+    private int _objectsTotal;
+    private bool _objectsLoadingMore;
+    private const int ObjectsPageSize = 100;
     private List<ReleaseProcedureMatch>? _procedureResults;
     private List<ReleaseContentMatch>? _contentResults;
     private List<ReleaseCompareFileRow>? _compareResults;
@@ -272,15 +281,6 @@
         _otherReleases = allReleases
             .Where(r => r.Id != ReleaseId && r.Status == "ready" && r.DeletedAt is null)
             .ToList();
-        // Module = second namespace segment (e.g. Microsoft.Warehouse.ADCS →
-        // "Warehouse"). Derive client-side from the namespace list so a single
-        // query feeds both filters.
-        _moduleSegments = _namespaces
-            .Select(SecondNamespaceSegment)
-            .Where(s => !string.IsNullOrEmpty(s))
-            .Distinct()
-            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
-            .ToList()!;
 
         // Seed filter state from the URL query string so back-navigation
         // from a result detail page restores what the user was searching.
@@ -306,9 +306,12 @@
             _scope = parsedScope;
         }
         _search = query["search"] ?? string.Empty;
-        _kind = query["kind"] ?? string.Empty;
+        _selectedKinds.Clear();
+        foreach (var k in (query["kind"] ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            _selectedKinds.Add(k);
+        }
         _moduleFilter = query["module"] ?? string.Empty;
-        _moduleSegment = query["segment"] ?? string.Empty;
         _namespace = query["namespace"] ?? string.Empty;
         _compareRight = query["right"] ?? string.Empty;
         var dir = query["dir"];
@@ -338,9 +341,8 @@
         var parts = new List<string>(8);
         if (_scope != SearchScope.Objects) parts.Add("scope=" + Uri.EscapeDataString(_scope.ToString()));
         if (!string.IsNullOrWhiteSpace(_search)) parts.Add("search=" + Uri.EscapeDataString(_search));
-        if (!string.IsNullOrWhiteSpace(_kind)) parts.Add("kind=" + Uri.EscapeDataString(_kind));
+        if (_selectedKinds.Count > 0) parts.Add("kind=" + Uri.EscapeDataString(string.Join(",", _selectedKinds)));
         if (!string.IsNullOrWhiteSpace(_moduleFilter)) parts.Add("module=" + Uri.EscapeDataString(_moduleFilter));
-        if (!string.IsNullOrWhiteSpace(_moduleSegment)) parts.Add("segment=" + Uri.EscapeDataString(_moduleSegment));
         if (!string.IsNullOrWhiteSpace(_namespace)) parts.Add("namespace=" + Uri.EscapeDataString(_namespace));
         if (_scope == SearchScope.Compare && !string.IsNullOrWhiteSpace(_compareRight)) parts.Add("right=" + Uri.EscapeDataString(_compareRight));
         if (_scope == SearchScope.Compare && _compareDirection == "ba") parts.Add("dir=ba");
@@ -357,34 +359,45 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
-        _isInteractive = true;
-        // Seed the uncontrolled text inputs with whatever filter values
-        // we hydrated from the URL. After this single call the DOM owns
-        // the input value so fast typing can never race a render diff.
-        if (!string.IsNullOrEmpty(_search))
+        if (firstRender)
         {
-            await JS.InvokeVoidAsync("aldt.seedInput", _searchInputRef, _search);
-        }
-        if (!string.IsNullOrEmpty(_namespace))
-        {
-            await JS.InvokeVoidAsync("aldt.seedInput", _namespaceInputRef, _namespace);
+            _isInteractive = true;
+            // Seed the uncontrolled text inputs with whatever filter values
+            // we hydrated from the URL. After this single call the DOM owns
+            // the input value so fast typing can never race a render diff.
+            if (!string.IsNullOrEmpty(_search))
+            {
+                await JS.InvokeVoidAsync("aldt.seedInput", _searchInputRef, _search);
+            }
+            if (!string.IsNullOrEmpty(_namespace))
+            {
+                await JS.InvokeVoidAsync("aldt.seedInput", _namespaceInputRef, _namespace);
+            }
+
+            // Park focus in the search box on first render so a keyboard-first
+            // user can land on the page and start typing. Compare mode doesn't
+            // render a search input, so skip it there.
+            if (_scope != SearchScope.Compare)
+            {
+                try { await _searchInputRef.FocusAsync(); }
+                catch { /* input was removed before focus landed */ }
+            }
+
+            // Wire the document-level Alt+1..Alt+4 scope keybinds + F3 search focus.
+            _keybindModule = await JS.InvokeAsync<IJSObjectReference>(
+                "import", "./Components/Pages/ObjectExplorer/OeReleaseDetail.razor.js");
+            _selfRef = DotNetObjectReference.Create(this);
+            await _keybindModule.InvokeVoidAsync("init", _selfRef);
         }
 
-        // Park focus in the search box on first render so a keyboard-first
-        // user can land on the page and start typing. Compare mode doesn't
-        // render a search input, so skip it there.
-        if (_scope != SearchScope.Compare)
+        // Re-point the infinite-scroll observer at the current sentinel after
+        // every render — the sentinel node is recreated when the result set or
+        // scope changes, and watchSentinel is a no-op when it isn't present.
+        if (_keybindModule is not null && _scope == SearchScope.Objects)
         {
-            try { await _searchInputRef.FocusAsync(); }
-            catch { /* input was removed before focus landed */ }
+            try { await _keybindModule.InvokeVoidAsync("watchSentinel"); }
+            catch { /* circuit tearing down */ }
         }
-
-        // Wire the document-level Alt+1..Alt+4 scope keybinds.
-        _keybindModule = await JS.InvokeAsync<IJSObjectReference>(
-            "import", "./Components/Pages/ObjectExplorer/OeReleaseDetail.razor.js");
-        _selfRef = DotNetObjectReference.Create(this);
-        await _keybindModule.InvokeVoidAsync("init", _selfRef);
     }
 
     /// <summary>
@@ -418,7 +431,9 @@
     {
         // Crossing search-mode boundaries — the kind dropdown's options
         // differ between Objects and Procedures, and Content has neither.
-        _kind = string.Empty;
+        _selectedKinds.Clear();
+        _sortColumn = null;
+        _sortDescending = false;
         await ReloadAsync();
     }
 
@@ -479,25 +494,32 @@
 
         long? moduleId = long.TryParse(_moduleFilter, out var m) ? m : null;
         var trimmedSearch = string.IsNullOrWhiteSpace(_search) ? null : _search;
-        // Module segment translates to a namespace-prefix narrow when set;
-        // an explicit namespace input takes precedence.
-        var nsPrefix = !string.IsNullOrWhiteSpace(_namespace)
-            ? _namespace
-            : (string.IsNullOrWhiteSpace(_moduleSegment)
-                ? null
-                : $"Microsoft.{_moduleSegment}");
+        var nsPrefix = string.IsNullOrWhiteSpace(_namespace) ? null : _namespace;
 
         switch (_scope)
         {
             case SearchScope.Objects:
-                _objectResults = await Search.SearchObjectsInReleaseAsync(
-                    ReleaseId,
-                    new ObjectListFilter(
-                        Kind: string.IsNullOrEmpty(_kind) ? null : _kind,
-                        Search: trimmedSearch),
-                    moduleId: moduleId,
-                    namespacePrefix: nsPrefix,
-                    take: 500);
+                var objectFilter = new ObjectListFilter(
+                    Kinds: _selectedKinds.Count == 0 ? null : _selectedKinds.ToList(),
+                    Search: trimmedSearch);
+                if (ObjectsRankedMode)
+                {
+                    // Relevance-ranked, capped — no lazy paging needed because a
+                    // search term keeps the match set small.
+                    _objectResults = await Search.SearchObjectsInReleaseAsync(
+                        ReleaseId, objectFilter, moduleId: moduleId, namespacePrefix: nsPrefix, take: 500);
+                    _objectsTotal = _objectResults.Count;
+                }
+                else
+                {
+                    // Column-sorted (or default Type order when browsing) — first
+                    // page only; the scroll sentinel pulls the rest.
+                    var (col, desc) = EffectiveSort();
+                    var page = await Search.SearchObjectsPageInReleaseAsync(
+                        ReleaseId, objectFilter, moduleId, nsPrefix, col, desc, skip: 0, take: ObjectsPageSize);
+                    _objectResults = page.Rows.ToList();
+                    _objectsTotal = page.TotalCount;
+                }
                 break;
 
             case SearchScope.Procedures:
@@ -533,15 +555,155 @@
         }
     }
 
-    private static string? SecondNamespaceSegment(string ns)
+    // ── Objects grid: sort, multi-kind, lazy paging ─────────────────────
+
+    /// <summary>
+    /// True when the objects list should use relevance ranking: a search term
+    /// is present and the user hasn't picked an explicit sort column. In that
+    /// case the (small) match set is fetched capped and ranked, so there's no
+    /// lazy paging. Otherwise we page a column-sorted query as the user scrolls.
+    /// </summary>
+    private bool ObjectsRankedMode => _sortColumn is null && !string.IsNullOrWhiteSpace(_search);
+
+    /// <summary>The sort to apply when not ranking — the picked column, or Type ascending by default.</summary>
+    private (ObjectSortColumn Column, bool Descending) EffectiveSort()
+        => _sortColumn is { } c ? (c, _sortDescending) : (ObjectSortColumn.Default, false);
+
+    private string KindSummary => _selectedKinds.Count switch
     {
-        // Split on '.' once, return the segment after the first.
-        // "Microsoft.Warehouse.ADCS" → "Warehouse"; "System" alone → null.
-        var dot = ns.IndexOf('.');
-        if (dot < 0 || dot == ns.Length - 1) return null;
-        var rest = ns[(dot + 1)..];
-        var nextDot = rest.IndexOf('.');
-        return nextDot < 0 ? rest : rest[..nextDot];
+        0 => "All types",
+        1 => _selectedKinds.First(),
+        var n => $"{n} types",
+    };
+
+    /// <summary>True when any object filter or sort is in effect — gates the Reset button.</summary>
+    private bool HasActiveFilters =>
+        !string.IsNullOrWhiteSpace(_search)
+        || _selectedKinds.Count > 0
+        || !string.IsNullOrWhiteSpace(_moduleFilter)
+        || !string.IsNullOrWhiteSpace(_namespace)
+        || _sortColumn is not null;
+
+    /// <summary>Clears every filter + sort back to the default view, including the uncontrolled inputs.</summary>
+    private async Task ResetFilters()
+    {
+        _search = string.Empty;
+        _selectedKinds.Clear();
+        _moduleFilter = string.Empty;
+        _namespace = string.Empty;
+        _sortColumn = null;
+        _sortDescending = false;
+        if (_isInteractive)
+        {
+            // Both are uncontrolled inputs; clear their DOM values. The search
+            // box renders in every non-Compare scope; the namespace box only in
+            // Objects, so only seed it there.
+            await JS.InvokeVoidAsync("aldt.seedInput", _searchInputRef, string.Empty);
+            if (_scope == SearchScope.Objects)
+            {
+                await JS.InvokeVoidAsync("aldt.seedInput", _namespaceInputRef, string.Empty);
+            }
+        }
+        await ReloadAsync();
+        StateHasChanged();
+    }
+
+    private RenderFragment SortHeader(string label, ObjectSortColumn column) => __builder =>
+    {
+        var active = _sortColumn == column;
+        <button type="button"
+                class="data-table__sort-button @(active ? "is-active" : "")"
+                @onclick="() => SortBy(column)">
+            @label
+            @if (active)
+            {
+                <span class="data-table__sort-indicator">@(_sortDescending ? "▼" : "▲")</span>
+            }
+        </button>
+    };
+
+    /// <summary>
+    /// Header click: first click sorts ascending, second flips to descending,
+    /// third clears the sort (back to relevance/default), BC-grid style.
+    /// </summary>
+    private async Task SortBy(ObjectSortColumn column)
+    {
+        if (_sortColumn != column)
+        {
+            _sortColumn = column;
+            _sortDescending = false;
+        }
+        else if (!_sortDescending)
+        {
+            _sortDescending = true;
+        }
+        else
+        {
+            _sortColumn = null;
+            _sortDescending = false;
+        }
+        await ReloadAsync();
+        StateHasChanged();
+    }
+
+    private async Task OnKindToggled(string kind, ChangeEventArgs e)
+    {
+        if (e.Value is true) _selectedKinds.Add(kind);
+        else _selectedKinds.Remove(kind);
+        await ReloadAsync();
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Invoked from JS when the scroll sentinel enters the viewport — appends
+    /// the next page of objects. No-op while ranking, already loading, or once
+    /// every row is in hand. Guarded by the reload gate so it never shares the
+    /// scoped DbContext with an in-flight reload.
+    /// </summary>
+    [JSInvokable]
+    public async Task LoadMoreObjects()
+    {
+        if (_scope != SearchScope.Objects || ObjectsRankedMode) return;
+        if (_objectsLoadingMore || _objectResults is null || _objectResults.Count >= _objectsTotal) return;
+
+        _objectsLoadingMore = true;
+        try
+        {
+            await _reloadGate.WaitAsync();
+            try
+            {
+                // Re-check under the gate: a reload (new search/filter) may have
+                // run while we waited, flipping us into ranked mode or replacing
+                // the result set.
+                if (_scope != SearchScope.Objects || ObjectsRankedMode
+                    || _objectResults is null || _objectResults.Count >= _objectsTotal)
+                {
+                    return;
+                }
+
+                long? moduleId = long.TryParse(_moduleFilter, out var m) ? m : null;
+                var trimmedSearch = string.IsNullOrWhiteSpace(_search) ? null : _search;
+                var nsPrefix = string.IsNullOrWhiteSpace(_namespace) ? null : _namespace;
+                var filter = new ObjectListFilter(
+                    Kinds: _selectedKinds.Count == 0 ? null : _selectedKinds.ToList(),
+                    Search: trimmedSearch);
+                var (col, desc) = EffectiveSort();
+                var page = await Search.SearchObjectsPageInReleaseAsync(
+                    ReleaseId, filter, moduleId, nsPrefix, col, desc,
+                    skip: _objectResults.Count, take: ObjectsPageSize);
+                _objectResults.AddRange(page.Rows);
+                _objectsTotal = page.TotalCount;
+            }
+            finally
+            {
+                _reloadGate.Release();
+            }
+        }
+        finally
+        {
+            _objectsLoadingMore = false;
+        }
+        StateHasChanged();
     }
 
     private static string FormatStatus(string s) => s switch
@@ -557,9 +719,8 @@
     private RenderFragment RenderObjectsResults() => __builder =>
     {
         var hasFilters = !string.IsNullOrWhiteSpace(_search)
-            || !string.IsNullOrWhiteSpace(_kind)
+            || _selectedKinds.Count > 0
             || !string.IsNullOrWhiteSpace(_moduleFilter)
-            || !string.IsNullOrWhiteSpace(_moduleSegment)
             || !string.IsNullOrWhiteSpace(_namespace);
 
         if (_objectResults is null)
@@ -572,18 +733,33 @@
             <p class="muted">@(hasFilters ? "No objects match the current filter." : "No objects in this release yet.")</p>
             return;
         }
-        <p class="muted">Showing @_objectResults.Count.ToString("N0") object(s)@(_objectResults.Count >= 500 ? " (capped — narrow the search to see the rest)" : "").</p>
-        <table class="data-table">
+        <p class="muted">
+            @if (ObjectsRankedMode)
+            {
+                <text>Showing @_objectResults.Count.ToString("N0") object(s)@(_objectResults.Count >= 500 ? " (capped — narrow the search to see the rest)" : "").</text>
+            }
+            else
+            {
+                <text>Showing @_objectResults.Count.ToString("N0") of @_objectsTotal.ToString("N0") object(s).</text>
+            }
+        </p>
+        <table class="data-table data-table--objects">
+            <colgroup>
+                <col class="col-type" />
+                <col class="col-id" />
+                <col />
+                <col class="col-extension" />
+                <col />
+                <col class="col-lines" />
+            </colgroup>
             <thead>
                 <tr>
-                    <th scope="col">Type</th>
-                    <th scope="col">ID</th>
-                    <th scope="col">Name</th>
-                    <th scope="col">Extension</th>
-                    <th scope="col">Module</th>
-                    <th scope="col">Namespace</th>
-                    <th scope="col">Lines</th>
-                    <th scope="col"><span class="visually-hidden">Actions</span></th>
+                    <th scope="col">@SortHeader("Type", ObjectSortColumn.Type)</th>
+                    <th scope="col">@SortHeader("ID", ObjectSortColumn.Id)</th>
+                    <th scope="col">@SortHeader("Name", ObjectSortColumn.Name)</th>
+                    <th scope="col">@SortHeader("Extension", ObjectSortColumn.Module)</th>
+                    <th scope="col">@SortHeader("Namespace", ObjectSortColumn.Namespace)</th>
+                    <th scope="col">@SortHeader("Lines", ObjectSortColumn.Lines)</th>
                 </tr>
             </thead>
             <tbody>
@@ -603,21 +779,18 @@
                             }
                         </td>
                         <td>@r.ModuleName</td>
-                        <td>@(SecondNamespaceSegment(r.Namespace ?? string.Empty) ?? "—")</td>
                         <td class="muted">@(r.Namespace ?? "—")</td>
                         <td>@(r.SourceFileId is null ? "—" : r.FileLineCount.ToString("N0"))</td>
-                        <td class="row-actions">
-                            <a href="@($"/object-explorer/object/{r.Id}#find-references")"
-                               title="Find references"
-                               aria-label="Find references"
-                               class="btn btn--sm">
-                                <Icon Name="search" Width="14" Height="14" />
-                            </a>
-                        </td>
                     </tr>
                 }
             </tbody>
         </table>
+        @if (!ObjectsRankedMode && _objectResults.Count < _objectsTotal)
+        {
+            <div id="oe-objects-sentinel" class="oe-scroll-sentinel">
+                <span class="muted">Loading more…</span>
+            </div>
+        }
     };
 
     private RenderFragment RenderProceduresResults() => __builder =>

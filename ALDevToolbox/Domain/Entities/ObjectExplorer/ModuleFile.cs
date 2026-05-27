@@ -20,11 +20,18 @@ public class ModuleFile
     /// <summary>Path relative to the module's source root (e.g. <c>src/Codeunits/Agent.Codeunit.al</c>).</summary>
     public string Path { get; set; } = string.Empty;
 
-    /// <summary>UTF-8 source text, stored verbatim so the file viewer renders the same bytes.</summary>
-    public string Content { get; set; } = string.Empty;
-
-    /// <summary>SHA-256 of <see cref="Content"/> as hex. Powers cross-Release diffing.</summary>
+    /// <summary>
+    /// SHA-256 of the source text as hex. Powers cross-Release diffing and is
+    /// the FK into the shared <see cref="FileContent"/> store — the actual
+    /// source text lives there, deduplicated, not on this row.
+    /// </summary>
     public string ContentHash { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The deduplicated source blob, shared across every file row with the same
+    /// <see cref="ContentHash"/>. Read the text via <c>FileContent.Content</c>.
+    /// </summary>
+    public FileContent? FileContent { get; set; }
 
     /// <summary>Denormalised line count for the browser table.</summary>
     public int LineCount { get; set; }

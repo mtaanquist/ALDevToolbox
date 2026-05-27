@@ -49,7 +49,15 @@ public sealed record PerTenantBackupRow(
 public sealed class PerTenantBackupService
 {
     /// <summary>Version baked into every snapshot ZIP. Bump when a migration touches a tenanted table.</summary>
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
+
+    /// <summary>
+    /// Snapshot entry for the shared content-addressed source store. Not a
+    /// tenanted table (no organization_id), so it isn't in
+    /// <see cref="TenantTableCatalog"/>; the snapshot carries the org's
+    /// referenced blobs explicitly and the restore upserts them first.
+    /// </summary>
+    private const string FileContentsEntryTable = "oe_file_contents";
 
     /// <summary>Filename suffix every per-tenant snapshot carries.</summary>
     public const string FileSuffix = ".tenant.zip";
@@ -195,6 +203,16 @@ public sealed class PerTenantBackupService
                 includedTables.Add(table);
             }
 
+            // The shared, content-addressed source-blob store. Captured as the
+            // subset this org's files reference so the snapshot stays
+            // self-contained (oe_file_contents has no organization_id column).
+            {
+                var entry = zip.CreateEntry(FileContentsEntryTable + ".json", CompressionLevel.Optimal);
+                await using var entryStream = entry.Open();
+                await WriteFileContentsAsJsonAsync(connection, organizationId, entryStream, ct);
+                includedTables.Add(FileContentsEntryTable);
+            }
+
             var manifest = new
             {
                 schema_version = CurrentSchemaVersion,
@@ -302,6 +320,30 @@ public sealed class PerTenantBackupService
             cmd.CommandText = $"DELETE FROM {table} WHERE organization_id = @org";
             cmd.Parameters.AddWithValue("@org", row.OrganizationId);
             await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // Restore the shared source blobs FIRST (FK order: oe_module_files
+        // references oe_file_contents.content_hash). ON CONFLICT DO NOTHING
+        // because the blob may already exist — shared with another org, or left
+        // behind by the delete phase above (which intentionally never touches
+        // the shared store). It is never deleted on restore for the same reason.
+        {
+            var entry = zip.GetEntry(FileContentsEntryTable + ".json");
+            if (entry is not null)
+            {
+                await using var entryStream = entry.Open();
+                await foreach (var batchJson in PerTenantBackupJson.BatchJsonArrayAsync(entryStream, RestoreBatchBytes, ct))
+                {
+                    await using var cmd = connection.CreateCommand();
+                    cmd.Transaction = tx;
+                    cmd.CommandText =
+                        $"INSERT INTO {FileContentsEntryTable} SELECT * FROM " +
+                        $"jsonb_populate_recordset(NULL::{FileContentsEntryTable}, @rows::jsonb) " +
+                        "ON CONFLICT (content_hash) DO NOTHING";
+                    cmd.Parameters.AddWithValue("@rows", batchJson);
+                    await cmd.ExecuteNonQueryAsync(ct);
+                }
+            }
         }
 
         // Insert in FK order. jsonb_populate_recordset takes a row type that
@@ -443,7 +485,32 @@ public sealed class PerTenantBackupService
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = $"SELECT to_jsonb(t)::text FROM {table} t WHERE t.organization_id = @org";
         cmd.Parameters.AddWithValue("@org", organizationId);
+        await WriteRowsAsJsonAsync(cmd, destination, ct);
+    }
 
+    /// <summary>
+    /// Writes the subset of the shared, content-addressed <c>oe_file_contents</c>
+    /// store referenced by this org's <c>oe_module_files</c>. The table has no
+    /// <c>organization_id</c> (it's cross-tenant shared), so the snapshot must
+    /// carry the org's referenced blobs explicitly — otherwise a restore into a
+    /// fresh database would violate the <c>content_hash</c> FK and lose source.
+    /// </summary>
+    private static async Task WriteFileContentsAsJsonAsync(
+        NpgsqlConnection connection,
+        int organizationId,
+        Stream destination,
+        CancellationToken ct)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText =
+            "SELECT to_jsonb(c)::text FROM oe_file_contents c WHERE EXISTS " +
+            "(SELECT 1 FROM oe_module_files f WHERE f.content_hash = c.content_hash AND f.organization_id = @org)";
+        cmd.Parameters.AddWithValue("@org", organizationId);
+        await WriteRowsAsJsonAsync(cmd, destination, ct);
+    }
+
+    private static async Task WriteRowsAsJsonAsync(NpgsqlCommand cmd, Stream destination, CancellationToken ct)
+    {
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         await destination.WriteAsync("["u8.ToArray(), ct);
         var first = true;

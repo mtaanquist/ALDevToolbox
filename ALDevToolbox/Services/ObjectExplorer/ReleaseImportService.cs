@@ -99,6 +99,8 @@ public class ReleaseImportService
             OrganizationId = orgId,
             Label = request.Label.Trim(),
             Kind = request.Kind,
+            Publisher = NullIfBlank(request.Publisher),
+            CustomerName = NullIfBlank(request.CustomerName),
             ParentReleaseId = request.ParentReleaseId,
             ApplicationVersionId = request.ApplicationVersionId,
             Status = "ingesting",
@@ -165,7 +167,7 @@ public class ReleaseImportService
             var totalsRow = await _db.OeModuleFiles.AsNoTracking()
                 .Where(f => f.Module!.ReleaseId == release.Id)
                 .GroupBy(_ => 1)
-                .Select(g => new { Count = g.Count(), Length = g.Sum(f => (long)f.Content.Length) })
+                .Select(g => new { Count = g.Count(), Length = g.Sum(f => (long)f.FileContent!.ContentLength) })
                 .SingleOrDefaultAsync(ct).ConfigureAwait(false);
             ready.SourceFileCount = totalsRow?.Count ?? 0;
             ready.SourceContentLength = totalsRow?.Length ?? 0;
@@ -324,7 +326,7 @@ public class ReleaseImportService
             var totalsRow = await _db.OeModuleFiles.AsNoTracking()
                 .Where(f => f.Module!.ReleaseId == release.Id)
                 .GroupBy(_ => 1)
-                .Select(g => new { Count = g.Count(), Length = g.Sum(f => (long)f.Content.Length) })
+                .Select(g => new { Count = g.Count(), Length = g.Sum(f => (long)f.FileContent!.ContentLength) })
                 .SingleOrDefaultAsync(ct).ConfigureAwait(false);
             ready.SourceFileCount = totalsRow?.Count ?? 0;
             ready.SourceContentLength = totalsRow?.Length ?? 0;
@@ -546,6 +548,7 @@ public class ReleaseImportService
             IsInternal = upload.IsInternal,
             IsLanguagePack = upload.IsLanguagePack,
             DependenciesJson = SerializeDeps(pkg.Manifest.Dependencies),
+            DependencyCount = pkg.Manifest.Dependencies.Count,
             AppFileHash = pkg.AppFileHash,
             CreatedAt = DateTime.UtcNow,
         };
@@ -563,30 +566,40 @@ public class ReleaseImportService
         // builder allocates the whole batch text + parameter array in
         // memory. Bounded chunks keep the per-flush memory footprint flat.
         var filesByPath = new Dictionary<string, OeModuleFile>(StringComparer.OrdinalIgnoreCase);
+        // Per-chunk dedup of source blobs, keyed by hash, upserted into the
+        // shared oe_file_contents store BEFORE the file rows that reference them
+        // (FK on content_hash). Keyed by hash so two identical files in the same
+        // chunk produce one blob.
+        var pendingContent = new Dictionary<string, (string Content, int Length, int LineCount)>(StringComparer.Ordinal);
         int filesPending = 0;
         foreach (var (path, content) in sourceFiles)
         {
+            var hash = HashHex(content);
+            var lineCount = CountLines(content);
             var file = new OeModuleFile
             {
                 OrganizationId = orgId,
                 ModuleId = module.Id,
                 Path = path,
-                Content = content,
-                ContentHash = HashHex(content),
-                LineCount = CountLines(content),
+                ContentHash = hash,
+                LineCount = lineCount,
             };
             _db.OeModuleFiles.Add(file);
             filesByPath[path] = file;
+            pendingContent[hash] = (content, content.Length, lineCount);
             totals.SourceFilesImported++;
             filesPending++;
             if (filesPending >= FileChunkSize)
             {
+                await UpsertFileContentsAsync(pendingContent, ct).ConfigureAwait(false);
                 await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+                pendingContent.Clear();
                 filesPending = 0;
             }
         }
         if (filesPending > 0)
         {
+            await UpsertFileContentsAsync(pendingContent, ct).ConfigureAwait(false);
             await _db.SaveChangesAsync(ct).ConfigureAwait(false);
         }
 
@@ -602,7 +615,7 @@ public class ReleaseImportService
         // all in BC 28.1 DK). The AL declaration at the top of each .al
         // file is deterministic; AL enforces one object per file in
         // practice; matching by that header is the stable contract.
-        var declarations = ScanFileDeclarations(filesByPath);
+        var declarations = ScanFileDeclarations(filesByPath, sourceFiles);
 
         // Same pass, deeper: run the AL symbol extractor over each file so we
         // can stamp line/column on every sub-symbol (procedure / trigger /
@@ -612,7 +625,7 @@ public class ReleaseImportService
         // in O(1). Files with no source — third-party modules built with
         // IncludeSourceInSymbolFile="false" and no paired .Source.zip — have
         // no entry here; sub-symbols for those objects stay at LineNumber=0.
-        var extractedByPath = ExtractSubSymbolsByFile(filesByPath);
+        var extractedByPath = ExtractSubSymbolsByFile(sourceFiles);
 
         // Each chunk holds the object + every symbol/variable/reference row
         // that references it via navigation. Saving them together lets EF
@@ -1109,6 +1122,13 @@ public class ReleaseImportService
     /// it from the base page, which a second-pass copy
     /// (<see cref="PropagateSourceTableToPageExtensionsAsync"/>) fills.
     /// </summary>
+    /// <summary>Trims a free-text field and collapses empty / whitespace-only input to null.</summary>
+    private static string? NullIfBlank(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        return value.Trim();
+    }
+
     private static string? ExtractSourceTableName(SymbolObject symObj)
     {
         // Three properties bind Rec to a specific table:
@@ -1180,6 +1200,40 @@ public class ReleaseImportService
         return Convert.ToHexString(hash);
     }
 
+    /// <summary>
+    /// Inserts a chunk's distinct source blobs into the shared, content-addressed
+    /// <c>oe_file_contents</c> store, keyed by hash. <c>ON CONFLICT DO NOTHING</c>
+    /// makes it idempotent and race-safe: two orgs importing the same Base App
+    /// concurrently both succeed and the blob is stored exactly once. Must run
+    /// before the <see cref="OeModuleFile"/> rows referencing these hashes are
+    /// saved, so their <c>content_hash</c> FK resolves. Raw SQL because EF can't
+    /// express a batch upsert and a duplicate-PK <c>Add</c> would throw.
+    /// </summary>
+    private async Task UpsertFileContentsAsync(
+        IReadOnlyDictionary<string, (string Content, int Length, int LineCount)> contents,
+        CancellationToken ct)
+    {
+        if (contents.Count == 0) return;
+        var hashes = new string[contents.Count];
+        var bodies = new string[contents.Count];
+        var lengths = new int[contents.Count];
+        var lines = new int[contents.Count];
+        int i = 0;
+        foreach (var (hash, v) in contents)
+        {
+            hashes[i] = hash;
+            bodies[i] = v.Content;
+            lengths[i] = v.Length;
+            lines[i] = v.LineCount;
+            i++;
+        }
+        await _db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO oe_file_contents (content_hash, content, content_length, line_count) " +
+            "SELECT * FROM unnest({0}::text[], {1}::text[], {2}::int[], {3}::int[]) " +
+            "ON CONFLICT (content_hash) DO NOTHING",
+            new object[] { hashes, bodies, lengths, lines }, ct).ConfigureAwait(false);
+    }
+
     private static int CountLines(string content)
     {
         if (string.IsNullOrEmpty(content)) return 0;
@@ -1249,13 +1303,17 @@ public class ReleaseImportService
     /// rare on first-party modules and acceptable for v1.
     /// </summary>
     private static Dictionary<(string Kind, string Name), DeclarationHit> ScanFileDeclarations(
-        IReadOnlyDictionary<string, OeModuleFile> filesByPath)
+        IReadOnlyDictionary<string, OeModuleFile> filesByPath,
+        IReadOnlyDictionary<string, string> sourceFiles)
     {
         var result = new Dictionary<(string, string), DeclarationHit>(DeclarationKeyComparer.Instance);
-        foreach (var (_, file) in filesByPath)
+        foreach (var (path, file) in filesByPath)
         {
+            // Source text now lives in the shared content store, not on the
+            // file entity — read it from the in-memory upload map by path.
+            if (!sourceFiles.TryGetValue(path, out var content)) continue;
             int line = 0;
-            foreach (var rawLine in file.Content.Split('\n'))
+            foreach (var rawLine in content.Split('\n'))
             {
                 line++;
                 var m = ObjectHeaderRegex.Match(rawLine);
@@ -1275,12 +1333,12 @@ public class ReleaseImportService
     /// source-scan pass later" placeholder and unblocks the outline panel.
     /// </summary>
     private static Dictionary<string, IReadOnlyList<AlSymbol>> ExtractSubSymbolsByFile(
-        IReadOnlyDictionary<string, OeModuleFile> filesByPath)
+        IReadOnlyDictionary<string, string> sourceFiles)
     {
         var result = new Dictionary<string, IReadOnlyList<AlSymbol>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (path, file) in filesByPath)
+        foreach (var (path, content) in sourceFiles)
         {
-            result[path] = AlSymbolExtractor.Extract(file.Content);
+            result[path] = AlSymbolExtractor.Extract(content);
         }
         return result;
     }
@@ -1670,7 +1728,7 @@ public class ReleaseImportService
             .Select(f => new
             {
                 f.Id,
-                f.Content,
+                Content = f.FileContent!.Content,
                 f.Path,
                 ModuleId = f.ModuleId,
                 ModuleName = f.Module!.Name,

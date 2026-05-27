@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260619000000_AddOeFileContentStore")]
+    partial class AddOeFileContentStore
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -592,12 +595,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("dependencies_json");
 
-                    b.Property<int>("DependencyCount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0)
-                        .HasColumnName("dependency_count");
-
                     b.Property<bool>("IsInternal")
                         .HasColumnType("boolean")
                         .HasColumnName("is_internal");
@@ -1148,11 +1145,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
-                    b.Property<string>("CustomerName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("customer_name");
-
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
@@ -1178,11 +1170,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Property<int?>("ParentReleaseId")
                         .HasColumnType("integer")
                         .HasColumnName("parent_release_id");
-
-                    b.Property<string>("Publisher")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("publisher");
 
                     b.Property<long>("SourceContentLength")
                         .ValueGeneratedOnAdd()

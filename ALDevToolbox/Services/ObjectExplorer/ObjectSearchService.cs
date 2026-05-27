@@ -31,16 +31,7 @@ public sealed class ObjectSearchService
     public async Task<List<ReleaseObjectMatch>> SearchObjectsInReleaseAsync(
         int releaseId, ObjectListFilter filter, int take = 200, CancellationToken ct = default)
     {
-        var q = _db.OeModuleObjects.AsNoTracking()
-            .Where(o => o.Module!.ReleaseId == releaseId);
-
-        if (!string.IsNullOrWhiteSpace(filter.Kind))
-        {
-            var k = filter.Kind.Trim().ToLowerInvariant();
-            q = q.Where(o => o.Kind == k);
-        }
-        (q, var tokens) = ObjectSearchRanking.ApplySearchTokens(q, filter.Search);
-
+        var q = BuildFilteredQuery(releaseId, filter, moduleId: null, namespacePrefix: null, out var tokens);
         return await ObjectSearchRanking.ExecuteAndRankAsync(q, tokens, take, ct);
     }
 
@@ -61,13 +52,61 @@ public sealed class ObjectSearchService
         int take = 500,
         CancellationToken ct = default)
     {
+        var q = BuildFilteredQuery(releaseId, filter, moduleId, namespacePrefix, out var tokens);
+        return await ObjectSearchRanking.ExecuteAndRankAsync(q, tokens, take, ct);
+    }
+
+    /// <summary>
+    /// A single page of objects for the release-detail grid, ordered by an
+    /// explicit column instead of relevance, with offset paging so the UI can
+    /// lazy-load the next batch as the user scrolls. Returns the window plus
+    /// the total (filtered) count. Use this when the user has picked a sort
+    /// column or is browsing without a search term; the relevance-ranked
+    /// <see cref="SearchObjectsInReleaseAsync(int, ObjectListFilter, long?, string?, int, CancellationToken)"/>
+    /// stays the path for "best match first" text search.
+    /// </summary>
+    public async Task<ObjectSearchPage> SearchObjectsPageInReleaseAsync(
+        int releaseId,
+        ObjectListFilter filter,
+        long? moduleId,
+        string? namespacePrefix,
+        ObjectSortColumn sortColumn,
+        bool descending,
+        int skip,
+        int take,
+        CancellationToken ct = default)
+    {
+        var q = BuildFilteredQuery(releaseId, filter, moduleId, namespacePrefix, out _);
+        var total = await q.CountAsync(ct);
+        var rows = await ApplySort(q, sortColumn, descending)
+            .Skip(skip)
+            .Take(take)
+            .Select(o => new ReleaseObjectMatch(
+                o.Id, o.Kind, o.ObjectId, o.Name, o.Namespace,
+                o.ModuleId, o.Module!.Name,
+                o.SourceFileId, o.LineNumber,
+                o.SourceFile != null ? o.SourceFile.LineCount : 0))
+            .ToListAsync(ct);
+        return new ObjectSearchPage(rows, total);
+    }
+
+    /// <summary>
+    /// Shared filter assembly for the object queries: release scope, kind(s),
+    /// optional module + namespace-prefix narrows, and the "Tell Me" search
+    /// tokens. Returns the query plus the positive token texts the ranker
+    /// scores (empty when there's no search term).
+    /// </summary>
+    private IQueryable<ModuleObject> BuildFilteredQuery(
+        int releaseId, ObjectListFilter filter, long? moduleId, string? namespacePrefix,
+        out IReadOnlyList<string> tokens)
+    {
         var q = _db.OeModuleObjects.AsNoTracking()
             .Where(o => o.Module!.ReleaseId == releaseId);
 
-        if (!string.IsNullOrWhiteSpace(filter.Kind))
+        var kinds = ObjectSearchRanking.NormalizeKinds(filter.Kinds);
+        if (kinds is { Count: > 0 })
         {
-            var k = filter.Kind.Trim().ToLowerInvariant();
-            q = q.Where(o => o.Kind == k);
+            q = q.Where(o => kinds.Contains(o.Kind));
         }
         if (moduleId is { } mid)
         {
@@ -78,9 +117,35 @@ public sealed class ObjectSearchService
             var ns = namespacePrefix.Trim();
             q = q.Where(o => o.Namespace != null && o.Namespace.StartsWith(ns));
         }
-        (q, var tokens) = ObjectSearchRanking.ApplySearchTokens(q, filter.Search);
+        (q, tokens) = ObjectSearchRanking.ApplySearchTokens(q, filter.Search);
+        return q;
+    }
 
-        return await ObjectSearchRanking.ExecuteAndRankAsync(q, tokens, take, ct);
+    /// <summary>
+    /// Orders the object query by the chosen grid column, always appending a
+    /// stable <c>Id</c> tiebreaker so offset paging can't skip or duplicate
+    /// rows that tie on the sort key.
+    /// </summary>
+    private static IOrderedQueryable<ModuleObject> ApplySort(
+        IQueryable<ModuleObject> q, ObjectSortColumn column, bool descending)
+    {
+        IOrderedQueryable<ModuleObject> ordered = (column, descending) switch
+        {
+            (ObjectSortColumn.Default, _)       => q.OrderBy(o => o.Kind).ThenBy(o => o.ObjectId).ThenBy(o => o.Module!.DependencyCount).ThenBy(o => o.Module!.Name),
+            (ObjectSortColumn.Id, false)        => q.OrderBy(o => o.ObjectId),
+            (ObjectSortColumn.Id, true)         => q.OrderByDescending(o => o.ObjectId),
+            (ObjectSortColumn.Name, false)      => q.OrderBy(o => o.Name),
+            (ObjectSortColumn.Name, true)       => q.OrderByDescending(o => o.Name),
+            (ObjectSortColumn.Module, false)    => q.OrderBy(o => o.Module!.Name).ThenBy(o => o.Name),
+            (ObjectSortColumn.Module, true)     => q.OrderByDescending(o => o.Module!.Name).ThenBy(o => o.Name),
+            (ObjectSortColumn.Namespace, false) => q.OrderBy(o => o.Namespace).ThenBy(o => o.Name),
+            (ObjectSortColumn.Namespace, true)  => q.OrderByDescending(o => o.Namespace).ThenBy(o => o.Name),
+            (ObjectSortColumn.Lines, false)     => q.OrderBy(o => o.SourceFile != null ? o.SourceFile.LineCount : 0),
+            (ObjectSortColumn.Lines, true)      => q.OrderByDescending(o => o.SourceFile != null ? o.SourceFile.LineCount : 0),
+            (ObjectSortColumn.Type, true)       => q.OrderByDescending(o => o.Kind).ThenBy(o => o.Name),
+            _                                   => q.OrderBy(o => o.Kind).ThenBy(o => o.Name),
+        };
+        return ordered.ThenBy(o => o.Id);
     }
 
     /// <summary>Distinct object kinds in a Release — feeds the "Object type" dropdown.</summary>
@@ -168,7 +233,10 @@ public sealed class ObjectSearchService
 
         var q = _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Module!.ReleaseId == releaseId)
-            .Where(f => f.Content.ToLower().Contains(lower));
+            // Stays org-scoped: the query is rooted at OeModuleFiles (org query
+            // filter applies); the FileContent nav becomes a JOIN to the shared
+            // content store, so no cross-tenant row can leak.
+            .Where(f => f.FileContent!.Content.ToLower().Contains(lower));
 
         if (moduleId is { } mid)
         {
@@ -188,7 +256,7 @@ public sealed class ObjectSearchService
                 f.Path,
                 f.ModuleId,
                 ModuleName = f.Module!.Name,
-                f.Content,
+                Content = f.FileContent!.Content,
             })
             .ToListAsync(ct);
 

@@ -566,7 +566,7 @@ public sealed class ReferenceQueryService
 
         var files = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => fileIds.Contains(f.Id))
-            .Select(f => new { f.Id, f.Path, f.Content })
+            .Select(f => new { f.Id, f.Path, Content = f.FileContent!.Content })
             .ToListAsync(ct);
 
         var lookup = files.ToDictionary(

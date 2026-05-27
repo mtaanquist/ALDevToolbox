@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260619000000_AddReleasePublisherAndCustomer")]
+    partial class AddReleasePublisherAndCustomer
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -542,30 +545,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.ToTable("oauth_consents", (string)null);
                 });
 
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.FileContent", b =>
-                {
-                    b.Property<string>("ContentHash")
-                        .HasColumnType("text")
-                        .HasColumnName("content_hash");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("content");
-
-                    b.Property<int>("ContentLength")
-                        .HasColumnType("integer")
-                        .HasColumnName("content_length");
-
-                    b.Property<int>("LineCount")
-                        .HasColumnType("integer")
-                        .HasColumnName("line_count");
-
-                    b.HasKey("ContentHash");
-
-                    b.ToTable("oe_file_contents", (string)null);
-                });
-
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.Module", b =>
                 {
                     b.Property<long>("Id")
@@ -591,12 +570,6 @@ namespace ALDevToolbox.Data.Migrations
                         .IsRequired()
                         .HasColumnType("jsonb")
                         .HasColumnName("dependencies_json");
-
-                    b.Property<int>("DependencyCount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0)
-                        .HasColumnName("dependency_count");
 
                     b.Property<bool>("IsInternal")
                         .HasColumnType("boolean")
@@ -664,6 +637,11 @@ namespace ALDevToolbox.Data.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("content");
+
                     b.Property<string>("ContentHash")
                         .IsRequired()
                         .HasColumnType("text")
@@ -687,9 +665,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasColumnName("path");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("ContentHash")
-                        .HasDatabaseName("ix_oe_module_files_content_hash");
 
                     b.HasIndex("OrganizationId");
 
@@ -3119,12 +3094,6 @@ namespace ALDevToolbox.Data.Migrations
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleFile", b =>
                 {
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.FileContent", "FileContent")
-                        .WithMany()
-                        .HasForeignKey("ContentHash")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Module", "Module")
                         .WithMany("Files")
                         .HasForeignKey("ModuleId")
@@ -3136,8 +3105,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasForeignKey("OrganizationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("FileContent");
 
                     b.Navigation("Module");
 

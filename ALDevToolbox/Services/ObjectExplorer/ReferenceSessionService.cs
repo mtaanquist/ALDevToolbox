@@ -198,7 +198,7 @@ public sealed class ReferenceSessionService
             .Where(f => f.Id == fileId)
             .Select(f => new
             {
-                f.Content,
+                Content = f.FileContent!.Content,
                 ReleaseId = f.Module!.ReleaseId,
                 ModuleId = f.ModuleId,
                 ModuleName = f.Module!.Name,
@@ -285,7 +285,7 @@ public sealed class ReferenceSessionService
     {
         var meta = await _db.OeModuleFiles.AsNoTracking()
             .Where(f => f.Id == fileId)
-            .Select(f => new { f.Content, ReleaseId = f.Module!.ReleaseId, f.Path })
+            .Select(f => new { Content = f.FileContent!.Content, ReleaseId = f.Module!.ReleaseId, f.Path })
             .SingleOrDefaultAsync(ct);
         if (meta is null)
         {
