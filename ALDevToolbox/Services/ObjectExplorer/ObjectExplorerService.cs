@@ -62,7 +62,8 @@ public class ObjectExplorerService
                 // pins these once when the Release flips to ready.
                 SourceFileCount: r.SourceFileCount,
                 SourceContentLength: r.SourceContentLength,
-                DeletedAt: r.DeletedAt))
+                DeletedAt: r.DeletedAt,
+                StatusMessage: r.StatusMessage))
             .ToListAsync(ct);
 
         // Sort in memory: active rows first, then by BC version descending

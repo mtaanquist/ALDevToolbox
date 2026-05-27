@@ -16,16 +16,6 @@
 
 <PageTitle>Object Explorer · Admin · AL Dev Toolbox</PageTitle>
 
-@* While an import is ingesting in the background, poll the page so the row
-   flips to Ready/Failed on its own. Meta-refresh keeps this working on the
-   statically-rendered page with no JS; it stops once nothing is ingesting. *@
-@if (_releases is not null && _releases.Any(r => r.Status == "ingesting"))
-{
-    <HeadContent>
-        <meta http-equiv="refresh" content="6" />
-    </HeadContent>
-}
-
 <div class="admin-page">
     <header class="admin-page__header">
         <div>
@@ -36,10 +26,19 @@
                 here until they're permanently removed.
             </p>
         </div>
-        <a class="btn" href="/admin/object-explorer/new">
-            <Icon Name="upload" Width="16" Height="16" />
-            <span>Import Release</span>
-        </a>
+        <div class="row-actions">
+            @if (_releases is not null && _releases.Any(r => r.Status == "ingesting"))
+            {
+                <a class="btn btn--sm" href="/admin/object-explorer" title="Reload to see import progress">
+                    <Icon Name="refresh-cw" Width="14" Height="14" />
+                    <span>Refresh</span>
+                </a>
+            }
+            <a class="btn" href="/admin/object-explorer/new">
+                <Icon Name="upload" Width="16" Height="16" />
+                <span>Import Release</span>
+            </a>
+        </div>
     </header>
 
     @if (Status is { } status)
@@ -96,7 +95,13 @@
                         <td>@FormatKind(r.Kind)</td>
                         <td>@(string.IsNullOrEmpty(r.Publisher) ? "—" : r.Publisher)</td>
                         <td>@(string.IsNullOrEmpty(r.CustomerName) ? "—" : r.CustomerName)</td>
-                        <td>@FormatStatus(r.Status)</td>
+                        <td>
+                            @FormatStatus(r.Status)
+                            @if (r.Status == "failed" && !string.IsNullOrEmpty(r.StatusMessage))
+                            {
+                                <p class="oe-status-error" role="alert">@r.StatusMessage</p>
+                            }
+                        </td>
                         <td>@r.SourceFileCount.ToString("N0")</td>
                         <td>@FormatBytes(r.SourceContentLength)</td>
                         <td>@r.ImportedAt.ToString("yyyy-MM-dd")</td>
@@ -144,7 +149,7 @@
 
     private static string FormatOkMessage(string ok, string id) => ok switch
     {
-        "queued"       => $"Release {id} queued — importing in the background. This page refreshes until it's ready.",
+        "queued"       => $"Release {id} queued — importing in the background. Refresh this page to check on its progress.",
         "imported"     => $"Release {id} imported.",
         "updated"      => $"Release {id} metadata updated.",
         "soft-deleted" => $"Release {id} soft-deleted. Restore from this page if it was a mistake.",

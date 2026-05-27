@@ -84,8 +84,8 @@
             if (bar) bar.removeAttribute("value");
             if (hint) {
                 hint.textContent = isBackground
-                    ? "This import will finish in the background — taking you to the releases list, "
-                        + "where the status updates on its own."
+                    ? "This import will finish in the background — taking you to the releases list. "
+                        + "Refresh that page to check on its progress."
                     : "Parsing .app files and resolving references. "
                         + "This can take a few minutes — keep this tab open.";
             }
