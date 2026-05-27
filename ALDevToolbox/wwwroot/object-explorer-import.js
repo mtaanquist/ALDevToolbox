@@ -23,11 +23,11 @@
     function setFieldVisible(field, visible) {
         if (!field) return;
         field.hidden = !visible;
-        // Clear the input when we hide it so a value typed under one Kind
+        // Clear the control when we hide it so a value set under one Kind
         // doesn't silently post after switching to a Kind that doesn't use it.
         if (!visible) {
-            const input = field.querySelector("input");
-            if (input) input.value = "";
+            const control = field.querySelector("input, select");
+            if (control) control.value = "";
         }
     }
 
@@ -35,7 +35,11 @@
         const kind = form.querySelector("select[name='Kind']");
         if (!kind) return;
         const value = kind.value;
-        setFieldVisible(form.querySelector("[data-oe-field-publisher]"), value === "third_party" || value === "customer");
+        const nonFirstParty = value === "third_party" || value === "customer";
+        // Parent + publisher only matter for apps that sit on a first-party base;
+        // customer name only for customer bundles. First-party shows none of them.
+        setFieldVisible(form.querySelector("[data-oe-field-parent]"), nonFirstParty);
+        setFieldVisible(form.querySelector("[data-oe-field-publisher]"), nonFirstParty);
         setFieldVisible(form.querySelector("[data-oe-field-customer]"), value === "customer");
     }
 

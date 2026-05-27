@@ -1914,6 +1914,12 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     min-width: 0;
 }
 
+/* Respect the `hidden` attribute — the display:flex above would otherwise beat
+   the UA `[hidden] { display: none }`, leaving JS-toggled fields visible. */
+.field[hidden] {
+    display: none;
+}
+
 .field__label {
     font-size: 12.5px;
     font-weight: 600;

@@ -51,6 +51,15 @@
             <input type="hidden" name="@_antiforgeryToken.FormFieldName" value="@_antiforgeryToken.RequestToken" />
         }
 
+        <div class="oe-import-progress" data-oe-import-progress hidden role="status" aria-live="polite">
+            <div class="oe-import-progress__row">
+                <span class="oe-import-progress__label" data-oe-import-label>Uploading…</span>
+                <span class="oe-import-progress__pct" data-oe-import-pct></span>
+            </div>
+            <progress class="oe-import-progress__bar" data-oe-import-bar max="100" value="0"></progress>
+            <p class="oe-import-progress__hint muted" data-oe-import-hint></p>
+        </div>
+
         <section class="form-section">
             <label class="field">
                 <span class="field__label">Label</span>
@@ -76,7 +85,7 @@
                 </small>
             </label>
 
-            <label class="field">
+            <label class="field" data-oe-field-parent>
                 <span class="field__label">Parent Release (optional)</span>
                 <select name="ParentReleaseId" class="field__input">
                     <option value="">— none (first-party, no parent) —</option>
@@ -167,15 +176,6 @@
                 <Icon Name="upload" Width="16" Height="16" />
                 <span>Import Release</span>
             </button>
-
-            <div class="upload-progress" data-oe-import-progress hidden role="status" aria-live="polite">
-                <div class="upload-progress__head">
-                    <span class="upload-progress__label" data-oe-import-label>Uploading…</span>
-                    <span class="upload-progress__pct" data-oe-import-pct></span>
-                </div>
-                <progress class="upload-progress__bar" data-oe-import-bar max="100" value="0"></progress>
-                <p class="upload-progress__hint muted" data-oe-import-hint></p>
-            </div>
         </section>
     </form>
 </div>
