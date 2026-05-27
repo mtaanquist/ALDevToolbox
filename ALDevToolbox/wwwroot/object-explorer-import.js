@@ -67,16 +67,22 @@
         if (bar) bar.value = 0;
         if (pct) pct.textContent = "0%";
 
+        const dvdUrlField = form.querySelector("input[name='DvdUrl']");
+        const isUrlImport = !!(dvdUrlField && dvdUrlField.value.trim());
+
         function switchToIngesting() {
-            if (label) label.textContent = "Ingesting…";
+            if (label) label.textContent = isUrlImport ? "Downloading & ingesting…" : "Ingesting…";
             if (pct) pct.textContent = "";
             // Removing the value attribute puts <progress> into its
             // indeterminate (animated) state — we have no byte signal for
-            // the server-side parse/resolve phase.
+            // the server-side download/parse/resolve phase.
             if (bar) bar.removeAttribute("value");
             if (hint) {
-                hint.textContent = "Parsing .app files and resolving references. "
-                    + "This can take a few minutes for a full DVD — keep this tab open.";
+                hint.textContent = isUrlImport
+                    ? "Downloading the DVD and resolving references. The download alone can take "
+                        + "several minutes for a multi-GB file — keep this tab open."
+                    : "Parsing .app files and resolving references. "
+                        + "This can take a few minutes for a full DVD — keep this tab open.";
             }
         }
 

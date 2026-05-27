@@ -73,5 +73,6 @@ public sealed class SystemSettingsAuditTests : IDisposable
         DefaultStorageQuotaMb: null,
         IndexSizeMultiplier: 0.5m,
         McpEnabled: false,
-        SignupEmailDomainAllowlist: null);
+        SignupEmailDomainAllowlist: null,
+        ReleaseDownloadDomainAllowlist: null);
 }

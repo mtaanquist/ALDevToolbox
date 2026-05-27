@@ -143,6 +143,7 @@ builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<ApplicationVersionService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationImportService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseImportService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.DvdDownloadService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseManagementService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationQueryService>();
@@ -375,6 +376,21 @@ builder.Services.AddHttpClient(nameof(ALDevToolbox.Services.OAuth.CimdClientReso
         ConnectCallback = ALDevToolbox.Services.OAuth.SsrfGuard.ConnectAsync,
     });
 builder.Services.AddScoped<ALDevToolbox.Services.OAuth.CimdClientResolver>();
+
+// DVD download client for the Object Explorer "import release from URL" flow.
+// Same SSRF guard as the CIMD client (dial only publicly routable IPs), but
+// redirects are allowed: Microsoft download URLs commonly 302 to a CDN, and the
+// ConnectCallback re-checks every hop's IP so a redirect still can't reach an
+// internal target. The long timeout covers the multi-GB body.
+builder.Services.AddHttpClient(nameof(ALDevToolbox.Services.ObjectExplorer.DvdDownloadService), client =>
+    {
+        client.Timeout = TimeSpan.FromMinutes(20);
+    })
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        AllowAutoRedirect = true,
+        ConnectCallback = ALDevToolbox.Services.OAuth.SsrfGuard.ConnectAsync,
+    });
 
 // MCP server (Model Context Protocol). Mounted at /mcp by McpEndpoints; the
 // PAT auth handler above turns Bearer tokens into the same claim set the

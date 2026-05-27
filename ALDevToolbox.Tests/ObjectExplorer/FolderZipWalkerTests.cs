@@ -129,6 +129,59 @@ public sealed class FolderZipWalkerTests
             new[] { "Microsoft_DK Core.app", "Microsoft_OIOUBL.app" });
     }
 
+    // ── WalkDvd: full-DVD subset selection ─────────────────────────────
+
+    [Fact]
+    public void WalkDvd_keeps_applications_apps_and_system_app_only()
+    {
+        using var archive = BuildArchive(
+            "BC/Applications/DKCore/Source/Microsoft_DK Core.app",
+            "BC/Applications/DKCore/Source/DK Core.Source.zip",
+            "BC/ModernDev/PFiles/Microsoft Dynamics NAV/280/AL Development Environment/System.app",
+            // Noise outside Applications that must be ignored:
+            "BC/ServiceTier/Some.app",
+            "BC/Prerequisite Components/setup.exe",
+            "BC/ModernDev/PFiles/Microsoft Dynamics NAV/280/AL Development Environment/ReadMe.txt");
+
+        var entries = FolderZipWalker.WalkDvd(archive);
+
+        entries.Select(e => e.FileName).Should().BeEquivalentTo(
+            new[] { "Microsoft_DK Core.app", "System.app" });
+        entries.Single(e => e.FileName == "Microsoft_DK Core.app")
+            .SourceZipEntry.Should().NotBeNull();
+        entries.Single(e => e.FileName == "System.app")
+            .SourceZipEntry.Should().BeNull();
+    }
+
+    [Fact]
+    public void WalkDvd_excludes_test_apps_and_their_source()
+    {
+        using var archive = BuildArchive(
+            "BC/Applications/BaseApp/Source/Microsoft_Base Application.app",
+            "BC/Applications/BaseApp/Source/Base Application.Source.zip",
+            "BC/Applications/BaseApp/Test/Microsoft_Base Application Test.app",
+            "BC/Applications/BaseApp/Test/Base Application Test.Source.zip",
+            "BC/Applications/TestFramework/TestLibraries/Microsoft_Any.app");
+
+        var entries = FolderZipWalker.WalkDvd(archive);
+
+        entries.Select(e => e.FileName).Should().BeEquivalentTo(
+            new[] { "Microsoft_Base Application.app" },
+            because: "test extensions and their source are dropped entirely on the DVD path");
+    }
+
+    [Fact]
+    public void WalkDvd_returns_empty_when_no_applications_or_system_app_present()
+    {
+        // Mimics a future DVD layout where nothing matches our anchors — the
+        // endpoint turns an empty result into a clear "not a DVD" error.
+        using var archive = BuildArchive(
+            "BC/ServiceTier/Some.app",
+            "BC/Prerequisite Components/setup.exe");
+
+        FolderZipWalker.WalkDvd(archive).Should().BeEmpty();
+    }
+
     /// <summary>
     /// Builds a throwaway <see cref="ZipArchive"/> in memory with the supplied
     /// entry paths. File bodies are empty — none of the walker's behaviour

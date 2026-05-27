@@ -40,6 +40,7 @@ internal static class ObjectExplorerEndpoints
         app.MapPost("/admin/object-explorer/import", async (
             HttpContext ctx,
             ReleaseImportService importer,
+            DvdDownloadService dvdDownloader,
             IAntiforgery antiforgery,
             CancellationToken ct) =>
         {
@@ -56,12 +57,13 @@ internal static class ObjectExplorerEndpoints
                 parentReleaseId = pr;
             }
 
+            var dvdUrl = form["DvdUrl"].ToString().Trim();
             var folderZip = form.Files.GetFile("FolderZip");
             var appFiles = form.Files.GetFiles("AppFiles").Where(f => f.Length > 0).ToArray();
 
-            if (folderZip is null && appFiles.Length == 0)
+            if (dvdUrl.Length == 0 && folderZip is null && appFiles.Length == 0)
             {
-                Redirect(ctx, "AppFiles", "Pick a folder ZIP or at least one .app file before submitting.");
+                Redirect(ctx, "AppFiles", "Paste a download URL, pick a folder ZIP, or pick at least one .app file before submitting.");
                 return;
             }
 
@@ -71,7 +73,20 @@ internal static class ObjectExplorerEndpoints
             try
             {
                 List<AppFileUpload> uploads;
-                if (folderZip is not null && folderZip.Length > 0)
+                // Precedence: download URL → uploaded folder ZIP → individual files.
+                if (dvdUrl.Length > 0)
+                {
+                    tempFolderZipPath = await dvdDownloader.DownloadToTempAsync(dvdUrl, ct).ConfigureAwait(false);
+                    (uploads, folderArchive) = OpenStagedZip(tempFolderZipPath, isDvd: true, openedStreams);
+                    if (uploads.Count == 0)
+                    {
+                        Redirect(ctx, "DvdUrl",
+                            "No application .app files were found in that ZIP. Make sure the URL points to a "
+                            + "Business Central DVD (we keep everything under its Applications folder plus System.app).");
+                        return;
+                    }
+                }
+                else if (folderZip is not null && folderZip.Length > 0)
                 {
                     (uploads, folderArchive, tempFolderZipPath) =
                         await BuildUploadsFromFolderZipAsync(folderZip, openedStreams, ct).ConfigureAwait(false);
@@ -90,17 +105,7 @@ internal static class ObjectExplorerEndpoints
                     Publisher: publisher,
                     CustomerName: customerName);
 
-                ReleaseImportSummary summary;
-                try
-                {
-                    summary = await importer.ImportReleaseAsync(request, ct);
-                }
-                catch (PlanValidationException ex)
-                {
-                    var first = ex.Errors.First();
-                    Redirect(ctx, first.Key, first.Value);
-                    return;
-                }
+                var summary = await importer.ImportReleaseAsync(request, ct);
 
                 var query = $"/object-explorer/release/{summary.ReleaseId}"
                     + $"?ok=imported"
@@ -109,6 +114,14 @@ internal static class ObjectExplorerEndpoints
                     + $"&refs={summary.ReferencesImported}"
                     + $"&translations={summary.TranslationsImported}";
                 ctx.Response.Redirect(query);
+            }
+            catch (PlanValidationException ex)
+            {
+                // Covers URL/allow-list validation from the download service and
+                // the importer's own field-keyed rules — both redirect inline.
+                var first = ex.Errors.First();
+                Redirect(ctx, first.Key, first.Value);
+                return;
             }
             finally
             {
@@ -545,8 +558,25 @@ internal static class ObjectExplorerEndpoints
             await src.CopyToAsync(fs, ct).ConfigureAwait(false);
         }
 
-        var archive = new ZipArchive(File.OpenRead(tempPath), ZipArchiveMode.Read);
-        var entries = FolderZipWalker.Walk(archive);
+        var (uploads, archive) = OpenStagedZip(tempPath, isDvd: false, openedStreams);
+        return (uploads, archive, tempPath);
+    }
+
+    /// <summary>
+    /// Opens a staged ZIP (uploaded folder ZIP or a downloaded DVD) and turns
+    /// the apps it contains into <see cref="AppFileUpload"/>s. When
+    /// <paramref name="isDvd"/> is true only the DVD's <c>Applications/</c>
+    /// apps + <c>System.app</c> are taken and test apps are dropped
+    /// (<see cref="FolderZipWalker.WalkDvd"/>); otherwise every <c>.app</c> is
+    /// taken (<see cref="FolderZipWalker.Walk(ZipArchive, Func{string, bool})"/>).
+    /// The returned archive's lifetime owns the entry streams added to
+    /// <paramref name="openedStreams"/>; the caller disposes both.
+    /// </summary>
+    private static (List<AppFileUpload> Uploads, ZipArchive Archive) OpenStagedZip(
+        string tempZipPath, bool isDvd, List<Stream> openedStreams)
+    {
+        var archive = new ZipArchive(File.OpenRead(tempZipPath), ZipArchiveMode.Read);
+        var entries = isDvd ? FolderZipWalker.WalkDvd(archive) : FolderZipWalker.Walk(archive);
 
         var uploads = new List<AppFileUpload>(entries.Count);
         foreach (var entry in entries)
@@ -569,7 +599,7 @@ internal static class ObjectExplorerEndpoints
                 IsInternal: entry.IsInternal,
                 IsLanguagePack: entry.IsLanguagePack));
         }
-        return (uploads, archive, tempPath);
+        return (uploads, archive);
     }
 
     // ── Individual-file path (legacy / partner extensions) ─────────────
