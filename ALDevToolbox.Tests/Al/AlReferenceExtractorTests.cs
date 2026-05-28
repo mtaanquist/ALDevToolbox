@@ -4281,6 +4281,165 @@ public sealed class AlReferenceExtractorTests
             s.Token == "ColumnNo");
     }
 
+    [Fact]
+    public void Bare_call_resolves_on_outer_dataitem_after_inner_dataitem_closed()
+    {
+        // Replicates InventoryPostingTest.Report.al's actual shape:
+        // the OUTER dataitem ("Item Journal Line") wraps an INNER
+        // dataitem (DimensionLoop on Integer). The inner closes
+        // BEFORE the outer's own triggers; `EmptyLine()` at line
+        // 439 lives inside the outer's `OnAfterGetRecord` and must
+        // resolve against the outer's source after the inner has
+        // been popped. The depth-tracked stack must keep the outer
+        // alive across the inner's `}` close.
+        var resolver = MakeResolver();
+        resolver.AddType("Inventory Posting - Test",
+            new AlTypeRef(BaseAppId, "report", 702, "Inventory Posting - Test"));
+        resolver.AddType("Item Journal Line",
+            new AlTypeRef(BaseAppId, "table", 83, "Item Journal Line"));
+        resolver.AddType("Integer",
+            new AlTypeRef(BaseAppId, "table", 2000000026, "Integer"));
+        resolver.AddMember("Item Journal Line",
+            new AlMember("EmptyLine", "procedure", "Boolean", null));
+
+        const string src = """
+            report 702 "Inventory Posting - Test"
+            {
+                dataset
+                {
+                    dataitem("Item Journal Line"; "Item Journal Line")
+                    {
+                        column(Foo; "Item No.") { }
+                        dataitem(DimensionLoop; "Integer")
+                        {
+                            column(Bar; Number) { }
+                            trigger OnAfterGetRecord()
+                            begin
+                                Clear(Number);
+                            end;
+                        }
+                        trigger OnPreDataItem()
+                        begin
+                            Clear(QtyError);
+                        end;
+                        trigger OnAfterGetRecord()
+                        begin
+                            if EmptyLine() then
+                                exit;
+                        end;
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "Inventory Posting - Test"));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Item Journal Line"
+            && r.TargetMemberName == "EmptyLine");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "EmptyLine");
+    }
+
+    // ── Preprocessor #if / #else / #endif branch handling ───────────
+
+    [Fact]
+    public void Preprocessor_if_else_picks_first_branch_only()
+    {
+        // `#if CLEAN24 ... #else ... #endif` ships pre- and post-
+        // cleanup code paths side by side. Walking BOTH branches
+        // doubles begin/end counts and pops the procedure scope
+        // early — every later identifier dispatches at object scope.
+        // The canonical shape from JobQueueErrorHandler.LogError in
+        // BC 26.13: a single `if X.FindFirst() then begin` with
+        // `end;` in the `#if CLEAN24` branch and `end else begin`
+        // in the `#else` branch. Both branches' `end`s were being
+        // counted; the local var `JobQueueEntry` then surfaces as
+        // head-not-a-variable on later lines (samples Line=63/64/71).
+        //
+        // The walker now picks ONLY the first branch (`#if`) and
+        // skips forward from `#else` to the matching `#endif`.
+        var resolver = MakeResolver();
+        resolver.AddType("Job Queue Error Handler",
+            new AlTypeRef(BaseAppId, "codeunit", 450, "Job Queue Error Handler"));
+        resolver.AddType("Job Queue Entry",
+            new AlTypeRef(BaseAppId, "table", 472, "Job Queue Entry"));
+        resolver.AddMember("Job Queue Entry",
+            new AlMember("Modify", "procedure", "Boolean", null));
+
+        const string src = """
+            codeunit 450 "Job Queue Error Handler"
+            {
+                local procedure LogError(var JobQueueEntry: Record "Job Queue Entry")
+                begin
+                    if JobQueueEntry.Modify() then begin
+            #if CLEAN24
+                    end;
+            #else
+                        JobQueueEntry.Modify();
+                    end else begin
+                        JobQueueEntry.Modify();
+                    end;
+            #endif
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        // The `JobQueueEntry.Modify()` calls in the `#else` branch
+        // should NOT be walked (they're skipped). Only the one in
+        // the live `#if CLEAN24` branch — which here is the call
+        // BEFORE the directive — should be emitted.
+        result.References.Where(r =>
+                r.ReferenceKind == "method_call"
+                && r.TargetObjectName == "Job Queue Entry"
+                && r.TargetMemberName == "Modify")
+            .Should().HaveCount(1);
+        // No head-not-a-variable samples for JobQueueEntry — the
+        // walker stayed in procedure scope so the local var stayed
+        // in scope.
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "JobQueueEntry");
+    }
+
+    [Fact]
+    public void Preprocessor_nested_if_endif_in_else_branch_skipped_correctly()
+    {
+        // Guard: when the `#else` branch itself contains an
+        // `#if X ... #endif` pair, the outer skip must NOT mistake
+        // the inner `#endif` for its own. Without the depth counter,
+        // the skip would stop at the inner `#endif` and resume
+        // walking the rest of the outer `#else` branch.
+        var resolver = MakeResolver();
+        resolver.AddType("Test Helper",
+            new AlTypeRef(BaseAppId, "codeunit", 50100, "Test Helper"));
+
+        const string src = """
+            codeunit 50100 "Test Helper"
+            {
+                procedure Run()
+                var
+                    LocalVar: Integer;
+                begin
+            #if A
+                    LocalVar := 1;
+            #else
+            #if B
+                    LocalVar := 2;
+            #endif
+                    LocalVar := 3;
+            #endif
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        // LocalVar is declared and should be in scope for the live
+        // branch (`#if A`). No head-not-a-variable samples for it.
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "LocalVar");
+    }
+
     // ── Stub resolver ───────────────────────────────────────────────
 
     private sealed class StubResolver : IAlTypeResolver
