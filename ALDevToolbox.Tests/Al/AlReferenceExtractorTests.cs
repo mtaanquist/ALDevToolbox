@@ -4616,6 +4616,124 @@ public sealed class AlReferenceExtractorTests
             s.Token == "LocalVar");
     }
 
+    // ── Owner-global / label fallback on chain steps ────────────────
+
+    [Fact]
+    public void This_dot_global_codeunit_var_continues_chain_against_var_type()
+    {
+        // `this.LogiqEDocumentManagement.Send(...)` from
+        // LogiqIntegrationImpl.Codeunit.al. `this` resolves to the
+        // owner codeunit; `.LogiqEDocumentManagement` is a global
+        // codeunit-typed var on that owner. Globals don't live in
+        // oe_module_members, so the catalog member lookup misses.
+        // The fallback consults the bottom scope frame (Ctx.GlobalVars)
+        // and advances the chain receiver to the var's type so the
+        // following `.Send(...)` chain-step resolves normally.
+        var resolver = MakeResolver();
+        resolver.AddType("Logiq Integration Impl.",
+            new AlTypeRef(BaseAppId, "codeunit", 6431, "Logiq Integration Impl."));
+        resolver.AddType("Logiq EDocument Management",
+            new AlTypeRef(BaseAppId, "codeunit", 6432, "Logiq EDocument Management"));
+        resolver.AddMember("Logiq EDocument Management",
+            new AlMember("Send", "procedure", null, null));
+
+        var globals = new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["LogiqEDocumentManagement"] = new ResolvedVariableType("Codeunit", "Logiq EDocument Management"),
+        };
+        var ctx = new AlExtractContext(
+            OwnerKind: "codeunit",
+            OwnerName: "Logiq Integration Impl.",
+            OwnerObjectId: 6431,
+            OwnerAppId: BaseAppId,
+            GlobalVars: globals,
+            Resolver: resolver);
+
+        const string src = """
+            procedure Send(var EDocument: Record "E-Document"; var EDocumentService: Record "E-Document Service")
+            begin
+                this.LogiqEDocumentManagement.Send(EDocument, EDocumentService);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        // `.Send(...)` resolves against Logiq EDocument Management.
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Logiq EDocument Management"
+            && r.TargetMemberName == "Send");
+        // No chain-step unresolved on LogiqEDocumentManagement.
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "LogiqEDocumentManagement");
+    }
+
+    [Fact]
+    public void This_dot_global_scalar_terminates_chain_silently()
+    {
+        // `this.CurrentStep` / `this.TopBannerVisible` from
+        // AddUniversalPrintersWizard.Page.al. Both are scalar globals
+        // (Option / Boolean) — no further chain. The chain step lookup
+        // misses on the page object's catalog members, the fallback
+        // matches the global, and the chain terminates without firing
+        // an unresolved sample.
+        var resolver = MakeResolver();
+        resolver.AddType("Add Universal Printers Wizard",
+            new AlTypeRef(BaseAppId, "page", 2752, "Add Universal Printers Wizard"));
+
+        var globals = new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["CurrentStep"] = new ResolvedVariableType(string.Empty, "Option"),
+            ["TopBannerVisible"] = new ResolvedVariableType(string.Empty, "Boolean"),
+        };
+        var ctx = new AlExtractContext(
+            OwnerKind: "page",
+            OwnerName: "Add Universal Printers Wizard",
+            OwnerObjectId: 2752,
+            OwnerAppId: BaseAppId,
+            GlobalVars: globals,
+            Resolver: resolver);
+
+        const string src = """
+            procedure CheckVisibility(): Boolean
+            begin
+                exit(this.TopBannerVisible and (this.CurrentStep = 0));
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "CurrentStep" || s.Token == "TopBannerVisible");
+    }
+
+    [Fact]
+    public void Owner_global_fallback_does_not_silence_unknown_member()
+    {
+        // Guard: when the chain step doesn't match a catalog member AND
+        // isn't a known global, the unresolved sample still fires.
+        var resolver = MakeResolver();
+        resolver.AddType("My Helper",
+            new AlTypeRef(BaseAppId, "codeunit", 50100, "My Helper"));
+
+        var ctx = new AlExtractContext(
+            OwnerKind: "codeunit",
+            OwnerName: "My Helper",
+            OwnerObjectId: 50100,
+            OwnerAppId: BaseAppId,
+            GlobalVars: new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+            Resolver: resolver);
+
+        const string src = """
+            procedure Run()
+            begin
+                this.TotallyUnknownMember();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        result.Stats.UnresolvedSamples.Should().Contain(s =>
+            s.Token == "TotallyUnknownMember" && s.Reason == "chain-step");
+    }
+
     // ── Stub resolver ───────────────────────────────────────────────
 
     private sealed class StubResolver : IAlTypeResolver

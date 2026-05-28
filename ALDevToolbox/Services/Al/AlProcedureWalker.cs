@@ -1404,6 +1404,33 @@ internal sealed class AlProcedureWalker
                     if (followedByParen) WalkBalancedParens();
                     return;
                 }
+                // Owner-globals / labels fallback: when the receiver IS
+                // the owner (the canonical shape is `this.MyGlobal` or
+                // `Rec.MyLabel` on tables), the chain step may name a
+                // global var or label that lives in Ctx.GlobalVars /
+                // object-scope labels — never in oe_module_members,
+                // which only holds procedures / triggers / fields.
+                //
+                // Canonical samples:
+                //   `this.LogiqEDocumentManagement.Send(...)` — global
+                //     codeunit var on the owner codeunit; chain
+                //     continues on the resolved codeunit type so
+                //     `.Send(args)` then resolves normally.
+                //   `Visible = TopBannerVisible and (CurrentStep = N)` —
+                //     page globals referenced via implicit `this.`.
+                //   `Error(PilotBaseUrlTok)` — table label in a
+                //     `Rec.<Label>` chain.
+                //
+                // When the global's declared type resolves through the
+                // catalog (Codeunit / Record / Page / …), the chain
+                // continues against that type. When the type is a
+                // scalar / Label / unresolvable, the chain ends here.
+                // Either way, the unresolved sample is silenced.
+                if (TryAdvanceToOwnerGlobal(receiverType, memberTok.Value, out var globalNextType))
+                {
+                    receiverType = globalNextType;
+                    continue;
+                }
                 _state.Unresolved++;
                 _state.CaptureUnresolved("chain-step", memberTok, receiverType);
                 AdvancePastChain();
@@ -2485,6 +2512,52 @@ internal sealed class AlProcedureWalker
         // Only AL-typed returns (Record / Codeunit / Page / …)
         // resolve to catalog entries. System types come back null.
         return _state.Ctx.Resolver.ResolveTypeByName(member.ReturnTypeName);
+    }
+
+    /// <summary>
+    /// When a chain step's member lookup misses on the owner type,
+    /// fall back to the owner's global vars / labels. Globals live in
+    /// <see cref="AlExtractContext.GlobalVars"/> (mirrored into the
+    /// bottom scope frame by <see cref="BuildAndPushGlobalScope"/>);
+    /// labels added by <see cref="ScanObjectScopeLabels"/> land there
+    /// too. Neither shape is in <c>oe_module_members</c>, so the
+    /// resolver's lookup misses even though the reference is legal AL
+    /// — `this.MyGlobal` / `Rec.MyLabel` from inside the owner.
+    /// <para/>
+    /// Returns true when the name matched a global / label, with
+    /// <paramref name="nextReceiver"/> set to the resolved type when
+    /// the global's declared type lives in the catalog
+    /// (Record / Codeunit / Page / …) so the chain can continue, or
+    /// null when the type is scalar / Label / unresolvable (in which
+    /// case the chain ends here). Returns false when the receiver
+    /// isn't the owner, or the name doesn't match any global.
+    /// </summary>
+    private bool TryAdvanceToOwnerGlobal(AlTypeRef receiverType, string memberName, out AlTypeRef? nextReceiver)
+    {
+        nextReceiver = null;
+        var owner = OwnerType();
+        if (owner is null || !receiverType.Equals(owner)) return false;
+
+        // Bottom scope frame holds Ctx.GlobalVars plus any labels
+        // scanned by ScanObjectScopeLabels — both are valid `this.X`
+        // / `Rec.X` targets. Stack iterates top→bottom, so the last
+        // entry is the bottom.
+        ScopeFrame? bottom = null;
+        foreach (var frame in _state.ScopeStack) bottom = frame;
+        if (bottom is null) return false;
+
+        var key = memberName.ToLowerInvariant();
+        if (!bottom.Vars.TryGetValue(key, out var declared)) return false;
+
+        // The global matched; try to resolve its declared type so the
+        // chain can continue. Scalars / Labels (empty TypeName) leave
+        // nextReceiver null — the chain walker's next iteration will
+        // see receiverType=null and AdvancePastChain.
+        if (!string.IsNullOrEmpty(declared.TypeName))
+        {
+            nextReceiver = _state.Ctx.Resolver.ResolveTypeByName(declared.TypeName, declared.Keyword);
+        }
+        return true;
     }
 
     /// <summary>
