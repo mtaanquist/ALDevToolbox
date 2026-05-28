@@ -172,6 +172,30 @@ public static class AlReferenceExtractor
         {
             var tok = _state.Tokens[_state.Pos];
 
+            // Preprocessor branch elimination: AL files use
+            // `#if CLEAN24 / #else / #endif` (and `#elif`) to ship the
+            // pre- and post-feature-cleanup code paths side by side.
+            // Both branches' tokens reach this walker. Walking BOTH
+            // doubles begin/end counts: the canonical shape inside
+            // JobQueueErrorHandler.LogError closes the outer `if` with
+            // `end;` in the `#if CLEAN24` branch and `end else begin`
+            // in the `#else` branch — counting both pops the procedure
+            // frame early, every later identifier is dispatched at
+            // object scope, and local vars fire as head-not-a-variable
+            // (the `JobQueueEntry` Lines=63/64/71 samples in BC 26.13).
+            //
+            // Resolution: always pick the FIRST branch (`#if X`). When
+            // an `#else` / `#elif` directive arrives, skip forward to
+            // the matching `#endif`, tracking nested `#if`s so the
+            // skipper doesn't bail at an inner `#endif`.
+            if (tok.Kind == AlTokenKind.Directive
+                && (StartsWithDirective(tok.Value, "#else")
+                    || StartsWithDirective(tok.Value, "#elif")))
+            {
+                SkipToMatchingEndif();
+                return;
+            }
+
             // Modern AL files open with `namespace X.Y.Z;` and a sequence
             // of `using A.B.C;` directives. The chain walker would otherwise
             // treat each dotted name as a member chain on an unresolved
@@ -468,6 +492,28 @@ public static class AlReferenceExtractor
                 && (tok.Kind == AlTokenKind.Identifier || tok.Kind == AlTokenKind.QuotedIdentifier))
             {
                 if (_structure.TryResolveObjectScopeBareIdentifier(tok)) return;
+            }
+
+            // Object-scope brace tracking. Updates the depth counter
+            // that AlExtractionState.DataItemStack relies on to pop
+            // dataitem frames at their body-closing brace. Procedure /
+            // trigger bodies sit inside this depth too (they enter
+            // through `begin` / `end`, not `{` / `}`), so this only
+            // ever runs at object scope.
+            if (_state.ScopeStack.Count == 1 && tok.Kind == AlTokenKind.Punct)
+            {
+                if (tok.Value == "{")
+                {
+                    _state.ObjectBraceDepth++;
+                    _state.Pos++;
+                    return;
+                }
+                if (tok.Value == "}")
+                {
+                    _state.OnObjectBraceClose();
+                    _state.Pos++;
+                    return;
+                }
             }
 
             _state.Pos++;
@@ -1082,6 +1128,61 @@ public static class AlReferenceExtractor
             _state.Pos++;
             while (_state.Pos < _state.Tokens.Count && !_state.At(";")) _state.Pos++;
             if (_state.At(";")) _state.Pos++;
+        }
+
+        /// <summary>
+        /// True when <paramref name="directiveValue"/> (the full text of a
+        /// <see cref="AlTokenKind.Directive"/> token — e.g.
+        /// <c>"#else"</c> or <c>"#if not CLEAN24"</c>) starts with the
+        /// given directive keyword, allowing trailing whitespace,
+        /// comments, or a condition expression. Comparison is
+        /// case-sensitive — AL preprocessor directives are always
+        /// lowercase.
+        /// </summary>
+        private static bool StartsWithDirective(string directiveValue, string keyword)
+        {
+            if (!directiveValue.StartsWith(keyword, StringComparison.Ordinal)) return false;
+            if (directiveValue.Length == keyword.Length) return true;
+            var next = directiveValue[keyword.Length];
+            // Reject `#elseif` matching `#else`, `#endif` matching `#end`, etc.
+            return char.IsWhiteSpace(next) || next == '\t';
+        }
+
+        /// <summary>
+        /// Advance past the <c>#else</c> / <c>#elif</c> at the current
+        /// cursor and consume tokens up to (and including) the matching
+        /// <c>#endif</c>. Tracks nested <c>#if</c> blocks so an inner
+        /// branch's <c>#endif</c> doesn't terminate the outer skip.
+        /// Called from <see cref="ProcessOneToken"/> after the first
+        /// branch of an <c>#if … #else … #endif</c> trio has been
+        /// walked — only the first branch's tokens reach the catalog.
+        /// </summary>
+        private void SkipToMatchingEndif()
+        {
+            // Consume the #else / #elif token itself.
+            _state.Pos++;
+            int depth = 0;
+            while (_state.Pos < _state.Tokens.Count)
+            {
+                var t = _state.Tokens[_state.Pos];
+                if (t.Kind == AlTokenKind.Directive)
+                {
+                    if (StartsWithDirective(t.Value, "#if"))
+                    {
+                        depth++;
+                    }
+                    else if (StartsWithDirective(t.Value, "#endif"))
+                    {
+                        if (depth == 0)
+                        {
+                            _state.Pos++;
+                            return;
+                        }
+                        depth--;
+                    }
+                }
+                _state.Pos++;
+            }
         }
 
         // ── EventSubscriber attribute extraction ───────────────────────

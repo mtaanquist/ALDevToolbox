@@ -71,27 +71,84 @@ internal sealed class AlExtractionState
     public AlTypeRef? CurrentFieldReceiver;
 
     /// <summary>
-    /// Current dataitem / tableelement source table for kinds that
+    /// Active dataitem / tableelement source tables for kinds that
     /// thread one (report / reportextension / query / xmlport).
-    /// Updated by the per-kind structure extractor as it consumes
-    /// each <c>dataitem(alias; SourceTable)</c> /
-    /// <c>tableelement(alias; SourceTable)</c> declaration; reset to
-    /// the previous value (most-recent-wins) when the body closes.
+    /// Pushed by the per-kind structure extractor when it consumes a
+    /// <c>dataitem(alias; SourceTable)</c> /
+    /// <c>tableelement(alias; SourceTable)</c> declaration; the entry
+    /// records the <see cref="ObjectBraceDepth"/> at which it was
+    /// pushed so <see cref="OnObjectBraceClose"/> can pop it when the
+    /// matching body brace closes. Innermost dataitem is at the top.
     ///
-    /// Read by <see cref="AlProcedureWalker.TryConsumeBareSelfCall"/>
-    /// so bare calls in column / fieldelement property expressions
-    /// (the canonical shape is
-    /// <c>AutoFormatExpression = GetCurrencyCodeFromBank();</c>
-    /// inside a report's <c>column(...)</c>) resolve against the
-    /// current dataitem's source table — those procedures live on
-    /// the table, not on the report.
-    ///
-    /// Null at the file's outer object-scope and inside ordinary
-    /// procedure bodies (the latter is intentional: in-body bare
-    /// calls already resolve through OwnerType / RecType /
-    /// BaseObjectType).
+    /// Walked by <see cref="AlProcedureWalker.TryConsumeBareSelfCall"/>
+    /// from innermost to outermost so a bare call in a NESTED
+    /// dataitem trigger (e.g. <c>EmptyLine()</c> inside an
+    /// <c>Integer</c>-loop dataitem under a <c>"Gen. Journal Line"</c>
+    /// parent) still resolves against the parent's source table when
+    /// the inner one doesn't expose the method. Single-dataitem
+    /// reports get the same behaviour as before (only one frame on
+    /// the stack).
     /// </summary>
-    public AlTypeRef? CurrentDataItemSource;
+    public readonly List<DataItemFrame> DataItemStack = new();
+
+    /// <summary>
+    /// Innermost dataitem source (top of <see cref="DataItemStack"/>),
+    /// or null when no dataitem is active. Preserved as a property
+    /// because object-scope helpers (column source-field resolution,
+    /// implicit-Rec field access fallback) only ever want the
+    /// innermost.
+    /// </summary>
+    public AlTypeRef? CurrentDataItemSource =>
+        DataItemStack.Count > 0 ? DataItemStack[^1].Source : null;
+
+    /// <summary>
+    /// Object-scope brace depth counter, incremented on every <c>{</c>
+    /// and decremented on every <c>}</c> while the walker is outside
+    /// any procedure / trigger body. Used to scope
+    /// <see cref="DataItemStack"/> entries to their dataitem's body.
+    /// Resets to 0 at the start of each file.
+    /// </summary>
+    public int ObjectBraceDepth;
+
+    /// <summary>
+    /// Push a dataitem / tableelement source onto the stack, recording
+    /// the current <see cref="ObjectBraceDepth"/> so the matching
+    /// body-closing brace pops it. Call from the per-kind structure
+    /// extractor at the moment the declaration is consumed (before the
+    /// body's opening <c>{</c> is processed).
+    /// </summary>
+    public void PushDataItemSource(AlTypeRef source) =>
+        DataItemStack.Add(new DataItemFrame(ObjectBraceDepth, source));
+
+    /// <summary>
+    /// Called from the orchestrator when a <c>}</c> is encountered at
+    /// object scope. Decrements <see cref="ObjectBraceDepth"/> and
+    /// pops any dataitem frames whose recorded depth is now at or
+    /// above the current depth — they've left their body.
+    /// </summary>
+    public void OnObjectBraceClose()
+    {
+        if (ObjectBraceDepth > 0) ObjectBraceDepth--;
+        while (DataItemStack.Count > 0
+               && DataItemStack[^1].Depth >= ObjectBraceDepth)
+        {
+            DataItemStack.RemoveAt(DataItemStack.Count - 1);
+        }
+    }
+
+    /// <summary>
+    /// Iterate the active dataitem sources from innermost to outermost.
+    /// Bare-call / implicit-field-access resolvers consult this to
+    /// resolve names that live on a parent dataitem's source table
+    /// when the innermost one doesn't expose them.
+    /// </summary>
+    public IEnumerable<AlTypeRef> ActiveDataItemSources()
+    {
+        for (int i = DataItemStack.Count - 1; i >= 0; i--)
+        {
+            yield return DataItemStack[i].Source;
+        }
+    }
 
     public AlExtractionState(List<AlToken> tokens, AlExtractContext ctx)
     {
@@ -329,6 +386,13 @@ internal sealed class AlExtractionState
         // identifier that follows isn't picked up as the var name.
         || string.Equals(s, "DotNet", StringComparison.OrdinalIgnoreCase);
 }
+
+/// <summary>
+/// One entry on <see cref="AlExtractionState.DataItemStack"/>. Records
+/// the <see cref="Depth"/> (<see cref="AlExtractionState.ObjectBraceDepth"/>
+/// at push time) so the matching body-closing brace can pop it.
+/// </summary>
+internal readonly record struct DataItemFrame(int Depth, AlTypeRef Source);
 
 /// <summary>
 /// One lexical scope frame in the procedure-body walker's stack. The
@@ -1731,33 +1795,34 @@ internal sealed class AlProcedureWalker
             // inside a report's `column(N; …) { … }`) targets a
             // procedure on the current dataitem's SOURCE TABLE, not on
             // the report itself. The per-kind structure extractor
-            // tracks the current dataitem in
-            // AlExtractionState.CurrentDataItemSource; we consult it
-            // here after the Rec / base-object lookups already missed.
-            var dataItemSource = _state.CurrentDataItemSource;
-            if (dataItemSource is not null
-                && !dataItemSource.Equals(ownerType)
-                && (recType is null || !dataItemSource.Equals(recType))
-                && (baseType is null || !dataItemSource.Equals(baseType)))
+            // pushes the active dataitem source onto
+            // AlExtractionState.DataItemStack; we walk it innermost-
+            // to-outermost so a bare call in a NESTED dataitem trigger
+            // (e.g. `EmptyLine()` inside an `Integer`-loop dataitem
+            // under a `"Gen. Journal Line"` parent) still resolves
+            // against the parent's source table when the inner one
+            // doesn't expose the method.
+            foreach (var dataItemSource in _state.ActiveDataItemSources())
             {
+                if (dataItemSource.Equals(ownerType)) continue;
+                if (recType is not null && dataItemSource.Equals(recType)) continue;
+                if (baseType is not null && dataItemSource.Equals(baseType)) continue;
                 var diMember = _state.Ctx.Resolver.ResolveMember(dataItemSource, name);
-                if (diMember is not null)
-                {
-                    var diTarget = diMember.DeclaringType ?? dataItemSource;
-                    _state.EmitReference(new ExtractedReference(
-                        Line: head.Line,
-                        Column: head.Column,
-                        TargetAppId: diTarget.AppId,
-                        TargetObjectKind: diTarget.Kind,
-                        TargetObjectId: diTarget.ObjectId,
-                        TargetObjectName: diTarget.Name,
-                        TargetMemberName: diMember.Name,
-                        TargetMemberKind: diMember.Kind,
-                        ReferenceKind: "method_call"));
-                    _state.Resolved++;
-                    _state.Pos++;
-                    return true;
-                }
+                if (diMember is null) continue;
+                var diTarget = diMember.DeclaringType ?? dataItemSource;
+                _state.EmitReference(new ExtractedReference(
+                    Line: head.Line,
+                    Column: head.Column,
+                    TargetAppId: diTarget.AppId,
+                    TargetObjectKind: diTarget.Kind,
+                    TargetObjectId: diTarget.ObjectId,
+                    TargetObjectName: diTarget.Name,
+                    TargetMemberName: diMember.Name,
+                    TargetMemberKind: diMember.Kind,
+                    ReferenceKind: "method_call"));
+                _state.Resolved++;
+                _state.Pos++;
+                return true;
             }
 
             // All catalog lookups missed. Now check whether the name
@@ -2297,15 +2362,23 @@ internal sealed class AlProcedureWalker
                 member = null;
             }
         }
-        if (member is null && _state.CurrentDataItemSource is not null
-            && (rec is null || !_state.CurrentDataItemSource.Equals(rec)))
+        if (member is null)
         {
-            var di = _state.CurrentDataItemSource;
-            var diMember = _state.Ctx.Resolver.ResolveMember(di, head.Value);
-            if (diMember is not null && AlExtractionState.IsFieldKind(diMember.Kind))
+            // Walk innermost-to-outermost across active dataitem
+            // sources. Same rationale as the bare-self-call fallback:
+            // a nested dataitem trigger that reads an implicit-Rec
+            // field defined on the parent dataitem's source table
+            // still gets that field resolved.
+            foreach (var di in _state.ActiveDataItemSources())
             {
-                member = diMember;
-                receiver = di;
+                if (rec is not null && di.Equals(rec)) continue;
+                var diMember = _state.Ctx.Resolver.ResolveMember(di, head.Value);
+                if (diMember is not null && AlExtractionState.IsFieldKind(diMember.Kind))
+                {
+                    member = diMember;
+                    receiver = di;
+                    break;
+                }
             }
         }
         if (member is null || receiver is null) return false;

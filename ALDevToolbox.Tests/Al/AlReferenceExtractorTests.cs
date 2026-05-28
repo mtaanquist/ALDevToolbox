@@ -4135,6 +4135,487 @@ public sealed class AlReferenceExtractorTests
             .Should().HaveCount(1);
     }
 
+    // ── Nested dataitem scope ────────────────────────────────────────
+
+    [Fact]
+    public void Bare_call_in_nested_dataitem_resolves_against_outer_source()
+    {
+        // `EmptyLine()` inside an inner Integer-loop dataitem's
+        // OnAfterGetRecord trigger targets a procedure on the outer
+        // dataitem's source table ("Gen. Journal Line"). Before the
+        // depth-tracked dataitem stack, only the innermost source
+        // was kept and the call surfaced as bare-call unresolved.
+        //
+        // Verified against the unresolved samples
+        //   Reason=bare-call Token='EmptyLine' Line=351 / 347 / 569 …
+        // logged across AutoPostingErrors / GeneralJournalTest /
+        // PhysInvtOrderDiffList / PhysInvtOrderTest / etc. in BC 26.13.
+        var resolver = MakeResolver();
+        resolver.AddType("Auto Posting Errors",
+            new AlTypeRef(BaseAppId, "report", 17, "Auto Posting Errors"));
+        resolver.AddType("Gen. Journal Line",
+            new AlTypeRef(BaseAppId, "table", 81, "Gen. Journal Line"));
+        resolver.AddType("Integer",
+            new AlTypeRef(BaseAppId, "table", 2000000026, "Integer"));
+        resolver.AddMember("Gen. Journal Line",
+            new AlMember("EmptyLine", "procedure", "Boolean", null));
+
+        const string src = """
+            report 17 "Auto Posting Errors"
+            {
+                dataset
+                {
+                    dataitem(GenJnlLine; "Gen. Journal Line")
+                    {
+                        dataitem(Loop; Integer)
+                        {
+                            trigger OnAfterGetRecord()
+                            begin
+                                if EmptyLine() then
+                                    exit;
+                            end;
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "Auto Posting Errors"));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Gen. Journal Line"
+            && r.TargetMemberName == "EmptyLine");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "EmptyLine");
+    }
+
+    [Fact]
+    public void Sibling_dataitem_does_not_leak_into_next_dataitem_scope()
+    {
+        // Guard: when a sibling dataitem's body closes, its source
+        // must NOT remain on the stack for the next sibling. Without
+        // depth-tracked pop, the second dataitem's bare calls would
+        // mis-resolve against the first sibling's table.
+        var resolver = MakeResolver();
+        resolver.AddType("Test Report",
+            new AlTypeRef(BaseAppId, "report", 50000, "Test Report"));
+        resolver.AddType("Cust. Ledger Entry",
+            new AlTypeRef(BaseAppId, "table", 21, "Cust. Ledger Entry"));
+        resolver.AddType("Vendor Ledger Entry",
+            new AlTypeRef(BaseAppId, "table", 25, "Vendor Ledger Entry"));
+        // Only the first sibling exposes the bare-callable procedure.
+        // After the first dataitem's `}` closes, we expect EmptyProc
+        // to surface as unresolved inside the second dataitem.
+        resolver.AddMember("Cust. Ledger Entry",
+            new AlMember("EmptyProc", "procedure", "Boolean", null));
+
+        const string src = """
+            report 50000 "Test Report"
+            {
+                dataset
+                {
+                    dataitem(Cust; "Cust. Ledger Entry")
+                    {
+                        trigger OnAfterGetRecord()
+                        begin
+                            if EmptyProc() then exit;
+                        end;
+                    }
+                    dataitem(Vend; "Vendor Ledger Entry")
+                    {
+                        trigger OnAfterGetRecord()
+                        begin
+                            if EmptyProc() then exit;
+                        end;
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "Test Report"));
+
+        // First sibling: resolved against Cust. Ledger Entry.
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Cust. Ledger Entry"
+            && r.TargetMemberName == "EmptyProc");
+        // Second sibling: must NOT resolve against Cust. Ledger Entry
+        // (that frame was popped); it stays unresolved because Vendor
+        // Ledger Entry doesn't expose the procedure.
+        result.References.Should().NotContain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Cust. Ledger Entry"
+            && r.TargetMemberName == "EmptyProc"
+            && r.Line >= 12); // second dataitem's trigger lives later
+        result.Stats.UnresolvedSamples.Should().Contain(s =>
+            s.Token == "EmptyProc" && s.Reason == "bare-call");
+    }
+
+    [Fact]
+    public void CurrQuery_chain_step_silences_in_query_body()
+    {
+        // `CurrQuery.ColumnNo("Customer No.")` inside a query trigger
+        // is a runtime self-pointer call; CurrQuery's methods live on
+        // the runtime, not in the catalog. Same shape as CurrPage /
+        // currXMLport / CurrReport — silenced via BuiltinStaticReceivers.
+        const string src = """
+            query 1001 "My Query"
+            {
+                trigger OnBeforeOpen()
+                begin
+                    if CurrQuery.ColumnNo("Customer No.") = 0 then
+                        exit;
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, new AlExtractContext(
+            OwnerKind: "query",
+            OwnerName: "My Query",
+            OwnerObjectId: 1001,
+            OwnerAppId: BaseAppId,
+            GlobalVars: new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+            Resolver: MakeResolver()));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "CurrQuery");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "ColumnNo");
+    }
+
+    [Fact]
+    public void Bare_call_resolves_on_outer_dataitem_after_inner_dataitem_closed()
+    {
+        // Replicates InventoryPostingTest.Report.al's actual shape:
+        // the OUTER dataitem ("Item Journal Line") wraps an INNER
+        // dataitem (DimensionLoop on Integer). The inner closes
+        // BEFORE the outer's own triggers; `EmptyLine()` at line
+        // 439 lives inside the outer's `OnAfterGetRecord` and must
+        // resolve against the outer's source after the inner has
+        // been popped. The depth-tracked stack must keep the outer
+        // alive across the inner's `}` close.
+        var resolver = MakeResolver();
+        resolver.AddType("Inventory Posting - Test",
+            new AlTypeRef(BaseAppId, "report", 702, "Inventory Posting - Test"));
+        resolver.AddType("Item Journal Line",
+            new AlTypeRef(BaseAppId, "table", 83, "Item Journal Line"));
+        resolver.AddType("Integer",
+            new AlTypeRef(BaseAppId, "table", 2000000026, "Integer"));
+        resolver.AddMember("Item Journal Line",
+            new AlMember("EmptyLine", "procedure", "Boolean", null));
+
+        const string src = """
+            report 702 "Inventory Posting - Test"
+            {
+                dataset
+                {
+                    dataitem("Item Journal Line"; "Item Journal Line")
+                    {
+                        column(Foo; "Item No.") { }
+                        dataitem(DimensionLoop; "Integer")
+                        {
+                            column(Bar; Number) { }
+                            trigger OnAfterGetRecord()
+                            begin
+                                Clear(Number);
+                            end;
+                        }
+                        trigger OnPreDataItem()
+                        begin
+                            Clear(QtyError);
+                        end;
+                        trigger OnAfterGetRecord()
+                        begin
+                            if EmptyLine() then
+                                exit;
+                        end;
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "Inventory Posting - Test"));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Item Journal Line"
+            && r.TargetMemberName == "EmptyLine");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "EmptyLine");
+    }
+
+    [Fact]
+    public void Bare_call_resolves_through_five_level_nested_dataitems()
+    {
+        // The actual AutoPostingErrors shape: FIVE dataitem levels.
+        // `GenJnlTmpl > GenJnlBatch > "Gen. Journal Line" > inner
+        // siblings (DimensionLoop, "Gen. Jnl. Allocation") > triggers`.
+        // The bare call sits in `Gen. Journal Line`'s OnAfterGetRecord
+        // AFTER both inner siblings have closed. Stack at the call site
+        // must contain [(d=2, GenJnlTmpl), (d=3, GenJnlBatch),
+        // (d=4, "Gen. Journal Line")] and the resolver must walk
+        // innermost-to-outermost to land on Gen. Journal Line.
+        var resolver = MakeResolver();
+        resolver.AddType("Auto Posting Errors",
+            new AlTypeRef(BaseAppId, "report", 6250, "Auto Posting Errors"));
+        resolver.AddType("Gen. Journal Template",
+            new AlTypeRef(BaseAppId, "table", 80, "Gen. Journal Template"));
+        resolver.AddType("Gen. Journal Batch",
+            new AlTypeRef(BaseAppId, "table", 232, "Gen. Journal Batch"));
+        resolver.AddType("Gen. Journal Line",
+            new AlTypeRef(BaseAppId, "table", 81, "Gen. Journal Line"));
+        resolver.AddType("Gen. Jnl. Allocation",
+            new AlTypeRef(BaseAppId, "table", 221, "Gen. Jnl. Allocation"));
+        resolver.AddType("Integer",
+            new AlTypeRef(BaseAppId, "table", 2000000026, "Integer"));
+        resolver.AddMember("Gen. Journal Line",
+            new AlMember("EmptyLine", "procedure", "Boolean", null));
+        resolver.AddMember("Gen. Journal Line",
+            new AlMember("UpdateLineBalance", "procedure", null, null));
+
+        const string src = """
+            report 6250 "Auto Posting Errors"
+            {
+                dataset
+                {
+                    dataitem(GenJnlTmpl; "Gen. Journal Template")
+                    {
+                        DataItemTableView = sorting(Name);
+                        column(TmplName; Name) { }
+                        dataitem(GenJnlBatch; "Gen. Journal Batch")
+                        {
+                            DataItemLink = "Journal Template Name" = field(Name);
+                            DataItemTableView = sorting("Journal Template Name", Name);
+                            column(BatchName; Name) { }
+                            dataitem("Gen. Journal Line"; "Gen. Journal Line")
+                            {
+                                DataItemLink = "Journal Batch Name" = field(Name);
+                                DataItemTableView = sorting("Journal Template Name", "Journal Batch Name", "Line No.");
+                                column(LineNo; "Line No.") { }
+                                dataitem(DimensionLoop; Integer)
+                                {
+                                    DataItemTableView = sorting(Number);
+                                    column(DimNum; Number) { }
+                                    trigger OnAfterGetRecord()
+                                    begin
+                                        Clear(Number);
+                                    end;
+                                }
+                                dataitem("Gen. Jnl. Allocation"; "Gen. Jnl. Allocation")
+                                {
+                                    DataItemLink = "Journal Template Name" = field("Journal Template Name");
+                                    column(AllocNo; "Line No.") { }
+                                    trigger OnAfterGetRecord()
+                                    begin
+                                        Clear("Line No.");
+                                    end;
+                                    trigger OnPreDataItem()
+                                    begin
+                                    end;
+                                    trigger OnPostDataItem()
+                                    begin
+                                    end;
+                                }
+                                trigger OnAfterGetRecord()
+                                begin
+                                    UpdateLineBalance();
+                                    if not EmptyLine() then
+                                        exit;
+                                end;
+                            }
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "Auto Posting Errors"));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Gen. Journal Line"
+            && r.TargetMemberName == "EmptyLine");
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Gen. Journal Line"
+            && r.TargetMemberName == "UpdateLineBalance");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "EmptyLine" || s.Token == "UpdateLineBalance");
+    }
+
+    [Fact]
+    public void Bare_call_resolves_through_four_level_nested_dataitems()
+    {
+        // The AutoPostingErrors / InventoryPostingTest / etc. shape:
+        // FOUR levels of dataitem nesting (Batch > Line > inner-loop)
+        // where the bare call `UpdateLineBalance()` / `EmptyLine()`
+        // sits in the middle level's OnAfterGetRecord AFTER an inner
+        // sibling dataitem has closed. The resolver must walk past
+        // the popped inner frame and still find the middle dataitem's
+        // source table.
+        var resolver = MakeResolver();
+        resolver.AddType("Auto Posting Errors",
+            new AlTypeRef(BaseAppId, "report", 6250, "Auto Posting Errors"));
+        resolver.AddType("Gen. Journal Batch",
+            new AlTypeRef(BaseAppId, "table", 232, "Gen. Journal Batch"));
+        resolver.AddType("Gen. Journal Line",
+            new AlTypeRef(BaseAppId, "table", 81, "Gen. Journal Line"));
+        resolver.AddType("Integer",
+            new AlTypeRef(BaseAppId, "table", 2000000026, "Integer"));
+        resolver.AddMember("Gen. Journal Line",
+            new AlMember("EmptyLine", "procedure", "Boolean", null));
+        resolver.AddMember("Gen. Journal Line",
+            new AlMember("UpdateLineBalance", "procedure", null, null));
+
+        const string src = """
+            report 6250 "Auto Posting Errors"
+            {
+                dataset
+                {
+                    dataitem(GenJnlBatch; "Gen. Journal Batch")
+                    {
+                        DataItemTableView = sorting("Journal Template Name", Name);
+                        column(BatchName; Name) { }
+                        dataitem("Gen. Journal Line"; "Gen. Journal Line")
+                        {
+                            DataItemLink = "Journal Batch Name" = field(Name);
+                            column(LineNo; "Line No.") { }
+                            dataitem(DimensionLoop; Integer)
+                            {
+                                DataItemTableView = sorting(Number);
+                                trigger OnAfterGetRecord()
+                                begin
+                                    Clear(Number);
+                                end;
+                            }
+                            dataitem(AllocLoop; Integer)
+                            {
+                                column(AllocNo; Number) { }
+                                trigger OnAfterGetRecord()
+                                begin
+                                    Clear(Number);
+                                end;
+                            }
+                            trigger OnAfterGetRecord()
+                            begin
+                                UpdateLineBalance();
+                                if not EmptyLine() then
+                                    exit;
+                            end;
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "Auto Posting Errors"));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Gen. Journal Line"
+            && r.TargetMemberName == "EmptyLine");
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Gen. Journal Line"
+            && r.TargetMemberName == "UpdateLineBalance");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "EmptyLine" || s.Token == "UpdateLineBalance");
+    }
+
+    // ── Preprocessor #if / #else / #endif branch handling ───────────
+
+    [Fact]
+    public void Preprocessor_if_else_picks_first_branch_only()
+    {
+        // `#if CLEAN24 ... #else ... #endif` ships pre- and post-
+        // cleanup code paths side by side. Walking BOTH branches
+        // doubles begin/end counts and pops the procedure scope
+        // early — every later identifier dispatches at object scope.
+        // The canonical shape from JobQueueErrorHandler.LogError in
+        // BC 26.13: a single `if X.FindFirst() then begin` with
+        // `end;` in the `#if CLEAN24` branch and `end else begin`
+        // in the `#else` branch. Both branches' `end`s were being
+        // counted; the local var `JobQueueEntry` then surfaces as
+        // head-not-a-variable on later lines (samples Line=63/64/71).
+        //
+        // The walker now picks ONLY the first branch (`#if`) and
+        // skips forward from `#else` to the matching `#endif`.
+        var resolver = MakeResolver();
+        resolver.AddType("Job Queue Error Handler",
+            new AlTypeRef(BaseAppId, "codeunit", 450, "Job Queue Error Handler"));
+        resolver.AddType("Job Queue Entry",
+            new AlTypeRef(BaseAppId, "table", 472, "Job Queue Entry"));
+        resolver.AddMember("Job Queue Entry",
+            new AlMember("Modify", "procedure", "Boolean", null));
+
+        const string src = """
+            codeunit 450 "Job Queue Error Handler"
+            {
+                local procedure LogError(var JobQueueEntry: Record "Job Queue Entry")
+                begin
+                    if JobQueueEntry.Modify() then begin
+            #if CLEAN24
+                    end;
+            #else
+                        JobQueueEntry.Modify();
+                    end else begin
+                        JobQueueEntry.Modify();
+                    end;
+            #endif
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        // The `JobQueueEntry.Modify()` calls in the `#else` branch
+        // should NOT be walked (they're skipped). Only the one in
+        // the live `#if CLEAN24` branch — which here is the call
+        // BEFORE the directive — should be emitted.
+        result.References.Where(r =>
+                r.ReferenceKind == "method_call"
+                && r.TargetObjectName == "Job Queue Entry"
+                && r.TargetMemberName == "Modify")
+            .Should().HaveCount(1);
+        // No head-not-a-variable samples for JobQueueEntry — the
+        // walker stayed in procedure scope so the local var stayed
+        // in scope.
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "JobQueueEntry");
+    }
+
+    [Fact]
+    public void Preprocessor_nested_if_endif_in_else_branch_skipped_correctly()
+    {
+        // Guard: when the `#else` branch itself contains an
+        // `#if X ... #endif` pair, the outer skip must NOT mistake
+        // the inner `#endif` for its own. Without the depth counter,
+        // the skip would stop at the inner `#endif` and resume
+        // walking the rest of the outer `#else` branch.
+        var resolver = MakeResolver();
+        resolver.AddType("Test Helper",
+            new AlTypeRef(BaseAppId, "codeunit", 50100, "Test Helper"));
+
+        const string src = """
+            codeunit 50100 "Test Helper"
+            {
+                procedure Run()
+                var
+                    LocalVar: Integer;
+                begin
+            #if A
+                    LocalVar := 1;
+            #else
+            #if B
+                    LocalVar := 2;
+            #endif
+                    LocalVar := 3;
+            #endif
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        // LocalVar is declared and should be in scope for the live
+        // branch (`#if A`). No head-not-a-variable samples for it.
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "LocalVar");
+    }
+
     // ── Stub resolver ───────────────────────────────────────────────
 
     private sealed class StubResolver : IAlTypeResolver
