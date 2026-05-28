@@ -764,6 +764,8 @@ public class ReleaseImportService
                 // any tracker-state assumption.
                 SourceFileId = sourceFile?.Id,
                 LineNumber = line,
+                ObsoleteState = NullIfBlank(symObj.Properties.FirstOrDefault(p =>
+                    string.Equals(p.Name, "ObsoleteState", StringComparison.OrdinalIgnoreCase))?.Value),
             };
             _db.OeModuleObjects.Add(obj);
             totals.ObjectsImported++;
@@ -1742,6 +1744,7 @@ public class ReleaseImportService
                 o.Name,
                 AppId = o.Module!.AppId,
                 o.SourceTableName,
+                o.ObsoleteState,
             })
             .ToListAsync(ct);
         var typesByName = new Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>>(StringComparer.OrdinalIgnoreCase);
@@ -1756,6 +1759,14 @@ public class ReleaseImportService
         // (page / pageextension / requestpage / report-dataitem in
         // practice); other kinds skip the dictionary entry.
         var sourceTablesByObjectId = new Dictionary<long, string>();
+        // Side-map for obsolete-state lookup on candidate ranking.
+        // Keyed by the catalog's identity triple so the resolver can
+        // ask "is this exact (AppId, Kind, Name) marked Pending /
+        // Removed?" without bloating AlTypeRef. Only populated for
+        // objects with the property set; lookups returning empty
+        // string mean "non-obsolete" (the default `No` state).
+        var obsoleteStateByIdentity = new Dictionary<(Guid AppId, string Kind, string Name), string>(
+            new ObjectIdentityComparer());
         foreach (var t in typeRows)
         {
             var typeRef = new ALDevToolbox.Services.Al.AlTypeRef(t.AppId, t.Kind, t.ObjectId, t.Name);
@@ -1770,6 +1781,10 @@ public class ReleaseImportService
             if (!string.IsNullOrEmpty(t.SourceTableName))
             {
                 sourceTablesByObjectId[t.Id] = t.SourceTableName;
+            }
+            if (!string.IsNullOrEmpty(t.ObsoleteState))
+            {
+                obsoleteStateByIdentity[(t.AppId, t.Kind, t.Name)] = t.ObsoleteState;
             }
         }
 
@@ -1986,7 +2001,7 @@ public class ReleaseImportService
                 typesByName, typesByObjectId, objectIdByIdentity,
                 membersByOwner, extensionsByBaseName, sourceTablesByObjectId, visible,
                 ownerAppId == Guid.Empty ? null : ownerAppId,
-                foundationalAppIds);
+                foundationalAppIds, obsoleteStateByIdentity);
             resolversByModule[moduleId] = r;
             return r;
         }
@@ -2724,6 +2739,14 @@ public class ReleaseImportService
         // probe BuildModuleVisibilityAsync uses (publisher=Microsoft
         // AND name in FoundationalAppNames).
         private readonly HashSet<Guid> _foundationalAppIds;
+        // ObsoleteState by identity. `Pending` / `Removed` candidates
+        // get pushed below non-obsolete ones during tiebreaker
+        // selection: Base Application's legacy `No. Series Line` /
+        // `No. Series` shims are marked Pending now that Business
+        // Foundation owns the canonical versions, and the resolver
+        // should follow the same migration path the platform follows.
+        // Missing entries mean ObsoleteState=No (default).
+        private readonly Dictionary<(Guid AppId, string Kind, string Name), string> _obsoleteStateByIdentity;
 
         public CatalogResolver(
             Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>> typesByName,
@@ -2734,7 +2757,8 @@ public class ReleaseImportService
             Dictionary<long, string> sourceTablesByObjectId,
             HashSet<Guid>? visibleAppIds,
             Guid? ownerAppId,
-            HashSet<Guid> foundationalAppIds)
+            HashSet<Guid> foundationalAppIds,
+            Dictionary<(Guid AppId, string Kind, string Name), string> obsoleteStateByIdentity)
         {
             _typesByName = typesByName;
             _typesByObjectId = typesByObjectId;
@@ -2745,7 +2769,18 @@ public class ReleaseImportService
             _visibleAppIds = visibleAppIds;
             _ownerAppId = ownerAppId;
             _foundationalAppIds = foundationalAppIds;
+            _obsoleteStateByIdentity = obsoleteStateByIdentity;
         }
+
+        /// <summary>
+        /// True when the candidate is marked <c>ObsoleteState = Pending</c>
+        /// or <c>Removed</c>. Obsolete candidates lose ties to non-obsolete
+        /// ones during <see cref="ResolveTypeByName"/> bucket selection.
+        /// </summary>
+        private bool IsObsolete(ALDevToolbox.Services.Al.AlTypeRef t) =>
+            _obsoleteStateByIdentity.TryGetValue((t.AppId, t.Kind, t.Name), out var state)
+            && (string.Equals(state, "Pending", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(state, "Removed", StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
         /// Resolves a name to a single AlTypeRef. When multiple objects
@@ -2781,45 +2816,74 @@ public class ReleaseImportService
             if (!_typesByName.TryGetValue(typeName, out var candidates)) return null;
             var expectedKind = MapKeywordToKind(expectedKeyword);
 
-            // Bucket walk: classify each visible candidate by source app
-            // and kind, then pick the highest-priority bucket that has
-            // a hit. Order of preference (highest first):
-            //   1. Same-app + exact-kind
-            //   2. Same-app + any kind
-            //   3. Foundational + exact-kind
-            //   4. Foundational + any kind
-            //   5. Other visible + exact-kind
-            //   6. Other visible + non-extension kind
-            //   7. Other visible + extension kind (last resort)
+            // Bucket walk: classify each visible candidate by source app,
+            // kind, AND ObsoleteState, then pick the highest-priority
+            // bucket that has a hit. Each app-tier (same-app /
+            // foundational / other) has a non-obsolete sub-bucket above
+            // its obsolete one — `No. Series Line` in Business Foundation
+            // beats `No. Series Line` in Base App because Base App's
+            // version is marked Pending. The non-obsolete entry in any
+            // tier still wins outright over a higher-tier obsolete one:
+            // if the only same-app candidate is Removed and a
+            // non-obsolete foundational candidate exists, follow the
+            // platform's de-facto migration.
             ALDevToolbox.Services.Al.AlTypeRef? sameAppExact = null;
+            ALDevToolbox.Services.Al.AlTypeRef? sameAppExactObs = null;
             ALDevToolbox.Services.Al.AlTypeRef? sameAppAny = null;
+            ALDevToolbox.Services.Al.AlTypeRef? sameAppAnyObs = null;
             ALDevToolbox.Services.Al.AlTypeRef? foundationalExact = null;
+            ALDevToolbox.Services.Al.AlTypeRef? foundationalExactObs = null;
             ALDevToolbox.Services.Al.AlTypeRef? foundationalAny = null;
+            ALDevToolbox.Services.Al.AlTypeRef? foundationalAnyObs = null;
             ALDevToolbox.Services.Al.AlTypeRef? otherExact = null;
+            ALDevToolbox.Services.Al.AlTypeRef? otherExactObs = null;
             ALDevToolbox.Services.Al.AlTypeRef? otherNonExt = null;
+            ALDevToolbox.Services.Al.AlTypeRef? otherNonExtObs = null;
             ALDevToolbox.Services.Al.AlTypeRef? otherAny = null;
+            ALDevToolbox.Services.Al.AlTypeRef? otherAnyObs = null;
 
             foreach (var t in candidates)
             {
                 if (!IsVisible(t.AppId)) continue;
                 bool kindMatches = expectedKind is not null
                     && string.Equals(t.Kind, expectedKind, StringComparison.OrdinalIgnoreCase);
+                bool obsolete = IsObsolete(t);
 
                 if (_ownerAppId is not null && t.AppId == _ownerAppId.Value)
                 {
-                    if (kindMatches) { sameAppExact ??= t; }
-                    else { sameAppAny ??= t; }
+                    if (kindMatches)
+                    {
+                        if (obsolete) sameAppExactObs ??= t; else sameAppExact ??= t;
+                    }
+                    else
+                    {
+                        if (obsolete) sameAppAnyObs ??= t; else sameAppAny ??= t;
+                    }
                     continue;
                 }
                 if (_foundationalAppIds.Contains(t.AppId))
                 {
-                    if (kindMatches) { foundationalExact ??= t; }
-                    else { foundationalAny ??= t; }
+                    if (kindMatches)
+                    {
+                        if (obsolete) foundationalExactObs ??= t; else foundationalExact ??= t;
+                    }
+                    else
+                    {
+                        if (obsolete) foundationalAnyObs ??= t; else foundationalAny ??= t;
+                    }
                     continue;
                 }
-                if (kindMatches) { otherExact ??= t; continue; }
-                if (!IsExtensionKind(t.Kind)) { otherNonExt ??= t; continue; }
-                otherAny ??= t;
+                if (kindMatches)
+                {
+                    if (obsolete) otherExactObs ??= t; else otherExact ??= t;
+                    continue;
+                }
+                if (!IsExtensionKind(t.Kind))
+                {
+                    if (obsolete) otherNonExtObs ??= t; else otherNonExt ??= t;
+                    continue;
+                }
+                if (obsolete) otherAnyObs ??= t; else otherAny ??= t;
             }
 
             return sameAppExact
@@ -2828,7 +2892,18 @@ public class ReleaseImportService
                 ?? foundationalAny
                 ?? otherExact
                 ?? otherNonExt
-                ?? otherAny;
+                ?? otherAny
+                // Non-obsolete tiers exhausted; fall through to obsolete
+                // candidates in the same priority order. A Pending /
+                // Removed declaration still resolves something — it's
+                // just less preferred than any live alternative.
+                ?? sameAppExactObs
+                ?? sameAppAnyObs
+                ?? foundationalExactObs
+                ?? foundationalAnyObs
+                ?? otherExactObs
+                ?? otherNonExtObs
+                ?? otherAnyObs;
         }
 
         /// <summary>

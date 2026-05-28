@@ -69,6 +69,17 @@ public class ModuleObject
     /// <summary>1-based line where the object declaration appears in the source file.</summary>
     public int LineNumber { get; set; }
 
+    /// <summary>
+    /// AL <c>ObsoleteState</c> property value, when set on the object
+    /// (<c>Pending</c> / <c>Removed</c>). Used as a tiebreaker by the
+    /// catalog resolver: when two visible apps declare a same-named
+    /// object (e.g. Base Application's legacy <c>No. Series Line</c>
+    /// shim alongside Business Foundation's canonical version),
+    /// non-obsolete candidates win. Null when the property isn't
+    /// declared on the object — the default <c>No</c> state.
+    /// </summary>
+    public string? ObsoleteState { get; set; }
+
     public ICollection<ModuleSymbol> Symbols { get; set; } = new List<ModuleSymbol>();
     public ICollection<ModuleVariable> Variables { get; set; } = new List<ModuleVariable>();
 }
