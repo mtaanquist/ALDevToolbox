@@ -4,6 +4,7 @@ using ALDevToolbox.Services;
 using ALDevToolbox.Services.ObjectExplorer;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using static ALDevToolbox.Endpoints.EndpointHelpers;
 
 namespace ALDevToolbox.Endpoints;
@@ -283,6 +284,42 @@ internal static class ObjectExplorerEndpoints
             if (string.IsNullOrEmpty(fileName)) fileName = $"file-{fileId}.al";
             var bytes = System.Text.Encoding.UTF8.GetBytes(file.Content ?? string.Empty);
             return Results.File(bytes, "text/plain; charset=utf-8", fileName);
+        }).RequireAuthorization();
+
+        // Stream the stored SymbolReference.json for one module — for debugging
+        // resolver errors. Written straight to the response via a chunked
+        // StreamWriter rather than buffering as bytes, so a base-app symbol
+        // file (tens of MB) doesn't allocate the 6×-worst-case escape buffer
+        // System.Text.Json would need if this travelled inline through the MCP
+        // tool's JSON response (which OOMed). EF query filters scope to the
+        // caller's org. Org users see this via the MCP tool's returned URL.
+        app.MapGet("/api/object-explorer/release/{releaseId:int}/modules/{moduleId:long}/symbol-reference",
+            async (int releaseId, long moduleId,
+                ALDevToolbox.Data.AppDbContext db,
+                HttpContext ctx,
+                CancellationToken ct) =>
+        {
+            var match = await db.OeModules.AsNoTracking()
+                .Where(m => m.Id == moduleId && m.ReleaseId == releaseId)
+                .Select(m => new
+                {
+                    m.Name,
+                    Label = m.Release!.Label,
+                    Hash = m.SymbolReferenceContentHash,
+                    Content = m.SymbolReferenceContent != null ? m.SymbolReferenceContent.Content : null,
+                })
+                .FirstOrDefaultAsync(ct);
+
+            if (match is null) return Results.NotFound();
+            if (match.Hash is null || match.Content is null) return Results.NotFound();
+
+            var safe = SanitiseFileName(match.Label) + "-" + SanitiseFileName(match.Name) + ".SymbolReference.json";
+            ctx.Response.ContentType = "application/json; charset=utf-8";
+            ctx.Response.Headers.ContentDisposition = $"attachment; filename=\"{safe}\"";
+            await using var writer = new StreamWriter(ctx.Response.Body, System.Text.Encoding.UTF8, bufferSize: 64 * 1024, leaveOpen: true);
+            await writer.WriteAsync(match.Content.AsMemory(), ct).ConfigureAwait(false);
+            await writer.FlushAsync(ct).ConfigureAwait(false);
+            return Results.Empty;
         }).RequireAuthorization();
 
         // Outline dependencies (#148): the file viewer's outline lazy-loads
@@ -657,5 +694,24 @@ internal static class ObjectExplorerEndpoints
         ctx.Response.Redirect(
             "/admin/object-explorer/new?err=" + Uri.EscapeDataString(errKey)
             + "&msg=" + Uri.EscapeDataString(message));
+    }
+
+    /// <summary>
+    /// Strips path-hostile characters from a release label or module name for
+    /// use in <c>Content-Disposition: attachment; filename=…</c>. Conservative:
+    /// keeps alphanumerics, dot, dash, and underscore; everything else becomes
+    /// a single dash. Empty input falls back to a placeholder so the header
+    /// stays a valid token.
+    /// </summary>
+    private static string SanitiseFileName(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "module";
+        var chars = new char[raw.Length];
+        for (var i = 0; i < raw.Length; i++)
+        {
+            var c = raw[i];
+            chars[i] = char.IsLetterOrDigit(c) || c is '.' or '-' or '_' ? c : '-';
+        }
+        return new string(chars);
     }
 }

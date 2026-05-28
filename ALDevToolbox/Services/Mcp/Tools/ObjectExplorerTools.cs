@@ -291,8 +291,8 @@ public sealed class ObjectExplorerTools
     }
 
     [McpServerTool(Name = "download_symbol_reference", ReadOnly = true)]
-    [Description("Downloads the raw SymbolReference.json for one module (extension) in a release, for debugging resolver errors. Only available when the release was imported with the 'store symbol reference' option enabled. The JSON can be large (tens of MB for the base application).")]
-    public async Task<SymbolReferenceDownload> DownloadSymbolReferenceAsync(
+    [Description("Returns a download URL for one module's raw SymbolReference.json, for debugging resolver errors. Only available when the release was imported with the 'store symbol reference' option enabled. The JSON is NOT returned inline — a base-app symbol file runs to tens of MB and would blow up the MCP response serialiser; share the returned downloadPath with the user (appended to the app's base URL) so they can fetch it via the streaming download endpoint.")]
+    public async Task<SymbolReferenceDownloadLink> DownloadSymbolReferenceAsync(
         [Description("Release Label ('BC 28.1') or numeric id.")] string releaseLabelOrId,
         [Description("Module / extension name, e.g. 'Base Application' (case-insensitive).")] string moduleName,
         CancellationToken ct = default)
@@ -301,7 +301,14 @@ public sealed class ObjectExplorerTools
         var name = moduleName.Trim();
         var match = await _db.OeModules.AsNoTracking()
             .Where(m => m.ReleaseId == releaseId && m.Name.ToLower() == name.ToLower())
-            .Select(m => new { m.Name, m.Version, m.SymbolReferenceContentHash, Json = m.SymbolReferenceContent!.Content })
+            .Select(m => new
+            {
+                m.Id,
+                m.Name,
+                m.Version,
+                m.SymbolReferenceContentHash,
+                ContentLength = (int?)(m.SymbolReferenceContent != null ? m.SymbolReferenceContent.ContentLength : 0),
+            })
             .FirstOrDefaultAsync(ct);
 
         if (match is null)
@@ -324,7 +331,13 @@ public sealed class ObjectExplorerTools
                 $"Module '{match.Name}' has no stored SymbolReference.json. {available}");
         }
 
-        return new SymbolReferenceDownload(match.Name, match.Version, match.Json);
+        var downloadPath = $"/api/object-explorer/release/{releaseId}/modules/{match.Id}/symbol-reference";
+        return new SymbolReferenceDownloadLink(
+            ModuleName: match.Name,
+            Version: match.Version,
+            ContentHash: match.SymbolReferenceContentHash,
+            ContentLength: match.ContentLength ?? 0,
+            DownloadPath: downloadPath);
     }
 
     private async Task<int> ResolveReleaseAsync(string releaseLabelOrId, CancellationToken ct)
@@ -348,5 +361,16 @@ public sealed class ObjectExplorerTools
     }
 }
 
-/// <summary>Raw <c>SymbolReference.json</c> for one module, returned by the download_symbol_reference tool.</summary>
-public sealed record SymbolReferenceDownload(string ModuleName, string Version, string Json);
+/// <summary>
+/// Download link + identity for one module's stored <c>SymbolReference.json</c>,
+/// returned by the <c>download_symbol_reference</c> MCP tool. The agent reports
+/// <c>DownloadPath</c> to the user, who appends it to the app's base URL and
+/// fetches it via the streaming download endpoint — the bytes never travel
+/// through the MCP response (a base-app symbol file would OOM the serialiser).
+/// </summary>
+public sealed record SymbolReferenceDownloadLink(
+    string ModuleName,
+    string Version,
+    string ContentHash,
+    int ContentLength,
+    string DownloadPath);

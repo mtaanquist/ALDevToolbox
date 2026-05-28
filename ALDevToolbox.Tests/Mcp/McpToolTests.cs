@@ -637,20 +637,22 @@ public sealed class McpToolTests : IDisposable
     }
 
     [Fact]
-    public async Task DownloadSymbolReference_returns_stored_json()
+    public async Task DownloadSymbolReference_returns_link_to_streaming_endpoint()
     {
         var releaseId = await SeedDkCoreReleaseAsync(storeSymbolReference: true, label: "MCP DK Core symbols");
         await using var ctx = _db.NewContext();
-        var moduleName = await ctx.OeModules.AsNoTracking()
+        var module = await ctx.OeModules.AsNoTracking()
             .Where(m => m.ReleaseId == releaseId)
-            .Select(m => m.Name)
+            .Select(m => new { m.Id, m.Name })
             .SingleAsync();
         var tools = NewOeTools(ctx);
 
-        var result = await tools.DownloadSymbolReferenceAsync(releaseId.ToString(), moduleName);
+        var result = await tools.DownloadSymbolReferenceAsync(releaseId.ToString(), module.Name);
 
-        result.ModuleName.Should().Be(moduleName);
-        result.Json.TrimStart().Should().StartWith("{");
+        result.ModuleName.Should().Be(module.Name);
+        result.ContentHash.Should().NotBeNullOrEmpty();
+        result.ContentLength.Should().BeGreaterThan(0);
+        result.DownloadPath.Should().Be($"/api/object-explorer/release/{releaseId}/modules/{module.Id}/symbol-reference");
     }
 
     [Fact]
