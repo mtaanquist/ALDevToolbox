@@ -1209,16 +1209,36 @@ internal sealed class AlProcedureWalker
         // still surface as references.
         if (AlBuiltinMethods.IsBuiltinStaticReceiver(head.Value))
         {
-            while (_state.Pos < _state.Tokens.Count && _state.At("."))
+            while (_state.Pos < _state.Tokens.Count)
             {
-                _state.Pos++; // .
-                if (_state.Pos < _state.Tokens.Count
-                    && (_state.Tokens[_state.Pos].Kind == AlTokenKind.Identifier
-                        || _state.Tokens[_state.Pos].Kind == AlTokenKind.QuotedIdentifier))
+                if (_state.At("."))
                 {
-                    _state.Pos++; // member
+                    _state.Pos++; // .
+                    if (_state.Pos < _state.Tokens.Count
+                        && (_state.Tokens[_state.Pos].Kind == AlTokenKind.Identifier
+                            || _state.Tokens[_state.Pos].Kind == AlTokenKind.QuotedIdentifier))
+                    {
+                        _state.Pos++; // member
+                    }
+                    if (_state.Pos < _state.Tokens.Count && _state.At("(")) WalkBalancedParens();
+                    continue;
                 }
-                if (_state.Pos < _state.Tokens.Count && _state.At("(")) WalkBalancedParens();
+                // Enum-value continuation:
+                // `Microsoft.Manufacturing.Document."Production Order Status"::Planned.AsInteger()`.
+                // After the dotted namespace path resolves to a quoted
+                // type name, an enum-value `::Identifier` may follow,
+                // optionally chained with `.AsInteger()` / `.AsBoolean()`.
+                // The catalog doesn't track enum values; treat the
+                // whole `::Value.method(...)` tail as a silent skip.
+                if (_state.Pos + 1 < _state.Tokens.Count
+                    && _state.Tokens[_state.Pos].Kind == AlTokenKind.DoubleColon
+                    && (_state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Identifier
+                        || _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.QuotedIdentifier))
+                {
+                    _state.Pos += 2; // :: value
+                    continue;
+                }
+                break;
             }
             return;
         }

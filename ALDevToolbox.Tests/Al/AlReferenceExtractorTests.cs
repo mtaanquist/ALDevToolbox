@@ -4697,6 +4697,37 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Microsoft_namespace_with_enum_value_continuation_silences_chain()
+    {
+        // RequisitionLine.Table.al's IsProdDemand:
+        //   `Microsoft.Manufacturing.Document."Production Order Status"::Planned.AsInteger()`
+        // The Microsoft-namespace static-receiver walker consumed the
+        // dotted path through the quoted type but stopped at `::`,
+        // leaving `Planned` to be re-dispatched as a fresh chain head
+        // — Planned isn't a scope var or a catalog type, so the chain
+        // fired head-not-a-variable. The fix continues the silent
+        // walk past `::Value` (and any trailing `.AsInteger()` /
+        // `.method(...)` chain), matching how enum-value references
+        // surface elsewhere.
+        var resolver = MakeResolver();
+        const string src = """
+            table 246 "Requisition Line"
+            {
+                procedure IsProdDemand(): Boolean
+                begin
+                    exit(
+                        Microsoft.Manufacturing.Document."Production Order Status"::Planned.AsInteger() = 1);
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            OwnerTable(resolver, "Requisition Line"));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "Planned" || s.Token == "AsInteger");
+    }
+
+    [Fact]
     public void Rec_field_with_same_name_as_catalog_codeunit_wins_chain_head()
     {
         // `Image.ImportFile(...)` inside `Customer.Table.al` —
