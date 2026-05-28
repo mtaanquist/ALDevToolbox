@@ -23,21 +23,32 @@ public sealed class ReleaseImportWorker : BackgroundService
     private readonly ReleaseImportQueue _queue;
     private readonly IServiceProvider _services;
     private readonly ILogger<ReleaseImportWorker> _logger;
+    private readonly WorkerHeartbeat _heartbeat;
 
     public ReleaseImportWorker(
         ReleaseImportQueue queue,
         IServiceProvider services,
-        ILogger<ReleaseImportWorker> logger)
+        ILogger<ReleaseImportWorker> logger,
+        WorkerHeartbeatRegistry heartbeats)
     {
         _queue = queue;
         _services = services;
         _logger = logger;
+        // Queue-driven: legitimately sits idle for hours waiting for an admin
+        // to enqueue work, so no idle-silence ceiling (null). The active-duration
+        // ceiling is the longest legitimate single import — a fresh BC base-app
+        // ingest can run 30+ minutes; 90 leaves margin while still catching the
+        // hung-on-I/O case that prompted this in the first place.
+        _heartbeat = heartbeats.Register(nameof(ReleaseImportWorker),
+            maxActiveDuration: TimeSpan.FromMinutes(90),
+            maxIdleSilence: null);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await foreach (var job in _queue.Reader.ReadAllAsync(stoppingToken).ConfigureAwait(false))
         {
+            _heartbeat.BeginActive();
             try
             {
                 await RunJobAsync(job, stoppingToken).ConfigureAwait(false);
@@ -51,6 +62,10 @@ public sealed class ReleaseImportWorker : BackgroundService
                 // RunJobAsync handles its own failures; this is the last-resort
                 // net so one bad job never kills the worker loop.
                 _logger.LogError(ex, "Release import worker tripped on ReleaseId={ReleaseId}.", job.ReleaseId);
+            }
+            finally
+            {
+                _heartbeat.EndActive();
             }
         }
     }

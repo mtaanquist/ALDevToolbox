@@ -25,12 +25,20 @@ public sealed class BackupScheduler : BackgroundService
     private readonly IServiceProvider _services;
     private readonly TimeProvider _clock;
     private readonly ILogger<BackupScheduler> _logger;
+    private readonly WorkerHeartbeat _heartbeat;
 
-    public BackupScheduler(IServiceProvider services, TimeProvider clock, ILogger<BackupScheduler> logger)
+    public BackupScheduler(IServiceProvider services, TimeProvider clock, ILogger<BackupScheduler> logger, WorkerHeartbeatRegistry heartbeats)
     {
         _services = services;
         _clock = clock;
         _logger = logger;
+        // Poll every minute; flag stale if no tick has landed in 5 (~3× the
+        // poll interval). Active-duration ceiling matches the longest legitimate
+        // backup run we'd allow — pg_dump on a large Postgres takes a while, so
+        // keep the ceiling generous.
+        _heartbeat = heartbeats.Register(nameof(BackupScheduler),
+            maxActiveDuration: TimeSpan.FromHours(2),
+            maxIdleSilence: TimeSpan.FromMinutes(5));
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -43,9 +51,12 @@ public sealed class BackupScheduler : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            _heartbeat.Tick();
             try
             {
-                await TickAsync(stoppingToken);
+                _heartbeat.BeginActive();
+                try { await TickAsync(stoppingToken); }
+                finally { _heartbeat.EndActive(); }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

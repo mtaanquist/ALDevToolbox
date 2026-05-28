@@ -145,7 +145,7 @@ public sealed class BackupSchedulerTests : IDisposable
     private async Task TickOnceAsync()
     {
         var sp = new ServiceCollection().BuildServiceProvider();
-        var scheduler = new BackupScheduler(sp, _clock, NullLogger<BackupScheduler>.Instance);
+        var scheduler = new BackupScheduler(sp, _clock, NullLogger<BackupScheduler>.Instance, new WorkerHeartbeatRegistry());
         await using var ctx = _db.NewContext();
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {

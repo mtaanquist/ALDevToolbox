@@ -49,17 +49,24 @@ public sealed class ObjectExplorerVacuumScheduler : BackgroundService
     private readonly ILogger<ObjectExplorerVacuumScheduler> _logger;
     private readonly int _hourUtc;
     private DateTimeOffset? _lastRunUtc;
+    private readonly WorkerHeartbeat _heartbeat;
 
     public ObjectExplorerVacuumScheduler(
         IServiceProvider services,
         TimeProvider clock,
         IConfiguration config,
-        ILogger<ObjectExplorerVacuumScheduler> logger)
+        ILogger<ObjectExplorerVacuumScheduler> logger,
+        WorkerHeartbeatRegistry heartbeats)
     {
         _services = services;
         _clock = clock;
         _logger = logger;
         _hourUtc = ParseHour(config["OE_VACUUM_HOUR_UTC"]);
+        // Same shape as BackupScheduler: poll every minute, stale at 5; a
+        // single VACUUM sweep is short, an hour ceiling is plenty.
+        _heartbeat = heartbeats.Register(nameof(ObjectExplorerVacuumScheduler),
+            maxActiveDuration: TimeSpan.FromHours(1),
+            maxIdleSilence: TimeSpan.FromMinutes(5));
     }
 
     private static int ParseHour(string? raw)
@@ -77,9 +84,12 @@ public sealed class ObjectExplorerVacuumScheduler : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            _heartbeat.Tick();
             try
             {
-                await TickAsync(stoppingToken);
+                _heartbeat.BeginActive();
+                try { await TickAsync(stoppingToken); }
+                finally { _heartbeat.EndActive(); }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
