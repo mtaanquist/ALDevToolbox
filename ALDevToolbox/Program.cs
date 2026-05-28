@@ -395,6 +395,17 @@ builder.Services.AddHttpClient(nameof(ALDevToolbox.Services.ObjectExplorer.DvdDo
     {
         AllowAutoRedirect = true,
         ConnectCallback = ALDevToolbox.Services.OAuth.SsrfGuard.ConnectAsync,
+        // SocketsHttpHandler defaults PooledConnectionLifetime to infinite, so
+        // a cached TCP connection that's silently gone half-dead (CDN edge
+        // dropped state, NAT timeout, …) gets reused for the next request and
+        // stalls mid-body. Recycle after 2 minutes so DVD imports — which are
+        // far apart and intolerant of stale state — always dial a fresh
+        // connection. This is the documented best-practice setting; see
+        // https://learn.microsoft.com/dotnet/fundamentals/networking/http/httpclient-guidelines.
+        // The range-resume retry in CopyWithRetriesAsync also leans on this:
+        // when a body stalls, the retry's new SendAsync gets a fresh
+        // connection rather than the same stuck pipe.
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2),
     });
 
 // MCP server (Model Context Protocol). Mounted at /mcp by McpEndpoints; the
