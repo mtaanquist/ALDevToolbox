@@ -94,7 +94,8 @@ public static class AlBuiltinMethods
         "Get", "GetBySystemId", "Find", "FindFirst", "FindLast", "FindSet", "Next",
         // Filtering / sorting.
         "SetRange", "SetFilter", "GetFilter", "GetFilters", "ClearMarks",
-        "SetCurrentKey", "SetView", "GetView", "SetPosition", "GetPosition",
+        "SetCurrentKey", "CurrentKey", "CurrentKeyIndex",
+        "SetView", "GetView", "SetPosition", "GetPosition",
         "SetAutoCalcFields", "CalcFields", "CalcSums",
         "SetAscending", "GetAscending", "Ascending",
         "SetSecurityFilterOnRespectiveTables",
@@ -234,6 +235,13 @@ public static class AlBuiltinMethods
         "Run", "RunModal", "Import", "Export",
         "SetSource", "SetDestination", "GetSource",
         "SetTableView", "GetTableView",
+        // Property accessors on xmlport instances — `FIELDDELIMITER`,
+        // `FIELDSEPARATOR`, `TEXTENCODING`, `USEREQUESTPAGE` etc. Used
+        // by base-app code that builds an xmlport at runtime to set
+        // these from a config table before .Import / .Export.
+        "FIELDDELIMITER", "FIELDSEPARATOR", "TEXTENCODING",
+        "USEREQUESTPAGE", "USEEXTERNALSCHEMA", "FILENAME",
+        "FormatFieldsForBC14_X",
     };
 
     /// <summary>
@@ -465,7 +473,7 @@ public static class AlBuiltinMethods
         // method sets (CommonMethods etc.) on actual chain calls,
         // and a bare call to one of those names would more often
         // be a mis-parsed chain than a deprecated system function.
-        "Exists",
+        "Exists", "Erase",
         "CreateTempFile", "Download", "DownloadFromStream",
         "Upload", "UploadIntoStream",
         "GetStamp", "SetStamp", "IsPathTemporary",
@@ -539,7 +547,7 @@ public static class AlBuiltinMethods
         "separator", "filter",
         // Pages / pageextensions: actions.
         "action", "actionref", "customaction", "actiongroup",
-        "systemaction",
+        "systemaction", "fileuploadaction",
         // Pageextensions: layout / action manipulators.
         "modify", "add", "addafter", "addbefore", "addlast", "addfirst",
         "movefirst", "movebefore", "moveafter", "movelast",
@@ -559,6 +567,11 @@ public static class AlBuiltinMethods
         // Controladd-ins, queries, profiles — declarative children.
         "controladdin", "querytype", "elements", "filters", "orderby",
         "dataitemlink", "column",
+        // Page / pageextension `view(...)` blocks — declarative
+        // filter / sort presets on listpage actions. `descending`
+        // appears in query `column` decoration as a sort direction
+        // (looks like a function call to the lexer).
+        "view", "views", "descending", "ascending",
     };
 
     /// <summary>
@@ -628,6 +641,18 @@ public static class AlBuiltinMethods
         // as head-not-a-variable (the variable lookup misses and the
         // catalog has no "Dialog" / "Text" object).
         "Dialog", "Text",
+        // AL runtime static APIs surfaced as `<Name>.<Method>(...)`:
+        //   IsolatedStorage.Set / .Get / .SetEncrypted / .Delete — the
+        //     per-app secret store used across BC's connectors and
+        //     authenticators.
+        //   NumberSequence.Insert / .Current / .Next — the platform's
+        //     gap-less number-sequence service.
+        //   MediaSet.FindOrphans — the System Application's media
+        //     cleanup helper.
+        // All three resolve at runtime through the AL kernel rather
+        // than the catalog, so chain heads through them should
+        // silence cleanly.
+        "IsolatedStorage", "NumberSequence", "MediaSet",
         // Legacy company-property accessor — `COMPANYPROPERTY.DISPLAYNAME()`,
         // `.PICTURE()`, etc. A system receiver, never a catalog object.
         "COMPANYPROPERTY",
@@ -702,6 +727,10 @@ public static class AlBuiltinMethods
         "HttpHeaders", "HttpContent",
         // App metadata.
         "ModuleInfo", "ModuleDependencyInfo",
+        // Data-upgrade infrastructure. `DataTransfer` powers the
+        // upgrade-codeunit Field-set-Field shape (`SetSourceTable`,
+        // `AddFieldValue`, `CopyRows`, …) introduced in BC 22+.
+        "DataTransfer",
         // .NET interop.
         "DotNet", "DotNetAssembly", "DotNetTypeDeclaration",
         "Automation",

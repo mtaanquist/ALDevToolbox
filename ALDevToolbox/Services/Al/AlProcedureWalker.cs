@@ -1298,16 +1298,23 @@ internal sealed class AlProcedureWalker
                     if (followedByParen) WalkArgsForBuiltin(receiverType, memberTok.Value);
                     return;
                 }
-                // Synthesised platform virtual tables (Record Field,
-                // Record Company, etc. — stamped with the PlatformAppId
-                // sentinel of Guid.Empty in the catalog) have no
-                // schemas: the import doesn't write members for them.
-                // Field accesses like `TempFieldSet.TableNo` are
-                // legitimate but unresolvable through our metadata.
-                // Silence the diagnostic so it doesn't crowd out real
-                // gaps; the trade-off (lost underline) was already
-                // implicit when we synthesised the type.
-                if (receiverType.AppId == Guid.Empty)
+                // Platform virtual tables (Record Field, Record Company,
+                // Record File, Record Media, Record User, …) have
+                // schemas that aren't fully modelled. Two ways to spot
+                // them: the synthesised sentinel (AppId == Guid.Empty)
+                // when we couldn't link them to a real module, and the
+                // object-id range 2000000000–2000000999 when they
+                // resolved through the System app's real symbol package
+                // (Microsoft does ship some metadata for them, but it's
+                // never a complete method list — static-style helpers
+                // like File.ViewFromStream, Media.FindOrphans, plus
+                // every BC's-current-month-added field, end up missing).
+                // Silence the chain-step miss in either case; the
+                // trade-off (no underline / Find-references support
+                // on those specific members) was already implicit.
+                if (receiverType.AppId == Guid.Empty
+                    || (receiverType.ObjectId is int id
+                        && id >= 2000000000 && id <= 2000000999))
                 {
                     if (followedByParen) WalkBalancedParens();
                     return;
@@ -2313,6 +2320,18 @@ internal sealed class AlProcedureWalker
     private AlTypeRef? ResolveHeadType(AlToken head, out ResolvedVariableType? declaredAsVar)
     {
         declaredAsVar = null;
+
+        // AL `this` keyword (BC 24+) — refers to the current object
+        // instance. `this.Member` from inside a codeunit / report /
+        // page / table dispatches against the OwnerType. Without
+        // this short-circuit, every `this.Foo()` chain in the
+        // System Application / Base App files that adopted the new
+        // syntax fires head-not-a-variable.
+        if (string.Equals(head.Value, "this", StringComparison.OrdinalIgnoreCase))
+        {
+            return OwnerType();
+        }
+
         // Step 1: walk the scope stack innermost-first.
         var name = head.Value.ToLowerInvariant();
         foreach (var frame in _state.ScopeStack)

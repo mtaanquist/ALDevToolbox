@@ -3572,6 +3572,171 @@ public sealed class AlReferenceExtractorTests
             && r.TargetMemberName == "Exists");
     }
 
+    // ── AL `this` keyword (BC 24+) ────────────────────────────────────
+
+    [Fact]
+    public void This_keyword_resolves_to_owner_type()
+    {
+        // BC 24+ allows `this.Member` inside a codeunit / page / report
+        // to refer to the current object instance. The chain walker
+        // didn't know about `this` and surfaced every reference as
+        // head-not-a-variable. Verified against the BC 26.13 sample
+        //   Token='this' Owner=codeunit:Apply Retention Policy Impl.
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper", new AlTypeRef(BaseAppId, "codeunit", 50000, "MyHelper"));
+        resolver.AddMember("MyHelper", new AlMember("DoStuff", "procedure", null, null));
+
+        const string src = """
+            procedure CallSelf()
+            begin
+                this.DoStuff();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "MyHelper"
+            && r.TargetMemberName == "DoStuff");
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "this");
+    }
+
+    // ── ControlAddIn event declarations ──────────────────────────────
+
+    [Fact]
+    public void ControlAddIn_event_declaration_silences()
+    {
+        // `event Foo(args);` inside a controladdin block is a
+        // declaration, not a call. Without an explicit consumer, the
+        // orchestrator dispatched `Foo(` through TryConsumeBareSelfCall
+        // and captured every controladdin event as a bare-call
+        // unresolved sample. Verified against System Application's
+        // ControlAddIns: ControlAddInReady, DataPointClicked,
+        // ErrorOccurred, AddInReady, …
+        var resolver = MakeResolver();
+        resolver.AddType("MyAddIn", new AlTypeRef(BaseAppId, "controladdin", 50000, "MyAddIn"));
+
+        const string src = """
+            controladdin MyAddIn
+            {
+                event ControlReady();
+                event DataPointClicked(Index: Integer);
+                event ErrorOccurred(Message: Text);
+            }
+            """;
+        var ctx = new AlExtractContext(
+            OwnerKind: "controladdin",
+            OwnerName: "MyAddIn",
+            OwnerObjectId: 50000,
+            OwnerAppId: BaseAppId,
+            GlobalVars: new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+            Resolver: resolver);
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "ControlReady"
+            || s.Token == "DataPointClicked"
+            || s.Token == "ErrorOccurred");
+    }
+
+    // ── IsolatedStorage / NumberSequence / MediaSet static receivers ──
+
+    [Fact]
+    public void Static_runtime_receivers_silence_chain()
+    {
+        // `IsolatedStorage.Set(...)`, `NumberSequence.Insert(...)`,
+        // `MediaSet.FindOrphans()` — all AL runtime APIs accessed as
+        // `<Name>.<Method>(...)` from anywhere in code. Each name lives
+        // in BuiltinStaticReceivers; the chain walker silences cleanly.
+        var resolver = MakeResolver();
+        const string src = """
+            procedure DoStuff()
+            begin
+                IsolatedStorage.Set('K', 'V', DataScope::Module);
+                NumberSequence.Insert('SeqName', 1, 1, true);
+                MediaSet.FindOrphans();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "IsolatedStorage"
+            || s.Token == "NumberSequence"
+            || s.Token == "MediaSet");
+    }
+
+    // ── Cross-app name collision tiebreaker ───────────────────────────
+
+    [Fact]
+    public void Same_app_candidate_wins_over_other_visible_apps()
+    {
+        // `No. Series Line` exists in BOTH Base Application and
+        // Business Foundation with the same object id (309). Code in
+        // Business Foundation referencing the table should resolve to
+        // Business Foundation's version — Base App's stripped-down
+        // shim doesn't have the `Implementation` field. Old resolver
+        // picked the first visible candidate, surfacing
+        //   chain-step Token='Implementation' ReceiverName='No. Series Line'
+        //     ReceiverAppId=437dbf0e... (Base App, wrong)
+        // The resolver's own preference logic is exercised through the
+        // real CatalogResolver in integration tests; this test pins
+        // the extractor-side contract (StubResolver returns the type
+        // the caller-app-aware preference wants) by adding only the
+        // app-specific version.
+        var resolver = MakeResolver();
+        var bfAppId = Guid.Parse("f3552374-a1f2-4356-848e-196002525837");
+        resolver.AddType("No. Series Line",
+            new AlTypeRef(bfAppId, "table", 309, "No. Series Line"));
+        resolver.AddMember("No. Series Line",
+            new AlMember("Implementation", "table_field", "Enum", "No. Series Implementation"));
+
+        const string src = """
+            procedure UseImplementation()
+            var
+                NoSeriesLine: Record "No. Series Line";
+            begin
+                if NoSeriesLine.Implementation::Sequence = NoSeriesLine.Implementation then
+                    exit;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "field_access"
+            && r.TargetObjectName == "No. Series Line"
+            && r.TargetMemberName == "Implementation");
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "Implementation");
+    }
+
+    // ── Platform virtual table chain-step silence ─────────────────────
+
+    [Fact]
+    public void Platform_virtual_table_chain_step_silences_by_object_id()
+    {
+        // The System app's `File` table (objectId 2000000022) doesn't
+        // model static helpers like ViewFromStream / WriteAllBytes in
+        // its symbol package members. Chain steps that miss on the
+        // platform-id range should silence — the underline / find-
+        // references trade-off is implicit when we accept these tables
+        // into the catalog.
+        var resolver = MakeResolver();
+        var systemAppId = Guid.Parse("8874ed3a-0643-4247-9ced-7a7002f7135d");
+        resolver.AddType("File",
+            new AlTypeRef(systemAppId, "table", 2000000022, "File"));
+
+        const string src = """
+            procedure UseFile()
+            var
+                FileVar: Record File;
+            begin
+                FileVar.ViewFromStream(InStream, 'X');
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "ViewFromStream");
+    }
+
     // ── Static-receiver silences for Dialog / Text ───────────────────
 
     [Fact]

@@ -1950,6 +1950,29 @@ public class ReleaseImportService
         // third-party extension, etc.
         var moduleVisibility = await BuildModuleVisibilityAsync(releaseId, ct);
 
+        // Per-module AppId lookup so the resolver can apply same-app
+        // preference when multiple candidates match a name. Same query
+        // shape BuildModuleVisibilityAsync uses but smaller projection;
+        // the cost is one extra trip, kept here so the visibility
+        // method's contract stays narrow.
+        var moduleAppIdsById = await _db.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == releaseId)
+            .ToDictionaryAsync(m => m.Id, m => m.AppId, ct);
+
+        // Foundational app ids — the platform / system / system-app /
+        // application modules whose tables (Company, User, File, …)
+        // Base App code references without an explicit dependency.
+        // Matched by Microsoft + name, same way the visibility builder
+        // does it; capturing the set here lets the resolver prefer
+        // platform candidates over random third-party same-named tables.
+        var foundationalAppIds = new HashSet<Guid>(
+            await _db.OeModules.AsNoTracking()
+                .Where(m => m.ReleaseId == releaseId
+                    && m.Publisher == "Microsoft"
+                    && FoundationalAppNames.Contains(m.Name))
+                .Select(m => m.AppId)
+                .ToListAsync(ct));
+
         // (6) Per-module resolver cache. All files in the same module
         // share the same visibility set, so build the resolver once
         // and reuse across files.
@@ -1958,9 +1981,12 @@ public class ReleaseImportService
         {
             if (resolversByModule.TryGetValue(moduleId, out var cached)) return cached;
             moduleVisibility.TryGetValue(moduleId, out var visible);
+            moduleAppIdsById.TryGetValue(moduleId, out var ownerAppId);
             var r = new CatalogResolver(
                 typesByName, typesByObjectId, objectIdByIdentity,
-                membersByOwner, extensionsByBaseName, sourceTablesByObjectId, visible);
+                membersByOwner, extensionsByBaseName, sourceTablesByObjectId, visible,
+                ownerAppId == Guid.Empty ? null : ownerAppId,
+                foundationalAppIds);
             resolversByModule[moduleId] = r;
             return r;
         }
@@ -2681,6 +2707,23 @@ public class ReleaseImportService
         private readonly Dictionary<string, List<ExtensionEntry>> _extensionsByBaseName;
         private readonly Dictionary<long, string> _sourceTablesByObjectId;
         private readonly HashSet<Guid>? _visibleAppIds;
+        // AppId of the module whose file is being walked. Used as a
+        // tiebreaker in ResolveTypeByName: when the catalog has
+        // multiple candidates for a name (a real BC pattern —
+        // `No. Series Line` exists in both Base Application and
+        // Business Foundation with the same object id, `Company` exists
+        // in the System platform and as a connector-specific table),
+        // prefer the candidate whose AppId matches the caller. Falls
+        // through to the existing kind / extension preference when no
+        // same-app match is visible.
+        private readonly Guid? _ownerAppId;
+        // Foundational app ids — the platform/system tables (Company,
+        // User, File, Field, …) live under these. When the caller has
+        // no same-app match for a name, prefer one of these over a
+        // random visible candidate. Set up from the same name-based
+        // probe BuildModuleVisibilityAsync uses (publisher=Microsoft
+        // AND name in FoundationalAppNames).
+        private readonly HashSet<Guid> _foundationalAppIds;
 
         public CatalogResolver(
             Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>> typesByName,
@@ -2689,7 +2732,9 @@ public class ReleaseImportService
             Dictionary<long, List<MemberEntry>> members,
             Dictionary<string, List<ExtensionEntry>> extensionsByBaseName,
             Dictionary<long, string> sourceTablesByObjectId,
-            HashSet<Guid>? visibleAppIds)
+            HashSet<Guid>? visibleAppIds,
+            Guid? ownerAppId,
+            HashSet<Guid> foundationalAppIds)
         {
             _typesByName = typesByName;
             _typesByObjectId = typesByObjectId;
@@ -2698,16 +2743,29 @@ public class ReleaseImportService
             _extensionsByBaseName = extensionsByBaseName;
             _sourceTablesByObjectId = sourceTablesByObjectId;
             _visibleAppIds = visibleAppIds;
+            _ownerAppId = ownerAppId;
+            _foundationalAppIds = foundationalAppIds;
         }
 
         /// <summary>
         /// Resolves a name to a single AlTypeRef. When multiple objects
-        /// share the name (e.g. a Table and a TableExtension both named
-        /// "Sales Header" — Microsoft's Subscription Billing app does
-        /// this against Base Application's Sales Header), preference is:
+        /// share the name, preference order is:
         /// <list type="number">
         ///   <item>Visible (the caller's module can see the declaring
-        ///         AppId via app.json dependencies).</item>
+        ///         AppId via app.json dependencies or first-party
+        ///         implicit visibility).</item>
+        ///   <item>Caller's own app wins on a tie. <c>No. Series Line</c>
+        ///         exists in both Base Application and Business
+        ///         Foundation with the same object id; Business Foundation
+        ///         files should resolve to Business Foundation's version
+        ///         even though Base Application's is also visible.</item>
+        ///   <item>Foundational platform apps (Base Application, System,
+        ///         System Application, Application) beat random other
+        ///         visible apps when there's no same-app match. The
+        ///         platform virtual <c>Company</c> / <c>User</c> / <c>File</c>
+        ///         tables live in <c>System</c> and Base App code
+        ///         referencing them shouldn't lose to a connector's
+        ///         same-named table.</item>
         ///   <item>Kind matches the caller's hint (<paramref name="expectedKeyword"/>).
         ///         A page's <c>SourceTable = "Sales Header"</c> arrives
         ///         here with keyword <c>Record</c> — a TableExtension
@@ -2722,24 +2780,55 @@ public class ReleaseImportService
         {
             if (!_typesByName.TryGetValue(typeName, out var candidates)) return null;
             var expectedKind = MapKeywordToKind(expectedKeyword);
-            ALDevToolbox.Services.Al.AlTypeRef? best = null;
+
+            // Bucket walk: classify each visible candidate by source app
+            // and kind, then pick the highest-priority bucket that has
+            // a hit. Order of preference (highest first):
+            //   1. Same-app + exact-kind
+            //   2. Same-app + any kind
+            //   3. Foundational + exact-kind
+            //   4. Foundational + any kind
+            //   5. Other visible + exact-kind
+            //   6. Other visible + non-extension kind
+            //   7. Other visible + extension kind (last resort)
+            ALDevToolbox.Services.Al.AlTypeRef? sameAppExact = null;
+            ALDevToolbox.Services.Al.AlTypeRef? sameAppAny = null;
+            ALDevToolbox.Services.Al.AlTypeRef? foundationalExact = null;
+            ALDevToolbox.Services.Al.AlTypeRef? foundationalAny = null;
+            ALDevToolbox.Services.Al.AlTypeRef? otherExact = null;
+            ALDevToolbox.Services.Al.AlTypeRef? otherNonExt = null;
+            ALDevToolbox.Services.Al.AlTypeRef? otherAny = null;
+
             foreach (var t in candidates)
             {
                 if (!IsVisible(t.AppId)) continue;
-                // With a kind hint, exact match wins outright — return
-                // the first exact-kind visible candidate.
-                if (expectedKind is not null
-                    && string.Equals(t.Kind, expectedKind, StringComparison.OrdinalIgnoreCase))
+                bool kindMatches = expectedKind is not null
+                    && string.Equals(t.Kind, expectedKind, StringComparison.OrdinalIgnoreCase);
+
+                if (_ownerAppId is not null && t.AppId == _ownerAppId.Value)
                 {
-                    return t;
+                    if (kindMatches) { sameAppExact ??= t; }
+                    else { sameAppAny ??= t; }
+                    continue;
                 }
-                if (best is null) { best = t; continue; }
-                if (IsExtensionKind(best.Kind) && !IsExtensionKind(t.Kind))
+                if (_foundationalAppIds.Contains(t.AppId))
                 {
-                    best = t;
+                    if (kindMatches) { foundationalExact ??= t; }
+                    else { foundationalAny ??= t; }
+                    continue;
                 }
+                if (kindMatches) { otherExact ??= t; continue; }
+                if (!IsExtensionKind(t.Kind)) { otherNonExt ??= t; continue; }
+                otherAny ??= t;
             }
-            return best;
+
+            return sameAppExact
+                ?? sameAppAny
+                ?? foundationalExact
+                ?? foundationalAny
+                ?? otherExact
+                ?? otherNonExt
+                ?? otherAny;
         }
 
         /// <summary>
