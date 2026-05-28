@@ -33,7 +33,7 @@ internal sealed class AlQueryStructure : IAlObjectStructureExtractor
         var (consumed, source) = AlDataItemDsl.TryConsumeAliasedSourceDeclaration(_state, "dataitem", tok);
         if (consumed && source is not null)
         {
-            _state.CurrentDataItemSource = source;
+            _state.PushDataItemSource(source);
         }
         return consumed;
     }

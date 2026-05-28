@@ -470,6 +470,28 @@ public static class AlReferenceExtractor
                 if (_structure.TryResolveObjectScopeBareIdentifier(tok)) return;
             }
 
+            // Object-scope brace tracking. Updates the depth counter
+            // that AlExtractionState.DataItemStack relies on to pop
+            // dataitem frames at their body-closing brace. Procedure /
+            // trigger bodies sit inside this depth too (they enter
+            // through `begin` / `end`, not `{` / `}`), so this only
+            // ever runs at object scope.
+            if (_state.ScopeStack.Count == 1 && tok.Kind == AlTokenKind.Punct)
+            {
+                if (tok.Value == "{")
+                {
+                    _state.ObjectBraceDepth++;
+                    _state.Pos++;
+                    return;
+                }
+                if (tok.Value == "}")
+                {
+                    _state.OnObjectBraceClose();
+                    _state.Pos++;
+                    return;
+                }
+            }
+
             _state.Pos++;
         }
 

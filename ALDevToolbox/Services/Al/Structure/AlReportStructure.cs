@@ -32,11 +32,13 @@ internal sealed class AlReportStructure : IAlObjectStructureExtractor
         var (consumed, source) = AlDataItemDsl.TryConsumeAliasedSourceDeclaration(_state, "dataitem", tok);
         if (consumed && source is not null)
         {
-            // Promoted to shared state so the bare-self-call resolver
-            // sees it too — `AutoFormatExpression = GetProc();` inside
-            // a column needs to resolve GetProc against the dataitem's
-            // source table.
-            _state.CurrentDataItemSource = source;
+            // Pushed onto the depth-tracked stack so nested dataitems
+            // keep their parents' source in scope for the bare-self-
+            // call resolver — `EmptyLine()` inside an Integer-loop
+            // child of a "Gen. Journal Line" dataitem still resolves
+            // against the parent's source table. The matching body
+            // `}` pops it via OnObjectBraceClose.
+            _state.PushDataItemSource(source);
         }
         return consumed;
     }

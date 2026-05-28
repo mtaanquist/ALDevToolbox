@@ -631,10 +631,12 @@ public static class AlBuiltinMethods
         // surface here if it appears).
         "DATABASE",
         // Current-object runtime keywords. CurrPage / currXMLport /
-        // CurrReport refer to the currently-running object instance;
-        // their methods (Update, Close, Skip, etc.) aren't in any
-        // module's catalog.
-        "CurrPage", "currXMLport", "CurrReport",
+        // CurrReport / CurrQuery refer to the currently-running object
+        // instance; their methods (Update, Close, Skip, ColumnNo, etc.)
+        // aren't in any module's catalog. CurrQuery surfaces inside
+        // query OnBeforeOpen / OnAfterGetRecord triggers as
+        // `CurrQuery.ColumnNo("X")` / `CurrQuery.Read()` etc.
+        "CurrPage", "currXMLport", "CurrReport", "CurrQuery",
         // XML / JSON / encoding primitives also exposed as static
         // factory receivers. `XmlDocument.ReadFrom(...)` /
         // `XmlDocument.Create()` / `XmlElement.Create(...)` create

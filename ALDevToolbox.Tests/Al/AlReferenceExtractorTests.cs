@@ -4135,6 +4135,152 @@ public sealed class AlReferenceExtractorTests
             .Should().HaveCount(1);
     }
 
+    // ── Nested dataitem scope ────────────────────────────────────────
+
+    [Fact]
+    public void Bare_call_in_nested_dataitem_resolves_against_outer_source()
+    {
+        // `EmptyLine()` inside an inner Integer-loop dataitem's
+        // OnAfterGetRecord trigger targets a procedure on the outer
+        // dataitem's source table ("Gen. Journal Line"). Before the
+        // depth-tracked dataitem stack, only the innermost source
+        // was kept and the call surfaced as bare-call unresolved.
+        //
+        // Verified against the unresolved samples
+        //   Reason=bare-call Token='EmptyLine' Line=351 / 347 / 569 …
+        // logged across AutoPostingErrors / GeneralJournalTest /
+        // PhysInvtOrderDiffList / PhysInvtOrderTest / etc. in BC 26.13.
+        var resolver = MakeResolver();
+        resolver.AddType("Auto Posting Errors",
+            new AlTypeRef(BaseAppId, "report", 17, "Auto Posting Errors"));
+        resolver.AddType("Gen. Journal Line",
+            new AlTypeRef(BaseAppId, "table", 81, "Gen. Journal Line"));
+        resolver.AddType("Integer",
+            new AlTypeRef(BaseAppId, "table", 2000000026, "Integer"));
+        resolver.AddMember("Gen. Journal Line",
+            new AlMember("EmptyLine", "procedure", "Boolean", null));
+
+        const string src = """
+            report 17 "Auto Posting Errors"
+            {
+                dataset
+                {
+                    dataitem(GenJnlLine; "Gen. Journal Line")
+                    {
+                        dataitem(Loop; Integer)
+                        {
+                            trigger OnAfterGetRecord()
+                            begin
+                                if EmptyLine() then
+                                    exit;
+                            end;
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "Auto Posting Errors"));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Gen. Journal Line"
+            && r.TargetMemberName == "EmptyLine");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "EmptyLine");
+    }
+
+    [Fact]
+    public void Sibling_dataitem_does_not_leak_into_next_dataitem_scope()
+    {
+        // Guard: when a sibling dataitem's body closes, its source
+        // must NOT remain on the stack for the next sibling. Without
+        // depth-tracked pop, the second dataitem's bare calls would
+        // mis-resolve against the first sibling's table.
+        var resolver = MakeResolver();
+        resolver.AddType("Test Report",
+            new AlTypeRef(BaseAppId, "report", 50000, "Test Report"));
+        resolver.AddType("Cust. Ledger Entry",
+            new AlTypeRef(BaseAppId, "table", 21, "Cust. Ledger Entry"));
+        resolver.AddType("Vendor Ledger Entry",
+            new AlTypeRef(BaseAppId, "table", 25, "Vendor Ledger Entry"));
+        // Only the first sibling exposes the bare-callable procedure.
+        // After the first dataitem's `}` closes, we expect EmptyProc
+        // to surface as unresolved inside the second dataitem.
+        resolver.AddMember("Cust. Ledger Entry",
+            new AlMember("EmptyProc", "procedure", "Boolean", null));
+
+        const string src = """
+            report 50000 "Test Report"
+            {
+                dataset
+                {
+                    dataitem(Cust; "Cust. Ledger Entry")
+                    {
+                        trigger OnAfterGetRecord()
+                        begin
+                            if EmptyProc() then exit;
+                        end;
+                    }
+                    dataitem(Vend; "Vendor Ledger Entry")
+                    {
+                        trigger OnAfterGetRecord()
+                        begin
+                            if EmptyProc() then exit;
+                        end;
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "Test Report"));
+
+        // First sibling: resolved against Cust. Ledger Entry.
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Cust. Ledger Entry"
+            && r.TargetMemberName == "EmptyProc");
+        // Second sibling: must NOT resolve against Cust. Ledger Entry
+        // (that frame was popped); it stays unresolved because Vendor
+        // Ledger Entry doesn't expose the procedure.
+        result.References.Should().NotContain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Cust. Ledger Entry"
+            && r.TargetMemberName == "EmptyProc"
+            && r.Line >= 12); // second dataitem's trigger lives later
+        result.Stats.UnresolvedSamples.Should().Contain(s =>
+            s.Token == "EmptyProc" && s.Reason == "bare-call");
+    }
+
+    [Fact]
+    public void CurrQuery_chain_step_silences_in_query_body()
+    {
+        // `CurrQuery.ColumnNo("Customer No.")` inside a query trigger
+        // is a runtime self-pointer call; CurrQuery's methods live on
+        // the runtime, not in the catalog. Same shape as CurrPage /
+        // currXMLport / CurrReport — silenced via BuiltinStaticReceivers.
+        const string src = """
+            query 1001 "My Query"
+            {
+                trigger OnBeforeOpen()
+                begin
+                    if CurrQuery.ColumnNo("Customer No.") = 0 then
+                        exit;
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, new AlExtractContext(
+            OwnerKind: "query",
+            OwnerName: "My Query",
+            OwnerObjectId: 1001,
+            OwnerAppId: BaseAppId,
+            GlobalVars: new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+            Resolver: MakeResolver()));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "CurrQuery");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "ColumnNo");
+    }
+
     // ── Stub resolver ───────────────────────────────────────────────
 
     private sealed class StubResolver : IAlTypeResolver
