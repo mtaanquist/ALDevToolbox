@@ -9,9 +9,13 @@ namespace ALDevToolbox.Services.ObjectExplorer;
 /// services" fence intact while giving the worker a clean back-pressure point.
 ///
 /// <para>
-/// The queue is deliberately not durable: a process restart drops pending
-/// jobs, and the startup reconciler (see <c>StartupTasks</c>) flips any
-/// release left in <c>ingesting</c> to <c>failed</c> so nothing is stranded.
+/// The channel itself is in-memory, but every enqueue is mirrored to the
+/// <c>oe_import_jobs</c> table via <see cref="PersistedImportJobs"/>. On
+/// startup the reconciler re-enqueues every <c>queued</c> / <c>running</c>
+/// URL-source row so an interrupted download resumes; staged-zip rows can't
+/// be resumed (their temp file lives in container-local <c>/tmp</c> and is
+/// gone after a restart), so the reconciler marks those <c>failed</c> with a
+/// "restart lost the upload" message instead of stranding them.
 /// </para>
 /// </summary>
 public sealed class ReleaseImportQueue
@@ -37,12 +41,19 @@ public sealed class ReleaseImportQueue
 /// state (created synchronously in the request so it shows in the list);
 /// the worker materialises the uploads from <see cref="Source"/> and runs the
 /// ingest under the captured <see cref="Identity"/>.
+///
+/// <para><see cref="JobRowId"/> points at the durable <c>oe_import_jobs</c>
+/// row managed by <see cref="PersistedImportJobs"/>. The worker updates that
+/// row's status (running → completed / failed) as it progresses so the admin
+/// page reflects current state and the startup reconciler can re-enqueue
+/// URL-source rows that survived a restart.</para>
 /// </summary>
 public sealed record ReleaseImportJob(
     int ReleaseId,
     AmbientOrganizationScope.OrganizationIdentity Identity,
     ReleaseImportSource Source,
-    bool StoreSymbolReference = false);
+    bool StoreSymbolReference = false,
+    long JobRowId = 0);
 
 /// <summary>Where the worker gets the bytes from.</summary>
 public abstract record ReleaseImportSource

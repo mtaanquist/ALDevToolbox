@@ -100,15 +100,41 @@ internal static class StartupTasks
                 + "These environment variables only take effect on a fresh database; remove them once the bootstrap account is in place.");
         }
 
-        // Reconcile release imports interrupted by a restart. The import queue
-        // is in-process, so a crash/redeploy drops any in-flight or pending
-        // job and would otherwise strand its Release row in "ingesting"
-        // forever. Mark them failed so the admin can re-import. Cross-org by
-        // design (no user in scope at startup) — same blessed startup-maintenance
-        // category as the migration/seed/bootstrap steps above, never a request.
+        // Reconcile durable import-job rows: re-enqueue URL downloads that were
+        // queued or running at restart (the download is idempotent and we have
+        // the URL on the row); flip staged-zip jobs to failed because their
+        // temp file lives in container-local /tmp and is gone. The reconciler
+        // returns the jobs to re-enqueue here; we push them through the queue
+        // so the worker picks them up like a fresh submission.
+        var persistedJobs = scope.ServiceProvider.GetRequiredService<ALDevToolbox.Services.ObjectExplorer.PersistedImportJobs>();
+        var queue = scope.ServiceProvider.GetRequiredService<ALDevToolbox.Services.ObjectExplorer.ReleaseImportQueue>();
+        var resumable = await persistedJobs.ReconcileOnStartupAsync(stopping);
+        foreach (var job in resumable)
+        {
+            await queue.EnqueueAsync(job, stopping);
+        }
+        if (resumable.Count > 0)
+        {
+            logger.LogInformation("Resumed {Count} URL-source release import(s) after restart.", resumable.Count);
+        }
+
+        // Belt-and-suspenders: any OeRelease row still left in "ingesting"
+        // WITHOUT a re-queued durable job (synchronous individual-file imports
+        // that crashed mid-way, or pre-table-existing in-flight rows) gets the
+        // generic "interrupted by restart" treatment so the list page doesn't
+        // strand them. Excluding releases with a queued job row is important —
+        // the reconciler above just re-enqueued those for resume; flipping
+        // them to failed here would silently undo the resume. Cross-org by
+        // design — same blessed startup-maintenance category as the
+        // migration/seed/bootstrap steps above, never a request.
+        var resumableReleaseIds = await db.OeImportJobs
+            .IgnoreQueryFilters()
+            .Where(j => j.Status == "queued")
+            .Select(j => j.ReleaseId)
+            .ToListAsync(stopping);
         var stranded = await db.OeReleases
             .IgnoreQueryFilters()
-            .Where(r => r.Status == "ingesting")
+            .Where(r => r.Status == "ingesting" && !resumableReleaseIds.Contains(r.Id))
             .ToListAsync(stopping);
         if (stranded.Count > 0)
         {

@@ -1,0 +1,172 @@
+using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Domain.Entities.ObjectExplorer;
+using ALDevToolbox.Services;
+using ALDevToolbox.Services.ObjectExplorer;
+using ALDevToolbox.Tests.Infrastructure;
+using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+
+namespace ALDevToolbox.Tests.ObjectExplorer;
+
+/// <summary>
+/// Drives <see cref="PersistedImportJobs"/> end-to-end against the shared
+/// <see cref="TestDb"/> Postgres fixture: the create / mark-* lifecycle plus
+/// the startup reconciler's branching (URL → re-enqueue list; staged-zip →
+/// failed in place, release flipped to failed too).
+/// </summary>
+public sealed class PersistedImportJobsTests : IDisposable
+{
+    private readonly TestDb _db = new();
+
+    public void Dispose() => _db.Dispose();
+
+    private static readonly AmbientOrganizationScope.OrganizationIdentity Identity =
+        new(OrganizationId: 1, UserId: null, IsSiteAdmin: false, IsSystemOrganization: true);
+
+    private PersistedImportJobs NewService(Data.AppDbContext ctx) =>
+        new(ctx, TimeProvider.System);
+
+    private async Task<Release> SeedReleaseAsync(Data.AppDbContext ctx, string status = "ingesting")
+    {
+        var release = new Release
+        {
+            OrganizationId = Identity.OrganizationId,
+            Label = "Test Release " + Guid.NewGuid().ToString("N").Substring(0, 8),
+            Kind = "first_party",
+            Status = status,
+            ImportedAt = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        ctx.OeReleases.Add(release);
+        await ctx.SaveChangesAsync();
+        return release;
+    }
+
+    [Fact]
+    public async Task CreateAsync_writes_a_queued_row_with_url_source_fields()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        var release = await SeedReleaseAsync(ctx);
+
+        var id = await svc.CreateAsync(release.Id, Identity,
+            new ReleaseImportSource.Url("https://download.microsoft.com/x.zip"),
+            storeSymbolReference: true);
+
+        id.Should().BeGreaterThan(0);
+        await using var read = _db.NewContext();
+        var row = await read.OeImportJobs.AsNoTracking().SingleAsync(j => j.Id == id);
+        row.ReleaseId.Should().Be(release.Id);
+        row.Kind.Should().Be("url");
+        row.DownloadUrl.Should().Be("https://download.microsoft.com/x.zip");
+        row.StagedZipPath.Should().BeNull();
+        row.StoreSymbolReference.Should().BeTrue();
+        row.Status.Should().Be("queued");
+    }
+
+    [Fact]
+    public async Task CreateAsync_writes_staged_zip_source_fields()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        var release = await SeedReleaseAsync(ctx);
+
+        var id = await svc.CreateAsync(release.Id, Identity,
+            new ReleaseImportSource.StagedZip("/tmp/oe-folder-abc.zip", IsDvd: true),
+            storeSymbolReference: false);
+
+        await using var read = _db.NewContext();
+        var row = await read.OeImportJobs.AsNoTracking().SingleAsync(j => j.Id == id);
+        row.Kind.Should().Be("staged_zip");
+        row.StagedZipPath.Should().Be("/tmp/oe-folder-abc.zip");
+        row.StagedIsDvd.Should().BeTrue();
+        row.DownloadUrl.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task MarkRunning_then_completed_flows_through_the_status_field()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        var release = await SeedReleaseAsync(ctx);
+        var id = await svc.CreateAsync(release.Id, Identity,
+            new ReleaseImportSource.Url("https://download.microsoft.com/x.zip"), storeSymbolReference: false);
+
+        await svc.MarkRunningAsync(id);
+        await svc.MarkCompletedAsync(id);
+
+        await using var read = _db.NewContext();
+        var row = await read.OeImportJobs.AsNoTracking().SingleAsync(j => j.Id == id);
+        row.Status.Should().Be("completed");
+        row.StartedAt.Should().NotBeNull();
+        row.CompletedAt.Should().NotBeNull();
+        row.ErrorMessage.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task MarkFailed_records_the_error_message()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        var release = await SeedReleaseAsync(ctx);
+        var id = await svc.CreateAsync(release.Id, Identity,
+            new ReleaseImportSource.Url("https://download.microsoft.com/x.zip"), storeSymbolReference: false);
+
+        await svc.MarkFailedAsync(id, "download stalled");
+
+        await using var read = _db.NewContext();
+        var row = await read.OeImportJobs.AsNoTracking().SingleAsync(j => j.Id == id);
+        row.Status.Should().Be("failed");
+        row.ErrorMessage.Should().Be("download stalled");
+        row.CompletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Reconciler_returns_url_jobs_for_resume_and_resets_their_status()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        var release = await SeedReleaseAsync(ctx);
+        var id = await svc.CreateAsync(release.Id, Identity,
+            new ReleaseImportSource.Url("https://download.microsoft.com/x.zip"), storeSymbolReference: true);
+        await svc.MarkRunningAsync(id); // simulates a crash mid-download
+
+        var resumable = await svc.ReconcileOnStartupAsync();
+
+        resumable.Should().ContainSingle();
+        resumable[0].ReleaseId.Should().Be(release.Id);
+        resumable[0].StoreSymbolReference.Should().BeTrue();
+        resumable[0].Source.Should().BeOfType<ReleaseImportSource.Url>()
+            .Which.DownloadUrl.Should().Be("https://download.microsoft.com/x.zip");
+        resumable[0].JobRowId.Should().Be(id);
+
+        await using var read = _db.NewContext();
+        var row = await read.OeImportJobs.AsNoTracking().SingleAsync(j => j.Id == id);
+        row.Status.Should().Be("queued");
+        row.StartedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Reconciler_fails_staged_zip_jobs_and_their_releases()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        var release = await SeedReleaseAsync(ctx);
+        var id = await svc.CreateAsync(release.Id, Identity,
+            new ReleaseImportSource.StagedZip("/tmp/lost-upload.zip", IsDvd: false),
+            storeSymbolReference: false);
+
+        var resumable = await svc.ReconcileOnStartupAsync();
+
+        resumable.Should().BeEmpty();
+        await using var read = _db.NewContext();
+        var row = await read.OeImportJobs.AsNoTracking().SingleAsync(j => j.Id == id);
+        row.Status.Should().Be("failed");
+        row.ErrorMessage.Should().Contain("uploaded ZIP was lost");
+        var releaseRow = await read.OeReleases.IgnoreQueryFilters().AsNoTracking()
+            .SingleAsync(r => r.Id == release.Id);
+        releaseRow.Status.Should().Be("failed");
+        releaseRow.StatusMessage.Should().Contain("uploaded ZIP was lost");
+    }
+}

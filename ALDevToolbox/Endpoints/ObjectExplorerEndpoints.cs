@@ -43,6 +43,7 @@ internal static class ObjectExplorerEndpoints
             ReleaseImportService importer,
             DvdDownloadService dvdDownloader,
             ReleaseImportQueue queue,
+            PersistedImportJobs persistedJobs,
             IOrganizationContext orgContext,
             IAntiforgery antiforgery,
             CancellationToken ct) =>
@@ -79,8 +80,11 @@ internal static class ObjectExplorerEndpoints
                 {
                     await dvdDownloader.ValidateUrlForQueueAsync(dvdUrl, ct).ConfigureAwait(false);
                     var releaseId = await importer.BeginReleaseAsync(metadata, ct).ConfigureAwait(false);
+                    var identity = CaptureIdentity(orgContext);
+                    var source = new ReleaseImportSource.Url(dvdUrl);
+                    var jobRowId = await persistedJobs.CreateAsync(releaseId, identity, source, storeSymbolReference, ct).ConfigureAwait(false);
                     await queue.EnqueueAsync(
-                        new ReleaseImportJob(releaseId, CaptureIdentity(orgContext), new ReleaseImportSource.Url(dvdUrl), storeSymbolReference),
+                        new ReleaseImportJob(releaseId, identity, source, storeSymbolReference, jobRowId),
                         ct).ConfigureAwait(false);
                     RedirectQueued(ctx, releaseId);
                     return;
@@ -104,8 +108,11 @@ internal static class ObjectExplorerEndpoints
                         RedirectQueued(ctx, releaseId);
                         return;
                     }
+                    var identity = CaptureIdentity(orgContext);
+                    var source = new ReleaseImportSource.StagedZip(tempPath, IsDvd: false);
+                    var jobRowId = await persistedJobs.CreateAsync(releaseId, identity, source, storeSymbolReference, ct).ConfigureAwait(false);
                     await queue.EnqueueAsync(
-                        new ReleaseImportJob(releaseId, CaptureIdentity(orgContext), new ReleaseImportSource.StagedZip(tempPath, IsDvd: false), storeSymbolReference),
+                        new ReleaseImportJob(releaseId, identity, source, storeSymbolReference, jobRowId),
                         ct).ConfigureAwait(false);
                     RedirectQueued(ctx, releaseId);
                     return;

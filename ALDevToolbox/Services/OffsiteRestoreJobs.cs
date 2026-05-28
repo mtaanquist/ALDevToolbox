@@ -204,22 +204,32 @@ public sealed class OffsiteRestoreWorker : BackgroundService
     private readonly OffsiteRestoreJobs _jobs;
     private readonly IServiceProvider _services;
     private readonly ILogger<OffsiteRestoreWorker> _logger;
+    private readonly WorkerHeartbeat _heartbeat;
 
     public OffsiteRestoreWorker(
         OffsiteRestoreJobs jobs,
         IServiceProvider services,
-        ILogger<OffsiteRestoreWorker> logger)
+        ILogger<OffsiteRestoreWorker> logger,
+        WorkerHeartbeatRegistry heartbeats)
     {
         _jobs = jobs;
         _services = services;
         _logger = logger;
+        // Queue-driven; downloads can be large (multi-GB pg_dump archives) and
+        // network-bound. 4-hour active ceiling lets a real restore complete
+        // even on a slow link while still flagging a hung connection.
+        _heartbeat = heartbeats.Register(nameof(OffsiteRestoreWorker),
+            maxActiveDuration: TimeSpan.FromHours(4),
+            maxIdleSilence: null);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await foreach (var jobId in _jobs.Reader.ReadAllAsync(stoppingToken))
         {
-            await RunOneAsync(jobId, stoppingToken);
+            _heartbeat.BeginActive();
+            try { await RunOneAsync(jobId, stoppingToken); }
+            finally { _heartbeat.EndActive(); }
         }
     }
 

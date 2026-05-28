@@ -23,21 +23,32 @@ public sealed class ReleaseImportWorker : BackgroundService
     private readonly ReleaseImportQueue _queue;
     private readonly IServiceProvider _services;
     private readonly ILogger<ReleaseImportWorker> _logger;
+    private readonly WorkerHeartbeat _heartbeat;
 
     public ReleaseImportWorker(
         ReleaseImportQueue queue,
         IServiceProvider services,
-        ILogger<ReleaseImportWorker> logger)
+        ILogger<ReleaseImportWorker> logger,
+        WorkerHeartbeatRegistry heartbeats)
     {
         _queue = queue;
         _services = services;
         _logger = logger;
+        // Queue-driven: legitimately sits idle for hours waiting for an admin
+        // to enqueue work, so no idle-silence ceiling (null). The active-duration
+        // ceiling is the longest legitimate single import — a fresh BC base-app
+        // ingest can run 30+ minutes; 90 leaves margin while still catching the
+        // hung-on-I/O case that prompted this in the first place.
+        _heartbeat = heartbeats.Register(nameof(ReleaseImportWorker),
+            maxActiveDuration: TimeSpan.FromMinutes(90),
+            maxIdleSilence: null);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await foreach (var job in _queue.Reader.ReadAllAsync(stoppingToken).ConfigureAwait(false))
         {
+            _heartbeat.BeginActive();
             try
             {
                 await RunJobAsync(job, stoppingToken).ConfigureAwait(false);
@@ -52,6 +63,10 @@ public sealed class ReleaseImportWorker : BackgroundService
                 // net so one bad job never kills the worker loop.
                 _logger.LogError(ex, "Release import worker tripped on ReleaseId={ReleaseId}.", job.ReleaseId);
             }
+            finally
+            {
+                _heartbeat.EndActive();
+            }
         }
     }
 
@@ -60,10 +75,24 @@ public sealed class ReleaseImportWorker : BackgroundService
         using var orgScope = AmbientOrganizationScope.Enter(job.Identity);
         await using var scope = _services.CreateAsyncScope();
         var importer = scope.ServiceProvider.GetRequiredService<ReleaseImportService>();
+        var persistedJobs = scope.ServiceProvider.GetRequiredService<PersistedImportJobs>();
+
+        // Stamp the durable row as running so the admin "Background workers"
+        // page reflects current state and the startup reconciler skips this
+        // row's re-enqueue on a restart that lands mid-job (the reconciler
+        // resets it to queued before re-enqueuing, idempotent). JobRowId of 0
+        // means a legacy in-flight job (no DB row) — skip the update.
+        if (job.JobRowId != 0)
+        {
+            try { await persistedJobs.MarkRunningAsync(job.JobRowId, ct).ConfigureAwait(false); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Failed to mark job row {JobRowId} as running.", job.JobRowId); }
+        }
 
         var openedStreams = new List<Stream>();
         ZipArchive? archive = null;
         string? tempToDelete = null;
+        var jobSucceeded = false;
+        string? jobFailureMessage = null;
         try
         {
             List<AppFileUpload> uploads;
@@ -87,7 +116,8 @@ public sealed class ReleaseImportWorker : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Release {ReleaseId} import failed while fetching/opening the archive.", job.ReleaseId);
-                await importer.MarkFailedAsync(job.ReleaseId, FriendlyMessage(ex), ct).ConfigureAwait(false);
+                jobFailureMessage = FriendlyMessage(ex);
+                await importer.MarkFailedAsync(job.ReleaseId, jobFailureMessage, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -96,23 +126,24 @@ public sealed class ReleaseImportWorker : BackgroundService
                 var diagnostic = archive is not null
                     ? " (" + ReleaseZipStaging.DescribeAppLocations(archive) + ")"
                     : string.Empty;
-                await importer.MarkFailedAsync(
-                    job.ReleaseId,
-                    "No application .app files were found in the archive. For a DVD we keep everything under "
-                        + "its Applications (or Extensions) folder plus System.app — check the URL points to a "
-                        + "Business Central DVD." + diagnostic,
-                    ct).ConfigureAwait(false);
+                jobFailureMessage = "No application .app files were found in the archive. For a DVD we keep everything under "
+                    + "its Applications (or Extensions) folder plus System.app — check the URL points to a "
+                    + "Business Central DVD." + diagnostic;
+                await importer.MarkFailedAsync(job.ReleaseId, jobFailureMessage, ct).ConfigureAwait(false);
                 return;
             }
 
             try
             {
                 await importer.ProcessReleaseAsync(job.ReleaseId, uploads, job.StoreSymbolReference, ct).ConfigureAwait(false);
+                jobSucceeded = true;
             }
             catch (Exception ex)
             {
                 // ProcessReleaseAsync already flips the row to failed with the
-                // message; nothing to add here but a log line.
+                // message; nothing to add here but a log line + the failure
+                // message for the job-row update below.
+                jobFailureMessage = FriendlyMessage(ex);
                 _logger.LogError(ex, "Release {ReleaseId} import failed during processing.", job.ReleaseId);
             }
         }
@@ -126,6 +157,20 @@ public sealed class ReleaseImportWorker : BackgroundService
             if (tempToDelete is not null && File.Exists(tempToDelete))
             {
                 try { File.Delete(tempToDelete); } catch { /* swallow */ }
+            }
+            if (job.JobRowId != 0)
+            {
+                try
+                {
+                    if (jobSucceeded)
+                        await persistedJobs.MarkCompletedAsync(job.JobRowId, ct).ConfigureAwait(false);
+                    else
+                        await persistedJobs.MarkFailedAsync(job.JobRowId, jobFailureMessage ?? "Import failed.", ct).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to finalise job row {JobRowId}.", job.JobRowId);
+                }
             }
         }
     }

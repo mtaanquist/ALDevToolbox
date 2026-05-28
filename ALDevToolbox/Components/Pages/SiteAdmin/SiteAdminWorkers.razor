@@ -1,0 +1,173 @@
+@page "/site-admin/workers"
+@attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
+@using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Services
+@using ALDevToolbox.Services.ObjectExplorer
+@inject WorkerHeartbeatRegistry Heartbeats
+@inject PersistedImportJobs ImportJobs
+@inject TimeProvider Clock
+
+<PageTitle>Background workers · Site administration · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <header class="page-header">
+        <h1>Background workers</h1>
+        <p class="muted">
+            Liveness snapshot of every <code>BackgroundService</code> running
+            in this host, plus the durable Object Explorer import queue. The
+            same data drives <code>/healthz</code>; an unhealthy worker here
+            flips that probe to 503.
+        </p>
+    </header>
+
+    <section class="admin-section">
+        <h2>Worker heartbeats</h2>
+        @if (_heartbeats is null)
+        {
+            <p class="muted">Loading…</p>
+        }
+        else if (_heartbeats.Count == 0)
+        {
+            <p class="muted">No workers registered yet — the host is probably still starting.</p>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Worker</th>
+                        <th>Status</th>
+                        <th>Active since</th>
+                        <th>Last tick</th>
+                        <th>Thresholds</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var row in _heartbeats)
+                {
+                    <tr>
+                        <td>@row.Name</td>
+                        <td>
+                            @if (row.Healthy)
+                            {
+                                <span class="status-pill" title="Within thresholds">Healthy</span>
+                            }
+                            else
+                            {
+                                <span class="status-pill status-pill--warn" title="@row.Reason">Unhealthy</span>
+                            }
+                        </td>
+                        <td class="muted">@(row.ActiveSinceUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "—")</td>
+                        <td class="muted">@(row.LastTickUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "(never)")</td>
+                        <td class="muted">
+                            active ≤ @FormatSpan(row.MaxActiveDuration)@(
+                                row.MaxIdleSilence is null ? "" : $", idle ≤ {FormatSpan(row.MaxIdleSilence.Value)}"
+                            )
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="admin-section">
+        <h2>Object Explorer import queue</h2>
+        @if (_queue is null)
+        {
+            <p class="muted">Loading…</p>
+        }
+        else
+        {
+            <p class="muted">
+                <strong>@_queue.Pending</strong> job(s) in flight (queued or running). The most recent submissions:
+            </p>
+            @if (_queue.Recent.Count == 0)
+            {
+                <p class="muted">No imports have been submitted yet.</p>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Job</th>
+                            <th>Release</th>
+                            <th>Source</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th>Started</th>
+                            <th>Completed</th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var j in _queue.Recent)
+                    {
+                        <tr>
+                            <td class="muted">#@j.Id</td>
+                            <td>
+                                <a href="/object-explorer/release/@j.ReleaseId">@j.ReleaseId</a>
+                            </td>
+                            <td class="muted">@j.Kind</td>
+                            <td>
+                                <span class="status-pill @StatusClass(j.Status)" title="@j.Status">@j.Status</span>
+                            </td>
+                            <td class="muted">@j.CreatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</td>
+                            <td class="muted">@(j.StartedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
+                            <td class="muted">@(j.CompletedAt?.ToString("yyyy-MM-dd HH:mm 'UTC'") ?? "—")</td>
+                            <td class="muted">@(string.IsNullOrEmpty(j.ErrorMessage) ? "" : j.ErrorMessage)</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        }
+    </section>
+</div>
+
+@code {
+    private List<HeartbeatRow>? _heartbeats;
+    private ImportQueueSnapshot? _queue;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var now = Clock.GetUtcNow().UtcDateTime;
+        _heartbeats = Heartbeats.All()
+            .OrderBy(h => h.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(h =>
+            {
+                var healthy = h.IsHealthy(now, out var reason);
+                return new HeartbeatRow(h.Name, h.LastTickUtc, h.ActiveSinceUtc, h.MaxActiveDuration, h.MaxIdleSilence, healthy, reason);
+            })
+            .ToList();
+        _queue = await ImportJobs.SnapshotAsync();
+    }
+
+    private static string FormatSpan(TimeSpan span) =>
+        span.TotalHours >= 1 ? $"{span.TotalHours:N0}h" :
+        span.TotalMinutes >= 1 ? $"{span.TotalMinutes:N0}m" :
+        $"{span.TotalSeconds:N0}s";
+
+    // Map row.status to the existing status-pill modifiers in base.css. The
+    // default (no modifier) is the accent-soft "in flight" colour, --muted is
+    // the neutral chip, --warn is red. `completed` reads naturally as
+    // accent-soft; `failed` as warn; `queued`/`running` as muted (they're
+    // transient).
+    private static string StatusClass(string status) => status switch
+    {
+        "failed" => "status-pill--warn",
+        "queued" => "status-pill--muted",
+        "running" => "status-pill--muted",
+        _ => "",
+    };
+
+    private sealed record HeartbeatRow(
+        string Name,
+        DateTime? LastTickUtc,
+        DateTime? ActiveSinceUtc,
+        TimeSpan MaxActiveDuration,
+        TimeSpan? MaxIdleSilence,
+        bool Healthy,
+        string? Reason);
+}
