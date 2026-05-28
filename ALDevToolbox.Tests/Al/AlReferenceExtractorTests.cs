@@ -102,6 +102,15 @@ public sealed class AlReferenceExtractorTests
             GlobalVars: globals ?? new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
             Resolver: resolver);
 
+    private static AlExtractContext OwnerReport(StubResolver resolver, string reportName,
+        Dictionary<string, ResolvedVariableType>? globals = null) => new(
+            OwnerKind: "report",
+            OwnerName: reportName,
+            OwnerObjectId: null,
+            OwnerAppId: BaseAppId,
+            GlobalVars: globals ?? new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+            Resolver: resolver);
+
     // ── Behavioural tests ───────────────────────────────────────────
 
     [Fact]
@@ -3225,6 +3234,141 @@ public sealed class AlReferenceExtractorTests
             r.TargetObjectName == "Sales-Post" && r.ReferenceKind == "property_object");
     }
 
+    // ── Chain :: typed-literal continuation through enum-typed fields ──
+
+    [Fact]
+    public void Field_typed_literal_chain_continues_to_enum_builtin()
+    {
+        // `Var."Field"::EnumValue.AsInteger()` — the dominant case-
+        // label / enum-coercion shape in base app. Before the fix,
+        // the chain walker exited after the field access and the main
+        // dispatch picked `EnumValue` up as a fresh chain head, firing
+        // head-not-a-variable. The `::Value` continuation in
+        // WalkMemberChain skips the value identifier silently and
+        // lets the trailing `.AsInteger()` resolve through the enum
+        // builtin set.
+        var resolver = MakeResolver();
+        resolver.AddType("Sales Document Type",
+            new AlTypeRef(BaseAppId, "enum", 39, "Sales Document Type"));
+        resolver.AddMember("Sales Header", new AlMember(
+            "Document Type", "table_field", "Enum", "Sales Document Type"));
+
+        const string src = """
+            procedure UsesDocumentType()
+            var
+                SalesHeader: Record "Sales Header";
+            begin
+                if SalesHeader."Document Type"::Quote.AsInteger() = 0 then
+                    exit;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        // The chain-step "Quote" must not show up as unresolved.
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "Quote");
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+        // The field access on Sales Header still emits.
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "field_access"
+            && r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "Document Type");
+    }
+
+    [Fact]
+    public void Field_typed_literal_chain_as_case_branch_label_silences()
+    {
+        // The pure case-label shape — `Var."Field"::Value:` — has no
+        // trailing `.AsInteger()`. The walker must still consume the
+        // `::Value` and stop cleanly, leaving the trailing `:` for the
+        // main loop's case-branch dispatch.
+        var resolver = MakeResolver();
+        resolver.AddMember("Sales Header", new AlMember(
+            "Document Type", "table_field", "Enum", "Sales Document Type"));
+        resolver.AddType("Sales Document Type",
+            new AlTypeRef(BaseAppId, "enum", 39, "Sales Document Type"));
+
+        const string src = """
+            procedure Decide()
+            var
+                SalesHeader: Record "Sales Header";
+            begin
+                case SalesHeader."Document Type" of
+                    SalesHeader."Document Type"::Quote:
+                        exit;
+                    SalesHeader."Document Type"::"Blanket Order":
+                        exit;
+                end;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "Quote" || s.Token == "Blanket Order");
+    }
+
+    [Fact]
+    public void Field_typed_literal_chain_with_scalar_option_silences()
+    {
+        // Inline scalar-Option fields (no named enum behind them) have
+        // an empty ReturnTypeName in the catalog, so the chain walker's
+        // receiver drops to null after the field access. The `::Value`
+        // continuation still needs to silence — and the trailing
+        // `.AsInteger()` should walk past via the dead-receiver branch.
+        // Mirrors the unresolved sample
+        //   Token='StepLine' Line=105 Owner=table:Cash Flow Chart Setup
+        // logged from CashFlowChartSetup.Table.al.
+        var resolver = MakeResolver();
+        resolver.AddType("Business Chart Buffer",
+            new AlTypeRef(BaseAppId, "table", 485, "Business Chart Buffer"));
+        // "Chart Type" is declared as an inline Option — no separate
+        // enum type to resolve, so ReturnTypeName comes back empty.
+        resolver.AddMember("Business Chart Buffer",
+            new AlMember("Chart Type", "table_field", null, null));
+
+        const string src = """
+            procedure GetChartType(): Integer
+            var
+                BusinessChartBuf: Record "Business Chart Buffer";
+            begin
+                exit(BusinessChartBuf."Chart Type"::StepLine.AsInteger());
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "StepLine");
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Field_typed_literal_quoted_value_silences()
+    {
+        // `Var."Field"::"Multi Word Value"` — quoted enum values with
+        // spaces hit the same dispatch path. Common in account-type
+        // and document-type discriminator code:
+        //   AppliedPaymentEntry."Account Type"::"G/L Account":
+        var resolver = MakeResolver();
+        resolver.AddType("Bank Acc. Reconciliation Line",
+            new AlTypeRef(BaseAppId, "table", 274, "Bank Acc. Reconciliation Line"));
+        resolver.AddMember("Bank Acc. Reconciliation Line",
+            new AlMember("Account Type", "table_field", null, null));
+
+        const string src = """
+            procedure Decide()
+            var
+                BankRecLine: Record "Bank Acc. Reconciliation Line";
+            begin
+                case BankRecLine."Account Type" of
+                    BankRecLine."Account Type"::"G/L Account":
+                        exit;
+                end;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "G/L Account" || s.Token == "Account Type");
+    }
+
     // ── Tableextension procedures reach base-table globals ───────────
 
     [Fact]
@@ -3270,6 +3414,89 @@ public sealed class AlReferenceExtractorTests
             && r.TargetMemberName == "GetCombinedDimensionSetID");
         result.Stats.UnresolvedSamples.Should().NotContain(s =>
             s.Token == "DimMgt" && s.Reason == "head-not-a-variable");
+    }
+
+    // ── Bare calls in report column properties hit dataitem source ──
+
+    [Fact]
+    public void Bare_call_in_report_column_property_resolves_on_dataitem_source()
+    {
+        // `AutoFormatExpression = GetCurrencyCodeFromBank();` inside a
+        // report's `column(N; …) { … }` is a bare call against a
+        // procedure on the dataitem's SOURCE TABLE — not on the
+        // report. The structure extractor tracks the current dataitem
+        // source on AlExtractionState.CurrentDataItemSource; the
+        // bare-self-call resolver now consults that slot after the
+        // OwnerType / RecType / BaseObjectType lookups miss.
+        //
+        // Verified against the unresolved samples
+        //   Reason=bare-call Token='GetCurrencyCodeFromBank' Line=111/119/157
+        // logged from BankAccountCheckDetails.Report.al in BC 26.5.
+        var resolver = MakeResolver();
+        resolver.AddType("Bank Account - Check Details",
+            new AlTypeRef(BaseAppId, "report", 1406, "Bank Account - Check Details"));
+        resolver.AddType("Check Ledger Entry",
+            new AlTypeRef(BaseAppId, "table", 272, "Check Ledger Entry"));
+        resolver.AddMember("Check Ledger Entry",
+            new AlMember("GetCurrencyCodeFromBank", "procedure", "Code", null));
+
+        const string src = """
+            report 1406 "Bank Account - Check Details"
+            {
+                dataset
+                {
+                    dataitem(CheckLedgerEntry; "Check Ledger Entry")
+                    {
+                        column(Amount; Amount)
+                        {
+                            AutoFormatExpression = GetCurrencyCodeFromBank();
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "Bank Account - Check Details"));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Check Ledger Entry"
+            && r.TargetMemberName == "GetCurrencyCodeFromBank");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "GetCurrencyCodeFromBank");
+    }
+
+    [Fact]
+    public void Bare_call_in_report_falls_back_to_unresolved_when_no_match()
+    {
+        // Guard: the dataitem-source fallback must not silence a
+        // genuinely missing procedure. When neither the report, its
+        // Rec, nor any dataitem source declares the name, it stays
+        // bare-call unresolved.
+        var resolver = MakeResolver();
+        resolver.AddType("My Report",
+            new AlTypeRef(BaseAppId, "report", 50000, "My Report"));
+        resolver.AddType("Check Ledger Entry",
+            new AlTypeRef(BaseAppId, "table", 272, "Check Ledger Entry"));
+
+        const string src = """
+            report 50000 "My Report"
+            {
+                dataset
+                {
+                    dataitem(CheckLedgerEntry; "Check Ledger Entry")
+                    {
+                        column(X; X)
+                        {
+                            AutoFormatExpression = TotallyUnknownProc();
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "My Report"));
+
+        result.Stats.UnresolvedSamples.Should().Contain(s =>
+            s.Token == "TotallyUnknownProc" && s.Reason == "bare-call");
     }
 
     // ── XmlPort tableelement forward references ──────────────────────

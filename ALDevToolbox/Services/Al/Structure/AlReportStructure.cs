@@ -20,7 +20,6 @@ namespace ALDevToolbox.Services.Al.Structure;
 internal sealed class AlReportStructure : IAlObjectStructureExtractor
 {
     private readonly AlExtractionState _state;
-    private AlTypeRef? _currentDataItemSource;
 
     public AlReportStructure(AlExtractionState state, AlProcedureWalker procedureWalker)
     {
@@ -33,11 +32,15 @@ internal sealed class AlReportStructure : IAlObjectStructureExtractor
         var (consumed, source) = AlDataItemDsl.TryConsumeAliasedSourceDeclaration(_state, "dataitem", tok);
         if (consumed && source is not null)
         {
-            _currentDataItemSource = source;
+            // Promoted to shared state so the bare-self-call resolver
+            // sees it too — `AutoFormatExpression = GetProc();` inside
+            // a column needs to resolve GetProc against the dataitem's
+            // source table.
+            _state.CurrentDataItemSource = source;
         }
         return consumed;
     }
 
     public bool TryResolveObjectScopeBareIdentifier(AlToken tok) =>
-        AlDataItemDsl.TryEmitBareFieldOnSource(_state, _currentDataItemSource, tok);
+        AlDataItemDsl.TryEmitBareFieldOnSource(_state, _state.CurrentDataItemSource, tok);
 }

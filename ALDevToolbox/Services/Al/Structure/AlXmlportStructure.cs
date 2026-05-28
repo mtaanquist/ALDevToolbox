@@ -18,7 +18,6 @@ namespace ALDevToolbox.Services.Al.Structure;
 internal sealed class AlXmlportStructure : IAlObjectStructureExtractor
 {
     private readonly AlExtractionState _state;
-    private AlTypeRef? _currentDataItemSource;
 
     public AlXmlportStructure(AlExtractionState state, AlProcedureWalker procedureWalker)
     {
@@ -31,13 +30,13 @@ internal sealed class AlXmlportStructure : IAlObjectStructureExtractor
         var (consumed, source) = AlDataItemDsl.TryConsumeAliasedSourceDeclaration(_state, "tableelement", tok);
         if (consumed && source is not null)
         {
-            _currentDataItemSource = source;
+            _state.CurrentDataItemSource = source;
         }
         return consumed;
     }
 
     public bool TryResolveObjectScopeBareIdentifier(AlToken tok) =>
-        AlDataItemDsl.TryEmitBareFieldOnSource(_state, _currentDataItemSource, tok);
+        AlDataItemDsl.TryEmitBareFieldOnSource(_state, _state.CurrentDataItemSource, tok);
 
     /// <summary>
     /// XmlPort schema blocks declare <c>tableelement(alias; SourceTable)</c>
