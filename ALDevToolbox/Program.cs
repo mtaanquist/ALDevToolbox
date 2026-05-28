@@ -147,6 +147,7 @@ builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.DvdDownloadServi
 // In-process hand-off + worker for the DVD-scale imports (folder-ZIP upload,
 // URL download) so the admin isn't held on the page while they ingest.
 builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ReleaseImportQueue>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.PersistedImportJobs>();
 builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseImportWorker>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseManagementService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService>();

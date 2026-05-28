@@ -11,6 +11,7 @@ using OeModuleSymbol = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol;
 using OeModuleVariable = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleVariable;
 using OeModuleReference = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleReference;
 using OeModuleTranslation = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleTranslation;
+using OeImportJob = ALDevToolbox.Domain.Entities.ObjectExplorer.ImportJob;
 
 namespace ALDevToolbox.Data;
 
@@ -157,6 +158,7 @@ public class AppDbContext : DbContext
     public DbSet<OeModuleVariable> OeModuleVariables => Set<OeModuleVariable>();
     public DbSet<OeModuleReference> OeModuleReferences => Set<OeModuleReference>();
     public DbSet<OeModuleTranslation> OeModuleTranslations => Set<OeModuleTranslation>();
+    public DbSet<OeImportJob> OeImportJobs => Set<OeImportJob>();
     public DbSet<Recipe> Recipes => Set<Recipe>();
     public DbSet<RecipeFile> RecipeFiles => Set<RecipeFile>();
     public DbSet<RecipeSuggestion> RecipeSuggestions => Set<RecipeSuggestion>();
@@ -225,6 +227,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OeModuleVariable>(modelBuilder);
         ScopeToOrganization<OeModuleReference>(modelBuilder);
         ScopeToOrganization<OeModuleTranslation>(modelBuilder);
+        ScopeToOrganization<OeImportJob>(modelBuilder);
         // NOTE: OeFileContent (oe_file_contents) is deliberately NOT scoped.
         // It is the content-addressable, cross-tenant-shared source-blob store;
         // it has no organization_id. Isolation holds because it is only ever
