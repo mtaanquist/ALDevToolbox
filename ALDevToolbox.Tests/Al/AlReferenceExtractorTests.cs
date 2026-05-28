@@ -4341,6 +4341,182 @@ public sealed class AlReferenceExtractorTests
             s.Token == "EmptyLine");
     }
 
+    [Fact]
+    public void Bare_call_resolves_through_five_level_nested_dataitems()
+    {
+        // The actual AutoPostingErrors shape: FIVE dataitem levels.
+        // `GenJnlTmpl > GenJnlBatch > "Gen. Journal Line" > inner
+        // siblings (DimensionLoop, "Gen. Jnl. Allocation") > triggers`.
+        // The bare call sits in `Gen. Journal Line`'s OnAfterGetRecord
+        // AFTER both inner siblings have closed. Stack at the call site
+        // must contain [(d=2, GenJnlTmpl), (d=3, GenJnlBatch),
+        // (d=4, "Gen. Journal Line")] and the resolver must walk
+        // innermost-to-outermost to land on Gen. Journal Line.
+        var resolver = MakeResolver();
+        resolver.AddType("Auto Posting Errors",
+            new AlTypeRef(BaseAppId, "report", 6250, "Auto Posting Errors"));
+        resolver.AddType("Gen. Journal Template",
+            new AlTypeRef(BaseAppId, "table", 80, "Gen. Journal Template"));
+        resolver.AddType("Gen. Journal Batch",
+            new AlTypeRef(BaseAppId, "table", 232, "Gen. Journal Batch"));
+        resolver.AddType("Gen. Journal Line",
+            new AlTypeRef(BaseAppId, "table", 81, "Gen. Journal Line"));
+        resolver.AddType("Gen. Jnl. Allocation",
+            new AlTypeRef(BaseAppId, "table", 221, "Gen. Jnl. Allocation"));
+        resolver.AddType("Integer",
+            new AlTypeRef(BaseAppId, "table", 2000000026, "Integer"));
+        resolver.AddMember("Gen. Journal Line",
+            new AlMember("EmptyLine", "procedure", "Boolean", null));
+        resolver.AddMember("Gen. Journal Line",
+            new AlMember("UpdateLineBalance", "procedure", null, null));
+
+        const string src = """
+            report 6250 "Auto Posting Errors"
+            {
+                dataset
+                {
+                    dataitem(GenJnlTmpl; "Gen. Journal Template")
+                    {
+                        DataItemTableView = sorting(Name);
+                        column(TmplName; Name) { }
+                        dataitem(GenJnlBatch; "Gen. Journal Batch")
+                        {
+                            DataItemLink = "Journal Template Name" = field(Name);
+                            DataItemTableView = sorting("Journal Template Name", Name);
+                            column(BatchName; Name) { }
+                            dataitem("Gen. Journal Line"; "Gen. Journal Line")
+                            {
+                                DataItemLink = "Journal Batch Name" = field(Name);
+                                DataItemTableView = sorting("Journal Template Name", "Journal Batch Name", "Line No.");
+                                column(LineNo; "Line No.") { }
+                                dataitem(DimensionLoop; Integer)
+                                {
+                                    DataItemTableView = sorting(Number);
+                                    column(DimNum; Number) { }
+                                    trigger OnAfterGetRecord()
+                                    begin
+                                        Clear(Number);
+                                    end;
+                                }
+                                dataitem("Gen. Jnl. Allocation"; "Gen. Jnl. Allocation")
+                                {
+                                    DataItemLink = "Journal Template Name" = field("Journal Template Name");
+                                    column(AllocNo; "Line No.") { }
+                                    trigger OnAfterGetRecord()
+                                    begin
+                                        Clear("Line No.");
+                                    end;
+                                    trigger OnPreDataItem()
+                                    begin
+                                    end;
+                                    trigger OnPostDataItem()
+                                    begin
+                                    end;
+                                }
+                                trigger OnAfterGetRecord()
+                                begin
+                                    UpdateLineBalance();
+                                    if not EmptyLine() then
+                                        exit;
+                                end;
+                            }
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "Auto Posting Errors"));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Gen. Journal Line"
+            && r.TargetMemberName == "EmptyLine");
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Gen. Journal Line"
+            && r.TargetMemberName == "UpdateLineBalance");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "EmptyLine" || s.Token == "UpdateLineBalance");
+    }
+
+    [Fact]
+    public void Bare_call_resolves_through_four_level_nested_dataitems()
+    {
+        // The AutoPostingErrors / InventoryPostingTest / etc. shape:
+        // FOUR levels of dataitem nesting (Batch > Line > inner-loop)
+        // where the bare call `UpdateLineBalance()` / `EmptyLine()`
+        // sits in the middle level's OnAfterGetRecord AFTER an inner
+        // sibling dataitem has closed. The resolver must walk past
+        // the popped inner frame and still find the middle dataitem's
+        // source table.
+        var resolver = MakeResolver();
+        resolver.AddType("Auto Posting Errors",
+            new AlTypeRef(BaseAppId, "report", 6250, "Auto Posting Errors"));
+        resolver.AddType("Gen. Journal Batch",
+            new AlTypeRef(BaseAppId, "table", 232, "Gen. Journal Batch"));
+        resolver.AddType("Gen. Journal Line",
+            new AlTypeRef(BaseAppId, "table", 81, "Gen. Journal Line"));
+        resolver.AddType("Integer",
+            new AlTypeRef(BaseAppId, "table", 2000000026, "Integer"));
+        resolver.AddMember("Gen. Journal Line",
+            new AlMember("EmptyLine", "procedure", "Boolean", null));
+        resolver.AddMember("Gen. Journal Line",
+            new AlMember("UpdateLineBalance", "procedure", null, null));
+
+        const string src = """
+            report 6250 "Auto Posting Errors"
+            {
+                dataset
+                {
+                    dataitem(GenJnlBatch; "Gen. Journal Batch")
+                    {
+                        DataItemTableView = sorting("Journal Template Name", Name);
+                        column(BatchName; Name) { }
+                        dataitem("Gen. Journal Line"; "Gen. Journal Line")
+                        {
+                            DataItemLink = "Journal Batch Name" = field(Name);
+                            column(LineNo; "Line No.") { }
+                            dataitem(DimensionLoop; Integer)
+                            {
+                                DataItemTableView = sorting(Number);
+                                trigger OnAfterGetRecord()
+                                begin
+                                    Clear(Number);
+                                end;
+                            }
+                            dataitem(AllocLoop; Integer)
+                            {
+                                column(AllocNo; Number) { }
+                                trigger OnAfterGetRecord()
+                                begin
+                                    Clear(Number);
+                                end;
+                            }
+                            trigger OnAfterGetRecord()
+                            begin
+                                UpdateLineBalance();
+                                if not EmptyLine() then
+                                    exit;
+                            end;
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "Auto Posting Errors"));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Gen. Journal Line"
+            && r.TargetMemberName == "EmptyLine");
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Gen. Journal Line"
+            && r.TargetMemberName == "UpdateLineBalance");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "EmptyLine" || s.Token == "UpdateLineBalance");
+    }
+
     // ── Preprocessor #if / #else / #endif branch handling ───────────
 
     [Fact]
