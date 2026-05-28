@@ -70,6 +70,29 @@ internal sealed class AlExtractionState
     /// </summary>
     public AlTypeRef? CurrentFieldReceiver;
 
+    /// <summary>
+    /// Current dataitem / tableelement source table for kinds that
+    /// thread one (report / reportextension / query / xmlport).
+    /// Updated by the per-kind structure extractor as it consumes
+    /// each <c>dataitem(alias; SourceTable)</c> /
+    /// <c>tableelement(alias; SourceTable)</c> declaration; reset to
+    /// the previous value (most-recent-wins) when the body closes.
+    ///
+    /// Read by <see cref="AlProcedureWalker.TryConsumeBareSelfCall"/>
+    /// so bare calls in column / fieldelement property expressions
+    /// (the canonical shape is
+    /// <c>AutoFormatExpression = GetCurrencyCodeFromBank();</c>
+    /// inside a report's <c>column(...)</c>) resolve against the
+    /// current dataitem's source table — those procedures live on
+    /// the table, not on the report.
+    ///
+    /// Null at the file's outer object-scope and inside ordinary
+    /// procedure bodies (the latter is intentional: in-body bare
+    /// calls already resolve through OwnerType / RecType /
+    /// BaseObjectType).
+    /// </summary>
+    public AlTypeRef? CurrentDataItemSource;
+
     public AlExtractionState(List<AlToken> tokens, AlExtractContext ctx)
     {
         Tokens = tokens;
@@ -1625,6 +1648,42 @@ internal sealed class AlProcedureWalker
                         TargetObjectName: baseTarget.Name,
                         TargetMemberName: baseMember.Name,
                         TargetMemberKind: baseMember.Kind,
+                        ReferenceKind: "method_call"));
+                    _state.Resolved++;
+                    _state.Pos++;
+                    return true;
+                }
+            }
+
+            // Dataitem-source fallback for report / query / xmlport
+            // owners: a bare call inside a column / fieldelement
+            // property expression (the canonical shape is
+            //   AutoFormatExpression = GetCurrencyCodeFromBank();
+            // inside a report's `column(N; …) { … }`) targets a
+            // procedure on the current dataitem's SOURCE TABLE, not on
+            // the report itself. The per-kind structure extractor
+            // tracks the current dataitem in
+            // AlExtractionState.CurrentDataItemSource; we consult it
+            // here after the Rec / base-object lookups already missed.
+            var dataItemSource = _state.CurrentDataItemSource;
+            if (dataItemSource is not null
+                && !dataItemSource.Equals(ownerType)
+                && (recType is null || !dataItemSource.Equals(recType))
+                && (baseType is null || !dataItemSource.Equals(baseType)))
+            {
+                var diMember = _state.Ctx.Resolver.ResolveMember(dataItemSource, name);
+                if (diMember is not null)
+                {
+                    var diTarget = diMember.DeclaringType ?? dataItemSource;
+                    _state.EmitReference(new ExtractedReference(
+                        Line: head.Line,
+                        Column: head.Column,
+                        TargetAppId: diTarget.AppId,
+                        TargetObjectKind: diTarget.Kind,
+                        TargetObjectId: diTarget.ObjectId,
+                        TargetObjectName: diTarget.Name,
+                        TargetMemberName: diMember.Name,
+                        TargetMemberKind: diMember.Kind,
                         ReferenceKind: "method_call"));
                     _state.Resolved++;
                     _state.Pos++;

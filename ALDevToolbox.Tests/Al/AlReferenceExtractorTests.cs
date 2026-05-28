@@ -102,6 +102,15 @@ public sealed class AlReferenceExtractorTests
             GlobalVars: globals ?? new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
             Resolver: resolver);
 
+    private static AlExtractContext OwnerReport(StubResolver resolver, string reportName,
+        Dictionary<string, ResolvedVariableType>? globals = null) => new(
+            OwnerKind: "report",
+            OwnerName: reportName,
+            OwnerObjectId: null,
+            OwnerAppId: BaseAppId,
+            GlobalVars: globals ?? new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+            Resolver: resolver);
+
     // ── Behavioural tests ───────────────────────────────────────────
 
     [Fact]
@@ -3405,6 +3414,89 @@ public sealed class AlReferenceExtractorTests
             && r.TargetMemberName == "GetCombinedDimensionSetID");
         result.Stats.UnresolvedSamples.Should().NotContain(s =>
             s.Token == "DimMgt" && s.Reason == "head-not-a-variable");
+    }
+
+    // ── Bare calls in report column properties hit dataitem source ──
+
+    [Fact]
+    public void Bare_call_in_report_column_property_resolves_on_dataitem_source()
+    {
+        // `AutoFormatExpression = GetCurrencyCodeFromBank();` inside a
+        // report's `column(N; …) { … }` is a bare call against a
+        // procedure on the dataitem's SOURCE TABLE — not on the
+        // report. The structure extractor tracks the current dataitem
+        // source on AlExtractionState.CurrentDataItemSource; the
+        // bare-self-call resolver now consults that slot after the
+        // OwnerType / RecType / BaseObjectType lookups miss.
+        //
+        // Verified against the unresolved samples
+        //   Reason=bare-call Token='GetCurrencyCodeFromBank' Line=111/119/157
+        // logged from BankAccountCheckDetails.Report.al in BC 26.5.
+        var resolver = MakeResolver();
+        resolver.AddType("Bank Account - Check Details",
+            new AlTypeRef(BaseAppId, "report", 1406, "Bank Account - Check Details"));
+        resolver.AddType("Check Ledger Entry",
+            new AlTypeRef(BaseAppId, "table", 272, "Check Ledger Entry"));
+        resolver.AddMember("Check Ledger Entry",
+            new AlMember("GetCurrencyCodeFromBank", "procedure", "Code", null));
+
+        const string src = """
+            report 1406 "Bank Account - Check Details"
+            {
+                dataset
+                {
+                    dataitem(CheckLedgerEntry; "Check Ledger Entry")
+                    {
+                        column(Amount; Amount)
+                        {
+                            AutoFormatExpression = GetCurrencyCodeFromBank();
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "Bank Account - Check Details"));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Check Ledger Entry"
+            && r.TargetMemberName == "GetCurrencyCodeFromBank");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "GetCurrencyCodeFromBank");
+    }
+
+    [Fact]
+    public void Bare_call_in_report_falls_back_to_unresolved_when_no_match()
+    {
+        // Guard: the dataitem-source fallback must not silence a
+        // genuinely missing procedure. When neither the report, its
+        // Rec, nor any dataitem source declares the name, it stays
+        // bare-call unresolved.
+        var resolver = MakeResolver();
+        resolver.AddType("My Report",
+            new AlTypeRef(BaseAppId, "report", 50000, "My Report"));
+        resolver.AddType("Check Ledger Entry",
+            new AlTypeRef(BaseAppId, "table", 272, "Check Ledger Entry"));
+
+        const string src = """
+            report 50000 "My Report"
+            {
+                dataset
+                {
+                    dataitem(CheckLedgerEntry; "Check Ledger Entry")
+                    {
+                        column(X; X)
+                        {
+                            AutoFormatExpression = TotallyUnknownProc();
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "My Report"));
+
+        result.Stats.UnresolvedSamples.Should().Contain(s =>
+            s.Token == "TotallyUnknownProc" && s.Reason == "bare-call");
     }
 
     // ── XmlPort tableelement forward references ──────────────────────

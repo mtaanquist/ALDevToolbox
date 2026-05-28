@@ -21,7 +21,6 @@ namespace ALDevToolbox.Services.Al.Structure;
 internal sealed class AlQueryStructure : IAlObjectStructureExtractor
 {
     private readonly AlExtractionState _state;
-    private AlTypeRef? _currentDataItemSource;
 
     public AlQueryStructure(AlExtractionState state, AlProcedureWalker procedureWalker)
     {
@@ -34,11 +33,11 @@ internal sealed class AlQueryStructure : IAlObjectStructureExtractor
         var (consumed, source) = AlDataItemDsl.TryConsumeAliasedSourceDeclaration(_state, "dataitem", tok);
         if (consumed && source is not null)
         {
-            _currentDataItemSource = source;
+            _state.CurrentDataItemSource = source;
         }
         return consumed;
     }
 
     public bool TryResolveObjectScopeBareIdentifier(AlToken tok) =>
-        AlDataItemDsl.TryEmitBareFieldOnSource(_state, _currentDataItemSource, tok);
+        AlDataItemDsl.TryEmitBareFieldOnSource(_state, _state.CurrentDataItemSource, tok);
 }
