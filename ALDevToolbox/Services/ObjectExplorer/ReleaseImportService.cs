@@ -2665,10 +2665,10 @@ public class ReleaseImportService
         return set;
     }
 
-    private sealed record MemberEntry(
+    internal sealed record MemberEntry(
         long SymbolId, string Name, string Kind, string? ReturnTypeKeyword, string? ReturnTypeName);
 
-    private sealed record ExtensionEntry(Guid AppId, long ObjectId);
+    internal sealed record ExtensionEntry(Guid AppId, long ObjectId);
 
     /// <summary>
     /// Composite-key comparer for object-identity lookups
@@ -2678,7 +2678,7 @@ public class ReleaseImportService
     /// disambiguates name collisions across kinds / modules — a Table
     /// and a TableExtension can both be named "Sales Header".
     /// </summary>
-    private sealed class ObjectIdentityComparer : IEqualityComparer<(Guid AppId, string Kind, string Name)>
+    internal sealed class ObjectIdentityComparer : IEqualityComparer<(Guid AppId, string Kind, string Name)>
     {
         public bool Equals((Guid AppId, string Kind, string Name) x, (Guid AppId, string Kind, string Name) y) =>
             x.AppId == y.AppId
@@ -2713,7 +2713,7 @@ public class ReleaseImportService
     /// caller's module doesn't depend on the extension's module, the
     /// extension's members are invisible.
     /// </summary>
-    private sealed class CatalogResolver : ALDevToolbox.Services.Al.IAlTypeResolver
+    internal sealed class CatalogResolver : ALDevToolbox.Services.Al.IAlTypeResolver
     {
         private readonly Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>> _typesByName;
         private readonly Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef> _typesByObjectId;
