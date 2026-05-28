@@ -2113,14 +2113,28 @@ internal sealed class AlProcedureWalker
     };
 
     /// <summary>
-    /// Object-scope <c>var</c> block: scans <c>Name: Label '…';</c>
-    /// declarations and adds them to the bottom (object-scope) frame
-    /// so bare uses inside any procedure / trigger body in the file
-    /// resolve through the same scope-walk that fields and other
-    /// vars use. Non-label declarations are skipped — those come in
-    /// via the symbol-package globals already. Terminates at the
-    /// closing <c>}</c> of the object or the next section keyword
-    /// (<c>procedure</c>, <c>trigger</c>, <c>fields</c>, …).
+    /// Object-scope <c>var</c> block scanner. Walks each
+    /// <c>Name[, Name]*: Type[ "X"];</c> declaration and adds the
+    /// variable to the bottom (object-scope) frame so bare uses in
+    /// any procedure / trigger body in the file resolve through the
+    /// scope-walk that fields and locals already use.
+    ///
+    /// Why source-side scanning when the symbol package already
+    /// supplies <see cref="AlExtractContext.GlobalVars"/>? Globals
+    /// declared inside a feature-flag <c>#if X / #endif</c> block
+    /// (BC pattern: <c>#if not CLEAN26 ... var UpgradeTagDefinitions:
+    /// Codeunit "Upgrade Tag Definitions"; ... #endif</c>) drop out
+    /// of the symbol package whenever the flag isn't the live one
+    /// the compiler chose. Without source-side fallback, every
+    /// procedure-body reference to those vars fires head-not-a-
+    /// variable. Bottom-frame writes are gap-fills only — symbol-
+    /// package entries from <see cref="BuildAndPushGlobalScope"/>
+    /// stay authoritative when both list the same name.
+    ///
+    /// Terminates at the object's closing <c>}</c> or the next
+    /// section keyword (<c>procedure</c>, <c>trigger</c>,
+    /// <c>fields</c>, …). The method name is kept (was
+    /// label-only originally) so existing callers still link.
     /// </summary>
     public void ScanObjectScopeLabels()
     {
@@ -2146,6 +2160,15 @@ internal sealed class AlProcedureWalker
                     _state.Pos++;
                     continue;
                 }
+                if (tok.Value == "[")
+                {
+                    // Attribute on a declaration — `[NonDebuggable]`,
+                    // `[SecurityFiltering(...)]`, etc. Skip the
+                    // bracketed span so the attribute's inner
+                    // identifier isn't mis-read as a variable name.
+                    _state.SkipAttribute();
+                    continue;
+                }
             }
             if (braceDepth == 0
                 && tok.Kind == AlTokenKind.Identifier
@@ -2154,24 +2177,45 @@ internal sealed class AlProcedureWalker
                 return;
             }
 
-            // Detect `Name : Label`. The lexer drops whitespace, so
-            // the three tokens are adjacent in the stream.
-            if ((tok.Kind == AlTokenKind.Identifier || tok.Kind == AlTokenKind.QuotedIdentifier)
-                && _state.Pos + 2 < _state.Tokens.Count
-                && _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Punct
-                && _state.Tokens[_state.Pos + 1].Value == ":"
-                && _state.Tokens[_state.Pos + 2].Kind == AlTokenKind.Identifier
-                && string.Equals(_state.Tokens[_state.Pos + 2].Value, "Label", StringComparison.OrdinalIgnoreCase))
+            // `Name[, Name]*: Type[ "X"];` — capture every declaration
+            // shape so codeunit / record / page / interface / scalar /
+            // array globals all land in the bottom frame. Quoted-
+            // identifier names are legal in AL at object scope too.
+            if (tok.Kind != AlTokenKind.Identifier && tok.Kind != AlTokenKind.QuotedIdentifier)
             {
-                var nameLower = tok.Value.ToLowerInvariant();
-                if (!bottom.Vars.ContainsKey(nameLower))
-                {
-                    bottom.Vars[nameLower] = new ResolvedVariableType(null, "Label");
-                }
-                _state.Pos += 3;
+                _state.Pos++;
                 continue;
             }
-            _state.Pos++;
+
+            var names = new List<string>();
+            int nameStart = _state.Pos;
+            while (_state.Pos < _state.Tokens.Count
+                   && (_state.Tokens[_state.Pos].Kind == AlTokenKind.Identifier
+                       || _state.Tokens[_state.Pos].Kind == AlTokenKind.QuotedIdentifier))
+            {
+                names.Add(_state.Tokens[_state.Pos].Value);
+                _state.Pos++;
+                if (_state.At(",")) { _state.Pos++; continue; }
+                break;
+            }
+            if (!_state.At(":"))
+            {
+                // Not a declaration. Advance past the name(s) we
+                // just consumed; loop continues. (Avoids re-reading
+                // the same identifier and looping forever.)
+                if (_state.Pos == nameStart) _state.Pos++;
+                continue;
+            }
+            _state.Pos++; // past `:`
+
+            var type = ReadTypeReference();
+            foreach (var n in names)
+            {
+                var key = n.ToLowerInvariant();
+                if (!bottom.Vars.ContainsKey(key)) bottom.Vars[key] = type;
+            }
+
+            if (_state.At(";")) _state.Pos++;
         }
     }
 

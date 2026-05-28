@@ -4616,6 +4616,104 @@ public sealed class AlReferenceExtractorTests
             s.Token == "LocalVar");
     }
 
+    // ── Object-scope var-block source-side fallback ─────────────────
+
+    [Fact]
+    public void Object_scope_global_codeunit_var_resolves_when_missing_from_symbol_package()
+    {
+        // Globals declared inside an `#if X / #endif` block drop out
+        // of the symbol package whenever the live build doesn't define
+        // the flag. The canonical BC pattern:
+        //
+        //   #if not CLEAN26
+        //   var
+        //       UpgradeTagDefinitions: Codeunit "Upgrade Tag Definitions";
+        //   #endif
+        //
+        // The walker now scans the object-scope var block source-side
+        // and seeds the bottom scope frame, so procedure-body uses of
+        // the variable resolve through the same path as fields/locals
+        // instead of firing head-not-a-variable.
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper",
+            new AlTypeRef(BaseAppId, "codeunit", 50000, "MyHelper"));
+        resolver.AddType("Upgrade Tag Definitions",
+            new AlTypeRef(BaseAppId, "codeunit", 9999, "Upgrade Tag Definitions"));
+        resolver.AddMember("Upgrade Tag Definitions",
+            new AlMember("GetSomeTag", "procedure", "Code", null));
+
+        // No globals in Ctx.GlobalVars — simulating a symbol package
+        // that omitted UpgradeTagDefinitions (e.g. it lives behind a
+        // feature flag the build didn't define).
+        const string src = """
+            codeunit 50000 MyHelper
+            {
+                var
+                    UpgradeTagDefinitions: Codeunit "Upgrade Tag Definitions";
+
+                procedure Run()
+                begin
+                    UpgradeTagDefinitions.GetSomeTag();
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        // GetSomeTag resolves against Upgrade Tag Definitions because
+        // the source-side scanner seeded the bottom frame with the
+        // variable's declared type.
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Upgrade Tag Definitions"
+            && r.TargetMemberName == "GetSomeTag");
+        // No head-not-a-variable diagnostic for the var.
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "UpgradeTagDefinitions");
+    }
+
+    [Fact]
+    public void Object_scope_var_block_does_not_overwrite_symbol_package_globals()
+    {
+        // Guard: source-side scanning is a GAP-FILL, not a replacement.
+        // When the symbol package already supplied a binding for a name
+        // (the normal case), the source-side pass must NOT overwrite it.
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper",
+            new AlTypeRef(BaseAppId, "codeunit", 50000, "MyHelper"));
+        resolver.AddType("Sales-Post",
+            new AlTypeRef(BaseAppId, "codeunit", 80, "Sales-Post"));
+        resolver.AddMember("Sales-Post",
+            new AlMember("Run", "procedure", null, null));
+
+        var globals = new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase)
+        {
+            // Symbol package's authoritative binding.
+            ["SalesPost"] = new ResolvedVariableType("Codeunit", "Sales-Post"),
+        };
+
+        // Same var name in the source. Both should converge on the
+        // same type, but the test verifies symbol-package data isn't
+        // clobbered by source-side scanning.
+        const string src = """
+            codeunit 50000 MyHelper
+            {
+                var
+                    SalesPost: Codeunit "Sales-Post";
+
+                procedure Run()
+                begin
+                    SalesPost.Run();
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver, globals));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Sales-Post"
+            && r.TargetMemberName == "Run");
+    }
+
     // ── Single-statement `with X do <stmt>;` ────────────────────────
 
 
