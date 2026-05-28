@@ -94,6 +94,25 @@ internal static class AlDataItemDsl
         {
             return (true, null);
         }
+        state.Pos++;
+
+        // Namespace-prefixed source: `System.Utilities.Integer`,
+        // `Microsoft.Foundation.NoSeries."No. Series"`. Walk the
+        // dotted prefix so the LAST segment is the actual type name —
+        // segments before it are the namespace path. Without this,
+        // the source token is `System` (unresolved), the cursor lands
+        // mid-chain, and `Utilities` / `Integer` get dispatched as
+        // bare chain heads by the orchestrator's main loop.
+        while (state.Pos + 1 < state.Tokens.Count
+               && state.Tokens[state.Pos].Kind == AlTokenKind.Punct
+               && state.Tokens[state.Pos].Value == "."
+               && (state.Tokens[state.Pos + 1].Kind == AlTokenKind.Identifier
+                   || state.Tokens[state.Pos + 1].Kind == AlTokenKind.QuotedIdentifier))
+        {
+            state.Pos++; // past .
+            sourceTok = state.Tokens[state.Pos];
+            state.Pos++;
+        }
 
         var resolved = state.Ctx.Resolver.ResolveTypeByName(sourceTok.Value, "Record");
         if (resolved is not null
@@ -127,10 +146,8 @@ internal static class AlDataItemDsl
                         new ResolvedVariableType("Record", resolved.Name);
                 }
             }
-            state.Pos++;
             return (true, resolved);
         }
-        state.Pos++;
         return (true, null);
     }
 
@@ -239,6 +256,21 @@ internal static class AlDataItemDsl
         {
             return;
         }
+        state.Pos++;
+
+        // Namespace prefix: walk `.<segment>` chains so the LAST
+        // segment is the actual type name. Mirrors the same path in
+        // TryConsumeAliasedSourceDeclaration above.
+        while (state.Pos + 1 < state.Tokens.Count
+               && state.Tokens[state.Pos].Kind == AlTokenKind.Punct
+               && state.Tokens[state.Pos].Value == "."
+               && (state.Tokens[state.Pos + 1].Kind == AlTokenKind.Identifier
+                   || state.Tokens[state.Pos + 1].Kind == AlTokenKind.QuotedIdentifier))
+        {
+            state.Pos++; // past .
+            sourceTok = state.Tokens[state.Pos];
+            state.Pos++;
+        }
 
         if (!string.IsNullOrEmpty(alias))
         {
@@ -255,7 +287,6 @@ internal static class AlDataItemDsl
                 }
             }
         }
-        state.Pos++;
     }
 
     /// <summary>

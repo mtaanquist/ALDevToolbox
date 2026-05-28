@@ -4617,6 +4617,47 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Dataitem_source_with_namespace_prefix_resolves_last_segment_as_table()
+    {
+        // BC 26.x increasingly uses fully-namespaced type references:
+        //   `dataitem("Integer"; System.Utilities.Integer)`
+        //   `dataitem("Foo"; Microsoft.Foundation.NoSeries."No. Series Line")`
+        // The dataitem source parser used to read the first segment
+        // (`System`), fail to resolve it, and leave the cursor mid-
+        // chain — `Utilities` then dispatched as a bare chain head
+        // and fired head-not-a-variable (Utilities Lines=22/143 on
+        // ServiceCertificateofSupply.Report.al was the canonical
+        // sample). The fix walks the `.<segment>` chain so the LAST
+        // segment is treated as the actual type name.
+        var resolver = MakeResolver();
+        resolver.AddType("Service Certificate of Supply",
+            new AlTypeRef(BaseAppId, "report", 5916, "Service Certificate of Supply"));
+        resolver.AddType("Integer",
+            new AlTypeRef(BaseAppId, "table", 2000000026, "Integer"));
+
+        const string src = """
+            report 5916 "Service Certificate of Supply"
+            {
+                dataset
+                {
+                    dataitem("Integer"; System.Utilities.Integer)
+                    {
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "Service Certificate of Supply"));
+
+        // No head-not-a-variable for Utilities or Integer.
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "Utilities" || s.Token == "System");
+        // Integer table was resolved as the dataitem source.
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "property_object"
+            && r.TargetObjectName == "Integer");
+    }
+
+    [Fact]
     public void Sibling_procedure_signature_var_modifier_does_not_eat_real_var_block()
     {
         // The canonical SalesPost.UpdateShippingNo shape: two
