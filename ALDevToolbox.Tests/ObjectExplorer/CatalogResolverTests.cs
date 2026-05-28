@@ -243,6 +243,34 @@ public sealed class CatalogResolverTests
     }
 
     [Fact]
+    public void Enum_member_lookup_falls_back_to_same_named_interface()
+    {
+        // BC's extensible enums frequently `implements` an identically-
+        // named interface (`enum "Alt. Cust. VAT Reg. Consist."
+        // implements "Alt. Cust. VAT Reg. Consist."`). Call sites
+        // dispatch interface methods through enum-typed variables;
+        // without this fallback every such call missed the method
+        // lookup on the enum (enums have no procedures of their own
+        // in the catalog) and fired chain-step unresolved.
+        var fixture = new ResolverFixture(BaseAppId);
+        fixture.Add(BaseAppId, "enum", 204, "Alt. Cust. VAT Reg. Consist.");
+        fixture.AddInterface(BaseAppId, 1003, "Alt. Cust. VAT Reg. Consist.");
+        fixture.AddMember(BaseAppId, "interface", "Alt. Cust. VAT Reg. Consist.",
+            "CheckCustomerConsistency", "procedure");
+
+        var resolver = fixture.Build();
+        var enumType = resolver.ResolveTypeByName("Alt. Cust. VAT Reg. Consist.", "Enum");
+        enumType.Should().NotBeNull();
+        enumType!.Kind.Should().Be("enum");
+        var member = resolver.ResolveMember(enumType, "CheckCustomerConsistency");
+
+        member.Should().NotBeNull();
+        member!.Name.Should().Be("CheckCustomerConsistency");
+        member.DeclaringType.Should().NotBeNull();
+        member.DeclaringType!.Kind.Should().Be("interface");
+    }
+
+    [Fact]
     public void Interface_member_lookup_walks_extends_chain_to_base_interface()
     {
         // BC 26 introduced derived interfaces via `extends`. Canonical

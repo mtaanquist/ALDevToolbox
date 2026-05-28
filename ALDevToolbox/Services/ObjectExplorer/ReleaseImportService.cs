@@ -73,7 +73,7 @@ public class ReleaseImportService
     // with the outline showing permissionset entries instead of the
     // query's columns).
     internal static readonly Regex ObjectHeaderRegex = new(
-        """^\s*(codeunit|table|page|report|xmlport|query|controladdin|enum|interface|permissionset|tableextension|pageextension|reportextension|enumextension|permissionsetextension)\s+(?:(\d+)\s+)?(?:"(?<quoted>[^"]+)"|(?<bare>[A-Za-z_]\w*))(?!\s*=)""",
+        """^\s*(codeunit|table|page|report|xmlport|query|controladdin|enum|interface|permissionset|tableextension|pageextension|reportextension|enumextension|permissionsetextension)\s+(?:(\d+)\s+)?(?:"(?<quoted>[^"]+)"|(?<bare>[A-Za-z_]\w*))(?!\s*=)(?:\s+extends\s+(?:"(?<exquoted>[^"]+)"|(?<exbare>[A-Za-z_]\w*)))?""",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public ReleaseImportService(
@@ -750,11 +750,33 @@ public class ReleaseImportService
             {
                 objectsExpectingSource++;
             }
+            string? sourceExtends = null;
             if (declarations.TryGetValue((symObj.Kind, symObj.Name), out var hit))
             {
                 sourceFile = hit.File;
                 line = hit.Line;
+                sourceExtends = hit.ExtendsName;
                 objectsLinked++;
+            }
+
+            // Interface inheritance fallback: BC's symbol package
+            // doesn't surface the `extends` pointer for interfaces via
+            // the usual TargetObject path, so a derived interface
+            // (`interface "Cost Adjustment With Params" extends
+            // "Inventory Adjustment"`) lands with ExtendsObjectName=null
+            // and the resolver's interface-extends walk has nothing to
+            // chase. Backfill from the source-side header scan, scoped
+            // to the same module (interfaces extending across module
+            // boundaries are vanishingly rare and we can't tell which
+            // app the base belongs to without resolving downstream).
+            var extendsName = symObj.ExtendsObjectName;
+            var extendsAppId = symObj.ExtendsAppId;
+            if (string.IsNullOrEmpty(extendsName)
+                && string.Equals(symObj.Kind, "interface", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrEmpty(sourceExtends))
+            {
+                extendsName = sourceExtends;
+                extendsAppId = module.AppId;
             }
 
             var obj = new OeModuleObject
@@ -765,8 +787,8 @@ public class ReleaseImportService
                 ObjectId = symObj.ObjectId,
                 Name = symObj.Name,
                 Namespace = string.IsNullOrEmpty(symObj.Namespace) ? null : symObj.Namespace,
-                ExtendsAppId = symObj.ExtendsAppId,
-                ExtendsObjectName = symObj.ExtendsObjectName,
+                ExtendsAppId = extendsAppId,
+                ExtendsObjectName = extendsName,
                 // SourceTable on pages — extracted from the symbol package's
                 // property list. Pageextensions don't carry it directly; a
                 // second pass below copies the value from their base page.
@@ -1436,7 +1458,7 @@ public class ReleaseImportService
     /// link <c>ModuleObject.SourceFileId</c> and stamp
     /// <c>ModuleObject.LineNumber</c> in one lookup.
     /// </summary>
-    private readonly record struct DeclarationHit(OeModuleFile File, int Line);
+    private readonly record struct DeclarationHit(OeModuleFile File, int Line, string? ExtendsName);
 
     private sealed class DeclarationKeyComparer : IEqualityComparer<(string Kind, string Name)>
     {
@@ -1483,7 +1505,18 @@ public class ReleaseImportService
                 if (!m.Success) continue;
                 var kind = m.Groups[1].Value.ToLowerInvariant();
                 var name = m.Groups["quoted"].Success ? m.Groups["quoted"].Value : m.Groups["bare"].Value;
-                result.TryAdd((kind, name), new DeclarationHit(file, line));
+                // Source-side `extends` capture. Used as a fallback for
+                // interface inheritance (`interface "Cost Adjustment With
+                // Params" extends "Inventory Adjustment"`) where the
+                // symbol package doesn't surface the extended-interface
+                // metadata via the usual Target / TargetObject path.
+                // tableextension / pageextension / etc. already get
+                // their extends pointer from the symbol package, so the
+                // fallback only fires when the SymObj-side value is null.
+                string? extends = null;
+                if (m.Groups["exquoted"].Success) extends = m.Groups["exquoted"].Value;
+                else if (m.Groups["exbare"].Success) extends = m.Groups["exbare"].Value;
+                result.TryAdd((kind, name), new DeclarationHit(file, line, extends));
             }
         }
         return result;
@@ -3052,6 +3085,42 @@ public class ReleaseImportService
                         Kind: match.Kind,
                         ReturnTypeKeyword: match.ReturnTypeKeyword,
                         ReturnTypeName: match.ReturnTypeName);
+                }
+            }
+
+            // Enum-implements-interface fallback: BC's extensible
+            // enums frequently `implements` an identically-named
+            // interface (`enum "Alt. Cust. VAT Reg. Consist."
+            // implements "Alt. Cust. VAT Reg. Consist."`). Calls on
+            // an enum-typed variable dispatch to the interface's
+            // methods, but our catalog doesn't carry the
+            // implements pointer, so member lookup on the enum
+            // misses every interface-declared method. Try the
+            // same-named visible interface as a fallback before
+            // giving up. (Other-named implements relations would
+            // need a source-side `implements "Y"` capture; sticking
+            // with the same-name convention covers BC's dominant
+            // pattern without that work.)
+            if (string.Equals(owner.Kind, "enum", StringComparison.OrdinalIgnoreCase)
+                && _typesByName.TryGetValue(owner.Name, out var sameNameCandidates))
+            {
+                foreach (var candidate in sameNameCandidates)
+                {
+                    if (!string.Equals(candidate.Kind, "interface", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!IsVisible(candidate.AppId)) continue;
+                    if (!_objectIdByIdentity.TryGetValue((candidate.AppId, "interface", candidate.Name), out var enumIfaceOwnerId)) continue;
+                    if (!_members.TryGetValue(enumIfaceOwnerId, out var enumIfaceMembers)) continue;
+                    var match = enumIfaceMembers.FirstOrDefault(m =>
+                        string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
+                    if (match is null) continue;
+
+                    _typesByObjectId.TryGetValue(enumIfaceOwnerId, out var declaringInterface);
+                    return new ALDevToolbox.Services.Al.AlMember(
+                        Name: match.Name,
+                        Kind: match.Kind,
+                        ReturnTypeKeyword: match.ReturnTypeKeyword,
+                        ReturnTypeName: match.ReturnTypeName,
+                        DeclaringType: declaringInterface);
                 }
             }
 

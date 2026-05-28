@@ -583,11 +583,27 @@ internal sealed class AlProcedureWalker
             return new ResolvedVariableType("Record", _state.Ctx.OwnerSourceTableName);
         }
 
+        // Reports / xmlports / queries with a declared SourceTable
+        // (request-page-level property — common on simple processing
+        // reports like Whse. Change Unit of Measure where there's no
+        // explicit dataitem block) bind Rec to that table. The
+        // dataitem-based PrescanAliases still overrides this when
+        // the report has a dataset { dataitem(X; Y) } block — both
+        // paths converge on "Rec is the report's primary record".
+        if ((k == "report" || k == "reportextension"
+                || k == "xmlport" || k == "query"
+                || k == "requestpage")
+            && !string.IsNullOrEmpty(_state.Ctx.OwnerSourceTableName))
+        {
+            return new ResolvedVariableType("Record", _state.Ctx.OwnerSourceTableName);
+        }
+
         // Other record-bearing kinds: Rec is the owner itself
-        // (tables, reports use dataitems per-trigger, but the
-        // type-resolver lookup falls back to the owner name when
-        // the catalog has no specific entry — same behaviour as
-        // before this refactor).
+        // (tables, and reports / xmlports / queries with no
+        // SourceTable and no dataitem yet — the prescan can still
+        // rebind Rec to the first dataitem source later in the
+        // setup, before any procedure body runs through the main
+        // dispatch).
         if (k == "table"
             || k == "report" || k == "reportextension"
             || k == "xmlport" || k == "query"
@@ -2828,9 +2844,16 @@ internal sealed class AlProcedureWalker
         // Procedures with a known return type continue the chain;
         // procedures with no return / scalar return terminate.
         if (string.IsNullOrEmpty(member.ReturnTypeName)) return null;
-        // Only AL-typed returns (Record / Codeunit / Page / …)
-        // resolve to catalog entries. System types come back null.
-        return _state.Ctx.Resolver.ResolveTypeByName(member.ReturnTypeName);
+        // Pass the return-type keyword so the resolver picks the
+        // correct kind when the name collides across kinds. Canonical
+        // sample: `EDocument.GetEDocumentService()` returns
+        // <c>Record "E-Document Service"</c>, and BC ships BOTH a
+        // table AND a page named "E-Document Service". Without the
+        // hint the resolver could land on the page and every
+        // subsequent chain step (.GetImportProcessVersion, etc.)
+        // misses against the wrong receiver.
+        return _state.Ctx.Resolver.ResolveTypeByName(
+            member.ReturnTypeName, member.ReturnTypeKeyword);
     }
 
     /// <summary>

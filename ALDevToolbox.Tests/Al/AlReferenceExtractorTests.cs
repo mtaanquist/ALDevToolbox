@@ -4697,6 +4697,94 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Return_type_kind_hint_disambiguates_same_named_table_vs_page()
+    {
+        // `EDocument.GetEDocumentService()` returns
+        // <c>Record "E-Document Service"</c>. E-Document Core ships
+        // BOTH a table AND a page named "E-Document Service". The
+        // resolver's tiebreaker prefers the same kind when given an
+        // expectedKeyword hint — without that hint, the chain advance
+        // landed on the page and every subsequent step
+        // (.GetImportProcessVersion, etc.) missed against the wrong
+        // receiver. AdvanceReceiverByMember now forwards
+        // <see cref="AlMember.ReturnTypeKeyword"/> so kind-aware
+        // tiebreaking kicks in.
+        var resolver = MakeResolver();
+        resolver.AddType("EDocumentService",
+            new AlTypeRef(BaseAppId, "table", 6103, "E-Document Service"));
+        // Same-named page in the catalog — without the hint the
+        // resolver could land here.
+        resolver.AddType("E-Document Service (page)",
+            new AlTypeRef(BaseAppId, "page", 6133, "E-Document Service"));
+        resolver.AddType("EDocument",
+            new AlTypeRef(BaseAppId, "table", 6101, "E-Document"));
+        resolver.AddMember("E-Document",
+            new AlMember("GetEDocumentService", "procedure", "Record", "E-Document Service"));
+        resolver.AddMember("E-Document Service",
+            new AlMember("GetImportProcessVersion", "procedure", null, null));
+
+        const string src = """
+            codeunit 50000 MyHelper
+            {
+                procedure Run(var EDocument: Record "E-Document"): Boolean
+                begin
+                    exit(EDocument.GetEDocumentService().GetImportProcessVersion() <> 0);
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "GetImportProcessVersion");
+    }
+
+    [Fact]
+    public void Report_with_source_table_property_binds_rec_to_that_table()
+    {
+        // Whse. Change Unit of Measure / VAT Report Suggest Lines etc.
+        // — reports where the request page declares a SourceTable
+        // property instead of using a `dataset { dataitem(X; Y) }`
+        // block. AL still binds Rec to the SourceTable for layout
+        // expressions and triggers; the walker now uses
+        // OwnerSourceTableName as a fallback when the report has no
+        // dataitem to prescan.
+        var resolver = MakeResolver();
+        resolver.AddType("Warehouse Activity Line",
+            new AlTypeRef(BaseAppId, "table", 5767, "Warehouse Activity Line"));
+        resolver.AddMember("Warehouse Activity Line",
+            new AlMember("Qty. to Handle (Base)", "table_field", null, null));
+
+        const string src = """
+            report 7314 "Whse. Change Unit of Measure"
+            {
+                requestpage
+                {
+                    SourceTable = "Warehouse Activity Line";
+                    layout
+                    {
+                        area(content)
+                        {
+                            field(QtyHandleBase; Rec."Qty. to Handle (Base)") { }
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            new AlExtractContext(
+                OwnerKind: "report",
+                OwnerName: "Whse. Change Unit of Measure",
+                OwnerObjectId: 7314,
+                OwnerAppId: BaseAppId,
+                GlobalVars: new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+                Resolver: resolver,
+                OwnerSourceTableName: "Warehouse Activity Line"));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "Qty. to Handle (Base)");
+    }
+
+    [Fact]
     public void Bare_self_call_continues_chain_through_return_type()
     {
         // EditInExcelFiltersImpl.Codeunit.al:48 pattern:
