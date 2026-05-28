@@ -2756,6 +2756,304 @@ public sealed class AlReferenceExtractorTests
         result.SymbolScopes[0].Name.Should().Be("OnRun");
     }
 
+    // ── Built-in receivers the catalog never tracks ─────────────────
+
+    [Fact]
+    public void Bare_File_typed_variable_does_not_resolve_to_the_File_table()
+    {
+        // `var ExportFile: File;` names the AL runtime File type, not the
+        // System "File" table — AL requires `Record File` for the table.
+        // The chain `ExportFile.WriteMode := true; ExportFile.Create(...)`
+        // must silence, not fire chain-step against the colliding table.
+        var resolver = MakeResolver();
+        resolver.AddType("File", new AlTypeRef(BaseAppId, "table", 2000000022, "File"));
+
+        const string src = """
+            procedure Export()
+            var
+                ExportFile: File;
+            begin
+                ExportFile.WriteMode := true;
+                ExportFile.TextMode := true;
+                ExportFile.Create('c:\temp\x.txt');
+                ExportFile.Close();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+        result.References.Should().NotContain(r => r.TargetObjectName == "File");
+    }
+
+    [Fact]
+    public void Three_part_enum_value_literal_silences_the_value_tail()
+    {
+        // `Enum::"Sales Document Type"::Quote.AsInteger()` — the enum type
+        // resolves (and emits a property_object ref), the `::Quote` value is
+        // consumed without emitting, and `.AsInteger()` walks as an enum
+        // built-in. Before the fix the value surfaced as a stray chain head
+        // and fired head-not-a-variable.
+        var resolver = MakeResolver();
+        resolver.AddType("Sales Document Type", new AlTypeRef(BaseAppId, "enum", 39, "Sales Document Type"));
+
+        const string src = """
+            procedure Foo()
+            var
+                I: Integer;
+            begin
+                I := Enum::"Sales Document Type"::Quote.AsInteger();
+                I := Enum::"Sales Document Type"::"Blanket Order".AsInteger();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "property_object"
+            && r.TargetObjectKind == "enum"
+            && r.TargetObjectName == "Sales Document Type");
+    }
+
+    [Fact]
+    public void Record_link_and_consistency_methods_are_builtins()
+    {
+        // HasLinks / DeleteLinks / Consistent are AL-runtime Record methods,
+        // never in the catalog. A chain through them must not fire chain-step.
+        const string src = """
+            procedure Foo()
+            var
+                Cust: Record Customer;
+            begin
+                if Cust.HasLinks() then
+                    Cust.DeleteLinks();
+                Cust.Consistent(true);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Builtin_type_static_factory_receivers_silence()
+    {
+        // `Version.Create(...)` / `ErrorInfo.Create(...)` /
+        // `COMPANYPROPERTY.DisplayName()` use a built-in type as a static
+        // receiver — not a variable, not a catalog object. Must not fire
+        // head-not-a-variable.
+        const string src = """
+            procedure Foo()
+            var
+                T: Text;
+            begin
+                if Version.Create('1.0.0.0') = Version.Create('2.0.0.0') then
+                    T := COMPANYPROPERTY.DisplayName();
+                Error(ErrorInfo.Create('boom'));
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    // ── Implicit-Rec bare calls to base / source-table procedures ───
+
+    [Fact]
+    public void Bare_call_in_tableextension_resolves_to_base_table_procedure()
+    {
+        // `BlockDynamicTracking(true);` bare in a tableextension is
+        // `Rec.BlockDynamicTracking(true)` — the procedure lives on the
+        // base table, not the extension. Must emit a method_call at the
+        // base table, not fire bare-call unresolved.
+        var resolver = MakeResolver();
+        resolver.AddType("Requisition Line", new AlTypeRef(BaseAppId, "table", 246, "Requisition Line"));
+        resolver.AddType("Asm. Requisition Line",
+            new AlTypeRef(BaseAppId, "tableextension", 906, "Asm. Requisition Line"));
+        resolver.AddMember("Requisition Line", new AlMember("BlockDynamicTracking", "procedure", null, null));
+
+        const string src = """
+            procedure SetReplenishment()
+            begin
+                BlockDynamicTracking(true);
+            end;
+            """;
+        var ctx = OwnerTableExtension(resolver, "Asm. Requisition Line", baseTable: "Requisition Line");
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Requisition Line"
+            && r.TargetObjectKind == "table"
+            && r.TargetMemberName == "BlockDynamicTracking");
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Bare_call_on_page_resolves_to_source_table_procedure()
+    {
+        // `SavePassword(Pwd);` bare on a page is `Rec.SavePassword(Pwd)`
+        // — the procedure is on the page's source table. Emit at the
+        // table, not bare-call unresolved.
+        var resolver = MakeResolver();
+        resolver.AddType("Setup Card", new AlTypeRef(BaseAppId, "page", 9000, "Setup Card"));
+        resolver.AddType("Setup Table", new AlTypeRef(BaseAppId, "table", 9001, "Setup Table"));
+        resolver.AddMember("Setup Table", new AlMember("SavePassword", "procedure", null, null));
+
+        const string src = """
+            procedure DoSave()
+            begin
+                SavePassword('secret');
+            end;
+            """;
+        var ctx = OwnerPage(resolver, "Setup Card", sourceTable: "Setup Table");
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Setup Table"
+            && r.TargetMemberName == "SavePassword");
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Bare_call_unknown_on_both_owner_and_rec_stays_unresolved()
+    {
+        // Guard: the implicit-Rec fallback must not silence a genuinely
+        // unknown bare call — when neither the page nor its source table
+        // declares the name, it's still bare-call unresolved.
+        var resolver = MakeResolver();
+        resolver.AddType("Setup Card", new AlTypeRef(BaseAppId, "page", 9000, "Setup Card"));
+        resolver.AddType("Setup Table", new AlTypeRef(BaseAppId, "table", 9001, "Setup Table"));
+
+        const string src = """
+            procedure DoSave()
+            begin
+                TotallyUnknownProc('x');
+            end;
+            """;
+        var ctx = OwnerPage(resolver, "Setup Card", sourceTable: "Setup Table");
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        result.Stats.UnresolvedReceivers.Should().Be(1);
+    }
+
+    [Fact]
+    public void Bare_call_in_pageextension_resolves_to_base_page_procedure()
+    {
+        // `NoOfRecords(TableID)` bare inside the `Navigate Ext.` pageextension
+        // is a call to a procedure declared on the base page `Navigate` —
+        // distinct from Rec (which is the page's source TABLE). The
+        // extension → base-object fallback resolves via OwnerExtendsName.
+        var resolver = MakeResolver();
+        resolver.AddType("Navigate", new AlTypeRef(BaseAppId, "page", 344, "Navigate"));
+        resolver.AddType("Navigate Ext.", new AlTypeRef(BaseAppId, "pageextension", 1708, "Navigate Ext."));
+        resolver.AddType("Document Entry", new AlTypeRef(BaseAppId, "table", 372, "Document Entry"));
+        resolver.AddMember("Navigate", new AlMember("NoOfRecords", "procedure", "Integer", null));
+
+        const string src = """
+            procedure GetNoOfRecords(TableID: Integer): Integer
+            begin
+                exit(NoOfRecords(TableID));
+            end;
+            """;
+        // Navigate Ext. extends Navigate (a page); its Rec is the base
+        // page's source table "Document Entry".
+        var ctx = new AlExtractContext(
+            OwnerKind: "pageextension",
+            OwnerName: "Navigate Ext.",
+            OwnerObjectId: 1708,
+            OwnerAppId: BaseAppId,
+            GlobalVars: new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+            Resolver: resolver,
+            OwnerSourceTableName: "Document Entry",
+            OwnerExtendsName: "Navigate");
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Navigate"
+            && r.TargetObjectKind == "page"
+            && r.TargetMemberName == "NoOfRecords");
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    // ── with X do begin … end ───────────────────────────────────────
+
+    [Fact]
+    public void With_block_rebinds_Rec_so_bare_calls_resolve_on_the_target_record()
+    {
+        // `with PaymentExportData do begin SetCustomerAsRecipient(...); end;` —
+        // bare identifiers inside resolve as procedures on PaymentExportData's
+        // record type, not the owner codeunit. AL deprecated `with` but
+        // Microsoft's banking modules still ship it.
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper", new AlTypeRef(BaseAppId, "codeunit", 50100, "MyHelper"));
+        resolver.AddType("Payment Export Data",
+            new AlTypeRef(BaseAppId, "table", 1226, "Payment Export Data"));
+        resolver.AddMember("Payment Export Data",
+            new AlMember("SetCustomerAsRecipient", "procedure", null, null));
+
+        const string src = """
+            procedure FillExportBuffer()
+            var
+                PaymentExportData: Record "Payment Export Data";
+            begin
+                with PaymentExportData do begin
+                    SetCustomerAsRecipient();
+                end;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Payment Export Data"
+            && r.TargetMemberName == "SetCustomerAsRecipient");
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void With_block_pops_at_matching_end_so_outer_Rec_returns()
+    {
+        // Once the with-block closes, the next bare call must NOT keep
+        // resolving against the with-record. Here `Insert(true)` after
+        // the with's `end;` is shorthand for `Rec.Insert()` on the
+        // codeunit's TableNo-bound table, not on Payment Export Data.
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper", new AlTypeRef(BaseAppId, "codeunit", 50100, "MyHelper"));
+        resolver.AddType("Payment Export Data",
+            new AlTypeRef(BaseAppId, "table", 1226, "Payment Export Data"));
+        resolver.AddType("Data Exch.", new AlTypeRef(BaseAppId, "table", 1220, "Data Exch."));
+        resolver.AddMember("Payment Export Data",
+            new AlMember("SetCustomerAsRecipient", "procedure", null, null));
+
+        const string src = """
+            procedure FillExportBuffer()
+            var
+                PaymentExportData: Record "Payment Export Data";
+            begin
+                with PaymentExportData do begin
+                    SetCustomerAsRecipient();
+                end;
+                Insert(true);
+            end;
+            """;
+        var ctx = OwnerCodeunit(resolver, tableNo: "Data Exch.");
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        // The with-block's bare call resolves on Payment Export Data.
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Payment Export Data"
+            && r.TargetMemberName == "SetCustomerAsRecipient");
+        // Insert is a Record built-in → silent skip (no emit, no unresolved).
+        // The key assertion: no phantom "Insert" attributed to Payment Export
+        // Data after the with-block closed, and no extra unresolveds.
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+        result.References.Should().NotContain(r =>
+            r.TargetMemberName == "Insert" && r.TargetObjectName == "Payment Export Data");
+    }
+
     // ── Stub resolver ───────────────────────────────────────────────
 
     private sealed class StubResolver : IAlTypeResolver

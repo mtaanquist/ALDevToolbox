@@ -1887,7 +1887,15 @@ public class ReleaseImportService
                 OwnerAppId: file.Owner.AppId,
                 GlobalVars: globals ?? new Dictionary<string, ALDevToolbox.Services.Al.ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
                 Resolver: ResolverFor(file.ModuleId),
-                OwnerSourceTableName: sourceTable);
+                OwnerSourceTableName: sourceTable,
+                // ExtendsObjectName lets the bare-self-call resolver fall back
+                // to procedures declared on the BASE object (the base page for
+                // a pageextension, the base report for a reportextension) —
+                // distinct from Rec which carries the source TABLE. Without
+                // this, a bare `NoOfRecords(TableID)` in `Navigate Ext.` that
+                // resolves to `Navigate.NoOfRecords` on the base page surfaces
+                // as bare-call unresolved.
+                OwnerExtendsName: file.Owner.ExtendsObjectName);
 
             var result = ALDevToolbox.Services.Al.AlReferenceExtractor.Extract(file.Content, ctx);
             totalUnresolved += result.Stats.UnresolvedReceivers;
