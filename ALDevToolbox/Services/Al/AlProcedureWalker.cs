@@ -683,11 +683,35 @@ internal sealed class AlProcedureWalker
         // just skip the type tokens.
         ParseOptionalReturnClause(frame);
 
+        // Interface procedure declarations have no body — they end at
+        // `;` after the (optional) return clause. Stop scanning here
+        // so the orchestrator picks up the next `procedure` token in
+        // the interface. Without this short-circuit the search for
+        // `var`/`begin` walks past every subsequent declaration in
+        // the interface and the second / third / Nth procedure's
+        // parameter types never get their property_object references
+        // emitted.
+        if (string.Equals(_state.Ctx.OwnerKind, "interface", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_state.At(";")) _state.Pos++;
+            return;
+        }
+
         // Optional local var block: `var name: Type; ...` between
-        // procedure head and `begin`.
+        // procedure head and `begin`. Skip balanced `(...)` spans so
+        // a `var` MODIFIER inside a sibling signature's parameter list
+        // (typical with `#if X / proc(...,NewArg) / #else / proc(...) /
+        // #endif` shapes — SalesPost.UpdateShippingNo is the canonical
+        // case) isn't mis-read as the start of THIS procedure's var
+        // block. Without the paren-skip, ParseVarBlock would consume
+        // the sibling's params as locals and the real var block (with
+        // `NoSeries: Codeunit "No. Series"` etc.) would be discarded
+        // by the `;`/`begin` recovery — every reference to those locals
+        // in the body then fires head-not-a-variable.
         while (_state.Pos < _state.Tokens.Count
                && !(_state.IsIdentifierTok(_state.Pos, "begin") || _state.IsIdentifierTok(_state.Pos, "var")))
         {
+            if (_state.At("(")) { _state.SkipBalancedParens(); continue; }
             _state.Pos++;
         }
         if (_state.IsIdentifierTok(_state.Pos, "var"))
@@ -696,9 +720,10 @@ internal sealed class AlProcedureWalker
             ParseVarBlock(frame);
         }
 
-        // Skip to and past `begin`.
+        // Skip to and past `begin`. Same paren-skip rationale.
         while (_state.Pos < _state.Tokens.Count && !_state.IsIdentifierTok(_state.Pos, "begin"))
         {
+            if (_state.At("(")) { _state.SkipBalancedParens(); continue; }
             _state.Pos++;
         }
         if (_state.IsIdentifierTok(_state.Pos, "begin"))

@@ -4616,6 +4616,56 @@ public sealed class AlReferenceExtractorTests
             s.Token == "LocalVar");
     }
 
+    [Fact]
+    public void Sibling_procedure_signature_var_modifier_does_not_eat_real_var_block()
+    {
+        // The canonical SalesPost.UpdateShippingNo shape: two
+        // procedure signatures separated by `#if/#else/#endif`,
+        // sharing a single var block + body. The walker walks the
+        // FIRST signature, then needs to skip the second one to
+        // reach the actual var block — but the second signature
+        // contains `var SalesHeader: …` parameters, and an unguarded
+        // search-for-var/begin treats that `var` modifier as the
+        // start of THIS procedure's var block. ParseVarBlock then
+        // consumes the second sig's params as locals (overwriting
+        // the first's), recovers at `;`/`begin`, and discards the
+        // ACTUAL var block (`NoSeries: Codeunit "No. Series"` etc.).
+        // Body references to those locals fire head-not-a-variable.
+        //
+        // Fix: SkipBalancedParens when scanning for var/begin.
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper",
+            new AlTypeRef(BaseAppId, "codeunit", 50000, "MyHelper"));
+        resolver.AddType("No. Series",
+            new AlTypeRef(BaseAppId, "codeunit", 1, "No. Series"));
+        resolver.AddMember("No. Series",
+            new AlMember("GetNextNo", "procedure", "Code", null));
+
+        const string src = """
+            codeunit 50000 MyHelper
+            {
+            #if not CLEAN24
+                local procedure UpdateShippingNo(var SalesHeader: Record "Sales Header"; var ModifyHeader: Boolean; NoSeriesMgt: Codeunit "No. Series")
+            #else
+                local procedure UpdateShippingNo(var SalesHeader: Record "Sales Header"; var ModifyHeader: Boolean)
+            #endif
+                var
+                    NoSeries: Codeunit "No. Series";
+                begin
+                    NoSeries.GetNextNo('SHIP', WorkDate());
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "No. Series"
+            && r.TargetMemberName == "GetNextNo");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "NoSeries");
+    }
+
     // ── Object-scope var-block source-side fallback ─────────────────
 
     [Fact]
