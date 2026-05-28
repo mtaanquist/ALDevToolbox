@@ -76,6 +76,16 @@ public class ReleaseImportService
         """^\s*(codeunit|table|page|report|xmlport|query|controladdin|enum|interface|permissionset|tableextension|pageextension|reportextension|enumextension|permissionsetextension)\s+(?:(\d+)\s+)?(?:"(?<quoted>[^"]+)"|(?<bare>[A-Za-z_]\w*))(?!\s*=)(?:\s+extends\s+(?:"(?<exquoted>[^"]+)"|(?<exbare>[A-Za-z_]\w*)))?""",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // `SourceTable = "X";` (or `SourceTable = X;` for unquoted ids).
+    // Used as a fallback to populate `oe_module_objects.source_table_name`
+    // for reports whose source-table property nests inside `requestpage
+    // { … }` and doesn't always surface on the symbol package's
+    // top-level Properties list. Source-side scan runs once per file
+    // alongside the existing header scan in <see cref="ScanFileDeclarations"/>.
+    internal static readonly Regex SourceTablePropertyRegex = new(
+        """^\s*SourceTable\s*=\s*(?:"(?<quoted>[^"]+)"|(?<bare>[A-Za-z_]\w*))\s*;""",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     public ReleaseImportService(
         AppDbContext db,
         IOrganizationContext orgContext,
@@ -751,11 +761,13 @@ public class ReleaseImportService
                 objectsExpectingSource++;
             }
             string? sourceExtends = null;
+            string? sourceTableFromHeader = null;
             if (declarations.TryGetValue((symObj.Kind, symObj.Name), out var hit))
             {
                 sourceFile = hit.File;
                 line = hit.Line;
                 sourceExtends = hit.ExtendsName;
+                sourceTableFromHeader = hit.SourceTable;
                 objectsLinked++;
             }
 
@@ -792,7 +804,10 @@ public class ReleaseImportService
                 // SourceTable on pages — extracted from the symbol package's
                 // property list. Pageextensions don't carry it directly; a
                 // second pass below copies the value from their base page.
-                SourceTableName = ExtractSourceTableName(symObj),
+                // SourceTable from the symbol package first; fall back
+                // to the source-side scan for reports whose request-
+                // page-level property the package didn't surface.
+                SourceTableName = ExtractSourceTableName(symObj) ?? sourceTableFromHeader,
                 // Use the FK directly rather than the navigation: after the
                 // file-chunk save loop above, the file entity may have been
                 // detached from the tracker on a previous flush. The Id is
@@ -1330,6 +1345,14 @@ public class ReleaseImportService
         {
             "page" or "pageextension" => "SourceTable",
             "codeunit" => "TableNo",
+            // Reports declare the request-page's data source inside
+            // a nested `requestpage { SourceTable = "X"; }` block;
+            // the symbol package flattens that onto the report's
+            // own Properties list (BC ships it as a top-level
+            // SourceTable hash-ref). Pick it up here so the walker
+            // can bind `Rec` to that table — Whse. Change Unit of
+            // Measure / VAT Report Suggest Lines / similar shapes.
+            "report" or "reportextension" => "SourceTable",
             _ => null,
         };
         if (propName is null) return null;
@@ -1458,7 +1481,7 @@ public class ReleaseImportService
     /// link <c>ModuleObject.SourceFileId</c> and stamp
     /// <c>ModuleObject.LineNumber</c> in one lookup.
     /// </summary>
-    private readonly record struct DeclarationHit(OeModuleFile File, int Line, string? ExtendsName);
+    private readonly record struct DeclarationHit(OeModuleFile File, int Line, string? ExtendsName, string? SourceTable);
 
     private sealed class DeclarationKeyComparer : IEqualityComparer<(string Kind, string Name)>
     {
@@ -1498,25 +1521,55 @@ public class ReleaseImportService
             // file entity — read it from the in-memory upload map by path.
             if (!sourceFiles.TryGetValue(path, out var content)) continue;
             int line = 0;
+            // First-header-wins; SourceTable found anywhere in the file
+            // is attributed to that first header. AL practice is one
+            // object per file, so this lines up with the rest of the
+            // import pipeline's first-match assumption.
+            (string Kind, string Name)? firstHeaderKey = null;
+            string? firstHeaderSourceTable = null;
             foreach (var rawLine in content.Split('\n'))
             {
                 line++;
                 var m = ObjectHeaderRegex.Match(rawLine);
-                if (!m.Success) continue;
-                var kind = m.Groups[1].Value.ToLowerInvariant();
-                var name = m.Groups["quoted"].Success ? m.Groups["quoted"].Value : m.Groups["bare"].Value;
-                // Source-side `extends` capture. Used as a fallback for
-                // interface inheritance (`interface "Cost Adjustment With
-                // Params" extends "Inventory Adjustment"`) where the
-                // symbol package doesn't surface the extended-interface
-                // metadata via the usual Target / TargetObject path.
-                // tableextension / pageextension / etc. already get
-                // their extends pointer from the symbol package, so the
-                // fallback only fires when the SymObj-side value is null.
-                string? extends = null;
-                if (m.Groups["exquoted"].Success) extends = m.Groups["exquoted"].Value;
-                else if (m.Groups["exbare"].Success) extends = m.Groups["exbare"].Value;
-                result.TryAdd((kind, name), new DeclarationHit(file, line, extends));
+                if (m.Success)
+                {
+                    var kind = m.Groups[1].Value.ToLowerInvariant();
+                    var name = m.Groups["quoted"].Success ? m.Groups["quoted"].Value : m.Groups["bare"].Value;
+                    // Source-side `extends` capture. Used as a fallback for
+                    // interface inheritance (`interface "Cost Adjustment With
+                    // Params" extends "Inventory Adjustment"`) where the
+                    // symbol package doesn't surface the extended-interface
+                    // metadata via the usual Target / TargetObject path.
+                    string? extends = null;
+                    if (m.Groups["exquoted"].Success) extends = m.Groups["exquoted"].Value;
+                    else if (m.Groups["exbare"].Success) extends = m.Groups["exbare"].Value;
+                    if (result.TryAdd((kind, name), new DeclarationHit(file, line, extends, null)))
+                    {
+                        firstHeaderKey ??= (kind, name);
+                    }
+                    continue;
+                }
+                // Source-side SourceTable capture. Used as a fallback for
+                // reports whose request-page-level SourceTable property
+                // doesn't surface on the symbol package's top-level
+                // properties list (Whse. Change Unit of Measure /
+                // VAT Report Suggest Lines shape).
+                if (firstHeaderSourceTable is null)
+                {
+                    var st = SourceTablePropertyRegex.Match(rawLine);
+                    if (st.Success)
+                    {
+                        firstHeaderSourceTable = st.Groups["quoted"].Success
+                            ? st.Groups["quoted"].Value
+                            : st.Groups["bare"].Value;
+                    }
+                }
+            }
+            if (firstHeaderKey is (string k, string n) && firstHeaderSourceTable is not null
+                && result.TryGetValue((k, n), out var existing)
+                && existing.SourceTable is null)
+            {
+                result[(k, n)] = existing with { SourceTable = firstHeaderSourceTable };
             }
         }
         return result;
