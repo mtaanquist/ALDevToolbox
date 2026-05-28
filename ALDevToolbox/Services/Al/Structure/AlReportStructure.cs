@@ -43,4 +43,16 @@ internal sealed class AlReportStructure : IAlObjectStructureExtractor
 
     public bool TryResolveObjectScopeBareIdentifier(AlToken tok) =>
         AlDataItemDsl.TryEmitBareFieldOnSource(_state, _state.CurrentDataItemSource, tok);
+
+    /// <summary>
+    /// Reports declare <c>dataitem(Alias; SourceTable)</c> inside the
+    /// <c>dataset { }</c> block. Aliases get referenced from earlier-
+    /// declared properties / triggers — the canonical shape is the
+    /// <c>WordMergeDataItem = TempSegmentLine;</c> property pointing
+    /// to a dataitem declared later in the same dataset
+    /// (ContactCoverSheet.Report:23 references the dataitem declared
+    /// at :79). Same forward-reference problem the xmlport handler
+    /// already solves; route through the shared pre-scan.
+    /// </summary>
+    public void Prescan() => AlDataItemDsl.PrescanAliases(_state, "dataitem");
 }

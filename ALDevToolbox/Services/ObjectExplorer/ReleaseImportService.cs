@@ -186,6 +186,13 @@ public class ReleaseImportService
             // get normalised too.
             await ResolveNumericSourceTableNamesAsync(release.Id, ct).ConfigureAwait(false);
 
+            // Dataitem-alias variables (and any same-module Record
+            // globals whose symbol package omitted ModuleId) get their
+            // TargetAppId / TargetObjectId filled in now that the full
+            // catalog for this release exists. Object Explorer's variable
+            // rows render click-through links via those fields.
+            await ResolveVariableTargetsAsync(release.Id, ct).ConfigureAwait(false);
+
             // Phase 2 call-site extraction. Runs once per release, AFTER
             // every module's symbols + variables are in the DB so the
             // resolver can see types declared anywhere in this release.
@@ -345,6 +352,7 @@ public class ReleaseImportService
             // release before re-running. See issue #216 reindex section.
             await PropagateSourceTableToPageExtensionsAsync(release.Id, ct).ConfigureAwait(false);
             await ResolveNumericSourceTableNamesAsync(release.Id, ct).ConfigureAwait(false);
+            await ResolveVariableTargetsAsync(release.Id, ct).ConfigureAwait(false);
             await DeleteExtractedCallSiteReferencesAsync(release.Id, ct).ConfigureAwait(false);
             await EmitCallSiteReferencesAsync(orgId, release.Id, totals, ct).ConfigureAwait(false);
 
@@ -1040,6 +1048,57 @@ public class ReleaseImportService
                 ColumnEnd = pos?.ColumnEnd ?? 0,
             });
         }
+
+        // Dataitem / tableelement aliases — recorded from source
+        // because SymbolReference.json doesn't surface them in the
+        // Variables list. Stamped as Record-typed globals so the
+        // reportextension / base-globals scope merge (PR #252)
+        // automatically threads the base report's aliases through
+        // to extension procedures. Without this, every reportextension
+        // reference to a base-report alias (e.g. `FilterItem` in
+        // AsmGetDemandToReserve.ReportExt against GetDemandToReserve)
+        // fires head-not-a-variable.
+        //
+        // TargetAppId stays null at insert time — we don't have the
+        // catalog built yet during the per-object loop. The
+        // post-import pass <see cref="ResolveDataItemAliasTargetsAsync"/>
+        // walks every Record-typed variable row with a null
+        // TargetAppId in this release and stamps the source table's
+        // identity from the catalog. Picking up regular same-module
+        // Record vars whose ModuleId was omitted by the symbol
+        // package is a beneficial side-effect.
+        var packageVariableNames = new HashSet<string>(
+            symObj.Variables.Select(v => v.Name),
+            StringComparer.OrdinalIgnoreCase);
+        var seenAliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var sym in extractedSymbols)
+        {
+            if (sym.Kind != "dataitem_alias") continue;
+            if (string.IsNullOrEmpty(sym.Name) || string.IsNullOrEmpty(sym.Signature)) continue;
+            // Skip when the package's own Variables list already
+            // claims this name — the package's metadata wins because
+            // it carries TypeKeyword / TypeName the binary compiler
+            // resolved. Nested dataitems repeating their parent's
+            // alias also get skipped against ourselves.
+            if (packageVariableNames.Contains(sym.Name)) continue;
+            if (!seenAliases.Add(sym.Name)) continue;
+            _db.OeModuleVariables.Add(new OeModuleVariable
+            {
+                OrganizationId = orgId,
+                ModuleId = module.Id,
+                Object = obj,
+                Name = sym.Name,
+                TypeKeyword = "Record",
+                TypeName = sym.Signature,
+                TargetAppId = null,
+                TargetObjectKind = "table",
+                TargetObjectId = null,
+                TargetObjectName = sym.Signature,
+                LineNumber = sym.LineNumber,
+                ColumnStart = sym.ColumnStart,
+                ColumnEnd = sym.ColumnEnd,
+            });
+        }
     }
 
     private void EmitReferences(int orgId, OeModule module, OeModuleObject obj, SymbolObject symObj, ImportTotals totals)
@@ -1170,9 +1229,18 @@ public class ReleaseImportService
     /// </summary>
     private static (string? Kind, int? Id, string? Name, string? TypeKeyword) ResolveVariableTarget(SymbolTypeRef type, Guid importingAppId)
     {
+        // Preserve the TypeKeyword regardless of whether it maps to an
+        // AL catalog object kind. The chain walker uses TypeKeyword to
+        // route DotNet variables down a silence branch (no AL members
+        // to resolve) — without preserving "DotNet" here, every
+        // `OfficeHost.Foo()` / `HttpStatusCode.X()` chain through a
+        // DotNet-typed global lands as head-var-type-unresolved
+        // because the catalog doesn't know the .NET type name. Same
+        // applies to any non-mapped keyword the AL grammar might
+        // surface in the future: we lose nothing by storing it.
         if (!TypeKeywordToObjectKind.TryGetValue(type.Name, out var kind))
         {
-            return (null, null, null, null);
+            return (null, null, null, type.Name);
         }
         if (string.IsNullOrEmpty(type.ObjectName))
         {
@@ -1568,6 +1636,66 @@ public class ReleaseImportService
         // up via TranslationImportService's explicit upload paths.
     }
 
+    /// <summary>
+    /// Fills <c>TargetAppId</c> + <c>TargetObjectId</c> on
+    /// <c>oe_module_variables</c> rows whose target object identity
+    /// wasn't known at insert time. Two sources contribute:
+    /// <list type="bullet">
+    ///   <item>Dataitem / tableelement aliases emitted from source
+    ///         extraction in <see cref="EmitVariables"/>. The catalog
+    ///         isn't built during the per-object loop, so those rows
+    ///         go in with null target identity and pick it up here.</item>
+    ///   <item>Package-derived Record / Codeunit / Page variables whose
+    ///         <c>SymbolTypeRef.ModuleId</c> wasn't set by the symbol
+    ///         package (same-module references that the compiler
+    ///         emitted without an explicit AppId). Beneficial side-
+    ///         effect of the same name-based lookup.</item>
+    /// </list>
+    /// Runs as a single <c>UPDATE … FROM</c> per object kind so it's
+    /// O(1) DB round-trips regardless of release size. Each kind needs
+    /// its own statement because the join target's <c>kind</c> column
+    /// has to match — sharing the join would over-match cross-kind
+    /// name collisions (a codeunit and a page can share a name).
+    /// </summary>
+    private async Task ResolveVariableTargetsAsync(int releaseId, CancellationToken ct)
+    {
+        // Each kind in oe_module_variables points to a corresponding
+        // oe_module_objects.kind. Wrap one UPDATE per kind; the index
+        // ix_oe_module_variables_target_name keys on (TargetAppId,
+        // TargetObjectKind, TargetObjectName) so the partial-NULL
+        // filter still hits the index for the read side. The chosen
+        // target row is the first one in_objectId order — ties
+        // (cross-app collisions) settle deterministically by import
+        // order; cross-release shadowing isn't modelled yet (same gap
+        // as PropagateSourceTableToPageExtensionsAsync).
+        const string sql = """
+            UPDATE oe_module_variables v
+            SET target_app_id = t.app_id_resolved,
+                target_object_id = t.object_id_resolved
+            FROM (
+                SELECT DISTINCT ON (om.release_id, o.kind, LOWER(o.name))
+                       om.release_id    AS release_id,
+                       o.kind           AS kind,
+                       LOWER(o.name)    AS name_lower,
+                       o.object_id      AS object_id_resolved,
+                       om.app_id        AS app_id_resolved
+                FROM oe_module_objects o
+                JOIN oe_modules om ON om.id = o.module_id
+                WHERE om.release_id = {0}
+                ORDER BY om.release_id, o.kind, LOWER(o.name), o.id
+            ) t,
+                 oe_modules vm
+            WHERE v.module_id = vm.id
+              AND vm.release_id = {0}
+              AND v.target_object_kind = t.kind
+              AND LOWER(v.target_object_name) = t.name_lower
+              AND v.target_app_id IS NULL
+              AND v.target_object_id IS NULL
+              AND v.target_object_name IS NOT NULL;
+            """;
+        await _db.Database.ExecuteSqlRawAsync(sql, new object[] { releaseId }, ct).ConfigureAwait(false);
+    }
+
     // ── Phase-2 call-site extraction ───────────────────────────────────
 
     /// <summary>
@@ -1875,8 +2003,10 @@ public class ReleaseImportService
         // files in this phase. Capped low so a pathological release doesn't
         // bloat the log; the per-file extractor also caps internally so
         // late files still get a chance to contribute samples even when
-        // earlier files were noisy.
-        const int unresolvedLogCap = 50;
+        // earlier files were noisy. Bumped from 50 → 100 so a single
+        // import surfaces enough variety to triage the long tail without
+        // requiring re-runs against subsets of the release.
+        const int unresolvedLogCap = 100;
         var unresolvedSamples = new List<(string Module, string Path, string Owner, ALDevToolbox.Services.Al.UnresolvedSample Sample)>(unresolvedLogCap);
         foreach (var file in files)
         {

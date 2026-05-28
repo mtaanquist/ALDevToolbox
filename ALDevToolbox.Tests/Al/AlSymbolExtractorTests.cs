@@ -599,6 +599,66 @@ public sealed class AlSymbolExtractorTests
     // ── Label declarations ─────────────────────────────────────────
 
     [Fact]
+    public void Extracts_dataitem_alias_with_source_table()
+    {
+        // dataitem(Alias; SourceTable) aliases get stamped as
+        // `dataitem_alias` symbols so ReleaseImportService can write
+        // them into oe_module_variables; the cross-object scope
+        // merge then propagates them to reportextensions referencing
+        // the base report's aliases (e.g. FilterItem).
+        var source = """
+            report 50100 "Bank Stuff"
+            {
+                dataset
+                {
+                    dataitem(FilterItem; Item)
+                    {
+                    }
+                    dataitem(BankCharge; "Bank Account")
+                    {
+                    }
+                }
+            }
+            """;
+
+        var aliases = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "dataitem_alias")
+            .ToList();
+
+        aliases.Should().HaveCount(2);
+        aliases.Should().ContainSingle(s => s.Name == "FilterItem" && s.Signature == "Item");
+        aliases.Should().ContainSingle(s => s.Name == "BankCharge" && s.Signature == "Bank Account");
+    }
+
+    [Fact]
+    public void Extracts_tableelement_alias_with_source_table()
+    {
+        // Same shape on xmlports — tableelement aliases are
+        // semantically identical to dataitem aliases.
+        var source = """
+            xmlport 50100 "Foo"
+            {
+                schema
+                {
+                    textelement(Document)
+                    {
+                        tableelement(paymentexportdatagroup; "Payment Export Data")
+                        {
+                        }
+                    }
+                }
+            }
+            """;
+
+        var aliases = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "dataitem_alias")
+            .ToList();
+
+        aliases.Should().ContainSingle(s =>
+            s.Name == "paymentexportdatagroup" && s.Signature == "Payment Export Data");
+    }
+
+    [Fact]
     public void Extracts_object_scope_label_declaration_with_content()
     {
         // The label content stashed in Signature is what makes the

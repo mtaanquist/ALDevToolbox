@@ -3499,6 +3499,297 @@ public sealed class AlReferenceExtractorTests
             s.Token == "TotallyUnknownProc" && s.Reason == "bare-call");
     }
 
+    // ── Bare-callable resolution order ───────────────────────────────
+
+    [Fact]
+    public void Bare_callable_silence_falls_through_when_no_own_member()
+    {
+        // `Exists(FileName)` is the deprecated AL file-existence
+        // global. The bare-call resolver now consults the catalog
+        // FIRST (no own-member named Exists on this codeunit), then
+        // falls through to the BareCallableFunctions silence list.
+        // Without Exists in that list — or with the old
+        // bare-callable-first order — every legacy file-system check
+        // in BC's banking / data-exchange code surfaces as
+        // bare-call unresolved.
+        //
+        // The codeunit owner type must be in the catalog or
+        // OwnerType() returns null and the early-out fires before
+        // catalog resolution; adding the type here exercises the
+        // full path (own-member miss → silence-list match → return).
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper",
+            new AlTypeRef(BaseAppId, "codeunit", 50100, "MyHelper"));
+
+        const string src = """
+            procedure Check(FileName: Text): Boolean
+            begin
+                exit(Exists(FileName));
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            OwnerCodeunit(resolver, tableNo: null));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "Exists");
+    }
+
+    [Fact]
+    public void User_procedure_named_after_system_function_wins_catalog_lookup()
+    {
+        // The reorder pins AL's actual semantics: a user procedure on
+        // the owner shadows a same-named system function. Before the
+        // reorder, the bare-callable check fired BEFORE own-member
+        // resolution, silencing the user procedure's reference.
+        // Here `Exists` is both a system function (deprecated file
+        // global, now in BareCallableFunctions) AND a real procedure
+        // on the codeunit. The catalog lookup must win — Find
+        // references on the procedure depends on this method_call
+        // reference emitting.
+        var resolver = MakeResolver();
+        resolver.AddType("Persistent Blob Impl.",
+            new AlTypeRef(BaseAppId, "codeunit", 4151, "Persistent Blob Impl."));
+        resolver.AddMember("Persistent Blob Impl.",
+            new AlMember("Exists", "procedure", "Boolean", null));
+
+        const string src = """
+            procedure CallSelf(): Boolean
+            begin
+                exit(Exists(42));
+            end;
+            """;
+        var ctx = new AlExtractContext(
+            OwnerKind: "codeunit",
+            OwnerName: "Persistent Blob Impl.",
+            OwnerObjectId: 4151,
+            OwnerAppId: BaseAppId,
+            GlobalVars: new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+            Resolver: resolver);
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Persistent Blob Impl."
+            && r.TargetMemberName == "Exists");
+    }
+
+    // ── Static-receiver silences for Dialog / Text ───────────────────
+
+    [Fact]
+    public void Dialog_static_call_silences_chain()
+    {
+        // `Dialog.StrMenu(...)` uses Dialog as a static receiver — no
+        // variable, no catalog object. Without Dialog in the
+        // BuiltinStaticReceivers set the chain walker emits a
+        // head-not-a-variable for every base-app
+        // `Dialog.StrMenu` / `Dialog.Update` / `Dialog.Open` call.
+        // Verified against the BC 26.13 unresolved samples
+        //   Token='Dialog' Line=249/276 Owner=codeunit:Bank Acc. Entry Set Recon.-No.
+        //   Token='DIALOG' Line=270/282/294 Owner=table:Text-to-Account Mapping
+        var resolver = MakeResolver();
+        const string src = """
+            procedure Choose()
+            var
+                Selection: Integer;
+            begin
+                Selection := Dialog.StrMenu('A,B,C', 1, 'Pick one');
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "Dialog");
+    }
+
+    [Fact]
+    public void Text_static_call_silences_chain()
+    {
+        // `Text.StrSubstNo(...)` and `Text.Format(...)` use Text as a
+        // static receiver. PmtRecReversalFinalize.Page.al uses this
+        // shape in OnOpenPage — `FinalizeTxt := Text.StrSubstNo(...)`.
+        var resolver = MakeResolver();
+        const string src = """
+            procedure Build(): Text
+            var
+                Msg: Text;
+            begin
+                Msg := Text.StrSubstNo('Hello %1', 'world');
+                exit(Msg);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "Text");
+    }
+
+    // ── Array indexing in chain heads ─────────────────────────────────
+
+    [Fact]
+    public void Array_indexed_chain_head_resolves_member_on_element_type()
+    {
+        // `Contact[2].UpdateBusinessRelation()` — local declared as
+        // `Contact: array[2] of Contact`. Before the array-index
+        // chain detection landed, the orchestrator skipped the
+        // chain entry because next-token-after-head is `[`, not `.`;
+        // the `UpdateBusinessRelation` identifier was then dispatched
+        // as a bare self-call against the table owner and missed.
+        // Verified against the BC 26.13 unresolved sample
+        //   Reason=bare-call Token='UpdateBusinessRelation' Owner=table:Merge Duplicates Buffer
+        var resolver = MakeResolver();
+        resolver.AddType("Merge Duplicates Buffer",
+            new AlTypeRef(BaseAppId, "table", 64, "Merge Duplicates Buffer"));
+        resolver.AddType("Contact",
+            new AlTypeRef(BaseAppId, "table", 5050, "Contact"));
+        resolver.AddMember("Contact",
+            new AlMember("UpdateBusinessRelation", "procedure", "Boolean", null));
+
+        const string src = """
+            local procedure MergeContacts()
+            var
+                Contact: array[2] of Contact;
+            begin
+                Contact[2].UpdateBusinessRelation();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerTable(resolver, "Merge Duplicates Buffer"));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Contact"
+            && r.TargetMemberName == "UpdateBusinessRelation");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "UpdateBusinessRelation");
+    }
+
+    // ── Implicit-Rec field access falls back to dataitem source ──────
+
+    [Fact]
+    public void Implicit_rec_field_chain_head_resolves_against_dataitem_source()
+    {
+        // `Type.AsInteger()` inside a report dataitem's OnAfterGetRecord
+        // trigger is implicit-Rec on the dataitem's source, NOT on
+        // the report itself. Rec at object scope binds to the report
+        // (DetermineRecBinding's report fallback), so without the
+        // dataitem-source fallback the chain head misses on the
+        // report's empty member list. Verified against the BC 26.13
+        // sample `Token='Type' Owner=report:Cost Acctg. Analysis`.
+        var resolver = MakeResolver();
+        resolver.AddType("Cost Acctg. Analysis",
+            new AlTypeRef(BaseAppId, "report", 1127, "Cost Acctg. Analysis"));
+        resolver.AddType("Cost Type",
+            new AlTypeRef(BaseAppId, "table", 1103, "Cost Type"));
+        resolver.AddMember("Cost Type",
+            new AlMember("Type", "table_field", "Enum", "Cost Type Type"));
+
+        const string src = """
+            report 1127 "Cost Acctg. Analysis"
+            {
+                dataset
+                {
+                    dataitem(CostType; "Cost Type")
+                    {
+                        trigger OnAfterGetRecord()
+                        var
+                            LineTypeInt: Integer;
+                        begin
+                            LineTypeInt := Type.AsInteger();
+                        end;
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "Cost Acctg. Analysis"));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "field_access"
+            && r.TargetObjectName == "Cost Type"
+            && r.TargetMemberName == "Type");
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "Type");
+    }
+
+    [Fact]
+    public void Implicit_rec_quoted_field_chain_head_resolves_against_dataitem_source()
+    {
+        // Same pattern with a quoted multi-word field name —
+        // `"Attachment File".HasValue()` inside the report's dataitem
+        // trigger. Verified against the BC 26.13 sample
+        //   Token='Attachment File' Owner=report:Relocate Attachments
+        var resolver = MakeResolver();
+        resolver.AddType("Relocate Attachments",
+            new AlTypeRef(BaseAppId, "report", 5054, "Relocate Attachments"));
+        resolver.AddType("Attachment",
+            new AlTypeRef(BaseAppId, "table", 5062, "Attachment"));
+        resolver.AddMember("Attachment",
+            new AlMember("Attachment File", "table_field", "Blob", null));
+
+        const string src = """
+            report 5054 "Relocate Attachments"
+            {
+                dataset
+                {
+                    dataitem(Attachment; Attachment)
+                    {
+                        trigger OnAfterGetRecord()
+                        begin
+                            CalcFields("Attachment File");
+                            if "Attachment File".HasValue() then begin
+                                exit;
+                            end;
+                        end;
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "Relocate Attachments"));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "Attachment File");
+    }
+
+    // ── Dataitem alias forward-reference (report) ─────────────────────
+
+    [Fact]
+    public void Report_dataitem_alias_resolves_when_declared_after_property()
+    {
+        // ContactCoverSheet.Report.al references `TempSegmentLine` at
+        // line 23 via `WordMergeDataItem = TempSegmentLine;` and later
+        // uses it directly in a trigger at lines 37-39, while the
+        // dataitem itself is declared at line 79. Single-pass walker
+        // missed the alias because it hadn't been registered yet.
+        // The pre-scan addresses this for reports, mirroring the
+        // existing xmlport pre-scan.
+        var resolver = MakeResolver();
+        resolver.AddType("Contact Cover Sheet",
+            new AlTypeRef(BaseAppId, "report", 5085, "Contact Cover Sheet"));
+        resolver.AddType("Segment Line",
+            new AlTypeRef(BaseAppId, "table", 5077, "Segment Line"));
+        resolver.AddMember("Segment Line",
+            new AlMember("FindFirst", "procedure", "Boolean", null));
+
+        const string src = """
+            report 5085 "Contact Cover Sheet"
+            {
+                WordMergeDataItem = TempSegmentLine;
+
+                dataset
+                {
+                    dataitem(Contact; Contact)
+                    {
+                        trigger OnAfterGetRecord()
+                        begin
+                            TempSegmentLine.SetRange("Contact No.", "Contact No.");
+                            if not TempSegmentLine.FindFirst() then
+                                exit;
+                        end;
+                    }
+                    dataitem(TempSegmentLine; "Segment Line")
+                    {
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "Contact Cover Sheet"));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "TempSegmentLine");
+    }
+
     // ── XmlPort tableelement forward references ──────────────────────
 
     [Fact]

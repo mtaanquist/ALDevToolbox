@@ -241,9 +241,13 @@ public static class AlReferenceExtractor
                 if (_procedureWalker.TryConsumeWithStatement()) return;
             }
 
-            // Member-access chain candidates. Two shapes trigger:
+            // Member-access chain candidates. Three shapes trigger:
             //   A. Identifier `.` Member …
-            //   B. Identifier `::` QuotedIdentifier (or Identifier)
+            //   B. Identifier `[` … `]` `.` Member … — array element
+            //      chain (BC ships `RecordRef[N].FieldCount()`,
+            //      `Contact[2].UpdateBusinessRelation()`, etc.).
+            //      Multi-dimensional arrays nest the brackets.
+            //   C. Identifier `::` QuotedIdentifier (or Identifier)
             //      `.` Member …  — the typed-literal head pattern.
             if (tok.Kind == AlTokenKind.Identifier || tok.Kind == AlTokenKind.QuotedIdentifier)
             {
@@ -253,6 +257,40 @@ public static class AlReferenceExtractor
                 {
                     _procedureWalker.TryConsumeMemberChain();
                     return;
+                }
+
+                // Array-indexed chain head: `Var[...][...]....`. Peek
+                // past balanced bracket spans to see if a `.` follows;
+                // if so, route through TryConsumeMemberChain, which
+                // also skips the brackets internally before continuing.
+                if (_state.Pos + 1 < _state.Tokens.Count
+                    && _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Punct
+                    && _state.Tokens[_state.Pos + 1].Value == "[")
+                {
+                    int probe = _state.Pos + 1;
+                    while (probe < _state.Tokens.Count
+                           && _state.Tokens[probe].Kind == AlTokenKind.Punct
+                           && _state.Tokens[probe].Value == "[")
+                    {
+                        int depth = 1;
+                        probe++;
+                        while (probe < _state.Tokens.Count && depth > 0)
+                        {
+                            if (_state.Tokens[probe].Kind == AlTokenKind.Punct)
+                            {
+                                if (_state.Tokens[probe].Value == "[") depth++;
+                                else if (_state.Tokens[probe].Value == "]") depth--;
+                            }
+                            probe++;
+                        }
+                    }
+                    if (probe < _state.Tokens.Count
+                        && _state.Tokens[probe].Kind == AlTokenKind.Punct
+                        && _state.Tokens[probe].Value == ".")
+                    {
+                        _procedureWalker.TryConsumeMemberChain();
+                        return;
+                    }
                 }
 
                 if (_state.Pos + 2 < _state.Tokens.Count

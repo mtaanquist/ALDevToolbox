@@ -839,6 +839,46 @@ internal sealed class AlProcedureWalker
             _state.Pos++;
         }
 
+        // `array[N, M, …] of <ElementType>` — fold the element type
+        // up so the variable's recorded type is its element, not the
+        // literal string "array". Without this, source-parsed locals
+        // like `Contact: array[2] of Contact` get TypeName="array",
+        // ResolveHeadType then misses on the catalog lookup, and
+        // every `Contact[i].Method()` chain surfaces as
+        // head-var-type-unresolved despite `Contact` being a real
+        // table. AL grammar guarantees one element-type after the
+        // `of`; nested arrays (`array of array of X`) aren't a thing
+        // in BC. The bracket-skip on line 867 below catches the size
+        // brackets, and the `of` branch reads the element type.
+        if (string.Equals(typeName, "array", StringComparison.OrdinalIgnoreCase))
+        {
+            // Skip the size-bracket span(s) — `array[2]` /
+            // `array[2, 3]`. The next `[` -> `]` walker below also
+            // handles this, but we need to consume it here so we
+            // can spot the `of` keyword that follows.
+            while (_state.Pos < _state.Tokens.Count && _state.At("["))
+            {
+                int depth = 1;
+                _state.Pos++;
+                while (_state.Pos < _state.Tokens.Count && depth > 0)
+                {
+                    if (_state.At("[")) depth++;
+                    else if (_state.At("]")) depth--;
+                    _state.Pos++;
+                }
+            }
+            if (_state.IsIdentifierTok(_state.Pos, "of"))
+            {
+                _state.Pos++;
+                // Recursively read the element type. Keyword + name
+                // come back from the inner read; we adopt them
+                // verbatim so chains through the array variable
+                // resolve against the element type's catalog entry.
+                var inner = ReadTypeReference();
+                return inner;
+            }
+        }
+
         // Only emit when we have an explicit AL keyword. Bare
         // identifier types (Integer, Boolean, custom variables in
         // scope) aren't navigable AL objects and would either
@@ -968,9 +1008,15 @@ internal sealed class AlProcedureWalker
     /// </summary>
     public void TryConsumeMemberChain()
     {
-        // We arrive with Tokens[Pos] = head identifier, [Pos+1] = ".".
+        // We arrive with Tokens[Pos] = head identifier; [Pos+1] is
+        // either `.` (the canonical chain entry) or `[` (an array
+        // index whose [Pos+N+1] is the chain's `.`). The orchestrator
+        // peeks past balanced brackets when dispatching; we mirror
+        // that here so the head's array index doesn't trip the
+        // `WalkMemberChain` loop's `At(".")` check.
         var head = _state.Tokens[_state.Pos];
         _state.Pos++;
+        SkipBalancedBracketSpans();
 
         // AL built-in static APIs like `CODEUNIT.Run(...)`,
         // `PAGE.RunModal(...)`, `NavApp.GetCurrentModuleInfo(...)`.
@@ -1478,16 +1524,33 @@ internal sealed class AlProcedureWalker
 
     /// <summary>
     /// Bare self-procedure call detector: <c>DoStuff(...)</c> with no
-    /// receiver. Three filters before emitting:
-    ///   1. AL statement / operator keyword (<c>if</c>, <c>not</c>, …) —
-    ///      these legitimately precede <c>(</c> without being calls.
-    ///   2. AL system function (<c>Message</c>, <c>Error</c>, …) — skip
-    ///      silently so we don't try to find them as self-members.
-    ///   3. In-scope variable — bare-callable variables aren't a thing
-    ///      in AL; advance without emitting.
-    /// Hit case: the identifier resolves to a member on the file's
-    /// owner type → emit a <c>method_call</c> reference and skip past
-    /// the argument list.
+    /// receiver. The dispatch order matches AL's actual resolution
+    /// semantics — a user procedure on the owner shadows a same-named
+    /// system function — so we try own-member resolution FIRST and
+    /// only fall through to the AL-system-function silence list when
+    /// the catalog has no candidate. Earlier revisions of this method
+    /// checked the system-function list first to save a catalog
+    /// lookup, but that silenced legitimate same-named user
+    /// procedures (a codeunit's own <c>Message(s)</c> would lose its
+    /// method_call reference). The catalog hit is cheap; the AL-
+    /// correct order is the right one.
+    ///
+    /// Filter steps that DO stay at the top:
+    /// <list type="bullet">
+    ///   <item>AL statement / operator keywords (<c>if</c>, <c>not</c>, …) —
+    ///     these legitimately precede <c>(</c> without being calls.</item>
+    ///   <item>Object-DSL keywords (<c>area(content)</c>,
+    ///     <c>field("X"; …)</c>) — declarative syntax, never user
+    ///     procedure names.</item>
+    ///   <item>Implicit-Rec <see cref="AlBuiltinMethods.RecordMethods"/>
+    ///     shorthand on Rec-bearing owners — bare <c>Insert()</c> on a
+    ///     page / tableextension. The risk (a codeunit-with-TableNo
+    ///     defining its own <c>Insert</c> proc) is theoretical; if a
+    ///     real case shows up we'd reorder this too.</item>
+    ///   <item>In-scope variables — AL doesn't allow calling a variable
+    ///     as a function, but if the name is in scope we treat it as
+    ///     referenced and advance past.</item>
+    /// </list>
     ///
     /// Returns true when the token was handled (cursor advanced),
     /// false when the caller should fall through to the default
@@ -1504,14 +1567,6 @@ internal sealed class AlProcedureWalker
             // walk past it. Returning false makes the main loop do
             // exactly one Pos++ next iteration; the `(` after it is
             // re-entered for whatever sits inside the parens.
-            return false;
-        }
-        if (AlBuiltinMethods.IsBareCallable(name))
-        {
-            // AL system function — silent skip. We DON'T consume the
-            // argument list: things like `Message(SalesHeader."No.")`
-            // have real references inside the parens the main loop
-            // still needs to walk.
             return false;
         }
         if (AlBuiltinMethods.IsObjectDslKeyword(name))
@@ -1542,31 +1597,6 @@ internal sealed class AlProcedureWalker
             return false;
         }
 
-        // Fallback: even when Rec isn't bound, the bare call's name
-        // might match a Record / Page / Codeunit / Common built-in
-        // method. This catches mis-parsed chain calls (e.g. the
-        // chain head got dropped earlier so `SomeRec.Insert(...)`
-        // surfaces as bare `Insert(...)`), Rec-method shorthand in
-        // contexts the explicit Rec check doesn't cover, and
-        // text/variant-method bare uses (`Trim`, `Unwrap`,
-        // `HasValue`, `AsInteger`). False-positive risk is a real
-        // user procedure named after a built-in — vanishingly rare
-        // in BC's corpus since the name would shadow the built-in.
-        if (AlBuiltinMethods.RecordMethods.Contains(name)
-            || AlBuiltinMethods.RecordSystemFields.Contains(name)
-            || AlBuiltinMethods.CodeunitMethods.Contains(name)
-            || AlBuiltinMethods.PageMethods.Contains(name)
-            || AlBuiltinMethods.ReportMethods.Contains(name)
-            || AlBuiltinMethods.XmlportMethods.Contains(name)
-            || AlBuiltinMethods.QueryMethods.Contains(name)
-            || AlBuiltinMethods.CommonMethods.Contains(name)
-            || AlBuiltinMethods.TextMethods.Contains(name)
-            || AlBuiltinMethods.CollectionMethods.Contains(name)
-            || AlBuiltinMethods.JsonMethods.Contains(name))
-        {
-            return false;
-        }
-
         // In-scope variable? AL doesn't allow calling a variable as
         // a function — if the name is in scope we treat it as
         // referenced and just advance past.
@@ -1581,7 +1611,18 @@ internal sealed class AlProcedureWalker
 
         // Try to resolve as a member on the file's owner object.
         var ownerType = OwnerType();
-        if (ownerType is null) return false;
+        if (ownerType is null)
+        {
+            // No owner-side catalog scope to consult. Return false
+            // unconditionally so the orchestrator's main loop does
+            // its standard Pos++ — returning true here without
+            // advancing the cursor sends the loop back into the
+            // same token forever. The system-function silence list
+            // doesn't apply yet because we haven't tried the
+            // catalog; with no owner context we can't say either way,
+            // so fall through to the default advance.
+            return false;
+        }
 
         var member = _state.Ctx.Resolver.ResolveMember(ownerType, name);
         if (member is null)
@@ -1691,6 +1732,16 @@ internal sealed class AlProcedureWalker
                 }
             }
 
+            // All catalog lookups missed. Now check whether the name
+            // matches an AL system function (`Message`, `Error`,
+            // `Format`, `Exists`, …) or a runtime built-in method
+            // exposed without a receiver. If so, silence; else this
+            // is a genuinely unresolved bare call.
+            if (MatchesBareCallableSilence(name))
+            {
+                return false;
+            }
+
             // Could be a bare AL system function we don't have on our
             // list yet, or a same-named procedure on a related extension
             // we don't track from this angle. Counted but not emitted.
@@ -1720,6 +1771,42 @@ internal sealed class AlProcedureWalker
         _state.Pos++;
         return true;
     }
+
+    /// <summary>
+    /// Returns true when <paramref name="name"/> is on one of the
+    /// AL-system-function or built-in-method silence lists — the
+    /// bare-callable functions (<see cref="AlBuiltinMethods.BareCallableFunctions"/>),
+    /// the per-receiver method sets (<see cref="AlBuiltinMethods.RecordMethods"/>,
+    /// <see cref="AlBuiltinMethods.CodeunitMethods"/>, etc.), or the
+    /// common-method set. Called from
+    /// <see cref="TryConsumeBareSelfCall"/> AFTER own-member catalog
+    /// resolution has missed; this ordering matches AL's actual
+    /// resolution semantics (user procedures shadow same-named
+    /// system functions) and avoids the false-positive risk the
+    /// reverse ordering carried.
+    ///
+    /// The bare-callable check covers system functions like
+    /// `Message` / `Error` / `Format` / `Exists` (the deprecated
+    /// AL file-system check, distinct from a user `procedure Exists`
+    /// which the catalog lookup above would have already matched).
+    /// The per-receiver lists catch mis-parsed chain calls (the
+    /// chain head got lost upstream, so `SomeRec.Insert(...)` arrived
+    /// here as bare `Insert(...)`) and text/variant bare uses
+    /// (`Trim`, `Unwrap`, `HasValue`, `AsInteger`).
+    /// </summary>
+    private static bool MatchesBareCallableSilence(string name) =>
+        AlBuiltinMethods.IsBareCallable(name)
+        || AlBuiltinMethods.RecordMethods.Contains(name)
+        || AlBuiltinMethods.RecordSystemFields.Contains(name)
+        || AlBuiltinMethods.CodeunitMethods.Contains(name)
+        || AlBuiltinMethods.PageMethods.Contains(name)
+        || AlBuiltinMethods.ReportMethods.Contains(name)
+        || AlBuiltinMethods.XmlportMethods.Contains(name)
+        || AlBuiltinMethods.QueryMethods.Contains(name)
+        || AlBuiltinMethods.CommonMethods.Contains(name)
+        || AlBuiltinMethods.TextMethods.Contains(name)
+        || AlBuiltinMethods.CollectionMethods.Contains(name)
+        || AlBuiltinMethods.JsonMethods.Contains(name);
 
     /// <summary>
     /// Lazily resolves the file owner's <see cref="AlTypeRef"/> via
@@ -2155,14 +2242,47 @@ internal sealed class AlProcedureWalker
     /// </summary>
     private bool TryConsumeImplicitRecFieldChainHead(AlToken head)
     {
+        // First try Rec (the owner's bound table). Then fall back to
+        // the current dataitem source for report / query / xmlport
+        // owners. AL binds Rec to the report itself (not the dataitem
+        // source) at object scope, so inside an `OnAfterGetRecord`
+        // trigger of `dataitem(X; "Sales Header")` a bare quoted
+        // field like `"Document Type"` resolves on `"Sales Header"`,
+        // not on the report. The bare-self-call resolver already had
+        // this fallback (PR #254); mirror it here for bare field
+        // chain heads — `"Account Type".AsInteger()`,
+        // `"Attachment File".HasValue()`, `Type.AsInteger()` all
+        // surface inside dataitem triggers and fired
+        // head-not-a-variable before this fix.
         var rec = RecType();
-        if (rec is null) return false;
+        AlMember? member = null;
+        AlTypeRef? receiver = null;
+        if (rec is not null)
+        {
+            member = _state.Ctx.Resolver.ResolveMember(rec, head.Value);
+            if (member is not null && AlExtractionState.IsFieldKind(member.Kind))
+            {
+                receiver = rec;
+            }
+            else
+            {
+                member = null;
+            }
+        }
+        if (member is null && _state.CurrentDataItemSource is not null
+            && (rec is null || !_state.CurrentDataItemSource.Equals(rec)))
+        {
+            var di = _state.CurrentDataItemSource;
+            var diMember = _state.Ctx.Resolver.ResolveMember(di, head.Value);
+            if (diMember is not null && AlExtractionState.IsFieldKind(diMember.Kind))
+            {
+                member = diMember;
+                receiver = di;
+            }
+        }
+        if (member is null || receiver is null) return false;
 
-        var member = _state.Ctx.Resolver.ResolveMember(rec, head.Value);
-        if (member is null) return false;
-        if (!AlExtractionState.IsFieldKind(member.Kind)) return false;
-
-        var targetOwner = member.DeclaringType ?? rec;
+        var targetOwner = member.DeclaringType ?? receiver;
         _state.EmitReference(new ExtractedReference(
             Line: head.Line,
             Column: head.Column,
@@ -2252,6 +2372,31 @@ internal sealed class AlProcedureWalker
         // Only AL-typed returns (Record / Codeunit / Page / …)
         // resolve to catalog entries. System types come back null.
         return _state.Ctx.Resolver.ResolveTypeByName(member.ReturnTypeName);
+    }
+
+    /// <summary>
+    /// Skips zero or more balanced <c>[…]</c> bracket spans
+    /// (multi-dimensional array indexing, e.g. <c>Var[2]</c> or
+    /// <c>Matrix[2][3]</c>). Called after the chain head's identifier
+    /// so the WalkMemberChain loop sees the trailing <c>.</c> directly.
+    /// Receiver type stays pinned to the variable's declared type —
+    /// AL arrays carry the element type as the variable's declared
+    /// type already (the <c>array[N] of</c> modifier is peeled off
+    /// by ReadTypeReference), so no further adjustment is needed.
+    /// </summary>
+    private void SkipBalancedBracketSpans()
+    {
+        while (_state.Pos < _state.Tokens.Count && _state.At("["))
+        {
+            int depth = 1;
+            _state.Pos++;
+            while (_state.Pos < _state.Tokens.Count && depth > 0)
+            {
+                if (_state.At("[")) depth++;
+                else if (_state.At("]")) depth--;
+                _state.Pos++;
+            }
+        }
     }
 
     private void AdvancePastChain()

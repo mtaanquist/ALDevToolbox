@@ -120,6 +120,23 @@ public static class AlSymbolExtractor
         @"^\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*:\s*[^;]+;",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // Dataitem / tableelement declarations: `dataitem(Alias; SourceTable)` /
+    // `tableelement(Alias; SourceTable)`. The alias is a name that
+    // procedure bodies (and reportextensions) reference like a Record
+    // variable bound to the source table. SymbolReference.json doesn't
+    // surface these in the Variables list, so the import-side path
+    // for cross-object scope merging would miss them entirely without
+    // a source-side scan. Captured here as `dataitem_alias` symbols
+    // that the import service stamps into oe_module_variables alongside
+    // the package-derived Variables, with TypeKeyword="Record" and
+    // TypeName=the source table — the chain walker treats them
+    // identically to a `Record "X"` global. Source-table name supports
+    // namespaced (dotted) forms; bracket / generic suffixes don't
+    // appear on dataitem sources.
+    private static readonly Regex DataItemAliasDeclarationRegex = new(
+        @"^\s*(?<keyword>dataitem|tableelement)\s*\(\s*(?<alias>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*;\s*(?<source>""[^""]+""|[A-Za-z_][A-Za-z0-9_.]*)\s*\)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     /// <summary>
     /// Returns the declarations found in <paramref name="source"/>. The line
     /// number is 1-based and refers to the original (un-stripped) source so
@@ -316,6 +333,34 @@ public static class AlSymbolExtractor
                     LineNumber: i + 1,
                     ColumnStart: lColStart,
                     ColumnEnd: lColEnd));
+                pendingEventKind = null;
+                continue;
+            }
+
+            // Dataitem / tableelement alias declaration. Captured as a
+            // standalone symbol kind (Signature carries the source-
+            // table name) so the import-side variable persistence can
+            // stamp a row for the alias and the cross-object scope
+            // merge (PR #252) picks it up for extensions. Sits BEFORE
+            // VarDeclarationRegex because a stray `dataitem(...)` on
+            // a line wouldn't match the var regex but other future
+            // shapes might; the specific match wins.
+            var diMatch = DataItemAliasDeclarationRegex.Match(stripped);
+            if (diMatch.Success)
+            {
+                var diRawAlias = diMatch.Groups["alias"].Value;
+                var diAlias = Unquote(diRawAlias);
+                var diRawSource = diMatch.Groups["source"].Value;
+                var diSource = Unquote(diRawSource);
+                var (diColStart, diColEnd) = FindNameColumns(rawLine, diRawAlias);
+                results.Add(new AlSymbol(
+                    Kind: "dataitem_alias",
+                    Name: diAlias,
+                    Signature: diSource,
+                    FieldId: null,
+                    LineNumber: i + 1,
+                    ColumnStart: diColStart,
+                    ColumnEnd: diColEnd));
                 pendingEventKind = null;
                 continue;
             }
