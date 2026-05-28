@@ -2665,10 +2665,10 @@ public class ReleaseImportService
         return set;
     }
 
-    private sealed record MemberEntry(
+    internal sealed record MemberEntry(
         long SymbolId, string Name, string Kind, string? ReturnTypeKeyword, string? ReturnTypeName);
 
-    private sealed record ExtensionEntry(Guid AppId, long ObjectId);
+    internal sealed record ExtensionEntry(Guid AppId, long ObjectId);
 
     /// <summary>
     /// Composite-key comparer for object-identity lookups
@@ -2678,7 +2678,7 @@ public class ReleaseImportService
     /// disambiguates name collisions across kinds / modules — a Table
     /// and a TableExtension can both be named "Sales Header".
     /// </summary>
-    private sealed class ObjectIdentityComparer : IEqualityComparer<(Guid AppId, string Kind, string Name)>
+    internal sealed class ObjectIdentityComparer : IEqualityComparer<(Guid AppId, string Kind, string Name)>
     {
         public bool Equals((Guid AppId, string Kind, string Name) x, (Guid AppId, string Kind, string Name) y) =>
             x.AppId == y.AppId
@@ -2713,7 +2713,7 @@ public class ReleaseImportService
     /// caller's module doesn't depend on the extension's module, the
     /// extension's members are invisible.
     /// </summary>
-    private sealed class CatalogResolver : ALDevToolbox.Services.Al.IAlTypeResolver
+    internal sealed class CatalogResolver : ALDevToolbox.Services.Al.IAlTypeResolver
     {
         private readonly Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>> _typesByName;
         private readonly Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef> _typesByObjectId;
@@ -2893,22 +2893,38 @@ public class ReleaseImportService
                 if (obsolete) otherAnyObs ??= t; else otherAny ??= t;
             }
 
+            // Priority is grouped first by kind-match (when the caller
+            // gave a hint), THEN by app-tier. A `Record User` reference
+            // must land on the User TABLE — wherever it lives — before
+            // it considers any codeunit named "User", even one in the
+            // caller's own app. The earlier ordering put same-app any-
+            // kind above foundational exact-kind, which made Base App
+            // code referencing `Record User` resolve against Base App's
+            // `User` codeunit instead of the System app's virtual User
+            // table; every chain step (FindFirst, SetRange, etc.) then
+            // missed because Record methods don't exist on a codeunit
+            // receiver.
+            //
+            // When the caller has no kind hint (typed-literal references
+            // like `Codeunit::"Foo"`), the exact-kind buckets are
+            // empty by construction and the wrong-kind buckets carry
+            // every candidate; same-app preference still wins.
             return sameAppExact
-                ?? sameAppAny
                 ?? foundationalExact
-                ?? foundationalAny
                 ?? otherExact
+                ?? sameAppAny
+                ?? foundationalAny
                 ?? otherNonExt
                 ?? otherAny
                 // Non-obsolete tiers exhausted; fall through to obsolete
-                // candidates in the same priority order. A Pending /
-                // Removed declaration still resolves something — it's
+                // candidates in the same priority order. A Removed /
+                // Moved declaration still resolves something — it's
                 // just less preferred than any live alternative.
                 ?? sameAppExactObs
-                ?? sameAppAnyObs
                 ?? foundationalExactObs
-                ?? foundationalAnyObs
                 ?? otherExactObs
+                ?? sameAppAnyObs
+                ?? foundationalAnyObs
                 ?? otherNonExtObs
                 ?? otherAnyObs;
         }
