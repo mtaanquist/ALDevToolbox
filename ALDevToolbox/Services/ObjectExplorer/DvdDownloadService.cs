@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http.Headers;
 using ALDevToolbox.Domain.ValueObjects;
 
 namespace ALDevToolbox.Services.ObjectExplorer;
@@ -43,6 +45,16 @@ public sealed class DvdDownloadService
     /// </summary>
     public static readonly TimeSpan IdleReadTimeout = TimeSpan.FromSeconds(60);
 
+    /// <summary>
+    /// Number of GET attempts (1 initial + N-1 resumes) before the download
+    /// gives up. On a stall, the retry sends <c>Range: bytes=N-</c> so the body
+    /// continues from where it stopped instead of restarting at zero. Microsoft's
+    /// CDN supports range requests; the retry forces a fresh TCP connection
+    /// (combined with <c>PooledConnectionLifetime</c> in the HttpClient config)
+    /// so we don't reuse the half-dead one that just stalled.
+    /// </summary>
+    public const int MaxDownloadAttempts = 4;
+
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly SystemSettingsService _settings;
     private readonly ILogger<DvdDownloadService> _logger;
@@ -77,21 +89,15 @@ public sealed class DvdDownloadService
 
         try
         {
-            using var response = await client
-                .GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, ct)
-                .ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
-            {
-                throw Invalid($"The server returned {(int)response.StatusCode} for that URL. Check the link and try again.");
-            }
-
-            await using var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            // Keep the dest stream open across resume attempts so we can
+            // append directly without re-opening / re-positioning between GETs.
             await using var dest = File.Create(tempPath);
-            await CopyWithCapAsync(source, dest, IdleReadTimeout, ct).ConfigureAwait(false);
+            var bytesWritten = await CopyWithRetriesAsync(
+                client, uri, dest, MaxDownloadAttempts, IdleReadTimeout, _logger, ct).ConfigureAwait(false);
 
             _logger.LogInformation(
                 "Downloaded DVD ZIP from {Host} ({Bytes} bytes) to staging.",
-                uri.Host, new FileInfo(tempPath).Length);
+                uri.Host, bytesWritten);
             return tempPath;
         }
         catch (PlanValidationException)
@@ -101,13 +107,13 @@ public sealed class DvdDownloadService
         }
         catch (TimeoutException ex) when (!ct.IsCancellationRequested)
         {
-            // CopyWithCapAsync's idle-read guard fired — the server delivered
-            // headers but stopped sending body bytes. Distinct from the
-            // connect-failure case below because the URL itself isn't bad;
-            // the admin's retry will likely hit a different CDN edge.
+            // CopyWithRetriesAsync exhausted its attempts — every Range-resume
+            // also stalled. Distinct from the connect-failure case below
+            // because the URL itself isn't bad; the admin's retry will likely
+            // hit a different CDN edge / fresh connection set.
             TryDelete(tempPath);
-            _logger.LogWarning(ex, "DVD download from {Host} stalled.", uri.Host);
-            throw Invalid("The download stalled — the server stopped sending data partway through. Try again; if it keeps happening the CDN may be having issues.");
+            _logger.LogWarning(ex, "DVD download from {Host} stalled after {Attempts} attempts.", uri.Host, MaxDownloadAttempts);
+            throw Invalid("The download stalled even after retrying — the server keeps cutting the stream short. Try again; if it keeps happening the CDN may be having issues.");
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or TaskCanceledException && !ct.IsCancellationRequested)
         {
@@ -123,6 +129,109 @@ public sealed class DvdDownloadService
             TryDelete(tempPath);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Sends the GET (or a Range-resume GET on retries) and copies the body to
+    /// <paramref name="dest"/>. On a per-read idle-timeout stall it re-issues
+    /// the request with <c>Range: bytes={written}-</c> and appends the new
+    /// bytes — Microsoft's CDN supports range requests, and pairing this with
+    /// the <c>PooledConnectionLifetime</c> setting on the named HttpClient
+    /// gives the retry a fresh TCP connection rather than the half-dead one
+    /// that just stalled.
+    ///
+    /// <para>Internal so the retry path can be tested directly with a
+    /// stubbed <see cref="HttpClient"/> backed by a <see cref="DelegatingHandler"/>,
+    /// without spinning up a real HTTP server or DB-backed SystemSettingsService.</para>
+    ///
+    /// <para>Returns the cumulative byte count actually written to
+    /// <paramref name="dest"/>. Throws <see cref="TimeoutException"/> if every
+    /// attempt stalled; the caller translates that to a friendly form error.</para>
+    /// </summary>
+    internal static async Task<long> CopyWithRetriesAsync(
+        HttpClient client,
+        Uri uri,
+        Stream dest,
+        int maxAttempts,
+        TimeSpan idleReadTimeout,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        long bytesWritten = 0;
+        TimeoutException? lastStall = null;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            if (bytesWritten > 0)
+            {
+                request.Headers.Range = new RangeHeaderValue(bytesWritten, null);
+            }
+
+            using var response = await client
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
+                .ConfigureAwait(false);
+
+            if (bytesWritten == 0)
+            {
+                // Initial attempt — must succeed with 2xx.
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw Invalid($"The server returned {(int)response.StatusCode} for that URL. Check the link and try again.");
+                }
+            }
+            else
+            {
+                // Resume attempt — interpret status against the Range header
+                // we just sent.
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    // Server ignored the Range header and gave us the whole
+                    // body again. Truncate dest and start over.
+                    logger.LogWarning(
+                        "DVD server at {Host} ignored Range on resume; restarting from byte 0.",
+                        uri.Host);
+                    dest.SetLength(0);
+                    dest.Position = 0;
+                    bytesWritten = 0;
+                }
+                else if (response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
+                {
+                    // Server says the offset is past EOF — we already have
+                    // every byte. Treat as success.
+                    return bytesWritten;
+                }
+                else if (response.StatusCode != HttpStatusCode.PartialContent)
+                {
+                    throw Invalid($"The server returned {(int)response.StatusCode} when resuming the download.");
+                }
+            }
+
+            await using var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            try
+            {
+                bytesWritten = await CopyWithCapAsync(source, dest, idleReadTimeout, bytesWritten, ct).ConfigureAwait(false);
+                // Body ended cleanly.
+                return bytesWritten;
+            }
+            catch (TimeoutException ex) when (attempt < maxAttempts && !ct.IsCancellationRequested)
+            {
+                lastStall = ex;
+                // CopyWithCapAsync doesn't return its tally on throw, but every
+                // successful read inside it advanced dest.Position via WriteAsync —
+                // so dest.Position IS the partial progress we need the next Range
+                // header to skip past. Read it back here.
+                bytesWritten = dest.Position;
+                logger.LogWarning(
+                    "DVD download from {Host} stalled at byte {BytesWritten}; attempt {Attempt}/{Max} — retrying with Range resume.",
+                    uri.Host, bytesWritten, attempt, maxAttempts);
+                // Loop falls through to the next attempt.
+            }
+        }
+
+        // Every attempt stalled.
+        throw lastStall ?? new TimeoutException(
+            $"The download stalled — {maxAttempts} attempts all gave up before the body finished.");
     }
 
     /// <summary>
@@ -164,11 +273,16 @@ public sealed class DvdDownloadService
     /// <see cref="OperationCanceledException"/> bubbles up unchanged so shutdown
     /// handling stays clean (the worker's <c>stoppingToken</c> shouldn't be
     /// converted into a TimeoutException).
+    ///
+    /// <para>Returns the cumulative bytes written, including the
+    /// <paramref name="startingBytesWritten"/> baseline. The cap is checked
+    /// against the cumulative value so a resume that exceeds the 5 GB ceiling
+    /// still trips it instead of being measured per-attempt.</para>
     /// </summary>
-    internal static async Task CopyWithCapAsync(Stream source, Stream dest, TimeSpan idleReadTimeout, CancellationToken ct)
+    internal static async Task<long> CopyWithCapAsync(Stream source, Stream dest, TimeSpan idleReadTimeout, long startingBytesWritten, CancellationToken ct)
     {
         var buffer = new byte[81920];
-        long total = 0;
+        long total = startingBytesWritten;
         while (true)
         {
             int read;
@@ -185,7 +299,7 @@ public sealed class DvdDownloadService
                         $"The download stalled — no data received within {idleReadTimeout.TotalSeconds:N0} seconds.");
                 }
             }
-            if (read <= 0) break;
+            if (read <= 0) return total;
             total += read;
             if (total > MaxDownloadBytes)
             {
