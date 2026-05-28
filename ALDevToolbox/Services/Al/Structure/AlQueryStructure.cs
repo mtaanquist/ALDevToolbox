@@ -40,4 +40,12 @@ internal sealed class AlQueryStructure : IAlObjectStructureExtractor
 
     public bool TryResolveObjectScopeBareIdentifier(AlToken tok) =>
         AlDataItemDsl.TryEmitBareFieldOnSource(_state, _state.CurrentDataItemSource, tok);
+
+    /// <summary>
+    /// Queries can use a <c>dataitem(Alias; SourceTable)</c> alias
+    /// from filters / columns declared in a different order. Mirror
+    /// the report / xmlport pre-scan so forward-referenced aliases
+    /// resolve on the main pass.
+    /// </summary>
+    public void Prescan() => AlDataItemDsl.PrescanAliases(_state, "dataitem");
 }

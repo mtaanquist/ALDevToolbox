@@ -1170,9 +1170,18 @@ public class ReleaseImportService
     /// </summary>
     private static (string? Kind, int? Id, string? Name, string? TypeKeyword) ResolveVariableTarget(SymbolTypeRef type, Guid importingAppId)
     {
+        // Preserve the TypeKeyword regardless of whether it maps to an
+        // AL catalog object kind. The chain walker uses TypeKeyword to
+        // route DotNet variables down a silence branch (no AL members
+        // to resolve) — without preserving "DotNet" here, every
+        // `OfficeHost.Foo()` / `HttpStatusCode.X()` chain through a
+        // DotNet-typed global lands as head-var-type-unresolved
+        // because the catalog doesn't know the .NET type name. Same
+        // applies to any non-mapped keyword the AL grammar might
+        // surface in the future: we lose nothing by storing it.
         if (!TypeKeywordToObjectKind.TryGetValue(type.Name, out var kind))
         {
-            return (null, null, null, null);
+            return (null, null, null, type.Name);
         }
         if (string.IsNullOrEmpty(type.ObjectName))
         {

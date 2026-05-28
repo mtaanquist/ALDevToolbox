@@ -839,6 +839,46 @@ internal sealed class AlProcedureWalker
             _state.Pos++;
         }
 
+        // `array[N, M, …] of <ElementType>` — fold the element type
+        // up so the variable's recorded type is its element, not the
+        // literal string "array". Without this, source-parsed locals
+        // like `Contact: array[2] of Contact` get TypeName="array",
+        // ResolveHeadType then misses on the catalog lookup, and
+        // every `Contact[i].Method()` chain surfaces as
+        // head-var-type-unresolved despite `Contact` being a real
+        // table. AL grammar guarantees one element-type after the
+        // `of`; nested arrays (`array of array of X`) aren't a thing
+        // in BC. The bracket-skip on line 867 below catches the size
+        // brackets, and the `of` branch reads the element type.
+        if (string.Equals(typeName, "array", StringComparison.OrdinalIgnoreCase))
+        {
+            // Skip the size-bracket span(s) — `array[2]` /
+            // `array[2, 3]`. The next `[` -> `]` walker below also
+            // handles this, but we need to consume it here so we
+            // can spot the `of` keyword that follows.
+            while (_state.Pos < _state.Tokens.Count && _state.At("["))
+            {
+                int depth = 1;
+                _state.Pos++;
+                while (_state.Pos < _state.Tokens.Count && depth > 0)
+                {
+                    if (_state.At("[")) depth++;
+                    else if (_state.At("]")) depth--;
+                    _state.Pos++;
+                }
+            }
+            if (_state.IsIdentifierTok(_state.Pos, "of"))
+            {
+                _state.Pos++;
+                // Recursively read the element type. Keyword + name
+                // come back from the inner read; we adopt them
+                // verbatim so chains through the array variable
+                // resolve against the element type's catalog entry.
+                var inner = ReadTypeReference();
+                return inner;
+            }
+        }
+
         // Only emit when we have an explicit AL keyword. Bare
         // identifier types (Integer, Boolean, custom variables in
         // scope) aren't navigable AL objects and would either
@@ -968,9 +1008,15 @@ internal sealed class AlProcedureWalker
     /// </summary>
     public void TryConsumeMemberChain()
     {
-        // We arrive with Tokens[Pos] = head identifier, [Pos+1] = ".".
+        // We arrive with Tokens[Pos] = head identifier; [Pos+1] is
+        // either `.` (the canonical chain entry) or `[` (an array
+        // index whose [Pos+N+1] is the chain's `.`). The orchestrator
+        // peeks past balanced brackets when dispatching; we mirror
+        // that here so the head's array index doesn't trip the
+        // `WalkMemberChain` loop's `At(".")` check.
         var head = _state.Tokens[_state.Pos];
         _state.Pos++;
+        SkipBalancedBracketSpans();
 
         // AL built-in static APIs like `CODEUNIT.Run(...)`,
         // `PAGE.RunModal(...)`, `NavApp.GetCurrentModuleInfo(...)`.
@@ -2155,14 +2201,47 @@ internal sealed class AlProcedureWalker
     /// </summary>
     private bool TryConsumeImplicitRecFieldChainHead(AlToken head)
     {
+        // First try Rec (the owner's bound table). Then fall back to
+        // the current dataitem source for report / query / xmlport
+        // owners. AL binds Rec to the report itself (not the dataitem
+        // source) at object scope, so inside an `OnAfterGetRecord`
+        // trigger of `dataitem(X; "Sales Header")` a bare quoted
+        // field like `"Document Type"` resolves on `"Sales Header"`,
+        // not on the report. The bare-self-call resolver already had
+        // this fallback (PR #254); mirror it here for bare field
+        // chain heads — `"Account Type".AsInteger()`,
+        // `"Attachment File".HasValue()`, `Type.AsInteger()` all
+        // surface inside dataitem triggers and fired
+        // head-not-a-variable before this fix.
         var rec = RecType();
-        if (rec is null) return false;
+        AlMember? member = null;
+        AlTypeRef? receiver = null;
+        if (rec is not null)
+        {
+            member = _state.Ctx.Resolver.ResolveMember(rec, head.Value);
+            if (member is not null && AlExtractionState.IsFieldKind(member.Kind))
+            {
+                receiver = rec;
+            }
+            else
+            {
+                member = null;
+            }
+        }
+        if (member is null && _state.CurrentDataItemSource is not null
+            && (rec is null || !_state.CurrentDataItemSource.Equals(rec)))
+        {
+            var di = _state.CurrentDataItemSource;
+            var diMember = _state.Ctx.Resolver.ResolveMember(di, head.Value);
+            if (diMember is not null && AlExtractionState.IsFieldKind(diMember.Kind))
+            {
+                member = diMember;
+                receiver = di;
+            }
+        }
+        if (member is null || receiver is null) return false;
 
-        var member = _state.Ctx.Resolver.ResolveMember(rec, head.Value);
-        if (member is null) return false;
-        if (!AlExtractionState.IsFieldKind(member.Kind)) return false;
-
-        var targetOwner = member.DeclaringType ?? rec;
+        var targetOwner = member.DeclaringType ?? receiver;
         _state.EmitReference(new ExtractedReference(
             Line: head.Line,
             Column: head.Column,
@@ -2252,6 +2331,31 @@ internal sealed class AlProcedureWalker
         // Only AL-typed returns (Record / Codeunit / Page / …)
         // resolve to catalog entries. System types come back null.
         return _state.Ctx.Resolver.ResolveTypeByName(member.ReturnTypeName);
+    }
+
+    /// <summary>
+    /// Skips zero or more balanced <c>[…]</c> bracket spans
+    /// (multi-dimensional array indexing, e.g. <c>Var[2]</c> or
+    /// <c>Matrix[2][3]</c>). Called after the chain head's identifier
+    /// so the WalkMemberChain loop sees the trailing <c>.</c> directly.
+    /// Receiver type stays pinned to the variable's declared type —
+    /// AL arrays carry the element type as the variable's declared
+    /// type already (the <c>array[N] of</c> modifier is peeled off
+    /// by ReadTypeReference), so no further adjustment is needed.
+    /// </summary>
+    private void SkipBalancedBracketSpans()
+    {
+        while (_state.Pos < _state.Tokens.Count && _state.At("["))
+        {
+            int depth = 1;
+            _state.Pos++;
+            while (_state.Pos < _state.Tokens.Count && depth > 0)
+            {
+                if (_state.At("[")) depth++;
+                else if (_state.At("]")) depth--;
+                _state.Pos++;
+            }
+        }
     }
 
     private void AdvancePastChain()

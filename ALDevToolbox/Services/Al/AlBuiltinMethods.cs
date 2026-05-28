@@ -606,6 +606,14 @@ public static class AlBuiltinMethods
         // (for the variable-typed case); listing them here silences the
         // `Kind.Method(...)` static-call shape too.
         "Version", "ErrorInfo",
+        // System types frequently used as static dispatchers without a
+        // variable declaration. `Dialog.StrMenu(...)`, `Dialog.Open(...)`,
+        // `Text.StrSubstNo(...)`, `Text.Format(...)` are the canonical
+        // base-app shapes — the receiver names the type, not an in-scope
+        // variable. Without these silences, every static call surfaces
+        // as head-not-a-variable (the variable lookup misses and the
+        // catalog has no "Dialog" / "Text" object).
+        "Dialog", "Text",
         // Legacy company-property accessor — `COMPANYPROPERTY.DISPLAYNAME()`,
         // `.PICTURE()`, etc. A system receiver, never a catalog object.
         "COMPANYPROPERTY",

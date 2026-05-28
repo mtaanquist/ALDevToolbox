@@ -135,6 +135,130 @@ internal static class AlDataItemDsl
     }
 
     /// <summary>
+    /// Pre-scan helper. Walks the entire token stream once, matching
+    /// every <paramref name="keyword"/>(<c>Alias; SourceTable</c>)
+    /// declaration and registering the alias on the outermost scope
+    /// frame. Per-kind structure extractors call this from their
+    /// <c>Prescan()</c> hook so forward-referenced aliases (a
+    /// dataitem / tableelement declared AFTER a procedure that uses
+    /// it) resolve on the main pass.
+    ///
+    /// Doesn't emit any references — the main pass still handles
+    /// property_object emission via
+    /// <see cref="TryConsumeAliasedSourceDeclaration"/>. Restores the
+    /// cursor before returning so the main walk starts from the top.
+    /// </summary>
+    public static void PrescanAliases(AlExtractionState state, string keyword)
+    {
+        int savedPos = state.Pos;
+        try
+        {
+            state.Pos = 0;
+            while (state.Pos < state.Tokens.Count)
+            {
+                var tok = state.Tokens[state.Pos];
+                if (tok.Kind == AlTokenKind.Identifier
+                    && string.Equals(tok.Value, keyword, StringComparison.OrdinalIgnoreCase)
+                    && state.Pos + 1 < state.Tokens.Count
+                    && state.Tokens[state.Pos + 1].Kind == AlTokenKind.Punct
+                    && state.Tokens[state.Pos + 1].Value == "(")
+                {
+                    RegisterAlias(state);
+                    continue;
+                }
+                state.Pos++;
+            }
+        }
+        finally
+        {
+            state.Pos = savedPos;
+        }
+    }
+
+    /// <summary>
+    /// Reads <c>keyword(alias; SourceTable)</c> at the current
+    /// position and stamps the alias onto the outermost scope frame
+    /// when the source table resolves through the catalog. Mirrors
+    /// the alias-registration half of
+    /// <see cref="TryConsumeAliasedSourceDeclaration"/> without
+    /// emitting the property_object reference (that's still the main
+    /// pass's job — pre-scan only seeds scope, doesn't double-emit).
+    /// Assumes the cursor sits on the keyword token; advances past
+    /// the source-table token on return.
+    /// </summary>
+    private static void RegisterAlias(AlExtractionState state)
+    {
+        // We arrive at the keyword; advance past it and the `(`.
+        state.Pos += 2;
+
+        string? alias = null;
+        if (state.Pos < state.Tokens.Count
+            && (state.Tokens[state.Pos].Kind == AlTokenKind.Identifier
+                || state.Tokens[state.Pos].Kind == AlTokenKind.QuotedIdentifier))
+        {
+            alias = state.Tokens[state.Pos].Value;
+            state.Pos++;
+        }
+
+        // Skip to the `;` separator at depth 0.
+        int depth = 0;
+        while (state.Pos < state.Tokens.Count)
+        {
+            var current = state.Tokens[state.Pos];
+            if (current.Kind == AlTokenKind.Punct)
+            {
+                if (current.Value == "(") { depth++; state.Pos++; continue; }
+                if (current.Value == ")")
+                {
+                    if (depth == 0) return;
+                    depth--;
+                    state.Pos++;
+                    continue;
+                }
+                if (current.Value == ";" && depth == 0)
+                {
+                    state.Pos++;
+                    break;
+                }
+            }
+            state.Pos++;
+        }
+
+        // Second arg: source table. May be preceded by `Record`.
+        if (state.Pos < state.Tokens.Count
+            && state.Tokens[state.Pos].Kind == AlTokenKind.Identifier
+            && AlExtractionState.IsAlObjectKeyword(state.Tokens[state.Pos].Value))
+        {
+            state.Pos++;
+        }
+        if (state.Pos >= state.Tokens.Count) return;
+
+        var sourceTok = state.Tokens[state.Pos];
+        if (sourceTok.Kind != AlTokenKind.Identifier
+            && sourceTok.Kind != AlTokenKind.QuotedIdentifier)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(alias))
+        {
+            var resolved = state.Ctx.Resolver.ResolveTypeByName(sourceTok.Value, "Record");
+            if (resolved is not null
+                && string.Equals(resolved.Kind, "table", StringComparison.OrdinalIgnoreCase))
+            {
+                ScopeFrame? bottom = null;
+                foreach (var frame in state.ScopeStack) bottom = frame;
+                if (bottom is not null)
+                {
+                    bottom.Vars[alias.ToLowerInvariant()] =
+                        new ResolvedVariableType("Record", resolved.Name);
+                }
+            }
+        }
+        state.Pos++;
+    }
+
+    /// <summary>
     /// Emits a <c>field_access</c> reference when
     /// <paramref name="tok"/> resolves to a field on the most-recent
     /// dataitem / tableelement source table
