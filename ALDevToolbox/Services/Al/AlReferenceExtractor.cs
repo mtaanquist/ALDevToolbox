@@ -221,6 +221,20 @@ public static class AlReferenceExtractor
             // nested `end`.
             if (_procedureWalker.TryHandleBlockDepth(tok)) return;
 
+            // `with X do begin … end;` — deprecated but still used in
+            // Microsoft's regional/banking modules (e.g. AMC Banking's
+            // `with PaymentExportData do begin … end;`). Push a scope
+            // frame that shadows Rec to X's type for the block, so bare
+            // identifiers inside resolve as field accesses / methods on X.
+            // Must run BEFORE the chain-candidate check so `with` doesn't
+            // get dispatched as an identifier-then-dot or bare-self-call.
+            if (_state.ScopeStack.Count > 1
+                && tok.Kind == AlTokenKind.Identifier
+                && string.Equals(tok.Value, "with", StringComparison.OrdinalIgnoreCase))
+            {
+                if (_procedureWalker.TryConsumeWithStatement()) return;
+            }
+
             // Member-access chain candidates. Two shapes trigger:
             //   A. Identifier `.` Member …
             //   B. Identifier `::` QuotedIdentifier (or Identifier)
@@ -1227,7 +1241,8 @@ public sealed record AlExtractContext(
     Guid OwnerAppId,
     IReadOnlyDictionary<string, ResolvedVariableType> GlobalVars,
     IAlTypeResolver Resolver,
-    string? OwnerSourceTableName = null);
+    string? OwnerSourceTableName = null,
+    string? OwnerExtendsName = null);
 
 /// <summary>
 /// Looks up type information used during receiver-type resolution.

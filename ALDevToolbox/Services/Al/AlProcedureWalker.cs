@@ -52,6 +52,8 @@ internal sealed class AlExtractionState
     public bool OwnerTypeResolved;
     public AlTypeRef? RecTypeCache;
     public bool RecTypeResolved;
+    public AlTypeRef? BaseObjectTypeCache;
+    public bool BaseObjectTypeResolved;
 
     /// <summary>
     /// Receiver context for the bare field-name arguments inside a
@@ -343,6 +345,17 @@ internal sealed class ScopeFrame
 
     /// <summary>1-based line where the declaration's name token sits — the same line stamped on the matching <c>oe_module_symbols</c> row.</summary>
     public int SymbolStartLine { get; set; }
+
+    /// <summary>
+    /// True when this frame was pushed by a <c>with X do begin … end</c>
+    /// statement (deprecated AL but still used in Microsoft's legacy
+    /// regional/banking modules). The frame's <c>Vars["rec"]</c> overrides
+    /// Rec for the duration of the block so bare identifiers resolve to
+    /// fields/procedures on <c>X</c>'s record type. <see cref="AlProcedureWalker.TryHandleBlockDepth"/>
+    /// uses this flag to invalidate the cached <see cref="AlExtractionState.RecTypeCache"/>
+    /// when the frame pops.
+    /// </summary>
+    public bool IsWithFrame { get; set; }
 }
 
 /// <summary>
@@ -829,7 +842,17 @@ internal sealed class AlProcedureWalker
                 // ReleaseImportService. SymbolName is only null on the
                 // outermost object-scope frame, which TryHandleBlockDepth
                 // never reaches (guarded by ScopeStack.Count > 1 above).
-                if (frame.SymbolName is not null && frame.SymbolKind is not null)
+                // A `with X do begin … end` frame doesn't represent a
+                // procedure / trigger; it's only here to shadow Rec for
+                // the block's duration. Skip the symbol-scope emit and
+                // invalidate the cached RecType so subsequent code reads
+                // the outer Rec again.
+                if (frame.IsWithFrame)
+                {
+                    _state.RecTypeResolved = false;
+                    _state.RecTypeCache = null;
+                }
+                else if (frame.SymbolName is not null && frame.SymbolKind is not null)
                 {
                     // `tok` is the `end` keyword; its Column is the column
                     // of `e`. EndColumn points PAST the last character so
@@ -1235,6 +1258,106 @@ internal sealed class AlProcedureWalker
     }
 
     /// <summary>
+    /// Consumes a <c>with X do begin … end;</c> statement, pushing a scope
+    /// frame that shadows Rec to X's type for the body's duration. AL's
+    /// <c>with</c> is deprecated and the compiler warns about it, but
+    /// Microsoft's regional / banking modules still ship it (the AMC
+    /// Banking codeunits build payment records via
+    /// <c>with PaymentExportData do begin … SetCustomerAsRecipient(...) … end;</c>);
+    /// without this handler every bare identifier inside surfaces as
+    /// bare-call unresolved.
+    ///
+    /// <para>Only the <c>do begin … end</c> shape is rebound — single-
+    /// statement <c>with X do Foo();</c> has no begin/end pair to anchor
+    /// the pop, so the cursor advances past <c>with X do</c> without
+    /// pushing a frame and the body walks with the outer Rec. Microsoft's
+    /// corpus uses the multi-statement shape exclusively.</para>
+    ///
+    /// <para>Returns true when at least <c>with X do</c> was consumed so
+    /// the dispatcher doesn't fall through to identifier-handling on the
+    /// <c>with</c> keyword. False (with the cursor restored) when the
+    /// shape doesn't match — e.g. a stray <c>with</c> followed by
+    /// something we can't resolve as a record-typed expression.</para>
+    /// </summary>
+    public bool TryConsumeWithStatement()
+    {
+        var savedPos = _state.Pos;
+        _state.Pos++; // past `with`
+        _state.SkipWhitespaceTokens();
+        if (_state.Pos >= _state.Tokens.Count)
+        {
+            _state.Pos = savedPos;
+            return false;
+        }
+
+        // Read the first identifier of the with-expression. AL supports
+        // chained `with X, Y do …` but Microsoft's corpus uses single
+        // identifiers; we resolve the first one and skip past any commas.
+        var xTok = _state.Tokens[_state.Pos];
+        if (xTok.Kind != AlTokenKind.Identifier && xTok.Kind != AlTokenKind.QuotedIdentifier)
+        {
+            _state.Pos = savedPos;
+            return false;
+        }
+        var xType = ResolveHeadType(xTok, out _);
+        _state.Pos++; // past X identifier
+
+        // Skip optional namespace/member chain on the with-expression
+        // (e.g. `with Rec."Document Type" do` — rare). We don't model it
+        // for Rec rebinding; the AMC pattern is a plain variable.
+        while (_state.Pos + 1 < _state.Tokens.Count
+               && _state.At(",")
+               && (_state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Identifier
+                   || _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.QuotedIdentifier))
+        {
+            _state.Pos += 2;
+        }
+        _state.SkipWhitespaceTokens();
+
+        if (!_state.IsIdentifierTok(_state.Pos, "do"))
+        {
+            _state.Pos = savedPos;
+            return false;
+        }
+        _state.Pos++; // past `do`
+        _state.SkipWhitespaceTokens();
+
+        // Only push a frame for the multi-statement shape. Single-statement
+        // `with X do Foo();` lacks the begin/end anchor TryHandleBlockDepth
+        // uses to pop; pushing here would mean the next stray `end` (likely
+        // the procedure's own) would pop the wrong frame.
+        if (!_state.IsIdentifierTok(_state.Pos, "begin"))
+        {
+            return true;
+        }
+
+        if (xType is not null)
+        {
+            // Map the resolved type's catalog kind back to the AL keyword
+            // ResolveTypeByName expects on next lookup (table → Record).
+            var keyword = string.Equals(xType.Kind, "table", StringComparison.OrdinalIgnoreCase)
+                ? "Record"
+                : xType.Kind;
+            var withFrame = new ScopeFrame
+            {
+                IsWithFrame = true,
+            };
+            withFrame.Vars["rec"] = new ResolvedVariableType(keyword, xType.Name);
+            withFrame.Vars["xrec"] = new ResolvedVariableType(keyword, xType.Name);
+            _state.ScopeStack.Push(withFrame);
+            // Invalidate the cached RecType so subsequent bare-call /
+            // implicit-Rec lookups read the with-frame's binding.
+            _state.RecTypeResolved = false;
+            _state.RecTypeCache = null;
+        }
+
+        // Leave the cursor at `begin` — the main loop will dispatch it
+        // through TryHandleBlockDepth, which now operates on the with
+        // frame we just pushed.
+        return true;
+    }
+
+    /// <summary>
     /// Bare self-procedure call detector: <c>DoStuff(...)</c> with no
     /// receiver. Three filters before emitting:
     ///   1. AL statement / operator keyword (<c>if</c>, <c>not</c>, …) —
@@ -1380,6 +1503,39 @@ internal sealed class AlProcedureWalker
                 }
             }
 
+            // Extension → base-object fallback. A pageextension's bare
+            // `NoOfRecords(TableID)` can resolve to a procedure on the
+            // BASE PAGE (e.g. `Navigate.NoOfRecords` on the `Navigate Ext.`
+            // pageextension) — distinct from Rec, which is the page's
+            // source TABLE. Same shape for reportextension → base report.
+            // Tableextensions don't need this branch: the base table IS
+            // the Rec type, so the recType fallback above already walked
+            // base → visible extensions.
+            var baseType = BaseObjectType();
+            if (baseType is not null
+                && !baseType.Equals(ownerType)
+                && (recType is null || !baseType.Equals(recType)))
+            {
+                var baseMember = _state.Ctx.Resolver.ResolveMember(baseType, name);
+                if (baseMember is not null)
+                {
+                    var baseTarget = baseMember.DeclaringType ?? baseType;
+                    _state.EmitReference(new ExtractedReference(
+                        Line: head.Line,
+                        Column: head.Column,
+                        TargetAppId: baseTarget.AppId,
+                        TargetObjectKind: baseTarget.Kind,
+                        TargetObjectId: baseTarget.ObjectId,
+                        TargetObjectName: baseTarget.Name,
+                        TargetMemberName: baseMember.Name,
+                        TargetMemberKind: baseMember.Kind,
+                        ReferenceKind: "method_call"));
+                    _state.Resolved++;
+                    _state.Pos++;
+                    return true;
+                }
+            }
+
             // Could be a bare AL system function we don't have on our
             // list yet, or a same-named procedure on a related extension
             // we don't track from this angle. Counted but not emitted.
@@ -1439,15 +1595,55 @@ internal sealed class AlProcedureWalker
     /// encoded the choice in the bottom scope frame's <c>rec</c>
     /// entry; we read it back and resolve once.
     /// </summary>
+    /// <summary>
+    /// Resolves the base object an extension targets — the base page for a
+    /// pageextension, the base report for a reportextension, etc. — via
+    /// <see cref="AlExtractContext.OwnerExtendsName"/>. Returns null for
+    /// non-extension owners or when the base name isn't set. Distinct from
+    /// <see cref="RecType"/>: a pageextension's Rec is the source TABLE,
+    /// while the base is the PAGE itself, and procedures declared on the
+    /// page live there (not on Rec). Cached for the same reason as
+    /// <see cref="OwnerType"/> — bare-self-calls can fire many times per
+    /// file and the resolver lookup walks a dictionary each call.
+    /// </summary>
+    public AlTypeRef? BaseObjectType()
+    {
+        if (_state.BaseObjectTypeResolved) return _state.BaseObjectTypeCache;
+        _state.BaseObjectTypeResolved = true;
+        if (string.IsNullOrEmpty(_state.Ctx.OwnerExtendsName)) return null;
+        var baseKind = _state.Ctx.OwnerKind?.ToLowerInvariant() switch
+        {
+            "pageextension" => "page",
+            "tableextension" => "table",
+            "reportextension" => "report",
+            "enumextension" => "enum",
+            "permissionsetextension" => "permissionset",
+            _ => null,
+        };
+        if (baseKind is null) return null;
+        _state.BaseObjectTypeCache = _state.Ctx.Resolver.ResolveTypeByName(_state.Ctx.OwnerExtendsName, baseKind);
+        return _state.BaseObjectTypeCache;
+    }
+
     public AlTypeRef? RecType()
     {
         if (_state.RecTypeResolved) return _state.RecTypeCache;
         _state.RecTypeResolved = true;
-        // Bottom frame (object-scope) is where Rec lives. Walk to it.
-        ScopeFrame? bottom = null;
-        foreach (var frame in _state.ScopeStack) bottom = frame;
-        if (bottom is null) return null;
-        if (!bottom.Vars.TryGetValue("rec", out var declared)) return null;
+        // Walk INNERMOST-first: in normal code only the object-scope frame
+        // binds `rec`, so this lands the same place as before; but a
+        // `with X do begin` pushes a frame whose `rec` shadows the object's
+        // for the duration of the block, and innermost-first lets that
+        // override take effect.
+        ResolvedVariableType? declared = null;
+        foreach (var frame in _state.ScopeStack)
+        {
+            if (frame.Vars.TryGetValue("rec", out var found))
+            {
+                declared = found;
+                break;
+            }
+        }
+        if (declared is null) return null;
         if (string.IsNullOrEmpty(declared.TypeName)) return null;
         // Pass the keyword: Rec on a page is `Record` → must be a
         // table (not a tableextension someone named the same way).
