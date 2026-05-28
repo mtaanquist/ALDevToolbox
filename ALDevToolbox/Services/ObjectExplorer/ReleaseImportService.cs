@@ -2739,13 +2739,16 @@ public class ReleaseImportService
         // probe BuildModuleVisibilityAsync uses (publisher=Microsoft
         // AND name in FoundationalAppNames).
         private readonly HashSet<Guid> _foundationalAppIds;
-        // ObsoleteState by identity. `Pending` / `Removed` candidates
+        // ObsoleteState by identity. `Removed` / `Moved` candidates
         // get pushed below non-obsolete ones during tiebreaker
-        // selection: Base Application's legacy `No. Series Line` /
-        // `No. Series` shims are marked Pending now that Business
-        // Foundation owns the canonical versions, and the resolver
-        // should follow the same migration path the platform follows.
-        // Missing entries mean ObsoleteState=No (default).
+        // selection — those have no body to dispatch against (`Removed`
+        // keeps an empty shell, `Moved` relocates to a different
+        // module). `Pending` declarations are intentionally NOT
+        // deprioritized: they're still fully functional in the
+        // current version and AL routes calls to them normally;
+        // the version that flips them to `Removed` is the one where
+        // resolution should follow the migration path. Missing
+        // entries mean ObsoleteState=No (default).
         private readonly Dictionary<(Guid AppId, string Kind, string Name), string> _obsoleteStateByIdentity;
 
         public CatalogResolver(
@@ -2773,14 +2776,19 @@ public class ReleaseImportService
         }
 
         /// <summary>
-        /// True when the candidate is marked <c>ObsoleteState = Pending</c>
-        /// or <c>Removed</c>. Obsolete candidates lose ties to non-obsolete
-        /// ones during <see cref="ResolveTypeByName"/> bucket selection.
+        /// True when the candidate is marked <c>ObsoleteState = Removed</c>
+        /// or <c>Moved</c>. Removed candidates have no body (just a shell
+        /// kept for backward-compatibility) and Moved ones have relocated
+        /// to a different module; either way, a live alternative should
+        /// win the tiebreaker. <c>Pending</c> declarations are
+        /// intentionally NOT flagged here — they're still functional in
+        /// the current version, just slated for removal in a future one,
+        /// so the resolver should keep treating them as first-class.
         /// </summary>
         private bool IsObsolete(ALDevToolbox.Services.Al.AlTypeRef t) =>
             _obsoleteStateByIdentity.TryGetValue((t.AppId, t.Kind, t.Name), out var state)
-            && (string.Equals(state, "Pending", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(state, "Removed", StringComparison.OrdinalIgnoreCase));
+            && (string.Equals(state, "Removed", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(state, "Moved", StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
         /// Resolves a name to a single AlTypeRef. When multiple objects
@@ -2820,13 +2828,12 @@ public class ReleaseImportService
             // kind, AND ObsoleteState, then pick the highest-priority
             // bucket that has a hit. Each app-tier (same-app /
             // foundational / other) has a non-obsolete sub-bucket above
-            // its obsolete one — `No. Series Line` in Business Foundation
-            // beats `No. Series Line` in Base App because Base App's
-            // version is marked Pending. The non-obsolete entry in any
-            // tier still wins outright over a higher-tier obsolete one:
-            // if the only same-app candidate is Removed and a
-            // non-obsolete foundational candidate exists, follow the
-            // platform's de-facto migration.
+            // its obsolete one — a `Removed` / `Moved` shell loses to
+            // any live alternative. `Pending` candidates are treated as
+            // non-obsolete (still functional in this version). Within
+            // a tier the live entry wins outright; cross-tier, all
+            // non-obsolete tiers are exhausted before any obsolete
+            // tier, matching the AL compiler's migration semantics.
             ALDevToolbox.Services.Al.AlTypeRef? sameAppExact = null;
             ALDevToolbox.Services.Al.AlTypeRef? sameAppExactObs = null;
             ALDevToolbox.Services.Al.AlTypeRef? sameAppAny = null;

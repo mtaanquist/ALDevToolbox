@@ -70,13 +70,14 @@ public class ModuleObject
     public int LineNumber { get; set; }
 
     /// <summary>
-    /// AL <c>ObsoleteState</c> property value, when set on the object
-    /// (<c>Pending</c> / <c>Removed</c>). Used as a tiebreaker by the
-    /// catalog resolver: when two visible apps declare a same-named
-    /// object (e.g. Base Application's legacy <c>No. Series Line</c>
-    /// shim alongside Business Foundation's canonical version),
-    /// non-obsolete candidates win. Null when the property isn't
-    /// declared on the object — the default <c>No</c> state.
+    /// AL <c>ObsoleteState</c> property value, when set on the object.
+    /// Stored verbatim (<c>Pending</c> / <c>Removed</c> / <c>Moved</c>);
+    /// null when the property isn't declared, equivalent to the
+    /// default <c>No</c> state. The catalog resolver uses
+    /// <c>Removed</c> / <c>Moved</c> as a tiebreaker — those candidates
+    /// have no body to dispatch against — but treats <c>Pending</c> as
+    /// first-class because the object is still fully functional in
+    /// the version that declared it.
     /// </summary>
     public string? ObsoleteState { get; set; }
 
