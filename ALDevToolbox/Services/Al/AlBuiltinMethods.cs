@@ -791,6 +791,13 @@ public static class AlBuiltinMethods
         "JsonObject", "JsonArray", "JsonValue", "JsonToken",
         // I/O.
         "InStream", "OutStream", "File", "TempBlob",
+        // Field-level media runtime types. `field(140; Image; Media)`
+        // exposes `.ImportFile`, `.ExportFile`, `.HasValue`, etc. on
+        // the field value. Without recognising the type name here,
+        // `Image.ImportFile(...)` inside Customer.Table.al picked up
+        // the System Application's `Codeunit "Image"` via the bare
+        // catalog match and fired chain-step on every Media field.
+        "Media", "MediaSet",
         // BC 26+ — `FileUpload` is the browser-native upload widget
         // surface. Variables typed `FileUpload` expose `.CurrentFile`,
         // `.SingleFile`, `.UploadIntoStream(...)` etc. via the runtime.

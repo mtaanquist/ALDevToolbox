@@ -4697,6 +4697,46 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Rec_field_with_same_name_as_catalog_codeunit_wins_chain_head()
+    {
+        // `Image.ImportFile(...)` inside `Customer.Table.al` —
+        // `Image` is a Media-typed field on Customer AND the name
+        // also matches the System Application's `Codeunit "Image"`.
+        // Before the collision fix, the bare catalog lookup found
+        // the codeunit and the `.ImportFile` chain step fired
+        // chain-step unresolved (the System "Image" codeunit doesn't
+        // expose ImportFile). AL itself resolves bare identifiers
+        // against Rec fields first, so the field interpretation has
+        // to win; the chain continues against the field's runtime
+        // type (Media), which is in KnownSystemTypes — silenced.
+        var resolver = MakeResolver();
+        resolver.AddType("Image", new AlTypeRef(BaseAppId, "codeunit", 50100, "Image"));
+        resolver.AddType("Customer", new AlTypeRef(BaseAppId, "table", 18, "Customer"));
+        resolver.AddMember("Customer",
+            new AlMember("Image", "table_field", null, null));
+
+        const string src = """
+            table 18 Customer
+            {
+                fields
+                {
+                    field(140; Image; Media) { }
+                }
+
+                procedure DoStuff()
+                begin
+                    Image.ImportFile('foo.png', '');
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            OwnerTable(resolver, "Customer"));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "ImportFile");
+    }
+
+    [Fact]
     public void Report_rec_binds_to_first_dataitem_source_in_requestpage_chain()
     {
         // VAT Report Request Page / Whse. Change Unit of Measure

@@ -2749,7 +2749,37 @@ internal sealed class AlProcedureWalker
             }
         }
 
-        // Step 2: head IS a type name (Customer.Insert pattern).
+        // Step 2: Rec-field collision check. Inside a Rec-bearing
+        // owner (table / page / extension), a bare head that also
+        // names a Rec field shadows any catalog name match — AL
+        // resolves the field, not a same-named codeunit. Canonical
+        // sample: <c>Image.ImportFile(...)</c> on
+        // <c>Customer.Table.al</c> where <c>Image</c> is a Media-typed
+        // field on Customer AND a Codeunit "Image" exists in System
+        // Application. Without this short-circuit the codeunit wins
+        // the catalog lookup and the .ImportFile chain step fires
+        // chain-step unresolved on a codeunit that doesn't expose it.
+        // Returning null with declaredAsVar populated routes through
+        // the known-system-type silence path on Media / Text /
+        // Decimal / etc.
+        var rec = RecType();
+        if (rec is not null)
+        {
+            var recField = _state.Ctx.Resolver.ResolveMember(rec, head.Value);
+            if (recField is not null && AlExtractionState.IsFieldKind(recField.Kind))
+            {
+                // Stash the field's runtime type so the silence path
+                // can recognise it. Most table-field types are
+                // scalars (Code/Text/Decimal/etc.) — runtime types
+                // like Media / MediaSet / Blob land here too. The
+                // chain walker treats these as terminal.
+                declaredAsVar = new ResolvedVariableType(
+                    null, recField.ReturnTypeName ?? string.Empty);
+                return null;
+            }
+        }
+
+        // Step 3: head IS a type name (Customer.Insert pattern).
         return _state.Ctx.Resolver.ResolveTypeByName(head.Value);
     }
 
