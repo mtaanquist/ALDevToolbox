@@ -436,13 +436,17 @@ public static class AppPackageReader
             using var ms = new MemoryStream();
             capped.CopyTo(ms);
             var data = ms.ToArray();
-            // The file carries a UTF-8 BOM; strip it so the stored text is
-            // clean JSON. System.Text.Json tolerates the BOM either way.
+            // Decode for storage via StreamReader so the UTF-8 BOM is stripped
+            // from the persisted text. The deserialise that follows runs through
+            // a MemoryStream (not the byte-span overload) because only the
+            // stream-based JsonSerializer entry point auto-skips the BOM — the
+            // span overload throws "0xEF is an invalid start of a value".
             using (var sr = new StreamReader(new MemoryStream(data), System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
             {
                 rawJson = sr.ReadToEnd();
             }
-            raw = JsonSerializer.Deserialize<RawSymbolRoot>(data, JsonOpts)
+            using var jsonStream = new MemoryStream(data);
+            raw = JsonSerializer.Deserialize<RawSymbolRoot>(jsonStream, JsonOpts)
                 ?? throw new InvalidDataException("SymbolReference.json deserialised to null.");
         }
         else
