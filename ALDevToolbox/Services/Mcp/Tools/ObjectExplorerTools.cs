@@ -290,6 +290,32 @@ public sealed class ObjectExplorerTools
         return bodied[0].Id;
     }
 
+    [McpServerTool(Name = "list_release_modules", ReadOnly = true)]
+    [Description("Lists every module (extension) in a BC release with its identity, flags, and whether a SymbolReference.json was stored for it at import time. Use this to discover the modules you can pass to search_objects, find_references, get_object_outline, and download_symbol_reference. Sorted alphabetically by name; capped at the standard result limit.")]
+    public async Task<IReadOnlyList<ReleaseModuleSummary>> ListReleaseModulesAsync(
+        [Description("Release Label ('BC 28.1') or numeric id.")] string releaseLabelOrId,
+        CancellationToken ct = default)
+    {
+        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
+        var rows = await _db.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == releaseId)
+            .OrderBy(m => m.Name)
+            .Take(MaxResults)
+            .Select(m => new ReleaseModuleSummary(
+                m.Id,
+                m.Name,
+                m.Publisher,
+                m.Version,
+                m.AppId,
+                m.IsTest,
+                m.IsInternal,
+                m.IsLanguagePack,
+                m.DependencyCount,
+                m.SymbolReferenceContentHash != null))
+            .ToListAsync(ct);
+        return rows;
+    }
+
     [McpServerTool(Name = "download_symbol_reference", ReadOnly = true)]
     [Description("Returns a download URL for one module's raw SymbolReference.json, for debugging resolver errors. Only available when the release was imported with the 'store symbol reference' option enabled. The JSON is NOT returned inline — a base-app symbol file runs to tens of MB and would blow up the MCP response serialiser; share the returned downloadPath with the user (appended to the app's base URL) so they can fetch it via the streaming download endpoint.")]
     public async Task<SymbolReferenceDownloadLink> DownloadSymbolReferenceAsync(
@@ -374,3 +400,21 @@ public sealed record SymbolReferenceDownloadLink(
     string ContentHash,
     int ContentLength,
     string DownloadPath);
+
+/// <summary>
+/// One row returned by the <c>list_release_modules</c> MCP tool — the per-release
+/// module surface agents need before calling the other Object Explorer tools.
+/// <c>HasStoredSymbolReference</c> is true when the release was imported with
+/// the "store symbol reference" option on, so the JSON is downloadable.
+/// </summary>
+public sealed record ReleaseModuleSummary(
+    long Id,
+    string Name,
+    string Publisher,
+    string Version,
+    Guid AppId,
+    bool IsTest,
+    bool IsInternal,
+    bool IsLanguagePack,
+    int DependencyCount,
+    bool HasStoredSymbolReference);
