@@ -443,15 +443,29 @@ public static class AlBuiltinMethods
         // URL helpers.
         "GetDocumentUrl", "GetDotNetType", "GetUrl",
         "ImportStreamWithUrlAccess",
-        // File system functions with distinctive names. Common-name
-        // File methods (Open / Close / Read / Write / Erase / Copy /
-        // Create / Rename / Exists / Len / Name / Pos / Seek / Trunc /
-        // TextMode / WriteMode / View) are intentionally NOT here —
-        // they're already covered by the receiver-method fallback via
-        // CommonMethods / QueryMethods / PageMethods, and adding them
-        // here would suppress real user procedures of the same name
-        // (any `Update()` / `Open()` / `Read()` on a user codeunit
-        // would lose its method_call reference).
+        // File system functions. The bare-callable check now runs
+        // AFTER own-member catalog resolution in
+        // <see cref="AlProcedureWalker.TryConsumeBareSelfCall"/>, so a
+        // user procedure named the same as one of these (e.g. a
+        // <c>procedure Exists()</c> on Persistent Blob Impl. or
+        // Guided Experience Impl.) wins through the catalog and only
+        // bare calls without a matching own-member silence here.
+        // That's the AL-correct resolution order — user procedures
+        // shadow same-named system functions.
+        //
+        // Coverage: `Exists` is the deprecated AL file-existence
+        // global (`if Exists(FileName) then ...`) used across
+        // PositivePayExportMgt, Attachment.Table, ExcelBuffer.Table
+        // and similar legacy file-system code. Other distinctive
+        // file globals (CreateTempFile / Download / Upload / etc.)
+        // were already silent. Common-name receiver methods (Open /
+        // Close / Read / Write / Erase / Copy / Create / Rename /
+        // Len / Name / Pos / Seek / Trunc / TextMode / WriteMode /
+        // View) stay out — they're handled by the per-receiver
+        // method sets (CommonMethods etc.) on actual chain calls,
+        // and a bare call to one of those names would more often
+        // be a mis-parsed chain than a deprecated system function.
+        "Exists",
         "CreateTempFile", "Download", "DownloadFromStream",
         "Upload", "UploadIntoStream",
         "GetStamp", "SetStamp", "IsPathTemporary",

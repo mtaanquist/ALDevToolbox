@@ -3499,6 +3499,74 @@ public sealed class AlReferenceExtractorTests
             s.Token == "TotallyUnknownProc" && s.Reason == "bare-call");
     }
 
+    // ── Bare-callable resolution order ───────────────────────────────
+
+    [Fact]
+    public void Bare_callable_silence_falls_through_when_no_own_member()
+    {
+        // `Exists(FileName)` is the deprecated AL file-existence
+        // global. The bare-call resolver now consults the catalog
+        // FIRST (no own-member named Exists on this codeunit), then
+        // falls through to the BareCallableFunctions silence list.
+        // Without Exists in that list — or with the old
+        // bare-callable-first order — every legacy file-system check
+        // in BC's banking / data-exchange code surfaces as
+        // bare-call unresolved.
+        var resolver = MakeResolver();
+        resolver.AddType("Positive Pay Export Mgt",
+            new AlTypeRef(BaseAppId, "codeunit", 1711, "Positive Pay Export Mgt"));
+
+        const string src = """
+            procedure Check(FileName: Text): Boolean
+            begin
+                exit(Exists(FileName));
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            OwnerCodeunit(resolver, tableNo: null));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "Exists");
+    }
+
+    [Fact]
+    public void User_procedure_named_after_system_function_wins_catalog_lookup()
+    {
+        // The reorder pins AL's actual semantics: a user procedure on
+        // the owner shadows a same-named system function. Before the
+        // reorder, the bare-callable check fired BEFORE own-member
+        // resolution, silencing the user procedure's reference.
+        // Here `Exists` is both a system function (deprecated file
+        // global, now in BareCallableFunctions) AND a real procedure
+        // on the codeunit. The catalog lookup must win — Find
+        // references on the procedure depends on this method_call
+        // reference emitting.
+        var resolver = MakeResolver();
+        resolver.AddType("Persistent Blob Impl.",
+            new AlTypeRef(BaseAppId, "codeunit", 4151, "Persistent Blob Impl."));
+        resolver.AddMember("Persistent Blob Impl.",
+            new AlMember("Exists", "procedure", "Boolean", null));
+
+        const string src = """
+            procedure CallSelf(): Boolean
+            begin
+                exit(Exists(42));
+            end;
+            """;
+        var ctx = new AlExtractContext(
+            OwnerKind: "codeunit",
+            OwnerName: "Persistent Blob Impl.",
+            OwnerObjectId: 4151,
+            OwnerAppId: BaseAppId,
+            GlobalVars: new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+            Resolver: resolver);
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Persistent Blob Impl."
+            && r.TargetMemberName == "Exists");
+    }
+
     // ── Static-receiver silences for Dialog / Text ───────────────────
 
     [Fact]
