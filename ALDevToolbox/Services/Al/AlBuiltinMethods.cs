@@ -129,6 +129,15 @@ public static class AlBuiltinMethods
         "Caption", "CaptionClass",
         // BC 18+ — partial-record loading.
         "SetLoadFields", "LoadFields",
+        // BC 26+ — `SetBaseLoadFields` extends `SetLoadFields` with
+        // the base set the caller wants loaded regardless of the
+        // filter narrowing. Same family of partial-record APIs.
+        "SetBaseLoadFields",
+        // Security filter mode property — `Rec.SecurityFiltering(SecurityFilter::Filtered)`.
+        // Also valid as a bare implicit-Rec call from inside a table
+        // body; the bare-self-call resolver picks it up through this
+        // entry too.
+        "SecurityFiltering",
         // Note: AssistEdit / Lookup / Drilldown are intentionally NOT
         // listed here. Microsoft's Base App declares user procedures
         // with those names (e.g. Sales Header.AssistEdit is a real
@@ -224,6 +233,9 @@ public static class AlBuiltinMethods
         "SaveAsHtml", "SaveAsWord", "SaveAsXml",
         "SetTableView", "GetTableView",
         "UseRequestPage", "UseSystemPrinter",
+        // `MyReport.Execute()` — BC 26+ replacement for the Run/RunModal
+        // pair when the caller wants the rendered output without a UI.
+        "Execute",
     };
 
     /// <summary>
@@ -362,6 +374,12 @@ public static class AlBuiltinMethods
         // Text-shape methods exposed on multiple receivers.
         "Trim", "TrimStart", "TrimEnd", "Unwrap",
         "Split", "Replace", "Substring",
+        // DateTime decomposition. `CurrentDateTime().Date()` and
+        // `.Time()` extract the components — also exposed on Variant
+        // (after `.HasValue()` checks) and DateFormula. Bare-call
+        // form silences only after own-member resolution misses, so
+        // a user procedure named `Date` on the owner still wins.
+        "Date", "Time",
         // Stream / blob primitives (TempBlob, File, InStream, OutStream).
         "CreateInStream", "CreateOutStream",
         "ReadText", "WriteText", "Read", "Write", "EOS",
@@ -653,6 +671,32 @@ public static class AlBuiltinMethods
         // than the catalog, so chain heads through them should
         // silence cleanly.
         "IsolatedStorage", "NumberSequence", "MediaSet",
+        // Top-level AL namespaces. Fully-qualified type references
+        // like `Microsoft.Service.Document."Service Line Type".FromInteger(Type)`
+        // surface as a chain head starting with `Microsoft`. The
+        // existing static-receiver walk advances through the dotted
+        // namespace path, through the final quoted type name, and
+        // past any method-call parens — silencing the whole chain.
+        // Note: BC ships `Microsoft` as its top-level publisher
+        // namespace; `System` is already in this list above as the
+        // dispatcher shorthand for system functions, which doubles
+        // as the .NET System namespace prefix.
+        "Microsoft",
+        // Report runtime — `RequestOptionsPage.Update(false)` from
+        // inside a report's procedures forces the request page UI to
+        // refresh. The receiver name is the static keyword, not a
+        // variable.
+        "RequestOptionsPage",
+        // Upgrade-codeunit runtime APIs. `HybridDeployment.VerifyCanStartUpgrade()`
+        // gates company-replicated-data upgrades; `UpgradeTag.HasUpgradeTag(...)` /
+        // `.SetUpgradeTag(...)` / `.SetAllUpgradeTags(...)` is the bookmark
+        // mechanism BC's upgrade codeunits use to skip already-run blocks.
+        // Both surface as static receivers across every upgrade .al file.
+        "HybridDeployment", "UpgradeTag",
+        // Session-scoped diagnostics. `SessionInformation.ServerInstanceName()`,
+        // `.TenantId`, `.UserId`, … are read from many places without a
+        // variable declaration.
+        "SessionInformation",
         // Legacy company-property accessor — `COMPANYPROPERTY.DISPLAYNAME()`,
         // `.PICTURE()`, etc. A system receiver, never a catalog object.
         "COMPANYPROPERTY",
@@ -722,6 +766,10 @@ public static class AlBuiltinMethods
         "JsonObject", "JsonArray", "JsonValue", "JsonToken",
         // I/O.
         "InStream", "OutStream", "File", "TempBlob",
+        // BC 26+ — `FileUpload` is the browser-native upload widget
+        // surface. Variables typed `FileUpload` expose `.CurrentFile`,
+        // `.SingleFile`, `.UploadIntoStream(...)` etc. via the runtime.
+        "FileUpload",
         // HTTP.
         "HttpClient", "HttpRequestMessage", "HttpResponseMessage",
         "HttpHeaders", "HttpContent",
@@ -768,10 +816,23 @@ public static class AlBuiltinMethods
     /// True when the declared type name is one of the AL runtime /
     /// system types the catalog never tracks — used to silence
     /// the <c>head-var-type-unresolved</c> diagnostic for variables
-    /// typed against these primitives.
+    /// typed against these primitives. Strips the optional
+    /// <c>[N]</c> length qualifier (<c>Text[250]</c>, <c>Code[20]</c>)
+    /// before checking so scalar declarations match the bare name in
+    /// <see cref="KnownSystemTypes"/>.
     /// </summary>
-    public static bool IsKnownSystemType(string typeName) =>
-        !string.IsNullOrEmpty(typeName) && KnownSystemTypes.Contains(typeName);
+    public static bool IsKnownSystemType(string typeName)
+    {
+        if (string.IsNullOrEmpty(typeName)) return false;
+        // Symbol-package-derived types arrive as `Text[250]` (full
+        // string including the length brackets) for scalar fields.
+        // The KnownSystemTypes set holds the bare type name; strip
+        // the bracket before matching so `Text[250]`, `Code[20]`,
+        // `Char[10]` all silence cleanly.
+        var bracket = typeName.IndexOf('[');
+        var bare = bracket > 0 ? typeName.Substring(0, bracket) : typeName;
+        return KnownSystemTypes.Contains(bare);
+    }
 
     /// <summary>
     /// AL statement / operator keywords that lex as <see cref="AlTokenKind.Identifier"/>

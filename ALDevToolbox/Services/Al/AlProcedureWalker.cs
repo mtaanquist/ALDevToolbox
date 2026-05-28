@@ -554,6 +554,27 @@ internal sealed class AlProcedureWalker
             _state.Pos++;
         }
 
+        // ControlAddin / DotNet event-receiver triggers use the form
+        // `trigger Receiver::EventName(params)` — the `Receiver` is
+        // the in-scope variable bound to the addin, `EventName` is
+        // the event being subscribed to. Without consuming the
+        // `::EventName` suffix the parameter list parser sees `::`
+        // as the next token and bails before reading
+        // `(location: DotNet Location)` — every parameter is lost
+        // from scope, and every `location.Foo` chain in the body
+        // fires head-not-a-variable (resolved to a same-named
+        // table by the catalog fallback). Captured shape examples:
+        //   trigger LocationProvider::LocationChanged(location: DotNet Location)
+        //   trigger EventReceiver::OnEventCheckEvent(sender: Variant; e: DotNet …)
+        if (_state.Pos < _state.Tokens.Count
+            && _state.Tokens[_state.Pos].Kind == AlTokenKind.DoubleColon
+            && _state.Pos + 1 < _state.Tokens.Count
+            && (_state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Identifier
+                || _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.QuotedIdentifier))
+        {
+            _state.Pos += 2; // past `::` and the event name
+        }
+
         var frame = new ScopeFrame
         {
             SymbolKind = symbolKind,

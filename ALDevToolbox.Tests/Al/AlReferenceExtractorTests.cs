@@ -3639,6 +3639,43 @@ public sealed class AlReferenceExtractorTests
             || s.Token == "ErrorOccurred");
     }
 
+    // ── ControlAddIn event-receiver trigger syntax ───────────────────
+
+    [Fact]
+    public void Receiver_event_trigger_parses_parameters_into_scope()
+    {
+        // ControlAddin / DotNet event subscriptions use the form
+        //   trigger Receiver::EventName(param: DotNet SomeType)
+        // The trigger name carries a `::EventName` suffix the
+        // procedure-header parser previously didn't consume — the
+        // parameter list parser then bailed before reading the
+        // params, and every body-scope chain on those parameters
+        // fired head-not-a-variable. Verified against BC 26.13's
+        // OnlineMapLocation.Page.al where `location: DotNet Location`
+        // surfaced as a chain head missing `location.Status` /
+        // `location.Coordinate.Latitude`.
+        var resolver = MakeResolver();
+        resolver.AddType("MyPage", new AlTypeRef(BaseAppId, "page", 50000, "MyPage"));
+        resolver.AddType("Location", new AlTypeRef(BaseAppId, "table", 14, "Location"));
+
+        const string src = """
+            trigger LocationProvider::LocationChanged(location: DotNet Location)
+            begin
+                if location.Status <> 0 then
+                    exit;
+            end;
+            """;
+        var ctx = OwnerPage(resolver, "MyPage", sourceTable: null);
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        // The `location` parameter is a DotNet variable; its `.Status`
+        // chain must silence (DotNet bypass), and we must NOT resolve
+        // it to the AL Location table.
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "Status");
+        result.References.Should().NotContain(r =>
+            r.TargetObjectName == "Location" && r.TargetMemberName == "Status");
+    }
+
     // ── IsolatedStorage / NumberSequence / MediaSet static receivers ──
 
     [Fact]
@@ -3663,6 +3700,66 @@ public sealed class AlReferenceExtractorTests
             s.Token == "IsolatedStorage"
             || s.Token == "NumberSequence"
             || s.Token == "MediaSet");
+    }
+
+    // ── Microsoft namespace prefix ───────────────────────────────────
+
+    [Fact]
+    public void Microsoft_namespace_prefix_silences_chain()
+    {
+        // BC 26.13 uses fully-qualified namespace references like
+        //   Microsoft.Service.Document."Service Line Type".FromInteger(Type)
+        // in expression position. The chain head `Microsoft` isn't a
+        // variable or catalog type; the static-receiver walk now
+        // recognises it as a namespace prefix and advances through
+        // the dotted segments + the final method call.
+        var resolver = MakeResolver();
+
+        const string src = """
+            procedure UseNamespacedType(Type: Integer)
+            var
+                TableId: Integer;
+            begin
+                TableId := Microsoft.Service.Document."Service Line Type".FromInteger(Type);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "Microsoft");
+    }
+
+    // ── Type-name length qualifier stripping ─────────────────────────
+
+    [Fact]
+    public void Bracketed_scalar_type_silences_like_bare_form()
+    {
+        // SymbolPackage-derived variables can come through with
+        // TypeName="Text[250]" (length qualifier preserved). The
+        // KnownSystemTypes lookup now strips the bracket suffix
+        // before checking so a `var X: Text[250]` declaration
+        // silences the same way `Text` does — chains through the
+        // variable (`AppName.Trim()`) shouldn't fire
+        // head-var-type-unresolved.
+        var resolver = MakeResolver();
+        var globals = new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase)
+        {
+            // The TypeKeyword carries the same string for scalar
+            // declarations the symbol package didn't tag with a
+            // catalog kind. Both shapes silence.
+            ["AppName"] = new ResolvedVariableType("Text[250]", "Text[250]"),
+        };
+
+        const string src = """
+            procedure UseAppName()
+            var
+                Trimmed: Text;
+            begin
+                Trimmed := AppName.Trim();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver, globals: globals));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "AppName");
     }
 
     // ── Cross-app name collision tiebreaker ───────────────────────────
