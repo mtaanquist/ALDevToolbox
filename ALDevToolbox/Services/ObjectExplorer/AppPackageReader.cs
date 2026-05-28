@@ -60,7 +60,10 @@ public static class AppPackageReader
     /// <see cref="InvalidDataException"/> when the input isn't a recognisable
     /// BC <c>.app</c> file.
     /// </summary>
-    public static async Task<AppPackage> ReadAsync(Stream appFileStream, CancellationToken ct = default)
+    public static async Task<AppPackage> ReadAsync(
+        Stream appFileStream,
+        bool captureSymbolReferenceJson = false,
+        CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(appFileStream);
 
@@ -99,19 +102,19 @@ public static class AppPackageReader
         {
             var innerBytes = await ExtractReadyToRunInnerAppAsync(archive, ct).ConfigureAwait(false);
             await using var innerStream = new MemoryStream(innerBytes, writable: false);
-            var inner = await ReadAsync(innerStream, ct).ConfigureAwait(false);
+            var inner = await ReadAsync(innerStream, captureSymbolReferenceJson, ct).ConfigureAwait(false);
             // Keep the outer hash: ReleaseImportService.ImportOneAppAsync
             // dedupes on the bytes the operator uploaded.
             return inner with { AppFileHash = hash };
         }
 
         var manifest = ReadManifest(archive);
-        var symbols = ReadSymbolPackage(archive);
+        var (symbols, symbolReferenceJson) = ReadSymbolPackage(archive, captureSymbolReferenceJson);
         var sourceFiles = manifest.IncludeSourceInSymbolFile
             ? ReadEmbeddedSource(archive)
             : Array.Empty<AppSourceFile>();
 
-        return new AppPackage(manifest, symbols, sourceFiles, hash);
+        return new AppPackage(manifest, symbols, sourceFiles, hash, symbolReferenceJson);
     }
 
     // Note: the .app's `Translations/` folder is intentionally NOT
@@ -402,7 +405,14 @@ public static class AppPackageReader
 
     // ── SymbolReference.json ────────────────────────────────────────────
 
-    private static SymbolPackage ReadSymbolPackage(ZipArchive archive)
+    /// <summary>
+    /// Parses <c>SymbolReference.json</c>. When <paramref name="captureRaw"/>
+    /// is set, also returns the raw JSON text (BOM stripped) so the importer
+    /// can persist it for resolver debugging — opt-in because a base-app symbol
+    /// file runs to tens of MB and we don't want to hold that string on every
+    /// import.
+    /// </summary>
+    private static (SymbolPackage Package, string? RawJson) ReadSymbolPackage(ZipArchive archive, bool captureRaw)
     {
         // The symbol package is *optional*. Translation-only language packs and
         // a few system .apps ship with just the manifest + payload files and no
@@ -413,12 +423,39 @@ public static class AppPackageReader
         var entry = FindEntry(archive, "SymbolReference.json");
         if (entry is null)
         {
-            return new SymbolPackage(RuntimeVersion: null, Objects: Array.Empty<SymbolObject>());
+            return (new SymbolPackage(RuntimeVersion: null, Objects: Array.Empty<SymbolObject>()), null);
         }
-        using var stream = entry.Open();
-        // The file has a UTF-8 BOM; System.Text.Json handles it transparently.
-        var raw = JsonSerializer.Deserialize<RawSymbolRoot>(stream, JsonOpts)
-            ?? throw new InvalidDataException("SymbolReference.json deserialised to null.");
+
+        RawSymbolRoot? raw;
+        string? rawJson = null;
+        if (captureRaw)
+        {
+            // Read the (capped) entry bytes once, decode for storage, and
+            // deserialise from the same buffer so we don't decompress twice.
+            using var capped = OpenCapped(entry);
+            using var ms = new MemoryStream();
+            capped.CopyTo(ms);
+            var data = ms.ToArray();
+            // Decode for storage via StreamReader so the UTF-8 BOM is stripped
+            // from the persisted text. The deserialise that follows runs through
+            // a MemoryStream (not the byte-span overload) because only the
+            // stream-based JsonSerializer entry point auto-skips the BOM — the
+            // span overload throws "0xEF is an invalid start of a value".
+            using (var sr = new StreamReader(new MemoryStream(data), System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                rawJson = sr.ReadToEnd();
+            }
+            using var jsonStream = new MemoryStream(data);
+            raw = JsonSerializer.Deserialize<RawSymbolRoot>(jsonStream, JsonOpts)
+                ?? throw new InvalidDataException("SymbolReference.json deserialised to null.");
+        }
+        else
+        {
+            using var stream = entry.Open();
+            // The file has a UTF-8 BOM; System.Text.Json handles it transparently.
+            raw = JsonSerializer.Deserialize<RawSymbolRoot>(stream, JsonOpts)
+                ?? throw new InvalidDataException("SymbolReference.json deserialised to null.");
+        }
 
         var objects = new List<SymbolObject>();
 
@@ -436,7 +473,7 @@ public static class AppPackageReader
                 WalkNamespace(ns, currentPath: string.Empty, objects);
             }
         }
-        return new SymbolPackage(raw.RuntimeVersion, objects);
+        return (new SymbolPackage(raw.RuntimeVersion, objects), rawJson);
     }
 
     private static void WalkNamespace(RawNamespace ns, string currentPath, List<SymbolObject> sink)

@@ -14,7 +14,8 @@ public sealed record ReleaseImportRequest(
     int? ApplicationVersionId,
     IReadOnlyList<AppFileUpload> Uploads,
     string? Publisher = null,
-    string? CustomerName = null);
+    string? CustomerName = null,
+    bool StoreSymbolReference = false);
 
 /// <summary>
 /// The Release-identity half of an import (everything except the uploads). The

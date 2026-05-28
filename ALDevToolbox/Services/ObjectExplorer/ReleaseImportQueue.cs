@@ -41,7 +41,8 @@ public sealed class ReleaseImportQueue
 public sealed record ReleaseImportJob(
     int ReleaseId,
     AmbientOrganizationScope.OrganizationIdentity Identity,
-    ReleaseImportSource Source);
+    ReleaseImportSource Source,
+    bool StoreSymbolReference = false);
 
 /// <summary>Where the worker gets the bytes from.</summary>
 public abstract record ReleaseImportSource

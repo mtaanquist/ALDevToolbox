@@ -107,7 +107,7 @@ public sealed class ReleaseImportWorker : BackgroundService
 
             try
             {
-                await importer.ProcessReleaseAsync(job.ReleaseId, uploads, ct).ConfigureAwait(false);
+                await importer.ProcessReleaseAsync(job.ReleaseId, uploads, job.StoreSymbolReference, ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

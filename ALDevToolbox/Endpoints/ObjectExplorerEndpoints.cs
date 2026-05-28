@@ -59,6 +59,7 @@ internal static class ObjectExplorerEndpoints
                 parentReleaseId = pr;
             }
             var metadata = new ReleaseImportMetadata(label, kind, parentReleaseId, null, publisher, customerName);
+            var storeSymbolReference = form["StoreSymbolReference"].ToString() is "true" or "on";
 
             var dvdUrl = form["DvdUrl"].ToString().Trim();
             var folderZip = form.Files.GetFile("FolderZip");
@@ -78,7 +79,7 @@ internal static class ObjectExplorerEndpoints
                     await dvdDownloader.ValidateUrlForQueueAsync(dvdUrl, ct).ConfigureAwait(false);
                     var releaseId = await importer.BeginReleaseAsync(metadata, ct).ConfigureAwait(false);
                     await queue.EnqueueAsync(
-                        new ReleaseImportJob(releaseId, CaptureIdentity(orgContext), new ReleaseImportSource.Url(dvdUrl)),
+                        new ReleaseImportJob(releaseId, CaptureIdentity(orgContext), new ReleaseImportSource.Url(dvdUrl), storeSymbolReference),
                         ct).ConfigureAwait(false);
                     RedirectQueued(ctx, releaseId);
                     return;
@@ -103,7 +104,7 @@ internal static class ObjectExplorerEndpoints
                         return;
                     }
                     await queue.EnqueueAsync(
-                        new ReleaseImportJob(releaseId, CaptureIdentity(orgContext), new ReleaseImportSource.StagedZip(tempPath, IsDvd: false)),
+                        new ReleaseImportJob(releaseId, CaptureIdentity(orgContext), new ReleaseImportSource.StagedZip(tempPath, IsDvd: false), storeSymbolReference),
                         ct).ConfigureAwait(false);
                     RedirectQueued(ctx, releaseId);
                     return;
@@ -121,7 +122,8 @@ internal static class ObjectExplorerEndpoints
                         ApplicationVersionId: null,
                         Uploads: uploads,
                         Publisher: publisher,
-                        CustomerName: customerName);
+                        CustomerName: customerName,
+                        StoreSymbolReference: storeSymbolReference);
 
                     var summary = await importer.ImportReleaseAsync(request, ct);
 

@@ -194,6 +194,19 @@
         </section>
 
         <section class="form-section">
+            <label class="checkbox-label">
+                <input type="checkbox" name="StoreSymbolReference" value="true" />
+                Store each extension's <code>SymbolReference.json</code> for debugging
+            </label>
+            <small class="field__caption muted">
+                Keeps the raw symbol file per module so resolver errors can be traced
+                and the JSON downloaded later (via the <code>download_symbol_reference</code>
+                MCP tool). Off by default — a first-party DVD's symbol files run to tens
+                of MB each, so only enable it when you're chasing a resolver bug.
+            </small>
+        </section>
+
+        <section class="form-section">
             <button type="submit" class="btn btn--primary" data-oe-import-submit>
                 <Icon Name="upload" Width="16" Height="16" />
                 <span>Import Release</span>
