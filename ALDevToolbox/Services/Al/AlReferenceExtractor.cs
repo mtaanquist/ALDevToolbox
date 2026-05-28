@@ -1495,6 +1495,25 @@ public interface IAlTypeResolver
     AlTypeRef? ResolveTypeByName(string typeName, string? expectedKeyword = null);
 
     /// <summary>
+    /// Resolves an AL object id (e.g. <c>Record 380</c>, <c>Codeunit 1060</c>)
+    /// to its catalog entry. Older AL — and a handful of still-shipping
+    /// modules — declare record variables and procedure parameters by
+    /// numeric id instead of the quoted name (<c>Record 380</c> →
+    /// <c>"Detailed Vendor Ledg. Entry"</c>). Without resolving these,
+    /// every member access on the variable strands as
+    /// <c>head-var-type-unresolved</c>.
+    ///
+    /// <paramref name="expectedKeyword"/> is the AL type keyword the
+    /// caller has from context (<c>Record</c>, <c>Codeunit</c>, …).
+    /// Implementations should kind-filter so a numeric id that exists
+    /// for several object kinds returns the one the keyword names.
+    ///
+    /// Default returns null so existing stub resolvers (unit tests)
+    /// don't need to opt in.
+    /// </summary>
+    AlTypeRef? ResolveTypeByObjectId(int objectId, string? expectedKeyword = null) => null;
+
+    /// <summary>
     /// Resolves a member on a known owner. The owner is identified by
     /// its triplet; the member is matched by name (case-insensitive).
     /// When multiple symbols share the name (overloads), implementations

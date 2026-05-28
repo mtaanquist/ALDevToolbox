@@ -4658,6 +4658,82 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Numeric_record_id_in_variable_declaration_resolves_via_catalog()
+    {
+        // Older AL — and modules like Payment Links to PayPal that
+        // never migrated — declare record variables by numeric id
+        // instead of quoted name: <c>DtldVendLedgEntry: Record 380;</c>,
+        // <c>var PaymentServiceSetup: Record 1060;</c>. The walker
+        // used to capture Keyword="Record" but leave TypeName empty
+        // (Number tokens aren't Identifier / QuotedIdentifier), so
+        // every member access fired head-var-type-unresolved with
+        // ReceiverName='Record ' (trailing space, then nothing). The
+        // fix routes numeric ids through the resolver's
+        // <see cref="IAlTypeResolver.ResolveTypeByObjectId"/> path.
+        var resolver = MakeResolver();
+        resolver.AddType("Detailed Vendor Ledg. Entry",
+            new AlTypeRef(BaseAppId, "table", 380, "Detailed Vendor Ledg. Entry"));
+        resolver.AddMember("Detailed Vendor Ledg. Entry",
+            new AlMember("SetRange", "procedure", null, null));
+
+        const string src = """
+            codeunit 50000 MyHelper
+            {
+                procedure Process()
+                var
+                    DtldVendLedgEntry: Record 380;
+                begin
+                    DtldVendLedgEntry.SetRange("Vendor No.", 'V001');
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().BeEmpty();
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetMemberName == "SetRange"
+            && r.TargetObjectName == "Detailed Vendor Ledg. Entry");
+    }
+
+    [Fact]
+    public void Xmlport_textattribute_silences_head_not_a_variable()
+    {
+        // `textattribute(Name)` and `textelement(Name)` declare XML
+        // text nodes that show up in xmlport procedure bodies as
+        // Text-typed variables. Without seeding them into the
+        // outermost scope frame, every read / write of the name fires
+        // head-not-a-variable. Pattern from
+        // <c>ImportExportWorkflow.XmlPort.al</c>: <c>EventConditions</c>
+        // declared via <c>textattribute(EventConditions)</c> and read
+        // bare-style inside a trigger ~30 lines later.
+        var resolver = MakeResolver();
+        const string src = """
+            xmlport 1502 "Import / Export Workflow"
+            {
+                schema
+                {
+                    textelement(Root)
+                    {
+                        textattribute(EventConditions)
+                        {
+                        }
+                    }
+                }
+                trigger OnAfterImportRecord()
+                begin
+                    if EventConditions = 'X' then exit;
+                    Message(EventConditions);
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            OwnerXmlPort(resolver, "Import / Export Workflow"));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "EventConditions");
+    }
+
+    [Fact]
     public void Sibling_procedure_signature_var_modifier_does_not_eat_real_var_block()
     {
         // The canonical SalesPost.UpdateShippingNo shape: two
@@ -5021,13 +5097,18 @@ public sealed class AlReferenceExtractorTests
     {
         private readonly Dictionary<string, AlTypeRef> _types =
             new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<(string Kind, int ObjectId), AlTypeRef> _typesById = new();
         private readonly Dictionary<string, List<AlMember>> _members =
             new(StringComparer.OrdinalIgnoreCase);
         // baseName -> list of extension type names targeting it
         private readonly Dictionary<string, List<string>> _extensionsByBase =
             new(StringComparer.OrdinalIgnoreCase);
 
-        public void AddType(string name, AlTypeRef type) => _types[name] = type;
+        public void AddType(string name, AlTypeRef type)
+        {
+            _types[name] = type;
+            if (type.ObjectId is int id && id > 0) _typesById[(type.Kind, id)] = type;
+        }
 
         public void AddMember(string ownerName, AlMember member)
         {
@@ -5059,6 +5140,15 @@ public sealed class AlReferenceExtractorTests
 
         public AlTypeRef? ResolveTypeByName(string typeName, string? expectedKeyword = null) =>
             _types.TryGetValue(typeName, out var t) ? t : null;
+
+        public AlTypeRef? ResolveTypeByObjectId(int objectId, string? expectedKeyword = null)
+        {
+            var kind = string.IsNullOrEmpty(expectedKeyword) ? null
+                : expectedKeyword.Equals("Record", StringComparison.OrdinalIgnoreCase) ? "table"
+                : expectedKeyword.ToLowerInvariant();
+            if (kind is null) return null;
+            return _typesById.TryGetValue((kind, objectId), out var t) ? t : null;
+        }
 
         public AlMember? ResolveMember(AlTypeRef owner, string memberName)
         {

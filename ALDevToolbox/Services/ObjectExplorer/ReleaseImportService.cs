@@ -1763,6 +1763,12 @@ public class ReleaseImportService
             .ToListAsync(ct);
         var typesByName = new Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>>(StringComparer.OrdinalIgnoreCase);
         var typesByObjectId = new Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef>();
+        // Catalog lookup by AL object id (the numeric id developers write
+        // in `Record 380` / `Codeunit 1060`), per kind. Multiple modules
+        // can share a (kind, id) pair across releases / app boundaries
+        // — keep them all and let the resolver tiebreak by visibility,
+        // same as the by-name path. See <see cref="CatalogResolver.ResolveTypeByObjectId"/>.
+        var typesByAlObjectId = new Dictionary<(string Kind, int ObjectId), List<ALDevToolbox.Services.Al.AlTypeRef>>();
         var objectIdByIdentity = new Dictionary<(Guid AppId, string Kind, string Name), long>(
             new ObjectIdentityComparer());
         // Per-object source-table lookup so AlPageStructure can
@@ -1791,6 +1797,16 @@ public class ReleaseImportService
                 typesByName[t.Name] = list;
             }
             list.Add(typeRef);
+            if (t.ObjectId is int alId && alId > 0)
+            {
+                var idKey = (t.Kind, alId);
+                if (!typesByAlObjectId.TryGetValue(idKey, out var idList))
+                {
+                    idList = new List<ALDevToolbox.Services.Al.AlTypeRef>();
+                    typesByAlObjectId[idKey] = idList;
+                }
+                idList.Add(typeRef);
+            }
             objectIdByIdentity[(t.AppId, t.Kind, t.Name)] = t.Id;
             if (!string.IsNullOrEmpty(t.SourceTableName))
             {
@@ -1821,6 +1837,13 @@ public class ReleaseImportService
                 typesByName[vt.Name] = list;
             }
             list.Add(typeRef);
+            var vtIdKey = ("table", vt.Id);
+            if (!typesByAlObjectId.TryGetValue(vtIdKey, out var vtIdList))
+            {
+                vtIdList = new List<ALDevToolbox.Services.Al.AlTypeRef>();
+                typesByAlObjectId[vtIdKey] = vtIdList;
+            }
+            vtIdList.Add(typeRef);
             // No oe_module_objects.Id for synthetic entries — typesByObjectId
             // and objectIdByIdentity stay unaugmented (they're keyed off
             // the DB row id, which doesn't exist here). The chain walker
@@ -2012,7 +2035,7 @@ public class ReleaseImportService
             moduleVisibility.TryGetValue(moduleId, out var visible);
             moduleAppIdsById.TryGetValue(moduleId, out var ownerAppId);
             var r = new CatalogResolver(
-                typesByName, typesByObjectId, objectIdByIdentity,
+                typesByName, typesByObjectId, typesByAlObjectId, objectIdByIdentity,
                 membersByOwner, extensionsByBaseName, sourceTablesByObjectId, visible,
                 ownerAppId == Guid.Empty ? null : ownerAppId,
                 foundationalAppIds, obsoleteStateByIdentity);
@@ -2731,6 +2754,7 @@ public class ReleaseImportService
     {
         private readonly Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>> _typesByName;
         private readonly Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef> _typesByObjectId;
+        private readonly Dictionary<(string Kind, int ObjectId), List<ALDevToolbox.Services.Al.AlTypeRef>> _typesByAlObjectId;
         private readonly Dictionary<(Guid AppId, string Kind, string Name), long> _objectIdByIdentity;
         private readonly Dictionary<long, List<MemberEntry>> _members;
         private readonly Dictionary<string, List<ExtensionEntry>> _extensionsByBaseName;
@@ -2768,6 +2792,7 @@ public class ReleaseImportService
         public CatalogResolver(
             Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>> typesByName,
             Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef> typesByObjectId,
+            Dictionary<(string Kind, int ObjectId), List<ALDevToolbox.Services.Al.AlTypeRef>> typesByAlObjectId,
             Dictionary<(Guid AppId, string Kind, string Name), long> objectIdByIdentity,
             Dictionary<long, List<MemberEntry>> members,
             Dictionary<string, List<ExtensionEntry>> extensionsByBaseName,
@@ -2779,6 +2804,7 @@ public class ReleaseImportService
         {
             _typesByName = typesByName;
             _typesByObjectId = typesByObjectId;
+            _typesByAlObjectId = typesByAlObjectId;
             _objectIdByIdentity = objectIdByIdentity;
             _members = members;
             _extensionsByBaseName = extensionsByBaseName;
@@ -3009,6 +3035,50 @@ public class ReleaseImportService
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Looks up a type by its AL object id. Used by the procedure
+        /// walker for variable declarations that name the type by id
+        /// instead of name (<c>DtldVendLedgEntry: Record 380;</c>,
+        /// <c>var PaymentServiceSetup: Record 1060</c>). Visibility-
+        /// and obsolete-state-aware in the same way
+        /// <see cref="ResolveTypeByName"/> is: foundational platform
+        /// apps win on ties when the caller has no same-app match.
+        /// </summary>
+        public ALDevToolbox.Services.Al.AlTypeRef? ResolveTypeByObjectId(
+            int objectId, string? expectedKeyword = null)
+        {
+            var kind = MapKeywordToKind(expectedKeyword);
+            if (kind is null) return null;
+            if (!_typesByAlObjectId.TryGetValue((kind, objectId), out var candidates)) return null;
+
+            ALDevToolbox.Services.Al.AlTypeRef? sameApp = null;
+            ALDevToolbox.Services.Al.AlTypeRef? sameAppObs = null;
+            ALDevToolbox.Services.Al.AlTypeRef? foundational = null;
+            ALDevToolbox.Services.Al.AlTypeRef? foundationalObs = null;
+            ALDevToolbox.Services.Al.AlTypeRef? other = null;
+            ALDevToolbox.Services.Al.AlTypeRef? otherObs = null;
+
+            foreach (var t in candidates)
+            {
+                if (!IsVisible(t.AppId)) continue;
+                bool obsolete = IsObsolete(t);
+                if (_ownerAppId is not null && t.AppId == _ownerAppId.Value)
+                {
+                    if (obsolete) sameAppObs ??= t; else sameApp ??= t;
+                }
+                else if (_foundationalAppIds.Contains(t.AppId))
+                {
+                    if (obsolete) foundationalObs ??= t; else foundational ??= t;
+                }
+                else
+                {
+                    if (obsolete) otherObs ??= t; else other ??= t;
+                }
+            }
+            return sameApp ?? foundational ?? other
+                ?? sameAppObs ?? foundationalObs ?? otherObs;
         }
 
         public string? ResolveSourceTableName(ALDevToolbox.Services.Al.AlTypeRef target)

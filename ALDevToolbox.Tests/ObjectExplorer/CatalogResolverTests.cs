@@ -259,6 +259,7 @@ public sealed class CatalogResolverTests
         private readonly Dictionary<string, List<AlTypeRef>> _typesByName =
             new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<long, AlTypeRef> _typesByObjectId = new();
+        private readonly Dictionary<(string Kind, int ObjectId), List<AlTypeRef>> _typesByAlObjectId = new();
         private readonly Dictionary<(Guid AppId, string Kind, string Name), long> _objectIdByIdentity =
             new(new ReleaseImportService.ObjectIdentityComparer());
         private readonly Dictionary<long, List<ReleaseImportService.MemberEntry>> _members = new();
@@ -288,6 +289,16 @@ public sealed class CatalogResolverTests
                 _typesByName[name] = list;
             }
             list.Add(typeRef);
+            if (objectId > 0)
+            {
+                var idKey = (kind, objectId);
+                if (!_typesByAlObjectId.TryGetValue(idKey, out var idList))
+                {
+                    idList = new List<AlTypeRef>();
+                    _typesByAlObjectId[idKey] = idList;
+                }
+                idList.Add(typeRef);
+            }
             _objectIdByIdentity[(appId, kind, name)] = rowId;
             if (!string.IsNullOrEmpty(obsoleteState))
             {
@@ -305,6 +316,7 @@ public sealed class CatalogResolverTests
         public ReleaseImportService.CatalogResolver Build() => new(
             _typesByName,
             _typesByObjectId,
+            _typesByAlObjectId,
             _objectIdByIdentity,
             _members,
             _extensionsByBaseName,

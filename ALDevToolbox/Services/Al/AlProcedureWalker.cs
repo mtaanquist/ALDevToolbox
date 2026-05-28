@@ -934,7 +934,25 @@ internal sealed class AlProcedureWalker
             if (_state.Pos < _state.Tokens.Count)
             {
                 var t = _state.Tokens[_state.Pos];
-                if (t.Kind == AlTokenKind.Identifier || t.Kind == AlTokenKind.QuotedIdentifier)
+                // Numeric-id form: `Record 380;`, `var X: Codeunit 1060;`.
+                // Older AL — and still-shipping modules like Payment Links
+                // to PayPal — declare record / codeunit variables by id
+                // rather than quoted name. Resolve via the catalog's
+                // (kind, id) index and substitute the canonical name so
+                // downstream ResolveTypeByName lookups succeed.
+                if (t.Kind == AlTokenKind.Number && int.TryParse(t.Value, out var objectId))
+                {
+                    var resolved = _state.Ctx.Resolver.ResolveTypeByObjectId(objectId, keyword);
+                    if (resolved is not null)
+                    {
+                        typeName = resolved.Name;
+                        typeNameLine = t.Line;
+                        typeNameColumn = t.Column;
+                        sawTypeName = true;
+                    }
+                    _state.Pos++;
+                }
+                else if (t.Kind == AlTokenKind.Identifier || t.Kind == AlTokenKind.QuotedIdentifier)
                 {
                     typeName = t.Value;
                     typeNameLine = t.Line;

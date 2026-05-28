@@ -165,6 +165,66 @@ internal static class AlDataItemDsl
     /// <see cref="TryConsumeAliasedSourceDeclaration"/>. Restores the
     /// cursor before returning so the main walk starts from the top.
     /// </summary>
+    /// <summary>
+    /// Walks the whole file pre-pass and stamps every
+    /// <c>keyword(Name)</c> declaration (where keyword is e.g.
+    /// <c>textattribute</c> / <c>textelement</c>) as a Text-typed
+    /// scope variable on the outermost frame. These nodes don't bind
+    /// to a record field — they're scalar XML text values used as
+    /// <c>Text</c> variables from procedure code in the same xmlport.
+    /// Without this seeding every procedure-body reference to one of
+    /// these names fires head-not-a-variable.
+    /// </summary>
+    public static void PrescanTextNodeAliases(AlExtractionState state, string keyword)
+    {
+        int savedPos = state.Pos;
+        try
+        {
+            state.Pos = 0;
+            while (state.Pos < state.Tokens.Count)
+            {
+                var tok = state.Tokens[state.Pos];
+                if (tok.Kind == AlTokenKind.Identifier
+                    && string.Equals(tok.Value, keyword, StringComparison.OrdinalIgnoreCase)
+                    && state.Pos + 1 < state.Tokens.Count
+                    && state.Tokens[state.Pos + 1].Kind == AlTokenKind.Punct
+                    && state.Tokens[state.Pos + 1].Value == "(")
+                {
+                    state.Pos += 2; // past keyword and (
+                    string? alias = null;
+                    if (state.Pos < state.Tokens.Count
+                        && (state.Tokens[state.Pos].Kind == AlTokenKind.Identifier
+                            || state.Tokens[state.Pos].Kind == AlTokenKind.QuotedIdentifier))
+                    {
+                        alias = state.Tokens[state.Pos].Value;
+                        state.Pos++;
+                    }
+                    if (!string.IsNullOrEmpty(alias))
+                    {
+                        ScopeFrame? bottom = null;
+                        foreach (var frame in state.ScopeStack) bottom = frame;
+                        if (bottom is not null)
+                        {
+                            // Keyword left null because Text isn't an AL
+                            // object — the head-resolver short-circuits
+                            // on IsKnownSystemType("Text") when both
+                            // keyword is null AND the type is known,
+                            // silencing the chain instead of mis-resolving.
+                            bottom.Vars[alias.ToLowerInvariant()] =
+                                new ResolvedVariableType(null, "Text");
+                        }
+                    }
+                    continue;
+                }
+                state.Pos++;
+            }
+        }
+        finally
+        {
+            state.Pos = savedPos;
+        }
+    }
+
     public static void PrescanAliases(AlExtractionState state, string keyword)
     {
         int savedPos = state.Pos;
