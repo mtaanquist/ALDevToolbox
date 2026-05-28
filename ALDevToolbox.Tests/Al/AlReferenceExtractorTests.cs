@@ -3225,6 +3225,53 @@ public sealed class AlReferenceExtractorTests
             r.TargetObjectName == "Sales-Post" && r.ReferenceKind == "property_object");
     }
 
+    // ── Tableextension procedures reach base-table globals ───────────
+
+    [Fact]
+    public void Tableextension_chain_resolves_when_global_passed_via_context()
+    {
+        // AL's compile-time merged scope lets a tableextension's
+        // procedures call into the base table's global var map. The
+        // unresolved samples surfacing as
+        //   Reason=head-not-a-variable Token='DimMgt' Owner=tableextension:…
+        // come from the import service NOT merging the base table's
+        // globalsByOwner entry into the extension's. With the merge
+        // wired up at the import-service layer, the extractor sees
+        // DimMgt in its GlobalVars and the chain resolves to the
+        // codeunit's procedure. This test pins the extractor side of
+        // the contract: given a tableextension owner with DimMgt in
+        // its (merged) globals, the chain head must resolve cleanly.
+        var resolver = MakeResolver();
+        resolver.AddType("Item Journal Line",
+            new AlTypeRef(BaseAppId, "table", 83, "Item Journal Line"));
+        resolver.AddType("DimensionManagement",
+            new AlTypeRef(BaseAppId, "codeunit", 408, "DimensionManagement"));
+        resolver.AddMember("DimensionManagement",
+            new AlMember("GetCombinedDimensionSetID", "procedure", "Integer", null));
+
+        var mergedGlobals = new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["DimMgt"] = new ResolvedVariableType("Codeunit", "DimensionManagement"),
+        };
+
+        const string src = """
+            procedure CreateAssemblyDim()
+            begin
+                "Dimension Set ID" := DimMgt.GetCombinedDimensionSetID();
+            end;
+            """;
+        var ctx = OwnerTableExtension(resolver, "Asm. Item Journal Line",
+            baseTable: "Item Journal Line", globals: mergedGlobals);
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "DimensionManagement"
+            && r.TargetMemberName == "GetCombinedDimensionSetID");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "DimMgt" && s.Reason == "head-not-a-variable");
+    }
+
     // ── XmlPort tableelement forward references ──────────────────────
 
     [Fact]
