@@ -236,6 +236,12 @@ public static class AlBuiltinMethods
         // `MyReport.Execute()` — BC 26+ replacement for the Run/RunModal
         // pair when the caller wants the rendered output without a UI.
         "Execute",
+        // `MyReport.RunRequestPage()` — runs only the request page
+        // (returns the user's filter selections as XML) without
+        // executing the report body. Base App uses it from
+        // RegisteredWhseMovements / RegisteredWhsePicks / etc. pages
+        // to gather filters before passing them to a deletion routine.
+        "RunRequestPage",
     };
 
     /// <summary>
@@ -380,6 +386,13 @@ public static class AlBuiltinMethods
         // form silences only after own-member resolution misses, so
         // a user procedure named `Date` on the owner still wins.
         "Date", "Time",
+        // Primitive-to-text conversion. Exposed on every scalar type
+        // (Integer / DateTime / Decimal / Guid / Code / Boolean): the
+        // canonical `MyInteger.ToText()` / `SystemCreatedAt.ToText()`
+        // shape in Base App's report-layout dialogs. Same rationale as
+        // `AsInteger` above — we don't track scalar receiver types
+        // through the chain, so receiver-typed dispatch can't see it.
+        "ToText",
         // Stream / blob primitives (TempBlob, File, InStream, OutStream).
         "CreateInStream", "CreateOutStream",
         "ReadText", "WriteText", "Read", "Write", "EOS",
