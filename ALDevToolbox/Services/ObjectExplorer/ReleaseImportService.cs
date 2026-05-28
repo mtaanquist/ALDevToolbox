@@ -58,8 +58,22 @@ public class ReleaseImportService
     // group 1, the optional numeric id in 2, the unquoted name in 3 (or
     // bare-identifier name in 4 for ids-only kinds like interfaces). Compiled
     // once because we scan every .al file for every imported module.
-    private static readonly Regex ObjectHeaderRegex = new(
-        """^\s*(codeunit|table|page|report|xmlport|query|controladdin|enum|interface|permissionset|tableextension|pageextension|reportextension|enumextension|permissionsetextension)\s+(?:(\d+)\s+)?(?:"(?<quoted>[^"]+)"|(?<bare>\w+))""",
+    //
+    // The trailing `(?!\s*=)` rejects permissionset permission entries like
+    // <c>query "Sent Emails" = X,</c> — those share the `kind "Name"` shape
+    // but assign permissions instead of opening a body. The bare-name
+    // alternative requires a letter / underscore start (AL identifier
+    // rules) so the regex can't backtrack past a failing quoted-name
+    // lookahead and accept the numeric id as the name (e.g.
+    // <c>page 21 "Customer Card" = X,</c> would otherwise match with
+    // bare="21"). Without these two guards, the permissionset file
+    // claims every object kind/name it permissions, and real object
+    // files lose the link (e.g. `query 8889 "Sent Emails"` pointing at
+    // `EmailObjects.PermissionSet.al` instead of `SentEmails.Query.al`,
+    // with the outline showing permissionset entries instead of the
+    // query's columns).
+    internal static readonly Regex ObjectHeaderRegex = new(
+        """^\s*(codeunit|table|page|report|xmlport|query|controladdin|enum|interface|permissionset|tableextension|pageextension|reportextension|enumextension|permissionsetextension)\s+(?:(\d+)\s+)?(?:"(?<quoted>[^"]+)"|(?<bare>[A-Za-z_]\w*))(?!\s*=)""",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public ReleaseImportService(

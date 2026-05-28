@@ -458,6 +458,39 @@ public sealed class AlSymbolExtractorTests
     }
 
     [Fact]
+    public void Extracts_aggregation_query_column_without_source_field()
+    {
+        // `column(Count_Orders)` with no `; SourceField` — value comes
+        // from `Method = Count;` (or Sum / Avg / etc.) on the column
+        // body, not a row column. Without surfacing these as
+        // query_column symbols, `CountPurchOrders.Count_Orders` chains
+        // strand as chain-step unresolved even though the column exists
+        // in source.
+        var source = """
+            query 9063 "Count Purchase Orders"
+            {
+                elements
+                {
+                    dataitem(Purchase_Header; "Purchase Header")
+                    {
+                        column(Count_Orders)
+                        {
+                            Method = Count;
+                        }
+                    }
+                }
+            }
+            """;
+
+        var columns = AlSymbolExtractor.Extract(source)
+            .Where(s => s.Kind == "query_column")
+            .ToList();
+
+        columns.Should().ContainSingle(c => c.Name == "Count_Orders");
+        columns.Single(c => c.Name == "Count_Orders").Signature.Should().BeNull();
+    }
+
+    [Fact]
     public void Query_column_does_not_fire_on_page_field_line()
     {
         // The query_column extraction is owner-kind gated so a page
