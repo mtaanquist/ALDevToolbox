@@ -3512,9 +3512,14 @@ public sealed class AlReferenceExtractorTests
         // bare-callable-first order — every legacy file-system check
         // in BC's banking / data-exchange code surfaces as
         // bare-call unresolved.
+        //
+        // The codeunit owner type must be in the catalog or
+        // OwnerType() returns null and the early-out fires before
+        // catalog resolution; adding the type here exercises the
+        // full path (own-member miss → silence-list match → return).
         var resolver = MakeResolver();
-        resolver.AddType("Positive Pay Export Mgt",
-            new AlTypeRef(BaseAppId, "codeunit", 1711, "Positive Pay Export Mgt"));
+        resolver.AddType("MyHelper",
+            new AlTypeRef(BaseAppId, "codeunit", 50100, "MyHelper"));
 
         const string src = """
             procedure Check(FileName: Text): Boolean

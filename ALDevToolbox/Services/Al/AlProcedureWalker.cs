@@ -1613,11 +1613,15 @@ internal sealed class AlProcedureWalker
         var ownerType = OwnerType();
         if (ownerType is null)
         {
-            // No owner-side catalog scope to consult; fall back to
-            // the system-function silence below so bare `Message(...)`
-            // / `Format(...)` from contexts without OwnerType don't
-            // pollute the diagnostic.
-            return MatchesBareCallableSilence(name);
+            // No owner-side catalog scope to consult. Return false
+            // unconditionally so the orchestrator's main loop does
+            // its standard Pos++ — returning true here without
+            // advancing the cursor sends the loop back into the
+            // same token forever. The system-function silence list
+            // doesn't apply yet because we haven't tried the
+            // catalog; with no owner context we can't say either way,
+            // so fall through to the default advance.
+            return false;
         }
 
         var member = _state.Ctx.Resolver.ResolveMember(ownerType, name);
