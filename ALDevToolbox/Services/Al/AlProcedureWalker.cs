@@ -1157,8 +1157,43 @@ internal sealed class AlProcedureWalker
     /// </summary>
     private void WalkMemberChain(AlTypeRef? receiverType)
     {
-        while (receiverType is not null && _state.Pos < _state.Tokens.Count && _state.At("."))
+        while (_state.Pos < _state.Tokens.Count)
         {
+            // `Var.Field::EnumValue` typed-literal continuation. The
+            // catalog doesn't track enum / option values, so we
+            // silently skip the value identifier. The receiver stays
+            // pinned to the field's enum/option return type (or to
+            // the null receiver inherited from a scalar-Option field)
+            // so subsequent `.AsInteger()` / `.AsBoolean()` continues
+            // through the EnumMethods / CommonMethods builtin set.
+            //
+            // Without this, every base-app case label of the shape
+            //   SalesHeader."Document Type"::Quote:
+            // and every chain like
+            //   CFForecastEntry."Source Type"::Receivables.AsInteger()
+            // fired head-not-a-variable on the value identifier when
+            // the main dispatch picked it up as a fresh chain head.
+            if (_state.Pos + 1 < _state.Tokens.Count
+                && _state.Tokens[_state.Pos].Kind == AlTokenKind.DoubleColon
+                && (_state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Identifier
+                    || _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.QuotedIdentifier))
+            {
+                _state.Pos += 2;
+                continue;
+            }
+
+            if (!_state.At(".")) break;
+
+            // Receiver dropped to null upstream (scalar-Option field
+            // with no resolvable type). Walk past trailing
+            // `.Member(args)` chains so the main loop doesn't re-enter
+            // on the dotted continuation and bump unresolved.
+            if (receiverType is null)
+            {
+                AdvancePastChain();
+                return;
+            }
+
             _state.Pos++; // .
 
             if (_state.Pos >= _state.Tokens.Count) break;
@@ -2163,18 +2198,37 @@ internal sealed class AlProcedureWalker
     private void AdvancePastChain()
     {
         // We've already advanced past the head. Walk through any
-        // `.member` follow-ons and method-call argument lists so the
-        // main loop doesn't re-enter and double-count.
-        while (_state.Pos < _state.Tokens.Count && _state.At("."))
+        // `.member` follow-ons, `::EnumValue` typed-literal steps,
+        // and method-call argument lists so the main loop doesn't
+        // re-enter and double-count. Without the `::Value` branch,
+        // a dead-receiver chain like
+        //   Var."Document Type"::Quote.AsInteger()
+        // (where Var resolved but the field's type didn't) would
+        // bail after `."Document Type"` and the main dispatch would
+        // pick `Quote` up as a fresh chain head.
+        while (_state.Pos < _state.Tokens.Count)
         {
-            _state.Pos++; // .
-            if (_state.Pos < _state.Tokens.Count
-                && (_state.Tokens[_state.Pos].Kind == AlTokenKind.Identifier
-                    || _state.Tokens[_state.Pos].Kind == AlTokenKind.QuotedIdentifier))
+            if (_state.At("."))
             {
-                _state.Pos++;
+                _state.Pos++; // .
+                if (_state.Pos < _state.Tokens.Count
+                    && (_state.Tokens[_state.Pos].Kind == AlTokenKind.Identifier
+                        || _state.Tokens[_state.Pos].Kind == AlTokenKind.QuotedIdentifier))
+                {
+                    _state.Pos++;
+                }
+                if (_state.Pos < _state.Tokens.Count && _state.At("(")) _state.SkipBalancedParens();
+                continue;
             }
-            if (_state.Pos < _state.Tokens.Count && _state.At("(")) _state.SkipBalancedParens();
+            if (_state.Pos + 1 < _state.Tokens.Count
+                && _state.Tokens[_state.Pos].Kind == AlTokenKind.DoubleColon
+                && (_state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Identifier
+                    || _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.QuotedIdentifier))
+            {
+                _state.Pos += 2;
+                continue;
+            }
+            break;
         }
     }
 

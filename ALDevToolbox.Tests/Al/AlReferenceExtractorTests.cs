@@ -3225,6 +3225,141 @@ public sealed class AlReferenceExtractorTests
             r.TargetObjectName == "Sales-Post" && r.ReferenceKind == "property_object");
     }
 
+    // ── Chain :: typed-literal continuation through enum-typed fields ──
+
+    [Fact]
+    public void Field_typed_literal_chain_continues_to_enum_builtin()
+    {
+        // `Var."Field"::EnumValue.AsInteger()` — the dominant case-
+        // label / enum-coercion shape in base app. Before the fix,
+        // the chain walker exited after the field access and the main
+        // dispatch picked `EnumValue` up as a fresh chain head, firing
+        // head-not-a-variable. The `::Value` continuation in
+        // WalkMemberChain skips the value identifier silently and
+        // lets the trailing `.AsInteger()` resolve through the enum
+        // builtin set.
+        var resolver = MakeResolver();
+        resolver.AddType("Sales Document Type",
+            new AlTypeRef(BaseAppId, "enum", 39, "Sales Document Type"));
+        resolver.AddMember("Sales Header", new AlMember(
+            "Document Type", "table_field", "Enum", "Sales Document Type"));
+
+        const string src = """
+            procedure UsesDocumentType()
+            var
+                SalesHeader: Record "Sales Header";
+            begin
+                if SalesHeader."Document Type"::Quote.AsInteger() = 0 then
+                    exit;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        // The chain-step "Quote" must not show up as unresolved.
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "Quote");
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+        // The field access on Sales Header still emits.
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "field_access"
+            && r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "Document Type");
+    }
+
+    [Fact]
+    public void Field_typed_literal_chain_as_case_branch_label_silences()
+    {
+        // The pure case-label shape — `Var."Field"::Value:` — has no
+        // trailing `.AsInteger()`. The walker must still consume the
+        // `::Value` and stop cleanly, leaving the trailing `:` for the
+        // main loop's case-branch dispatch.
+        var resolver = MakeResolver();
+        resolver.AddMember("Sales Header", new AlMember(
+            "Document Type", "table_field", "Enum", "Sales Document Type"));
+        resolver.AddType("Sales Document Type",
+            new AlTypeRef(BaseAppId, "enum", 39, "Sales Document Type"));
+
+        const string src = """
+            procedure Decide()
+            var
+                SalesHeader: Record "Sales Header";
+            begin
+                case SalesHeader."Document Type" of
+                    SalesHeader."Document Type"::Quote:
+                        exit;
+                    SalesHeader."Document Type"::"Blanket Order":
+                        exit;
+                end;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "Quote" || s.Token == "Blanket Order");
+    }
+
+    [Fact]
+    public void Field_typed_literal_chain_with_scalar_option_silences()
+    {
+        // Inline scalar-Option fields (no named enum behind them) have
+        // an empty ReturnTypeName in the catalog, so the chain walker's
+        // receiver drops to null after the field access. The `::Value`
+        // continuation still needs to silence — and the trailing
+        // `.AsInteger()` should walk past via the dead-receiver branch.
+        // Mirrors the unresolved sample
+        //   Token='StepLine' Line=105 Owner=table:Cash Flow Chart Setup
+        // logged from CashFlowChartSetup.Table.al.
+        var resolver = MakeResolver();
+        resolver.AddType("Business Chart Buffer",
+            new AlTypeRef(BaseAppId, "table", 485, "Business Chart Buffer"));
+        // "Chart Type" is declared as an inline Option — no separate
+        // enum type to resolve, so ReturnTypeName comes back empty.
+        resolver.AddMember("Business Chart Buffer",
+            new AlMember("Chart Type", "table_field", null, null));
+
+        const string src = """
+            procedure GetChartType(): Integer
+            var
+                BusinessChartBuf: Record "Business Chart Buffer";
+            begin
+                exit(BusinessChartBuf."Chart Type"::StepLine.AsInteger());
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "StepLine");
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Field_typed_literal_quoted_value_silences()
+    {
+        // `Var."Field"::"Multi Word Value"` — quoted enum values with
+        // spaces hit the same dispatch path. Common in account-type
+        // and document-type discriminator code:
+        //   AppliedPaymentEntry."Account Type"::"G/L Account":
+        var resolver = MakeResolver();
+        resolver.AddType("Bank Acc. Reconciliation Line",
+            new AlTypeRef(BaseAppId, "table", 274, "Bank Acc. Reconciliation Line"));
+        resolver.AddMember("Bank Acc. Reconciliation Line",
+            new AlMember("Account Type", "table_field", null, null));
+
+        const string src = """
+            procedure Decide()
+            var
+                BankRecLine: Record "Bank Acc. Reconciliation Line";
+            begin
+                case BankRecLine."Account Type" of
+                    BankRecLine."Account Type"::"G/L Account":
+                        exit;
+                end;
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "G/L Account" || s.Token == "Account Type");
+    }
+
     // ── Tableextension procedures reach base-table globals ───────────
 
     [Fact]
