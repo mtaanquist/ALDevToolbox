@@ -804,10 +804,22 @@ public class ReleaseImportService
                 // SourceTable on pages — extracted from the symbol package's
                 // property list. Pageextensions don't carry it directly; a
                 // second pass below copies the value from their base page.
-                // SourceTable from the symbol package first; fall back
-                // to the source-side scan for reports whose request-
-                // page-level property the package didn't surface.
-                SourceTableName = ExtractSourceTableName(symObj) ?? sourceTableFromHeader,
+                // SourceTable resolution order depends on the object
+                // kind. Pages / codeunits get a reliable SourceTable /
+                // TableNo on the symbol package's top-level Properties
+                // list — that path stays authoritative. Reports nest
+                // the property inside `requestpage { ... }` and BC's
+                // symbol package doesn't always surface it at the
+                // report's own Properties list (Whse. Change Unit of
+                // Measure / VAT Report Suggest Lines), so source-side
+                // wins for reports and the package side serves as the
+                // fallback when source isn't paired (third-party
+                // modules with no .Source.zip).
+                SourceTableName =
+                    (string.Equals(symObj.Kind, "report", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(symObj.Kind, "reportextension", StringComparison.OrdinalIgnoreCase))
+                        ? (sourceTableFromHeader ?? ExtractSourceTableName(symObj))
+                        : (ExtractSourceTableName(symObj) ?? sourceTableFromHeader),
                 // Use the FK directly rather than the navigation: after the
                 // file-chunk save loop above, the file entity may have been
                 // detached from the tracker on a previous flush. The Id is
@@ -1510,6 +1522,42 @@ public class ReleaseImportService
     /// the second-and-later objects' links (first match wins) —
     /// rare on first-party modules and acceptable for v1.
     /// </summary>
+    internal static (string? ExtendsName, string? SourceTable) ScanFileForHeaderMetadata(string content)
+    {
+        // Exposed for unit tests. Mirrors the per-file logic in
+        // <see cref="ScanFileDeclarations"/> for the first header found,
+        // returning the source-side extends + SourceTable metadata so
+        // tests can pin the parsing without a TestDb fixture.
+        bool sawHeader = false;
+        string? extendsName = null;
+        string? sourceTable = null;
+        foreach (var rawLine in content.Split('\n'))
+        {
+            if (!sawHeader)
+            {
+                var m = ObjectHeaderRegex.Match(rawLine);
+                if (m.Success)
+                {
+                    sawHeader = true;
+                    if (m.Groups["exquoted"].Success) extendsName = m.Groups["exquoted"].Value;
+                    else if (m.Groups["exbare"].Success) extendsName = m.Groups["exbare"].Value;
+                    continue;
+                }
+            }
+            if (sourceTable is null)
+            {
+                var st = SourceTablePropertyRegex.Match(rawLine);
+                if (st.Success)
+                {
+                    sourceTable = st.Groups["quoted"].Success
+                        ? st.Groups["quoted"].Value
+                        : st.Groups["bare"].Value;
+                }
+            }
+        }
+        return (extendsName, sourceTable);
+    }
+
     private static Dictionary<(string Kind, string Name), DeclarationHit> ScanFileDeclarations(
         IReadOnlyDictionary<string, OeModuleFile> filesByPath,
         IReadOnlyDictionary<string, string> sourceFiles)

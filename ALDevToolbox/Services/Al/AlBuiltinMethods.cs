@@ -613,6 +613,13 @@ public static class AlBuiltinMethods
         // appears in query `column` decoration as a sort direction
         // (looks like a function call to the lexer).
         "view", "views", "descending", "ascending",
+        // BC 28 list-page analytics: pages declare an
+        // `analysisviews { analysisview("Name") { ... } }` block
+        // pointing at a JSON definition file. Same shape as
+        // `views { view(...) { } }` — declarative, no user code,
+        // both the singular and plural form land in bare-self-
+        // call dispatch and need silencing.
+        "analysisview", "analysisviews",
     };
 
     /// <summary>
@@ -674,8 +681,10 @@ public static class AlBuiltinMethods
         // not as variables: `Version.Create('1.0.0.0')`,
         // `ErrorInfo.Create('msg')`. They're also in KnownSystemTypes
         // (for the variable-typed case); listing them here silences the
-        // `Kind.Method(...)` static-call shape too.
-        "Version", "ErrorInfo",
+        // `Kind.Method(...)` static-call shape too. `SecretText.Empty()`
+        // (BC 28+ AI-prompt callsites) and the existing scalar set
+        // share the static-receiver shape.
+        "Version", "ErrorInfo", "SecretText", "Guid",
         // System types frequently used as static dispatchers without a
         // variable declaration. `Dialog.StrMenu(...)`, `Dialog.Open(...)`,
         // `Text.StrSubstNo(...)`, `Text.Format(...)` are the canonical
