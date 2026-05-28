@@ -637,20 +637,53 @@ public sealed class McpToolTests : IDisposable
     }
 
     [Fact]
-    public async Task DownloadSymbolReference_returns_stored_json()
+    public async Task ListReleaseModules_returns_modules_with_symbol_reference_flag()
     {
-        var releaseId = await SeedDkCoreReleaseAsync(storeSymbolReference: true, label: "MCP DK Core symbols");
+        var releaseId = await SeedDkCoreReleaseAsync(storeSymbolReference: true, label: "MCP list modules");
         await using var ctx = _db.NewContext();
-        var moduleName = await ctx.OeModules.AsNoTracking()
+        var module = await ctx.OeModules.AsNoTracking()
             .Where(m => m.ReleaseId == releaseId)
-            .Select(m => m.Name)
+            .Select(m => new { m.Name })
             .SingleAsync();
         var tools = NewOeTools(ctx);
 
-        var result = await tools.DownloadSymbolReferenceAsync(releaseId.ToString(), moduleName);
+        var rows = await tools.ListReleaseModulesAsync(releaseId.ToString());
 
-        result.ModuleName.Should().Be(moduleName);
-        result.Json.TrimStart().Should().StartWith("{");
+        var row = rows.Should().ContainSingle().Subject;
+        row.Name.Should().Be(module.Name);
+        row.HasStoredSymbolReference.Should().BeTrue("the seed imported with storeSymbolReference: true");
+    }
+
+    [Fact]
+    public async Task ListReleaseModules_marks_modules_without_stored_symbol_reference()
+    {
+        var releaseId = await SeedDkCoreReleaseAsync(label: "MCP list modules nosym");
+        await using var ctx = _db.NewContext();
+        var tools = NewOeTools(ctx);
+
+        var rows = await tools.ListReleaseModulesAsync(releaseId.ToString());
+
+        rows.Should().ContainSingle()
+            .Which.HasStoredSymbolReference.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task DownloadSymbolReference_returns_link_to_streaming_endpoint()
+    {
+        var releaseId = await SeedDkCoreReleaseAsync(storeSymbolReference: true, label: "MCP DK Core symbols");
+        await using var ctx = _db.NewContext();
+        var module = await ctx.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == releaseId)
+            .Select(m => new { m.Id, m.Name })
+            .SingleAsync();
+        var tools = NewOeTools(ctx);
+
+        var result = await tools.DownloadSymbolReferenceAsync(releaseId.ToString(), module.Name);
+
+        result.ModuleName.Should().Be(module.Name);
+        result.ContentHash.Should().NotBeNullOrEmpty();
+        result.ContentLength.Should().BeGreaterThan(0);
+        result.DownloadPath.Should().Be($"/api/object-explorer/release/{releaseId}/modules/{module.Id}/symbol-reference");
     }
 
     [Fact]
