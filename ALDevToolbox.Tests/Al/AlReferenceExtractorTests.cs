@@ -3054,6 +3054,168 @@ public sealed class AlReferenceExtractorTests
             r.TargetMemberName == "Insert" && r.TargetObjectName == "Payment Export Data");
     }
 
+    // ── DotNet variable type names that collide with AL tables ───────
+
+    [Fact]
+    public void DotNet_variable_does_not_resolve_through_AL_catalog()
+    {
+        // `File: DotNet File;` declares a .NET System.IO.File handle.
+        // The type name "File" collides with the platform virtual `File`
+        // table (id 2000000022); without the DotNet bypass the resolver
+        // routes the chain receiver to the AL table and `.WriteAllBytes`
+        // fires as chain-step unresolved on the table receiver. Verified
+        // against the unresolved sample
+        //   ReceiverKind=table ReceiverName='File' Token='WriteAllBytes'
+        // logged from AMCBankExpCTHndl.Codeunit.al in BC 26.5.
+        var resolver = MakeResolver();
+        resolver.AddType("File", new AlTypeRef(BaseAppId, "table", 2000000022, "File"));
+
+        const string src = """
+            procedure WriteBytes()
+            var
+                File: DotNet File;
+            begin
+                File.WriteAllBytes('foo.txt', 'data');
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        // No chain-step unresolved against the AL File table.
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+        result.References.Should().NotContain(r =>
+            r.TargetObjectName == "File" && r.TargetMemberName == "WriteAllBytes");
+    }
+
+    // ── Object-scope attribute skipping ───────────────────────────────
+
+    [Fact]
+    public void CommitBehavior_attribute_does_not_fire_bare_call_unresolved()
+    {
+        // `[CommitBehavior(CommitBehavior::Ignore)]` placed above a
+        // procedure declaration is a method attribute, not a callable.
+        // Before the object-scope attribute-skipper landed, the walker
+        // stepped past `[` and dispatched `CommitBehavior(` as a bare
+        // self-call, producing the sample
+        //   Reason=bare-call Token='CommitBehavior'
+        // every time this attribute appeared (BankAccReconciliationPost
+        // and friends emit it on every posting procedure). With the
+        // skipper, the entire bracketed span is consumed silently.
+        var resolver = MakeResolver();
+        const string src = """
+            codeunit 50000 "MyHelper"
+            {
+                [CommitBehavior(CommitBehavior::Ignore)]
+                local procedure DoPost()
+                begin
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Inherent_permissions_attribute_does_not_fire_bare_call_unresolved()
+    {
+        // Same shape, different attribute name — covers the broader
+        // family of method attributes (InherentPermissions,
+        // InherentEntitlements, NonDebuggable, TryFunction, …).
+        var resolver = MakeResolver();
+        const string src = """
+            codeunit 50000 "MyHelper"
+            {
+                [InherentPermissions(PermissionObjectType::TableData, Database::Customer, 'X')]
+                procedure Update()
+                begin
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void EventSubscriber_attribute_still_emits_after_attribute_skipper()
+    {
+        // Guard: the generic attribute skipper must not eat EventSubscriber —
+        // that one carries a real cross-object reference (event_publisher).
+        var resolver = MakeResolver();
+        resolver.AddType("Sales-Post", new AlTypeRef(BaseAppId, "codeunit", 80, "Sales-Post"));
+
+        const string src = """
+            codeunit 50000 "MyHelper"
+            {
+                [EventSubscriber(ObjectType::Codeunit, Codeunit::"Sales-Post", 'OnAfterPostSalesDoc', '', false, false)]
+                local procedure OnAfterPostSalesDoc(var SalesHeader: Record "Sales Header")
+                begin
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "event_publisher"
+            && r.TargetObjectName == "Sales-Post"
+            && r.TargetMemberName == "OnAfterPostSalesDoc");
+    }
+
+    // ── Named return values ──────────────────────────────────────────
+
+    [Fact]
+    public void Named_return_value_is_in_scope_in_procedure_body()
+    {
+        // `procedure GetTableValuePair(...) TableValuePair: Dictionary ...`
+        // — the named-return identifier becomes an in-scope local
+        // for the body. Verified against the unresolved sample
+        //   Reason=head-not-a-variable Token='TableValuePair'
+        // logged from AssemblyLine.Table.al in BC 26.5. Same idiom
+        // ships across PhysInvtOrderLine, ItemJournalLine,
+        // JobJournalLine, PurchaseLine, SalesLine, ServiceLine.
+        //
+        // Asserting on the diagnostic sample directly (rather than the
+        // unresolved counter) so an unrelated unresolved on the same
+        // line doesn't mask a regression of this fix.
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper", new AlTypeRef(BaseAppId, "codeunit", 50100, "MyHelper"));
+
+        const string src = """
+            procedure GetTableValuePair(FieldNo: Integer) TableValuePair: Dictionary of [Integer, Code[20]]
+            begin
+                TableValuePair.Add(FieldNo, 'X');
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        // The named return TableValuePair, referenced inside the body,
+        // must not fire head-not-a-variable.
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "TableValuePair" && s.Reason == "head-not-a-variable");
+    }
+
+    [Fact]
+    public void Anonymous_return_clause_still_parses_cleanly()
+    {
+        // Guard: the named-return parser must not eat an anonymous
+        // return type — `procedure Foo(): Integer` should still leave
+        // the cursor positioned to enter the body. A regression here
+        // would skip the body entirely and lose every reference inside.
+        var resolver = MakeResolver();
+        resolver.AddType("Sales-Post", new AlTypeRef(BaseAppId, "codeunit", 80, "Sales-Post"));
+
+        const string src = """
+            procedure DoWork(): Integer
+            var
+                SalesPost: Codeunit "Sales-Post";
+            begin
+                SalesPost.Run();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "Sales-Post" && r.ReferenceKind == "property_object");
+    }
+
     // ── Stub resolver ───────────────────────────────────────────────
 
     private sealed class StubResolver : IAlTypeResolver

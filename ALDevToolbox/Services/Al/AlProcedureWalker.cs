@@ -542,8 +542,17 @@ internal sealed class AlProcedureWalker
         _state.SkipWhitespaceTokens();
         if (_state.At("(")) ParseParameterList(frame);
 
-        // Optional return-type clause: `: ReturnType` — no variables
-        // introduced, just skip until we hit `var` or `begin`.
+        // Optional return-type clause. Two shapes:
+        //   `: ReturnType` (anonymous)
+        //   `ReturnName: ReturnType` (named — the AL "named return value"
+        //   idiom, where `ReturnName` becomes a writable local inside
+        //   the body, e.g. `procedure GetX() X: Integer begin X := 42 end;`).
+        // The named form introduces a variable that base-app idioms
+        // frequently reference inside the body — without registering
+        // it, every `X := ...` and `OnAfter(X, ...)` fires
+        // head-not-a-variable. Anonymous return: no variable added,
+        // just skip the type tokens.
+        ParseOptionalReturnClause(frame);
 
         // Optional local var block: `var name: Type; ...` between
         // procedure head and `begin`.
@@ -623,6 +632,58 @@ internal sealed class AlProcedureWalker
     {
         while (_state.Pos < _state.Tokens.Count && !_state.At(";") && !_state.At(")")) _state.Pos++;
         if (_state.At(";")) _state.Pos++;
+    }
+
+    /// <summary>
+    /// Parses the optional return clause sitting between a procedure's
+    /// parameter list and its <c>var</c> / <c>begin</c>. Two shapes:
+    /// <list type="bullet">
+    ///   <item><c>) ReturnName: ReturnType</c> — the AL named-return
+    ///     idiom; <c>ReturnName</c> becomes an in-scope local of the
+    ///     declared type for the body. Base-app procedures like
+    ///     <c>GetTableValuePair(FieldNo) TableValuePair: Dictionary</c>
+    ///     reference the named return inside the body and fire
+    ///     head-not-a-variable without this registration.</item>
+    ///   <item><c>) : ReturnType</c> — anonymous return; no variable
+    ///     introduced. The token-skip below covers both by checking
+    ///     for the optional name before the colon.</item>
+    /// </list>
+    /// On entry the cursor sits just past the closing <c>)</c> of the
+    /// parameter list (or wherever the parameter parser left it). On
+    /// exit the cursor sits at the first <c>var</c> / <c>begin</c>
+    /// token of the procedure head — or unchanged when no return
+    /// clause is present.
+    /// </summary>
+    private void ParseOptionalReturnClause(ScopeFrame frame)
+    {
+        _state.SkipWhitespaceTokens();
+        if (_state.Pos >= _state.Tokens.Count) return;
+
+        // Named return: identifier then `:`. Quoted identifiers are
+        // legal as names; bare identifiers must not collide with the
+        // `var` / `begin` keywords (those mark the next sub-clause).
+        int probe = _state.Pos;
+        if ((_state.Tokens[probe].Kind == AlTokenKind.Identifier
+             || _state.Tokens[probe].Kind == AlTokenKind.QuotedIdentifier)
+            && !_state.IsIdentifierTok(probe, "var")
+            && !_state.IsIdentifierTok(probe, "begin")
+            && probe + 1 < _state.Tokens.Count
+            && _state.Tokens[probe + 1].Kind == AlTokenKind.Punct
+            && _state.Tokens[probe + 1].Value == ":")
+        {
+            var returnName = _state.Tokens[probe].Value;
+            _state.Pos = probe + 2; // past name and `:`
+            var type = ReadTypeReference();
+            frame.Vars[returnName.ToLowerInvariant()] = type;
+            return;
+        }
+
+        // Anonymous return: `: Type`.
+        if (_state.At(":"))
+        {
+            _state.Pos++;
+            ReadTypeReference();
+        }
     }
 
     private void ParseVarBlock(ScopeFrame frame)
@@ -2063,6 +2124,19 @@ internal sealed class AlProcedureWalker
                 // diagnostic still sees declaredAsVar for context).
                 if (string.IsNullOrEmpty(declared.Keyword)
                     && AlBuiltinMethods.IsKnownSystemType(declared.TypeName))
+                {
+                    return null;
+                }
+                // DotNet variables (`var File: DotNet File;`) name a .NET
+                // type whose members live outside the AL catalog. The
+                // keyword carries the DotNet hint, but the type name
+                // sometimes collides with an AL platform table — `File`
+                // also names the virtual id=2000000022 table, and
+                // `Convert` collides with nothing but would still false-
+                // resolve if anyone added that table later. Short-circuit
+                // before the catalog lookup; the caller's keyword=="DotNet"
+                // branch silences the chain without emitting unresolved.
+                if (string.Equals(declared.Keyword, "DotNet", StringComparison.OrdinalIgnoreCase))
                 {
                     return null;
                 }
