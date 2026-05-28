@@ -253,6 +253,11 @@ public static class AlBuiltinMethods
         "Run", "RunModal", "Import", "Export",
         "SetSource", "SetDestination", "GetSource",
         "SetTableView", "GetTableView",
+        // `MyXmlport.ImportFile()` — runtime helper that pops up the
+        // platform's import dialog. Used by `CAL Test Management` for
+        // each of CAL Test Coverage Map / CAL Export Test Result /
+        // CAL Import Enabled Codeunit.
+        "ImportFile",
         // Property accessors on xmlport instances — `FIELDDELIMITER`,
         // `FIELDSEPARATOR`, `TEXTENCODING`, `USEREQUESTPAGE` etc. Used
         // by base-app code that builds an xmlport at runtime to set
@@ -375,6 +380,11 @@ public static class AlBuiltinMethods
         "AsInteger", "AsBoolean", "AsText", "AsCode", "AsDecimal",
         "AsDateTime", "AsDate", "AsTime", "AsDuration", "AsGuid",
         "AsBigInteger",
+        // Inverse conversion — `MyRec."Action"::FromInteger(N)` /
+        // `MyEnum.FromInteger(N)` builds an enum value from an int.
+        // Same rationale as AsInteger — chain walker doesn't track
+        // enum types on field receivers.
+        "FromInteger",
         // Variant / InStream introspection.
         "HasValue", "IsValue", "IsArray", "IsObject", "IsNull",
         // Text-shape methods exposed on multiple receivers.

@@ -170,6 +170,23 @@ public static class AlReferenceExtractor
         /// </summary>
         private void ProcessOneToken()
         {
+            // Single-statement `with X do <stmt>;` frame disposal. The
+            // with-frame was pushed at `do` with EndTokenIndex pointing
+            // one past the statement-terminating `;` (computed by
+            // ScanForSingleStatementEnd). Pop it the moment the cursor
+            // reaches that position so the rebound Rec doesn't bleed
+            // into the next statement. Loops because deeply-nested
+            // single-stmt withs (rare but legal) could close several at
+            // the same position.
+            while (_state.ScopeStack.Count > 0)
+            {
+                var top = _state.ScopeStack.Peek();
+                if (!top.IsSingleStmtWith || _state.Pos < top.EndTokenIndex) break;
+                _state.ScopeStack.Pop();
+                _state.RecTypeResolved = false;
+                _state.RecTypeCache = null;
+            }
+
             var tok = _state.Tokens[_state.Pos];
 
             // Preprocessor branch elimination: AL files use

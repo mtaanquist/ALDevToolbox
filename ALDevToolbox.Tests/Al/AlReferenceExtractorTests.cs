@@ -4616,6 +4616,98 @@ public sealed class AlReferenceExtractorTests
             s.Token == "LocalVar");
     }
 
+    // ── Single-statement `with X do <stmt>;` ────────────────────────
+
+
+    [Fact]
+    public void Single_statement_with_rebinds_rec_for_bare_call_in_inner_if()
+    {
+        // Canonical BC pattern from PaymentExportManagement (DK
+        // module): `WITH GenJournalLine DO IF X THEN
+        // InsertPaymentFileError(...);`. The single-statement WITH
+        // form has no begin/end anchor so the older walker skipped
+        // the frame push entirely; the bare InsertPaymentFileError
+        // call then dispatched against the owner codeunit (which
+        // doesn't expose it) and surfaced as bare-call unresolved.
+        // The fix pre-scans for the matching `;` and pops the with-
+        // frame at that position so subsequent statements aren't
+        // affected.
+        var resolver = MakeResolver();
+        // The owner codeunit name must match OwnerCodeunit()'s default
+        // ("MyHelper") so OwnerType() resolves; the bare-self-call
+        // resolver early-exits when OwnerType is null and never
+        // reaches the RecType fallback that the WITH frame sets up.
+        resolver.AddType("MyHelper",
+            new AlTypeRef(BaseAppId, "codeunit", 50000, "MyHelper"));
+        resolver.AddType("Gen. Journal Line",
+            new AlTypeRef(BaseAppId, "table", 81, "Gen. Journal Line"));
+        resolver.AddMember("Gen. Journal Line",
+            new AlMember("InsertPaymentFileError", "procedure", null, null));
+
+        const string src = """
+            procedure Check(GenJournalLine: Record "Gen. Journal Line")
+            begin
+                WITH GenJournalLine DO
+                    IF TRUE THEN
+                        IF FALSE THEN BEGIN
+                            IF TRUE THEN
+                                InsertPaymentFileError('first');
+                        END ELSE
+                            IF TRUE THEN
+                                InsertPaymentFileError('second');
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Where(r =>
+                r.ReferenceKind == "method_call"
+                && r.TargetObjectName == "Gen. Journal Line"
+                && r.TargetMemberName == "InsertPaymentFileError")
+            .Should().HaveCount(2);
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "InsertPaymentFileError");
+    }
+
+    [Fact]
+    public void Single_statement_with_pops_at_terminating_semicolon()
+    {
+        // Guard: the with-frame must be popped at the FIRST semicolon
+        // outside of any nested parens / brackets / begin-end. A bare
+        // call AFTER the WITH's `;` must resolve against the owner,
+        // NOT against the WITH-target's type.
+        var resolver = MakeResolver();
+        // Owner is "MyHelper" via OwnerCodeunit()'s default; it must
+        // be in the catalog so OwnerType() resolves (bare-self-call
+        // early-exits otherwise and never reaches the WITH-frame's
+        // RecType binding).
+        resolver.AddType("MyHelper",
+            new AlTypeRef(BaseAppId, "codeunit", 50000, "MyHelper"));
+        // Sales Header DOES expose Foo; MyHelper does NOT.
+        resolver.AddMember("Sales Header",
+            new AlMember("Foo", "procedure", null, null));
+
+        const string src = """
+            procedure Run(SalesHeader: Record "Sales Header")
+            begin
+                WITH SalesHeader DO
+                    Foo('inside');
+                Foo('outside');
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        // First Foo() resolves on Sales Header (inside the WITH).
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "Foo");
+        // Second Foo() is OUTSIDE the WITH — owner doesn't expose Foo
+        // and Sales Header is no longer the implicit receiver, so it
+        // stays bare-call unresolved.
+        result.Stats.UnresolvedSamples.Should().Contain(s =>
+            s.Token == "Foo" && s.Reason == "bare-call");
+    }
+
     // ── Owner-global / label fallback on chain steps ────────────────
 
     [Fact]

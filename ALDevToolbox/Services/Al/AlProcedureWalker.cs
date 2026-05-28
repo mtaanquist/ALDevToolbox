@@ -443,6 +443,27 @@ internal sealed class ScopeFrame
     /// when the frame pops.
     /// </summary>
     public bool IsWithFrame { get; set; }
+
+    /// <summary>
+    /// True for the single-statement <c>with X do &lt;stmt&gt;;</c> form
+    /// — no <c>begin</c>/<c>end</c> anchor, so the frame can't be
+    /// popped through the normal begin/end pairing. Instead the frame
+    /// records <see cref="EndTokenIndex"/> at push time (computed by a
+    /// forward scan from <c>do</c> through to the statement's matching
+    /// <c>;</c>) and the orchestrator pops it the moment the cursor
+    /// reaches that position. Without this, the canonical BC pattern
+    /// <c>WITH GenJournalLine DO IF X THEN InsertPaymentFileError(...)</c>
+    /// loses the Rec rebind and the bare call fires unresolved.
+    /// </summary>
+    public bool IsSingleStmtWith { get; set; }
+
+    /// <summary>
+    /// Token index ONE PAST the closing <c>;</c> of a single-statement
+    /// <c>with X do</c> body. Set when <see cref="IsSingleStmtWith"/>
+    /// is true; ignored otherwise. The orchestrator pops the frame
+    /// when <c>state.Pos &gt;= EndTokenIndex</c>.
+    /// </summary>
+    public int EndTokenIndex { get; set; }
 }
 
 /// <summary>
@@ -1029,19 +1050,37 @@ internal sealed class AlProcedureWalker
     /// procedure walker owns the depth counter and the matching pop.
     /// Returns true when the token was consumed.
     /// </summary>
+    /// <summary>
+    /// Returns the frame that should accumulate <c>begin</c> / <c>end</c>
+    /// depth changes. Normally the top frame, but single-statement
+    /// <c>with X do</c> frames are skipped — they have no begin/end
+    /// anchor of their own (they're popped by their pre-scanned
+    /// <see cref="ScopeFrame.EndTokenIndex"/>), so any nested
+    /// <c>BEGIN</c>/<c>END</c> inside the with's single statement
+    /// belongs to the procedure frame below.
+    /// </summary>
+    private ScopeFrame BlockDepthTrackingFrame()
+    {
+        foreach (var frame in _state.ScopeStack)
+        {
+            if (!frame.IsSingleStmtWith) return frame;
+        }
+        return _state.ScopeStack.Peek();
+    }
+
     public bool TryHandleBlockDepth(AlToken tok)
     {
         if (_state.ScopeStack.Count <= 1 || tok.Kind != AlTokenKind.Identifier) return false;
         if (string.Equals(tok.Value, "begin", StringComparison.OrdinalIgnoreCase)
             || string.Equals(tok.Value, "case", StringComparison.OrdinalIgnoreCase))
         {
-            _state.ScopeStack.Peek().BeginDepth++;
+            BlockDepthTrackingFrame().BeginDepth++;
             _state.Pos++;
             return true;
         }
         if (string.Equals(tok.Value, "end", StringComparison.OrdinalIgnoreCase))
         {
-            var frame = _state.ScopeStack.Peek();
+            var frame = BlockDepthTrackingFrame();
             frame.BeginDepth--;
             if (frame.BeginDepth <= 0)
             {
@@ -1606,39 +1645,90 @@ internal sealed class AlProcedureWalker
         _state.Pos++; // past `do`
         _state.SkipWhitespaceTokens();
 
-        // Only push a frame for the multi-statement shape. Single-statement
-        // `with X do Foo();` lacks the begin/end anchor TryHandleBlockDepth
-        // uses to pop; pushing here would mean the next stray `end` (likely
-        // the procedure's own) would pop the wrong frame.
-        if (!_state.IsIdentifierTok(_state.Pos, "begin"))
+        // Two shapes downstream:
+        //   `with X do begin … end;` — multi-statement, anchored by
+        //     begin/end so TryHandleBlockDepth pops the frame on the
+        //     matching end.
+        //   `with X do <single statement>;` — no begin/end; pop the
+        //     frame when the cursor reaches the matching `;` (found
+        //     here by a forward scan tracking parens / brackets /
+        //     begin-end depth). Canonical BC pattern:
+        //     `WITH GenJournalLine DO IF X THEN
+        //        InsertPaymentFileError(...);` — without the rebind,
+        //     the bare call fires unresolved.
+        var multiStmt = _state.IsIdentifierTok(_state.Pos, "begin");
+
+        if (xType is null) return true;
+
+        // Map the resolved type's catalog kind back to the AL keyword
+        // ResolveTypeByName expects on next lookup (table → Record).
+        var keyword = string.Equals(xType.Kind, "table", StringComparison.OrdinalIgnoreCase)
+            ? "Record"
+            : xType.Kind;
+        var withFrame = new ScopeFrame
         {
-            return true;
+            IsWithFrame = true,
+        };
+        withFrame.Vars["rec"] = new ResolvedVariableType(keyword, xType.Name);
+        withFrame.Vars["xrec"] = new ResolvedVariableType(keyword, xType.Name);
+
+        if (!multiStmt)
+        {
+            withFrame.IsSingleStmtWith = true;
+            withFrame.EndTokenIndex = ScanForSingleStatementEnd(_state.Pos);
+            // Guard: if the scan didn't find a terminator (malformed
+            // source / truncation), don't push — falls back to the
+            // pre-fix behaviour of "no rebind, take the unresolved".
+            if (withFrame.EndTokenIndex <= _state.Pos) return true;
         }
 
-        if (xType is not null)
-        {
-            // Map the resolved type's catalog kind back to the AL keyword
-            // ResolveTypeByName expects on next lookup (table → Record).
-            var keyword = string.Equals(xType.Kind, "table", StringComparison.OrdinalIgnoreCase)
-                ? "Record"
-                : xType.Kind;
-            var withFrame = new ScopeFrame
-            {
-                IsWithFrame = true,
-            };
-            withFrame.Vars["rec"] = new ResolvedVariableType(keyword, xType.Name);
-            withFrame.Vars["xrec"] = new ResolvedVariableType(keyword, xType.Name);
-            _state.ScopeStack.Push(withFrame);
-            // Invalidate the cached RecType so subsequent bare-call /
-            // implicit-Rec lookups read the with-frame's binding.
-            _state.RecTypeResolved = false;
-            _state.RecTypeCache = null;
-        }
+        _state.ScopeStack.Push(withFrame);
+        // Invalidate the cached RecType so subsequent bare-call /
+        // implicit-Rec lookups read the with-frame's binding.
+        _state.RecTypeResolved = false;
+        _state.RecTypeCache = null;
 
-        // Leave the cursor at `begin` — the main loop will dispatch it
-        // through TryHandleBlockDepth, which now operates on the with
-        // frame we just pushed.
+        // Leave the cursor at `begin` (multi-stmt) or the first token of
+        // the single statement — the main loop dispatches normally; the
+        // orchestrator pops single-stmt frames when Pos >= EndTokenIndex.
         return true;
+    }
+
+    /// <summary>
+    /// Scans forward from <paramref name="startPos"/> through the AL
+    /// tokens to find the <c>;</c> that terminates a single statement,
+    /// tracking <c>(</c> / <c>)</c>, <c>[</c> / <c>]</c>, and
+    /// <c>begin</c> / <c>end</c> (and <c>case</c> / <c>end</c>) depths
+    /// so nested constructs don't terminate early. Returns the position
+    /// ONE PAST the closing <c>;</c>, or <paramref name="startPos"/> if
+    /// no terminator was found before the token stream ends.
+    /// </summary>
+    private int ScanForSingleStatementEnd(int startPos)
+    {
+        int depth = 0;
+        for (int i = startPos; i < _state.Tokens.Count; i++)
+        {
+            var t = _state.Tokens[i];
+            if (t.Kind == AlTokenKind.Punct)
+            {
+                if (t.Value == "(" || t.Value == "[") { depth++; continue; }
+                if (t.Value == ")" || t.Value == "]") { if (depth > 0) depth--; continue; }
+                if (t.Value == ";" && depth == 0) return i + 1;
+            }
+            else if (t.Kind == AlTokenKind.Identifier)
+            {
+                if (string.Equals(t.Value, "begin", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(t.Value, "case", StringComparison.OrdinalIgnoreCase))
+                {
+                    depth++;
+                }
+                else if (string.Equals(t.Value, "end", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (depth > 0) depth--;
+                }
+            }
+        }
+        return startPos;
     }
 
     /// <summary>
