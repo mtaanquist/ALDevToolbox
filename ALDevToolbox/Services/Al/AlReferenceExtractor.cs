@@ -142,6 +142,12 @@ public static class AlReferenceExtractor
             // owner type for Rec / xRec when applicable.
             _procedureWalker.BuildAndPushGlobalScope();
 
+            // Per-kind pre-scan: lets xmlport (and any future kind with
+            // forward-referenced lexical constructs) seed the outer
+            // scope frame before bodies declared earlier in the file
+            // run through the main dispatch.
+            _structure.Prescan();
+
             while (_state.Pos < _state.Tokens.Count)
             {
                 ProcessOneToken();

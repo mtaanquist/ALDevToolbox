@@ -93,6 +93,15 @@ public sealed class AlReferenceExtractorTests
             Resolver: resolver,
             OwnerSourceTableName: sourceTable);
 
+    private static AlExtractContext OwnerXmlPort(StubResolver resolver, string xmlPortName,
+        Dictionary<string, ResolvedVariableType>? globals = null) => new(
+            OwnerKind: "xmlport",
+            OwnerName: xmlPortName,
+            OwnerObjectId: null,
+            OwnerAppId: BaseAppId,
+            GlobalVars: globals ?? new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+            Resolver: resolver);
+
     // ── Behavioural tests ───────────────────────────────────────────
 
     [Fact]
@@ -3214,6 +3223,89 @@ public sealed class AlReferenceExtractorTests
 
         result.References.Should().Contain(r =>
             r.TargetObjectName == "Sales-Post" && r.ReferenceKind == "property_object");
+    }
+
+    // ── XmlPort tableelement forward references ──────────────────────
+
+    [Fact]
+    public void XmlPort_tableelement_alias_resolves_when_declared_after_procedure()
+    {
+        // Schema blocks in xmlports routinely sit after the procedure
+        // block in Base App (e.g. SEPADDpain00800102.XmlPort.al uses
+        // `paymentexportdatagroup.GetOrganizationID()` at line 103
+        // with the matching `tableelement(paymentexportdatagroup; ...)`
+        // at line 111). The pre-scan registers the alias in the outer
+        // scope frame BEFORE the main walk visits the procedure body
+        // so the chain head resolves cleanly. Without it, every
+        // tableelement-alias chain in a procedure ahead of the schema
+        // fires head-not-a-variable.
+        var resolver = MakeResolver();
+        resolver.AddType("Payment Export Data",
+            new AlTypeRef(BaseAppId, "table", 1226, "Payment Export Data"));
+        resolver.AddMember("Payment Export Data",
+            new AlMember("GetOrganizationID", "procedure", "Text", null));
+
+        const string src = """
+            xmlport 1010 "SEPA DD pain.008.001.02"
+            {
+                procedure ReadOrgId(): Text
+                begin
+                    exit(paymentexportdatagroup.GetOrganizationID());
+                end;
+
+                schema
+                {
+                    textelement(Document)
+                    {
+                        tableelement(paymentexportdatagroup; "Payment Export Data")
+                        {
+                            fieldelement(PmtInfId; PaymentExportDataGroup."Payment Information ID")
+                            {
+                            }
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerXmlPort(resolver, "SEPA DD pain.008.001.02"));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Payment Export Data"
+            && r.TargetMemberName == "GetOrganizationID");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "paymentexportdatagroup");
+    }
+
+    [Fact]
+    public void XmlPort_tableelement_pre_scan_does_not_emit_duplicate_references()
+    {
+        // Guard: the pre-scan only seeds the scope frame; the main
+        // walk still emits the source-table property_object reference
+        // once. A double-emit would inflate the resolved counter and
+        // surface as duplicate rows in oe_module_references.
+        var resolver = MakeResolver();
+        resolver.AddType("Payment Export Data",
+            new AlTypeRef(BaseAppId, "table", 1226, "Payment Export Data"));
+
+        const string src = """
+            xmlport 1010 "Test Port"
+            {
+                schema
+                {
+                    textelement(Document)
+                    {
+                        tableelement(grp; "Payment Export Data") { }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerXmlPort(resolver, "Test Port"));
+
+        result.References.Where(r =>
+                r.TargetObjectName == "Payment Export Data"
+                && r.ReferenceKind == "property_object")
+            .Should().HaveCount(1);
     }
 
     // ── Stub resolver ───────────────────────────────────────────────

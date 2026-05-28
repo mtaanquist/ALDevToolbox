@@ -64,4 +64,25 @@ internal interface IAlObjectStructureExtractor
     /// without dataitem context stay minimal.
     /// </summary>
     bool TryResolveObjectScopeBareIdentifier(AlToken tok) => false;
+
+    /// <summary>
+    /// Runs once before the main token walk, with the cursor at the
+    /// start of the file. Lets per-kind extractors register lexical
+    /// constructs that the main walk will need to look up from
+    /// procedure bodies declared earlier in the same file.
+    ///
+    /// The dominant case is xmlport: tableelements live in the
+    /// <c>schema { }</c> block, which BC's Base App routinely places
+    /// AFTER the procedure block. Without a pre-scan, every
+    /// <c>tableelement-alias.Member</c> chain in a procedure body
+    /// fires head-not-a-variable because the alias hasn't been
+    /// registered yet. The pre-scan walks tableelement declarations
+    /// up front and seeds the outer scope frame.
+    ///
+    /// Default no-op so kinds without forward-reference shapes
+    /// stay minimal. Implementations MUST restore
+    /// <see cref="AlExtractionState.Pos"/> to its entry value before
+    /// returning so the main walk starts from the top.
+    /// </summary>
+    void Prescan() { }
 }
