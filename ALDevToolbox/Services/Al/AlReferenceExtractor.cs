@@ -194,6 +194,31 @@ public static class AlReferenceExtractor
                 return;
             }
 
+            // ControlAddIn / interface event declarations:
+            //   event Foo(args);
+            // The `event` keyword sits at object scope; the next
+            // identifier and its parenthesised parameter list aren't
+            // a call. Without consuming the declaration explicitly,
+            // the orchestrator's default advance steps past `event`
+            // and then dispatches `Foo(` through TryConsumeBareSelfCall
+            // — which captures it as a bare-call unresolved sample.
+            // Verified against BC 26.13's controladdin event
+            // declarations (ControlAddInReady, AddInReady,
+            // ControlReady, DataPointClicked, …) across System
+            // Application and friends.
+            if (_state.ScopeStack.Count == 1
+                && tok.Kind == AlTokenKind.Identifier
+                && string.Equals(tok.Value, "event", StringComparison.OrdinalIgnoreCase)
+                && _state.Pos + 2 < _state.Tokens.Count
+                && _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Identifier
+                && _state.Tokens[_state.Pos + 2].Kind == AlTokenKind.Punct
+                && _state.Tokens[_state.Pos + 2].Value == "(")
+            {
+                _state.Pos += 2; // past `event` and the event name
+                _state.SkipBalancedParens();
+                return;
+            }
+
             // Object-header `implements "Iface1", "Iface2"` clause on a
             // codeunit. Appears between the object name and the opening
             // `{`, at object scope, before any procedure body has been

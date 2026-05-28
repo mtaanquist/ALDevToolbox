@@ -69,6 +69,18 @@ public class ModuleObject
     /// <summary>1-based line where the object declaration appears in the source file.</summary>
     public int LineNumber { get; set; }
 
+    /// <summary>
+    /// AL <c>ObsoleteState</c> property value, when set on the object.
+    /// Stored verbatim (<c>Pending</c> / <c>Removed</c> / <c>Moved</c>);
+    /// null when the property isn't declared, equivalent to the
+    /// default <c>No</c> state. The catalog resolver uses
+    /// <c>Removed</c> / <c>Moved</c> as a tiebreaker — those candidates
+    /// have no body to dispatch against — but treats <c>Pending</c> as
+    /// first-class because the object is still fully functional in
+    /// the version that declared it.
+    /// </summary>
+    public string? ObsoleteState { get; set; }
+
     public ICollection<ModuleSymbol> Symbols { get; set; } = new List<ModuleSymbol>();
     public ICollection<ModuleVariable> Variables { get; set; } = new List<ModuleVariable>();
 }

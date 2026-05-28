@@ -22,6 +22,7 @@ internal sealed class ModuleObjectConfiguration : IEntityTypeConfiguration<Modul
         entity.Property(e => e.SourceTableName).HasColumnName("source_table_name");
         entity.Property(e => e.SourceFileId).HasColumnName("source_file_id");
         entity.Property(e => e.LineNumber).HasColumnName("line_number").IsRequired();
+        entity.Property(e => e.ObsoleteState).HasColumnName("obsolete_state");
 
         entity.HasOne(e => e.Organization)
             .WithMany()
