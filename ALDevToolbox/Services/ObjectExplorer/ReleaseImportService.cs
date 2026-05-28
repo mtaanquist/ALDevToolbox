@@ -1040,6 +1040,42 @@ public class ReleaseImportService
                 ColumnEnd = pos?.ColumnEnd ?? 0,
             });
         }
+
+        // Dataitem / tableelement aliases — recorded from source
+        // because SymbolReference.json doesn't surface them in the
+        // Variables list. Stamped as Record-typed globals so the
+        // reportextension / base-globals scope merge (PR #252)
+        // automatically threads the base report's aliases through
+        // to extension procedures. Without this, every reportextension
+        // reference to a base-report alias (e.g. `FilterItem` in
+        // AsmGetDemandToReserve.ReportExt against GetDemandToReserve)
+        // fires head-not-a-variable.
+        var seenAliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var sym in extractedSymbols)
+        {
+            if (sym.Kind != "dataitem_alias") continue;
+            if (string.IsNullOrEmpty(sym.Name) || string.IsNullOrEmpty(sym.Signature)) continue;
+            // De-dup against package-derived Variables (rare on
+            // dataitem names but cheap to guard) and against
+            // ourselves (nested dataitems can technically repeat).
+            if (!seenAliases.Add(sym.Name)) continue;
+            _db.OeModuleVariables.Add(new OeModuleVariable
+            {
+                OrganizationId = orgId,
+                ModuleId = module.Id,
+                Object = obj,
+                Name = sym.Name,
+                TypeKeyword = "Record",
+                TypeName = sym.Signature,
+                TargetAppId = module.AppId,
+                TargetObjectKind = "table",
+                TargetObjectId = null,
+                TargetObjectName = sym.Signature,
+                LineNumber = sym.LineNumber,
+                ColumnStart = sym.ColumnStart,
+                ColumnEnd = sym.ColumnEnd,
+            });
+        }
     }
 
     private void EmitReferences(int orgId, OeModule module, OeModuleObject obj, SymbolObject symObj, ImportTotals totals)
