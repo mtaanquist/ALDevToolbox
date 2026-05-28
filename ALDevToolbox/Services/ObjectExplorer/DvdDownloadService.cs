@@ -30,6 +30,19 @@ public sealed class DvdDownloadService
     /// </summary>
     public const long MaxDownloadBytes = 5L * 1024 * 1024 * 1024;
 
+    /// <summary>
+    /// Per-<see cref="Stream.ReadAsync(Memory{byte}, CancellationToken)"/> idle
+    /// window: if the server delivers zero bytes for this long, abort. The named
+    /// <see cref="HttpClient.Timeout"/> is the overall-request budget, but with
+    /// <see cref="HttpCompletionOption.ResponseHeadersRead"/> it primarily
+    /// covers the time-to-headers — a CDN edge that opens the body and stops
+    /// sending can leave a worker thread stuck indefinitely. 60 s is generous
+    /// compared to a healthy CDN's gap-between-packets (sub-second on a real
+    /// transfer) and tight enough that a dead connection fails the job in
+    /// minutes instead of holding the queue hostage forever.
+    /// </summary>
+    public static readonly TimeSpan IdleReadTimeout = TimeSpan.FromSeconds(60);
+
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly SystemSettingsService _settings;
     private readonly ILogger<DvdDownloadService> _logger;
@@ -74,7 +87,7 @@ public sealed class DvdDownloadService
 
             await using var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
             await using var dest = File.Create(tempPath);
-            await CopyWithCapAsync(source, dest, ct).ConfigureAwait(false);
+            await CopyWithCapAsync(source, dest, IdleReadTimeout, ct).ConfigureAwait(false);
 
             _logger.LogInformation(
                 "Downloaded DVD ZIP from {Host} ({Bytes} bytes) to staging.",
@@ -85,6 +98,16 @@ public sealed class DvdDownloadService
         {
             TryDelete(tempPath);
             throw;
+        }
+        catch (TimeoutException ex) when (!ct.IsCancellationRequested)
+        {
+            // CopyWithCapAsync's idle-read guard fired — the server delivered
+            // headers but stopped sending body bytes. Distinct from the
+            // connect-failure case below because the URL itself isn't bad;
+            // the admin's retry will likely hit a different CDN edge.
+            TryDelete(tempPath);
+            _logger.LogWarning(ex, "DVD download from {Host} stalled.", uri.Host);
+            throw Invalid("The download stalled — the server stopped sending data partway through. Try again; if it keeps happening the CDN may be having issues.");
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or TaskCanceledException && !ct.IsCancellationRequested)
         {
@@ -133,13 +156,36 @@ public sealed class DvdDownloadService
         return uri;
     }
 
-    private static async Task CopyWithCapAsync(Stream source, Stream dest, CancellationToken ct)
+    /// <summary>
+    /// Internal so tests can drive it directly with a stalled Stream without
+    /// spinning up an HTTP server. <paramref name="idleReadTimeout"/> resets on
+    /// every successful read — only a window of zero progress trips it. The
+    /// caller's <paramref name="ct"/> always wins: if it fires first the
+    /// <see cref="OperationCanceledException"/> bubbles up unchanged so shutdown
+    /// handling stays clean (the worker's <c>stoppingToken</c> shouldn't be
+    /// converted into a TimeoutException).
+    /// </summary>
+    internal static async Task CopyWithCapAsync(Stream source, Stream dest, TimeSpan idleReadTimeout, CancellationToken ct)
     {
         var buffer = new byte[81920];
         long total = 0;
-        int read;
-        while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+        while (true)
         {
+            int read;
+            using (var idle = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+                idle.CancelAfter(idleReadTimeout);
+                try
+                {
+                    read = await source.ReadAsync(buffer.AsMemory(), idle.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    throw new TimeoutException(
+                        $"The download stalled — no data received within {idleReadTimeout.TotalSeconds:N0} seconds.");
+                }
+            }
+            if (read <= 0) break;
             total += read;
             if (total > MaxDownloadBytes)
             {
