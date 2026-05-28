@@ -37,10 +37,20 @@
       "TargetObjectName": "Customer",
       "TargetMemberKind": "table_field",
       "TargetMemberName": "Phone No."
+    },
+    {
+      "Line": 23,
+      "Column": 20,
+      "ReferenceKind": "field_access",
+      "TargetObjectKind": "table",
+      "TargetObjectId": 18,
+      "TargetObjectName": "Customer",
+      "TargetMemberKind": "table_field",
+      "TargetMemberName": "Name"
     }
   ],
   "Stats": {
-    "ResolvedReferences": 4,
+    "ResolvedReferences": 5,
     "UnresolvedReceivers": 0,
     "UnresolvedSamples": []
   }

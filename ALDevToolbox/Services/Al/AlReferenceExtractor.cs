@@ -307,6 +307,19 @@ public static class AlReferenceExtractor
                 if (_procedureWalker.TryConsumeWithStatement()) return;
             }
 
+            // `(Variant as Interface).Method(...)` — interface-cast
+            // chain head. Recognise the parenthesised cast so the
+            // post-`as` interface type drives the member chain
+            // (otherwise the trailing `Method(...)` would dispatch
+            // as a bare-self-call against the owner and miss).
+            // Canonical shape from E-Document Core:
+            // <code>(IDocumentSender as ISentDocumentActions).GetApprovalStatus(...)</code>.
+            if (_state.ScopeStack.Count > 1
+                && tok.Kind == AlTokenKind.Punct && tok.Value == "(")
+            {
+                if (_procedureWalker.TryConsumeAsCastChain()) return;
+            }
+
             // Member-access chain candidates. Three shapes trigger:
             //   A. Identifier `.` Member …
             //   B. Identifier `[` … `]` `.` Member … — array element

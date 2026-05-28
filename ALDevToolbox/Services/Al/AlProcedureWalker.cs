@@ -117,8 +117,15 @@ internal sealed class AlExtractionState
     /// extractor at the moment the declaration is consumed (before the
     /// body's opening <c>{</c> is processed).
     /// </summary>
-    public void PushDataItemSource(AlTypeRef source) =>
+    public void PushDataItemSource(AlTypeRef source)
+    {
         DataItemStack.Add(new DataItemFrame(ObjectBraceDepth, source));
+        // Rec shadows over the active dataitem; bust the cache so a
+        // RecType() call inside this dataitem's body re-reads from the
+        // updated stack instead of returning the outer binding.
+        RecTypeResolved = false;
+        RecTypeCache = null;
+    }
 
     /// <summary>
     /// Called from the orchestrator when a <c>}</c> is encountered at
@@ -129,10 +136,17 @@ internal sealed class AlExtractionState
     public void OnObjectBraceClose()
     {
         if (ObjectBraceDepth > 0) ObjectBraceDepth--;
+        bool popped = false;
         while (DataItemStack.Count > 0
                && DataItemStack[^1].Depth >= ObjectBraceDepth)
         {
             DataItemStack.RemoveAt(DataItemStack.Count - 1);
+            popped = true;
+        }
+        if (popped)
+        {
+            RecTypeResolved = false;
+            RecTypeCache = null;
         }
     }
 
@@ -1384,6 +1398,50 @@ internal sealed class AlProcedureWalker
     }
 
     /// <summary>
+    /// Recognises the parenthesised <c>as</c>-cast chain shape:
+    /// <code>(IDocumentSender as ISentDocumentActions).GetApprovalStatus(...)</code>.
+    /// This is the canonical interface-cast pattern in BC 26 (E-Document
+    /// Core's Sent Document Approval / Cancellation / Mark Fetched /
+    /// Get Response Runner all use it on the codeunit's own
+    /// implementation surface). Without recognising it, the dispatch
+    /// path walked past the cast and saw <c>GetApprovalStatus(</c> at
+    /// the end — bare-self-call on the owner codeunit, which doesn't
+    /// declare it. Emit the chain step against the post-<c>as</c>
+    /// interface type so the GetApprovalStatus reference lands on the
+    /// interface's declaration row.
+    ///
+    /// Returns true when the pattern matched (cursor advances through
+    /// the cast and the trailing member chain); false otherwise (cursor
+    /// untouched).
+    /// </summary>
+    public bool TryConsumeAsCastChain()
+    {
+        // Pattern: `(` Identifier `as` (Identifier|QuotedIdentifier) `)` `.` Member
+        if (_state.Pos + 6 >= _state.Tokens.Count) return false;
+        var t = _state.Tokens;
+        int p = _state.Pos;
+        if (t[p].Kind != AlTokenKind.Punct || t[p].Value != "(") return false;
+        if (t[p + 1].Kind != AlTokenKind.Identifier
+            && t[p + 1].Kind != AlTokenKind.QuotedIdentifier) return false;
+        if (t[p + 2].Kind != AlTokenKind.Identifier
+            || !string.Equals(t[p + 2].Value, "as", StringComparison.OrdinalIgnoreCase)) return false;
+        if (t[p + 3].Kind != AlTokenKind.Identifier
+            && t[p + 3].Kind != AlTokenKind.QuotedIdentifier) return false;
+        if (t[p + 4].Kind != AlTokenKind.Punct || t[p + 4].Value != ")") return false;
+        if (t[p + 5].Kind != AlTokenKind.Punct || t[p + 5].Value != ".") return false;
+
+        var typeName = t[p + 3].Value;
+        var receiverType = _state.Ctx.Resolver.ResolveTypeByName(typeName);
+        // Advance cursor to the `.` so WalkMemberChain reads it as the
+        // next chain step. The cast head is consumed regardless of
+        // whether the type resolved — letting the dispatch fall through
+        // would just re-emit `GetApprovalStatus(...)` as a bare-self-call.
+        _state.Pos = p + 5;
+        WalkMemberChain(receiverType);
+        return true;
+    }
+
+    /// <summary>
     /// Walks the <c>.member.member…</c> tail of a chain after the
     /// head has been resolved to a receiver type. Emits one
     /// reference per step we resolve and advances the receiver to
@@ -2124,6 +2182,22 @@ internal sealed class AlProcedureWalker
     {
         if (_state.RecTypeResolved) return _state.RecTypeCache;
         _state.RecTypeResolved = true;
+        // Active dataitem source wins: inside a report/query/xmlport
+        // dataitem body, AL binds Rec to THAT dataitem's source table,
+        // shadowing any object-level Rec binding. The structure
+        // extractor pushes the source on the stack on dataitem entry
+        // and pops on its `}`, so a sibling dataitem's body sees its
+        // own source — not the previous sibling's. This is what keeps
+        // bare-self-call dispatch from leaking across siblings (see
+        // Sibling_dataitem_does_not_leak_into_next_dataitem_scope).
+        // Pre-cache via RecTypeCache so subsequent calls in the same
+        // block don't re-query the resolver per token.
+        var di = _state.CurrentDataItemSource;
+        if (di is not null)
+        {
+            _state.RecTypeCache = di;
+            return di;
+        }
         // Walk INNERMOST-first: in normal code only the object-scope frame
         // binds `rec`, so this lands the same place as before; but a
         // `with X do begin` pushes a frame whose `rec` shadows the object's

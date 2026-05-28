@@ -225,9 +225,11 @@ internal static class AlDataItemDsl
         }
     }
 
-    public static void PrescanAliases(AlExtractionState state, string keyword)
+    public static void PrescanAliases(
+        AlExtractionState state, string keyword, bool bindFirstAsRec = false)
     {
         int savedPos = state.Pos;
+        bool recAssigned = false;
         try
         {
             state.Pos = 0;
@@ -240,7 +242,23 @@ internal static class AlDataItemDsl
                     && state.Tokens[state.Pos + 1].Kind == AlTokenKind.Punct
                     && state.Tokens[state.Pos + 1].Value == "(")
                 {
-                    RegisterAlias(state);
+                    var registered = RegisterAlias(state);
+                    if (bindFirstAsRec && !recAssigned && registered is not null)
+                    {
+                        ScopeFrame? bottom = null;
+                        foreach (var f in state.ScopeStack) bottom = f;
+                        if (bottom is not null)
+                        {
+                            // Overwrite the default Rec binding (which
+                            // pointed at the owner report itself, useless
+                            // for the requestpage's `Rec.<field>`
+                            // expressions). xRec mirrors Rec — same
+                            // contract pages have.
+                            bottom.Vars["rec"] = registered;
+                            bottom.Vars["xrec"] = registered;
+                            recAssigned = true;
+                        }
+                    }
                     continue;
                 }
                 state.Pos++;
@@ -262,8 +280,14 @@ internal static class AlDataItemDsl
     /// pass's job — pre-scan only seeds scope, doesn't double-emit).
     /// Assumes the cursor sits on the keyword token; advances past
     /// the source-table token on return.
+    ///
+    /// Returns the registered Record-typed binding (the source table
+    /// the alias resolved to) so callers can also stamp it as Rec /
+    /// xRec when the report-style "first dataitem is Rec" semantics
+    /// apply. Returns null when no alias was registered (no name,
+    /// no source, source didn't resolve, etc.).
     /// </summary>
-    private static void RegisterAlias(AlExtractionState state)
+    private static ResolvedVariableType? RegisterAlias(AlExtractionState state)
     {
         // We arrive at the keyword; advance past it and the `(`.
         state.Pos += 2;
@@ -287,7 +311,7 @@ internal static class AlDataItemDsl
                 if (current.Value == "(") { depth++; state.Pos++; continue; }
                 if (current.Value == ")")
                 {
-                    if (depth == 0) return;
+                    if (depth == 0) return null;
                     depth--;
                     state.Pos++;
                     continue;
@@ -308,13 +332,13 @@ internal static class AlDataItemDsl
         {
             state.Pos++;
         }
-        if (state.Pos >= state.Tokens.Count) return;
+        if (state.Pos >= state.Tokens.Count) return null;
 
         var sourceTok = state.Tokens[state.Pos];
         if (sourceTok.Kind != AlTokenKind.Identifier
             && sourceTok.Kind != AlTokenKind.QuotedIdentifier)
         {
-            return;
+            return null;
         }
         state.Pos++;
 
@@ -332,6 +356,7 @@ internal static class AlDataItemDsl
             state.Pos++;
         }
 
+        ResolvedVariableType? registered = null;
         if (!string.IsNullOrEmpty(alias))
         {
             var resolved = state.Ctx.Resolver.ResolveTypeByName(sourceTok.Value, "Record");
@@ -342,11 +367,12 @@ internal static class AlDataItemDsl
                 foreach (var frame in state.ScopeStack) bottom = frame;
                 if (bottom is not null)
                 {
-                    bottom.Vars[alias.ToLowerInvariant()] =
-                        new ResolvedVariableType("Record", resolved.Name);
+                    registered = new ResolvedVariableType("Record", resolved.Name);
+                    bottom.Vars[alias.ToLowerInvariant()] = registered;
                 }
             }
         }
+        return registered;
     }
 
     /// <summary>

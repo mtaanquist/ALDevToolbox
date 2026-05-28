@@ -4697,6 +4697,95 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Report_rec_binds_to_first_dataitem_source_in_requestpage_chain()
+    {
+        // VAT Report Request Page / Whse. Change Unit of Measure
+        // pattern: the requestpage's `field(Alias; Rec.<FieldName>)`
+        // expressions read fields off the report's "primary" record,
+        // which is the FIRST dataitem's source table. The walker used
+        // to bind Rec to the report itself (DetermineRecBinding's
+        // fallback for record-bearing owners that aren't tables /
+        // pages), so every `Rec."<Field>"` chain in the requestpage
+        // surfaced as chain-step unresolved with ReceiverKind=report.
+        // The fix: prescan dataitems, take the first source as Rec.
+        var resolver = MakeResolver();
+        resolver.AddType("VAT Report Request Page",
+            new AlTypeRef(BaseAppId, "report", 742, "VAT Report Request Page"));
+        resolver.AddType("VAT Report Header",
+            new AlTypeRef(BaseAppId, "table", 743, "VAT Report Header"));
+        resolver.AddMember("VAT Report Header",
+            new AlMember("Statement Template Name", "table_field", null, null));
+
+        const string src = """
+            report 742 "VAT Report Request Page"
+            {
+                dataset
+                {
+                    dataitem(VATReportHeader; "VAT Report Header")
+                    {
+                    }
+                }
+                requestpage
+                {
+                    layout
+                    {
+                        area(content)
+                        {
+                            field(VATStatementTemplate; Rec."Statement Template Name")
+                            {
+                            }
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            OwnerReport(resolver, "VAT Report Request Page"));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "Statement Template Name");
+    }
+
+    [Fact]
+    public void Interface_cast_with_as_keyword_routes_chain_through_target_interface()
+    {
+        // Canonical pattern from E-Document Core's Sent Document
+        // Approval / Cancellation / Mark Fetched / Get Response
+        // Runner codeunits:
+        //   <c>exit((IDocumentSender as ISentDocumentActions).GetApprovalStatus(...))</c>.
+        // Before the as-cast handler, the dispatch path walked past
+        // the parenthesised cast and reached `GetApprovalStatus(` at
+        // the end — that was then dispatched as a bare-self-call on
+        // the owner codeunit, which doesn't declare GetApprovalStatus
+        // (the codeunit implements other interfaces). The new
+        // handler routes the chain step through the cast-target
+        // interface so the reference lands on the interface's
+        // declaration.
+        var resolver = MakeResolver();
+        resolver.AddType("ISentDocumentActions",
+            new AlTypeRef(BaseAppId, "interface", 6200, "ISentDocumentActions"));
+        resolver.AddMember("ISentDocumentActions",
+            new AlMember("GetApprovalStatus", "procedure", null, null));
+
+        const string src = """
+            codeunit 50000 MyHelper
+            {
+                procedure Run(IDocumentSender: Variant): Boolean
+                begin
+                    exit((IDocumentSender as ISentDocumentActions).GetApprovalStatus(EDoc, Service, Ctx));
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().BeEmpty();
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetMemberName == "GetApprovalStatus"
+            && r.TargetObjectName == "ISentDocumentActions");
+    }
+
+    [Fact]
     public void Xmlport_textattribute_silences_head_not_a_variable()
     {
         // `textattribute(Name)` and `textelement(Name)` declare XML

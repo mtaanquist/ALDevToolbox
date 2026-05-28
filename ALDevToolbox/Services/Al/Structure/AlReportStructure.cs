@@ -56,5 +56,12 @@ internal sealed class AlReportStructure : IAlObjectStructureExtractor
     /// at :79). Same forward-reference problem the xmlport handler
     /// already solves; route through the shared pre-scan.
     /// </summary>
-    public void Prescan() => AlDataItemDsl.PrescanAliases(_state, "dataitem");
+    public void Prescan() =>
+        // Reports bind `Rec` to the FIRST dataitem's source table at
+        // runtime — that's why `Rec."Statement Template Name"` works in
+        // the requestpage of VAT Report Request Page even though the
+        // field belongs to "VAT Report Header" rather than the report
+        // itself. Re-stamp Rec / xRec on the bottom scope frame so the
+        // walker's chain resolution finds the right table.
+        AlDataItemDsl.PrescanAliases(_state, "dataitem", bindFirstAsRec: true);
 }

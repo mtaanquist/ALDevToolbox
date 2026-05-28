@@ -1759,6 +1759,8 @@ public class ReleaseImportService
                 AppId = o.Module!.AppId,
                 o.SourceTableName,
                 o.ObsoleteState,
+                o.ExtendsObjectName,
+                o.ExtendsAppId,
             })
             .ToListAsync(ct);
         var typesByName = new Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>>(StringComparer.OrdinalIgnoreCase);
@@ -1779,6 +1781,15 @@ public class ReleaseImportService
         // (page / pageextension / requestpage / report-dataitem in
         // practice); other kinds skip the dictionary entry.
         var sourceTablesByObjectId = new Dictionary<long, string>();
+        // Interface inheritance: interface "B" extends "A" means a
+        // member lookup on B walks up to A's members too. Keyed by
+        // owner DB id (the same key shape `_members` uses) so the
+        // resolver can chain TryGetValue calls. Only interfaces are
+        // populated — tableextensions / pageextensions / etc. use the
+        // separate `extensionsByBaseName` path with reversed semantics
+        // (extension's members get attached to the base, not inherited
+        // by the extension).
+        var interfaceExtendsByOwnerId = new Dictionary<long, (Guid AppId, string Name)>();
         // Side-map for obsolete-state lookup on candidate ranking.
         // Keyed by the catalog's identity triple so the resolver can
         // ask "is this exact (AppId, Kind, Name) marked Pending /
@@ -1815,6 +1826,12 @@ public class ReleaseImportService
             if (!string.IsNullOrEmpty(t.ObsoleteState))
             {
                 obsoleteStateByIdentity[(t.AppId, t.Kind, t.Name)] = t.ObsoleteState;
+            }
+            if (string.Equals(t.Kind, "interface", StringComparison.OrdinalIgnoreCase)
+                && t.ExtendsAppId is Guid baseAppId
+                && !string.IsNullOrEmpty(t.ExtendsObjectName))
+            {
+                interfaceExtendsByOwnerId[t.Id] = (baseAppId, t.ExtendsObjectName!);
             }
         }
 
@@ -2036,7 +2053,8 @@ public class ReleaseImportService
             moduleAppIdsById.TryGetValue(moduleId, out var ownerAppId);
             var r = new CatalogResolver(
                 typesByName, typesByObjectId, typesByAlObjectId, objectIdByIdentity,
-                membersByOwner, extensionsByBaseName, sourceTablesByObjectId, visible,
+                membersByOwner, extensionsByBaseName, interfaceExtendsByOwnerId,
+                sourceTablesByObjectId, visible,
                 ownerAppId == Guid.Empty ? null : ownerAppId,
                 foundationalAppIds, obsoleteStateByIdentity);
             resolversByModule[moduleId] = r;
@@ -2758,6 +2776,7 @@ public class ReleaseImportService
         private readonly Dictionary<(Guid AppId, string Kind, string Name), long> _objectIdByIdentity;
         private readonly Dictionary<long, List<MemberEntry>> _members;
         private readonly Dictionary<string, List<ExtensionEntry>> _extensionsByBaseName;
+        private readonly Dictionary<long, (Guid AppId, string Name)> _interfaceExtendsByOwnerId;
         private readonly Dictionary<long, string> _sourceTablesByObjectId;
         private readonly HashSet<Guid>? _visibleAppIds;
         // AppId of the module whose file is being walked. Used as a
@@ -2796,6 +2815,7 @@ public class ReleaseImportService
             Dictionary<(Guid AppId, string Kind, string Name), long> objectIdByIdentity,
             Dictionary<long, List<MemberEntry>> members,
             Dictionary<string, List<ExtensionEntry>> extensionsByBaseName,
+            Dictionary<long, (Guid AppId, string Name)> interfaceExtendsByOwnerId,
             Dictionary<long, string> sourceTablesByObjectId,
             HashSet<Guid>? visibleAppIds,
             Guid? ownerAppId,
@@ -2806,6 +2826,7 @@ public class ReleaseImportService
             _typesByObjectId = typesByObjectId;
             _typesByAlObjectId = typesByAlObjectId;
             _objectIdByIdentity = objectIdByIdentity;
+            _interfaceExtendsByOwnerId = interfaceExtendsByOwnerId;
             _members = members;
             _extensionsByBaseName = extensionsByBaseName;
             _sourceTablesByObjectId = sourceTablesByObjectId;
@@ -3010,6 +3031,45 @@ public class ReleaseImportService
                         Kind: match.Kind,
                         ReturnTypeKeyword: match.ReturnTypeKeyword,
                         ReturnTypeName: match.ReturnTypeName);
+                }
+            }
+
+            // Interface inheritance: when owner is an interface that
+            // extends a base interface, walk up the chain so members
+            // declared on the base resolve on the derived. Canonical
+            // sample: <c>Cost Adjustment With Params extends Inventory
+            // Adjustment</c>; <c>SetFilterItem</c> is declared on the
+            // base only, but call sites use the derived interface as
+            // the receiver. Cap the depth defensively at 16 — interface
+            // hierarchies in BC don't go anywhere near that, but a
+            // catalog cycle (shouldn't exist, but defensive) would
+            // otherwise spin forever.
+            if (string.Equals(owner.Kind, "interface", StringComparison.OrdinalIgnoreCase)
+                && _objectIdByIdentity.TryGetValue((owner.AppId, "interface", owner.Name), out var ifaceOwnerId))
+            {
+                var visited = new HashSet<long> { ifaceOwnerId };
+                var currentId = ifaceOwnerId;
+                for (int depth = 0; depth < 16; depth++)
+                {
+                    if (!_interfaceExtendsByOwnerId.TryGetValue(currentId, out var baseId)) break;
+                    if (!_objectIdByIdentity.TryGetValue((baseId.AppId, "interface", baseId.Name), out var baseOwnerId)) break;
+                    if (!visited.Add(baseOwnerId)) break;
+                    if (_members.TryGetValue(baseOwnerId, out var baseMembers))
+                    {
+                        var match = baseMembers.FirstOrDefault(m =>
+                            string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
+                        if (match is not null)
+                        {
+                            _typesByObjectId.TryGetValue(baseOwnerId, out var declaringInterface);
+                            return new ALDevToolbox.Services.Al.AlMember(
+                                Name: match.Name,
+                                Kind: match.Kind,
+                                ReturnTypeKeyword: match.ReturnTypeKeyword,
+                                ReturnTypeName: match.ReturnTypeName,
+                                DeclaringType: declaringInterface);
+                        }
+                    }
+                    currentId = baseOwnerId;
                 }
             }
 

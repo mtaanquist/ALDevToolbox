@@ -242,6 +242,34 @@ public sealed class CatalogResolverTests
         result.Should().BeNull();
     }
 
+    [Fact]
+    public void Interface_member_lookup_walks_extends_chain_to_base_interface()
+    {
+        // BC 26 introduced derived interfaces via `extends`. Canonical
+        // sample: `interface "Cost Adjustment With Params" extends
+        // "Inventory Adjustment"`. Members declared on the base
+        // (`SetFilterItem` lives on Inventory Adjustment) must
+        // resolve when the call site receiver is typed as the derived
+        // interface; otherwise every base-declared method called via
+        // the derived interface fires chain-step unresolved.
+        var fixture = new ResolverFixture(BaseAppId);
+        fixture.AddInterface(BaseAppId, 1001, "Inventory Adjustment");
+        fixture.AddMember(BaseAppId, "interface", "Inventory Adjustment",
+            "SetFilterItem", "procedure");
+        fixture.AddInterface(BaseAppId, 1002, "Cost Adjustment With Params",
+            extendsAppId: BaseAppId, extendsName: "Inventory Adjustment");
+
+        var resolver = fixture.Build();
+        var derived = resolver.ResolveTypeByName("Cost Adjustment With Params", "Interface");
+        derived.Should().NotBeNull();
+        var member = resolver.ResolveMember(derived!, "SetFilterItem");
+
+        member.Should().NotBeNull();
+        member!.Name.Should().Be("SetFilterItem");
+        member.DeclaringType.Should().NotBeNull();
+        member.DeclaringType!.Name.Should().Be("Inventory Adjustment");
+    }
+
     // ── Fixture ─────────────────────────────────────────────────────
 
     /// <summary>
@@ -265,6 +293,7 @@ public sealed class CatalogResolverTests
         private readonly Dictionary<long, List<ReleaseImportService.MemberEntry>> _members = new();
         private readonly Dictionary<string, List<ReleaseImportService.ExtensionEntry>> _extensionsByBaseName =
             new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<long, (Guid AppId, string Name)> _interfaceExtendsByOwnerId = new();
         private readonly Dictionary<long, string> _sourceTablesByObjectId = new();
         private readonly HashSet<Guid> _foundationalAppIds = new();
         private readonly Dictionary<(Guid AppId, string Kind, string Name), string> _obsoleteStateByIdentity =
@@ -307,6 +336,40 @@ public sealed class CatalogResolverTests
             return this;
         }
 
+        public ResolverFixture AddInterface(
+            Guid appId, int objectId, string name, Guid? extendsAppId = null, string? extendsName = null)
+        {
+            Add(appId, "interface", objectId, name);
+            if (extendsAppId is Guid baseAppId && !string.IsNullOrEmpty(extendsName))
+            {
+                _interfaceExtendsByOwnerId[_objectIdByIdentity[(appId, "interface", name)]] =
+                    (baseAppId, extendsName!);
+            }
+            return this;
+        }
+
+        public ResolverFixture AddMember(
+            Guid appId, string kind, string ownerName,
+            string memberName, string memberKind = "procedure",
+            string? returnTypeKeyword = null, string? returnTypeName = null)
+        {
+            var key = (appId, kind, ownerName);
+            if (!_objectIdByIdentity.TryGetValue(key, out var ownerId))
+            {
+                throw new InvalidOperationException(
+                    $"Add(...) the owner '{kind} \"{ownerName}\"' before AddMember.");
+            }
+            if (!_members.TryGetValue(ownerId, out var list))
+            {
+                list = new List<ReleaseImportService.MemberEntry>();
+                _members[ownerId] = list;
+            }
+            list.Add(new ReleaseImportService.MemberEntry(
+                ownerId * 10 + list.Count + 1,
+                memberName, memberKind, returnTypeKeyword, returnTypeName));
+            return this;
+        }
+
         public ResolverFixture Foundational(params Guid[] appIds)
         {
             foreach (var id in appIds) _foundationalAppIds.Add(id);
@@ -320,6 +383,7 @@ public sealed class CatalogResolverTests
             _objectIdByIdentity,
             _members,
             _extensionsByBaseName,
+            _interfaceExtendsByOwnerId,
             _sourceTablesByObjectId,
             _visibleAppIds,
             _ownerAppId,
