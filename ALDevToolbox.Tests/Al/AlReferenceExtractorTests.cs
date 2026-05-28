@@ -4697,6 +4697,51 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Bare_self_call_continues_chain_through_return_type()
+    {
+        // EditInExcelFiltersImpl.Codeunit.al:48 pattern:
+        //   `Get(ODataFieldName).AddFilterValueV2(EditInExcelFilterType, FilterValue);`
+        // `Get` is on the owner codeunit and returns
+        // `Codeunit "Edit in Excel Fld Filter Impl."`. Before the
+        // chain-continuation fix, bare-self-call emitted Get's
+        // reference but left `.AddFilterValueV2(...)` for the main
+        // loop to re-dispatch as a fresh bare-self-call against the
+        // owner — which doesn't declare AddFilterValueV2 (it lives
+        // on the codeunit Get returns).
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper",
+            new AlTypeRef(BaseAppId, "codeunit", 50000, "MyHelper"));
+        resolver.AddMember("MyHelper",
+            new AlMember("Get", "procedure", "Codeunit", "Edit in Excel Fld Filter Impl."));
+        resolver.AddType("Edit in Excel Fld Filter Impl.",
+            new AlTypeRef(BaseAppId, "codeunit", 50100, "Edit in Excel Fld Filter Impl."));
+        resolver.AddMember("Edit in Excel Fld Filter Impl.",
+            new AlMember("AddFilterValueV2", "procedure", null, null));
+
+        const string src = """
+            codeunit 50000 MyHelper
+            {
+                procedure Run()
+                begin
+                    Get(ODataFieldName).AddFilterValueV2(FilterType, FilterValue);
+                end;
+
+                procedure Get(ODataFieldName: Text): Codeunit "Edit in Excel Fld Filter Impl."
+                begin
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetMemberName == "AddFilterValueV2"
+            && r.TargetObjectName == "Edit in Excel Fld Filter Impl.");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "AddFilterValueV2");
+    }
+
+    [Fact]
     public void Microsoft_namespace_with_enum_value_continuation_silences_chain()
     {
         // RequisitionLine.Table.al's IsProdDemand:

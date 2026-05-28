@@ -2096,10 +2096,28 @@ internal sealed class AlProcedureWalker
             ReferenceKind: "method_call"));
         _state.Resolved++;
 
-        // Advance past the identifier only. The argument list is
-        // walked by the main loop in its own right — `Outer(Cust.X())`
-        // needs the inner `Cust.X()` chain to still be picked up.
+        // Continue the chain when the call is followed by `.member`
+        // and the called procedure's return type resolves to a real
+        // catalog object — `Get(field).AddFilterValueV2(...)` shape.
+        // Without this the bare-self-call emitted Get's reference but
+        // left `.AddFilterValueV2(...)` for the main loop to re-
+        // dispatch as a fresh bare-self-call against the owner, which
+        // missed (AddFilterValueV2 lives on the codeunit Get returns).
+        //
+        // Walking the args via WalkBalancedParens preserves the
+        // "inner `Cust.X()` still resolves" guarantee — same dispatcher
+        // the main loop would have used.
         _state.Pos++;
+        if (_state.Pos < _state.Tokens.Count && _state.At("("))
+        {
+            var returnType = AdvanceReceiverByMember(member);
+            WalkBalancedParens();
+            if (returnType is not null
+                && _state.Pos < _state.Tokens.Count && _state.At("."))
+            {
+                WalkMemberChain(returnType);
+            }
+        }
         return true;
     }
 

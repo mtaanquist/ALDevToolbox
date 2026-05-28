@@ -940,7 +940,7 @@ public class ReleaseImportService
                 Kind = kind,
                 Name = method.Name,
                 Signature = RenderSignature(method),
-                ReturnType = method.ReturnType?.Name,
+                ReturnType = FormatReturnType(method.ReturnType),
                 LineNumber = line,
                 ColumnStart = colStart,
                 ColumnEnd = colEnd,
@@ -2365,6 +2365,27 @@ public class ReleaseImportService
     /// types so the extractor's chained-access loop terminates on the
     /// next step.
     /// </summary>
+    /// <summary>
+    /// Renders a symbol-package return type into the
+    /// <c>Keyword "ObjectName"</c> string shape <see cref="ParseReturnType"/>
+    /// round-trips. Storing just <c>type.Name</c> dropped the
+    /// <c>ObjectName</c> half — so <c>procedure Get(...): Codeunit
+    /// "Edit in Excel Fld Filter Impl."</c> persisted as the bare
+    /// keyword <c>"Codeunit"</c>, the chain walker had no concrete
+    /// type to advance to after the call, and
+    /// <c>Get(fieldName).AddFilterValueV2(...)</c> stranded as bare-
+    /// call against the owner. AL object kinds (Record/Codeunit/…) get
+    /// the quoted-name form; everything else (DotNet types, scalars
+    /// with no ObjectName, generics like Codeunit alone) round-trips
+    /// the existing single-token shape.
+    /// </summary>
+    private static string? FormatReturnType(SymbolTypeRef? type)
+    {
+        if (type is null) return null;
+        if (string.IsNullOrEmpty(type.ObjectName)) return type.Name;
+        return $"{type.Name} \"{type.ObjectName}\"";
+    }
+
     private static (string? Keyword, string? TypeName) ParseReturnType(string? returnType)
     {
         if (string.IsNullOrEmpty(returnType)) return (null, null);
