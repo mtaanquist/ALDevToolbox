@@ -142,6 +142,12 @@ public static class AlReferenceExtractor
             // owner type for Rec / xRec when applicable.
             _procedureWalker.BuildAndPushGlobalScope();
 
+            // Per-kind pre-scan: lets xmlport (and any future kind with
+            // forward-referenced lexical constructs) seed the outer
+            // scope frame before bodies declared earlier in the file
+            // run through the main dispatch.
+            _structure.Prescan();
+
             while (_state.Pos < _state.Tokens.Count)
             {
                 ProcessOneToken();
@@ -362,14 +368,30 @@ public static class AlReferenceExtractor
                 }
             }
 
-            // EventSubscriber attribute detection.
+            // Method / object attribute at object-scope: `[X(...)]`
+            // immediately before a procedure / trigger declaration.
+            // EventSubscriber emits an event_publisher reference; every
+            // other attribute (CommitBehavior, InherentPermissions,
+            // InherentEntitlements, NonDebuggable, ServiceEnabled,
+            // ExternalBusinessEvent, BusinessEvent, IntegrationEvent,
+            // InternalEvent, TryFunction, Scope, Obsolete, Test,
+            // HandlerFunctions, TransactionModel, …) is decorative for
+            // reference-extraction purposes — skip the bracketed span
+            // wholesale so identifiers like CommitBehavior inside the
+            // attribute don't get dispatched as bare self-calls and
+            // accrue spurious unresolved samples.
             if (_state.ScopeStack.Count == 1
-                && tok.Kind == AlTokenKind.Punct && tok.Value == "["
-                && _state.Pos + 1 < _state.Tokens.Count
-                && _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Identifier
-                && string.Equals(_state.Tokens[_state.Pos + 1].Value, "EventSubscriber", StringComparison.OrdinalIgnoreCase))
+                && tok.Kind == AlTokenKind.Punct && tok.Value == "[")
             {
-                TryConsumeEventSubscriberAttribute();
+                if (_state.Pos + 1 < _state.Tokens.Count
+                    && _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Identifier
+                    && string.Equals(_state.Tokens[_state.Pos + 1].Value, "EventSubscriber", StringComparison.OrdinalIgnoreCase))
+                {
+                    TryConsumeEventSubscriberAttribute();
+                    return;
+                }
+
+                SkipBracketedAttribute();
                 return;
             }
 
@@ -1220,6 +1242,29 @@ public static class AlReferenceExtractor
                     if (depth == 0) { _state.Pos++; return; }
                     depth--;
                 }
+                _state.Pos++;
+            }
+        }
+
+        /// <summary>
+        /// Skips a bracketed object-scope attribute (<c>[X(args)]</c>)
+        /// starting at the current <c>[</c> token. Tracks nested
+        /// bracket depth so a paired-inner shape closes cleanly.
+        /// Used to walk past procedure / object attributes that don't
+        /// yield reference rows (CommitBehavior, InherentPermissions,
+        /// NonDebuggable, …) without letting the identifiers inside
+        /// fall through to the bare-self-call or chain dispatch and
+        /// surface as spurious unresolved samples.
+        /// </summary>
+        private void SkipBracketedAttribute()
+        {
+            if (!_state.At("[")) return;
+            _state.Pos++;
+            int depth = 1;
+            while (_state.Pos < _state.Tokens.Count && depth > 0)
+            {
+                if (_state.At("[")) depth++;
+                else if (_state.At("]")) depth--;
                 _state.Pos++;
             }
         }

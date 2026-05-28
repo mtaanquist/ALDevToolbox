@@ -93,6 +93,15 @@ public sealed class AlReferenceExtractorTests
             Resolver: resolver,
             OwnerSourceTableName: sourceTable);
 
+    private static AlExtractContext OwnerXmlPort(StubResolver resolver, string xmlPortName,
+        Dictionary<string, ResolvedVariableType>? globals = null) => new(
+            OwnerKind: "xmlport",
+            OwnerName: xmlPortName,
+            OwnerObjectId: null,
+            OwnerAppId: BaseAppId,
+            GlobalVars: globals ?? new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+            Resolver: resolver);
+
     // ── Behavioural tests ───────────────────────────────────────────
 
     [Fact]
@@ -3052,6 +3061,298 @@ public sealed class AlReferenceExtractorTests
         result.Stats.UnresolvedReceivers.Should().Be(0);
         result.References.Should().NotContain(r =>
             r.TargetMemberName == "Insert" && r.TargetObjectName == "Payment Export Data");
+    }
+
+    // ── DotNet variable type names that collide with AL tables ───────
+
+    [Fact]
+    public void DotNet_variable_does_not_resolve_through_AL_catalog()
+    {
+        // `File: DotNet File;` declares a .NET System.IO.File handle.
+        // The type name "File" collides with the platform virtual `File`
+        // table (id 2000000022); without the DotNet bypass the resolver
+        // routes the chain receiver to the AL table and `.WriteAllBytes`
+        // fires as chain-step unresolved on the table receiver. Verified
+        // against the unresolved sample
+        //   ReceiverKind=table ReceiverName='File' Token='WriteAllBytes'
+        // logged from AMCBankExpCTHndl.Codeunit.al in BC 26.5.
+        var resolver = MakeResolver();
+        resolver.AddType("File", new AlTypeRef(BaseAppId, "table", 2000000022, "File"));
+
+        const string src = """
+            procedure WriteBytes()
+            var
+                File: DotNet File;
+            begin
+                File.WriteAllBytes('foo.txt', 'data');
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        // No chain-step unresolved against the AL File table.
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+        result.References.Should().NotContain(r =>
+            r.TargetObjectName == "File" && r.TargetMemberName == "WriteAllBytes");
+    }
+
+    // ── Object-scope attribute skipping ───────────────────────────────
+
+    [Fact]
+    public void CommitBehavior_attribute_does_not_fire_bare_call_unresolved()
+    {
+        // `[CommitBehavior(CommitBehavior::Ignore)]` placed above a
+        // procedure declaration is a method attribute, not a callable.
+        // Before the object-scope attribute-skipper landed, the walker
+        // stepped past `[` and dispatched `CommitBehavior(` as a bare
+        // self-call, producing the sample
+        //   Reason=bare-call Token='CommitBehavior'
+        // every time this attribute appeared (BankAccReconciliationPost
+        // and friends emit it on every posting procedure). With the
+        // skipper, the entire bracketed span is consumed silently.
+        var resolver = MakeResolver();
+        const string src = """
+            codeunit 50000 "MyHelper"
+            {
+                [CommitBehavior(CommitBehavior::Ignore)]
+                local procedure DoPost()
+                begin
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void Inherent_permissions_attribute_does_not_fire_bare_call_unresolved()
+    {
+        // Same shape, different attribute name — covers the broader
+        // family of method attributes (InherentPermissions,
+        // InherentEntitlements, NonDebuggable, TryFunction, …).
+        var resolver = MakeResolver();
+        const string src = """
+            codeunit 50000 "MyHelper"
+            {
+                [InherentPermissions(PermissionObjectType::TableData, Database::Customer, 'X')]
+                procedure Update()
+                begin
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+        result.Stats.UnresolvedReceivers.Should().Be(0);
+    }
+
+    [Fact]
+    public void EventSubscriber_attribute_still_emits_after_attribute_skipper()
+    {
+        // Guard: the generic attribute skipper must not eat EventSubscriber —
+        // that one carries a real cross-object reference (event_publisher).
+        var resolver = MakeResolver();
+        resolver.AddType("Sales-Post", new AlTypeRef(BaseAppId, "codeunit", 80, "Sales-Post"));
+
+        const string src = """
+            codeunit 50000 "MyHelper"
+            {
+                [EventSubscriber(ObjectType::Codeunit, Codeunit::"Sales-Post", 'OnAfterPostSalesDoc', '', false, false)]
+                local procedure OnAfterPostSalesDoc(var SalesHeader: Record "Sales Header")
+                begin
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().ContainSingle(r =>
+            r.ReferenceKind == "event_publisher"
+            && r.TargetObjectName == "Sales-Post"
+            && r.TargetMemberName == "OnAfterPostSalesDoc");
+    }
+
+    // ── Named return values ──────────────────────────────────────────
+
+    [Fact]
+    public void Named_return_value_is_in_scope_in_procedure_body()
+    {
+        // `procedure GetTableValuePair(...) TableValuePair: Dictionary ...`
+        // — the named-return identifier becomes an in-scope local
+        // for the body. Verified against the unresolved sample
+        //   Reason=head-not-a-variable Token='TableValuePair'
+        // logged from AssemblyLine.Table.al in BC 26.5. Same idiom
+        // ships across PhysInvtOrderLine, ItemJournalLine,
+        // JobJournalLine, PurchaseLine, SalesLine, ServiceLine.
+        //
+        // Asserting on the diagnostic sample directly (rather than the
+        // unresolved counter) so an unrelated unresolved on the same
+        // line doesn't mask a regression of this fix.
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper", new AlTypeRef(BaseAppId, "codeunit", 50100, "MyHelper"));
+
+        const string src = """
+            procedure GetTableValuePair(FieldNo: Integer) TableValuePair: Dictionary of [Integer, Code[20]]
+            begin
+                TableValuePair.Add(FieldNo, 'X');
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        // The named return TableValuePair, referenced inside the body,
+        // must not fire head-not-a-variable.
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "TableValuePair" && s.Reason == "head-not-a-variable");
+    }
+
+    [Fact]
+    public void Anonymous_return_clause_still_parses_cleanly()
+    {
+        // Guard: the named-return parser must not eat an anonymous
+        // return type — `procedure Foo(): Integer` should still leave
+        // the cursor positioned to enter the body. A regression here
+        // would skip the body entirely and lose every reference inside.
+        var resolver = MakeResolver();
+        resolver.AddType("Sales-Post", new AlTypeRef(BaseAppId, "codeunit", 80, "Sales-Post"));
+
+        const string src = """
+            procedure DoWork(): Integer
+            var
+                SalesPost: Codeunit "Sales-Post";
+            begin
+                SalesPost.Run();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(MakeResolver()));
+
+        result.References.Should().Contain(r =>
+            r.TargetObjectName == "Sales-Post" && r.ReferenceKind == "property_object");
+    }
+
+    // ── Tableextension procedures reach base-table globals ───────────
+
+    [Fact]
+    public void Tableextension_chain_resolves_when_global_passed_via_context()
+    {
+        // AL's compile-time merged scope lets a tableextension's
+        // procedures call into the base table's global var map. The
+        // unresolved samples surfacing as
+        //   Reason=head-not-a-variable Token='DimMgt' Owner=tableextension:…
+        // come from the import service NOT merging the base table's
+        // globalsByOwner entry into the extension's. With the merge
+        // wired up at the import-service layer, the extractor sees
+        // DimMgt in its GlobalVars and the chain resolves to the
+        // codeunit's procedure. This test pins the extractor side of
+        // the contract: given a tableextension owner with DimMgt in
+        // its (merged) globals, the chain head must resolve cleanly.
+        var resolver = MakeResolver();
+        resolver.AddType("Item Journal Line",
+            new AlTypeRef(BaseAppId, "table", 83, "Item Journal Line"));
+        resolver.AddType("DimensionManagement",
+            new AlTypeRef(BaseAppId, "codeunit", 408, "DimensionManagement"));
+        resolver.AddMember("DimensionManagement",
+            new AlMember("GetCombinedDimensionSetID", "procedure", "Integer", null));
+
+        var mergedGlobals = new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["DimMgt"] = new ResolvedVariableType("Codeunit", "DimensionManagement"),
+        };
+
+        const string src = """
+            procedure CreateAssemblyDim()
+            begin
+                "Dimension Set ID" := DimMgt.GetCombinedDimensionSetID();
+            end;
+            """;
+        var ctx = OwnerTableExtension(resolver, "Asm. Item Journal Line",
+            baseTable: "Item Journal Line", globals: mergedGlobals);
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "DimensionManagement"
+            && r.TargetMemberName == "GetCombinedDimensionSetID");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "DimMgt" && s.Reason == "head-not-a-variable");
+    }
+
+    // ── XmlPort tableelement forward references ──────────────────────
+
+    [Fact]
+    public void XmlPort_tableelement_alias_resolves_when_declared_after_procedure()
+    {
+        // Schema blocks in xmlports routinely sit after the procedure
+        // block in Base App (e.g. SEPADDpain00800102.XmlPort.al uses
+        // `paymentexportdatagroup.GetOrganizationID()` at line 103
+        // with the matching `tableelement(paymentexportdatagroup; ...)`
+        // at line 111). The pre-scan registers the alias in the outer
+        // scope frame BEFORE the main walk visits the procedure body
+        // so the chain head resolves cleanly. Without it, every
+        // tableelement-alias chain in a procedure ahead of the schema
+        // fires head-not-a-variable.
+        var resolver = MakeResolver();
+        resolver.AddType("Payment Export Data",
+            new AlTypeRef(BaseAppId, "table", 1226, "Payment Export Data"));
+        resolver.AddMember("Payment Export Data",
+            new AlMember("GetOrganizationID", "procedure", "Text", null));
+
+        const string src = """
+            xmlport 1010 "SEPA DD pain.008.001.02"
+            {
+                procedure ReadOrgId(): Text
+                begin
+                    exit(paymentexportdatagroup.GetOrganizationID());
+                end;
+
+                schema
+                {
+                    textelement(Document)
+                    {
+                        tableelement(paymentexportdatagroup; "Payment Export Data")
+                        {
+                            fieldelement(PmtInfId; PaymentExportDataGroup."Payment Information ID")
+                            {
+                            }
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerXmlPort(resolver, "SEPA DD pain.008.001.02"));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Payment Export Data"
+            && r.TargetMemberName == "GetOrganizationID");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "paymentexportdatagroup");
+    }
+
+    [Fact]
+    public void XmlPort_tableelement_pre_scan_does_not_emit_duplicate_references()
+    {
+        // Guard: the pre-scan only seeds the scope frame; the main
+        // walk still emits the source-table property_object reference
+        // once. A double-emit would inflate the resolved counter and
+        // surface as duplicate rows in oe_module_references.
+        var resolver = MakeResolver();
+        resolver.AddType("Payment Export Data",
+            new AlTypeRef(BaseAppId, "table", 1226, "Payment Export Data"));
+
+        const string src = """
+            xmlport 1010 "Test Port"
+            {
+                schema
+                {
+                    textelement(Document)
+                    {
+                        tableelement(grp; "Payment Export Data") { }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerXmlPort(resolver, "Test Port"));
+
+        result.References.Where(r =>
+                r.TargetObjectName == "Payment Export Data"
+                && r.ReferenceKind == "property_object")
+            .Should().HaveCount(1);
     }
 
     // ── Stub resolver ───────────────────────────────────────────────

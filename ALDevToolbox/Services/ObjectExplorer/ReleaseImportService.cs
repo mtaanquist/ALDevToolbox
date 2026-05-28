@@ -1759,11 +1759,23 @@ public class ReleaseImportService
             .Select(o => new
             {
                 o.Id,
+                o.Kind,
                 ExtensionAppId = o.Module!.AppId,
                 BaseName = o.ExtendsObjectName!,
             })
             .ToListAsync(ct);
         var extensionsByBaseName = new Dictionary<string, List<ExtensionEntry>>(StringComparer.OrdinalIgnoreCase);
+        // Extension owner id → base object owner id. Used by the per-
+        // file context builder to merge the base object's global var
+        // map into the extension's, so a `DimMgt.GetCombined…` chain
+        // inside a tableextension procedure resolves through the base
+        // table's DimMgt global rather than firing head-not-a-variable.
+        // AL effectively merges extension and base scopes at compile
+        // time; without this merge the diagnostic surfaces every base-
+        // declared global accessed from an extension procedure
+        // (DimMgt, TempPlanningErrorLog, PlanningLineMgt, FilterItem,
+        // and others) as a spurious unresolved sample.
+        var baseOwnerIdByExtensionOwnerId = new Dictionary<long, long>();
         foreach (var e in extRows)
         {
             if (!extensionsByBaseName.TryGetValue(e.BaseName, out var list))
@@ -1772,6 +1784,34 @@ public class ReleaseImportService
                 extensionsByBaseName[e.BaseName] = list;
             }
             list.Add(new ExtensionEntry(e.ExtensionAppId, e.Id));
+
+            // Map to the base object's owner id. Object kind maps
+            // 1:1 (tableextension → table, pageextension → page,
+            // reportextension → report); we only bother with the
+            // three kinds that have variable scopes — enum and
+            // permissionset extensions never own globals.
+            var baseKind = e.Kind switch
+            {
+                "tableextension" => "table",
+                "pageextension" => "page",
+                "reportextension" => "report",
+                _ => null,
+            };
+            if (baseKind is null) continue;
+            // The base may live in a different app than the extension
+            // (a Base App tableextension on top of a System App table,
+            // a third-party extension on top of Base App). Walk every
+            // candidate with the matching kind + name and pick the
+            // first one whose object exists in the catalog — same-app
+            // collisions don't happen for `tableextension extends X`
+            // because AL forbids extending an object you also declare.
+            foreach (var candidate in typeRows)
+            {
+                if (!string.Equals(candidate.Kind, baseKind, StringComparison.OrdinalIgnoreCase)) continue;
+                if (!string.Equals(candidate.Name, e.BaseName, StringComparison.OrdinalIgnoreCase)) continue;
+                baseOwnerIdByExtensionOwnerId[e.Id] = candidate.Id;
+                break;
+            }
         }
 
         // (5) Per-module visibility: which AppIds is each module
@@ -1844,6 +1884,31 @@ public class ReleaseImportService
             if (file.Owner is null || string.IsNullOrEmpty(file.Content)) continue;
 
             globalsByOwner.TryGetValue(file.Owner.Id, out var globals);
+
+            // Extension owners (tableextension / pageextension /
+            // reportextension) reach the base object's global vars
+            // through AL's merged-scope semantics — a base table's
+            // `DimMgt: Codeunit DimensionManagement;` is callable from
+            // any tableextension on top of it. Merge the base's
+            // globals UNDER the extension's so extension-side names
+            // shadow on collision (AL same-name rules), and leave the
+            // map alone for non-extension owners.
+            if (baseOwnerIdByExtensionOwnerId.TryGetValue(file.Owner.Id, out var baseOwnerId)
+                && globalsByOwner.TryGetValue(baseOwnerId, out var baseGlobals))
+            {
+                if (globals is null)
+                {
+                    globals = new Dictionary<string, ALDevToolbox.Services.Al.ResolvedVariableType>(
+                        baseGlobals, StringComparer.OrdinalIgnoreCase);
+                }
+                else
+                {
+                    var merged = new Dictionary<string, ALDevToolbox.Services.Al.ResolvedVariableType>(
+                        baseGlobals, StringComparer.OrdinalIgnoreCase);
+                    foreach (var (name, type) in globals) merged[name] = type;
+                    globals = merged;
+                }
+            }
             // For tableextensions, Rec is semantically the BASE TABLE
             // (the extension's columns are merged into the base at
             // runtime). The base table's name lives in ExtendsObjectName
