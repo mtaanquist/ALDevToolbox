@@ -74,11 +74,20 @@ services:
     # picks it up automatically; we don't restate it here to avoid the two
     # drifting.
     restart: unless-stopped
+    # Resource ceilings. The memory limit is sized for Object Explorer
+    # ingestion: parsing Microsoft's Base Application .app peaks around
+    # 2-3 GiB of managed heap (full .app buffered, SymbolReference.json
+    # tree, embedded src/ tree, plus the second byte[] copy R2R-wrapped
+    # modules need during the recursive unwrap). 1 GiB OOM'd on BC 28.1.1;
+    # 4 GiB lands comfortably and leaves headroom for future Base App
+    # growth. CPU is bumped to 4 so server GC has more workers during
+    # those big parses — ingestion itself is sequential, but GC throughput
+    # at this heap size benefits from the extra cores.
     deploy:
       resources:
         limits:
-          cpus: "2.0"
-          memory: 1g
+          cpus: "4.0"
+          memory: 4g
         reservations:
           memory: 256m
 
