@@ -4785,6 +4785,60 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Reportextension_this_member_resolves_through_base_report()
+    {
+        // `this.GetLocation("Location Code")` inside
+        // `reportextension "Mfg. Get Outbound Source Docs" extends
+        // "Get Outbound Source Docs"`. The receiver `this` resolves to
+        // the reportextension itself, but `GetLocation` is a procedure
+        // on the BASE report — AL merges extension + base scopes at
+        // dispatch time. Without the chain-step base-object fallback,
+        // every explicit-`this.<baseMember>` chain in extension code
+        // fired chain-step unresolved. (The bare-self-call path
+        // already had this branch; this fix mirrors it for the chain
+        // walker.)
+        var resolver = MakeResolver();
+        resolver.AddType("Get Outbound Source Docs",
+            new AlTypeRef(BaseAppId, "report", 5754, "Get Outbound Source Docs"));
+        resolver.AddType("Mfg. Get Outbound Source Docs",
+            new AlTypeRef(BaseAppId, "reportextension", 99000836, "Mfg. Get Outbound Source Docs"));
+        resolver.AddMember("Get Outbound Source Docs",
+            new AlMember("GetLocation", "procedure", null, null));
+
+        const string src = """
+            reportextension 99000836 "Mfg. Get Outbound Source Docs" extends "Get Outbound Source Docs"
+            {
+                dataset
+                {
+                    add(ProdOrderComp)
+                    {
+                        trigger OnAfterGetRecord()
+                        begin
+                            this.GetLocation("Location Code");
+                        end;
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            new AlExtractContext(
+                OwnerKind: "reportextension",
+                OwnerName: "Mfg. Get Outbound Source Docs",
+                OwnerObjectId: 99000836,
+                OwnerAppId: BaseAppId,
+                GlobalVars: new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+                Resolver: resolver,
+                OwnerExtendsName: "Get Outbound Source Docs"));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetMemberName == "GetLocation"
+            && r.TargetObjectName == "Get Outbound Source Docs");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "GetLocation");
+    }
+
+    [Fact]
     public void Bare_self_call_continues_chain_through_return_type()
     {
         // EditInExcelFiltersImpl.Codeunit.al:48 pattern:

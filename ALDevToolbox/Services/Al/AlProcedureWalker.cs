@@ -1607,6 +1607,23 @@ internal sealed class AlProcedureWalker
                     receiverType = globalNextType;
                     continue;
                 }
+                // Extension → base-object fallback. When the receiver
+                // is the current owner AND the owner is a
+                // reportextension / pageextension, AL routes member
+                // calls to the base object's procedures too. The
+                // canonical shape:
+                //   `this.GetLocation("Location Code")`
+                // inside `reportextension "Mfg. Get Outbound Source
+                // Docs" extends "Get Outbound Source Docs"`, where
+                // `GetLocation` is declared on the base report. The
+                // bare-self-call resolver already has this branch
+                // (line 2020 area); the chain walker needs it too for
+                // explicit-this dispatch.
+                if (TryAdvanceToBaseObject(receiverType, memberTok, followedByParen, out var baseNextType))
+                {
+                    receiverType = baseNextType;
+                    continue;
+                }
                 _state.Unresolved++;
                 _state.CaptureUnresolved("chain-step", memberTok, receiverType);
                 AdvancePastChain();
@@ -2899,6 +2916,52 @@ internal sealed class AlProcedureWalker
         {
             nextReceiver = _state.Ctx.Resolver.ResolveTypeByName(declared.TypeName, declared.Keyword);
         }
+        return true;
+    }
+
+    /// <summary>
+    /// When a chain step's member lookup misses on the owner type
+    /// AND the owner is a reportextension / pageextension, walk to
+    /// the base object and re-try the lookup. AL merges extension and
+    /// base scopes at dispatch time, so `this.GetLocation(...)` on a
+    /// reportextension's body can call a procedure declared on the
+    /// base report. The bare-self-call path already handles this; the
+    /// chain walker mirrors it here for explicit-`this` dispatch.
+    /// Emits the reference at the base object's declaration when the
+    /// lookup succeeds. Returns true when consumed (cursor stays put;
+    /// caller continues the chain on the advanced receiver), false
+    /// when the receiver isn't the owner, the owner isn't an
+    /// extension kind, or the base doesn't expose the member.
+    /// </summary>
+    private bool TryAdvanceToBaseObject(
+        AlTypeRef receiverType, AlToken memberTok, bool followedByParen,
+        out AlTypeRef? nextReceiver)
+    {
+        nextReceiver = null;
+        var owner = OwnerType();
+        if (owner is null || !receiverType.Equals(owner)) return false;
+        var k = _state.Ctx.OwnerKind?.ToLowerInvariant();
+        if (k != "reportextension" && k != "pageextension") return false;
+
+        var baseType = BaseObjectType();
+        if (baseType is null) return false;
+        var member = _state.Ctx.Resolver.ResolveMember(baseType, memberTok.Value);
+        if (member is null) return false;
+
+        var targetOwner = member.DeclaringType ?? baseType;
+        var refKind = followedByParen ? "method_call" : "field_access";
+        _state.EmitReference(new ExtractedReference(
+            Line: memberTok.Line,
+            Column: memberTok.Column,
+            TargetAppId: targetOwner.AppId,
+            TargetObjectKind: targetOwner.Kind,
+            TargetObjectId: targetOwner.ObjectId,
+            TargetObjectName: targetOwner.Name,
+            TargetMemberName: member.Name,
+            TargetMemberKind: member.Kind,
+            ReferenceKind: refKind));
+        _state.Resolved++;
+        nextReceiver = AdvanceReceiverByMember(member);
         return true;
     }
 
