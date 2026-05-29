@@ -35,6 +35,23 @@ public static class FolderZipWalker
         "TestFramework",
     };
 
+    /// <summary>
+    /// Suffixes a segment can end with to still count as a test-extension
+    /// folder, in addition to the exact <see cref="TestFolderNames"/> set.
+    /// Catches modern BC DVD shapes like <c>Application Test Library/</c> where
+    /// the test toolkit ships as its own top-level <em>extension</em> folder
+    /// (rather than as a <c>Test/</c> subfolder under the product app). The
+    /// leading space is the word-boundary safety net so we don't false-positive
+    /// on names like <c>MyTestLibrary</c>.
+    /// </summary>
+    private static readonly string[] TestFolderSuffixes =
+    {
+        " Test Library",
+        " Test Libraries",
+        " Test Toolkit",
+        " Tests",
+    };
+
     // The DVD root folder that holds the product apps. Microsoft has used a few
     // names across BC versions (and the casing varies), so match a set,
     // case-insensitively. EXTENDING: if a future/older DVD nests its apps under
@@ -209,6 +226,10 @@ public static class FolderZipWalker
         foreach (var segment in fullName.Split('/', StringSplitOptions.RemoveEmptyEntries))
         {
             if (TestFolderNames.Contains(segment)) return true;
+            foreach (var suffix in TestFolderSuffixes)
+            {
+                if (segment.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return true;
+            }
         }
         return false;
     }
