@@ -69,6 +69,13 @@ public sealed class FolderZipWalkerTests
     [InlineData("applications/Quality Management/Test Library/Microsoft_Quality Management Test Library.app", true)]
     [InlineData("applications/Quality Management/Source/Microsoft_Quality Management.app", false)]
     [InlineData("applications/Shopify/test/Microsoft_Shopify Connector Test.app", true)]
+    // BC 28.1+ ships some test toolkits as their own top-level extension folders
+    // rather than as a Test/ subfolder under the product app. The folder name itself
+    // ends with " Test Library" (or " Test Toolkit") — exact-match against
+    // TestFolderNames alone misses these, so the walker also checks suffix patterns.
+    [InlineData("applications/Application Test Library/Source/Microsoft_Application Test Library.app", true)]
+    [InlineData("applications/AI Test Toolkit/Source/Microsoft_AI Test Toolkit.app", true)]
+    [InlineData("applications/Quality Management Test Libraries/Source/Microsoft_QM Test Libs.app", true)]
     public void Sets_is_test_when_ancestor_folder_matches_test_convention(string path, bool expected)
     {
         using var archive = BuildArchive(path);
@@ -168,6 +175,24 @@ public sealed class FolderZipWalkerTests
         entries.Select(e => e.FileName).Should().BeEquivalentTo(
             new[] { "Microsoft_Base Application.app" },
             because: "test extensions and their source are dropped entirely on the DVD path");
+    }
+
+    [Fact]
+    public void WalkDvd_excludes_top_level_application_test_library_extension()
+    {
+        // BC 28.1 ships "Application Test Library" as its own top-level
+        // Applications/<name>/ folder (not as a Test/ subfolder of another app).
+        // The folder name itself ends with "Test Library", so the walker's
+        // suffix rule should drop it.
+        using var archive = BuildArchive(
+            "BC/Applications/BaseApp/Source/Microsoft_Base Application.app",
+            "BC/Applications/Application Test Library/Source/Microsoft_Application Test Library.app",
+            "BC/Applications/Application Test Library/Source/Application Test Library.Source.zip");
+
+        var entries = FolderZipWalker.WalkDvd(archive);
+
+        entries.Select(e => e.FileName).Should().BeEquivalentTo(
+            new[] { "Microsoft_Base Application.app" });
     }
 
     [Theory]
