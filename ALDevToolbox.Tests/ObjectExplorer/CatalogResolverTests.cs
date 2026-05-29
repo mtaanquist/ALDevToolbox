@@ -242,6 +242,62 @@ public sealed class CatalogResolverTests
         result.Should().BeNull();
     }
 
+    [Fact]
+    public void Enum_member_lookup_falls_back_to_same_named_interface()
+    {
+        // BC's extensible enums frequently `implements` an identically-
+        // named interface (`enum "Alt. Cust. VAT Reg. Consist."
+        // implements "Alt. Cust. VAT Reg. Consist."`). Call sites
+        // dispatch interface methods through enum-typed variables;
+        // without this fallback every such call missed the method
+        // lookup on the enum (enums have no procedures of their own
+        // in the catalog) and fired chain-step unresolved.
+        var fixture = new ResolverFixture(BaseAppId);
+        fixture.Add(BaseAppId, "enum", 204, "Alt. Cust. VAT Reg. Consist.");
+        fixture.AddInterface(BaseAppId, 1003, "Alt. Cust. VAT Reg. Consist.");
+        fixture.AddMember(BaseAppId, "interface", "Alt. Cust. VAT Reg. Consist.",
+            "CheckCustomerConsistency", "procedure");
+
+        var resolver = fixture.Build();
+        var enumType = resolver.ResolveTypeByName("Alt. Cust. VAT Reg. Consist.", "Enum");
+        enumType.Should().NotBeNull();
+        enumType!.Kind.Should().Be("enum");
+        var member = resolver.ResolveMember(enumType, "CheckCustomerConsistency");
+
+        member.Should().NotBeNull();
+        member!.Name.Should().Be("CheckCustomerConsistency");
+        member.DeclaringType.Should().NotBeNull();
+        member.DeclaringType!.Kind.Should().Be("interface");
+    }
+
+    [Fact]
+    public void Interface_member_lookup_walks_extends_chain_to_base_interface()
+    {
+        // BC 26 introduced derived interfaces via `extends`. Canonical
+        // sample: `interface "Cost Adjustment With Params" extends
+        // "Inventory Adjustment"`. Members declared on the base
+        // (`SetFilterItem` lives on Inventory Adjustment) must
+        // resolve when the call site receiver is typed as the derived
+        // interface; otherwise every base-declared method called via
+        // the derived interface fires chain-step unresolved.
+        var fixture = new ResolverFixture(BaseAppId);
+        fixture.AddInterface(BaseAppId, 1001, "Inventory Adjustment");
+        fixture.AddMember(BaseAppId, "interface", "Inventory Adjustment",
+            "SetFilterItem", "procedure");
+        fixture.AddInterface(BaseAppId, 1002, "Cost Adjustment With Params",
+            extendsAppId: BaseAppId, extendsName: "Inventory Adjustment");
+
+        var resolver = fixture.Build();
+        var derived = resolver.ResolveTypeByName("Cost Adjustment With Params", "Interface");
+        derived.Should().NotBeNull();
+        var member = resolver.ResolveMember(derived!, "SetFilterItem");
+
+        member.Should().NotBeNull();
+        member!.Name.Should().Be("SetFilterItem");
+        member.DeclaringType.Should().NotBeNull();
+        member.DeclaringType!.Name.Should().Be("Inventory Adjustment");
+    }
+
     // ── Fixture ─────────────────────────────────────────────────────
 
     /// <summary>
@@ -259,11 +315,13 @@ public sealed class CatalogResolverTests
         private readonly Dictionary<string, List<AlTypeRef>> _typesByName =
             new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<long, AlTypeRef> _typesByObjectId = new();
+        private readonly Dictionary<(string Kind, int ObjectId), List<AlTypeRef>> _typesByAlObjectId = new();
         private readonly Dictionary<(Guid AppId, string Kind, string Name), long> _objectIdByIdentity =
             new(new ReleaseImportService.ObjectIdentityComparer());
         private readonly Dictionary<long, List<ReleaseImportService.MemberEntry>> _members = new();
         private readonly Dictionary<string, List<ReleaseImportService.ExtensionEntry>> _extensionsByBaseName =
             new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<long, (Guid AppId, string Name)> _interfaceExtendsByOwnerId = new();
         private readonly Dictionary<long, string> _sourceTablesByObjectId = new();
         private readonly HashSet<Guid> _foundationalAppIds = new();
         private readonly Dictionary<(Guid AppId, string Kind, string Name), string> _obsoleteStateByIdentity =
@@ -288,11 +346,55 @@ public sealed class CatalogResolverTests
                 _typesByName[name] = list;
             }
             list.Add(typeRef);
+            if (objectId > 0)
+            {
+                var idKey = (kind, objectId);
+                if (!_typesByAlObjectId.TryGetValue(idKey, out var idList))
+                {
+                    idList = new List<AlTypeRef>();
+                    _typesByAlObjectId[idKey] = idList;
+                }
+                idList.Add(typeRef);
+            }
             _objectIdByIdentity[(appId, kind, name)] = rowId;
             if (!string.IsNullOrEmpty(obsoleteState))
             {
                 _obsoleteStateByIdentity[(appId, kind, name)] = obsoleteState;
             }
+            return this;
+        }
+
+        public ResolverFixture AddInterface(
+            Guid appId, int objectId, string name, Guid? extendsAppId = null, string? extendsName = null)
+        {
+            Add(appId, "interface", objectId, name);
+            if (extendsAppId is Guid baseAppId && !string.IsNullOrEmpty(extendsName))
+            {
+                _interfaceExtendsByOwnerId[_objectIdByIdentity[(appId, "interface", name)]] =
+                    (baseAppId, extendsName!);
+            }
+            return this;
+        }
+
+        public ResolverFixture AddMember(
+            Guid appId, string kind, string ownerName,
+            string memberName, string memberKind = "procedure",
+            string? returnTypeKeyword = null, string? returnTypeName = null)
+        {
+            var key = (appId, kind, ownerName);
+            if (!_objectIdByIdentity.TryGetValue(key, out var ownerId))
+            {
+                throw new InvalidOperationException(
+                    $"Add(...) the owner '{kind} \"{ownerName}\"' before AddMember.");
+            }
+            if (!_members.TryGetValue(ownerId, out var list))
+            {
+                list = new List<ReleaseImportService.MemberEntry>();
+                _members[ownerId] = list;
+            }
+            list.Add(new ReleaseImportService.MemberEntry(
+                ownerId * 10 + list.Count + 1,
+                memberName, memberKind, returnTypeKeyword, returnTypeName));
             return this;
         }
 
@@ -305,9 +407,11 @@ public sealed class CatalogResolverTests
         public ReleaseImportService.CatalogResolver Build() => new(
             _typesByName,
             _typesByObjectId,
+            _typesByAlObjectId,
             _objectIdByIdentity,
             _members,
             _extensionsByBaseName,
+            _interfaceExtendsByOwnerId,
             _sourceTablesByObjectId,
             _visibleAppIds,
             _ownerAppId,

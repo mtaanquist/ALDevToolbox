@@ -4616,19 +4616,846 @@ public sealed class AlReferenceExtractorTests
             s.Token == "LocalVar");
     }
 
+    [Fact]
+    public void Dataitem_source_with_namespace_prefix_resolves_last_segment_as_table()
+    {
+        // BC 26.x increasingly uses fully-namespaced type references:
+        //   `dataitem("Integer"; System.Utilities.Integer)`
+        //   `dataitem("Foo"; Microsoft.Foundation.NoSeries."No. Series Line")`
+        // The dataitem source parser used to read the first segment
+        // (`System`), fail to resolve it, and leave the cursor mid-
+        // chain — `Utilities` then dispatched as a bare chain head
+        // and fired head-not-a-variable (Utilities Lines=22/143 on
+        // ServiceCertificateofSupply.Report.al was the canonical
+        // sample). The fix walks the `.<segment>` chain so the LAST
+        // segment is treated as the actual type name.
+        var resolver = MakeResolver();
+        resolver.AddType("Service Certificate of Supply",
+            new AlTypeRef(BaseAppId, "report", 5916, "Service Certificate of Supply"));
+        resolver.AddType("Integer",
+            new AlTypeRef(BaseAppId, "table", 2000000026, "Integer"));
+
+        const string src = """
+            report 5916 "Service Certificate of Supply"
+            {
+                dataset
+                {
+                    dataitem("Integer"; System.Utilities.Integer)
+                    {
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerReport(resolver, "Service Certificate of Supply"));
+
+        // No head-not-a-variable for Utilities or Integer.
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "Utilities" || s.Token == "System");
+        // Integer table was resolved as the dataitem source.
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "property_object"
+            && r.TargetObjectName == "Integer");
+    }
+
+    [Fact]
+    public void Numeric_record_id_in_variable_declaration_resolves_via_catalog()
+    {
+        // Older AL — and modules like Payment Links to PayPal that
+        // never migrated — declare record variables by numeric id
+        // instead of quoted name: <c>DtldVendLedgEntry: Record 380;</c>,
+        // <c>var PaymentServiceSetup: Record 1060;</c>. The walker
+        // used to capture Keyword="Record" but leave TypeName empty
+        // (Number tokens aren't Identifier / QuotedIdentifier), so
+        // every member access fired head-var-type-unresolved with
+        // ReceiverName='Record ' (trailing space, then nothing). The
+        // fix routes numeric ids through the resolver's
+        // <see cref="IAlTypeResolver.ResolveTypeByObjectId"/> path.
+        var resolver = MakeResolver();
+        resolver.AddType("Detailed Vendor Ledg. Entry",
+            new AlTypeRef(BaseAppId, "table", 380, "Detailed Vendor Ledg. Entry"));
+        resolver.AddMember("Detailed Vendor Ledg. Entry",
+            new AlMember("SetRange", "procedure", null, null));
+
+        const string src = """
+            codeunit 50000 MyHelper
+            {
+                procedure Process()
+                var
+                    DtldVendLedgEntry: Record 380;
+                begin
+                    DtldVendLedgEntry.SetRange("Vendor No.", 'V001');
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().BeEmpty();
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetMemberName == "SetRange"
+            && r.TargetObjectName == "Detailed Vendor Ledg. Entry");
+    }
+
+    [Fact]
+    public void Return_type_kind_hint_disambiguates_same_named_table_vs_page()
+    {
+        // `EDocument.GetEDocumentService()` returns
+        // <c>Record "E-Document Service"</c>. E-Document Core ships
+        // BOTH a table AND a page named "E-Document Service". The
+        // resolver's tiebreaker prefers the same kind when given an
+        // expectedKeyword hint — without that hint, the chain advance
+        // landed on the page and every subsequent step
+        // (.GetImportProcessVersion, etc.) missed against the wrong
+        // receiver. AdvanceReceiverByMember now forwards
+        // <see cref="AlMember.ReturnTypeKeyword"/> so kind-aware
+        // tiebreaking kicks in.
+        var resolver = MakeResolver();
+        resolver.AddType("EDocumentService",
+            new AlTypeRef(BaseAppId, "table", 6103, "E-Document Service"));
+        // Same-named page in the catalog — without the hint the
+        // resolver could land here.
+        resolver.AddType("E-Document Service (page)",
+            new AlTypeRef(BaseAppId, "page", 6133, "E-Document Service"));
+        resolver.AddType("EDocument",
+            new AlTypeRef(BaseAppId, "table", 6101, "E-Document"));
+        resolver.AddMember("E-Document",
+            new AlMember("GetEDocumentService", "procedure", "Record", "E-Document Service"));
+        resolver.AddMember("E-Document Service",
+            new AlMember("GetImportProcessVersion", "procedure", null, null));
+
+        const string src = """
+            codeunit 50000 MyHelper
+            {
+                procedure Run(var EDocument: Record "E-Document"): Boolean
+                begin
+                    exit(EDocument.GetEDocumentService().GetImportProcessVersion() <> 0);
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "GetImportProcessVersion");
+    }
+
+    [Fact]
+    public void Report_with_source_table_property_binds_rec_to_that_table()
+    {
+        // Whse. Change Unit of Measure / VAT Report Suggest Lines etc.
+        // — reports where the request page declares a SourceTable
+        // property instead of using a `dataset { dataitem(X; Y) }`
+        // block. AL still binds Rec to the SourceTable for layout
+        // expressions and triggers; the walker now uses
+        // OwnerSourceTableName as a fallback when the report has no
+        // dataitem to prescan.
+        var resolver = MakeResolver();
+        resolver.AddType("Warehouse Activity Line",
+            new AlTypeRef(BaseAppId, "table", 5767, "Warehouse Activity Line"));
+        resolver.AddMember("Warehouse Activity Line",
+            new AlMember("Qty. to Handle (Base)", "table_field", null, null));
+
+        const string src = """
+            report 7314 "Whse. Change Unit of Measure"
+            {
+                requestpage
+                {
+                    SourceTable = "Warehouse Activity Line";
+                    layout
+                    {
+                        area(content)
+                        {
+                            field(QtyHandleBase; Rec."Qty. to Handle (Base)") { }
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            new AlExtractContext(
+                OwnerKind: "report",
+                OwnerName: "Whse. Change Unit of Measure",
+                OwnerObjectId: 7314,
+                OwnerAppId: BaseAppId,
+                GlobalVars: new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+                Resolver: resolver,
+                OwnerSourceTableName: "Warehouse Activity Line"));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "Qty. to Handle (Base)");
+    }
+
+    [Fact]
+    public void Reportextension_this_member_resolves_through_base_report()
+    {
+        // `this.GetLocation("Location Code")` inside
+        // `reportextension "Mfg. Get Outbound Source Docs" extends
+        // "Get Outbound Source Docs"`. The receiver `this` resolves to
+        // the reportextension itself, but `GetLocation` is a procedure
+        // on the BASE report — AL merges extension + base scopes at
+        // dispatch time. Without the chain-step base-object fallback,
+        // every explicit-`this.<baseMember>` chain in extension code
+        // fired chain-step unresolved. (The bare-self-call path
+        // already had this branch; this fix mirrors it for the chain
+        // walker.)
+        var resolver = MakeResolver();
+        resolver.AddType("Get Outbound Source Docs",
+            new AlTypeRef(BaseAppId, "report", 5754, "Get Outbound Source Docs"));
+        resolver.AddType("Mfg. Get Outbound Source Docs",
+            new AlTypeRef(BaseAppId, "reportextension", 99000836, "Mfg. Get Outbound Source Docs"));
+        resolver.AddMember("Get Outbound Source Docs",
+            new AlMember("GetLocation", "procedure", null, null));
+
+        const string src = """
+            reportextension 99000836 "Mfg. Get Outbound Source Docs" extends "Get Outbound Source Docs"
+            {
+                dataset
+                {
+                    add(ProdOrderComp)
+                    {
+                        trigger OnAfterGetRecord()
+                        begin
+                            this.GetLocation("Location Code");
+                        end;
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            new AlExtractContext(
+                OwnerKind: "reportextension",
+                OwnerName: "Mfg. Get Outbound Source Docs",
+                OwnerObjectId: 99000836,
+                OwnerAppId: BaseAppId,
+                GlobalVars: new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+                Resolver: resolver,
+                OwnerExtendsName: "Get Outbound Source Docs"));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetMemberName == "GetLocation"
+            && r.TargetObjectName == "Get Outbound Source Docs");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "GetLocation");
+    }
+
+    [Fact]
+    public void Bare_self_call_continues_chain_through_return_type()
+    {
+        // EditInExcelFiltersImpl.Codeunit.al:48 pattern:
+        //   `Get(ODataFieldName).AddFilterValueV2(EditInExcelFilterType, FilterValue);`
+        // `Get` is on the owner codeunit and returns
+        // `Codeunit "Edit in Excel Fld Filter Impl."`. Before the
+        // chain-continuation fix, bare-self-call emitted Get's
+        // reference but left `.AddFilterValueV2(...)` for the main
+        // loop to re-dispatch as a fresh bare-self-call against the
+        // owner — which doesn't declare AddFilterValueV2 (it lives
+        // on the codeunit Get returns).
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper",
+            new AlTypeRef(BaseAppId, "codeunit", 50000, "MyHelper"));
+        resolver.AddMember("MyHelper",
+            new AlMember("Get", "procedure", "Codeunit", "Edit in Excel Fld Filter Impl."));
+        resolver.AddType("Edit in Excel Fld Filter Impl.",
+            new AlTypeRef(BaseAppId, "codeunit", 50100, "Edit in Excel Fld Filter Impl."));
+        resolver.AddMember("Edit in Excel Fld Filter Impl.",
+            new AlMember("AddFilterValueV2", "procedure", null, null));
+
+        const string src = """
+            codeunit 50000 MyHelper
+            {
+                procedure Run()
+                begin
+                    Get(ODataFieldName).AddFilterValueV2(FilterType, FilterValue);
+                end;
+
+                procedure Get(ODataFieldName: Text): Codeunit "Edit in Excel Fld Filter Impl."
+                begin
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetMemberName == "AddFilterValueV2"
+            && r.TargetObjectName == "Edit in Excel Fld Filter Impl.");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "AddFilterValueV2");
+    }
+
+    [Fact]
+    public void Microsoft_namespace_with_enum_value_continuation_silences_chain()
+    {
+        // RequisitionLine.Table.al's IsProdDemand:
+        //   `Microsoft.Manufacturing.Document."Production Order Status"::Planned.AsInteger()`
+        // The Microsoft-namespace static-receiver walker consumed the
+        // dotted path through the quoted type but stopped at `::`,
+        // leaving `Planned` to be re-dispatched as a fresh chain head
+        // — Planned isn't a scope var or a catalog type, so the chain
+        // fired head-not-a-variable. The fix continues the silent
+        // walk past `::Value` (and any trailing `.AsInteger()` /
+        // `.method(...)` chain), matching how enum-value references
+        // surface elsewhere.
+        var resolver = MakeResolver();
+        const string src = """
+            table 246 "Requisition Line"
+            {
+                procedure IsProdDemand(): Boolean
+                begin
+                    exit(
+                        Microsoft.Manufacturing.Document."Production Order Status"::Planned.AsInteger() = 1);
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            OwnerTable(resolver, "Requisition Line"));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "Planned" || s.Token == "AsInteger");
+    }
+
+    [Fact]
+    public void Rec_field_with_same_name_as_catalog_codeunit_wins_chain_head()
+    {
+        // `Image.ImportFile(...)` inside `Customer.Table.al` —
+        // `Image` is a Media-typed field on Customer AND the name
+        // also matches the System Application's `Codeunit "Image"`.
+        // Before the collision fix, the bare catalog lookup found
+        // the codeunit and the `.ImportFile` chain step fired
+        // chain-step unresolved (the System "Image" codeunit doesn't
+        // expose ImportFile). AL itself resolves bare identifiers
+        // against Rec fields first, so the field interpretation has
+        // to win; the chain continues against the field's runtime
+        // type (Media), which is in KnownSystemTypes — silenced.
+        var resolver = MakeResolver();
+        resolver.AddType("Image", new AlTypeRef(BaseAppId, "codeunit", 50100, "Image"));
+        resolver.AddType("Customer", new AlTypeRef(BaseAppId, "table", 18, "Customer"));
+        resolver.AddMember("Customer",
+            new AlMember("Image", "table_field", null, null));
+
+        const string src = """
+            table 18 Customer
+            {
+                fields
+                {
+                    field(140; Image; Media) { }
+                }
+
+                procedure DoStuff()
+                begin
+                    Image.ImportFile('foo.png', '');
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            OwnerTable(resolver, "Customer"));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "ImportFile");
+    }
+
+    [Fact]
+    public void Report_rec_binds_to_first_dataitem_source_in_requestpage_chain()
+    {
+        // VAT Report Request Page / Whse. Change Unit of Measure
+        // pattern: the requestpage's `field(Alias; Rec.<FieldName>)`
+        // expressions read fields off the report's "primary" record,
+        // which is the FIRST dataitem's source table. The walker used
+        // to bind Rec to the report itself (DetermineRecBinding's
+        // fallback for record-bearing owners that aren't tables /
+        // pages), so every `Rec."<Field>"` chain in the requestpage
+        // surfaced as chain-step unresolved with ReceiverKind=report.
+        // The fix: prescan dataitems, take the first source as Rec.
+        var resolver = MakeResolver();
+        resolver.AddType("VAT Report Request Page",
+            new AlTypeRef(BaseAppId, "report", 742, "VAT Report Request Page"));
+        resolver.AddType("VAT Report Header",
+            new AlTypeRef(BaseAppId, "table", 743, "VAT Report Header"));
+        resolver.AddMember("VAT Report Header",
+            new AlMember("Statement Template Name", "table_field", null, null));
+
+        const string src = """
+            report 742 "VAT Report Request Page"
+            {
+                dataset
+                {
+                    dataitem(VATReportHeader; "VAT Report Header")
+                    {
+                    }
+                }
+                requestpage
+                {
+                    layout
+                    {
+                        area(content)
+                        {
+                            field(VATStatementTemplate; Rec."Statement Template Name")
+                            {
+                            }
+                        }
+                    }
+                }
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            OwnerReport(resolver, "VAT Report Request Page"));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "Statement Template Name");
+    }
+
+    [Fact]
+    public void Interface_cast_with_as_keyword_routes_chain_through_target_interface()
+    {
+        // Canonical pattern from E-Document Core's Sent Document
+        // Approval / Cancellation / Mark Fetched / Get Response
+        // Runner codeunits:
+        //   <c>exit((IDocumentSender as ISentDocumentActions).GetApprovalStatus(...))</c>.
+        // Before the as-cast handler, the dispatch path walked past
+        // the parenthesised cast and reached `GetApprovalStatus(` at
+        // the end — that was then dispatched as a bare-self-call on
+        // the owner codeunit, which doesn't declare GetApprovalStatus
+        // (the codeunit implements other interfaces). The new
+        // handler routes the chain step through the cast-target
+        // interface so the reference lands on the interface's
+        // declaration.
+        var resolver = MakeResolver();
+        resolver.AddType("ISentDocumentActions",
+            new AlTypeRef(BaseAppId, "interface", 6200, "ISentDocumentActions"));
+        resolver.AddMember("ISentDocumentActions",
+            new AlMember("GetApprovalStatus", "procedure", null, null));
+
+        const string src = """
+            codeunit 50000 MyHelper
+            {
+                procedure Run(IDocumentSender: Variant): Boolean
+                begin
+                    exit((IDocumentSender as ISentDocumentActions).GetApprovalStatus(EDoc, Service, Ctx));
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedSamples.Should().BeEmpty();
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetMemberName == "GetApprovalStatus"
+            && r.TargetObjectName == "ISentDocumentActions");
+    }
+
+    [Fact]
+    public void Xmlport_textattribute_silences_head_not_a_variable()
+    {
+        // `textattribute(Name)` and `textelement(Name)` declare XML
+        // text nodes that show up in xmlport procedure bodies as
+        // Text-typed variables. Without seeding them into the
+        // outermost scope frame, every read / write of the name fires
+        // head-not-a-variable. Pattern from
+        // <c>ImportExportWorkflow.XmlPort.al</c>: <c>EventConditions</c>
+        // declared via <c>textattribute(EventConditions)</c> and read
+        // bare-style inside a trigger ~30 lines later.
+        var resolver = MakeResolver();
+        const string src = """
+            xmlport 1502 "Import / Export Workflow"
+            {
+                schema
+                {
+                    textelement(Root)
+                    {
+                        textattribute(EventConditions)
+                        {
+                        }
+                    }
+                }
+                trigger OnAfterImportRecord()
+                begin
+                    if EventConditions = 'X' then exit;
+                    Message(EventConditions);
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src,
+            OwnerXmlPort(resolver, "Import / Export Workflow"));
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s => s.Token == "EventConditions");
+    }
+
+    [Fact]
+    public void Sibling_procedure_signature_var_modifier_does_not_eat_real_var_block()
+    {
+        // The canonical SalesPost.UpdateShippingNo shape: two
+        // procedure signatures separated by `#if/#else/#endif`,
+        // sharing a single var block + body. The walker walks the
+        // FIRST signature, then needs to skip the second one to
+        // reach the actual var block — but the second signature
+        // contains `var SalesHeader: …` parameters, and an unguarded
+        // search-for-var/begin treats that `var` modifier as the
+        // start of THIS procedure's var block. ParseVarBlock then
+        // consumes the second sig's params as locals (overwriting
+        // the first's), recovers at `;`/`begin`, and discards the
+        // ACTUAL var block (`NoSeries: Codeunit "No. Series"` etc.).
+        // Body references to those locals fire head-not-a-variable.
+        //
+        // Fix: SkipBalancedParens when scanning for var/begin.
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper",
+            new AlTypeRef(BaseAppId, "codeunit", 50000, "MyHelper"));
+        resolver.AddType("No. Series",
+            new AlTypeRef(BaseAppId, "codeunit", 1, "No. Series"));
+        resolver.AddMember("No. Series",
+            new AlMember("GetNextNo", "procedure", "Code", null));
+
+        const string src = """
+            codeunit 50000 MyHelper
+            {
+            #if not CLEAN24
+                local procedure UpdateShippingNo(var SalesHeader: Record "Sales Header"; var ModifyHeader: Boolean; NoSeriesMgt: Codeunit "No. Series")
+            #else
+                local procedure UpdateShippingNo(var SalesHeader: Record "Sales Header"; var ModifyHeader: Boolean)
+            #endif
+                var
+                    NoSeries: Codeunit "No. Series";
+                begin
+                    NoSeries.GetNextNo('SHIP', WorkDate());
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "No. Series"
+            && r.TargetMemberName == "GetNextNo");
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "NoSeries");
+    }
+
+    // ── Object-scope var-block source-side fallback ─────────────────
+
+    [Fact]
+    public void Object_scope_global_codeunit_var_resolves_when_missing_from_symbol_package()
+    {
+        // Globals declared inside an `#if X / #endif` block drop out
+        // of the symbol package whenever the live build doesn't define
+        // the flag. The canonical BC pattern:
+        //
+        //   #if not CLEAN26
+        //   var
+        //       UpgradeTagDefinitions: Codeunit "Upgrade Tag Definitions";
+        //   #endif
+        //
+        // The walker now scans the object-scope var block source-side
+        // and seeds the bottom scope frame, so procedure-body uses of
+        // the variable resolve through the same path as fields/locals
+        // instead of firing head-not-a-variable.
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper",
+            new AlTypeRef(BaseAppId, "codeunit", 50000, "MyHelper"));
+        resolver.AddType("Upgrade Tag Definitions",
+            new AlTypeRef(BaseAppId, "codeunit", 9999, "Upgrade Tag Definitions"));
+        resolver.AddMember("Upgrade Tag Definitions",
+            new AlMember("GetSomeTag", "procedure", "Code", null));
+
+        // No globals in Ctx.GlobalVars — simulating a symbol package
+        // that omitted UpgradeTagDefinitions (e.g. it lives behind a
+        // feature flag the build didn't define).
+        const string src = """
+            codeunit 50000 MyHelper
+            {
+                var
+                    UpgradeTagDefinitions: Codeunit "Upgrade Tag Definitions";
+
+                procedure Run()
+                begin
+                    UpgradeTagDefinitions.GetSomeTag();
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        // GetSomeTag resolves against Upgrade Tag Definitions because
+        // the source-side scanner seeded the bottom frame with the
+        // variable's declared type.
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Upgrade Tag Definitions"
+            && r.TargetMemberName == "GetSomeTag");
+        // No head-not-a-variable diagnostic for the var.
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "UpgradeTagDefinitions");
+    }
+
+    [Fact]
+    public void Object_scope_var_block_does_not_overwrite_symbol_package_globals()
+    {
+        // Guard: source-side scanning is a GAP-FILL, not a replacement.
+        // When the symbol package already supplied a binding for a name
+        // (the normal case), the source-side pass must NOT overwrite it.
+        var resolver = MakeResolver();
+        resolver.AddType("MyHelper",
+            new AlTypeRef(BaseAppId, "codeunit", 50000, "MyHelper"));
+        resolver.AddType("Sales-Post",
+            new AlTypeRef(BaseAppId, "codeunit", 80, "Sales-Post"));
+        resolver.AddMember("Sales-Post",
+            new AlMember("Run", "procedure", null, null));
+
+        var globals = new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase)
+        {
+            // Symbol package's authoritative binding.
+            ["SalesPost"] = new ResolvedVariableType("Codeunit", "Sales-Post"),
+        };
+
+        // Same var name in the source. Both should converge on the
+        // same type, but the test verifies symbol-package data isn't
+        // clobbered by source-side scanning.
+        const string src = """
+            codeunit 50000 MyHelper
+            {
+                var
+                    SalesPost: Codeunit "Sales-Post";
+
+                procedure Run()
+                begin
+                    SalesPost.Run();
+                end;
+            }
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver, globals));
+
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Sales-Post"
+            && r.TargetMemberName == "Run");
+    }
+
+    // ── Single-statement `with X do <stmt>;` ────────────────────────
+
+
+    [Fact]
+    public void Single_statement_with_rebinds_rec_for_bare_call_in_inner_if()
+    {
+        // Canonical BC pattern from PaymentExportManagement (DK
+        // module): `WITH GenJournalLine DO IF X THEN
+        // InsertPaymentFileError(...);`. The single-statement WITH
+        // form has no begin/end anchor so the older walker skipped
+        // the frame push entirely; the bare InsertPaymentFileError
+        // call then dispatched against the owner codeunit (which
+        // doesn't expose it) and surfaced as bare-call unresolved.
+        // The fix pre-scans for the matching `;` and pops the with-
+        // frame at that position so subsequent statements aren't
+        // affected.
+        var resolver = MakeResolver();
+        // The owner codeunit name must match OwnerCodeunit()'s default
+        // ("MyHelper") so OwnerType() resolves; the bare-self-call
+        // resolver early-exits when OwnerType is null and never
+        // reaches the RecType fallback that the WITH frame sets up.
+        resolver.AddType("MyHelper",
+            new AlTypeRef(BaseAppId, "codeunit", 50000, "MyHelper"));
+        resolver.AddType("Gen. Journal Line",
+            new AlTypeRef(BaseAppId, "table", 81, "Gen. Journal Line"));
+        resolver.AddMember("Gen. Journal Line",
+            new AlMember("InsertPaymentFileError", "procedure", null, null));
+
+        const string src = """
+            procedure Check(GenJournalLine: Record "Gen. Journal Line")
+            begin
+                WITH GenJournalLine DO
+                    IF TRUE THEN
+                        IF FALSE THEN BEGIN
+                            IF TRUE THEN
+                                InsertPaymentFileError('first');
+                        END ELSE
+                            IF TRUE THEN
+                                InsertPaymentFileError('second');
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.References.Where(r =>
+                r.ReferenceKind == "method_call"
+                && r.TargetObjectName == "Gen. Journal Line"
+                && r.TargetMemberName == "InsertPaymentFileError")
+            .Should().HaveCount(2);
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "InsertPaymentFileError");
+    }
+
+    [Fact]
+    public void Single_statement_with_pops_at_terminating_semicolon()
+    {
+        // Guard: the with-frame must be popped at the FIRST semicolon
+        // outside of any nested parens / brackets / begin-end. A bare
+        // call AFTER the WITH's `;` must resolve against the owner,
+        // NOT against the WITH-target's type.
+        var resolver = MakeResolver();
+        // Owner is "MyHelper" via OwnerCodeunit()'s default; it must
+        // be in the catalog so OwnerType() resolves (bare-self-call
+        // early-exits otherwise and never reaches the WITH-frame's
+        // RecType binding).
+        resolver.AddType("MyHelper",
+            new AlTypeRef(BaseAppId, "codeunit", 50000, "MyHelper"));
+        // Sales Header DOES expose Foo; MyHelper does NOT.
+        resolver.AddMember("Sales Header",
+            new AlMember("Foo", "procedure", null, null));
+
+        const string src = """
+            procedure Run(SalesHeader: Record "Sales Header")
+            begin
+                WITH SalesHeader DO
+                    Foo('inside');
+                Foo('outside');
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        // First Foo() resolves on Sales Header (inside the WITH).
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Sales Header"
+            && r.TargetMemberName == "Foo");
+        // Second Foo() is OUTSIDE the WITH — owner doesn't expose Foo
+        // and Sales Header is no longer the implicit receiver, so it
+        // stays bare-call unresolved.
+        result.Stats.UnresolvedSamples.Should().Contain(s =>
+            s.Token == "Foo" && s.Reason == "bare-call");
+    }
+
+    // ── Owner-global / label fallback on chain steps ────────────────
+
+    [Fact]
+    public void This_dot_global_codeunit_var_continues_chain_against_var_type()
+    {
+        // `this.LogiqEDocumentManagement.Send(...)` from
+        // LogiqIntegrationImpl.Codeunit.al. `this` resolves to the
+        // owner codeunit; `.LogiqEDocumentManagement` is a global
+        // codeunit-typed var on that owner. Globals don't live in
+        // oe_module_members, so the catalog member lookup misses.
+        // The fallback consults the bottom scope frame (Ctx.GlobalVars)
+        // and advances the chain receiver to the var's type so the
+        // following `.Send(...)` chain-step resolves normally.
+        var resolver = MakeResolver();
+        resolver.AddType("Logiq Integration Impl.",
+            new AlTypeRef(BaseAppId, "codeunit", 6431, "Logiq Integration Impl."));
+        resolver.AddType("Logiq EDocument Management",
+            new AlTypeRef(BaseAppId, "codeunit", 6432, "Logiq EDocument Management"));
+        resolver.AddMember("Logiq EDocument Management",
+            new AlMember("Send", "procedure", null, null));
+
+        var globals = new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["LogiqEDocumentManagement"] = new ResolvedVariableType("Codeunit", "Logiq EDocument Management"),
+        };
+        var ctx = new AlExtractContext(
+            OwnerKind: "codeunit",
+            OwnerName: "Logiq Integration Impl.",
+            OwnerObjectId: 6431,
+            OwnerAppId: BaseAppId,
+            GlobalVars: globals,
+            Resolver: resolver);
+
+        const string src = """
+            procedure Send(var EDocument: Record "E-Document"; var EDocumentService: Record "E-Document Service")
+            begin
+                this.LogiqEDocumentManagement.Send(EDocument, EDocumentService);
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        // `.Send(...)` resolves against Logiq EDocument Management.
+        result.References.Should().Contain(r =>
+            r.ReferenceKind == "method_call"
+            && r.TargetObjectName == "Logiq EDocument Management"
+            && r.TargetMemberName == "Send");
+        // No chain-step unresolved on LogiqEDocumentManagement.
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "LogiqEDocumentManagement");
+    }
+
+    [Fact]
+    public void This_dot_global_scalar_terminates_chain_silently()
+    {
+        // `this.CurrentStep` / `this.TopBannerVisible` from
+        // AddUniversalPrintersWizard.Page.al. Both are scalar globals
+        // (Option / Boolean) — no further chain. The chain step lookup
+        // misses on the page object's catalog members, the fallback
+        // matches the global, and the chain terminates without firing
+        // an unresolved sample.
+        var resolver = MakeResolver();
+        resolver.AddType("Add Universal Printers Wizard",
+            new AlTypeRef(BaseAppId, "page", 2752, "Add Universal Printers Wizard"));
+
+        var globals = new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["CurrentStep"] = new ResolvedVariableType(string.Empty, "Option"),
+            ["TopBannerVisible"] = new ResolvedVariableType(string.Empty, "Boolean"),
+        };
+        var ctx = new AlExtractContext(
+            OwnerKind: "page",
+            OwnerName: "Add Universal Printers Wizard",
+            OwnerObjectId: 2752,
+            OwnerAppId: BaseAppId,
+            GlobalVars: globals,
+            Resolver: resolver);
+
+        const string src = """
+            procedure CheckVisibility(): Boolean
+            begin
+                exit(this.TopBannerVisible and (this.CurrentStep = 0));
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        result.Stats.UnresolvedSamples.Should().NotContain(s =>
+            s.Token == "CurrentStep" || s.Token == "TopBannerVisible");
+    }
+
+    [Fact]
+    public void Owner_global_fallback_does_not_silence_unknown_member()
+    {
+        // Guard: when the chain step doesn't match a catalog member AND
+        // isn't a known global, the unresolved sample still fires.
+        var resolver = MakeResolver();
+        resolver.AddType("My Helper",
+            new AlTypeRef(BaseAppId, "codeunit", 50100, "My Helper"));
+
+        var ctx = new AlExtractContext(
+            OwnerKind: "codeunit",
+            OwnerName: "My Helper",
+            OwnerObjectId: 50100,
+            OwnerAppId: BaseAppId,
+            GlobalVars: new Dictionary<string, ResolvedVariableType>(StringComparer.OrdinalIgnoreCase),
+            Resolver: resolver);
+
+        const string src = """
+            procedure Run()
+            begin
+                this.TotallyUnknownMember();
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, ctx);
+
+        result.Stats.UnresolvedSamples.Should().Contain(s =>
+            s.Token == "TotallyUnknownMember" && s.Reason == "chain-step");
+    }
+
     // ── Stub resolver ───────────────────────────────────────────────
 
     private sealed class StubResolver : IAlTypeResolver
     {
         private readonly Dictionary<string, AlTypeRef> _types =
             new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<(string Kind, int ObjectId), AlTypeRef> _typesById = new();
         private readonly Dictionary<string, List<AlMember>> _members =
             new(StringComparer.OrdinalIgnoreCase);
         // baseName -> list of extension type names targeting it
         private readonly Dictionary<string, List<string>> _extensionsByBase =
             new(StringComparer.OrdinalIgnoreCase);
 
-        public void AddType(string name, AlTypeRef type) => _types[name] = type;
+        public void AddType(string name, AlTypeRef type)
+        {
+            _types[name] = type;
+            if (type.ObjectId is int id && id > 0) _typesById[(type.Kind, id)] = type;
+        }
 
         public void AddMember(string ownerName, AlMember member)
         {
@@ -4660,6 +5487,15 @@ public sealed class AlReferenceExtractorTests
 
         public AlTypeRef? ResolveTypeByName(string typeName, string? expectedKeyword = null) =>
             _types.TryGetValue(typeName, out var t) ? t : null;
+
+        public AlTypeRef? ResolveTypeByObjectId(int objectId, string? expectedKeyword = null)
+        {
+            var kind = string.IsNullOrEmpty(expectedKeyword) ? null
+                : expectedKeyword.Equals("Record", StringComparison.OrdinalIgnoreCase) ? "table"
+                : expectedKeyword.ToLowerInvariant();
+            if (kind is null) return null;
+            return _typesById.TryGetValue((kind, objectId), out var t) ? t : null;
+        }
 
         public AlMember? ResolveMember(AlTypeRef owner, string memberName)
         {

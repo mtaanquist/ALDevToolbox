@@ -117,8 +117,15 @@ internal sealed class AlExtractionState
     /// extractor at the moment the declaration is consumed (before the
     /// body's opening <c>{</c> is processed).
     /// </summary>
-    public void PushDataItemSource(AlTypeRef source) =>
+    public void PushDataItemSource(AlTypeRef source)
+    {
         DataItemStack.Add(new DataItemFrame(ObjectBraceDepth, source));
+        // Rec shadows over the active dataitem; bust the cache so a
+        // RecType() call inside this dataitem's body re-reads from the
+        // updated stack instead of returning the outer binding.
+        RecTypeResolved = false;
+        RecTypeCache = null;
+    }
 
     /// <summary>
     /// Called from the orchestrator when a <c>}</c> is encountered at
@@ -129,10 +136,17 @@ internal sealed class AlExtractionState
     public void OnObjectBraceClose()
     {
         if (ObjectBraceDepth > 0) ObjectBraceDepth--;
+        bool popped = false;
         while (DataItemStack.Count > 0
                && DataItemStack[^1].Depth >= ObjectBraceDepth)
         {
             DataItemStack.RemoveAt(DataItemStack.Count - 1);
+            popped = true;
+        }
+        if (popped)
+        {
+            RecTypeResolved = false;
+            RecTypeCache = null;
         }
     }
 
@@ -443,6 +457,27 @@ internal sealed class ScopeFrame
     /// when the frame pops.
     /// </summary>
     public bool IsWithFrame { get; set; }
+
+    /// <summary>
+    /// True for the single-statement <c>with X do &lt;stmt&gt;;</c> form
+    /// — no <c>begin</c>/<c>end</c> anchor, so the frame can't be
+    /// popped through the normal begin/end pairing. Instead the frame
+    /// records <see cref="EndTokenIndex"/> at push time (computed by a
+    /// forward scan from <c>do</c> through to the statement's matching
+    /// <c>;</c>) and the orchestrator pops it the moment the cursor
+    /// reaches that position. Without this, the canonical BC pattern
+    /// <c>WITH GenJournalLine DO IF X THEN InsertPaymentFileError(...)</c>
+    /// loses the Rec rebind and the bare call fires unresolved.
+    /// </summary>
+    public bool IsSingleStmtWith { get; set; }
+
+    /// <summary>
+    /// Token index ONE PAST the closing <c>;</c> of a single-statement
+    /// <c>with X do</c> body. Set when <see cref="IsSingleStmtWith"/>
+    /// is true; ignored otherwise. The orchestrator pops the frame
+    /// when <c>state.Pos &gt;= EndTokenIndex</c>.
+    /// </summary>
+    public int EndTokenIndex { get; set; }
 }
 
 /// <summary>
@@ -548,11 +583,27 @@ internal sealed class AlProcedureWalker
             return new ResolvedVariableType("Record", _state.Ctx.OwnerSourceTableName);
         }
 
+        // Reports / xmlports / queries with a declared SourceTable
+        // (request-page-level property — common on simple processing
+        // reports like Whse. Change Unit of Measure where there's no
+        // explicit dataitem block) bind Rec to that table. The
+        // dataitem-based PrescanAliases still overrides this when
+        // the report has a dataset { dataitem(X; Y) } block — both
+        // paths converge on "Rec is the report's primary record".
+        if ((k == "report" || k == "reportextension"
+                || k == "xmlport" || k == "query"
+                || k == "requestpage")
+            && !string.IsNullOrEmpty(_state.Ctx.OwnerSourceTableName))
+        {
+            return new ResolvedVariableType("Record", _state.Ctx.OwnerSourceTableName);
+        }
+
         // Other record-bearing kinds: Rec is the owner itself
-        // (tables, reports use dataitems per-trigger, but the
-        // type-resolver lookup falls back to the owner name when
-        // the catalog has no specific entry — same behaviour as
-        // before this refactor).
+        // (tables, and reports / xmlports / queries with no
+        // SourceTable and no dataitem yet — the prescan can still
+        // rebind Rec to the first dataitem source later in the
+        // setup, before any procedure body runs through the main
+        // dispatch).
         if (k == "table"
             || k == "report" || k == "reportextension"
             || k == "xmlport" || k == "query"
@@ -662,11 +713,35 @@ internal sealed class AlProcedureWalker
         // just skip the type tokens.
         ParseOptionalReturnClause(frame);
 
+        // Interface procedure declarations have no body — they end at
+        // `;` after the (optional) return clause. Stop scanning here
+        // so the orchestrator picks up the next `procedure` token in
+        // the interface. Without this short-circuit the search for
+        // `var`/`begin` walks past every subsequent declaration in
+        // the interface and the second / third / Nth procedure's
+        // parameter types never get their property_object references
+        // emitted.
+        if (string.Equals(_state.Ctx.OwnerKind, "interface", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_state.At(";")) _state.Pos++;
+            return;
+        }
+
         // Optional local var block: `var name: Type; ...` between
-        // procedure head and `begin`.
+        // procedure head and `begin`. Skip balanced `(...)` spans so
+        // a `var` MODIFIER inside a sibling signature's parameter list
+        // (typical with `#if X / proc(...,NewArg) / #else / proc(...) /
+        // #endif` shapes — SalesPost.UpdateShippingNo is the canonical
+        // case) isn't mis-read as the start of THIS procedure's var
+        // block. Without the paren-skip, ParseVarBlock would consume
+        // the sibling's params as locals and the real var block (with
+        // `NoSeries: Codeunit "No. Series"` etc.) would be discarded
+        // by the `;`/`begin` recovery — every reference to those locals
+        // in the body then fires head-not-a-variable.
         while (_state.Pos < _state.Tokens.Count
                && !(_state.IsIdentifierTok(_state.Pos, "begin") || _state.IsIdentifierTok(_state.Pos, "var")))
         {
+            if (_state.At("(")) { _state.SkipBalancedParens(); continue; }
             _state.Pos++;
         }
         if (_state.IsIdentifierTok(_state.Pos, "var"))
@@ -675,9 +750,10 @@ internal sealed class AlProcedureWalker
             ParseVarBlock(frame);
         }
 
-        // Skip to and past `begin`.
+        // Skip to and past `begin`. Same paren-skip rationale.
         while (_state.Pos < _state.Tokens.Count && !_state.IsIdentifierTok(_state.Pos, "begin"))
         {
+            if (_state.At("(")) { _state.SkipBalancedParens(); continue; }
             _state.Pos++;
         }
         if (_state.IsIdentifierTok(_state.Pos, "begin"))
@@ -888,7 +964,25 @@ internal sealed class AlProcedureWalker
             if (_state.Pos < _state.Tokens.Count)
             {
                 var t = _state.Tokens[_state.Pos];
-                if (t.Kind == AlTokenKind.Identifier || t.Kind == AlTokenKind.QuotedIdentifier)
+                // Numeric-id form: `Record 380;`, `var X: Codeunit 1060;`.
+                // Older AL — and still-shipping modules like Payment Links
+                // to PayPal — declare record / codeunit variables by id
+                // rather than quoted name. Resolve via the catalog's
+                // (kind, id) index and substitute the canonical name so
+                // downstream ResolveTypeByName lookups succeed.
+                if (t.Kind == AlTokenKind.Number && int.TryParse(t.Value, out var objectId))
+                {
+                    var resolved = _state.Ctx.Resolver.ResolveTypeByObjectId(objectId, keyword);
+                    if (resolved is not null)
+                    {
+                        typeName = resolved.Name;
+                        typeNameLine = t.Line;
+                        typeNameColumn = t.Column;
+                        sawTypeName = true;
+                    }
+                    _state.Pos++;
+                }
+                else if (t.Kind == AlTokenKind.Identifier || t.Kind == AlTokenKind.QuotedIdentifier)
                 {
                     typeName = t.Value;
                     typeNameLine = t.Line;
@@ -1029,19 +1123,37 @@ internal sealed class AlProcedureWalker
     /// procedure walker owns the depth counter and the matching pop.
     /// Returns true when the token was consumed.
     /// </summary>
+    /// <summary>
+    /// Returns the frame that should accumulate <c>begin</c> / <c>end</c>
+    /// depth changes. Normally the top frame, but single-statement
+    /// <c>with X do</c> frames are skipped — they have no begin/end
+    /// anchor of their own (they're popped by their pre-scanned
+    /// <see cref="ScopeFrame.EndTokenIndex"/>), so any nested
+    /// <c>BEGIN</c>/<c>END</c> inside the with's single statement
+    /// belongs to the procedure frame below.
+    /// </summary>
+    private ScopeFrame BlockDepthTrackingFrame()
+    {
+        foreach (var frame in _state.ScopeStack)
+        {
+            if (!frame.IsSingleStmtWith) return frame;
+        }
+        return _state.ScopeStack.Peek();
+    }
+
     public bool TryHandleBlockDepth(AlToken tok)
     {
         if (_state.ScopeStack.Count <= 1 || tok.Kind != AlTokenKind.Identifier) return false;
         if (string.Equals(tok.Value, "begin", StringComparison.OrdinalIgnoreCase)
             || string.Equals(tok.Value, "case", StringComparison.OrdinalIgnoreCase))
         {
-            _state.ScopeStack.Peek().BeginDepth++;
+            BlockDepthTrackingFrame().BeginDepth++;
             _state.Pos++;
             return true;
         }
         if (string.Equals(tok.Value, "end", StringComparison.OrdinalIgnoreCase))
         {
-            var frame = _state.ScopeStack.Peek();
+            var frame = BlockDepthTrackingFrame();
             frame.BeginDepth--;
             if (frame.BeginDepth <= 0)
             {
@@ -1113,16 +1225,36 @@ internal sealed class AlProcedureWalker
         // still surface as references.
         if (AlBuiltinMethods.IsBuiltinStaticReceiver(head.Value))
         {
-            while (_state.Pos < _state.Tokens.Count && _state.At("."))
+            while (_state.Pos < _state.Tokens.Count)
             {
-                _state.Pos++; // .
-                if (_state.Pos < _state.Tokens.Count
-                    && (_state.Tokens[_state.Pos].Kind == AlTokenKind.Identifier
-                        || _state.Tokens[_state.Pos].Kind == AlTokenKind.QuotedIdentifier))
+                if (_state.At("."))
                 {
-                    _state.Pos++; // member
+                    _state.Pos++; // .
+                    if (_state.Pos < _state.Tokens.Count
+                        && (_state.Tokens[_state.Pos].Kind == AlTokenKind.Identifier
+                            || _state.Tokens[_state.Pos].Kind == AlTokenKind.QuotedIdentifier))
+                    {
+                        _state.Pos++; // member
+                    }
+                    if (_state.Pos < _state.Tokens.Count && _state.At("(")) WalkBalancedParens();
+                    continue;
                 }
-                if (_state.Pos < _state.Tokens.Count && _state.At("(")) WalkBalancedParens();
+                // Enum-value continuation:
+                // `Microsoft.Manufacturing.Document."Production Order Status"::Planned.AsInteger()`.
+                // After the dotted namespace path resolves to a quoted
+                // type name, an enum-value `::Identifier` may follow,
+                // optionally chained with `.AsInteger()` / `.AsBoolean()`.
+                // The catalog doesn't track enum values; treat the
+                // whole `::Value.method(...)` tail as a silent skip.
+                if (_state.Pos + 1 < _state.Tokens.Count
+                    && _state.Tokens[_state.Pos].Kind == AlTokenKind.DoubleColon
+                    && (_state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Identifier
+                        || _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.QuotedIdentifier))
+                {
+                    _state.Pos += 2; // :: value
+                    continue;
+                }
+                break;
             }
             return;
         }
@@ -1302,6 +1434,50 @@ internal sealed class AlProcedureWalker
     }
 
     /// <summary>
+    /// Recognises the parenthesised <c>as</c>-cast chain shape:
+    /// <code>(IDocumentSender as ISentDocumentActions).GetApprovalStatus(...)</code>.
+    /// This is the canonical interface-cast pattern in BC 26 (E-Document
+    /// Core's Sent Document Approval / Cancellation / Mark Fetched /
+    /// Get Response Runner all use it on the codeunit's own
+    /// implementation surface). Without recognising it, the dispatch
+    /// path walked past the cast and saw <c>GetApprovalStatus(</c> at
+    /// the end — bare-self-call on the owner codeunit, which doesn't
+    /// declare it. Emit the chain step against the post-<c>as</c>
+    /// interface type so the GetApprovalStatus reference lands on the
+    /// interface's declaration row.
+    ///
+    /// Returns true when the pattern matched (cursor advances through
+    /// the cast and the trailing member chain); false otherwise (cursor
+    /// untouched).
+    /// </summary>
+    public bool TryConsumeAsCastChain()
+    {
+        // Pattern: `(` Identifier `as` (Identifier|QuotedIdentifier) `)` `.` Member
+        if (_state.Pos + 6 >= _state.Tokens.Count) return false;
+        var t = _state.Tokens;
+        int p = _state.Pos;
+        if (t[p].Kind != AlTokenKind.Punct || t[p].Value != "(") return false;
+        if (t[p + 1].Kind != AlTokenKind.Identifier
+            && t[p + 1].Kind != AlTokenKind.QuotedIdentifier) return false;
+        if (t[p + 2].Kind != AlTokenKind.Identifier
+            || !string.Equals(t[p + 2].Value, "as", StringComparison.OrdinalIgnoreCase)) return false;
+        if (t[p + 3].Kind != AlTokenKind.Identifier
+            && t[p + 3].Kind != AlTokenKind.QuotedIdentifier) return false;
+        if (t[p + 4].Kind != AlTokenKind.Punct || t[p + 4].Value != ")") return false;
+        if (t[p + 5].Kind != AlTokenKind.Punct || t[p + 5].Value != ".") return false;
+
+        var typeName = t[p + 3].Value;
+        var receiverType = _state.Ctx.Resolver.ResolveTypeByName(typeName);
+        // Advance cursor to the `.` so WalkMemberChain reads it as the
+        // next chain step. The cast head is consumed regardless of
+        // whether the type resolved — letting the dispatch fall through
+        // would just re-emit `GetApprovalStatus(...)` as a bare-self-call.
+        _state.Pos = p + 5;
+        WalkMemberChain(receiverType);
+        return true;
+    }
+
+    /// <summary>
     /// Walks the <c>.member.member…</c> tail of a chain after the
     /// head has been resolved to a receiver type. Emits one
     /// reference per step we resolve and advances the receiver to
@@ -1403,6 +1579,50 @@ internal sealed class AlProcedureWalker
                 {
                     if (followedByParen) WalkBalancedParens();
                     return;
+                }
+                // Owner-globals / labels fallback: when the receiver IS
+                // the owner (the canonical shape is `this.MyGlobal` or
+                // `Rec.MyLabel` on tables), the chain step may name a
+                // global var or label that lives in Ctx.GlobalVars /
+                // object-scope labels — never in oe_module_members,
+                // which only holds procedures / triggers / fields.
+                //
+                // Canonical samples:
+                //   `this.LogiqEDocumentManagement.Send(...)` — global
+                //     codeunit var on the owner codeunit; chain
+                //     continues on the resolved codeunit type so
+                //     `.Send(args)` then resolves normally.
+                //   `Visible = TopBannerVisible and (CurrentStep = N)` —
+                //     page globals referenced via implicit `this.`.
+                //   `Error(PilotBaseUrlTok)` — table label in a
+                //     `Rec.<Label>` chain.
+                //
+                // When the global's declared type resolves through the
+                // catalog (Codeunit / Record / Page / …), the chain
+                // continues against that type. When the type is a
+                // scalar / Label / unresolvable, the chain ends here.
+                // Either way, the unresolved sample is silenced.
+                if (TryAdvanceToOwnerGlobal(receiverType, memberTok.Value, out var globalNextType))
+                {
+                    receiverType = globalNextType;
+                    continue;
+                }
+                // Extension → base-object fallback. When the receiver
+                // is the current owner AND the owner is a
+                // reportextension / pageextension, AL routes member
+                // calls to the base object's procedures too. The
+                // canonical shape:
+                //   `this.GetLocation("Location Code")`
+                // inside `reportextension "Mfg. Get Outbound Source
+                // Docs" extends "Get Outbound Source Docs"`, where
+                // `GetLocation` is declared on the base report. The
+                // bare-self-call resolver already has this branch
+                // (line 2020 area); the chain walker needs it too for
+                // explicit-this dispatch.
+                if (TryAdvanceToBaseObject(receiverType, memberTok, followedByParen, out var baseNextType))
+                {
+                    receiverType = baseNextType;
+                    continue;
                 }
                 _state.Unresolved++;
                 _state.CaptureUnresolved("chain-step", memberTok, receiverType);
@@ -1579,39 +1799,90 @@ internal sealed class AlProcedureWalker
         _state.Pos++; // past `do`
         _state.SkipWhitespaceTokens();
 
-        // Only push a frame for the multi-statement shape. Single-statement
-        // `with X do Foo();` lacks the begin/end anchor TryHandleBlockDepth
-        // uses to pop; pushing here would mean the next stray `end` (likely
-        // the procedure's own) would pop the wrong frame.
-        if (!_state.IsIdentifierTok(_state.Pos, "begin"))
+        // Two shapes downstream:
+        //   `with X do begin … end;` — multi-statement, anchored by
+        //     begin/end so TryHandleBlockDepth pops the frame on the
+        //     matching end.
+        //   `with X do <single statement>;` — no begin/end; pop the
+        //     frame when the cursor reaches the matching `;` (found
+        //     here by a forward scan tracking parens / brackets /
+        //     begin-end depth). Canonical BC pattern:
+        //     `WITH GenJournalLine DO IF X THEN
+        //        InsertPaymentFileError(...);` — without the rebind,
+        //     the bare call fires unresolved.
+        var multiStmt = _state.IsIdentifierTok(_state.Pos, "begin");
+
+        if (xType is null) return true;
+
+        // Map the resolved type's catalog kind back to the AL keyword
+        // ResolveTypeByName expects on next lookup (table → Record).
+        var keyword = string.Equals(xType.Kind, "table", StringComparison.OrdinalIgnoreCase)
+            ? "Record"
+            : xType.Kind;
+        var withFrame = new ScopeFrame
         {
-            return true;
+            IsWithFrame = true,
+        };
+        withFrame.Vars["rec"] = new ResolvedVariableType(keyword, xType.Name);
+        withFrame.Vars["xrec"] = new ResolvedVariableType(keyword, xType.Name);
+
+        if (!multiStmt)
+        {
+            withFrame.IsSingleStmtWith = true;
+            withFrame.EndTokenIndex = ScanForSingleStatementEnd(_state.Pos);
+            // Guard: if the scan didn't find a terminator (malformed
+            // source / truncation), don't push — falls back to the
+            // pre-fix behaviour of "no rebind, take the unresolved".
+            if (withFrame.EndTokenIndex <= _state.Pos) return true;
         }
 
-        if (xType is not null)
-        {
-            // Map the resolved type's catalog kind back to the AL keyword
-            // ResolveTypeByName expects on next lookup (table → Record).
-            var keyword = string.Equals(xType.Kind, "table", StringComparison.OrdinalIgnoreCase)
-                ? "Record"
-                : xType.Kind;
-            var withFrame = new ScopeFrame
-            {
-                IsWithFrame = true,
-            };
-            withFrame.Vars["rec"] = new ResolvedVariableType(keyword, xType.Name);
-            withFrame.Vars["xrec"] = new ResolvedVariableType(keyword, xType.Name);
-            _state.ScopeStack.Push(withFrame);
-            // Invalidate the cached RecType so subsequent bare-call /
-            // implicit-Rec lookups read the with-frame's binding.
-            _state.RecTypeResolved = false;
-            _state.RecTypeCache = null;
-        }
+        _state.ScopeStack.Push(withFrame);
+        // Invalidate the cached RecType so subsequent bare-call /
+        // implicit-Rec lookups read the with-frame's binding.
+        _state.RecTypeResolved = false;
+        _state.RecTypeCache = null;
 
-        // Leave the cursor at `begin` — the main loop will dispatch it
-        // through TryHandleBlockDepth, which now operates on the with
-        // frame we just pushed.
+        // Leave the cursor at `begin` (multi-stmt) or the first token of
+        // the single statement — the main loop dispatches normally; the
+        // orchestrator pops single-stmt frames when Pos >= EndTokenIndex.
         return true;
+    }
+
+    /// <summary>
+    /// Scans forward from <paramref name="startPos"/> through the AL
+    /// tokens to find the <c>;</c> that terminates a single statement,
+    /// tracking <c>(</c> / <c>)</c>, <c>[</c> / <c>]</c>, and
+    /// <c>begin</c> / <c>end</c> (and <c>case</c> / <c>end</c>) depths
+    /// so nested constructs don't terminate early. Returns the position
+    /// ONE PAST the closing <c>;</c>, or <paramref name="startPos"/> if
+    /// no terminator was found before the token stream ends.
+    /// </summary>
+    private int ScanForSingleStatementEnd(int startPos)
+    {
+        int depth = 0;
+        for (int i = startPos; i < _state.Tokens.Count; i++)
+        {
+            var t = _state.Tokens[i];
+            if (t.Kind == AlTokenKind.Punct)
+            {
+                if (t.Value == "(" || t.Value == "[") { depth++; continue; }
+                if (t.Value == ")" || t.Value == "]") { if (depth > 0) depth--; continue; }
+                if (t.Value == ";" && depth == 0) return i + 1;
+            }
+            else if (t.Kind == AlTokenKind.Identifier)
+            {
+                if (string.Equals(t.Value, "begin", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(t.Value, "case", StringComparison.OrdinalIgnoreCase))
+                {
+                    depth++;
+                }
+                else if (string.Equals(t.Value, "end", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (depth > 0) depth--;
+                }
+            }
+        }
+        return startPos;
     }
 
     /// <summary>
@@ -1858,10 +2129,28 @@ internal sealed class AlProcedureWalker
             ReferenceKind: "method_call"));
         _state.Resolved++;
 
-        // Advance past the identifier only. The argument list is
-        // walked by the main loop in its own right — `Outer(Cust.X())`
-        // needs the inner `Cust.X()` chain to still be picked up.
+        // Continue the chain when the call is followed by `.member`
+        // and the called procedure's return type resolves to a real
+        // catalog object — `Get(field).AddFilterValueV2(...)` shape.
+        // Without this the bare-self-call emitted Get's reference but
+        // left `.AddFilterValueV2(...)` for the main loop to re-
+        // dispatch as a fresh bare-self-call against the owner, which
+        // missed (AddFilterValueV2 lives on the codeunit Get returns).
+        //
+        // Walking the args via WalkBalancedParens preserves the
+        // "inner `Cust.X()` still resolves" guarantee — same dispatcher
+        // the main loop would have used.
         _state.Pos++;
+        if (_state.Pos < _state.Tokens.Count && _state.At("("))
+        {
+            var returnType = AdvanceReceiverByMember(member);
+            WalkBalancedParens();
+            if (returnType is not null
+                && _state.Pos < _state.Tokens.Count && _state.At("."))
+            {
+                WalkMemberChain(returnType);
+            }
+        }
         return true;
     }
 
@@ -1964,6 +2253,22 @@ internal sealed class AlProcedureWalker
     {
         if (_state.RecTypeResolved) return _state.RecTypeCache;
         _state.RecTypeResolved = true;
+        // Active dataitem source wins: inside a report/query/xmlport
+        // dataitem body, AL binds Rec to THAT dataitem's source table,
+        // shadowing any object-level Rec binding. The structure
+        // extractor pushes the source on the stack on dataitem entry
+        // and pops on its `}`, so a sibling dataitem's body sees its
+        // own source — not the previous sibling's. This is what keeps
+        // bare-self-call dispatch from leaking across siblings (see
+        // Sibling_dataitem_does_not_leak_into_next_dataitem_scope).
+        // Pre-cache via RecTypeCache so subsequent calls in the same
+        // block don't re-query the resolver per token.
+        var di = _state.CurrentDataItemSource;
+        if (di is not null)
+        {
+            _state.RecTypeCache = di;
+            return di;
+        }
         // Walk INNERMOST-first: in normal code only the object-scope frame
         // binds `rec`, so this lands the same place as before; but a
         // `with X do begin` pushes a frame whose `rec` shadows the object's
@@ -1996,14 +2301,28 @@ internal sealed class AlProcedureWalker
     };
 
     /// <summary>
-    /// Object-scope <c>var</c> block: scans <c>Name: Label '…';</c>
-    /// declarations and adds them to the bottom (object-scope) frame
-    /// so bare uses inside any procedure / trigger body in the file
-    /// resolve through the same scope-walk that fields and other
-    /// vars use. Non-label declarations are skipped — those come in
-    /// via the symbol-package globals already. Terminates at the
-    /// closing <c>}</c> of the object or the next section keyword
-    /// (<c>procedure</c>, <c>trigger</c>, <c>fields</c>, …).
+    /// Object-scope <c>var</c> block scanner. Walks each
+    /// <c>Name[, Name]*: Type[ "X"];</c> declaration and adds the
+    /// variable to the bottom (object-scope) frame so bare uses in
+    /// any procedure / trigger body in the file resolve through the
+    /// scope-walk that fields and locals already use.
+    ///
+    /// Why source-side scanning when the symbol package already
+    /// supplies <see cref="AlExtractContext.GlobalVars"/>? Globals
+    /// declared inside a feature-flag <c>#if X / #endif</c> block
+    /// (BC pattern: <c>#if not CLEAN26 ... var UpgradeTagDefinitions:
+    /// Codeunit "Upgrade Tag Definitions"; ... #endif</c>) drop out
+    /// of the symbol package whenever the flag isn't the live one
+    /// the compiler chose. Without source-side fallback, every
+    /// procedure-body reference to those vars fires head-not-a-
+    /// variable. Bottom-frame writes are gap-fills only — symbol-
+    /// package entries from <see cref="BuildAndPushGlobalScope"/>
+    /// stay authoritative when both list the same name.
+    ///
+    /// Terminates at the object's closing <c>}</c> or the next
+    /// section keyword (<c>procedure</c>, <c>trigger</c>,
+    /// <c>fields</c>, …). The method name is kept (was
+    /// label-only originally) so existing callers still link.
     /// </summary>
     public void ScanObjectScopeLabels()
     {
@@ -2029,6 +2348,15 @@ internal sealed class AlProcedureWalker
                     _state.Pos++;
                     continue;
                 }
+                if (tok.Value == "[")
+                {
+                    // Attribute on a declaration — `[NonDebuggable]`,
+                    // `[SecurityFiltering(...)]`, etc. Skip the
+                    // bracketed span so the attribute's inner
+                    // identifier isn't mis-read as a variable name.
+                    _state.SkipAttribute();
+                    continue;
+                }
             }
             if (braceDepth == 0
                 && tok.Kind == AlTokenKind.Identifier
@@ -2037,24 +2365,45 @@ internal sealed class AlProcedureWalker
                 return;
             }
 
-            // Detect `Name : Label`. The lexer drops whitespace, so
-            // the three tokens are adjacent in the stream.
-            if ((tok.Kind == AlTokenKind.Identifier || tok.Kind == AlTokenKind.QuotedIdentifier)
-                && _state.Pos + 2 < _state.Tokens.Count
-                && _state.Tokens[_state.Pos + 1].Kind == AlTokenKind.Punct
-                && _state.Tokens[_state.Pos + 1].Value == ":"
-                && _state.Tokens[_state.Pos + 2].Kind == AlTokenKind.Identifier
-                && string.Equals(_state.Tokens[_state.Pos + 2].Value, "Label", StringComparison.OrdinalIgnoreCase))
+            // `Name[, Name]*: Type[ "X"];` — capture every declaration
+            // shape so codeunit / record / page / interface / scalar /
+            // array globals all land in the bottom frame. Quoted-
+            // identifier names are legal in AL at object scope too.
+            if (tok.Kind != AlTokenKind.Identifier && tok.Kind != AlTokenKind.QuotedIdentifier)
             {
-                var nameLower = tok.Value.ToLowerInvariant();
-                if (!bottom.Vars.ContainsKey(nameLower))
-                {
-                    bottom.Vars[nameLower] = new ResolvedVariableType(null, "Label");
-                }
-                _state.Pos += 3;
+                _state.Pos++;
                 continue;
             }
-            _state.Pos++;
+
+            var names = new List<string>();
+            int nameStart = _state.Pos;
+            while (_state.Pos < _state.Tokens.Count
+                   && (_state.Tokens[_state.Pos].Kind == AlTokenKind.Identifier
+                       || _state.Tokens[_state.Pos].Kind == AlTokenKind.QuotedIdentifier))
+            {
+                names.Add(_state.Tokens[_state.Pos].Value);
+                _state.Pos++;
+                if (_state.At(",")) { _state.Pos++; continue; }
+                break;
+            }
+            if (!_state.At(":"))
+            {
+                // Not a declaration. Advance past the name(s) we
+                // just consumed; loop continues. (Avoids re-reading
+                // the same identifier and looping forever.)
+                if (_state.Pos == nameStart) _state.Pos++;
+                continue;
+            }
+            _state.Pos++; // past `:`
+
+            var type = ReadTypeReference();
+            foreach (var n in names)
+            {
+                var key = n.ToLowerInvariant();
+                if (!bottom.Vars.ContainsKey(key)) bottom.Vars[key] = type;
+            }
+
+            if (_state.At(";")) _state.Pos++;
         }
     }
 
@@ -2471,7 +2820,37 @@ internal sealed class AlProcedureWalker
             }
         }
 
-        // Step 2: head IS a type name (Customer.Insert pattern).
+        // Step 2: Rec-field collision check. Inside a Rec-bearing
+        // owner (table / page / extension), a bare head that also
+        // names a Rec field shadows any catalog name match — AL
+        // resolves the field, not a same-named codeunit. Canonical
+        // sample: <c>Image.ImportFile(...)</c> on
+        // <c>Customer.Table.al</c> where <c>Image</c> is a Media-typed
+        // field on Customer AND a Codeunit "Image" exists in System
+        // Application. Without this short-circuit the codeunit wins
+        // the catalog lookup and the .ImportFile chain step fires
+        // chain-step unresolved on a codeunit that doesn't expose it.
+        // Returning null with declaredAsVar populated routes through
+        // the known-system-type silence path on Media / Text /
+        // Decimal / etc.
+        var rec = RecType();
+        if (rec is not null)
+        {
+            var recField = _state.Ctx.Resolver.ResolveMember(rec, head.Value);
+            if (recField is not null && AlExtractionState.IsFieldKind(recField.Kind))
+            {
+                // Stash the field's runtime type so the silence path
+                // can recognise it. Most table-field types are
+                // scalars (Code/Text/Decimal/etc.) — runtime types
+                // like Media / MediaSet / Blob land here too. The
+                // chain walker treats these as terminal.
+                declaredAsVar = new ResolvedVariableType(
+                    null, recField.ReturnTypeName ?? string.Empty);
+                return null;
+            }
+        }
+
+        // Step 3: head IS a type name (Customer.Insert pattern).
         return _state.Ctx.Resolver.ResolveTypeByName(head.Value);
     }
 
@@ -2482,9 +2861,108 @@ internal sealed class AlProcedureWalker
         // Procedures with a known return type continue the chain;
         // procedures with no return / scalar return terminate.
         if (string.IsNullOrEmpty(member.ReturnTypeName)) return null;
-        // Only AL-typed returns (Record / Codeunit / Page / …)
-        // resolve to catalog entries. System types come back null.
-        return _state.Ctx.Resolver.ResolveTypeByName(member.ReturnTypeName);
+        // Pass the return-type keyword so the resolver picks the
+        // correct kind when the name collides across kinds. Canonical
+        // sample: `EDocument.GetEDocumentService()` returns
+        // <c>Record "E-Document Service"</c>, and BC ships BOTH a
+        // table AND a page named "E-Document Service". Without the
+        // hint the resolver could land on the page and every
+        // subsequent chain step (.GetImportProcessVersion, etc.)
+        // misses against the wrong receiver.
+        return _state.Ctx.Resolver.ResolveTypeByName(
+            member.ReturnTypeName, member.ReturnTypeKeyword);
+    }
+
+    /// <summary>
+    /// When a chain step's member lookup misses on the owner type,
+    /// fall back to the owner's global vars / labels. Globals live in
+    /// <see cref="AlExtractContext.GlobalVars"/> (mirrored into the
+    /// bottom scope frame by <see cref="BuildAndPushGlobalScope"/>);
+    /// labels added by <see cref="ScanObjectScopeLabels"/> land there
+    /// too. Neither shape is in <c>oe_module_members</c>, so the
+    /// resolver's lookup misses even though the reference is legal AL
+    /// — `this.MyGlobal` / `Rec.MyLabel` from inside the owner.
+    /// <para/>
+    /// Returns true when the name matched a global / label, with
+    /// <paramref name="nextReceiver"/> set to the resolved type when
+    /// the global's declared type lives in the catalog
+    /// (Record / Codeunit / Page / …) so the chain can continue, or
+    /// null when the type is scalar / Label / unresolvable (in which
+    /// case the chain ends here). Returns false when the receiver
+    /// isn't the owner, or the name doesn't match any global.
+    /// </summary>
+    private bool TryAdvanceToOwnerGlobal(AlTypeRef receiverType, string memberName, out AlTypeRef? nextReceiver)
+    {
+        nextReceiver = null;
+        var owner = OwnerType();
+        if (owner is null || !receiverType.Equals(owner)) return false;
+
+        // Bottom scope frame holds Ctx.GlobalVars plus any labels
+        // scanned by ScanObjectScopeLabels — both are valid `this.X`
+        // / `Rec.X` targets. Stack iterates top→bottom, so the last
+        // entry is the bottom.
+        ScopeFrame? bottom = null;
+        foreach (var frame in _state.ScopeStack) bottom = frame;
+        if (bottom is null) return false;
+
+        var key = memberName.ToLowerInvariant();
+        if (!bottom.Vars.TryGetValue(key, out var declared)) return false;
+
+        // The global matched; try to resolve its declared type so the
+        // chain can continue. Scalars / Labels (empty TypeName) leave
+        // nextReceiver null — the chain walker's next iteration will
+        // see receiverType=null and AdvancePastChain.
+        if (!string.IsNullOrEmpty(declared.TypeName))
+        {
+            nextReceiver = _state.Ctx.Resolver.ResolveTypeByName(declared.TypeName, declared.Keyword);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// When a chain step's member lookup misses on the owner type
+    /// AND the owner is a reportextension / pageextension, walk to
+    /// the base object and re-try the lookup. AL merges extension and
+    /// base scopes at dispatch time, so `this.GetLocation(...)` on a
+    /// reportextension's body can call a procedure declared on the
+    /// base report. The bare-self-call path already handles this; the
+    /// chain walker mirrors it here for explicit-`this` dispatch.
+    /// Emits the reference at the base object's declaration when the
+    /// lookup succeeds. Returns true when consumed (cursor stays put;
+    /// caller continues the chain on the advanced receiver), false
+    /// when the receiver isn't the owner, the owner isn't an
+    /// extension kind, or the base doesn't expose the member.
+    /// </summary>
+    private bool TryAdvanceToBaseObject(
+        AlTypeRef receiverType, AlToken memberTok, bool followedByParen,
+        out AlTypeRef? nextReceiver)
+    {
+        nextReceiver = null;
+        var owner = OwnerType();
+        if (owner is null || !receiverType.Equals(owner)) return false;
+        var k = _state.Ctx.OwnerKind?.ToLowerInvariant();
+        if (k != "reportextension" && k != "pageextension") return false;
+
+        var baseType = BaseObjectType();
+        if (baseType is null) return false;
+        var member = _state.Ctx.Resolver.ResolveMember(baseType, memberTok.Value);
+        if (member is null) return false;
+
+        var targetOwner = member.DeclaringType ?? baseType;
+        var refKind = followedByParen ? "method_call" : "field_access";
+        _state.EmitReference(new ExtractedReference(
+            Line: memberTok.Line,
+            Column: memberTok.Column,
+            TargetAppId: targetOwner.AppId,
+            TargetObjectKind: targetOwner.Kind,
+            TargetObjectId: targetOwner.ObjectId,
+            TargetObjectName: targetOwner.Name,
+            TargetMemberName: member.Name,
+            TargetMemberKind: member.Kind,
+            ReferenceKind: refKind));
+        _state.Resolved++;
+        nextReceiver = AdvanceReceiverByMember(member);
+        return true;
     }
 
     /// <summary>

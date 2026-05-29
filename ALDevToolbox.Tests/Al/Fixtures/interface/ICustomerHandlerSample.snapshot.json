@@ -9,6 +9,14 @@
       "TargetObjectName": "Customer"
     },
     {
+      "Line": 4,
+      "Column": 39,
+      "ReferenceKind": "property_object",
+      "TargetObjectKind": "enum",
+      "TargetObjectId": 50000,
+      "TargetObjectName": "Sales Document Type"
+    },
+    {
       "Line": 5,
       "Column": 49,
       "ReferenceKind": "property_object",
@@ -18,7 +26,7 @@
     }
   ],
   "Stats": {
-    "ResolvedReferences": 2,
+    "ResolvedReferences": 3,
     "UnresolvedReceivers": 0,
     "UnresolvedSamples": []
   }

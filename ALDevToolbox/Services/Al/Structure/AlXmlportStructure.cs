@@ -13,7 +13,13 @@ namespace ALDevToolbox.Services.Al.Structure;
 /// are already handled by the chain walker via the registered
 /// alias.
 ///
-/// <c>textelement(Name)</c> keeps the generic DSL first-arg skip.
+/// <c>textattribute(Name)</c> / <c>textelement(Name)</c> declare
+/// XML text nodes that surface inside the xmlport as <c>Text</c>-
+/// typed variables. Procedure bodies read / write them as bare
+/// identifiers (e.g. <c>EventConditions := '...'</c> in
+/// <c>ImportExportWorkflow.XmlPort.al</c>). Registered as Text-typed
+/// scope vars during pre-scan so head lookups don't fire
+/// head-not-a-variable.
 /// </summary>
 internal sealed class AlXmlportStructure : IAlObjectStructureExtractor
 {
@@ -46,7 +52,14 @@ internal sealed class AlXmlportStructure : IAlObjectStructureExtractor
     /// uses <c>paymentexportdatagroup.GetOrganizationID()</c> at
     /// line 103 with the declaration at line 111). Walk every
     /// tableelement up front and seed the outermost scope frame so
-    /// the main walk's chain resolver finds the alias.
+    /// the main walk's chain resolver finds the alias. The same
+    /// pass scans <c>textattribute(Name)</c> and <c>textelement(Name)</c>
+    /// so procedure-body references resolve as Text-typed.
     /// </summary>
-    public void Prescan() => AlDataItemDsl.PrescanAliases(_state, "tableelement");
+    public void Prescan()
+    {
+        AlDataItemDsl.PrescanAliases(_state, "tableelement");
+        AlDataItemDsl.PrescanTextNodeAliases(_state, "textattribute");
+        AlDataItemDsl.PrescanTextNodeAliases(_state, "textelement");
+    }
 }

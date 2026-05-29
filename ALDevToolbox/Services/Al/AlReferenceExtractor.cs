@@ -170,6 +170,23 @@ public static class AlReferenceExtractor
         /// </summary>
         private void ProcessOneToken()
         {
+            // Single-statement `with X do <stmt>;` frame disposal. The
+            // with-frame was pushed at `do` with EndTokenIndex pointing
+            // one past the statement-terminating `;` (computed by
+            // ScanForSingleStatementEnd). Pop it the moment the cursor
+            // reaches that position so the rebound Rec doesn't bleed
+            // into the next statement. Loops because deeply-nested
+            // single-stmt withs (rare but legal) could close several at
+            // the same position.
+            while (_state.ScopeStack.Count > 0)
+            {
+                var top = _state.ScopeStack.Peek();
+                if (!top.IsSingleStmtWith || _state.Pos < top.EndTokenIndex) break;
+                _state.ScopeStack.Pop();
+                _state.RecTypeResolved = false;
+                _state.RecTypeCache = null;
+            }
+
             var tok = _state.Tokens[_state.Pos];
 
             // Preprocessor branch elimination: AL files use
@@ -288,6 +305,19 @@ public static class AlReferenceExtractor
                 && string.Equals(tok.Value, "with", StringComparison.OrdinalIgnoreCase))
             {
                 if (_procedureWalker.TryConsumeWithStatement()) return;
+            }
+
+            // `(Variant as Interface).Method(...)` — interface-cast
+            // chain head. Recognise the parenthesised cast so the
+            // post-`as` interface type drives the member chain
+            // (otherwise the trailing `Method(...)` would dispatch
+            // as a bare-self-call against the owner and miss).
+            // Canonical shape from E-Document Core:
+            // <code>(IDocumentSender as ISentDocumentActions).GetApprovalStatus(...)</code>.
+            if (_state.ScopeStack.Count > 1
+                && tok.Kind == AlTokenKind.Punct && tok.Value == "(")
+            {
+                if (_procedureWalker.TryConsumeAsCastChain()) return;
             }
 
             // Member-access chain candidates. Three shapes trigger:
@@ -1476,6 +1506,25 @@ public interface IAlTypeResolver
     /// to a TableExtension someone happened to give the same name.
     /// </summary>
     AlTypeRef? ResolveTypeByName(string typeName, string? expectedKeyword = null);
+
+    /// <summary>
+    /// Resolves an AL object id (e.g. <c>Record 380</c>, <c>Codeunit 1060</c>)
+    /// to its catalog entry. Older AL — and a handful of still-shipping
+    /// modules — declare record variables and procedure parameters by
+    /// numeric id instead of the quoted name (<c>Record 380</c> →
+    /// <c>"Detailed Vendor Ledg. Entry"</c>). Without resolving these,
+    /// every member access on the variable strands as
+    /// <c>head-var-type-unresolved</c>.
+    ///
+    /// <paramref name="expectedKeyword"/> is the AL type keyword the
+    /// caller has from context (<c>Record</c>, <c>Codeunit</c>, …).
+    /// Implementations should kind-filter so a numeric id that exists
+    /// for several object kinds returns the one the keyword names.
+    ///
+    /// Default returns null so existing stub resolvers (unit tests)
+    /// don't need to opt in.
+    /// </summary>
+    AlTypeRef? ResolveTypeByObjectId(int objectId, string? expectedKeyword = null) => null;
 
     /// <summary>
     /// Resolves a member on a known owner. The owner is identified by

@@ -61,8 +61,15 @@ public static class AlSymbolExtractor
     // use `column(...)` with similar shape; we deliberately skip those
     // for now because nothing in the imported corpus accesses report
     // columns as chain members.
+    //
+    // The source expression is optional: aggregation columns
+    // (`column(Count_Orders) { Method = Count; }`) have no source field
+    // because the value comes from the aggregation method, not a row
+    // column. Without this, every access like
+    // <c>CountPurchOrders.Count_Orders</c> strands as a chain-step
+    // unresolved.
     private static readonly Regex QueryColumnDeclarationRegex = new(
-        @"^\s*(?:column|filter)\s*\(\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*;\s*(?<expr>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)\s*\)",
+        @"^\s*(?:column|filter)\s*\(\s*(?<name>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*)(?:\s*;\s*(?<expr>""[^""]+""|[A-Za-z_][A-Za-z0-9_]*))?\s*\)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     // The object-header declaration line: `table 36 "Sales Header"`,

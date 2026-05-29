@@ -253,6 +253,11 @@ public static class AlBuiltinMethods
         "Run", "RunModal", "Import", "Export",
         "SetSource", "SetDestination", "GetSource",
         "SetTableView", "GetTableView",
+        // `MyXmlport.ImportFile()` — runtime helper that pops up the
+        // platform's import dialog. Used by `CAL Test Management` for
+        // each of CAL Test Coverage Map / CAL Export Test Result /
+        // CAL Import Enabled Codeunit.
+        "ImportFile",
         // Property accessors on xmlport instances — `FIELDDELIMITER`,
         // `FIELDSEPARATOR`, `TEXTENCODING`, `USEREQUESTPAGE` etc. Used
         // by base-app code that builds an xmlport at runtime to set
@@ -375,6 +380,11 @@ public static class AlBuiltinMethods
         "AsInteger", "AsBoolean", "AsText", "AsCode", "AsDecimal",
         "AsDateTime", "AsDate", "AsTime", "AsDuration", "AsGuid",
         "AsBigInteger",
+        // Inverse conversion — `MyRec."Action"::FromInteger(N)` /
+        // `MyEnum.FromInteger(N)` builds an enum value from an int.
+        // Same rationale as AsInteger — chain walker doesn't track
+        // enum types on field receivers.
+        "FromInteger",
         // Variant / InStream introspection.
         "HasValue", "IsValue", "IsArray", "IsObject", "IsNull",
         // Text-shape methods exposed on multiple receivers.
@@ -603,6 +613,13 @@ public static class AlBuiltinMethods
         // appears in query `column` decoration as a sort direction
         // (looks like a function call to the lexer).
         "view", "views", "descending", "ascending",
+        // BC 28 list-page analytics: pages declare an
+        // `analysisviews { analysisview("Name") { ... } }` block
+        // pointing at a JSON definition file. Same shape as
+        // `views { view(...) { } }` — declarative, no user code,
+        // both the singular and plural form land in bare-self-
+        // call dispatch and need silencing.
+        "analysisview", "analysisviews",
     };
 
     /// <summary>
@@ -664,8 +681,10 @@ public static class AlBuiltinMethods
         // not as variables: `Version.Create('1.0.0.0')`,
         // `ErrorInfo.Create('msg')`. They're also in KnownSystemTypes
         // (for the variable-typed case); listing them here silences the
-        // `Kind.Method(...)` static-call shape too.
-        "Version", "ErrorInfo",
+        // `Kind.Method(...)` static-call shape too. `SecretText.Empty()`
+        // (BC 28+ AI-prompt callsites) and the existing scalar set
+        // share the static-receiver shape.
+        "Version", "ErrorInfo", "SecretText", "Guid",
         // System types frequently used as static dispatchers without a
         // variable declaration. `Dialog.StrMenu(...)`, `Dialog.Open(...)`,
         // `Text.StrSubstNo(...)`, `Text.Format(...)` are the canonical
@@ -781,6 +800,13 @@ public static class AlBuiltinMethods
         "JsonObject", "JsonArray", "JsonValue", "JsonToken",
         // I/O.
         "InStream", "OutStream", "File", "TempBlob",
+        // Field-level media runtime types. `field(140; Image; Media)`
+        // exposes `.ImportFile`, `.ExportFile`, `.HasValue`, etc. on
+        // the field value. Without recognising the type name here,
+        // `Image.ImportFile(...)` inside Customer.Table.al picked up
+        // the System Application's `Codeunit "Image"` via the bare
+        // catalog match and fired chain-step on every Media field.
+        "Media", "MediaSet",
         // BC 26+ — `FileUpload` is the browser-native upload widget
         // surface. Variables typed `FileUpload` expose `.CurrentFile`,
         // `.SingleFile`, `.UploadIntoStream(...)` etc. via the runtime.

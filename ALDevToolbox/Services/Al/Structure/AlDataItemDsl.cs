@@ -94,6 +94,25 @@ internal static class AlDataItemDsl
         {
             return (true, null);
         }
+        state.Pos++;
+
+        // Namespace-prefixed source: `System.Utilities.Integer`,
+        // `Microsoft.Foundation.NoSeries."No. Series"`. Walk the
+        // dotted prefix so the LAST segment is the actual type name —
+        // segments before it are the namespace path. Without this,
+        // the source token is `System` (unresolved), the cursor lands
+        // mid-chain, and `Utilities` / `Integer` get dispatched as
+        // bare chain heads by the orchestrator's main loop.
+        while (state.Pos + 1 < state.Tokens.Count
+               && state.Tokens[state.Pos].Kind == AlTokenKind.Punct
+               && state.Tokens[state.Pos].Value == "."
+               && (state.Tokens[state.Pos + 1].Kind == AlTokenKind.Identifier
+                   || state.Tokens[state.Pos + 1].Kind == AlTokenKind.QuotedIdentifier))
+        {
+            state.Pos++; // past .
+            sourceTok = state.Tokens[state.Pos];
+            state.Pos++;
+        }
 
         var resolved = state.Ctx.Resolver.ResolveTypeByName(sourceTok.Value, "Record");
         if (resolved is not null
@@ -127,10 +146,8 @@ internal static class AlDataItemDsl
                         new ResolvedVariableType("Record", resolved.Name);
                 }
             }
-            state.Pos++;
             return (true, resolved);
         }
-        state.Pos++;
         return (true, null);
     }
 
@@ -148,7 +165,17 @@ internal static class AlDataItemDsl
     /// <see cref="TryConsumeAliasedSourceDeclaration"/>. Restores the
     /// cursor before returning so the main walk starts from the top.
     /// </summary>
-    public static void PrescanAliases(AlExtractionState state, string keyword)
+    /// <summary>
+    /// Walks the whole file pre-pass and stamps every
+    /// <c>keyword(Name)</c> declaration (where keyword is e.g.
+    /// <c>textattribute</c> / <c>textelement</c>) as a Text-typed
+    /// scope variable on the outermost frame. These nodes don't bind
+    /// to a record field — they're scalar XML text values used as
+    /// <c>Text</c> variables from procedure code in the same xmlport.
+    /// Without this seeding every procedure-body reference to one of
+    /// these names fires head-not-a-variable.
+    /// </summary>
+    public static void PrescanTextNodeAliases(AlExtractionState state, string keyword)
     {
         int savedPos = state.Pos;
         try
@@ -163,7 +190,75 @@ internal static class AlDataItemDsl
                     && state.Tokens[state.Pos + 1].Kind == AlTokenKind.Punct
                     && state.Tokens[state.Pos + 1].Value == "(")
                 {
-                    RegisterAlias(state);
+                    state.Pos += 2; // past keyword and (
+                    string? alias = null;
+                    if (state.Pos < state.Tokens.Count
+                        && (state.Tokens[state.Pos].Kind == AlTokenKind.Identifier
+                            || state.Tokens[state.Pos].Kind == AlTokenKind.QuotedIdentifier))
+                    {
+                        alias = state.Tokens[state.Pos].Value;
+                        state.Pos++;
+                    }
+                    if (!string.IsNullOrEmpty(alias))
+                    {
+                        ScopeFrame? bottom = null;
+                        foreach (var frame in state.ScopeStack) bottom = frame;
+                        if (bottom is not null)
+                        {
+                            // Keyword left null because Text isn't an AL
+                            // object — the head-resolver short-circuits
+                            // on IsKnownSystemType("Text") when both
+                            // keyword is null AND the type is known,
+                            // silencing the chain instead of mis-resolving.
+                            bottom.Vars[alias.ToLowerInvariant()] =
+                                new ResolvedVariableType(null, "Text");
+                        }
+                    }
+                    continue;
+                }
+                state.Pos++;
+            }
+        }
+        finally
+        {
+            state.Pos = savedPos;
+        }
+    }
+
+    public static void PrescanAliases(
+        AlExtractionState state, string keyword, bool bindFirstAsRec = false)
+    {
+        int savedPos = state.Pos;
+        bool recAssigned = false;
+        try
+        {
+            state.Pos = 0;
+            while (state.Pos < state.Tokens.Count)
+            {
+                var tok = state.Tokens[state.Pos];
+                if (tok.Kind == AlTokenKind.Identifier
+                    && string.Equals(tok.Value, keyword, StringComparison.OrdinalIgnoreCase)
+                    && state.Pos + 1 < state.Tokens.Count
+                    && state.Tokens[state.Pos + 1].Kind == AlTokenKind.Punct
+                    && state.Tokens[state.Pos + 1].Value == "(")
+                {
+                    var registered = RegisterAlias(state);
+                    if (bindFirstAsRec && !recAssigned && registered is not null)
+                    {
+                        ScopeFrame? bottom = null;
+                        foreach (var f in state.ScopeStack) bottom = f;
+                        if (bottom is not null)
+                        {
+                            // Overwrite the default Rec binding (which
+                            // pointed at the owner report itself, useless
+                            // for the requestpage's `Rec.<field>`
+                            // expressions). xRec mirrors Rec — same
+                            // contract pages have.
+                            bottom.Vars["rec"] = registered;
+                            bottom.Vars["xrec"] = registered;
+                            recAssigned = true;
+                        }
+                    }
                     continue;
                 }
                 state.Pos++;
@@ -185,8 +280,14 @@ internal static class AlDataItemDsl
     /// pass's job — pre-scan only seeds scope, doesn't double-emit).
     /// Assumes the cursor sits on the keyword token; advances past
     /// the source-table token on return.
+    ///
+    /// Returns the registered Record-typed binding (the source table
+    /// the alias resolved to) so callers can also stamp it as Rec /
+    /// xRec when the report-style "first dataitem is Rec" semantics
+    /// apply. Returns null when no alias was registered (no name,
+    /// no source, source didn't resolve, etc.).
     /// </summary>
-    private static void RegisterAlias(AlExtractionState state)
+    private static ResolvedVariableType? RegisterAlias(AlExtractionState state)
     {
         // We arrive at the keyword; advance past it and the `(`.
         state.Pos += 2;
@@ -210,7 +311,7 @@ internal static class AlDataItemDsl
                 if (current.Value == "(") { depth++; state.Pos++; continue; }
                 if (current.Value == ")")
                 {
-                    if (depth == 0) return;
+                    if (depth == 0) return null;
                     depth--;
                     state.Pos++;
                     continue;
@@ -231,15 +332,31 @@ internal static class AlDataItemDsl
         {
             state.Pos++;
         }
-        if (state.Pos >= state.Tokens.Count) return;
+        if (state.Pos >= state.Tokens.Count) return null;
 
         var sourceTok = state.Tokens[state.Pos];
         if (sourceTok.Kind != AlTokenKind.Identifier
             && sourceTok.Kind != AlTokenKind.QuotedIdentifier)
         {
-            return;
+            return null;
+        }
+        state.Pos++;
+
+        // Namespace prefix: walk `.<segment>` chains so the LAST
+        // segment is the actual type name. Mirrors the same path in
+        // TryConsumeAliasedSourceDeclaration above.
+        while (state.Pos + 1 < state.Tokens.Count
+               && state.Tokens[state.Pos].Kind == AlTokenKind.Punct
+               && state.Tokens[state.Pos].Value == "."
+               && (state.Tokens[state.Pos + 1].Kind == AlTokenKind.Identifier
+                   || state.Tokens[state.Pos + 1].Kind == AlTokenKind.QuotedIdentifier))
+        {
+            state.Pos++; // past .
+            sourceTok = state.Tokens[state.Pos];
+            state.Pos++;
         }
 
+        ResolvedVariableType? registered = null;
         if (!string.IsNullOrEmpty(alias))
         {
             var resolved = state.Ctx.Resolver.ResolveTypeByName(sourceTok.Value, "Record");
@@ -250,12 +367,12 @@ internal static class AlDataItemDsl
                 foreach (var frame in state.ScopeStack) bottom = frame;
                 if (bottom is not null)
                 {
-                    bottom.Vars[alias.ToLowerInvariant()] =
-                        new ResolvedVariableType("Record", resolved.Name);
+                    registered = new ResolvedVariableType("Record", resolved.Name);
+                    bottom.Vars[alias.ToLowerInvariant()] = registered;
                 }
             }
         }
-        state.Pos++;
+        return registered;
     }
 
     /// <summary>

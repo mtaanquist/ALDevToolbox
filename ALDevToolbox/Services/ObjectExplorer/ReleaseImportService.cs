@@ -58,8 +58,32 @@ public class ReleaseImportService
     // group 1, the optional numeric id in 2, the unquoted name in 3 (or
     // bare-identifier name in 4 for ids-only kinds like interfaces). Compiled
     // once because we scan every .al file for every imported module.
-    private static readonly Regex ObjectHeaderRegex = new(
-        """^\s*(codeunit|table|page|report|xmlport|query|controladdin|enum|interface|permissionset|tableextension|pageextension|reportextension|enumextension|permissionsetextension)\s+(?:(\d+)\s+)?(?:"(?<quoted>[^"]+)"|(?<bare>\w+))""",
+    //
+    // The trailing `(?!\s*=)` rejects permissionset permission entries like
+    // <c>query "Sent Emails" = X,</c> — those share the `kind "Name"` shape
+    // but assign permissions instead of opening a body. The bare-name
+    // alternative requires a letter / underscore start (AL identifier
+    // rules) so the regex can't backtrack past a failing quoted-name
+    // lookahead and accept the numeric id as the name (e.g.
+    // <c>page 21 "Customer Card" = X,</c> would otherwise match with
+    // bare="21"). Without these two guards, the permissionset file
+    // claims every object kind/name it permissions, and real object
+    // files lose the link (e.g. `query 8889 "Sent Emails"` pointing at
+    // `EmailObjects.PermissionSet.al` instead of `SentEmails.Query.al`,
+    // with the outline showing permissionset entries instead of the
+    // query's columns).
+    internal static readonly Regex ObjectHeaderRegex = new(
+        """^\s*(codeunit|table|page|report|xmlport|query|controladdin|enum|interface|permissionset|tableextension|pageextension|reportextension|enumextension|permissionsetextension)\s+(?:(\d+)\s+)?(?:"(?<quoted>[^"]+)"|(?<bare>[A-Za-z_]\w*))(?!\s*=)(?:\s+extends\s+(?:"(?<exquoted>[^"]+)"|(?<exbare>[A-Za-z_]\w*)))?""",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // `SourceTable = "X";` (or `SourceTable = X;` for unquoted ids).
+    // Used as a fallback to populate `oe_module_objects.source_table_name`
+    // for reports whose source-table property nests inside `requestpage
+    // { … }` and doesn't always surface on the symbol package's
+    // top-level Properties list. Source-side scan runs once per file
+    // alongside the existing header scan in <see cref="ScanFileDeclarations"/>.
+    internal static readonly Regex SourceTablePropertyRegex = new(
+        """^\s*SourceTable\s*=\s*(?:"(?<quoted>[^"]+)"|(?<bare>[A-Za-z_]\w*))\s*;""",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public ReleaseImportService(
@@ -736,11 +760,35 @@ public class ReleaseImportService
             {
                 objectsExpectingSource++;
             }
+            string? sourceExtends = null;
+            string? sourceTableFromHeader = null;
             if (declarations.TryGetValue((symObj.Kind, symObj.Name), out var hit))
             {
                 sourceFile = hit.File;
                 line = hit.Line;
+                sourceExtends = hit.ExtendsName;
+                sourceTableFromHeader = hit.SourceTable;
                 objectsLinked++;
+            }
+
+            // Interface inheritance fallback: BC's symbol package
+            // doesn't surface the `extends` pointer for interfaces via
+            // the usual TargetObject path, so a derived interface
+            // (`interface "Cost Adjustment With Params" extends
+            // "Inventory Adjustment"`) lands with ExtendsObjectName=null
+            // and the resolver's interface-extends walk has nothing to
+            // chase. Backfill from the source-side header scan, scoped
+            // to the same module (interfaces extending across module
+            // boundaries are vanishingly rare and we can't tell which
+            // app the base belongs to without resolving downstream).
+            var extendsName = symObj.ExtendsObjectName;
+            var extendsAppId = symObj.ExtendsAppId;
+            if (string.IsNullOrEmpty(extendsName)
+                && string.Equals(symObj.Kind, "interface", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrEmpty(sourceExtends))
+            {
+                extendsName = sourceExtends;
+                extendsAppId = module.AppId;
             }
 
             var obj = new OeModuleObject
@@ -751,12 +799,27 @@ public class ReleaseImportService
                 ObjectId = symObj.ObjectId,
                 Name = symObj.Name,
                 Namespace = string.IsNullOrEmpty(symObj.Namespace) ? null : symObj.Namespace,
-                ExtendsAppId = symObj.ExtendsAppId,
-                ExtendsObjectName = symObj.ExtendsObjectName,
+                ExtendsAppId = extendsAppId,
+                ExtendsObjectName = extendsName,
                 // SourceTable on pages — extracted from the symbol package's
                 // property list. Pageextensions don't carry it directly; a
                 // second pass below copies the value from their base page.
-                SourceTableName = ExtractSourceTableName(symObj),
+                // SourceTable resolution order depends on the object
+                // kind. Pages / codeunits get a reliable SourceTable /
+                // TableNo on the symbol package's top-level Properties
+                // list — that path stays authoritative. Reports nest
+                // the property inside `requestpage { ... }` and BC's
+                // symbol package doesn't always surface it at the
+                // report's own Properties list (Whse. Change Unit of
+                // Measure / VAT Report Suggest Lines), so source-side
+                // wins for reports and the package side serves as the
+                // fallback when source isn't paired (third-party
+                // modules with no .Source.zip).
+                SourceTableName =
+                    (string.Equals(symObj.Kind, "report", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(symObj.Kind, "reportextension", StringComparison.OrdinalIgnoreCase))
+                        ? (sourceTableFromHeader ?? ExtractSourceTableName(symObj))
+                        : (ExtractSourceTableName(symObj) ?? sourceTableFromHeader),
                 // Use the FK directly rather than the navigation: after the
                 // file-chunk save loop above, the file entity may have been
                 // detached from the tracker on a previous flush. The Id is
@@ -926,7 +989,7 @@ public class ReleaseImportService
                 Kind = kind,
                 Name = method.Name,
                 Signature = RenderSignature(method),
-                ReturnType = method.ReturnType?.Name,
+                ReturnType = FormatReturnType(method.ReturnType),
                 LineNumber = line,
                 ColumnStart = colStart,
                 ColumnEnd = colEnd,
@@ -1294,6 +1357,14 @@ public class ReleaseImportService
         {
             "page" or "pageextension" => "SourceTable",
             "codeunit" => "TableNo",
+            // Reports declare the request-page's data source inside
+            // a nested `requestpage { SourceTable = "X"; }` block;
+            // the symbol package flattens that onto the report's
+            // own Properties list (BC ships it as a top-level
+            // SourceTable hash-ref). Pick it up here so the walker
+            // can bind `Rec` to that table — Whse. Change Unit of
+            // Measure / VAT Report Suggest Lines / similar shapes.
+            "report" or "reportextension" => "SourceTable",
             _ => null,
         };
         if (propName is null) return null;
@@ -1422,7 +1493,7 @@ public class ReleaseImportService
     /// link <c>ModuleObject.SourceFileId</c> and stamp
     /// <c>ModuleObject.LineNumber</c> in one lookup.
     /// </summary>
-    private readonly record struct DeclarationHit(OeModuleFile File, int Line);
+    private readonly record struct DeclarationHit(OeModuleFile File, int Line, string? ExtendsName, string? SourceTable);
 
     private sealed class DeclarationKeyComparer : IEqualityComparer<(string Kind, string Name)>
     {
@@ -1451,6 +1522,42 @@ public class ReleaseImportService
     /// the second-and-later objects' links (first match wins) —
     /// rare on first-party modules and acceptable for v1.
     /// </summary>
+    internal static (string? ExtendsName, string? SourceTable) ScanFileForHeaderMetadata(string content)
+    {
+        // Exposed for unit tests. Mirrors the per-file logic in
+        // <see cref="ScanFileDeclarations"/> for the first header found,
+        // returning the source-side extends + SourceTable metadata so
+        // tests can pin the parsing without a TestDb fixture.
+        bool sawHeader = false;
+        string? extendsName = null;
+        string? sourceTable = null;
+        foreach (var rawLine in content.Split('\n'))
+        {
+            if (!sawHeader)
+            {
+                var m = ObjectHeaderRegex.Match(rawLine);
+                if (m.Success)
+                {
+                    sawHeader = true;
+                    if (m.Groups["exquoted"].Success) extendsName = m.Groups["exquoted"].Value;
+                    else if (m.Groups["exbare"].Success) extendsName = m.Groups["exbare"].Value;
+                    continue;
+                }
+            }
+            if (sourceTable is null)
+            {
+                var st = SourceTablePropertyRegex.Match(rawLine);
+                if (st.Success)
+                {
+                    sourceTable = st.Groups["quoted"].Success
+                        ? st.Groups["quoted"].Value
+                        : st.Groups["bare"].Value;
+                }
+            }
+        }
+        return (extendsName, sourceTable);
+    }
+
     private static Dictionary<(string Kind, string Name), DeclarationHit> ScanFileDeclarations(
         IReadOnlyDictionary<string, OeModuleFile> filesByPath,
         IReadOnlyDictionary<string, string> sourceFiles)
@@ -1462,14 +1569,55 @@ public class ReleaseImportService
             // file entity — read it from the in-memory upload map by path.
             if (!sourceFiles.TryGetValue(path, out var content)) continue;
             int line = 0;
+            // First-header-wins; SourceTable found anywhere in the file
+            // is attributed to that first header. AL practice is one
+            // object per file, so this lines up with the rest of the
+            // import pipeline's first-match assumption.
+            (string Kind, string Name)? firstHeaderKey = null;
+            string? firstHeaderSourceTable = null;
             foreach (var rawLine in content.Split('\n'))
             {
                 line++;
                 var m = ObjectHeaderRegex.Match(rawLine);
-                if (!m.Success) continue;
-                var kind = m.Groups[1].Value.ToLowerInvariant();
-                var name = m.Groups["quoted"].Success ? m.Groups["quoted"].Value : m.Groups["bare"].Value;
-                result.TryAdd((kind, name), new DeclarationHit(file, line));
+                if (m.Success)
+                {
+                    var kind = m.Groups[1].Value.ToLowerInvariant();
+                    var name = m.Groups["quoted"].Success ? m.Groups["quoted"].Value : m.Groups["bare"].Value;
+                    // Source-side `extends` capture. Used as a fallback for
+                    // interface inheritance (`interface "Cost Adjustment With
+                    // Params" extends "Inventory Adjustment"`) where the
+                    // symbol package doesn't surface the extended-interface
+                    // metadata via the usual Target / TargetObject path.
+                    string? extends = null;
+                    if (m.Groups["exquoted"].Success) extends = m.Groups["exquoted"].Value;
+                    else if (m.Groups["exbare"].Success) extends = m.Groups["exbare"].Value;
+                    if (result.TryAdd((kind, name), new DeclarationHit(file, line, extends, null)))
+                    {
+                        firstHeaderKey ??= (kind, name);
+                    }
+                    continue;
+                }
+                // Source-side SourceTable capture. Used as a fallback for
+                // reports whose request-page-level SourceTable property
+                // doesn't surface on the symbol package's top-level
+                // properties list (Whse. Change Unit of Measure /
+                // VAT Report Suggest Lines shape).
+                if (firstHeaderSourceTable is null)
+                {
+                    var st = SourceTablePropertyRegex.Match(rawLine);
+                    if (st.Success)
+                    {
+                        firstHeaderSourceTable = st.Groups["quoted"].Success
+                            ? st.Groups["quoted"].Value
+                            : st.Groups["bare"].Value;
+                    }
+                }
+            }
+            if (firstHeaderKey is (string k, string n) && firstHeaderSourceTable is not null
+                && result.TryGetValue((k, n), out var existing)
+                && existing.SourceTable is null)
+            {
+                result[(k, n)] = existing with { SourceTable = firstHeaderSourceTable };
             }
         }
         return result;
@@ -1745,10 +1893,18 @@ public class ReleaseImportService
                 AppId = o.Module!.AppId,
                 o.SourceTableName,
                 o.ObsoleteState,
+                o.ExtendsObjectName,
+                o.ExtendsAppId,
             })
             .ToListAsync(ct);
         var typesByName = new Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>>(StringComparer.OrdinalIgnoreCase);
         var typesByObjectId = new Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef>();
+        // Catalog lookup by AL object id (the numeric id developers write
+        // in `Record 380` / `Codeunit 1060`), per kind. Multiple modules
+        // can share a (kind, id) pair across releases / app boundaries
+        // — keep them all and let the resolver tiebreak by visibility,
+        // same as the by-name path. See <see cref="CatalogResolver.ResolveTypeByObjectId"/>.
+        var typesByAlObjectId = new Dictionary<(string Kind, int ObjectId), List<ALDevToolbox.Services.Al.AlTypeRef>>();
         var objectIdByIdentity = new Dictionary<(Guid AppId, string Kind, string Name), long>(
             new ObjectIdentityComparer());
         // Per-object source-table lookup so AlPageStructure can
@@ -1759,6 +1915,15 @@ public class ReleaseImportService
         // (page / pageextension / requestpage / report-dataitem in
         // practice); other kinds skip the dictionary entry.
         var sourceTablesByObjectId = new Dictionary<long, string>();
+        // Interface inheritance: interface "B" extends "A" means a
+        // member lookup on B walks up to A's members too. Keyed by
+        // owner DB id (the same key shape `_members` uses) so the
+        // resolver can chain TryGetValue calls. Only interfaces are
+        // populated — tableextensions / pageextensions / etc. use the
+        // separate `extensionsByBaseName` path with reversed semantics
+        // (extension's members get attached to the base, not inherited
+        // by the extension).
+        var interfaceExtendsByOwnerId = new Dictionary<long, (Guid AppId, string Name)>();
         // Side-map for obsolete-state lookup on candidate ranking.
         // Keyed by the catalog's identity triple so the resolver can
         // ask "is this exact (AppId, Kind, Name) marked Pending /
@@ -1777,6 +1942,16 @@ public class ReleaseImportService
                 typesByName[t.Name] = list;
             }
             list.Add(typeRef);
+            if (t.ObjectId is int alId && alId > 0)
+            {
+                var idKey = (t.Kind, alId);
+                if (!typesByAlObjectId.TryGetValue(idKey, out var idList))
+                {
+                    idList = new List<ALDevToolbox.Services.Al.AlTypeRef>();
+                    typesByAlObjectId[idKey] = idList;
+                }
+                idList.Add(typeRef);
+            }
             objectIdByIdentity[(t.AppId, t.Kind, t.Name)] = t.Id;
             if (!string.IsNullOrEmpty(t.SourceTableName))
             {
@@ -1785,6 +1960,12 @@ public class ReleaseImportService
             if (!string.IsNullOrEmpty(t.ObsoleteState))
             {
                 obsoleteStateByIdentity[(t.AppId, t.Kind, t.Name)] = t.ObsoleteState;
+            }
+            if (string.Equals(t.Kind, "interface", StringComparison.OrdinalIgnoreCase)
+                && t.ExtendsAppId is Guid baseAppId
+                && !string.IsNullOrEmpty(t.ExtendsObjectName))
+            {
+                interfaceExtendsByOwnerId[t.Id] = (baseAppId, t.ExtendsObjectName!);
             }
         }
 
@@ -1807,6 +1988,13 @@ public class ReleaseImportService
                 typesByName[vt.Name] = list;
             }
             list.Add(typeRef);
+            var vtIdKey = ("table", vt.Id);
+            if (!typesByAlObjectId.TryGetValue(vtIdKey, out var vtIdList))
+            {
+                vtIdList = new List<ALDevToolbox.Services.Al.AlTypeRef>();
+                typesByAlObjectId[vtIdKey] = vtIdList;
+            }
+            vtIdList.Add(typeRef);
             // No oe_module_objects.Id for synthetic entries — typesByObjectId
             // and objectIdByIdentity stay unaugmented (they're keyed off
             // the DB row id, which doesn't exist here). The chain walker
@@ -1998,8 +2186,9 @@ public class ReleaseImportService
             moduleVisibility.TryGetValue(moduleId, out var visible);
             moduleAppIdsById.TryGetValue(moduleId, out var ownerAppId);
             var r = new CatalogResolver(
-                typesByName, typesByObjectId, objectIdByIdentity,
-                membersByOwner, extensionsByBaseName, sourceTablesByObjectId, visible,
+                typesByName, typesByObjectId, typesByAlObjectId, objectIdByIdentity,
+                membersByOwner, extensionsByBaseName, interfaceExtendsByOwnerId,
+                sourceTablesByObjectId, visible,
                 ownerAppId == Guid.Empty ? null : ownerAppId,
                 foundationalAppIds, obsoleteStateByIdentity);
             resolversByModule[moduleId] = r;
@@ -2310,6 +2499,27 @@ public class ReleaseImportService
     /// types so the extractor's chained-access loop terminates on the
     /// next step.
     /// </summary>
+    /// <summary>
+    /// Renders a symbol-package return type into the
+    /// <c>Keyword "ObjectName"</c> string shape <see cref="ParseReturnType"/>
+    /// round-trips. Storing just <c>type.Name</c> dropped the
+    /// <c>ObjectName</c> half — so <c>procedure Get(...): Codeunit
+    /// "Edit in Excel Fld Filter Impl."</c> persisted as the bare
+    /// keyword <c>"Codeunit"</c>, the chain walker had no concrete
+    /// type to advance to after the call, and
+    /// <c>Get(fieldName).AddFilterValueV2(...)</c> stranded as bare-
+    /// call against the owner. AL object kinds (Record/Codeunit/…) get
+    /// the quoted-name form; everything else (DotNet types, scalars
+    /// with no ObjectName, generics like Codeunit alone) round-trips
+    /// the existing single-token shape.
+    /// </summary>
+    private static string? FormatReturnType(SymbolTypeRef? type)
+    {
+        if (type is null) return null;
+        if (string.IsNullOrEmpty(type.ObjectName)) return type.Name;
+        return $"{type.Name} \"{type.ObjectName}\"";
+    }
+
     private static (string? Keyword, string? TypeName) ParseReturnType(string? returnType)
     {
         if (string.IsNullOrEmpty(returnType)) return (null, null);
@@ -2717,9 +2927,11 @@ public class ReleaseImportService
     {
         private readonly Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>> _typesByName;
         private readonly Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef> _typesByObjectId;
+        private readonly Dictionary<(string Kind, int ObjectId), List<ALDevToolbox.Services.Al.AlTypeRef>> _typesByAlObjectId;
         private readonly Dictionary<(Guid AppId, string Kind, string Name), long> _objectIdByIdentity;
         private readonly Dictionary<long, List<MemberEntry>> _members;
         private readonly Dictionary<string, List<ExtensionEntry>> _extensionsByBaseName;
+        private readonly Dictionary<long, (Guid AppId, string Name)> _interfaceExtendsByOwnerId;
         private readonly Dictionary<long, string> _sourceTablesByObjectId;
         private readonly HashSet<Guid>? _visibleAppIds;
         // AppId of the module whose file is being walked. Used as a
@@ -2754,9 +2966,11 @@ public class ReleaseImportService
         public CatalogResolver(
             Dictionary<string, List<ALDevToolbox.Services.Al.AlTypeRef>> typesByName,
             Dictionary<long, ALDevToolbox.Services.Al.AlTypeRef> typesByObjectId,
+            Dictionary<(string Kind, int ObjectId), List<ALDevToolbox.Services.Al.AlTypeRef>> typesByAlObjectId,
             Dictionary<(Guid AppId, string Kind, string Name), long> objectIdByIdentity,
             Dictionary<long, List<MemberEntry>> members,
             Dictionary<string, List<ExtensionEntry>> extensionsByBaseName,
+            Dictionary<long, (Guid AppId, string Name)> interfaceExtendsByOwnerId,
             Dictionary<long, string> sourceTablesByObjectId,
             HashSet<Guid>? visibleAppIds,
             Guid? ownerAppId,
@@ -2765,7 +2979,9 @@ public class ReleaseImportService
         {
             _typesByName = typesByName;
             _typesByObjectId = typesByObjectId;
+            _typesByAlObjectId = typesByAlObjectId;
             _objectIdByIdentity = objectIdByIdentity;
+            _interfaceExtendsByOwnerId = interfaceExtendsByOwnerId;
             _members = members;
             _extensionsByBaseName = extensionsByBaseName;
             _sourceTablesByObjectId = sourceTablesByObjectId;
@@ -2973,6 +3189,81 @@ public class ReleaseImportService
                 }
             }
 
+            // Enum-implements-interface fallback: BC's extensible
+            // enums frequently `implements` an identically-named
+            // interface (`enum "Alt. Cust. VAT Reg. Consist."
+            // implements "Alt. Cust. VAT Reg. Consist."`). Calls on
+            // an enum-typed variable dispatch to the interface's
+            // methods, but our catalog doesn't carry the
+            // implements pointer, so member lookup on the enum
+            // misses every interface-declared method. Try the
+            // same-named visible interface as a fallback before
+            // giving up. (Other-named implements relations would
+            // need a source-side `implements "Y"` capture; sticking
+            // with the same-name convention covers BC's dominant
+            // pattern without that work.)
+            if (string.Equals(owner.Kind, "enum", StringComparison.OrdinalIgnoreCase)
+                && _typesByName.TryGetValue(owner.Name, out var sameNameCandidates))
+            {
+                foreach (var candidate in sameNameCandidates)
+                {
+                    if (!string.Equals(candidate.Kind, "interface", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!IsVisible(candidate.AppId)) continue;
+                    if (!_objectIdByIdentity.TryGetValue((candidate.AppId, "interface", candidate.Name), out var enumIfaceOwnerId)) continue;
+                    if (!_members.TryGetValue(enumIfaceOwnerId, out var enumIfaceMembers)) continue;
+                    var match = enumIfaceMembers.FirstOrDefault(m =>
+                        string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
+                    if (match is null) continue;
+
+                    _typesByObjectId.TryGetValue(enumIfaceOwnerId, out var declaringInterface);
+                    return new ALDevToolbox.Services.Al.AlMember(
+                        Name: match.Name,
+                        Kind: match.Kind,
+                        ReturnTypeKeyword: match.ReturnTypeKeyword,
+                        ReturnTypeName: match.ReturnTypeName,
+                        DeclaringType: declaringInterface);
+                }
+            }
+
+            // Interface inheritance: when owner is an interface that
+            // extends a base interface, walk up the chain so members
+            // declared on the base resolve on the derived. Canonical
+            // sample: <c>Cost Adjustment With Params extends Inventory
+            // Adjustment</c>; <c>SetFilterItem</c> is declared on the
+            // base only, but call sites use the derived interface as
+            // the receiver. Cap the depth defensively at 16 — interface
+            // hierarchies in BC don't go anywhere near that, but a
+            // catalog cycle (shouldn't exist, but defensive) would
+            // otherwise spin forever.
+            if (string.Equals(owner.Kind, "interface", StringComparison.OrdinalIgnoreCase)
+                && _objectIdByIdentity.TryGetValue((owner.AppId, "interface", owner.Name), out var ifaceOwnerId))
+            {
+                var visited = new HashSet<long> { ifaceOwnerId };
+                var currentId = ifaceOwnerId;
+                for (int depth = 0; depth < 16; depth++)
+                {
+                    if (!_interfaceExtendsByOwnerId.TryGetValue(currentId, out var baseId)) break;
+                    if (!_objectIdByIdentity.TryGetValue((baseId.AppId, "interface", baseId.Name), out var baseOwnerId)) break;
+                    if (!visited.Add(baseOwnerId)) break;
+                    if (_members.TryGetValue(baseOwnerId, out var baseMembers))
+                    {
+                        var match = baseMembers.FirstOrDefault(m =>
+                            string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase));
+                        if (match is not null)
+                        {
+                            _typesByObjectId.TryGetValue(baseOwnerId, out var declaringInterface);
+                            return new ALDevToolbox.Services.Al.AlMember(
+                                Name: match.Name,
+                                Kind: match.Kind,
+                                ReturnTypeKeyword: match.ReturnTypeKeyword,
+                                ReturnTypeName: match.ReturnTypeName,
+                                DeclaringType: declaringInterface);
+                        }
+                    }
+                    currentId = baseOwnerId;
+                }
+            }
+
             // Walk visible extensions of this base.
             if (_extensionsByBaseName.TryGetValue(owner.Name, out var extensions))
             {
@@ -2995,6 +3286,50 @@ public class ReleaseImportService
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Looks up a type by its AL object id. Used by the procedure
+        /// walker for variable declarations that name the type by id
+        /// instead of name (<c>DtldVendLedgEntry: Record 380;</c>,
+        /// <c>var PaymentServiceSetup: Record 1060</c>). Visibility-
+        /// and obsolete-state-aware in the same way
+        /// <see cref="ResolveTypeByName"/> is: foundational platform
+        /// apps win on ties when the caller has no same-app match.
+        /// </summary>
+        public ALDevToolbox.Services.Al.AlTypeRef? ResolveTypeByObjectId(
+            int objectId, string? expectedKeyword = null)
+        {
+            var kind = MapKeywordToKind(expectedKeyword);
+            if (kind is null) return null;
+            if (!_typesByAlObjectId.TryGetValue((kind, objectId), out var candidates)) return null;
+
+            ALDevToolbox.Services.Al.AlTypeRef? sameApp = null;
+            ALDevToolbox.Services.Al.AlTypeRef? sameAppObs = null;
+            ALDevToolbox.Services.Al.AlTypeRef? foundational = null;
+            ALDevToolbox.Services.Al.AlTypeRef? foundationalObs = null;
+            ALDevToolbox.Services.Al.AlTypeRef? other = null;
+            ALDevToolbox.Services.Al.AlTypeRef? otherObs = null;
+
+            foreach (var t in candidates)
+            {
+                if (!IsVisible(t.AppId)) continue;
+                bool obsolete = IsObsolete(t);
+                if (_ownerAppId is not null && t.AppId == _ownerAppId.Value)
+                {
+                    if (obsolete) sameAppObs ??= t; else sameApp ??= t;
+                }
+                else if (_foundationalAppIds.Contains(t.AppId))
+                {
+                    if (obsolete) foundationalObs ??= t; else foundational ??= t;
+                }
+                else
+                {
+                    if (obsolete) otherObs ??= t; else other ??= t;
+                }
+            }
+            return sameApp ?? foundational ?? other
+                ?? sameAppObs ?? foundationalObs ?? otherObs;
         }
 
         public string? ResolveSourceTableName(ALDevToolbox.Services.Al.AlTypeRef target)
