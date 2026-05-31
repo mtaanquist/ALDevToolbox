@@ -95,6 +95,27 @@ public sealed class ReleaseImportWorker : BackgroundService
         string? jobFailureMessage = null;
         try
         {
+            // Legacy C/AL TXT has no .app uploads — parse the staged text file
+            // directly through CalImportService and finalise via the shared
+            // finally block below.
+            if (job.Source is ReleaseImportSource.CalTxt calTxt)
+            {
+                tempToDelete = calTxt.TempPath;
+                var calImporter = scope.ServiceProvider.GetRequiredService<CalImportService>();
+                try
+                {
+                    await calImporter.ProcessReleaseAsync(job.ReleaseId, calTxt.TempPath, calTxt.EncodingName, ct).ConfigureAwait(false);
+                    jobSucceeded = true;
+                }
+                catch (Exception ex)
+                {
+                    // ProcessReleaseAsync already flipped the row to failed.
+                    jobFailureMessage = FriendlyMessage(ex);
+                    _logger.LogError(ex, "Release {ReleaseId} C/AL import failed during processing.", job.ReleaseId);
+                }
+                return;
+            }
+
             List<AppFileUpload> uploads;
             try
             {

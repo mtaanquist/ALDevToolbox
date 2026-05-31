@@ -24,14 +24,16 @@ public sealed class ObjectExplorerTools
     private readonly ObjectSearchService _search;
     private readonly ReferenceQueryService _references;
     private readonly TranslationQueryService _translations;
+    private readonly ReleaseComparisonService _comparison;
     private readonly AppDbContext _db;
 
-    public ObjectExplorerTools(ObjectExplorerService explorer, ObjectSearchService search, ReferenceQueryService references, TranslationQueryService translations, AppDbContext db)
+    public ObjectExplorerTools(ObjectExplorerService explorer, ObjectSearchService search, ReferenceQueryService references, TranslationQueryService translations, ReleaseComparisonService comparison, AppDbContext db)
     {
         _explorer = explorer;
         _search = search;
         _references = references;
         _translations = translations;
+        _comparison = comparison;
         _db = db;
     }
 
@@ -40,12 +42,26 @@ public sealed class ObjectExplorerTools
     public async Task<IReadOnlyList<ReleaseListItem>> ListReleasesAsync(CancellationToken ct = default) =>
         await _explorer.ListReleasesAsync(includeSoftDeleted: false, ct);
 
+    [McpServerTool(Name = "compare_releases", ReadOnly = true)]
+    [Description("Diffs two releases at the object level, matched by (kind, object id). Returns each object's Status — 'added' (in the second only), 'removed' (in the first only), 'modified' (source differs), or 'unchanged' — plus the LeftFileId / RightFileId for a side-by-side source diff. Built for the legacy C/AL Base-vs-Customer comparison: pass the bare-Microsoft 'Base' release first and the customer export second.")]
+    public async Task<IReadOnlyList<ObjectCompareRow>> CompareReleasesAsync(
+        [Description("First (left / Base) release Label or numeric id.")] string baseReleaseLabelOrId,
+        [Description("Second (right / Customer) release Label or numeric id.")] string otherReleaseLabelOrId,
+        [Description("When true (default), omit unchanged objects and return only added / removed / modified.")] bool changesOnly = true,
+        CancellationToken ct = default)
+    {
+        var leftId = await ResolveReleaseAsync(baseReleaseLabelOrId, ct);
+        var rightId = await ResolveReleaseAsync(otherReleaseLabelOrId, ct);
+        var rows = await _comparison.CompareReleaseObjectsAsync(leftId, rightId, ct);
+        return changesOnly ? rows.Where(r => r.Status != "unchanged").ToList() : rows;
+    }
+
     [McpServerTool(Name = "search_objects", ReadOnly = true)]
     [Description("Searches a BC release for AL objects (tables, pages, codeunits, reports, etc.) by name or id. Tokens in the pattern are split on whitespace; every token must appear as a case-insensitive substring of the object name (BC \"Tell Me\" style), so 'sal set' finds 'Sales & Receivables Setup'. Wrap a phrase in double quotes for a literal match (\"sales header\"), and prefix a token with '-' to exclude it (setup -temp). Returns the owning module name + source file pointer for each hit, with word-boundary matches ranked first.")]
     public async Task<IReadOnlyList<ReleaseObjectMatch>> SearchObjectsAsync(
         [Description("Release Label ('BC 28.1') or numeric id from list_releases.")] string releaseLabelOrId,
         [Description("Whitespace-separated tokens; every token must appear (case-insensitive substring) in the object name. Use \"quotes\" for a literal phrase and a -prefix to exclude a token. A single bare numeric token still matches by object id.")] string namePattern,
-        [Description("Optional AL kind filter ('table', 'page', 'codeunit', 'report', 'query', 'enum', 'interface', 'tableextension', 'pageextension'). Pass several comma-separated to match any of them ('table,page'). Null returns every kind.")] string? kind = null,
+        [Description("Optional AL kind filter ('table', 'page', 'codeunit', 'report', 'query', 'enum', 'interface', 'tableextension', 'pageextension'). Legacy C/AL releases also carry 'menusuite' (and 'form'/'dataport' from pre-2013 exports). Pass several comma-separated to match any of them ('table,page'). Null returns every kind.")] string? kind = null,
         CancellationToken ct = default)
     {
         var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);

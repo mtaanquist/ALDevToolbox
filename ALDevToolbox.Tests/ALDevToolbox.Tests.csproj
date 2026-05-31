@@ -75,6 +75,13 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>Al\Fixtures\%(RecursiveDir)%(Filename)%(Extension)</Link>
     </None>
+    <!-- Legacy C/AL TXT fixture: a byte-preserved (Windows-1252 / CRLF) slice
+         of a real NAV export covering a rich table, a report with RDLDATA, an
+         xmlport, a menusuite, a page, and a query. -->
+    <None Include="Cal\Fixtures\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Cal\Fixtures\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </None>
   </ItemGroup>
 
 </Project>

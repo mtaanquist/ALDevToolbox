@@ -1,0 +1,505 @@
+using System.Security.Cryptography;
+using System.Text;
+using ALDevToolbox.Data;
+using ALDevToolbox.Services.Cal;
+using Microsoft.EntityFrameworkCore;
+using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
+using OeModuleFile = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleFile;
+using OeModuleObject = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject;
+using OeModuleReference = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleReference;
+using OeModuleSymbol = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol;
+using OeModuleVariable = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleVariable;
+
+namespace ALDevToolbox.Services.ObjectExplorer;
+
+/// <summary>
+/// Ingests one legacy C/AL TXT export (a classic NAV "export all objects" file,
+/// Windows-1252 or codepage 850) into the <c>oe_*</c> schema, parallel to
+/// <see cref="ReleaseImportService"/> for AL <c>.app</c> packages. Reuses that
+/// service's Release lifecycle (<see cref="ReleaseImportService.BeginReleaseAsync"/>
+/// creates the <c>ingesting</c> row; this service flips it to <c>ready</c> /
+/// <c>failed</c>) and the shared blob store + chunking in
+/// <see cref="OeIngestHelpers"/>.
+///
+/// <para>
+/// One synthetic <see cref="OeModule"/> per file. Each object's raw C/AL text is
+/// stored as its own source slice so the existing source viewer / outline / diff
+/// work unchanged. Because a C/AL export is a full self-contained database, all
+/// references resolve within the one module — a single id→name post-pass
+/// replaces the AL Phase-2 resolution chain. See
+/// <c>.design/object-explorer.md</c> and the C/AL parser under
+/// <c>Services/Cal/</c>.
+/// </para>
+/// </summary>
+public sealed class CalImportService
+{
+    private readonly AppDbContext _db;
+    private readonly IOrganizationContext _orgContext;
+    private readonly StorageQuotaGuard _quotaGuard;
+    private readonly ILogger<CalImportService> _logger;
+
+    public CalImportService(
+        AppDbContext db,
+        IOrganizationContext orgContext,
+        StorageQuotaGuard quotaGuard,
+        ILogger<CalImportService> logger)
+    {
+        _db = db;
+        _orgContext = orgContext;
+        _quotaGuard = quotaGuard;
+        _logger = logger;
+    }
+
+    private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
+        ?? throw new InvalidOperationException("No organization in scope; CalImportService called outside an authenticated request.");
+
+    /// <summary>
+    /// Parses the staged C/AL TXT at <paramref name="txtPath"/> (decoded with
+    /// <paramref name="encodingName"/> — "850" or "1252") into the existing
+    /// <c>ingesting</c> Release <paramref name="releaseId"/>, then flips it to
+    /// <c>ready</c>. On any exception the release is stamped <c>failed</c> and
+    /// the exception rethrown, matching <see cref="ReleaseImportService.ProcessReleaseAsync"/>.
+    /// </summary>
+    public async Task<ReleaseImportSummary> ProcessReleaseAsync(
+        int releaseId, string txtPath, string encodingName, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        await _quotaGuard.EnsureCanWriteAsync(ct).ConfigureAwait(false);
+        var release = await _db.OeReleases.FindAsync(new object?[] { releaseId }, ct).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Release {releaseId} not found for C/AL processing.");
+
+        var encoding = ResolveEncoding(encodingName);
+        _logger.LogInformation(
+            "Processing C/AL ingest: ReleaseId={ReleaseId} Encoding={Encoding}", release.Id, encoding.WebName);
+
+        try
+        {
+            var appFileHash = await HashFileAsync(txtPath, ct).ConfigureAwait(false);
+
+            var module = new OeModule
+            {
+                OrganizationId = orgId,
+                ReleaseId = release.Id,
+                AppId = DeterministicAppId(orgId, release.Label),
+                Name = string.IsNullOrWhiteSpace(release.Label) ? "C/AL Objects" : release.Label,
+                Publisher = release.Publisher ?? "Legacy C/AL",
+                Version = "NAV",
+                DependenciesJson = "[]",
+                DependencyCount = 0,
+                AppFileHash = appFileHash,
+                CreatedAt = DateTime.UtcNow,
+            };
+            _db.OeModules.Add(module);
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            long moduleId = module.Id;
+
+            int objectsImported = 0, referencesImported = 0, filesImported = 0;
+            string? versionList = null;
+            var pendingContent = new Dictionary<string, (string Content, int Length, int LineCount)>(StringComparer.Ordinal);
+            int pendingObjects = 0;
+
+            using (var fs = File.OpenRead(txtPath))
+            {
+                foreach (var block in CalObjectSplitter.Split(fs, encoding,
+                    w => _logger.LogWarning("C/AL splitter: {Warning}", w)))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var parsed = CalObjectParser.Parse(block);
+                    versionList ??= parsed.VersionList;
+
+                    EmitObject(orgId, moduleId, module.AppId, block, parsed,
+                        pendingContent, ref referencesImported);
+                    objectsImported++;
+                    filesImported++;
+                    pendingObjects++;
+
+                    if (pendingObjects >= OeIngestHelpers.ObjectChunkSize)
+                    {
+                        await FlushAsync(pendingContent, ct).ConfigureAwait(false);
+                        pendingContent.Clear();
+                        pendingObjects = 0;
+                    }
+                }
+            }
+            if (pendingObjects > 0)
+                await FlushAsync(pendingContent, ct).ConfigureAwait(false);
+
+            // Stamp the parsed Version List on the module (e.g. "NAVW114.49,NAVDK14.49").
+            if (!string.IsNullOrWhiteSpace(versionList))
+            {
+                await _db.OeModules.Where(m => m.Id == moduleId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(m => m.Version, versionList!.Trim()), ct)
+                    .ConfigureAwait(false);
+            }
+
+            await ResolveTargetsByIdAsync(moduleId, ct).ConfigureAwait(false);
+
+            _db.ChangeTracker.Clear();
+            var ready = await _db.OeReleases.FindAsync(new object?[] { release.Id }, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Release {release.Id} disappeared mid-ingest.");
+            ready.Status = "ready";
+            ready.UpdatedAt = DateTime.UtcNow;
+
+            var totalsRow = await _db.OeModuleFiles.AsNoTracking()
+                .Where(f => f.Module!.ReleaseId == release.Id)
+                .GroupBy(_ => 1)
+                .Select(g => new { Count = g.Count(), Length = g.Sum(f => (long)f.FileContent!.ContentLength) })
+                .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+            ready.SourceFileCount = totalsRow?.Count ?? 0;
+            ready.SourceContentLength = totalsRow?.Length ?? 0;
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Completed C/AL ingest: ReleaseId={ReleaseId} Objects={Objects} References={References} Files={Files}",
+                release.Id, objectsImported, referencesImported, filesImported);
+
+            return new ReleaseImportSummary(
+                ReleaseId: release.Id,
+                ModulesImported: 1,
+                ModulesSkipped: 0,
+                ObjectsImported: objectsImported,
+                ReferencesImported: referencesImported,
+                SourceFilesImported: filesImported,
+                TranslationsImported: 0);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "C/AL ingest failed: ReleaseId={ReleaseId}", release.Id);
+            _db.ChangeTracker.Clear();
+            var failed = await _db.OeReleases.FindAsync(new object?[] { release.Id }, ct).ConfigureAwait(false);
+            if (failed is not null)
+            {
+                failed.Status = "failed";
+                failed.StatusMessage = ex.Message;
+                failed.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            }
+            throw;
+        }
+    }
+
+    /// <summary>Builds the entity rows for one parsed object and queues its source slice for the blob store.</summary>
+    private void EmitObject(
+        int orgId, long moduleId, Guid appId,
+        CalObjectBlock block, CalParsedObject parsed,
+        Dictionary<string, (string Content, int Length, int LineCount)> pendingContent,
+        ref int referencesImported)
+    {
+        var content = block.RawText;
+        var hash = OeIngestHelpers.HashHex(content);
+        var lineCount = OeIngestHelpers.CountLines(content);
+        pendingContent[hash] = (content, content.Length, lineCount);
+
+        var file = new OeModuleFile
+        {
+            OrganizationId = orgId,
+            ModuleId = moduleId,
+            Path = SlicePath(parsed.Kind, parsed.ObjectId, parsed.Name),
+            ContentHash = hash,
+            LineCount = lineCount,
+        };
+        _db.OeModuleFiles.Add(file);
+
+        var obj = new OeModuleObject
+        {
+            OrganizationId = orgId,
+            ModuleId = moduleId,
+            Kind = parsed.Kind,
+            ObjectId = parsed.ObjectId,
+            Name = parsed.Name,
+            // Numeric source-table id is stored verbatim now and resolved to the
+            // table name in ResolveTargetsByIdAsync (mirrors the AL path).
+            SourceTableName = parsed.SourceTableId,
+            SourceFile = file,
+            LineNumber = 1,
+        };
+        _db.OeModuleObjects.Add(obj);
+
+        foreach (var f in parsed.Fields)
+        {
+            _db.OeModuleSymbols.Add(new OeModuleSymbol
+            {
+                OrganizationId = orgId,
+                ModuleId = moduleId,
+                Object = obj,
+                Kind = "table_field",
+                Name = f.Name,
+                Signature = f.DataType,
+                FieldId = f.Id,
+                LineNumber = f.LineNumber,
+            });
+        }
+
+        foreach (var pf in parsed.PageFields)
+        {
+            _db.OeModuleSymbols.Add(new OeModuleSymbol
+            {
+                OrganizationId = orgId,
+                ModuleId = moduleId,
+                Object = obj,
+                Kind = "page_field",
+                Name = pf.Name,
+                LineNumber = pf.LineNumber,
+            });
+        }
+
+        // Shared call-site scope for this object: globals + Rec binding + the
+        // owner itself (for bare self-calls). Built once; each body adds its own
+        // params / locals on top.
+        var ownerId = parsed.ObjectId;
+        CalTypeRef? recRef = parsed.Kind == "table"
+            ? new CalTypeRef("table", parsed.ObjectId)
+            : parsed.Kind == "page" && int.TryParse(parsed.SourceTableId, out var stid)
+                ? new CalTypeRef("table", stid)
+                : null;
+        var globalVars = BuildVarMap(parsed.Globals);
+
+        foreach (var p in parsed.Procedures)
+        {
+            var procSym = new OeModuleSymbol
+            {
+                OrganizationId = orgId,
+                ModuleId = moduleId,
+                Object = obj,
+                Kind = p.IsLocal ? "local_procedure" : "procedure",
+                Name = p.Name,
+                Signature = p.Signature,
+                ReturnType = p.ReturnType,
+                LineNumber = p.LineNumber,
+                EndLine = p.EndLine,
+            };
+            _db.OeModuleSymbols.Add(procSym);
+            EmitBodyReferences(orgId, moduleId, appId, obj, procSym, p.Body,
+                globalVars, p.Parameters, p.Locals, parsed.Kind, ownerId, recRef, ref referencesImported);
+        }
+
+        foreach (var t in parsed.Triggers)
+        {
+            var trigSym = new OeModuleSymbol
+            {
+                OrganizationId = orgId,
+                ModuleId = moduleId,
+                Object = obj,
+                Kind = "trigger",
+                Name = t.Name,
+                LineNumber = t.LineNumber,
+                EndLine = CalScanEndLine(t),
+            };
+            _db.OeModuleSymbols.Add(trigSym);
+            EmitBodyReferences(orgId, moduleId, appId, obj, trigSym, t.Body,
+                globalVars, Array.Empty<CalVariable>(), t.Locals, parsed.Kind, ownerId, recRef, ref referencesImported);
+        }
+
+        foreach (var g in parsed.Globals)
+        {
+            var targetKind = g.TypeKeyword is not null
+                && CalObjectKinds.ObjectTypeKeywordToKind.TryGetValue(g.TypeKeyword, out var tk)
+                ? tk : null;
+
+            _db.OeModuleVariables.Add(new OeModuleVariable
+            {
+                OrganizationId = orgId,
+                ModuleId = moduleId,
+                Object = obj,
+                Name = g.Name,
+                TypeKeyword = g.TypeKeyword,
+                TypeName = g.TypeName,
+                TargetAppId = targetKind is not null ? appId : null,
+                TargetObjectKind = targetKind,
+                TargetObjectId = g.TargetObjectId,
+                LineNumber = g.LineNumber,
+                ColumnStart = g.ColumnStart,
+                ColumnEnd = g.ColumnEnd,
+            });
+
+            // A global typed to another object is a declarative variable_type
+            // reference, resolvable by id within this release.
+            if (targetKind is not null && g.TargetObjectId is int targetId)
+            {
+                _db.OeModuleReferences.Add(new OeModuleReference
+                {
+                    OrganizationId = orgId,
+                    ModuleId = moduleId,
+                    SourceObject = obj,
+                    TargetAppId = appId,
+                    TargetObjectKind = targetKind,
+                    TargetObjectId = targetId,
+                    TargetObjectName = string.Empty,   // resolved in the id post-pass
+                    ReferenceKind = "variable_type",
+                    LineNumber = g.LineNumber,
+                });
+                referencesImported++;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Runs the C/AL call-site walker over one procedure / trigger body and
+    /// emits its <c>method_call</c> / <c>field_access</c> references, stamped
+    /// with the calling symbol so the forward-edge "what does this call?" query
+    /// works. Target names are filled in by <see cref="ResolveTargetsByIdAsync"/>.
+    /// </summary>
+    private void EmitBodyReferences(
+        int orgId, long moduleId, Guid appId,
+        OeModuleObject obj, OeModuleSymbol sourceSym, string body,
+        IReadOnlyDictionary<string, CalTypeRef> globals,
+        IEnumerable<CalVariable> parameters, IEnumerable<CalVariable> locals,
+        string ownerKind, int ownerId, CalTypeRef? recRef, ref int referencesImported)
+    {
+        if (string.IsNullOrEmpty(body)) return;
+
+        var scope = new CalExtractScope { OwnerKind = ownerKind, OwnerId = ownerId, Rec = recRef };
+        foreach (var kv in globals) scope.Variables[kv.Key] = kv.Value;
+        foreach (var v in parameters) AddTypedVar(scope.Variables, v);
+        foreach (var v in locals) AddTypedVar(scope.Variables, v);
+
+        var result = CalReferenceExtractor.Extract(body, scope);
+        foreach (var r in result.References)
+        {
+            _db.OeModuleReferences.Add(new OeModuleReference
+            {
+                OrganizationId = orgId,
+                ModuleId = moduleId,
+                SourceObject = obj,
+                SourceSymbol = sourceSym,
+                TargetAppId = appId,
+                TargetObjectKind = r.TargetKind,
+                TargetObjectId = r.TargetId,
+                TargetObjectName = string.Empty,   // resolved in the id post-pass
+                TargetMemberName = r.MemberName,
+                TargetMemberKind = r.MemberKind,
+                ReferenceKind = r.ReferenceKind,
+                LineNumber = r.Line,
+                ColumnNumber = r.Column,
+            });
+            referencesImported++;
+        }
+    }
+
+    private static Dictionary<string, CalTypeRef> BuildVarMap(IEnumerable<CalVariable> vars)
+    {
+        var d = new Dictionary<string, CalTypeRef>(StringComparer.OrdinalIgnoreCase);
+        foreach (var v in vars) AddTypedVar(d, v);
+        return d;
+    }
+
+    private static void AddTypedVar(Dictionary<string, CalTypeRef> d, CalVariable v)
+    {
+        if (v.TargetObjectId is int id && v.TypeKeyword is not null
+            && CalObjectKinds.ObjectTypeKeywordToKind.TryGetValue(v.TypeKeyword, out var k))
+            d[v.Name] = new CalTypeRef(k, id);
+    }
+
+    private async Task FlushAsync(
+        IReadOnlyDictionary<string, (string Content, int Length, int LineCount)> pendingContent,
+        CancellationToken ct)
+    {
+        await OeIngestHelpers.UpsertFileContentsAsync(_db, pendingContent, ct).ConfigureAwait(false);
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        _db.ChangeTracker.Clear();
+    }
+
+    /// <summary>
+    /// Resolves the numeric object ids that C/AL references carry into target
+    /// names, within the single module. Set-based UPDATEs so a full-database
+    /// export (tens of thousands of vars/refs) resolves without loading rows.
+    /// </summary>
+    private async Task ResolveTargetsByIdAsync(long moduleId, CancellationToken ct)
+    {
+        var p = new object[] { moduleId };
+
+        await _db.Database.ExecuteSqlRawAsync(
+            "UPDATE oe_module_references r SET target_object_name = o.name " +
+            "FROM oe_module_objects o " +
+            "WHERE r.module_id = {0} AND o.module_id = {0} " +
+            "AND r.target_object_id IS NOT NULL " +
+            "AND o.object_id = r.target_object_id AND o.kind = r.target_object_kind " +
+            "AND (r.target_object_name = '' OR r.target_object_name IS NULL)", p, ct).ConfigureAwait(false);
+
+        await _db.Database.ExecuteSqlRawAsync(
+            "UPDATE oe_module_variables v SET target_object_name = o.name " +
+            "FROM oe_module_objects o " +
+            "WHERE v.module_id = {0} AND o.module_id = {0} " +
+            "AND v.target_object_id IS NOT NULL " +
+            "AND o.object_id = v.target_object_id AND o.kind = v.target_object_kind", p, ct).ConfigureAwait(false);
+
+        // Pages store SourceTable as a bare numeric id; resolve to the table name
+        // so Rec-field resolution and the outline read a name like the AL path.
+        await _db.Database.ExecuteSqlRawAsync(
+            "UPDATE oe_module_objects pg SET source_table_name = t.name " +
+            "FROM oe_module_objects t " +
+            "WHERE pg.module_id = {0} AND t.module_id = {0} AND t.kind = 'table' " +
+            "AND pg.source_table_name ~ '^[0-9]+$' " +
+            "AND t.object_id = CAST(pg.source_table_name AS int)", p, ct).ConfigureAwait(false);
+
+        // Platform virtual tables (Field, Object, Date, AllObj, …) are
+        // referenced by id but never shipped as objects in the export, so the
+        // joins above can't name them. Resolve from the NAV-specific id→name map
+        // (NOT the BC one — the id space was renumbered) so they stop showing as
+        // unresolved. Set-based via unnest: one UPDATE per target table.
+        var ids = CalVirtualTables.Ids;
+        var names = CalVirtualTables.Names;
+        var vt = new object[] { moduleId, ids, names };
+
+        await _db.Database.ExecuteSqlRawAsync(
+            "UPDATE oe_module_references r SET target_object_name = v.name " +
+            "FROM unnest({1}::int[], {2}::text[]) AS v(id, name) " +
+            "WHERE r.module_id = {0} AND r.target_object_kind = 'table' AND r.target_object_id = v.id " +
+            "AND (r.target_object_name = '' OR r.target_object_name IS NULL)", vt, ct).ConfigureAwait(false);
+
+        await _db.Database.ExecuteSqlRawAsync(
+            "UPDATE oe_module_variables mv SET target_object_name = v.name " +
+            "FROM unnest({1}::int[], {2}::text[]) AS v(id, name) " +
+            "WHERE mv.module_id = {0} AND mv.target_object_kind = 'table' AND mv.target_object_id = v.id " +
+            "AND (mv.target_object_name = '' OR mv.target_object_name IS NULL)", vt, ct).ConfigureAwait(false);
+
+        await _db.Database.ExecuteSqlRawAsync(
+            "UPDATE oe_module_objects o SET source_table_name = v.name " +
+            "FROM unnest({1}::int[], {2}::text[]) AS v(id, name) " +
+            "WHERE o.module_id = {0} AND o.source_table_name = v.id::text", vt, ct).ConfigureAwait(false);
+    }
+
+    private static int? CalScanEndLine(CalTrigger t)
+        => t.Body.Length > 0 ? t.BodyLine + CountNewlines(t.Body) : null;
+
+    private static int CountNewlines(string s)
+    {
+        int n = 0;
+        foreach (var c in s) if (c == '\n') n++;
+        return n;
+    }
+
+    /// <summary>A stable, idempotent synthetic AppId per (org, release label).</summary>
+    private static Guid DeterministicAppId(int orgId, string label)
+    {
+        var bytes = MD5.HashData(Encoding.UTF8.GetBytes($"cal:{orgId}:{label}"));
+        return new Guid(bytes);
+    }
+
+    private static async Task<string> HashFileAsync(string path, CancellationToken ct)
+    {
+        await using var fs = File.OpenRead(path);
+        using var sha = SHA256.Create();
+        var hash = await sha.ComputeHashAsync(fs, ct).ConfigureAwait(false);
+        return Convert.ToHexString(hash);
+    }
+
+    /// <summary>Resolves "850"/"1252" (or any codepage name) to an <see cref="Encoding"/>; defaults to CP850.</summary>
+    private static Encoding ResolveEncoding(string name)
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        if (string.IsNullOrWhiteSpace(name)) return Encoding.GetEncoding(850);
+        return int.TryParse(name, out var cp)
+            ? Encoding.GetEncoding(cp)
+            : Encoding.GetEncoding(name);
+    }
+
+    private static string SlicePath(string kind, int id, string name)
+    {
+        var title = char.ToUpperInvariant(kind[0]) + kind[1..];
+        var safeName = name;
+        foreach (var bad in Path.GetInvalidFileNameChars())
+            safeName = safeName.Replace(bad, '-');
+        return $"CAL/{title}/{id} - {safeName}.txt";
+    }
+}

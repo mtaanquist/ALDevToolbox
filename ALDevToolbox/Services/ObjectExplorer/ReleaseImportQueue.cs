@@ -63,4 +63,11 @@ public abstract record ReleaseImportSource
 
     /// <summary>Open a ZIP already staged to a temp file. <paramref name="IsDvd"/> selects the DVD-subset walk vs the whole-archive walk.</summary>
     public sealed record StagedZip(string TempPath, bool IsDvd) : ReleaseImportSource;
+
+    /// <summary>
+    /// A legacy C/AL TXT export staged to a temp file, decoded with the named
+    /// codepage ("850" or "1252"). Like <see cref="StagedZip"/> it lives in
+    /// container-local <c>/tmp</c> and so is never resumed after a restart.
+    /// </summary>
+    public sealed record CalTxt(string TempPath, string EncodingName) : ReleaseImportSource;
 }

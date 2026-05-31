@@ -269,6 +269,75 @@ public sealed class ReleaseComparisonService
     }
 
     /// <summary>
+    /// Object-level diff between two releases, matched by <c>(Kind, ObjectId)</c>
+    /// (or <c>(Kind, Name)</c> when an object has no id). Each object's
+    /// source-slice <c>content_hash</c> decides added / removed / modified /
+    /// unchanged. This is the matcher the legacy C/AL Base-vs-Customer compare
+    /// uses — the module/AppId-keyed <see cref="CompareReleasesAsync"/> can't
+    /// line two independent releases up because each carries a distinct AppId.
+    /// </summary>
+    public async Task<List<ObjectCompareRow>> CompareReleaseObjectsAsync(
+        int leftReleaseId, int rightReleaseId, CancellationToken ct = default)
+    {
+        var left = await LoadCompareObjectsAsync(leftReleaseId, ct).ConfigureAwait(false);
+        var right = await LoadCompareObjectsAsync(rightReleaseId, ct).ConfigureAwait(false);
+
+        var leftByKey = ToKeyedMap(left);
+        var rightByKey = ToKeyedMap(right);
+
+        var rows = new List<ObjectCompareRow>();
+
+        foreach (var (key, l) in leftByKey)
+        {
+            if (rightByKey.TryGetValue(key, out var r))
+            {
+                var status = l.Hash is not null && l.Hash == r.Hash ? "unchanged" : "modified";
+                rows.Add(new ObjectCompareRow(l.Kind, l.ObjectId, l.Name, status, l.FileId, r.FileId));
+            }
+            else
+            {
+                rows.Add(new ObjectCompareRow(l.Kind, l.ObjectId, l.Name, "removed", l.FileId, null));
+            }
+        }
+        foreach (var (key, r) in rightByKey)
+        {
+            if (!leftByKey.ContainsKey(key))
+                rows.Add(new ObjectCompareRow(r.Kind, r.ObjectId, r.Name, "added", null, r.FileId));
+        }
+
+        return rows
+            .OrderBy(r => r.Kind, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.ObjectId ?? int.MaxValue)
+            .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private async Task<List<CompareObject>> LoadCompareObjectsAsync(int releaseId, CancellationToken ct)
+        => await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId)
+            .Select(o => new CompareObject(
+                o.Kind, o.ObjectId, o.Name, o.SourceFileId,
+                o.SourceFile != null ? o.SourceFile.ContentHash : null))
+            .ToListAsync(ct).ConfigureAwait(false);
+
+    private static Dictionary<string, CompareObject> ToKeyedMap(IEnumerable<CompareObject> objects)
+    {
+        var map = new Dictionary<string, CompareObject>(StringComparer.Ordinal);
+        foreach (var o in objects)
+        {
+            // (kind, object id) is unique within a release; fall back to name for
+            // id-less objects (AL interfaces). First wins on the rare collision.
+            var key = o.ObjectId is int id
+                ? $"{o.Kind}#{id}"
+                : $"{o.Kind}#name:{o.Name.ToLowerInvariant()}";
+            map.TryAdd(key, o);
+        }
+        return map;
+    }
+
+    private sealed record CompareObject(string Kind, int? ObjectId, string Name, long? FileId, string? Hash);
+
+    /// <summary>
     /// Releases other than the file's own that contain a file at the same
     /// <c>(AppId, Path)</c> — populates the "Compare with release" picker on
     /// the source-file viewer. Only ready Releases that actually carry a
