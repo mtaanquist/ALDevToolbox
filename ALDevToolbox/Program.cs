@@ -12,6 +12,11 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Legacy C/AL TXT exports are Windows-1252 / codepage 850, neither of which
+// .NET Core ships by default — register the code-pages provider so
+// CalImportService can decode them. See Services/Cal/.
+System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+
 builder.Logging.ClearProviders();
 builder.Logging.AddSimpleConsole(options =>
 {
@@ -143,6 +148,7 @@ builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<ApplicationVersionService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationImportService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseImportService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.CalImportService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.DvdDownloadService>();
 // In-process hand-off + worker for the DVD-scale imports (folder-ZIP upload,
 // URL download) so the admin isn't held on the page while they ingest.

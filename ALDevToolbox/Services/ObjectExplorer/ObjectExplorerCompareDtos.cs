@@ -82,3 +82,22 @@ public sealed record CompareTargetOption(
     int ReleaseId,
     string ReleaseLabel,
     long TargetFileId);
+
+/// <summary>
+/// One object in an <b>object-level</b> Release-vs-Release comparison, matched
+/// by <c>(Kind, ObjectId)</c> (falling back to <c>(Kind, Name)</c> for id-less
+/// objects). Unlike the module/AppId-keyed file compare, this lines two
+/// independent releases up by object identity — the shape a legacy C/AL
+/// Base-vs-Customer diff needs, since each C/AL release is its own synthetic
+/// module with a distinct AppId. <see cref="Status"/> is decided by the
+/// objects' source-slice <c>content_hash</c>. For <c>modified</c> rows both
+/// file ids are set, so the row links straight into the side-by-side source
+/// diff at <c>/object-explorer/compare/file</c>.
+/// </summary>
+public sealed record ObjectCompareRow(
+    string Kind,
+    int? ObjectId,
+    string Name,
+    string Status,            // "added" | "removed" | "modified" | "unchanged"
+    long? LeftFileId,
+    long? RightFileId);

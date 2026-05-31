@@ -60,3 +60,7 @@ nunit-*.xml
 *.db
 *.db-shm
 *.db-wal
+
+# Throwaway / scratch files — anything you don't want tracked. Drop local
+# samples, large test exports, scratch notes, etc. here.
+/scratch/

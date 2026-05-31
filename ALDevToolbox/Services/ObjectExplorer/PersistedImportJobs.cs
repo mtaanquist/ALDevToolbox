@@ -64,6 +64,13 @@ public sealed class PersistedImportJobs
                 row.StagedZipPath = staged.TempPath;
                 row.StagedIsDvd = staged.IsDvd;
                 break;
+            case ReleaseImportSource.CalTxt cal:
+                // Like a staged zip, the temp file is container-local and not
+                // resumed across restarts; the encoding isn't persisted because
+                // the row is only ever marked failed on restart, never re-run.
+                row.Kind = "cal_txt";
+                row.StagedZipPath = cal.TempPath;
+                break;
             default:
                 throw new InvalidOperationException($"Unknown import source {source.GetType().Name}.");
         }
@@ -123,7 +130,9 @@ public sealed class PersistedImportJobs
 
         var now = _clock.GetUtcNow().UtcDateTime;
         var toResume = new List<ReleaseImportJob>();
-        var lostReleaseIds = new List<int>();
+        // releaseId → human noun for the lost upload, so the failure copy names
+        // the right thing (a ZIP vs a C/AL file).
+        var lostReleases = new Dictionary<int, string>();
 
         foreach (var row in survivors)
         {
@@ -145,29 +154,31 @@ public sealed class PersistedImportJobs
                         JobRowId: row.Id));
                     break;
                 default:
-                    // Staged-zip can't be resumed — the temp file is gone. The
-                    // existing OeRelease row reconciler in StartupTasks already
-                    // flips ingesting releases to failed, but its message is
-                    // generic; record a more specific failure on the job row.
+                    // Staged-zip / cal-txt can't be resumed — the temp file is
+                    // gone. The existing OeRelease row reconciler in StartupTasks
+                    // already flips ingesting releases to failed, but its message
+                    // is generic; record a more specific failure on the job row.
+                    var noun = row.Kind == "cal_txt" ? "C/AL file" : "ZIP";
                     row.Status = "failed";
-                    row.ErrorMessage = "The uploaded ZIP was lost when the container restarted. Re-submit to try again.";
+                    row.ErrorMessage = $"The uploaded {noun} was lost when the container restarted. Re-submit to try again.";
                     row.CompletedAt = now;
-                    lostReleaseIds.Add(row.ReleaseId);
+                    lostReleases[row.ReleaseId] = noun;
                     break;
             }
         }
 
-        // For lost staged-zip jobs, flip the matching OeRelease row to failed
-        // with the same message so the list-page surfaces the cause.
-        if (lostReleaseIds.Count > 0)
+        // For lost staged-zip / cal-txt jobs, flip the matching OeRelease row to
+        // failed with the same message so the list-page surfaces the cause.
+        if (lostReleases.Count > 0)
         {
+            var ids = lostReleases.Keys.ToList();
             var releases = await _db.OeReleases.IgnoreQueryFilters()
-                .Where(r => lostReleaseIds.Contains(r.Id) && r.Status == "ingesting")
+                .Where(r => ids.Contains(r.Id) && r.Status == "ingesting")
                 .ToListAsync(ct).ConfigureAwait(false);
             foreach (var r in releases)
             {
                 r.Status = "failed";
-                r.StatusMessage = "The uploaded ZIP was lost when the container restarted. Re-submit to try again.";
+                r.StatusMessage = $"The uploaded {lostReleases.GetValueOrDefault(r.Id, "file")} was lost when the container restarted. Re-submit to try again.";
                 r.UpdatedAt = now;
             }
         }

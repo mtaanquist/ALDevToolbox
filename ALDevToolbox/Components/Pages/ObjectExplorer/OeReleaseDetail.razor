@@ -103,6 +103,15 @@
                         <option value="ba">B → A</option>
                     </select>
                 </label>
+
+                <label class="field">
+                    <span class="field__label">Compare by</span>
+                    <select class="field__input" @bind="_compareBy" @bind:after="ReloadAsync"
+                            aria-label="Comparison granularity">
+                        <option value="files">Files (by module / path)</option>
+                        <option value="objects">Objects (by type + id)</option>
+                    </select>
+                </label>
             }
             else
             {
@@ -242,6 +251,7 @@
     private string _namespace = string.Empty;
     private string _compareRight = string.Empty;
     private string _compareDirection = "ab";
+    private string _compareBy = "files";
 
     private List<ReleaseObjectMatch>? _objectResults;
     // Objects-grid sort + lazy-load paging state. A null sort column means the
@@ -255,6 +265,7 @@
     private List<ReleaseProcedureMatch>? _procedureResults;
     private List<ReleaseContentMatch>? _contentResults;
     private List<ReleaseCompareFileRow>? _compareResults;
+    private List<ObjectCompareRow>? _objectCompareResults;
 
     // Refs to the search-style text inputs whose `value` attribute is
     // intentionally NOT bound from the server side. See the comment on
@@ -316,6 +327,7 @@
         _compareRight = query["right"] ?? string.Empty;
         var dir = query["dir"];
         _compareDirection = dir == "ba" ? "ba" : "ab";
+        _compareBy = query["by"] == "objects" ? "objects" : "files";
     }
 
     /// <summary>
@@ -346,6 +358,7 @@
         if (!string.IsNullOrWhiteSpace(_namespace)) parts.Add("namespace=" + Uri.EscapeDataString(_namespace));
         if (_scope == SearchScope.Compare && !string.IsNullOrWhiteSpace(_compareRight)) parts.Add("right=" + Uri.EscapeDataString(_compareRight));
         if (_scope == SearchScope.Compare && _compareDirection == "ba") parts.Add("dir=ba");
+        if (_scope == SearchScope.Compare && _compareBy == "objects") parts.Add("by=objects");
 
         var url = $"/object-explorer/release/{ReleaseId}";
         if (parts.Count > 0) url += "?" + string.Join("&", parts);
@@ -538,13 +551,23 @@
                 if (!int.TryParse(_compareRight, out var otherId) || otherId == ReleaseId)
                 {
                     _compareResults = null;
+                    _objectCompareResults = null;
                 }
                 else
                 {
                     var (leftId, rightId) = _compareDirection == "ba"
                         ? (otherId, ReleaseId)
                         : (ReleaseId, otherId);
-                    _compareResults = await Comparison.CompareReleaseFilesFlatAsync(leftId, rightId);
+                    if (_compareBy == "objects")
+                    {
+                        _objectCompareResults = await Comparison.CompareReleaseObjectsAsync(leftId, rightId);
+                        _compareResults = null;
+                    }
+                    else
+                    {
+                        _compareResults = await Comparison.CompareReleaseFilesFlatAsync(leftId, rightId);
+                        _objectCompareResults = null;
+                    }
                 }
                 break;
         }
@@ -857,6 +880,11 @@
             <p class="muted">Pick a release to compare against.</p>
             return;
         }
+        if (_compareBy == "objects")
+        {
+            @RenderObjectCompareResults()
+            return;
+        }
         if (_compareResults is null)
         {
             <p class="muted">Comparing…</p>
@@ -883,6 +911,60 @@
                     <tr>
                         <td>@r.ModuleName</td>
                         <td><code>@r.Path</code></td>
+                        <td><span class="badge @CompareBadgeClass(r.Status)">@r.Status</span></td>
+                        <td class="row-actions">
+                            @if (r.Status == "modified" && r.LeftFileId is { } lf && r.RightFileId is { } rf)
+                            {
+                                <a class="btn btn--sm" href="@Links.CompareFile(lf, rf)">Open diff</a>
+                            }
+                            else if (r.Status == "added" && r.RightFileId is { } addedId)
+                            {
+                                <a class="btn btn--sm" href="@Links.SourceFile(addedId)">Open</a>
+                            }
+                            else if (r.Status == "removed" && r.LeftFileId is { } removedId)
+                            {
+                                <a class="btn btn--sm" href="@Links.SourceFile(removedId)">Open</a>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+
+    private RenderFragment RenderObjectCompareResults() => __builder =>
+    {
+        if (_objectCompareResults is null)
+        {
+            <p class="muted">Comparing…</p>
+            return;
+        }
+        // Unchanged objects are the bulk and rarely interesting — hide them and
+        // surface the changes (matches the C/AL Base-vs-Customer use case).
+        var changed = _objectCompareResults.Where(r => r.Status != "unchanged").ToList();
+        if (changed.Count == 0)
+        {
+            <p class="muted">No object differences between these two releases (@_objectCompareResults.Count.ToString("N0") objects, all unchanged).</p>
+            return;
+        }
+        <p class="muted">Showing @changed.Count.ToString("N0") changed object(s) of @_objectCompareResults.Count.ToString("N0").</p>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th scope="col">Type</th>
+                    <th scope="col">ID</th>
+                    <th scope="col">Name</th>
+                    <th scope="col">Status</th>
+                    <th scope="col"><span class="visually-hidden">Actions</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in changed)
+                {
+                    <tr>
+                        <td>@r.Kind</td>
+                        <td>@(r.ObjectId?.ToString() ?? "—")</td>
+                        <td>@r.Name</td>
                         <td><span class="badge @CompareBadgeClass(r.Status)">@r.Status</span></td>
                         <td class="row-actions">
                             @if (r.Status == "modified" && r.LeftFileId is { } lf && r.RightFileId is { } rf)

@@ -191,6 +191,32 @@
                     with its .app by filename stem (case-insensitive).
                 </small>
             </label>
+
+            <label class="field">
+                <span class="field__label">Legacy C/AL TXT export</span>
+                <input type="file" name="CalTxtFile" accept=".txt" class="field__input field__input--file" />
+                <small class="field__caption muted">
+                    A classic NAV <em>Export Objects to text</em> file (one big
+                    <code>OBJECT … { }</code> dump). Import the bare-Microsoft
+                    <strong>Base</strong> first as Kind = <code>first_party</code>,
+                    then the <strong>Customer</strong> file as Kind = <code>customer</code>
+                    with the base picked as its Parent Release — that powers the
+                    Base-vs-Customer object comparison.
+                </small>
+            </label>
+
+            <label class="field">
+                <span class="field__label">C/AL codepage</span>
+                <select name="CalEncoding" class="field__input">
+                    <option value="850" selected>IBM 850 (OEM — classic finsql default)</option>
+                    <option value="1252">Windows-1252</option>
+                </select>
+                <small class="field__caption muted">
+                    Only used for the C/AL TXT upload. The classic Windows client
+                    exports in the OEM codepage (850 for Western Europe); pick
+                    1252 if accented characters look wrong after import.
+                </small>
+            </label>
         </section>
 
         <section class="form-section">

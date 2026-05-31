@@ -66,15 +66,44 @@ internal static class ObjectExplorerEndpoints
             var dvdUrl = form["DvdUrl"].ToString().Trim();
             var folderZip = form.Files.GetFile("FolderZip");
             var appFiles = form.Files.GetFiles("AppFiles").Where(f => f.Length > 0).ToArray();
+            var calTxtFile = form.Files.GetFile("CalTxtFile");
+            // Legacy C/AL TXT codepage: classic finsql exports are OEM (850);
+            // newer ones can be 1252. Admin-selectable, default 850.
+            var calEncoding = form["CalEncoding"].ToString() is { Length: > 0 } ce ? ce : "850";
 
-            if (dvdUrl.Length == 0 && folderZip is null && appFiles.Length == 0)
+            if (dvdUrl.Length == 0 && folderZip is null && appFiles.Length == 0 && (calTxtFile is null || calTxtFile.Length == 0))
             {
-                Redirect(ctx, "AppFiles", "Paste a download URL, pick a folder ZIP, or pick at least one .app file before submitting.");
+                Redirect(ctx, "AppFiles", "Paste a download URL, pick a folder ZIP, pick at least one .app file, or pick a C/AL TXT export before submitting.");
                 return;
             }
 
             try
             {
+                // ── Legacy C/AL TXT: stage to disk, queue, ingest in bg ────
+                if (calTxtFile is not null && calTxtFile.Length > 0)
+                {
+                    var releaseId = await importer.BeginReleaseAsync(metadata, ct).ConfigureAwait(false);
+                    string tempPath;
+                    try
+                    {
+                        tempPath = await StageUploadToTempAsync(calTxtFile, "oe-cal-", ".txt", ct).ConfigureAwait(false);
+                    }
+                    catch (IOException ex)
+                    {
+                        await importer.MarkFailedAsync(releaseId, "Could not stage the uploaded C/AL file to disk: " + ex.Message, ct).ConfigureAwait(false);
+                        RedirectQueued(ctx, releaseId);
+                        return;
+                    }
+                    var identity = CaptureIdentity(orgContext);
+                    var source = new ReleaseImportSource.CalTxt(tempPath, calEncoding);
+                    var jobRowId = await persistedJobs.CreateAsync(releaseId, identity, source, storeSymbolReference: false, ct).ConfigureAwait(false);
+                    await queue.EnqueueAsync(
+                        new ReleaseImportJob(releaseId, identity, source, StoreSymbolReference: false, jobRowId),
+                        ct).ConfigureAwait(false);
+                    RedirectQueued(ctx, releaseId);
+                    return;
+                }
+
                 // ── URL download: queue, ingest in the background ──────────
                 if (dvdUrl.Length > 0)
                 {
@@ -616,10 +645,20 @@ internal static class ObjectExplorerEndpoints
     /// </summary>
     private static async Task<string> StageFolderZipToTempAsync(
         Microsoft.AspNetCore.Http.IFormFile folderZip, CancellationToken ct)
+        => await StageUploadToTempAsync(folderZip, "oe-folder-", ".zip", ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Streams an uploaded file to a temp file the background worker reopens
+    /// after the request ends (the worker deletes it when done). Used for both
+    /// the folder ZIP and the raw C/AL TXT — neither fits through the Blazor
+    /// circuit at 150 MB+.
+    /// </summary>
+    private static async Task<string> StageUploadToTempAsync(
+        Microsoft.AspNetCore.Http.IFormFile file, string prefix, string extension, CancellationToken ct)
     {
-        var tempPath = Path.Combine(Path.GetTempPath(), "oe-folder-" + Guid.NewGuid().ToString("N") + ".zip");
+        var tempPath = Path.Combine(Path.GetTempPath(), prefix + Guid.NewGuid().ToString("N") + extension);
         await using var fs = File.Create(tempPath);
-        await using var src = folderZip.OpenReadStream();
+        await using var src = file.OpenReadStream();
         await src.CopyToAsync(fs, ct).ConfigureAwait(false);
         return tempPath;
     }
