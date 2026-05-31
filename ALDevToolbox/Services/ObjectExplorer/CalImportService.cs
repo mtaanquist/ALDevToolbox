@@ -269,7 +269,7 @@ public sealed class CalImportService
                 EndLine = p.EndLine,
             };
             _db.OeModuleSymbols.Add(procSym);
-            EmitBodyReferences(orgId, moduleId, appId, obj, procSym, p.Body,
+            EmitBodyReferences(orgId, moduleId, appId, obj, procSym, p.Body, p.BodyLine,
                 globalVars, p.Parameters, p.Locals, parsed.Kind, ownerId, recRef, ref referencesImported);
         }
 
@@ -286,7 +286,7 @@ public sealed class CalImportService
                 EndLine = CalScanEndLine(t),
             };
             _db.OeModuleSymbols.Add(trigSym);
-            EmitBodyReferences(orgId, moduleId, appId, obj, trigSym, t.Body,
+            EmitBodyReferences(orgId, moduleId, appId, obj, trigSym, t.Body, t.BodyLine,
                 globalVars, Array.Empty<CalVariable>(), t.Locals, parsed.Kind, ownerId, recRef, ref referencesImported);
         }
 
@@ -341,7 +341,7 @@ public sealed class CalImportService
     /// </summary>
     private void EmitBodyReferences(
         int orgId, long moduleId, Guid appId,
-        OeModuleObject obj, OeModuleSymbol sourceSym, string body,
+        OeModuleObject obj, OeModuleSymbol sourceSym, string body, int bodyLine,
         IReadOnlyDictionary<string, CalTypeRef> globals,
         IEnumerable<CalVariable> parameters, IEnumerable<CalVariable> locals,
         string ownerKind, int ownerId, CalTypeRef? recRef, ref int referencesImported)
@@ -356,6 +356,9 @@ public sealed class CalImportService
         var result = CalReferenceExtractor.Extract(body, scope);
         foreach (var r in result.References)
         {
+            // The walker numbers lines from 1 within the body text it was given;
+            // shift to slice-relative so the line lands on the real call site
+            // (bodyLine is the slice line of the body's BEGIN = walker line 1).
             _db.OeModuleReferences.Add(new OeModuleReference
             {
                 OrganizationId = orgId,
@@ -369,7 +372,7 @@ public sealed class CalImportService
                 TargetMemberName = r.MemberName,
                 TargetMemberKind = r.MemberKind,
                 ReferenceKind = r.ReferenceKind,
-                LineNumber = r.Line,
+                LineNumber = bodyLine + r.Line - 1,
                 ColumnNumber = r.Column,
             });
             referencesImported++;
