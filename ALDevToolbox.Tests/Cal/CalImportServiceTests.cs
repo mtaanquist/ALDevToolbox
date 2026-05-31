@@ -138,6 +138,47 @@ public sealed class CalImportServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Call_site_reference_line_is_slice_relative_not_body_relative()
+    {
+        // The call sits on line 10 of the object slice. The walker numbers it
+        // from the body start, so without the slice offset it would be stored
+        // against line ~2 (the OBJECT-PROPERTIES / VAR area) — the bug that made
+        // find-references show "Version List=…" snippets.
+        const string cal =
+            "OBJECT Codeunit 50000 Mgt\r\n"  // 1
+          + "{\r\n"                            // 2
+          + "  CODE\r\n"                       // 3
+          + "  {\r\n"                          // 4
+          + "    VAR\r\n"                      // 5
+          + "      Helper@1000 : Codeunit 50001;\r\n" // 6
+          + "\r\n"                             // 7
+          + "    PROCEDURE Foo@1();\r\n"       // 8
+          + "    BEGIN\r\n"                    // 9
+          + "      Helper.DoStuff();\r\n"      // 10  <- the call
+          + "    END;\r\n"                     // 11
+          + "\r\n"                             // 12
+          + "    BEGIN\r\n"                    // 13
+          + "    END.\r\n"                     // 14
+          + "  }\r\n"                          // 15
+          + "}\r\n";                           // 16
+        var path = Path.GetTempFileName();
+        await File.WriteAllTextAsync(path, cal, Encoding.ASCII);
+        try
+        {
+            var releaseId = await ImportAsync(path, "Lines");
+            await using var read = _db.NewContext();
+            var module = await read.OeModules.AsNoTracking().SingleAsync(m => m.ReleaseId == releaseId);
+            var call = await read.OeModuleReferences.AsNoTracking()
+                .SingleAsync(r => r.ModuleId == module.Id && r.ReferenceKind == "method_call"
+                    && r.TargetMemberName == "DoStuff");
+            call.TargetObjectKind.Should().Be("codeunit");
+            call.TargetObjectId.Should().Be(50001);
+            call.LineNumber.Should().Be(10);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
     public async Task Resolves_nav_platform_virtual_table_names()
     {
         // A global typed to a NAV virtual table (2000000038 = AllObj) resolves by
