@@ -18,12 +18,15 @@ There is no superuser; an admin only ever sees their own organisation. The "last
 
 **Existing-org signups** still go through admin approval in `/admin/users` and email notification. Inviting users into your own org via invite link / admin-issued invitation is a Phase 4 candidate; today the path is "ask the user to sign up with your slug and approve them".
 
+**Email-first verified signup.** When SMTP is configured, `/signup` runs an email-first, verified flow instead of the single form above. Step 1 collects only an email and `POST /auth/signup/start` persists a `PendingSignup` (org-less, read via `IgnoreQueryFilters()` like `Invite`/`PasswordResetToken`) and emails a one-time link **and** a 6-digit code (`PendingSignupService`; link token via `TokenIssuer`, code hashed bound to the row's link-token hash, both 30-minute lifetime). The response is always the same generic "check your email" — it never reveals whether the address is new, already registered (no row, no email sent), rate-limited, or domain-disallowed. Step 2 verifies via `GET /auth/signup/verify` (link) or `POST /auth/signup/verify-code` (code), which stamps `verified_at` and sets a short-lived Data-Protected verified-email cookie. Step 3 (`/signup/details`, `POST /auth/signup/complete`) re-resolves the verified email **server-side** from a verified, uncompleted, unexpired row — the cookie is only a hint, so a forged cookie is inert — and branches: a claimed-domain email joins that org (Active immediately when the org has `OrganizationSettings.AutoJoinVerifiedDomainUsers` on, otherwise Pending for admin approval, the historical behaviour), and an unclaimed-domain email creates a brand-new org with the visitor as its Active Admin. There is no "join an arbitrary org by typing its slug" path in this flow. The verification row's `completed_at` is the single-use guard. When SMTP is **not** configured the original single-form `/auth/signup` flow is used unchanged, so a zero-config deployment can still get started. Mandatory two-factor is not bolted onto signup: `StrongAuthGate` already redirects a newly-Active member of a `RequireStrongAuth` org to `/account?required=1` on their next request.
+
 ## Pages
 
 | Path | Audience | Purpose |
 |------|----------|---------|
 | `/login` | Anonymous | Email + password sign-in. |
-| `/signup` | Anonymous | Email, display name, password, optional org slug. Always lands in `Pending` status. |
+| `/signup` | Anonymous | Email-first verified signup when SMTP is configured (verify, then name + password, plus org name/slug for a new org); falls back to the single all-fields form when SMTP is off. |
+| `/signup/details` | Anonymous | Step 3 of the verified flow: collects the remaining fields for a verified email (gated by the verified-email cookie + a server-side `PendingSignup` re-check). |
 | `/forgot-password` | Anonymous | Email a reset link if SMTP is configured. Always shows the same "if that email exists" message. |
 | `/reset-password?token=…` | Anonymous | Single-use; expires after one hour. |
 | `/account` | User+ | Self-service: change password / display name, delete account. |

@@ -72,5 +72,17 @@ public class OrganizationSettings
     /// </summary>
     public bool RequireStrongAuth { get; set; }
 
+    /// <summary>
+    /// When <see langword="true"/>, a visitor who verifies an email whose
+    /// domain this organisation has claimed (see
+    /// <see cref="OrganizationEmailDomain"/>) joins as an Active
+    /// <see cref="UserRole.User"/> immediately — no admin approval. When
+    /// <see langword="false"/> (the default) such a signup lands as Pending and
+    /// waits for an admin to approve it via <c>/admin/administration/users</c>,
+    /// the historical existing-org behaviour. Only consulted by the verified,
+    /// email-first signup flow; it has no effect on the SMTP-off fallback.
+    /// </summary>
+    public bool AutoJoinVerifiedDomainUsers { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }

@@ -133,6 +133,19 @@ public static class EmailTemplates
             + $"<p>If you weren't expecting this invitation, you can ignore this message.</p>");
     }
 
+    public static (string Subject, string HtmlBody) SignupVerification(string verifyUrl, string code)
+        => ("Verify your email for AL Dev Toolbox",
+            // No display name is known yet — the account doesn't exist.
+            "<p>Hi,</p>"
+            + "<p>Someone (hopefully you) started signing up for AL Dev Toolbox with this email "
+            + "address. Confirm it's yours to continue — this link and code are valid for the next "
+            + "30 minutes:</p>"
+            + $"<p><a href=\"{Html(verifyUrl)}\">{Html(verifyUrl)}</a></p>"
+            + "<p>Or enter this code on the signup page: "
+            + $"<strong style=\"font-size: 1.5em; letter-spacing: 0.15em;\">{Html(code)}</strong></p>"
+            + "<p>If you didn't start a signup, you can ignore this message — no account is created until "
+            + "the address is confirmed.</p>");
+
     public static (string Subject, string HtmlBody) MagicLink(string displayName, string magicUrl)
         => ("Your AL Dev Toolbox sign-in link",
             $"<p>Hi {Html(displayName)},</p>"

@@ -36,6 +36,13 @@ public enum SignupOutcome
     PendingApproval,
     EmailAlreadyTaken,
     OrganizationProvisioned,
+    /// <summary>
+    /// A verified email at an org's claimed domain joined that org as an Active
+    /// member because the org has <c>AutoJoinVerifiedDomainUsers</c> on. The
+    /// caller signs the user in (like <see cref="OrganizationProvisioned"/>)
+    /// rather than queuing them for approval.
+    /// </summary>
+    JoinedActive,
     Invalid,
 }
 
@@ -210,6 +217,118 @@ public sealed class AccountService
 
         return (createdNewOrg ? SignupOutcome.OrganizationProvisioned : SignupOutcome.PendingApproval,
                 user, org);
+    }
+
+    /// <summary>
+    /// Completes the email-first signup flow for a verified
+    /// <see cref="PendingSignup"/>. Branches on whether the verified email's
+    /// domain is claimed by an org:
+    /// <list type="bullet">
+    ///   <item>Claimed domain → join that org. Active <see cref="UserRole.User"/>
+    ///         when the org has <see cref="OrganizationSettings.AutoJoinVerifiedDomainUsers"/>
+    ///         on, otherwise Pending awaiting admin approval.</item>
+    ///   <item>No claimed domain → create a brand-new org and activate the
+    ///         visitor as its <see cref="UserRole.Admin"/>, exactly like the
+    ///         new-org path of <see cref="SignupAsync"/>. There is no
+    ///         "join an arbitrary org by slug" path here by design.</item>
+    /// </list>
+    /// The supplied <paramref name="pending"/> row must already be verified; the
+    /// caller (the completion endpoint) re-checks that via
+    /// <c>PendingSignupService.FindVerifiedAsync</c>. We stamp its
+    /// <see cref="PendingSignup.CompletedAt"/> in the same save as the new user
+    /// so the link/code can't be reused.
+    /// </summary>
+    public async Task<(SignupOutcome Outcome, User? User, Organization? Organization)> CompleteVerifiedSignupAsync(
+        PendingSignup pending, string displayName, string password,
+        string? organizationName, string? organizationSlug, CancellationToken ct = default)
+    {
+        var errors = new Dictionary<string, string>();
+        ValidateDisplayName(displayName, errors);
+        AuthService.ValidatePassword(password, errors);
+        var slug = (organizationSlug ?? string.Empty).Trim().ToLowerInvariant();
+        if (slug.Length > 0 && !SlugRegex.IsMatch(slug))
+        {
+            errors["OrganizationSlug"] = "Slug must use lowercase letters, digits and hyphens only.";
+        }
+        if (errors.Count > 0) throw new PlanValidationException(errors);
+
+        var normalised = pending.Email;
+        var now = _clock.GetUtcNow().UtcDateTime;
+
+        // Race: a user for this email could have appeared between verification
+        // and completion (e.g. an admin invite was accepted in the meantime).
+        // Refuse rather than duplicate — mirrors the SignupAsync guard.
+        var existingUser = await _db.Users.IgnoreQueryFilters()
+            .AnyAsync(u => u.Email == normalised, ct);
+        if (existingUser)
+        {
+            return (SignupOutcome.EmailAlreadyTaken, null, null);
+        }
+
+        Organization org;
+        var createdNewOrg = false;
+        bool autoActive;
+
+        var domainMatch = await ResolveOrganizationByEmailDomainAsync(normalised, ct);
+        if (domainMatch is not null)
+        {
+            org = domainMatch;
+            // Verified ownership of a claimed domain joins active immediately
+            // only when the org opted in; otherwise it's the historical
+            // Pending-awaiting-approval behaviour.
+            autoActive = await _db.OrganizationSettings.IgnoreQueryFilters()
+                .Where(s => s.OrganizationId == org.Id)
+                .Select(s => (bool?)s.AutoJoinVerifiedDomainUsers)
+                .FirstOrDefaultAsync(ct) ?? false;
+        }
+        else
+        {
+            // No claimed domain → the only path is a brand-new org.
+            ValidateOrganizationName(organizationName, errors);
+            if (errors.Count > 0) throw new PlanValidationException(errors);
+            var trimmedName = organizationName!.Trim();
+            org = await CreatePendingOrganizationAsync(slug.Length > 0 ? slug : trimmedName, trimmedName, now, ct);
+            createdNewOrg = true;
+            autoActive = true;
+        }
+
+        var user = new User
+        {
+            OrganizationId = org.Id,
+            Email = normalised,
+            PasswordHash = _auth.HashPassword(password),
+            DisplayName = displayName.Trim(),
+            Role = createdNewOrg ? UserRole.Admin : UserRole.User,
+            Status = autoActive ? UserStatus.Active : UserStatus.Pending,
+            CreatedAt = now,
+        };
+        _db.Users.Add(user);
+        await _db.SaveChangesAsync(ct);
+
+        var request = new SignupRequest
+        {
+            OrganizationId = org.Id,
+            UserId = user.Id,
+            Email = normalised,
+            RequestedAt = now,
+            Decision = autoActive ? SignupDecision.Approved : SignupDecision.Pending,
+            DecidedAt = autoActive ? now : null,
+            DecidedByUserId = autoActive ? user.Id : null,
+        };
+        _db.SignupRequests.Add(request);
+        if (createdNewOrg) org.IsPending = false;
+
+        // Single-use: burn the verification row alongside the new account.
+        pending.CompletedAt = now;
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Verified signup completed for {Email} into {OrgSlug} (new={New}, active={Active}).",
+            normalised, org.Slug, createdNewOrg, autoActive);
+
+        var outcome = autoActive
+            ? (createdNewOrg ? SignupOutcome.OrganizationProvisioned : SignupOutcome.JoinedActive)
+            : SignupOutcome.PendingApproval;
+        return (outcome, user, org);
     }
 
     /// <summary>Self-service password change. Verifies the current password before applying the new one.</summary>

@@ -163,6 +163,53 @@ internal static class EndpointHelpers
     public static void ClearMfaPendingCookie(HttpContext ctx) =>
         ctx.Response.Cookies.Delete(MfaPendingCookieName);
 
+    public const string SignupVerifiedCookieName = "alwb_signup_verified";
+    public const string SignupVerifiedProtectionPurpose = "ALDevToolbox.SignupVerified";
+    public static readonly TimeSpan SignupVerifiedCookieLifetime = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// Carries the freshly-verified signup email from the verify step to the
+    /// details step. A UX hint only — the completion endpoint re-validates the
+    /// email against a verified, uncompleted <c>pending_signups</c> row, so a
+    /// forged or replayed cookie is inert. Matches the signed-cookie posture of
+    /// <see cref="MfaPending"/>.
+    /// </summary>
+    public sealed record SignupVerified(int PendingSignupId, string Email, DateTime IssuedAt);
+
+    public static void SetSignupVerifiedCookie(HttpContext ctx, IDataProtectionProvider protection, SignupVerified state)
+    {
+        var protector = protection.CreateProtector(SignupVerifiedProtectionPurpose);
+        var payload = protector.Protect(JsonSerializer.Serialize(state));
+        ctx.Response.Cookies.Append(SignupVerifiedCookieName, payload, new CookieOptions
+        {
+            HttpOnly = true,
+            SameSite = SameSiteMode.Lax,
+            Secure = ctx.Request.IsHttps,
+            Path = "/",
+            MaxAge = SignupVerifiedCookieLifetime,
+        });
+    }
+
+    public static SignupVerified? ReadSignupVerifiedCookie(HttpContext ctx, IDataProtectionProvider protection, TimeProvider clock)
+    {
+        if (!ctx.Request.Cookies.TryGetValue(SignupVerifiedCookieName, out var raw) || string.IsNullOrEmpty(raw)) return null;
+        try
+        {
+            var protector = protection.CreateProtector(SignupVerifiedProtectionPurpose);
+            var state = JsonSerializer.Deserialize<SignupVerified>(protector.Unprotect(raw));
+            if (state is null) return null;
+            if (clock.GetUtcNow().UtcDateTime - state.IssuedAt > SignupVerifiedCookieLifetime) return null;
+            return state;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static void ClearSignupVerifiedCookie(HttpContext ctx) =>
+        ctx.Response.Cookies.Delete(SignupVerifiedCookieName);
+
     public static void SetOneShotInviteCookie(HttpContext ctx, IDataProtectionProvider protection, string url)
     {
         var protector = protection.CreateProtector(OneShotInviteProtectionPurpose);

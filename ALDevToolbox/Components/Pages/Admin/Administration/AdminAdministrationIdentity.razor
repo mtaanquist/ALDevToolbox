@@ -98,8 +98,10 @@
             <h2>Email domains</h2>
             <p class="muted">
                 When someone signs up with an email at one of these domains we
-                attach them to this organisation as a Pending user — they still
-                need an admin's approval via the <a href="/admin/administration/users">Users</a> tab.
+                attach them to this organisation. By default they land as a
+                Pending user needing an admin's approval via the
+                <a href="/admin/administration/users">Users</a> tab; turn on
+                auto-join below to admit verified addresses straight away.
                 A domain belongs to exactly one organisation deployment-wide.
             </p>
             @if (!string.IsNullOrEmpty(_domainOkMessage))
@@ -147,6 +149,24 @@
                     </button>
                 </section>
             </div>
+
+            @if (!string.IsNullOrEmpty(_autoJoinOkMessage))
+            {
+                <p class="form-success" role="status">@_autoJoinOkMessage</p>
+            }
+            @if (!string.IsNullOrEmpty(_autoJoinErrMessage))
+            {
+                <div class="form-error" role="alert"><p>@_autoJoinErrMessage</p></div>
+            }
+            <label class="checkbox-label">
+                <input type="checkbox" @bind="_autoJoinVerifiedDomainUsers" @bind:after="SaveAutoJoinAsync"
+                       disabled="@_savingAutoJoin" />
+                Auto-join verified users from these domains (skip admin approval)
+            </label>
+            <small class="muted">
+                Only applies when email verification is on (SMTP configured). A new user must still
+                confirm they own the address before they're admitted.
+            </small>
         </section>
     }
 </div>
@@ -156,18 +176,22 @@
     private bool _savingName;
     private bool _savingDomain;
     private bool _savingStrongAuth;
+    private bool _savingAutoJoin;
     private string? _nameOkMessage;
     private string? _nameErrMessage;
     private string? _domainOkMessage;
     private string? _domainErrMessage;
     private string? _strongAuthOkMessage;
     private string? _strongAuthErrMessage;
+    private string? _autoJoinOkMessage;
+    private string? _autoJoinErrMessage;
 
     private string _name = string.Empty;
     private string _baseName = string.Empty;
     private string _slug = string.Empty;
     private string _newDomain = string.Empty;
     private bool _requireStrongAuth;
+    private bool _autoJoinVerifiedDomainUsers;
     private List<OrganizationEmailDomain> _domains = new();
 
     protected override async Task OnInitializedAsync()
@@ -182,10 +206,12 @@
         var org = await Db.Organizations.AsNoTracking().FirstAsync(o => o.Id == orgId);
         _name = _baseName = org.Name;
         _slug = org.Slug;
-        _requireStrongAuth = await Db.OrganizationSettings.AsNoTracking()
+        var settings = await Db.OrganizationSettings.AsNoTracking()
             .Where(s => s.OrganizationId == orgId)
-            .Select(s => s.RequireStrongAuth)
+            .Select(s => new { s.RequireStrongAuth, s.AutoJoinVerifiedDomainUsers })
             .FirstOrDefaultAsync();
+        _requireStrongAuth = settings?.RequireStrongAuth ?? false;
+        _autoJoinVerifiedDomainUsers = settings?.AutoJoinVerifiedDomainUsers ?? false;
         _domains = await OrgAdmin.ListEmailDomainsAsync();
         _loading = false;
     }
@@ -218,6 +244,32 @@
         finally
         {
             _savingStrongAuth = false;
+        }
+    }
+
+    private async Task SaveAutoJoinAsync()
+    {
+        if (_savingAutoJoin) return;
+        _savingAutoJoin = true;
+        _autoJoinOkMessage = null;
+        _autoJoinErrMessage = null;
+        try
+        {
+            await OrgAdmin.SetAutoJoinVerifiedDomainUsersAsync(_autoJoinVerifiedDomainUsers);
+            _autoJoinOkMessage = _autoJoinVerifiedDomainUsers
+                ? "Verified users from your claimed domains will now join automatically — no approval needed."
+                : "Auto-join is off. New users from your domains land Pending for approval.";
+        }
+        catch (Exception ex)
+        {
+            // Revert the toggle so the UI reflects the unchanged DB state.
+            _autoJoinVerifiedDomainUsers = !_autoJoinVerifiedDomainUsers;
+            Log.LogError(ex, "Failed to toggle auto-join for verified domain users.");
+            _autoJoinErrMessage = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _savingAutoJoin = false;
         }
     }
 
