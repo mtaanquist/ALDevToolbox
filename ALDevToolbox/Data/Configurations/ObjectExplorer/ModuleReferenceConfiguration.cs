@@ -87,6 +87,15 @@ internal sealed class ModuleReferenceConfiguration : IEntityTypeConfiguration<Mo
         entity.HasIndex(e => e.SourceObjectId)
             .HasDatabaseName("ix_oe_module_references_source_object");
 
+        // Module-scoped resolution: the C/AL import's id→name post-pass
+        // (CalImportService.ResolveTargetsByIdAsync) UPDATEs every reference in
+        // one module by joining on (module_id, target_object_kind,
+        // target_object_id). Without this the UPDATE seq-scans the whole table
+        // — which accumulates across every release — and tips past the command
+        // timeout on a large import. Also serves the virtual-table UPDATEs.
+        entity.HasIndex(e => new { e.ModuleId, e.TargetObjectKind, e.TargetObjectId })
+            .HasDatabaseName("ix_oe_module_references_module_target");
+
         // Right-click "Find references" on a global variable: returns
         // every variable_use row pointing at the variable's DB id.
         // Partial-filtered on non-null so it stays small relative to

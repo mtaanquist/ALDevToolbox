@@ -169,4 +169,30 @@ public sealed class PersistedImportJobsTests : IDisposable
         releaseRow.Status.Should().Be("failed");
         releaseRow.StatusMessage.Should().Contain("uploaded ZIP was lost");
     }
+
+    [Fact]
+    public async Task SnapshotAsync_surfaces_release_label_and_failure_message()
+    {
+        long jobId;
+        int releaseId;
+        string label;
+        await using (var ctx = _db.NewContext())
+        {
+            var svc = NewService(ctx);
+            var release = await SeedReleaseAsync(ctx);
+            releaseId = release.Id;
+            label = release.Label;
+            jobId = await svc.CreateAsync(release.Id, Identity,
+                new ReleaseImportSource.CalTxt("/tmp/x.txt", "850"), storeSymbolReference: false);
+            await svc.MarkFailedAsync(jobId, "Exception while reading from stream\n  ---> Timeout during reading attempt");
+        }
+
+        await using var read = _db.NewContext();
+        var snapshot = await NewService(read).SnapshotAsync();
+        var row = snapshot.Recent.Single(r => r.Id == jobId);
+        row.ReleaseId.Should().Be(releaseId);
+        row.ReleaseLabel.Should().Be(label);          // joined from oe_releases
+        row.Status.Should().Be("failed");
+        row.ErrorMessage.Should().Contain("Timeout during reading attempt");
+    }
 }

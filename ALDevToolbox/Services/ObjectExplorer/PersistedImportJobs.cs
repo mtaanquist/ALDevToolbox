@@ -192,12 +192,24 @@ public sealed class PersistedImportJobs
     {
         var pending = await _db.OeImportJobs.IgnoreQueryFilters()
             .CountAsync(j => j.Status == "queued" || j.Status == "running", ct).ConfigureAwait(false);
-        var recent = await _db.OeImportJobs.IgnoreQueryFilters()
+        var jobs = await _db.OeImportJobs.IgnoreQueryFilters()
             .OrderByDescending(j => j.CreatedAt)
             .Take(recentLimit)
-            .Select(j => new ImportQueueRow(
-                j.Id, j.ReleaseId, j.Kind, j.Status, j.CreatedAt, j.StartedAt, j.CompletedAt, j.ErrorMessage))
             .ToListAsync(ct).ConfigureAwait(false);
+
+        // Resolve release labels cross-org (this is the SiteAdmin console) so
+        // the workers page can name each import rather than show a bare id.
+        var releaseIds = jobs.Select(j => j.ReleaseId).Distinct().ToList();
+        var labels = await _db.OeReleases.IgnoreQueryFilters()
+            .Where(r => releaseIds.Contains(r.Id))
+            .Select(r => new { r.Id, r.Label })
+            .ToDictionaryAsync(x => x.Id, x => x.Label, ct).ConfigureAwait(false);
+
+        var recent = jobs
+            .Select(j => new ImportQueueRow(
+                j.Id, j.ReleaseId, labels.GetValueOrDefault(j.ReleaseId),
+                j.Kind, j.Status, j.CreatedAt, j.StartedAt, j.CompletedAt, j.ErrorMessage))
+            .ToList();
         return new ImportQueueSnapshot(pending, recent);
     }
 
@@ -210,6 +222,7 @@ public sealed record ImportQueueSnapshot(int Pending, IReadOnlyList<ImportQueueR
 public sealed record ImportQueueRow(
     long Id,
     int ReleaseId,
+    string? ReleaseLabel,
     string Kind,
     string Status,
     DateTime CreatedAt,

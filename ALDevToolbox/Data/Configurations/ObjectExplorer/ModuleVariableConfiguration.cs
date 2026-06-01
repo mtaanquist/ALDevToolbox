@@ -52,5 +52,12 @@ internal sealed class ModuleVariableConfiguration : IEntityTypeConfiguration<Mod
 
         entity.HasIndex(e => new { e.TargetAppId, e.TargetObjectKind, e.TargetObjectName })
             .HasDatabaseName("ix_oe_module_variables_target_name");
+
+        // Module-scoped resolution: mirrors the references index — the C/AL
+        // import's id→name post-pass UPDATEs every variable in one module by
+        // (module_id, target_object_kind, target_object_id). Avoids a full-table
+        // seq scan on large imports.
+        entity.HasIndex(e => new { e.ModuleId, e.TargetObjectKind, e.TargetObjectId })
+            .HasDatabaseName("ix_oe_module_variables_module_target");
     }
 }
