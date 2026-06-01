@@ -189,6 +189,8 @@ When picking which tests to add for a new feature, prefer tests that go through 
 - PR title: short, present tense ("Milestone 4: live preview"). Body: what changed, what was deliberately left out, how to verify.
 - Commit messages explain *why*. The diff already shows *what*.
 - If you change `.design/`, call it out in the PR body — design changes deserve review attention, not just the code.
+- We squash-merge, so a merged branch shares no commit ancestry with main — `git log main..branch` will look "ahead" even when the content already landed. After a PR merges, that branch is done: start follow-up work from a fresh branch off main, never push new commits onto an already-merged branch. (The repo has *auto-delete head branches* on to enforce this.)
+- Auditing whether a stray branch is unmerged means comparing *content*, not commits — check whether main already contains the equivalent change, since the squash drops the original SHAs.
 
 ## When in doubt
 
