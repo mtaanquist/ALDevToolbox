@@ -82,6 +82,25 @@
             <p class="muted">
                 <strong>@_queue.Pending</strong> job(s) in flight (queued or running). The most recent submissions:
             </p>
+
+            @if (_queue.Recent.Any(j => j.Status == "failed" && !string.IsNullOrWhiteSpace(j.ErrorMessage)))
+            {
+                <h3>Recent failures</h3>
+                @foreach (var f in _queue.Recent.Where(j => j.Status == "failed" && !string.IsNullOrWhiteSpace(j.ErrorMessage)))
+                {
+                    <div class="manage-card manage-card--danger">
+                        <p class="manage-card__title">
+                            <a href="/object-explorer/release/@f.ReleaseId">@(f.ReleaseLabel ?? $"Release {f.ReleaseId}")</a>
+                            <span class="muted"> · job #@f.Id · @f.Kind</span>
+                        </p>
+                        <p class="worker-failure__meta muted">
+                            Failed @(f.CompletedAt?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "—")
+                        </p>
+                        <pre class="worker-failure__error">@f.ErrorMessage</pre>
+                    </div>
+                }
+            }
+
             @if (_queue.Recent.Count == 0)
             {
                 <p class="muted">No imports have been submitted yet.</p>
@@ -107,7 +126,7 @@
                         <tr>
                             <td class="muted">#@j.Id</td>
                             <td>
-                                <a href="/object-explorer/release/@j.ReleaseId">@j.ReleaseId</a>
+                                <a href="/object-explorer/release/@j.ReleaseId">@(j.ReleaseLabel ?? j.ReleaseId.ToString())</a>
                             </td>
                             <td class="muted">@j.Kind</td>
                             <td>

@@ -72,6 +72,14 @@ public sealed class CalImportService
         _logger.LogInformation(
             "Processing C/AL ingest: ReleaseId={ReleaseId} Encoding={Encoding}", release.Id, encoding.WebName);
 
+        // A 150 MB+ export runs the chunked writes and the module-wide
+        // resolution UPDATEs well past Npgsql's 30 s default command timeout on
+        // a resource-constrained DB. This is a background job (the worker's
+        // active-duration ceiling is 90 min), so give each command real room —
+        // the index added in migration AddCalResolutionIndexes keeps the
+        // resolution UPDATEs fast, and this is the safety margin on top.
+        _db.Database.SetCommandTimeout(TimeSpan.FromMinutes(10));
+
         try
         {
             var appFileHash = await HashFileAsync(txtPath, ct).ConfigureAwait(false);

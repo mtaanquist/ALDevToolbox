@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260601152354_AddCalResolutionIndexes")]
+    partial class AddCalResolutionIndexes
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1512,10 +1515,6 @@ namespace ALDevToolbox.Data.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<bool>("AutoJoinVerifiedDomainUsers")
-                        .HasColumnType("boolean")
-                        .HasColumnName("auto_join_verified_domain_users");
-
                     b.Property<string>("CodeWorkspaceJson")
                         .IsRequired()
                         .HasColumnType("text")
@@ -1625,61 +1624,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("password_reset_tokens", (string)null);
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.PendingSignup", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("CodeHash")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("code_hash");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("completed_at");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("email");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("expires_at");
-
-                    b.Property<string>("LinkTokenHash")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("link_token_hash");
-
-                    b.Property<DateTime?>("VerifiedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("verified_at");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Email")
-                        .IsUnique()
-                        .HasDatabaseName("ux_pending_signups_email_active")
-                        .HasFilter("verified_at IS NULL AND completed_at IS NULL");
-
-                    b.HasIndex("LinkTokenHash")
-                        .IsUnique();
-
-                    b.HasIndex(new[] { "Email" }, "ix_pending_signups_email");
-
-                    b.ToTable("pending_signups", (string)null);
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.PerTenantBackup", b =>

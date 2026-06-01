@@ -433,6 +433,28 @@
     gap: 10px;
 }
 
+/* Background-workers page: a readable block for a failed import's full error
+   message (e.g. an Npgsql stack), so it's not crammed into a table cell. */
+.worker-failure__meta {
+    margin: 0 0 8px;
+    font-size: 13px;
+}
+
+.worker-failure__error {
+    margin: 0;
+    padding: 12px;
+    border-radius: var(--radius);
+    background: var(--color-bg, #1116);
+    color: var(--color-text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 280px;
+    overflow: auto;
+}
+
 /* File pickers: style the native control's button portion to match our
    outline .btn instead of the browser default grey chrome. The input keeps
    a light frame; the ::file-selector-button carries the button look. */
