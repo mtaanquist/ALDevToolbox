@@ -37,4 +37,14 @@
         if (el.value && el.value.length > 0) return;
         el.value = value;
     };
+
+    // Sets document.title from an interactive component. PageTitle alone
+    // doesn't reach the static-SSR HeadOutlet on pages rendered with
+    // `prerender: false` (the head has no initial title and the
+    // interactive update doesn't propagate back to it), so those pages
+    // call this directly once their data has loaded.
+    window.aldt.setTitle = function (value) {
+        if (typeof value !== "string") return;
+        document.title = value;
+    };
 })();

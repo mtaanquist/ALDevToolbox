@@ -25,7 +25,7 @@
     SourceFileViewerLegacy.razor + OBJECT_EXPLORER_LEGACY_VIEWER=1.
 *@
 
-<PageTitle>@(_header?.Path ?? "Source") · AL Dev Toolbox</PageTitle>
+<PageTitle>@(_header is null ? "Source" : BuildBreadcrumb(_header)) · AL Dev Toolbox</PageTitle>
 
 <div class="object-explorer source-viewer"
      data-file-id="@FileId"
