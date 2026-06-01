@@ -375,6 +375,17 @@
         if (firstRender)
         {
             _isInteractive = true;
+
+            // PageTitle alone doesn't update the head on this page because we
+            // render with `prerender: false` — the initial response has no
+            // <title>, and the interactive PageTitle update doesn't reach the
+            // static-SSR HeadOutlet. Set document.title explicitly via JS now
+            // that the circuit is connected and the release has loaded.
+            if (_release is not null)
+            {
+                await JS.InvokeVoidAsync("aldt.setTitle", $"{_release.Label} · AL Dev Toolbox");
+            }
+
             // Seed the uncontrolled text inputs with whatever filter values
             // we hydrated from the URL. After this single call the DOM owns
             // the input value so fast typing can never race a render diff.
