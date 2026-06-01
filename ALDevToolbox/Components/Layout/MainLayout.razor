@@ -48,10 +48,12 @@
                     </form>
                 </Authorized>
                 <NotAuthorized>
-                    <a href="/login" class="signin-link signin-link--icon" aria-label="Sign in" title="Sign in">
+                    @* One entry point: the sign-in page links onward to /signup
+                       for new accounts, so we don't surface a second button. *@
+                    <a href="/login" class="signin-link" aria-label="Sign in" title="Sign in">
                         <Icon Name="log-in" Width="16" Height="16" />
+                        <span>Sign in</span>
                     </a>
-                    <a href="/signup" class="signin-link" aria-label="Sign up" title="Sign up">Sign up</a>
                 </NotAuthorized>
             </AuthorizeView>
         </div>

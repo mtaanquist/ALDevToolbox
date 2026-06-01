@@ -171,6 +171,30 @@ public sealed class OrganizationAdminService
         _logger.LogInformation("Org {OrgId} set require_strong_auth = {Enabled}.", orgId, enabled);
     }
 
+    /// <summary>
+    /// Toggles whether a visitor who verifies an email at one of this org's
+    /// claimed domains joins as an Active member immediately
+    /// (<see cref="OrganizationSettings.AutoJoinVerifiedDomainUsers"/>) instead
+    /// of landing Pending for admin approval. No self-lockout guard is needed —
+    /// unlike strong-auth this can't lock the acting admin out.
+    /// </summary>
+    public async Task SetAutoJoinVerifiedDomainUsersAsync(bool enabled, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        var row = await _db.OrganizationSettings.FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
+        if (row is null)
+        {
+            row = new OrganizationSettings { OrganizationId = orgId };
+            _db.OrganizationSettings.Add(row);
+        }
+        if (row.AutoJoinVerifiedDomainUsers == enabled) return;
+        row.AutoJoinVerifiedDomainUsers = enabled;
+        row.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        _config.InvalidateCache(orgId);
+        _logger.LogInformation("Org {OrgId} set auto_join_verified_domain_users = {Enabled}.", orgId, enabled);
+    }
+
     private static string NormaliseDomain(string? input)
     {
         var trimmed = (input ?? string.Empty).Trim().ToLowerInvariant();

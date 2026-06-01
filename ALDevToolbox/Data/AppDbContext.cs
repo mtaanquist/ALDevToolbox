@@ -121,6 +121,10 @@ public class AppDbContext : DbContext
     public DbSet<OrganizationEmailDomain> OrganizationEmailDomains => Set<OrganizationEmailDomain>();
     public DbSet<User> Users => Set<User>();
     public DbSet<SignupRequest> SignupRequests => Set<SignupRequest>();
+    // Pre-account email verification (email-first signup). Org-less and
+    // user-less, so deliberately NOT scoped by the tenant query filter — read
+    // via IgnoreQueryFilters() like Invites / PasswordResetTokens.
+    public DbSet<PendingSignup> PendingSignups => Set<PendingSignup>();
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<LoginAttempt> LoginAttempts => Set<LoginAttempt>();
     public DbSet<Invite> Invites => Set<Invite>();

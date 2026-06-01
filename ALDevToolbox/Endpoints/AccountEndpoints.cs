@@ -103,6 +103,15 @@ internal static class AccountEndpoints
         {
             var logger = loggerFactory.CreateLogger("Signup");
             if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            // When SMTP is configured, the email-first verified flow is the only
+            // signup path. Refuse this unverified single-form POST so a forged
+            // request can't skip verification — the /signup page renders the
+            // email-only form in that case and posts to /auth/signup/start.
+            if (await email.IsConfiguredAsync(ct))
+            {
+                ctx.Response.Redirect("/signup");
+                return;
+            }
             var form = await ctx.Request.ReadFormAsync(ct);
             try
             {
@@ -167,6 +176,188 @@ internal static class AccountEndpoints
             {
                 var qs = ex.Errors.FirstOrDefault();
                 ctx.Response.Redirect($"/signup?err=invalid&field={Uri.EscapeDataString(qs.Key)}&msg={Uri.EscapeDataString(qs.Value)}");
+            }
+        });
+
+        // --- Email-first verified signup (when SMTP is configured) ----------
+        //
+        // Step 1: /auth/signup/start takes just an email and emails a one-time
+        // verification link + 6-digit code. Step 2: the visitor verifies via
+        // /auth/signup/verify (link) or /auth/signup/verify-code (code), which
+        // sets the signed verified-email cookie. Step 3: /signup/details posts
+        // the remaining fields to /auth/signup/complete. See
+        // .design/auth-and-audit.md.
+
+        app.MapPost("/auth/signup/start", async (
+            HttpContext ctx,
+            PendingSignupService pending,
+            IEmailService email,
+            IAntiforgery antiforgery,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            var logger = loggerFactory.CreateLogger("Signup");
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var emailInput = form["Email"].ToString();
+            var ip = ResolveIp(ctx);
+            try
+            {
+                var start = await pending.StartAsync(emailInput, ip, ct);
+                if (start is not null && await email.IsConfiguredAsync(ct))
+                {
+                    var verifyUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}/auth/signup/verify?token={Uri.EscapeDataString(start.LinkToken)}";
+                    var (subject, body) = EmailTemplates.SignupVerification(verifyUrl, start.Code);
+                    await email.SendAsync(AuthService.NormaliseEmail(emailInput), subject, body, ct);
+                }
+            }
+            catch (Exception ex)
+            {
+                // A send failure must not betray whether the address exists —
+                // log it and fall through to the same generic response.
+                logger.LogWarning(ex, "Failed to send signup verification email.");
+            }
+            // Always identical, regardless of new / already-registered / rate-
+            // limited / domain-disallowed: no account enumeration.
+            ctx.Response.Redirect($"/signup?ok=check-email&email={Uri.EscapeDataString(emailInput.Trim())}");
+        });
+
+        app.MapGet("/auth/signup/verify", async (
+            HttpContext ctx,
+            PendingSignupService pending,
+            IDataProtectionProvider protection,
+            TimeProvider clock,
+            CancellationToken ct) =>
+        {
+            var token = ctx.Request.Query["token"].ToString();
+            var row = await pending.VerifyByTokenAsync(token, ct);
+            if (row is null)
+            {
+                ctx.Response.Redirect("/signup?err=verify-invalid");
+                return;
+            }
+            SetSignupVerifiedCookie(ctx, protection, new SignupVerified(row.Id, row.Email, clock.GetUtcNow().UtcDateTime));
+            ctx.Response.Redirect("/signup/details");
+        });
+
+        app.MapPost("/auth/signup/verify-code", async (
+            HttpContext ctx,
+            PendingSignupService pending,
+            IDataProtectionProvider protection,
+            TimeProvider clock,
+            IAntiforgery antiforgery,
+            CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var emailInput = form["Email"].ToString();
+            var row = await pending.VerifyByCodeAsync(emailInput, form["Code"].ToString(), ct);
+            if (row is null)
+            {
+                ctx.Response.Redirect($"/signup?err=code-invalid&email={Uri.EscapeDataString(emailInput.Trim())}");
+                return;
+            }
+            SetSignupVerifiedCookie(ctx, protection, new SignupVerified(row.Id, row.Email, clock.GetUtcNow().UtcDateTime));
+            ctx.Response.Redirect("/signup/details");
+        });
+
+        app.MapPost("/auth/signup/complete", async (
+            HttpContext ctx,
+            PendingSignupService pending,
+            AccountService accounts,
+            AppDbContext db,
+            IEmailService email,
+            IDataProtectionProvider protection,
+            TimeProvider clock,
+            IAntiforgery antiforgery,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            var logger = loggerFactory.CreateLogger("Signup");
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+
+            var state = ReadSignupVerifiedCookie(ctx, protection, clock);
+            if (state is null)
+            {
+                ctx.Response.Redirect("/signup");
+                return;
+            }
+
+            // Authoritative re-check: the cookie is only a hint. The row must
+            // still be verified, uncompleted and unexpired.
+            var row = await pending.FindVerifiedAsync(state.Email, ct);
+            if (row is null)
+            {
+                ClearSignupVerifiedCookie(ctx);
+                ctx.Response.Redirect("/signup?err=verify-invalid");
+                return;
+            }
+
+            var form = await ctx.Request.ReadFormAsync(ct);
+            try
+            {
+                var (outcome, user, org) = await accounts.CompleteVerifiedSignupAsync(
+                    row,
+                    displayName: form["DisplayName"].ToString(),
+                    password: form["Password"].ToString(),
+                    organizationName: form["OrganizationName"].ToString(),
+                    organizationSlug: form["OrganizationSlug"].ToString(),
+                    ct);
+
+                ClearSignupVerifiedCookie(ctx);
+
+                if (outcome == SignupOutcome.EmailAlreadyTaken)
+                {
+                    // Lost a race to an invite/another signup — the account now
+                    // exists, so send them to sign in.
+                    logger.LogInformation("Verified signup raced an existing account; redirecting to login.");
+                    ctx.Response.Redirect(RouteConstants.Login);
+                    return;
+                }
+
+                if ((outcome == SignupOutcome.OrganizationProvisioned || outcome == SignupOutcome.JoinedActive)
+                    && user is not null && org is not null)
+                {
+                    user.Organization = org;
+                    await ctx.SignInAsync(
+                        CookieAuthenticationDefaults.AuthenticationScheme,
+                        new ClaimsPrincipal(BuildIdentity(user)));
+                    logger.LogInformation("Verified signup signed in {Email} (org {OrgSlug}, newOrg={New}).",
+                        user.Email, org.Slug, outcome == SignupOutcome.OrganizationProvisioned);
+                    ctx.Response.Redirect("/");
+                    return;
+                }
+
+                // PendingApproval — notify the org's active admins, then show
+                // the queued message. SMTP failures don't roll back the signup.
+                if (org is not null && await email.IsConfiguredAsync(ct))
+                {
+                    try
+                    {
+                        var admins = await db.Users.IgnoreQueryFilters()
+                            .Where(u => u.OrganizationId == org.Id
+                                        && u.Role == UserRole.Admin
+                                        && u.Status == UserStatus.Active)
+                            .ToListAsync(ct);
+                        foreach (var admin in admins)
+                        {
+                            var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}{RouteConstants.AdminUsers}";
+                            var (subject, body) = EmailTemplates.SignupPending(admin.DisplayName, user!.Email, org.Name, url);
+                            await email.SendAsync(admin.Email, subject, body, ct);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Failed to email admins about pending signup {Email}.", user?.Email);
+                    }
+                }
+
+                ctx.Response.Redirect("/signup?ok=pending");
+            }
+            catch (PlanValidationException ex)
+            {
+                var qs = ex.Errors.FirstOrDefault();
+                ctx.Response.Redirect($"/signup/details?err=invalid&field={Uri.EscapeDataString(qs.Key)}&msg={Uri.EscapeDataString(qs.Value)}");
             }
         });
 

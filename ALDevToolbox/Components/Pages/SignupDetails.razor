@@ -1,0 +1,107 @@
+@page "/signup/details"
+@inject IHttpContextAccessor Http
+@inject IDataProtectionProvider Protection
+@inject AppDbContext Db
+@inject TimeProvider Clock
+@inject NavigationManager Nav
+@using ALDevToolbox.Data
+@using ALDevToolbox.Endpoints
+@using ALDevToolbox.Services
+@using Microsoft.AspNetCore.DataProtection
+@using Microsoft.EntityFrameworkCore
+
+<PageTitle>Finish signing up · AL Dev Toolbox</PageTitle>
+
+<div class="login-page">
+    <h1>Finish signing up</h1>
+
+    <p class="caption muted">
+        Verified <strong>@_email</strong>.
+        @if (_domainMatched)
+        {
+            <text>You'll join <strong>@_domainOrgName</strong>. Pick a display name and password to finish.</text>
+        }
+        else
+        {
+            <text>No organisation has claimed this email's domain, so you'll start a new one and become its first admin.</text>
+        }
+    </p>
+
+    @if (Error == "invalid" && !string.IsNullOrEmpty(Field))
+    {
+        <p class="form-error" role="alert"><strong>@Field:</strong> @Message</p>
+    }
+
+    <form method="post" action="/auth/signup/complete" class="form-grid login-form">
+        <AntiforgeryToken />
+
+        <section class="form-section">
+            <label class="section-label" for="su-display">Display name</label>
+            <input id="su-display" type="text" name="DisplayName" required minlength="2" maxlength="80"
+                   autofocus placeholder="e.g. Bob — Engineering" />
+        </section>
+
+        <section class="form-section">
+            <label class="section-label" for="su-password">Password</label>
+            <input id="su-password" type="password" name="Password" required minlength="12" autocomplete="new-password" />
+            <small class="muted">At least 12 characters. Length beats classes.</small>
+        </section>
+
+        @if (!_domainMatched)
+        {
+            <section class="form-section">
+                <label class="section-label" for="su-org-name">Organisation name</label>
+                <input id="su-org-name" type="text" name="OrganizationName" required minlength="2" maxlength="80" placeholder="e.g. Acme" />
+                <small class="muted">The display name for your new organisation.</small>
+            </section>
+
+            <section class="form-section">
+                <label class="section-label" for="su-org-slug">Organisation short ID</label>
+                <input id="su-org-slug" type="text" name="OrganizationSlug" pattern="[a-z0-9-]*" maxlength="64" placeholder="e.g. acme" />
+                <small class="muted">Lowercase letters, digits and hyphens. We fill this in from the name — edit it if you'd like something different.</small>
+            </section>
+        }
+
+        <button type="submit" class="btn">
+            <Icon Name="user-plus" Width="16" Height="16" />
+            <span>@(_domainMatched ? "Join organisation" : "Create organisation")</span>
+        </button>
+    </form>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "err")] public string? Error { get; set; }
+    [SupplyParameterFromQuery(Name = "field")] public string? Field { get; set; }
+    [SupplyParameterFromQuery(Name = "msg")] public string? Message { get; set; }
+
+    private string _email = string.Empty;
+    private bool _domainMatched;
+    private string? _domainOrgName;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var ctx = Http.HttpContext;
+        var state = ctx is null ? null : EndpointHelpers.ReadSignupVerifiedCookie(ctx, Protection, Clock);
+        if (state is null)
+        {
+            // No verified email in scope — send them back to start over.
+            Nav.NavigateTo("/signup");
+            return;
+        }
+
+        _email = state.Email;
+        var domain = EmailAddress.DomainOf(_email);
+        if (domain is not null)
+        {
+            // Pre-auth read across the tenant fence: the visitor isn't signed in
+            // and the domain claim is globally unique.
+            _domainOrgName = await Db.OrganizationEmailDomains
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Where(d => d.Domain == domain)
+                .Select(d => d.Organization!.Name)
+                .FirstOrDefaultAsync();
+            _domainMatched = _domainOrgName is not null;
+        }
+    }
+}

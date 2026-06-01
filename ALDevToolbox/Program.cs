@@ -182,6 +182,7 @@ builder.Services.AddScoped<ALDevToolbox.Services.Account.PasswordResetService>()
 builder.Services.AddScoped<ALDevToolbox.Services.Account.RecoveryCodeService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.TotpService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.EmailMfaService>();
+builder.Services.AddScoped<ALDevToolbox.Services.Account.PendingSignupService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.PasskeyService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Account.PersonalAccessTokenService>();
 
