@@ -510,6 +510,17 @@ export function mountReadOnly(container, value, language, options) {
                 action: () => opts.dotNetRef.invokeMethodAsync(
                     callback, onDeclaration.symbolId),
             });
+            // "Find system references" — built-in/system method calls (Insert,
+            // Modify, SetRange, …) on this object. Object headers only; system
+            // calls target a whole object, not a member. symbolId here is the
+            // oe_module_objects.Id. See #279/#291.
+            if (!onDeclaration.isMemberSymbol) {
+                items.push({
+                    label: "Find system references",
+                    action: () => opts.dotNetRef.invokeMethodAsync(
+                        "OnFindSystemReferences", onDeclaration.symbolId),
+                });
+            }
         } else {
             // Off-declaration click: the host decides whether the word
             // under the cursor resolves to a symbol. The two-arg variant
