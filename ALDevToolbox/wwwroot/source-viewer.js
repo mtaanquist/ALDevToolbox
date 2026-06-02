@@ -109,6 +109,8 @@ function initOne(root) {
             switch (method) {
                 case "OnFindReferences":
                     return onFindReferences(args[0]);
+                case "OnFindSystemReferences":
+                    return mintObjectSystemSession(args[0]);
                 case "OnFindMemberReferences":
                     return mintMemberSession(args[0]);
                 case "OnFindReferencesAt":
