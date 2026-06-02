@@ -2217,7 +2217,8 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
    foreign next to the rest of the app's text inputs. Same padding,
    border, radius and background as <c>.admin-form input[type="text"]</c>;
    only the bottom margin is panel-specific. */
-.source-viewer__outline-filter {
+.source-viewer__outline-filter,
+.source-viewer__refs-filter {
     width: 100%;
     box-sizing: border-box;
     padding: 8px 10px;
@@ -2230,11 +2231,13 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     font-size: 13.5px;
 }
 
-.source-viewer__outline-filter::placeholder {
+.source-viewer__outline-filter::placeholder,
+.source-viewer__refs-filter::placeholder {
     color: var(--color-text-secondary);
 }
 
-.source-viewer__outline-filter:focus {
+.source-viewer__outline-filter:focus,
+.source-viewer__refs-filter:focus {
     outline: 2px solid var(--color-accent);
     outline-offset: -1px;
     border-color: var(--color-accent);
