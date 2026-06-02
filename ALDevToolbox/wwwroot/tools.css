@@ -1484,6 +1484,18 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     margin: 16px 0;
 }
 
+/* Per-object C/AL Version List, shown under the object name in the results
+   table (issue #271). Long; truncated with the full value on hover (title). */
+.oe-version-list {
+    margin-top: 2px;
+    max-width: 360px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+    font-size: 11px;
+}
+
 /* With the scope selector added, the Objects-mode row needs five
    columns (scope + search + three filters); procedures / content modes
    need just the two leading columns. `--with-scope` puts the narrow

@@ -328,7 +328,8 @@ public sealed record ReleaseObjectMatch(
     string ModuleName,
     long? SourceFileId,
     int LineNumber,
-    int FileLineCount);
+    int FileLineCount,
+    string? VersionList = null);
 
 /// <summary>
 /// Header info for the source-file viewer's breadcrumb — module + release

@@ -496,6 +496,38 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchObjectsInReleaseAsync_matches_the_cal_version_list()
+    {
+        // The C/AL Version List is searchable on a contains match, so `*CON*`
+        // finds an object tagged with it even though its name has no "CON" (#271).
+        var releaseId = await SeedSingleReleaseAsync();
+        await using (var write = _db.NewContext())
+        {
+            var moduleId = await write.OeModules
+                .Where(m => m.ReleaseId == releaseId).Select(m => m.Id).FirstAsync();
+            write.OeModuleObjects.Add(new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = moduleId,
+                Kind = "table",
+                ObjectId = 50000,
+                Name = "Acme Setup",
+                VersionList = "NAVW111.00,CON001",
+                LineNumber = 1,
+            });
+            await write.SaveChangesAsync();
+        }
+        await using var read = _db.NewContext();
+
+        var hits = await NewSearch(read).SearchObjectsInReleaseAsync(releaseId,
+            new ObjectListFilter(Search: "*CON*"));
+        hits.Should().Contain(h => h.Name == "Acme Setup",
+            because: "the version list contains CON even though the name does not");
+        hits.Should().Contain(h => h.VersionList != null && h.VersionList.Contains("CON001"),
+            because: "the matched row carries its version list for display");
+    }
+
+    [Fact]
     public async Task SearchObjectsInReleaseAsync_trailing_wildcard_matches_prefix()
     {
         // "sales*" matches names starting with "sales" (case-insensitive), and

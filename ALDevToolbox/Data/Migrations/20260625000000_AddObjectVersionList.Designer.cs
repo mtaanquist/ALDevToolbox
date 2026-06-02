@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ALDevToolbox.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ALDevToolbox.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260625000000_AddObjectVersionList")]
+    partial class AddObjectVersionList
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1049,88 +1052,6 @@ namespace ALDevToolbox.Data.Migrations
                         .HasDatabaseName("ix_oe_module_symbols_module_kind_name");
 
                     b.ToTable("oe_module_symbols", (string)null);
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSystemReference", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<int?>("ColumnNumber")
-                        .HasColumnType("integer")
-                        .HasColumnName("column_number");
-
-                    b.Property<int?>("LineNumber")
-                        .HasColumnType("integer")
-                        .HasColumnName("line_number");
-
-                    b.Property<long>("ModuleId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("module_id");
-
-                    b.Property<int>("OrganizationId")
-                        .HasColumnType("integer")
-                        .HasColumnName("organization_id");
-
-                    b.Property<string>("ReferenceKind")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("reference_kind");
-
-                    b.Property<long>("SourceObjectId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("source_object_id");
-
-                    b.Property<long?>("SourceSymbolId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("source_symbol_id");
-
-                    b.Property<string>("SystemMethodName")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("system_method_name");
-
-                    b.Property<Guid>("TargetAppId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("target_app_id");
-
-                    b.Property<int?>("TargetObjectId")
-                        .HasColumnType("integer")
-                        .HasColumnName("target_object_id");
-
-                    b.Property<string>("TargetObjectKind")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("target_object_kind");
-
-                    b.Property<string>("TargetObjectName")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("target_object_name");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId");
-
-                    b.HasIndex("SourceObjectId")
-                        .HasDatabaseName("ix_oe_module_system_references_source_object");
-
-                    b.HasIndex("SourceSymbolId");
-
-                    b.HasIndex("ModuleId", "TargetObjectKind", "TargetObjectId")
-                        .HasDatabaseName("ix_oe_module_system_references_module_target");
-
-                    b.HasIndex("TargetAppId", "TargetObjectKind", "TargetObjectId")
-                        .HasDatabaseName("ix_oe_module_system_references_target_id");
-
-                    b.HasIndex("TargetAppId", "TargetObjectKind", "TargetObjectName")
-                        .HasDatabaseName("ix_oe_module_system_references_target_name");
-
-                    b.ToTable("oe_module_system_references", (string)null);
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleTranslation", b =>
@@ -3521,40 +3442,6 @@ namespace ALDevToolbox.Data.Migrations
                     b.Navigation("Object");
 
                     b.Navigation("Organization");
-                });
-
-            modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSystemReference", b =>
-                {
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.Module", "Module")
-                        .WithMany()
-                        .HasForeignKey("ModuleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject", "SourceObject")
-                        .WithMany()
-                        .HasForeignKey("SourceObjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol", "SourceSymbol")
-                        .WithMany()
-                        .HasForeignKey("SourceSymbolId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Module");
-
-                    b.Navigation("Organization");
-
-                    b.Navigation("SourceObject");
-
-                    b.Navigation("SourceSymbol");
                 });
 
             modelBuilder.Entity("ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleTranslation", b =>
