@@ -35,6 +35,16 @@
                     <strong>Right:</strong>
                     <a href="@Links.SourceFile(_rightHeader.Id)">@_rightHeader.ReleaseLabel · @_rightHeader.ModuleName · @_rightHeader.Path</a>
                 </p>
+                <p class="muted oe-compare-file__summary">
+                    @if (_added == 0 && _removed == 0 && _modified == 0)
+                    {
+                        <span>Files are identical</span>
+                    }
+                    else
+                    {
+                        <span>@(_added + _removed + _modified) change@(_added + _removed + _modified == 1 ? "" : "s") — @_added added, @_removed removed, @_modified modified</span>
+                    }
+                </p>
             </div>
             <a class="btn btn--outline"
                href="@Links.CompareFile(_rightHeader.Id, _leftHeader.Id)"
@@ -77,6 +87,9 @@
     private string _rightDiffJson = "[]";
     private string _leftProceduresJson = "[]";
     private string _rightProceduresJson = "[]";
+    private int _added;
+    private int _removed;
+    private int _modified;
 
     protected override async Task OnInitializedAsync()
     {
@@ -96,6 +109,11 @@
         var model = SideBySideDiffBuilder.Diff(_left.Content, _right.Content);
         _leftDiffJson = CompareFileDiffSerializer.SerializeSide(model.OldText);
         _rightDiffJson = CompareFileDiffSerializer.SerializeSide(model.NewText);
+
+        var summary = CompareFileDiffSerializer.Summarize(model);
+        _added = summary.Added;
+        _removed = summary.Removed;
+        _modified = summary.Modified;
 
         var leftOutline = await SourceViewer.GetFileOutlineAsync(leftId);
         var rightOutline = await SourceViewer.GetFileOutlineAsync(rightId);

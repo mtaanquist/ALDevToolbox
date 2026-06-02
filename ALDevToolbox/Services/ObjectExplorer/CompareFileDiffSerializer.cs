@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.Json;
 using DiffPlex.DiffBuilder.Model;
 
@@ -34,6 +35,22 @@ internal static class CompareFileDiffSerializer
         }
         return JsonSerializer.Serialize(rows);
     }
+
+    /// <summary>
+    /// Per-side change counts for the compare header. Modified lines appear
+    /// (aligned) in both panes, so they're counted once from the new side;
+    /// inserted/deleted are unique to their pane.
+    /// </summary>
+    public readonly record struct DiffSummary(int Added, int Removed, int Modified)
+    {
+        public int Total => Added + Removed + Modified;
+        public bool Identical => Total == 0;
+    }
+
+    public static DiffSummary Summarize(SideBySideDiffModel model) => new(
+        Added: model.NewText.Lines.Count(l => l.Type == ChangeType.Inserted),
+        Removed: model.OldText.Lines.Count(l => l.Type == ChangeType.Deleted),
+        Modified: model.NewText.Lines.Count(l => l.Type == ChangeType.Modified));
 
     public static string MapKind(ChangeType type) => type switch
     {

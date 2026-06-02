@@ -3565,6 +3565,20 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 .cm-line.cm-diff-modified   { background-color: rgba(234, 179, 8, 0.20); }
 .cm-line.cm-diff-imaginary  { background-color: var(--color-surface-strong); color: var(--color-text-muted); }
 
+/* Diff change-bar gutter — a thin column (built in code-editor.js's
+   buildDiffGutterExtensions) that paints one coloured cell per changed line so
+   the run of changes is visible at a glance. Colours mirror the line tints but
+   fully opaque to read as a solid bar. */
+.cm-diff-gutter { width: 4px; }
+.cm-diff-gutter .cm-gutterElement { padding: 0; }
+.cm-diff-gutter-mark { width: 4px; }
+.cm-diff-gutter-inserted { background-color: rgb(38, 176, 80); }
+.cm-diff-gutter-deleted  { background-color: rgb(179, 33, 33); }
+.cm-diff-gutter-modified { background-color: rgb(234, 179, 8); }
+
+/* Change summary line in the compare header. */
+.oe-compare-file__summary { margin: 6px 0 0; font-weight: 500; }
+
 /* Compare-with-release picker on the single-file viewer header.
    Sits stacked under the Download button on the right edge. The
    picker collapses to one row inside its container (the field label

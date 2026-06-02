@@ -103,4 +103,39 @@ public sealed class CompareFileDiffSerializerTests
         var combined = leftJson + rightJson;
         combined.Should().MatchRegex("\"kind\":\"(modified|deleted|inserted)\"");
     }
+
+    [Fact]
+    public void Summarize_reports_identical_when_no_changes()
+    {
+        var model = SideBySideDiffBuilder.Diff("a\nb\nc\n", "a\nb\nc\n");
+        var summary = CompareFileDiffSerializer.Summarize(model);
+
+        summary.Identical.Should().BeTrue();
+        summary.Total.Should().Be(0);
+    }
+
+    [Fact]
+    public void Summarize_counts_a_pure_insertion()
+    {
+        // One line appended on the new side, nothing removed.
+        var model = SideBySideDiffBuilder.Diff("a\nb\n", "a\nb\nc\n");
+        var summary = CompareFileDiffSerializer.Summarize(model);
+
+        summary.Added.Should().Be(1);
+        summary.Removed.Should().Be(0);
+        summary.Modified.Should().Be(0);
+        summary.Identical.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Summarize_counts_a_pure_deletion()
+    {
+        // One line removed on the new side, nothing added.
+        var model = SideBySideDiffBuilder.Diff("a\nb\nc\n", "a\nc\n");
+        var summary = CompareFileDiffSerializer.Summarize(model);
+
+        summary.Removed.Should().Be(1);
+        summary.Added.Should().Be(0);
+        summary.Modified.Should().Be(0);
+    }
 }

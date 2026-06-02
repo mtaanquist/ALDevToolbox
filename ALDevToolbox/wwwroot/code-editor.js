@@ -17,7 +17,7 @@
 
 import { EditorView, lineNumbers, highlightActiveLineGutter, highlightSpecialChars,
     drawSelection, dropCursor, rectangularSelection, crosshairCursor,
-    highlightActiveLine, keymap, Decoration, showPanel }
+    highlightActiveLine, keymap, Decoration, showPanel, gutter, GutterMarker }
     from "https://esm.sh/@codemirror/view@6.34.1?deps=@codemirror/state@6.4.1";
 import { EditorState, Compartment, RangeSetBuilder, StateField, StateEffect }
     from "https://esm.sh/@codemirror/state@6.4.1";
@@ -401,6 +401,10 @@ export function mountReadOnly(container, value, language, options) {
     const opts = options ?? {};
 
     const decorationExtensions = buildLineDecorationExtensions(opts.lineDecorations);
+    // Diff change-bar gutter, only when there are diff line decorations to
+    // mark (i.e. the compare page). The single-file viewer passes none, so it
+    // gets no extra gutter.
+    const diffGutterExtensions = buildDiffGutterExtensions(opts.lineDecorations);
     const declarationExtensions = buildDeclarationDecorationExtensions(opts.declarations);
     const resolvableExtensions = buildResolvableDecorationExtensions(opts.resolvables);
     // Opt-in status bar: only the source-file viewer asks for it today.
@@ -426,6 +430,7 @@ export function mountReadOnly(container, value, language, options) {
                 // our resolvable / declaration dotted underlines.
                 EditorView.contentAttributes.of({ spellcheck: "false" }),
                 lineNumbers(),
+                ...diffGutterExtensions,
                 highlightSpecialChars(),
                 foldGutter(),
                 drawSelection(),
@@ -824,6 +829,46 @@ function buildLineDecorationExtensions(lineDecorations) {
             builder.add(line.from, line.from, Decoration.line({ class: cls }));
         }
         return builder.finish();
+    })];
+}
+
+// A GutterMarker that renders no content — just an element class, so CSS can
+// paint the gutter cell as a coloured change bar.
+class DiffGutterMarker extends GutterMarker {
+    constructor(cls) {
+        super();
+        this._cls = cls;
+    }
+    get elementClass() {
+        return this._cls;
+    }
+}
+
+// Compare-page change bar: a thin gutter that paints a coloured cell on every
+// inserted / deleted / modified line, so changes are visible at a glance even
+// when scrolled away from the tinted line. Driven by the same `lineDecorations`
+// (`{line: "cm-diff-<kind>"}`) the line backgrounds use, so the two stay in
+// step. Returns no extension when there are no diff lines (single-file viewer).
+function buildDiffGutterExtensions(lineDecorations) {
+    if (!lineDecorations || typeof lineDecorations !== "object") return [];
+    if (Object.keys(lineDecorations).length === 0) return [];
+
+    const markers = {};
+    const markerFor = (kind) => {
+        if (!markers[kind]) {
+            markers[kind] = new DiffGutterMarker(`cm-diff-gutter-mark cm-diff-gutter-${kind}`);
+        }
+        return markers[kind];
+    };
+
+    return [gutter({
+        class: "cm-diff-gutter",
+        lineMarker(view, line) {
+            const lineNo = view.state.doc.lineAt(line.from).number;
+            const cls = lineDecorations[lineNo];
+            if (typeof cls !== "string" || !cls.startsWith("cm-diff-")) return null;
+            return markerFor(cls.slice("cm-diff-".length));
+        },
     })];
 }
 
