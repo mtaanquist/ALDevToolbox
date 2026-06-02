@@ -365,13 +365,14 @@ public sealed class ReferenceQueryService
     ///         is a place that could call this member.</item>
     ///   <item><c>call</c> — every <c>oe_module_references</c> row already
     ///         tagged with this member (target_member_name + target_member_kind).
-    ///         Empty in phase 1; populated when method-call extraction
-    ///         lands in phase 2.</item>
+    ///         Populated by call-site / field-access extraction (emitted in
+    ///         <see cref="Services.Al.AlProcedureWalker"/>); see
+    ///         <c>.design/al-reference-extractor-gaps.md</c> for the covered
+    ///         surface and remaining gaps.</item>
     /// </list>
-    /// Phase 1's "indirect callers" answer is honest about its limitations:
-    /// declarations + owner-type references are what the existing data
-    /// supports. Phase 2 will graduate the <c>call</c> bucket from empty
-    /// to authoritative.
+    /// The <c>call</c> bucket is the authoritative "who calls this member"
+    /// answer; <c>declaration</c> and <c>owner_type</c> add sibling
+    /// declarations and indirect callers (variables typed to the owner).
     /// </summary>
     public async Task<List<ReferenceMatch>> FindReferencesForSymbolAsync(
         int releaseId,
@@ -438,10 +439,9 @@ public sealed class ReferenceQueryService
                 (object?)query.TargetMemberKind ?? DBNull.Value)
             .ToListAsync(ct);
 
-        // (2) Phase-2 ready: rows already tagged with the matching member.
-        // Until phase 2 lands the import-pipeline change, FindReferencesAsync
-        // returns the empty set here. Reusing it keeps the call/object
-        // branch logic in one place.
+        // (2) Call sites: rows already tagged with the matching member by
+        // call-site / field-access extraction. Reusing FindReferencesAsync
+        // keeps the call/object branch logic in one place.
         var memberRefs = await FindReferencesAsync(releaseId, query, ct);
 
         // (3) Owner-type references at the object level. Disabled for

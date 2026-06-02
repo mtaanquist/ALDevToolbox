@@ -1,21 +1,18 @@
 # Migration history
 
-One-line summary per EF Core migration in `ALDevToolbox/Data/Migrations/`. Read each migration's class XML doc for the gritty details — this list is for orientation only.
+The authoritative list of schema changes is the migrations directory itself:
 
-| Timestamp        | Name                              | Summary |
-|------------------|-----------------------------------|---------|
-| 20260508 105816  | `InitialCreate`                   | First schema: `runtime_templates`, `template_folders`, `modules`, `module_dependencies`, `well_known_dependencies`, `audit_log`. |
-| 20260509 000000  | `AddTemplateFiles`                | Splits per-folder example AL out of disk and into the new `template_files` table. Drops the old `example_path` column on `template_folders` after backfilling. |
-| 20260510 000000  | `AddAuditLogTimestampIndex`       | Standalone `(timestamp)` index on `audit_log` so the `/admin/audit` overview doesn't full-sort. |
-| 20260511 000000  | `AddRuntimeTemplateDefaultModules`| `runtime_template_default_modules` join table — admin-curated modules that pre-tick on the New Workspace form (P2.1). |
-| 20260511 000001  | `AddTemplateModuleFolders`        | Splits per-extension scaffolding into Core-only `template_folders` and module-only `template_module_folders` / `template_module_files`. Fixes module ZIPs duplicating Core's folders. |
-| 20260512 000000  | `RuntimeColumnAsString`           | `runtime_templates.runtime` becomes TEXT so it can carry dotted versions (`"15.2"`) alongside bare majors. |
-| 20260513 000000  | `AddApplicationVersions`          | Curated `application_versions` catalogue + `default_application_version_id` FK on `runtime_templates` (P2.4). Replaces free-text Application/Runtime fields with a select. |
-| 20260514 000000  | `AddOrganizationsAndAccounts`     | Multi-tenancy + accounts (P3.13). Adds `organizations`, `users`, `signup_requests`, `password_reset_tokens`, `login_attempts`. Stamps every editable row with `organization_id` (Default org = 1). Replaces the shared admin password. |
-| 20260515 000000  | `AddOrganizationConfiguration`    | Per-org config (P3.14). Adds `organization_settings`, `organization_assets` (logo BLOB), `organization_files` (always-included files). |
-| 20260513 000000  | `MoveSeedToSystemOrg`             | Retires the on-disk `Templates.seed/` bootstrap. Renames `organizations.is_seeded` to `is_system`, stamps the Default org as the singleton system org other orgs fork from via `TemplateImportService`, and adds a partial unique index that refuses a second system org per deployment. |
-| 20260601 000000  | `AddObjectExplorerTables`         | New Object Explorer schema (see `.design/object-explorer.md`): `oe_releases`, `oe_modules`, `oe_module_files`, `oe_module_objects`, `oe_module_symbols`, `oe_module_variables`, `oe_module_references`. Additive — leaves the legacy `base_app_*` tables in place; later PRs migrate the read paths and drop them. |
-| 20260602 000000  | `DropBaseAppTables`               | Drops the legacy `base_app_versions` / `base_app_extensions` / `base_app_files` / `base_app_symbols` tables now that every consumer has migrated to the `oe_*` schema. Forward-only — `Down` throws because reverting also requires restoring deleted source. |
+```
+ALDevToolbox/Data/Migrations/
+```
+
+Each migration is named `<timestamp>_<Name>.cs`. Read its class XML doc for the per-migration rationale — that's where the "why" lives, kept next to the code so it can't drift from it. List them in order with:
+
+```
+ls ALDevToolbox/Data/Migrations/*.cs | grep -v Designer
+```
+
+> This page used to hand-maintain a one-line summary per migration. That table fell out of sync every time a migration was added (it listed ~12 of the 50+ on disk), so it was retired in favour of pointing at the source. Don't reintroduce a hand-maintained list here — annotate the migration's own XML doc instead.
 
 ## Conventions
 

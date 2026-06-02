@@ -245,27 +245,77 @@ application version automatically sets the matching runtime.
 picking an entry on the builder forms fills both fields atomically; seed and
 export round-trip; the audit log captures version-table changes.
 
+## Phase 3 — organisations, accounts, multi-tenancy
+
+Phase 3 turned the single-tenant, shared-password v1 into a multi-tenant app with real accounts. All four milestones shipped; the detail below is the record, not a plan.
+
+### Milestone 12 — Test foundation
+
+Stood up `ALDevToolbox.Tests/` (xUnit + FluentAssertions) and backfilled tests for the algorithms a future change could silently break — ID-range allocation, mustache substitution, audit snapshots, TOML round-trip, and the `PlanValidationException` field-key contract. No behaviour change; the prerequisite for everything after.
+
+### Milestone 13 — Organisations and accounts
+
+Replaced the shared-password gate with email/password accounts scoped to organisations: the `organizations` / `users` tables, the `User` / `Admin` roles (the `Editor` content-authoring role was added shortly after — see "Deliberately small"), admin-approved signups, forgot-password by email, login hardening (rate limit + lockout), account self-service, and the EF query filter that scopes every read to `IOrganizationContext.CurrentOrganizationId`. Bootstrap admin via `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` on a fresh DB.
+
+### Milestone 14 — Organisation configuration
+
+Per-org configuration moved into the database: `organization_settings`, `organization_assets` (logo), and `organization_files` (always-included files), all admin-editable and audited, with export/import so an org's content round-trips.
+
+### Milestone 15 — Polish pass
+
+Cross-cutting consistency pass over the new account/admin surface — validation, empty states, confirmation modals, copy — plus the code-level cleanups that accumulated across M13–M14.
+
+## Phase 4 — Postgres backend and hosting readiness
+
+Phase 4 made the app deployable as managed hosting: Postgres, a cross-org operator console, backups, and the invite/operator polish around them.
+
+### Milestone 16 — Postgres-only backend
+
+Swapped SQLite for PostgreSQL (Npgsql) with Postgres in a sibling compose service backed by the `pg-data` named volume. EF provider swap + migration regeneration; see `migrating-from-sqlite.md` for the one-time path for early self-hosters.
+
+### Milestone 17 — Site Admin Console v1
+
+Added the cross-org `SiteAdmin` role and `/site-admin/*` console: the `system_settings` singleton (SMTP overrides, signup-auto-approve default, backup schedule/retention), the encrypted SMTP-password column on the Data Protection key ring, hybrid SMTP (system vs per-org), and the "last SiteAdmin" demotion guard. SiteAdmin pages call `IgnoreQueryFilters()` explicitly.
+
+### Milestone 18 — Backup tooling and CI migration testing
+
+`pg_dump`-based backups to the `app-backups` volume on a schedule with retention, a restore path, and CI that runs migrations against a real Postgres to catch destructive changes.
+
+### Milestone 19 — Invite-by-email and magic-link login
+
+Admin-issued invites (`invites` table, `/admin/administration/users/new` → `/accept-invite`, sha-256 token hashes, 7-day single-use expiry) and magic-link login (`/magic-login`). Two-factor (TOTP + recovery codes) and email-verified signup also landed in this area.
+
+### Milestone 20 — Audit diff viewer and bulk admin actions
+
+The audit log gained a before/after diff viewer (`/admin` and `/site-admin`), and the admin list pages gained bulk actions (deprecate / delete across a selection).
+
+### Milestone 21 — Hosting-readiness polish
+
+Operator surface and consistency pass: the `/healthz` (liveness — DB + DP key ring) and `/readyz` (readiness — startup complete) endpoints, a Postgres performance pass, UX consistency across the Phase-3/4 pages, and compose hardening.
+
+## Roadmap
+
+Forward-looking ideas that are *not* committed live in `roadmap.md`. This file is the record of what shipped; the roadmap is the wishlist.
+
 ## Out of scope for v1
 
-These remain off the table — listed here so they don't get pulled into a current milestone by accident. Phase 4 candidates in `milestones.md` revisit some of these.
+These remain off the table — listed here so they don't get pulled into a current milestone by accident. Some are revisited in `roadmap.md`.
 
 - Mobile-friendly layout. Desktop only.
-- A structured editor for `defaults_json` and `app_source_cop_json`. Textarea is fine for v1.
-- Automatic migration testing in CI. Manual is fine for v1.
-- Cross-organisation superuser. There's no support / debugging account that bypasses the org filter.
-- SSO / OIDC, two-factor, magic-link login, invite-by-email. Email + password is the only path.
+- A structured editor for `defaults_json` and `app_source_cop_json`. Textarea is fine; the TOML editor round-trips the rest.
+- SSO / OIDC. Email + password (with optional two-factor) is the only credential path; per-org federated identity stays out — see `roadmap.md`.
 - Binary files inside template folders. Text content only.
 
-(Multi-tenancy and per-user accounts moved on-scope and shipped in Phase 3 — M13 added organisations and accounts; M14 added per-org configuration.)
+(Several v1 exclusions later moved on-scope and shipped: multi-tenancy and accounts in Phase 3 (M13–M14); two-factor, magic-link login and invite-by-email in Phase 4 (M19); a cross-org operator role — `SiteAdmin`, distinct from a per-org superuser — in M17; and automatic migration testing in CI in M18.)
 
 ## Deliberately small
 
 A few decisions throughout the design exist to keep this small. If you find yourself building something that feels disproportionately complex, check that you're not over-engineering one of these:
 
-- SQLite instead of Postgres.
-- One container, one volume.
+- One PostgreSQL database — no Redis, no S3, no other backing services. (Phase 1–3 ran on SQLite; M16 swapped to Postgres but the "one simple data store" constraint is unchanged.)
+- One app container + one Postgres container; named volumes per concern (`pg-data`, `app-keys`, `app-backups`).
 - Synchronous generation (no queue).
-- TOML is an authoring format on top of the DB, never a peer persistence path. `Templates.seed/` bootstraps an empty *organisation* (templates, modules, catalogue, per-folder file contents, organisation defaults, logo, always-included files); nothing watches it or writes back to it.
+- TOML is an authoring format on top of the DB, never a peer persistence path. The singleton **system org** (`organizations.is_system = true`) holds the canonical templates other orgs fork; nothing watches a seed directory or writes back to it. (The on-disk `Templates.seed/` bootstrap was retired — see `templates-and-seeding.md`.)
 - JSON columns for `defaults` and `app_source_cop` instead of normalised tables.
-- Admin UI edits structured data and TOML; AL file contents stay in the repo's seed folder until an admin first edits them.
-- Three roles (`User`, `Editor`, `Admin`); admin-approved signups; no superuser. (`Editor` was added after M13 as a content-authoring role between `User` and `Admin`.)
+- Admin UI edits structured data and TOML; AL file contents live in the `template_files` table, admin-editable.
+- Three roles (`User`, `Editor`, `Admin`); admin-approved signups; a cross-org `SiteAdmin` operator role but no per-org superuser. (`Editor` was added after M13 as a content-authoring role between `User` and `Admin`.)

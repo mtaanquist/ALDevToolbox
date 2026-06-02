@@ -14,11 +14,11 @@ Living specification for the AL Dev Toolbox. The code in `ALDevToolbox/` is the 
 | `ui-design.md` | Page layout, copy, components in `Components/Shared/`. |
 | `deployment.md` | Docker, env vars, health checks, backups. |
 | `object-explorer.md` | `.app` symbol-package ingest, Release/Module model, cross-module reference resolution. |
-| `milestones.md` | Build sequence — current and Phase 4 candidates. |
-| `completed-milestones.md` | What each shipped milestone added. |
-| `migration-history.md` | One-line summary per EF migration. |
+| `completed-milestones.md` | The record of what each shipped milestone added (M1–M21). |
+| `roadmap.md` | Uncommitted forward-looking ideas (successor to the retired `milestones.md`). |
+| `migration-history.md` | Where to find the EF migration history. |
 
-`template.toml` and `well-known-deps.toml` are reference samples for the seed format documented in `templates-and-seeding.md`. `al-workspace-builder/` carries reference material from the legacy in-browser tool this app replaces; everything load-bearing has migrated into the docs above.
+`template.toml` and `well-known-deps.toml` are reference samples for the seed format documented in `templates-and-seeding.md`.
 
 ## Contributing changes
 

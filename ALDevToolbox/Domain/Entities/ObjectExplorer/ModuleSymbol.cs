@@ -22,9 +22,15 @@ public class ModuleSymbol
     public ModuleObject? Object { get; set; }
 
     /// <summary>
-    /// One of: <c>procedure</c>, <c>local_procedure</c>, <c>internal_procedure</c>,
-    /// <c>protected_procedure</c>, <c>trigger</c>, <c>event_publisher</c>,
-    /// <c>event_subscriber</c>, <c>field</c>.
+    /// The disambiguated symbol kind. One of: <c>procedure</c>,
+    /// <c>local_procedure</c>, <c>internal_procedure</c>, <c>protected_procedure</c>,
+    /// <c>trigger</c>, <c>event_publisher</c>, <c>event_subscriber</c>,
+    /// <c>table_field</c>, <c>page_field</c>, <c>page_action</c>,
+    /// <c>query_column</c>, <c>label</c>, <c>var_declaration</c>,
+    /// <c>dataitem_alias</c>, <c>object_declaration</c>.
+    /// Field-like kinds are split by host (<c>table_field</c> vs <c>page_field</c>)
+    /// so downstream navigability checks don't need to know the owner kind —
+    /// see <c>.design/al-reference-extractor-refactor.md</c>.
     /// </summary>
     public string Kind { get; set; } = string.Empty;
 

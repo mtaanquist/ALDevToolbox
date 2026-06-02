@@ -1,12 +1,19 @@
 # TOML overhaul — continuation notes (Issue #54)
 
+> **Historical — complete and merged.** This was the implementation-state
+> companion for the unified-extensions work (Issue #54, PR #56), kept as a
+> progress log. That work shipped; the branch is long since merged and gone.
+> For the current schema see `unified-extensions.md`; for the generation
+> algorithm see `generation-engine.md`. Retained only as a record of how the
+> rollout was sequenced — don't treat the "next session" framing or the branch
+> reference below as live.
+
 A working doc for the **next** session to pick up the unified-extensions work
 where this one left off. The spec for the data model itself is in
 `unified-extensions.md`; this file is the implementation-state companion.
 
-**Branch:** `claude/issue-54-R6lFE`
+**Branch:** `claude/issue-54-R6lFE` (merged via PR #56; no longer exists)
 **PR:** [#56](https://github.com/mtaanquist/ALDevToolbox/pull/56)
-**Last commit on branch:** see `git log claude/issue-54-R6lFE`
 
 ## Acceptance-criteria status
 

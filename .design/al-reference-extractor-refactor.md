@@ -198,7 +198,7 @@ Items 1–3 are mostly mechanical and each independently shippable. Item 4 is th
 
 The noise-reduction PR adds a lot of allow-lists, system-type tables, platform-virtual-table mappings, DSL keyword silencing, and column-position storage. None of that should be thrown out by the refactor — most of it lives in `AlBuiltinMethods` (well-organised, doc-commented for maintainers) and `ReleaseImportService.PlatformVirtualTables` (sourced from hougaard.com). The refactor restructures the *walker*; the *catalogs* stay.
 
-The `IsNonNavigableDeclaration` owner-kind branch in `SourceFileViewer.razor` is the one piece that becomes redundant after item 1 above and should be deleted then.
+The `IsNonNavigableDeclaration` owner-kind branch in `SourceFileViewer.razor` became redundant once item 1 landed and was removed — it's now a flat lookup over the disambiguated kinds (`trigger`, `page_field`, `page_action`).
 
 ## Reference: current state at refactor start
 
