@@ -629,6 +629,16 @@ function renderReferencesPanel(root, session, fileId, editorId) {
         p.textContent = "No references in this Release's chain.";
         panel.appendChild(p);
     } else {
+        // Filter box — mirrors the Outline's, so you can narrow a long
+        // reference set by object, enclosing member, target member, or the
+        // snippet text. Wired after the sections are built.
+        const filter = document.createElement("input");
+        filter.type = "text";
+        filter.className = "source-viewer__refs-filter";
+        filter.placeholder = "Filter references…";
+        filter.setAttribute("aria-label", "Filter references");
+        panel.appendChild(filter);
+
         // Group references by their source object so every place that
         // touches the target clusters under one header — repeated calls
         // from the same table / page no longer scatter down a flat list.
@@ -685,7 +695,43 @@ function renderReferencesPanel(root, session, fileId, editorId) {
 
             panel.appendChild(section);
         }
+
+        const empty = document.createElement("p");
+        empty.className = "muted source-viewer__refs-empty";
+        empty.hidden = true;
+        empty.textContent = "No references match the filter.";
+        panel.appendChild(empty);
+
+        wireRefsFilter(panel);
     }
+}
+
+// Filters the rendered reference rows by object / member / snippet text,
+// mirroring wireOutlineFilter: hides non-matching rows, collapses sections
+// with no surviving rows, and shows an empty-state when nothing matches.
+function wireRefsFilter(panel) {
+    const filter = panel.querySelector(".source-viewer__refs-filter");
+    if (!filter) return;
+    const sections = Array.from(panel.querySelectorAll(".source-viewer__refs-group"));
+    const empty = panel.querySelector(".source-viewer__refs-empty");
+
+    filter.addEventListener("input", () => {
+        const needle = filter.value.trim().toLowerCase();
+        let anyVisible = false;
+        for (const section of sections) {
+            const items = Array.from(section.querySelectorAll(".source-viewer__refs-item"));
+            let sectionVisible = false;
+            for (const item of items) {
+                const hay = item.dataset.filter ?? "";
+                const match = needle.length === 0 || hay.includes(needle);
+                item.hidden = !match;
+                if (match) sectionVisible = true;
+            }
+            section.hidden = !sectionVisible;
+            if (sectionVisible) anyVisible = true;
+        }
+        if (empty) empty.hidden = anyVisible || needle.length === 0;
+    });
 }
 
 // Within an object, order rows by reference category (declarations first,
@@ -737,6 +783,11 @@ function categoryLabel(category) {
 function buildRefsRow(r, session, fileId, editorId) {
     const li = document.createElement("li");
     li.className = "source-viewer__refs-item";
+    // Searchable haystack for the panel filter: object, enclosing member,
+    // target member, reference kind, and the code snippet.
+    li.dataset.filter = [
+        r.sourceObjectName, r.sourceMemberName, r.memberName, r.referenceKind, r.snippet,
+    ].filter(Boolean).join(" ").toLowerCase();
 
     const srcFid = r.sourceFileId;
     const ln = r.lineNumber;
