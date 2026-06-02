@@ -450,16 +450,17 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SearchObjectsInReleaseAsync_double_quoted_phrase_matches_literally()
+    public async Task SearchObjectsInReleaseAsync_double_quoted_phrase_matches_exactly()
     {
-        // A quoted run is one literal token: "sales header" must match the
-        // adjacent phrase, not the two words scattered through the name.
-        // "Sales Invoice Header" has both words but not the phrase, so the
-        // quoted search excludes it while the unquoted search keeps it.
+        // A quoted run is an exact-match token: "sales header" matches only the
+        // object whose whole name equals it — not one that merely contains the
+        // phrase ("Posted Sales Header") nor one with the words scattered
+        // ("Sales Invoice Header"). The unquoted search keeps all three (substring).
         var releaseId = await SeedSingleReleaseAsync();
         await SeedObjectsAsync(releaseId,
             ("Sales Header", 9000070),
-            ("Sales Invoice Header", 9000071));
+            ("Sales Invoice Header", 9000071),
+            ("Posted Sales Header", 9000072));
         await using var read = _db.NewContext();
         var query = NewSearch(read);
 
@@ -467,11 +468,48 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             new ObjectListFilter(Search: "\"sales header\""));
         quoted.Should().Contain(h => h.Name == "Sales Header");
         quoted.Should().NotContain(h => h.Name == "Sales Invoice Header");
+        quoted.Should().NotContain(h => h.Name == "Posted Sales Header");
 
         var unquoted = await query.SearchObjectsInReleaseAsync(releaseId,
             new ObjectListFilter(Search: "sales header"));
         unquoted.Should().Contain(h => h.Name == "Sales Header");
         unquoted.Should().Contain(h => h.Name == "Sales Invoice Header");
+    }
+
+    [Fact]
+    public async Task SearchObjectsInReleaseAsync_id_range_filters_by_object_id()
+    {
+        // "50000..50001" returns only objects whose ObjectId falls in the
+        // inclusive range, regardless of name.
+        var releaseId = await SeedSingleReleaseAsync();
+        await SeedObjectsAsync(releaseId,
+            ("Alpha", 50000),
+            ("Bravo", 50001),
+            ("Charlie", 50002));
+        await using var read = _db.NewContext();
+
+        var hits = await NewSearch(read).SearchObjectsInReleaseAsync(releaseId,
+            new ObjectListFilter(Search: "50000..50001"));
+        hits.Should().Contain(h => h.ObjectId == 50000);
+        hits.Should().Contain(h => h.ObjectId == 50001);
+        hits.Should().NotContain(h => h.ObjectId == 50002);
+    }
+
+    [Fact]
+    public async Task SearchObjectsInReleaseAsync_trailing_wildcard_matches_prefix()
+    {
+        // "sales*" matches names starting with "sales" (case-insensitive), and
+        // excludes a name that merely contains "sales" mid-string.
+        var releaseId = await SeedSingleReleaseAsync();
+        await SeedObjectsAsync(releaseId,
+            ("Sales Header", 9000090),
+            ("Posted Sales Header", 9000091));
+        await using var read = _db.NewContext();
+
+        var hits = await NewSearch(read).SearchObjectsInReleaseAsync(releaseId,
+            new ObjectListFilter(Search: "sales*"));
+        hits.Should().Contain(h => h.Name == "Sales Header");
+        hits.Should().NotContain(h => h.Name == "Posted Sales Header");
     }
 
     [Fact]
