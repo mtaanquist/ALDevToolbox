@@ -70,4 +70,14 @@ public abstract record ReleaseImportSource
     /// container-local <c>/tmp</c> and so is never resumed after a restart.
     /// </summary>
     public sealed record CalTxt(string TempPath, string EncodingName) : ReleaseImportSource;
+
+    /// <summary>
+    /// Maintenance re-extraction over already-stored source: repopulate
+    /// <c>oe_module_system_references</c> for an existing release without
+    /// re-uploading the package (see #291). Carries no payload — the release id
+    /// on the job is enough — so unlike the upload sources it survives a restart
+    /// only as a failed row to re-trigger, never a lost temp file. The worker
+    /// routes it to the AL or C/AL backfill path by inspecting the release.
+    /// </summary>
+    public sealed record Backfill() : ReleaseImportSource;
 }

@@ -1,5 +1,7 @@
 using System.IO.Compression;
+using ALDevToolbox.Data;
 using ALDevToolbox.Domain.ValueObjects;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ALDevToolbox.Services.ObjectExplorer;
@@ -112,6 +114,36 @@ public sealed class ReleaseImportWorker : BackgroundService
                     // ProcessReleaseAsync already flipped the row to failed.
                     jobFailureMessage = FriendlyMessage(ex);
                     _logger.LogError(ex, "Release {ReleaseId} C/AL import failed during processing.", job.ReleaseId);
+                }
+                return;
+            }
+
+            // Maintenance backfill: re-extract system references over
+            // already-stored source, no upload (#291). Route to the AL or C/AL
+            // path by the source flavour — C/AL stores its slices under CAL/.
+            if (job.Source is ReleaseImportSource.Backfill)
+            {
+                try
+                {
+                    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    var isCal = await db.OeModuleFiles.AsNoTracking()
+                        .Where(f => f.Module!.ReleaseId == job.ReleaseId)
+                        .AnyAsync(f => f.Path.StartsWith("CAL/"), ct).ConfigureAwait(false);
+                    if (isCal)
+                    {
+                        var calImporter = scope.ServiceProvider.GetRequiredService<CalImportService>();
+                        await calImporter.BackfillSystemReferencesAsync(job.ReleaseId, ct).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await importer.BackfillSystemReferencesAsync(job.ReleaseId, ct).ConfigureAwait(false);
+                    }
+                    jobSucceeded = true;
+                }
+                catch (Exception ex)
+                {
+                    jobFailureMessage = FriendlyMessage(ex);
+                    _logger.LogError(ex, "Release {ReleaseId} system-reference backfill failed.", job.ReleaseId);
                 }
                 return;
             }

@@ -34,6 +34,17 @@
                     <span>Refresh</span>
                 </a>
             }
+            @if (_releases is not null && _releases.Any(r => r.Status == "ready" && r.DeletedAt is null))
+            {
+                <form method="post" action="/admin/object-explorer/backfill-system-references-all">
+                    <AntiforgeryToken />
+                    <button type="submit" class="btn"
+                            title="Re-extract built-in/system method calls (Insert, Modify, SetRange, …) over stored source for every ready release. For releases imported before Find System References shipped — no re-upload needed.">
+                        <Icon Name="rotate-ccw" Width="16" Height="16" />
+                        <span>Backfill system references</span>
+                    </button>
+                </form>
+            }
             <a class="btn" href="/admin/object-explorer/new">
                 <Icon Name="upload" Width="16" Height="16" />
                 <span>Import Release</span>
@@ -155,6 +166,7 @@
         "soft-deleted" => $"Release {id} soft-deleted. Restore from this page if it was a mistake.",
         "restored"     => $"Release {id} restored.",
         "hard-deleted" => $"Release {id} permanently deleted.",
+        "backfill-all-queued" => $"Queued a system-reference backfill for {id} ready release(s). They run in the background — watch progress on the workers page.",
         _              => "Done.",
     };
 

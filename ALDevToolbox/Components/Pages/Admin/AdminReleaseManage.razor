@@ -101,6 +101,16 @@
                     <Icon Name="book-open" Width="16" Height="16" />
                     <span>Import translations</span>
                 </a>
+                @if (_release.DeletedAt is null)
+                {
+                    <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/backfill-system-references")">
+                        <AntiforgeryToken />
+                        <button type="submit" class="btn" title="Re-extract built-in/system method calls (Insert, Modify, SetRange, …) over stored source. Needed for releases imported before this feature shipped.">
+                            <Icon Name="rotate-ccw" Width="16" Height="16" />
+                            <span>Backfill system references</span>
+                        </button>
+                    </form>
+                }
             </div>
         </section>
 
@@ -177,10 +187,11 @@
 
     private static string FormatOkMessage(string ok) => ok switch
     {
-        "updated"      => "Details saved.",
-        "soft-deleted" => "Release soft-deleted. Restore it below if that was a mistake.",
-        "restored"     => "Release restored.",
-        _              => "Done.",
+        "updated"          => "Details saved.",
+        "soft-deleted"     => "Release soft-deleted. Restore it below if that was a mistake.",
+        "restored"         => "Release restored.",
+        "backfill-queued"  => "System-reference backfill queued. It runs in the background; check the workers page for progress.",
+        _                  => "Done.",
     };
 
     private static string FormatKind(string kind) => kind switch

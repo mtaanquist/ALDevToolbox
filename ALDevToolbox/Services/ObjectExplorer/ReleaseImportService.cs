@@ -462,6 +462,67 @@ public class ReleaseImportService
         await _db.Database.ExecuteSqlRawAsync(sql, new object[] { releaseId }, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Re-runs the Phase-2 extraction over already-stored source for an
+    /// existing AL release, repopulating <c>oe_module_system_references</c>
+    /// WITHOUT re-uploading the package — the maintenance backfill for releases
+    /// imported before #279. Idempotent: deletes the release's existing
+    /// system-reference rows first, then re-extracts in system-only mode so
+    /// <c>oe_module_references</c> and the source files stay untouched. C/AL
+    /// releases route to <see cref="CalImportService.BackfillSystemReferencesAsync"/>
+    /// instead. See issue #291.
+    /// </summary>
+    public async Task BackfillSystemReferencesAsync(int releaseId, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+
+        var preview = await _db.OeReleases.AsNoTracking()
+            .Where(r => r.Id == releaseId)
+            .Select(r => new { r.Status, r.DeletedAt })
+            .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+        if (preview is null)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["ReleaseId"] = $"Release {releaseId} not found in this organisation.",
+            });
+        }
+        if (preview.DeletedAt is not null || !string.Equals(preview.Status, "ready", StringComparison.Ordinal))
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["ReleaseId"] = $"Release {releaseId} isn't ready to backfill (status = {preview.Status}).",
+            });
+        }
+
+        // Phase-2 over a large catalog can run long on a constrained DB; give
+        // it the same headroom the C/AL import grants its module-wide passes.
+        _db.Database.SetCommandTimeout(TimeSpan.FromMinutes(10));
+
+        await DeleteSystemReferencesAsync(releaseId, ct).ConfigureAwait(false);
+
+        var totals = new ImportTotals();
+        await EmitCallSiteReferencesAsync(orgId, releaseId, totals, ct, systemReferencesOnly: true)
+            .ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "Backfilled system references (AL): ReleaseId={ReleaseId} Emitted={Count}",
+            releaseId, totals.ReferencesImported);
+    }
+
+    /// <summary>
+    /// Wipes <c>oe_module_system_references</c> for every module in the release
+    /// so the backfill re-extraction can't produce duplicates. See #291.
+    /// </summary>
+    private async Task DeleteSystemReferencesAsync(int releaseId, CancellationToken ct)
+    {
+        const string sql = """
+            DELETE FROM oe_module_system_references
+            WHERE module_id IN (SELECT id FROM oe_modules WHERE release_id = {0});
+            """;
+        await _db.Database.ExecuteSqlRawAsync(sql, new object[] { releaseId }, ct).ConfigureAwait(false);
+    }
+
     // ── Validation ──────────────────────────────────────────────────────
 
     private static void ValidateMetadata(ReleaseImportMetadata m)
@@ -1827,7 +1888,8 @@ public class ReleaseImportService
     /// sites can be added later by reusing the recursive-CTE chain walk.
     /// </summary>
     private async Task EmitCallSiteReferencesAsync(
-        int orgId, int releaseId, ImportTotals totals, CancellationToken ct)
+        int orgId, int releaseId, ImportTotals totals, CancellationToken ct,
+        bool systemReferencesOnly = false)
     {
         _db.ChangeTracker.Clear();
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -2341,6 +2403,11 @@ public class ReleaseImportService
                 pending++;
             }
 
+            // Normal call-site references (method_call / field_access). Skipped
+            // in system-references-only mode — the backfill path (#291)
+            // repopulates only oe_module_system_references and leaves the
+            // already-present normal references untouched.
+            if (!systemReferencesOnly)
             foreach (var r in result.References)
             {
                 long? targetSymbolId = null;

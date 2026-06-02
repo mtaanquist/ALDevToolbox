@@ -851,6 +851,58 @@ public sealed class ReleaseImportServiceTests : IDisposable
         sysRefs.Where(r => r.SourceSymbolId is not null).Should().NotBeEmpty();
     }
 
+    [Fact]
+    public async Task BackfillSystemReferencesAsync_repopulates_without_touching_normal_refs()
+    {
+        // #291: re-extract system references over already-stored source. Import,
+        // record the baselines, wipe the system refs (mimicking a pre-#279
+        // release), backfill, and assert the system refs return identically
+        // while oe_module_references is left exactly as it was.
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        await using var s1 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        var summary = await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "Backfill DK Core",
+            Kind: "first_party",
+            ParentReleaseId: null,
+            ApplicationVersionId: null,
+            Uploads: new[] { new AppFileUpload("dk.app", s1, null) }));
+        var releaseId = summary.ReleaseId;
+
+        int normalBefore, sysBefore;
+        await using (var read = _db.NewContext())
+        {
+            normalBefore = await read.OeModuleReferences.AsNoTracking()
+                .CountAsync(r => r.Module!.ReleaseId == releaseId);
+            sysBefore = await read.OeModuleSystemReferences.AsNoTracking()
+                .CountAsync(r => r.Module!.ReleaseId == releaseId);
+        }
+        sysBefore.Should().BeGreaterThan(0);
+
+        await using (var wipe = _db.NewContext())
+        {
+            await wipe.Database.ExecuteSqlRawAsync(
+                "DELETE FROM oe_module_system_references WHERE module_id IN (SELECT id FROM oe_modules WHERE release_id = {0});",
+                releaseId);
+        }
+
+        await using (var b = _db.NewContext())
+        {
+            await NewService(b).BackfillSystemReferencesAsync(releaseId);
+        }
+
+        await using var after = _db.NewContext();
+        var sysAfter = await after.OeModuleSystemReferences.AsNoTracking()
+            .CountAsync(r => r.Module!.ReleaseId == releaseId);
+        var normalAfter = await after.OeModuleReferences.AsNoTracking()
+            .CountAsync(r => r.Module!.ReleaseId == releaseId);
+
+        sysAfter.Should().Be(sysBefore,
+            because: "backfill reproduces exactly the system references the import emitted");
+        normalAfter.Should().Be(normalBefore,
+            because: "system-only backfill must not touch oe_module_references");
+    }
+
     // ── Amend (issue #216) ──────────────────────────────────────────────
 
     /// <summary>

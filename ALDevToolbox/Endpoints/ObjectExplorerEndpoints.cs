@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using ALDevToolbox.Data;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.ObjectExplorer;
@@ -546,6 +547,56 @@ internal static class ObjectExplorerEndpoints
                 var first = ex.Errors.First();
                 RedirectManage(ctx, id, first.Key, first.Value);
             }
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
+
+        // Maintenance: re-extract system references over already-stored source
+        // for one release (no re-upload) — backfills oe_module_system_references
+        // for releases imported before #279. Queued like an import; processed by
+        // ReleaseImportWorker, which routes AL vs C/AL. See #291.
+        app.MapPost("/admin/object-explorer/{id:int}/backfill-system-references", async (
+            int id,
+            HttpContext ctx,
+            ReleaseImportQueue queue,
+            PersistedImportJobs persistedJobs,
+            IOrganizationContext orgContext,
+            IAntiforgery antiforgery,
+            CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var identity = CaptureIdentity(orgContext);
+            var source = new ReleaseImportSource.Backfill();
+            var jobRowId = await persistedJobs.CreateAsync(id, identity, source, storeSymbolReference: false, ct);
+            await queue.EnqueueAsync(
+                new ReleaseImportJob(id, identity, source, StoreSymbolReference: false, jobRowId), ct);
+            ctx.Response.Redirect($"/admin/object-explorer/release/{id}/manage?ok=backfill-queued");
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
+
+        // Bulk variant: enqueue a backfill for every ready, non-deleted release
+        // in the org — the "I don't want to reimport my whole catalogue" path.
+        app.MapPost("/admin/object-explorer/backfill-system-references-all", async (
+            HttpContext ctx,
+            AppDbContext db,
+            ReleaseImportQueue queue,
+            PersistedImportJobs persistedJobs,
+            IOrganizationContext orgContext,
+            IAntiforgery antiforgery,
+            CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+            var identity = CaptureIdentity(orgContext);
+            // Query-filtered to the caller's org; no cross-tenant enqueue.
+            var releaseIds = await db.OeReleases.AsNoTracking()
+                .Where(r => r.Status == "ready" && r.DeletedAt == null)
+                .Select(r => r.Id)
+                .ToListAsync(ct);
+            foreach (var rid in releaseIds)
+            {
+                var source = new ReleaseImportSource.Backfill();
+                var jobRowId = await persistedJobs.CreateAsync(rid, identity, source, storeSymbolReference: false, ct);
+                await queue.EnqueueAsync(
+                    new ReleaseImportJob(rid, identity, source, StoreSymbolReference: false, jobRowId), ct);
+            }
+            ctx.Response.Redirect($"/admin/object-explorer?ok=backfill-all-queued&id={releaseIds.Count}");
         }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
 
         app.MapPost("/admin/object-explorer/{id:int}/restore", async (
