@@ -62,16 +62,19 @@ Migrations run on startup. If a migration is destructive (drops a column, etc.),
 
 ## Monitoring
 
-Use the framework's standard health check endpoints:
+The app exposes two operator endpoints (wired in `Program.cs`):
 
 ```csharp
-app.MapHealthChecks("/health");
-app.MapHealthChecks("/health/ready", new HealthCheckOptions {
-    Predicate = check => check.Tags.Contains("ready")
+app.MapHealthChecks("/healthz", new HealthCheckOptions {
+    Predicate = check => check.Tags.Contains("healthz")
+});
+app.MapHealthChecks("/readyz", new HealthCheckOptions {
+    Predicate = check => check.Tags.Contains("readyz")
 });
 ```
 
-Register a health check that pings the database. That covers "is the app up and can it talk to its data."
+- `/healthz` — liveness: `200` when the database is reachable **and** the Data Protection key ring round-trips; `503` otherwise. The Dockerfile `HEALTHCHECK` polls this.
+- `/readyz` — readiness: only green once startup work (migrations + first-run seed + bootstrap admin) has finished. Gate reverse-proxy traffic on it.
 
 ## Logs
 

@@ -1,8 +1,8 @@
 # Unified extensions: the `[[extensions]]` data model
 
-This document proposes replacing the current Core-vs-modules asymmetry in the template schema with a single `[[extensions]]` concept. It covers the data model, TOML shape, generator changes, dependency resolution, the affix-substitution path, and the migration from today's `template_folders` / `template_module_folders` split.
+This document specifies the unified `[[extensions]]` data model that replaced the old Core-vs-modules asymmetry in the template schema. It covers the data model, TOML shape, generator changes, dependency resolution, the affix-substitution path, and the migration from the former `template_folders` / `template_module_folders` split.
 
-**Status:** proposal. No code in this doc has been written. Once approved, it supersedes the relevant sections of `domain-model.md`, `generation-engine.md`, and `templates-and-seeding.md`, which will be rewritten in the implementing PR rather than left out of sync.
+**Status:** implemented. The model shipped in Phase 3 (entities `WorkspaceExtension{,Folder,File,Dependency}`, migration `20260514000000_UnifyExtensions`, `GenerationService`'s per-extension walk, and the `[[extensions]]` handling in `TemplateTomlMapper`). It supersedes the relevant sections of `domain-model.md`, `generation-engine.md`, and `templates-and-seeding.md`, which were rewritten to match. The old `template_folders` / `template_module_folders` tables no longer exist.
 
 ## Why
 
@@ -296,12 +296,11 @@ The doc deliberately punts on:
 
 ## Impact on other docs
 
-When this proposal lands:
+This work landed and the affected docs were rewritten to match:
 
-- `domain-model.md` — rewrite the templates section to describe the new tables; drop the four removed ones.
-- `generation-engine.md` — rewrite the algorithm section around the unified extension walk; drop "Core-vs-modules" language.
-- `templates-and-seeding.md` — rewrite the TOML schema section; drop `[[folders]]` / `[[module_folders]]` examples in favour of `[[extensions]]`.
-- `milestones.md` — add a milestone for "Unify extensions" before any further generation work.
-- `completed-milestones.md` — record the migration as a one-way step so anyone reading later understands why a `Down` doesn't restore the prior data shape.
+- `domain-model.md` — the templates section now describes the new tables; the four removed ones are gone.
+- `generation-engine.md` — the algorithm section is built around the unified extension walk; "Core-vs-modules" language was dropped.
+- `templates-and-seeding.md` — the TOML schema section uses `[[extensions]]`; the old `[[folders]]` / `[[module_folders]]` examples were removed.
+- `completed-milestones.md` — the migration is recorded as a one-way step so anyone reading later understands why a `Down` doesn't restore the prior data shape.
 
 `CLAUDE.md` doesn't need changes — the architectural fences (PG as source of truth, multi-tenant, synchronous generation, no client framework) all still hold.

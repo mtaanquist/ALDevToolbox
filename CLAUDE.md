@@ -162,7 +162,8 @@ Skip the MCP path only when it genuinely doesn't apply — pure UI affordances (
 - `templates-and-seeding.md` — TOML schema and the seed contract.
 - `auth-and-audit.md` — how the password gate and audit interceptor work.
 - `ui-design.md` — page layout, copy, components to factor out.
-- `milestones.md` — the order we're building things in.
+- `completed-milestones.md` — the record of what each shipped milestone added (M1–M21).
+- `roadmap.md` — uncommitted forward-looking ideas (successor to the old `milestones.md` plan).
 
 When implementing a milestone:
 

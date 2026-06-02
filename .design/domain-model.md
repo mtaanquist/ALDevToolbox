@@ -290,17 +290,19 @@ The catalogue of "things you might depend on without us knowing in advance." It'
 
 One row per write to any of the above tables. See `auth-and-audit.md` for the full behaviour.
 
-| Column         | Type             | Notes                                                |
-|----------------|------------------|------------------------------------------------------|
-| `id`           | INTEGER PK       |                                                      |
-| `timestamp`    | TIMESTAMPTZ NOT NULL | UTC                                              |
-| `changed_by`   | TEXT NOT NULL    | The current user's display name                      |
-| `entity_type`  | TEXT NOT NULL    | One of: `runtime_template`, `workspace_extension`, `workspace_extension_folder`, `workspace_extension_file`, `workspace_extension_dependency`, `runtime_template_default_module`, `module`, `module_dependency`, `module_extension_folder`, `module_extension_file`, `well_known_dependency`. Pre-Issue #54 rows with `template_folder` / `template_file` / `template_module_folder` / `template_module_file` are retained for historical view. |
-| `entity_id`    | INTEGER NOT NULL | The id within that entity's table                    |
-| `action`       | TEXT NOT NULL    | `created` \| `updated` \| `deleted`                  |
-| `snapshot_json`| TEXT             | Full JSON of the row's state *before* the change. Null for `created`. |
+| Column               | Type             | Notes                                          |
+|----------------------|------------------|------------------------------------------------|
+| `id`                 | INTEGER PK       |                                                |
+| `timestamp`          | TIMESTAMPTZ NOT NULL | UTC                                        |
+| `changed_by`         | TEXT NOT NULL    | `"display_name <email>"` of the acting user; `"unknown"` for pre-login writes (seed/bootstrap). |
+| `changed_by_user_id` | INTEGER NULL FK → `users` | Null for pre-login changes (seed, bootstrap). |
+| `organization_id`    | INTEGER NULL FK → `organizations` | Owning org; null for changes with no org context (seed bootstrap). |
+| `entity_type`        | TEXT NOT NULL    | The `AuditEntityType` enum (the authoritative list — see `Domain/Entities/AuditLogEntry.cs`). Covers the template / module / workspace-extension entities plus the account, organisation, system-settings, backup, invite, recipe, and personal-access-token entities. Pre-`UnifyExtensions` values (`template_folder` / `template_file` / `template_module_folder` / `template_module_file`) are retained for historical reads. |
+| `entity_id`          | INTEGER NOT NULL | The id within that entity's table              |
+| `action`             | TEXT NOT NULL    | `created` \| `updated` \| `deleted`            |
+| `snapshot_json`      | TEXT             | Full JSON of the row's state *before* the change. Null for `created`. |
 
-Index: `(entity_type, entity_id, timestamp DESC)` for the per-entity history view.
+Indexes: `(entity_type, entity_id, timestamp)` for the per-entity history view; `(timestamp)` for the global log overview; `(organization_id, timestamp)` for the per-org audit search.
 
 ## Validation rules
 

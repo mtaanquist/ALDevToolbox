@@ -202,6 +202,6 @@ See [`.design/architecture.md`](./.design/architecture.md) for what belongs wher
 
 ## Contributing
 
-- One milestone per PR, or a coherent slice. The build sequence is in [`.design/milestones.md`](./.design/milestones.md).
+- One coherent slice per PR. What's shipped is recorded in [`.design/completed-milestones.md`](./.design/completed-milestones.md); uncommitted ideas live in [`.design/roadmap.md`](./.design/roadmap.md).
 - Run the GitHub Actions build on every push — it's the floor for "compiles, starts, and tests pass."
 - Manual smoke test the end-user flows after any change to shared services. Bring up the app under Docker before merging anything that touches startup, env vars, or volumes.

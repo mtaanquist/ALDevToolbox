@@ -28,20 +28,18 @@ Implemented as a single `MainLayout.razor`:
 
 ## Routes
 
-| Route                          | Page                          | Auth required |
-|--------------------------------|-------------------------------|---------------|
-| `/`                            | Redirects to `/projects/new`  | No            |
-| `/projects/new`                | NewWorkspace                  | No            |
-| `/projects/extension`          | NewExtension                  | No            |
-| `/templates`                   | TemplatesBrowser (read-only)  | No            |
-| `/admin`                       | AdminDashboard                | Yes           |
-| `/admin/templates`             | AdminTemplateList             | Yes           |
-| `/admin/templates/{key}`       | AdminTemplateEdit             | Yes           |
-| `/admin/modules`               | AdminModuleList               | Yes           |
-| `/admin/modules/{key}`         | AdminModuleEdit               | Yes           |
-| `/admin/catalog`               | AdminCatalog                  | Yes           |
-| `/admin/audit`                 | AdminAuditLog                 | Yes           |
-| `/login`                       | Login                         | No            |
+> **This document is a Phase-1 design snapshot.** It predates Phase 3 (accounts, multi-tenancy) and Phase 4 (Postgres, site-admin), so the route list and per-page descriptions below cover only the original generator + admin surface. The app now has ~80 routes (the full auth stack, account self-service, `/site-admin/*`, invites, MCP/OAuth). The authoritative route list is the Blazor router (the `@page` directives across `Components/Pages/`); for the current auth model and the page-by-page auth requirements, see `auth-and-audit.md`.
+
+A key change since this snapshot: the generator pages (`/projects/new`, `/projects/extension`) and `/templates` are now **authenticated** (`[Authorize]`, `User`+). Anonymous visitors are redirected to `/login`. The original Phase-1 surface was:
+
+| Route                          | Page                          | Auth (current) |
+|--------------------------------|-------------------------------|----------------|
+| `/`                            | Redirects to `/projects/new`  | —              |
+| `/projects/new`                | NewWorkspace                  | Yes (User+)    |
+| `/projects/extension`          | NewExtension                  | Yes (User+)    |
+| `/templates`                   | TemplatesBrowser (read-only)  | Yes (User+)    |
+| `/admin/*`                     | Admin pages                   | Yes (Editor/Admin) |
+| `/login`                       | Login                         | No             |
 
 ## Page: New workspace (`/projects/new`)
 
@@ -188,12 +186,12 @@ Table of all audit entries across all entities, newest first. Filters: entity ty
 
 ## Components to factor out
 
-These appear in multiple pages — pulling them into reusable components saves duplication:
+These appear in multiple pages — pulling them into reusable components saves duplication. The first three shipped and live in `Components/Shared/`:
 
 - **`<DependencyPicker>`** — used by New Extension and admin module/catalogue editing. Takes a list of `DependencyEntry`, supports add/remove. Catalogue picker mode shows checkboxes over the catalogue; freeform mode shows a list with add buttons.
 - **`<FolderTreePreview>`** — takes a list of folder paths and renders the tree. Used by both project flows.
 - **`<AuditHistoryPanel>`** — takes an entity type + id, fetches recent audit entries. Used at the bottom of every admin edit page.
-- **`<JsonEditor>`** — a textarea with monospace font and basic validation feedback. Used for `defaults_json` and `app_source_cop_json` fields. v1 = textarea + parse-and-show-error-on-blur. v2 = something nicer.
+- **`<JsonEditor>`** — *not built; superseded.* The plan was a textarea for `defaults_json` / `app_source_cop_json`. Instead, the visible knobs moved to dedicated form fields (`/admin/templates/defaults`) and the remaining raw JSON is edited through the TOML editor's round-trip rather than a bespoke component. See the rationale comment in `AdminTemplateEdit.razor`.
 
 ## Visual conventions
 
