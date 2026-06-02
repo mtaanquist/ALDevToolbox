@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using ALDevToolbox.Domain.Entities.ObjectExplorer;
 using Microsoft.EntityFrameworkCore;
 
@@ -60,6 +61,43 @@ internal static class ObjectSearchRanking
         foreach (var token in tokens)
         {
             var text = token.Text;
+
+            // Quoted run → exact match: the whole object name, or (for a
+            // numeric) the exact ObjectId. Stricter than the substring default
+            // so `"36"` / `"Sales Header"` return only exact hits. Exact is
+            // all-or-nothing, so it never contributes a ranking token.
+            if (token.Quoted)
+            {
+                q = int.TryParse(text, out var exactId)
+                    ? ApplyPredicate(q, token.Negated, o => o.ObjectId == exactId || o.Name.ToLower() == text)
+                    : ApplyPredicate(q, token.Negated, o => o.Name.ToLower() == text);
+                continue;
+            }
+
+            // `lo..hi` → inclusive ObjectId range (e.g. 50000..99999).
+            if (TryParseIdRange(text, out var lo, out var hi))
+            {
+                q = ApplyPredicate(q, token.Negated,
+                    o => o.ObjectId != null && o.ObjectId >= lo && o.ObjectId <= hi);
+                continue;
+            }
+
+            // `sales*` / `*sales` / `*sales*` → anchored glob on the name.
+            var (globKind, needle) = ParseGlob(text);
+            if (globKind != GlobKind.None)
+            {
+                if (needle.Length == 0) continue; // a bare `*` matches everything
+                q = globKind switch
+                {
+                    GlobKind.Prefix => ApplyPredicate(q, token.Negated, o => o.Name.ToLower().StartsWith(needle)),
+                    GlobKind.Suffix => ApplyPredicate(q, token.Negated, o => o.Name.ToLower().EndsWith(needle)),
+                    _               => ApplyPredicate(q, token.Negated, o => o.Name.ToLower().Contains(needle)),
+                };
+                if (!token.Negated) rankTokens.Add(needle);
+                continue;
+            }
+
+            // Default: case-insensitive substring on the name.
             if (token.Negated)
             {
                 q = q.Where(o => !o.Name.ToLower().Contains(text));
@@ -116,6 +154,60 @@ internal static class ObjectSearchRanking
             tokens.Add(new SearchToken(text.ToLowerInvariant(), negated, quoted));
         }
         return tokens;
+    }
+
+    /// <summary>
+    /// Wraps <paramref name="predicate"/> in a <c>Where</c>, negating it (via
+    /// <see cref="Expression.Not"/>) when <paramref name="negated"/> is set, so
+    /// a leading <c>-</c> works uniformly across exact / range / glob tokens.
+    /// </summary>
+    private static IQueryable<ModuleObject> ApplyPredicate(
+        IQueryable<ModuleObject> q, bool negated, Expression<Func<ModuleObject, bool>> predicate)
+    {
+        if (!negated) return q.Where(predicate);
+        var not = Expression.Lambda<Func<ModuleObject, bool>>(
+            Expression.Not(predicate.Body), predicate.Parameters);
+        return q.Where(not);
+    }
+
+    /// <summary>
+    /// Parses an inclusive id-range token of the form <c>lo..hi</c> (e.g.
+    /// <c>50000..99999</c>). Reversed bounds are tolerated. Returns false for
+    /// anything that isn't exactly two integers around a single <c>..</c>
+    /// (so open-ended <c>50000..</c> / <c>..99999</c> stay plain tokens).
+    /// </summary>
+    internal static bool TryParseIdRange(string text, out int lo, out int hi)
+    {
+        lo = 0;
+        hi = 0;
+        var dots = text.IndexOf("..", StringComparison.Ordinal);
+        if (dots <= 0 || dots + 2 >= text.Length) return false;
+        if (text.IndexOf("..", dots + 2, StringComparison.Ordinal) >= 0) return false; // only one ".."
+        if (!int.TryParse(text[..dots], out lo) || !int.TryParse(text[(dots + 2)..], out hi))
+            return false;
+        if (lo > hi) (lo, hi) = (hi, lo);
+        return true;
+    }
+
+    internal enum GlobKind { None, Prefix, Suffix, Contains }
+
+    /// <summary>
+    /// Classifies a <c>*</c>-bearing token into an anchored glob: <c>foo*</c>
+    /// is a prefix match, <c>*foo</c> a suffix, <c>*foo*</c> (or an internal
+    /// <c>*</c>) a contains. A token with no <c>*</c> returns
+    /// <see cref="GlobKind.None"/> so the caller keeps the substring default.
+    /// The needle is the token with its <c>*</c>s stripped.
+    /// </summary>
+    internal static (GlobKind Kind, string Needle) ParseGlob(string text)
+    {
+        if (!text.Contains('*')) return (GlobKind.None, text);
+        var starts = text.StartsWith('*');
+        var ends = text.EndsWith('*');
+        var core = text.Replace("*", "");
+        if (starts && ends) return (GlobKind.Contains, core);
+        if (ends) return (GlobKind.Prefix, core);
+        if (starts) return (GlobKind.Suffix, core);
+        return (GlobKind.Contains, core); // internal '*': fall back to contains
     }
 
     /// <summary>
