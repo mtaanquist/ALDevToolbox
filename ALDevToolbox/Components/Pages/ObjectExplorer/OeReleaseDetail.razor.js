@@ -8,6 +8,7 @@
 let currentRef = null;
 let keyHandler = null;
 let scrollObserver = null;
+let outsideClickHandler = null;
 
 const SCOPE_BY_DIGIT = {
     "1": "Objects",
@@ -44,6 +45,16 @@ export function init(dotNetRef) {
         currentRef.invokeMethodAsync("SetScopeFromKeybind", SCOPE_BY_DIGIT[digit]);
     };
     document.addEventListener("keydown", keyHandler);
+
+    // The Object-type filter is a native <details> popover, which only closes
+    // when you click its summary again. Close any open one when the click lands
+    // outside it, matching the dismiss-on-outside-click users expect. See #273.
+    outsideClickHandler = (ev) => {
+        document.querySelectorAll("details.kind-filter[open]").forEach((d) => {
+            if (!d.contains(ev.target)) d.removeAttribute("open");
+        });
+    };
+    document.addEventListener("click", outsideClickHandler);
 }
 
 // Infinite scroll: (re)observe the objects-grid sentinel so it pulls the next
@@ -71,6 +82,10 @@ export function detach() {
     if (keyHandler) {
         document.removeEventListener("keydown", keyHandler);
         keyHandler = null;
+    }
+    if (outsideClickHandler) {
+        document.removeEventListener("click", outsideClickHandler);
+        outsideClickHandler = null;
     }
     if (scrollObserver) {
         scrollObserver.disconnect();
