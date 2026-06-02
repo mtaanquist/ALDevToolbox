@@ -141,6 +141,12 @@
                     <details class="kind-filter">
                         <summary class="field__input kind-filter__summary">@KindSummary</summary>
                         <div class="kind-filter__panel">
+                            <label class="kind-filter__option">
+                                <input type="checkbox"
+                                       checked="@(_selectedKinds.Count == 0)"
+                                       @onchange="OnAllKindsToggled" />
+                                <span>All types</span>
+                            </label>
                             @if (_kinds is not null)
                             {
                                 @foreach (var k in _kinds)
@@ -207,9 +213,9 @@
             @if (_scope != SearchScope.Compare)
             {
                 <div class="field object-explorer__filters-reset">
-                    <button type="button" class="btn btn--sm" @onclick="ResetFilters" disabled="@(!HasActiveFilters)">
+                    <button type="button" class="btn btn--sm btn--icon" @onclick="ResetFilters" disabled="@(!HasActiveFilters)"
+                            title="Reset filters" aria-label="Reset filters">
                         <Icon Name="rotate-ccw" Width="14" Height="14" />
-                        <span>Reset filters</span>
                     </button>
                 </div>
             }
@@ -695,6 +701,20 @@
     {
         if (e.Value is true) _selectedKinds.Add(kind);
         else _selectedKinds.Remove(kind);
+        await ReloadAsync();
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// The "All types" affordance. An empty selection already means "all", so
+    /// this just clears any per-kind picks. It auto-checks again (the bound
+    /// <c>checked</c> tracks <c>Count == 0</c>) whenever the user clears every
+    /// specific kind. No-op when nothing is selected. See issue #273.
+    /// </summary>
+    private async Task OnAllKindsToggled()
+    {
+        if (_selectedKinds.Count == 0) return;
+        _selectedKinds.Clear();
         await ReloadAsync();
         StateHasChanged();
     }
