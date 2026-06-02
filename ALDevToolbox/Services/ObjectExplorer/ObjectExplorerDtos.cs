@@ -249,6 +249,18 @@ public sealed record FindReferencesQuery(
     string? TargetMemberKind = null);
 
 /// <summary>
+/// Query envelope for <c>FindSystemReferencesAsync</c> — the receiver object
+/// triplet (same matching as <see cref="FindReferencesQuery"/>), optionally
+/// narrowed to a single built-in method (<c>Insert</c>, <c>Modify</c>, …).
+/// </summary>
+public sealed record FindSystemReferencesQuery(
+    Guid TargetAppId,
+    string TargetObjectKind,
+    int? TargetObjectId,
+    string TargetObjectName,
+    string? SystemMethodName = null);
+
+/// <summary>
 /// One reference matched by <c>FindReferencesAsync</c>. Carries enough
 /// joined context (source module, source object, reference kind, line)
 /// for the UI to link back to the calling object's file viewer without a

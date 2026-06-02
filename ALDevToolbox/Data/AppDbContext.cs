@@ -10,6 +10,7 @@ using OeModuleObject = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject;
 using OeModuleSymbol = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol;
 using OeModuleVariable = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleVariable;
 using OeModuleReference = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleReference;
+using OeModuleSystemReference = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSystemReference;
 using OeModuleTranslation = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleTranslation;
 using OeImportJob = ALDevToolbox.Domain.Entities.ObjectExplorer.ImportJob;
 
@@ -161,6 +162,7 @@ public class AppDbContext : DbContext
     public DbSet<OeModuleSymbol> OeModuleSymbols => Set<OeModuleSymbol>();
     public DbSet<OeModuleVariable> OeModuleVariables => Set<OeModuleVariable>();
     public DbSet<OeModuleReference> OeModuleReferences => Set<OeModuleReference>();
+    public DbSet<OeModuleSystemReference> OeModuleSystemReferences => Set<OeModuleSystemReference>();
     public DbSet<OeModuleTranslation> OeModuleTranslations => Set<OeModuleTranslation>();
     public DbSet<OeImportJob> OeImportJobs => Set<OeImportJob>();
     public DbSet<Recipe> Recipes => Set<Recipe>();
@@ -230,6 +232,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OeModuleSymbol>(modelBuilder);
         ScopeToOrganization<OeModuleVariable>(modelBuilder);
         ScopeToOrganization<OeModuleReference>(modelBuilder);
+        ScopeToOrganization<OeModuleSystemReference>(modelBuilder);
         ScopeToOrganization<OeModuleTranslation>(modelBuilder);
         ScopeToOrganization<OeImportJob>(modelBuilder);
         // NOTE: OeFileContent (oe_file_contents) is deliberately NOT scoped.

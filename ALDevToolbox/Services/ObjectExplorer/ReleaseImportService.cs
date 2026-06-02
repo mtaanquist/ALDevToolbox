@@ -9,6 +9,7 @@ using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
 using OeModuleFile = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleFile;
 using OeModuleObject = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject;
 using OeModuleReference = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleReference;
+using OeModuleSystemReference = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSystemReference;
 using OeModuleSymbol = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol;
 using OeModuleVariable = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleVariable;
 using OeRelease = ALDevToolbox.Domain.Entities.ObjectExplorer.Release;
@@ -2404,6 +2405,41 @@ public class ReleaseImportService
                     TargetMemberKind = r.TargetMemberKind,
                     TargetSymbolId = targetSymbolId,
                     TargetVariableId = targetVariableId,
+                    SourceSymbolId = sourceSymbolId,
+                });
+                totalEmitted++;
+                pending++;
+            }
+
+            // System / built-in method calls (Insert, Modify, SetRange, …) go
+            // to the separate oe_module_system_references table — see #279. The
+            // receiver was already resolved at extraction time, so there's no
+            // target-id post-pass; only the enclosing symbol is resolved here,
+            // the same way as the normal references above.
+            foreach (var sr in result.SystemReferences)
+            {
+                long? sourceSymbolId = null;
+                if (sr.SourceMemberLine is int sysSourceLine
+                    && symbolIdByOwnerAndLine.TryGetValue(
+                        (file.Owner.Id, sysSourceLine),
+                        out var resolvedSysSourceSymbolId))
+                {
+                    sourceSymbolId = resolvedSysSourceSymbolId;
+                }
+
+                _db.OeModuleSystemReferences.Add(new OeModuleSystemReference
+                {
+                    OrganizationId = orgId,
+                    ModuleId = file.ModuleId,
+                    SourceObjectId = file.Owner.Id,
+                    TargetAppId = sr.TargetAppId,
+                    TargetObjectKind = sr.TargetObjectKind,
+                    TargetObjectId = sr.TargetObjectId,
+                    TargetObjectName = sr.TargetObjectName,
+                    SystemMethodName = sr.SystemMethodName,
+                    ReferenceKind = sr.ReferenceKind,
+                    LineNumber = sr.Line,
+                    ColumnNumber = sr.Column,
                     SourceSymbolId = sourceSymbolId,
                 });
                 totalEmitted++;

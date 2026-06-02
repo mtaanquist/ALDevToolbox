@@ -391,6 +391,22 @@ internal static class ObjectExplorerEndpoints
             return session is null ? Results.NotFound() : Results.Ok(session);
         }).RequireAuthorization();
 
+        // "Find System References" on an object: every built-in / system
+        // method call (Insert / Modify / SetRange / …) on it, from the
+        // separate oe_module_system_references table. Renders through the same
+        // panel as Find references. The id is an oe_module_objects row.
+        app.MapGet("/api/object-explorer/system-references/sessions/from-object/{objectId:long}", async (
+            long objectId,
+            HttpContext ctx,
+            ReferenceSessionService sessions,
+            CancellationToken ct) =>
+        {
+            var owner = OwnerKey(ctx);
+            if (owner is null) return Results.Unauthorized();
+            var session = await sessions.CreateSystemReferencesFromObjectAsync(objectId, owner, ct);
+            return session is null ? Results.NotFound() : Results.Ok(session);
+        }).RequireAuthorization();
+
         // Member-scoped find: outline right-click on a procedure / field /
         // trigger row mints a session that bundles declarations + indirect
         // owner-type refs + (eventually) method-call refs. The symbolId

@@ -355,6 +355,76 @@ public sealed class ReferenceQueryService
     }
 
     /// <summary>
+    /// "Find System References": every call to a built-in / system method
+    /// (<c>Insert</c>, <c>Modify</c>, <c>SetRange</c>, …) on the target object,
+    /// read from the separate <c>oe_module_system_references</c> table. Same
+    /// recursive-CTE shadowing and target-triplet matching as
+    /// <see cref="FindReferencesAsync"/>; optionally narrowed to one method.
+    /// Rows are tagged <c>Category = "system_call"</c> so the panel can label
+    /// them, with the system method name in <see cref="ReferenceMatch.MemberName"/>.
+    /// </summary>
+    public async Task<List<ReferenceMatch>> FindSystemReferencesAsync(
+        int releaseId, FindSystemReferencesQuery query, CancellationToken ct = default)
+    {
+        if (!await ReleaseVisibleAsync(releaseId, ct)) return new();
+
+        const string sql = ReleaseAncestrySql.WinningModules + "\n" + """
+            SELECT
+                sr.id                    AS "Id",
+                sr.module_id             AS "SourceModuleId",
+                m.name                   AS "SourceModuleName",
+                sr.source_object_id      AS "SourceObjectId",
+                so.kind                  AS "SourceObjectKind",
+                so.name                  AS "SourceObjectName",
+                sr.reference_kind        AS "ReferenceKind",
+                sr.line_number           AS "LineNumber",
+                so.source_file_id        AS "SourceFileId",
+                NULL::text               AS "SourceFilePath",
+                NULL::text               AS "Snippet",
+                'system_call'::text      AS "Category",
+                sr.system_method_name    AS "MemberName",
+                'system'::text           AS "MemberKind",
+                NULL::text               AS "MemberSignature",
+                ss.name                  AS "SourceMemberName",
+                ss.kind                  AS "SourceMemberKind",
+                ss.signature             AS "SourceMemberSignature"
+            FROM oe_module_system_references sr
+            JOIN oe_module_objects so ON so.id = sr.source_object_id
+            JOIN oe_modules        m  ON m.id  = sr.module_id
+            JOIN winning           w  ON w.id  = sr.module_id
+            LEFT JOIN oe_module_symbols ss ON ss.id = sr.source_symbol_id
+            WHERE sr.target_app_id      = {1}::uuid
+              AND sr.target_object_kind = {2}
+              AND (
+                    ({3}::int IS NOT NULL AND sr.target_object_id = {3}::int)
+                 OR ({3}::int IS NULL AND sr.target_object_name = {4})
+              )
+              -- Optional narrow to a single system method (Insert / Modify / …).
+              AND ({5}::text IS NULL OR sr.system_method_name = {5}::text)
+            ORDER BY m.name, so.name, sr.id
+            """;
+
+        var matches = await _db.Database
+            .SqlQueryRaw<ReferenceMatch>(
+                sql,
+                releaseId,
+                query.TargetAppId,
+                query.TargetObjectKind,
+                (object?)query.TargetObjectId ?? DBNull.Value,
+                query.TargetObjectName,
+                (object?)query.SystemMethodName ?? DBNull.Value)
+            .ToListAsync(ct);
+
+        matches = await EnrichReferencesWithSnippetsAsync(matches, ct);
+
+        _logger.LogInformation(
+            "FindSystemReferences ReleaseId={ReleaseId} TargetAppId={TargetAppId} Kind={Kind} Id={Id} Name={Name} Method={Method} Matches={Count}",
+            releaseId, query.TargetAppId, query.TargetObjectKind, query.TargetObjectId, query.TargetObjectName, query.SystemMethodName, matches.Count);
+
+        return matches;
+    }
+
+    /// <summary>
     /// Member-scoped find references: returns everywhere a specific
     /// procedure / field / trigger on a specific owner object is referenced,
     /// across the visible module chain. Composed of three result sets the UI

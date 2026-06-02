@@ -33,6 +33,7 @@ internal sealed class AlExtractionState
     public AlExtractContext Ctx { get; }
     public Stack<ScopeFrame> ScopeStack { get; } = new();
     public List<ExtractedReference> Refs { get; } = new();
+    public List<ExtractedSystemReference> SystemRefs { get; } = new();
     public List<UnresolvedSample> UnresolvedSamples { get; } = new();
 
     /// <summary>
@@ -221,6 +222,30 @@ internal sealed class AlExtractionState
             }
         }
         Refs.Add(reference);
+    }
+
+    /// <summary>
+    /// Records a built-in / system method call (the rows the normal extractor
+    /// drops). Stamps the enclosing procedure/trigger from the scope frame the
+    /// same way <see cref="EmitReference"/> does, so the panel can show which
+    /// member each system call sits in. See issue #279.
+    /// </summary>
+    public void EmitSystemReference(ExtractedSystemReference reference)
+    {
+        if (ScopeStack.Count > 1)
+        {
+            var frame = ScopeStack.Peek();
+            if (frame.SymbolName is not null && frame.SymbolKind is not null)
+            {
+                reference = reference with
+                {
+                    SourceMemberName = frame.SymbolName,
+                    SourceMemberKind = frame.SymbolKind,
+                    SourceMemberLine = frame.SymbolStartLine,
+                };
+            }
+        }
+        SystemRefs.Add(reference);
     }
 
     /// <summary>
@@ -1551,11 +1576,22 @@ internal sealed class AlProcedureWalker
                 // counter so operators can size the residual gap.
                 if (AlBuiltinMethods.IsBuiltin(receiverType.Kind, memberTok.Value))
                 {
-                    // Built-in like Rec.Validate(...) — no ref to
-                    // emit for the call itself, but the args may
-                    // contain references that need to surface.
-                    // Walk inside the parens via the same dispatch
-                    // path the main loop uses.
+                    // Built-in like Rec.Insert()/Rec.Validate(...): not a normal
+                    // reference, but record it as a SYSTEM reference (separate
+                    // table) so "Find System References" can surface it without
+                    // cluttering Find references. The receiver type is already
+                    // resolved, so this row is fully qualified. See issue #279.
+                    _state.EmitSystemReference(new ExtractedSystemReference(
+                        Line: memberTok.Line,
+                        Column: memberTok.Column,
+                        TargetAppId: receiverType.AppId,
+                        TargetObjectKind: receiverType.Kind,
+                        TargetObjectId: receiverType.ObjectId,
+                        TargetObjectName: receiverType.Name,
+                        SystemMethodName: memberTok.Value,
+                        ReferenceKind: followedByParen ? "method_call" : "field_access"));
+                    // The args may still contain references that need to
+                    // surface — walk inside the parens via the main dispatch.
                     if (followedByParen) WalkArgsForBuiltin(receiverType, memberTok.Value);
                     return;
                 }

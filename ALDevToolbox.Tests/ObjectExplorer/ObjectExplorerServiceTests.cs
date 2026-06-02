@@ -1031,6 +1031,66 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task FindSystemReferencesAsync_returns_system_calls_for_an_object()
+    {
+        // Seed a system-reference row directly (no extraction) to lock the
+        // query: a codeunit "Caller" that Inserts table 99000 "Acme". #279.
+        var releaseId = await SeedSingleReleaseAsync();
+        Guid appId;
+        await using (var write = _db.NewContext())
+        {
+            var module = await write.OeModules
+                .Where(m => m.ReleaseId == releaseId)
+                .Select(m => new { m.Id, m.AppId })
+                .FirstAsync();
+            appId = module.AppId;
+            var caller = new ModuleObject
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                Kind = "codeunit",
+                ObjectId = 50000,
+                Name = "Caller",
+                LineNumber = 1,
+            };
+            write.OeModuleObjects.Add(caller);
+            await write.SaveChangesAsync();
+
+            write.OeModuleSystemReferences.Add(new ModuleSystemReference
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                ModuleId = module.Id,
+                SourceObjectId = caller.Id,
+                TargetAppId = appId,
+                TargetObjectKind = "table",
+                TargetObjectId = 99000,
+                TargetObjectName = "Acme",
+                SystemMethodName = "Insert",
+                ReferenceKind = "method_call",
+                LineNumber = 10,
+            });
+            await write.SaveChangesAsync();
+        }
+        await using var read = _db.NewContext();
+        var refs = NewReferences(read);
+
+        var hits = await refs.FindSystemReferencesAsync(releaseId, new FindSystemReferencesQuery(
+            TargetAppId: appId,
+            TargetObjectKind: "table",
+            TargetObjectId: 99000,
+            TargetObjectName: "Acme"));
+        hits.Should().Contain(m => m.MemberName == "Insert"
+            && m.Category == "system_call"
+            && m.SourceObjectName == "Caller");
+
+        // Narrowing to a method that wasn't called returns nothing.
+        var modifyHits = await refs.FindSystemReferencesAsync(releaseId, new FindSystemReferencesQuery(
+            TargetAppId: appId, TargetObjectKind: "table", TargetObjectId: 99000,
+            TargetObjectName: "Acme", SystemMethodName: "Modify"));
+        modifyHits.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task FindReferencesForSymbolAsync_call_rows_carry_the_enclosing_member()
     {
         var releaseId = await SeedSingleReleaseAsync();
