@@ -3508,8 +3508,13 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     align-items: flex-start;
     gap: 16px;
 }
-.oe-compare-file__breadcrumbs p {
+/* Override the 72ch prose cap inherited from `.admin-page__header p`
+   (admin.css) so the full "Release · Module · Path" labels show instead of
+   wrapping early. The extra ancestor class wins the specificity tie against
+   admin.css, which loads after tools.css. */
+.oe-compare-file__header .oe-compare-file__breadcrumbs p {
     margin: 0 0 4px;
+    max-width: none;
 }
 .oe-compare-file__panes {
     /* Fills the rest of .oe-compare-file. grid-template-rows: 1fr is what
