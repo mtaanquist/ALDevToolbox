@@ -141,6 +141,64 @@ public sealed class CalImportServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task BackfillSystemReferencesAsync_repopulates_cal_system_references()
+    {
+        // #291: simulate a pre-#279 C/AL release (no system refs), then backfill
+        // from stored source and confirm the Cust.INSERT system ref comes back.
+        const string cal =
+            "OBJECT Codeunit 50000 Mgt\r\n"
+          + "{\r\n"
+          + "  CODE\r\n"
+          + "  {\r\n"
+          + "    VAR\r\n"
+          + "      Cust@1000 : Record 18;\r\n"
+          + "\r\n"
+          + "    PROCEDURE Foo@1();\r\n"
+          + "    BEGIN\r\n"
+          + "      Cust.INSERT();\r\n"
+          + "    END;\r\n"
+          + "\r\n"
+          + "    BEGIN\r\n"
+          + "    END.\r\n"
+          + "  }\r\n"
+          + "}\r\n";
+        var path = Path.GetTempFileName();
+        await File.WriteAllTextAsync(path, cal, Encoding.ASCII);
+        try
+        {
+            var releaseId = await ImportAsync(path, "Backfill");
+
+            // Wipe to mimic a release imported before system references existed.
+            await using (var wipe = _db.NewContext())
+            {
+                await wipe.Database.ExecuteSqlRawAsync(
+                    "DELETE FROM oe_module_system_references WHERE module_id IN (SELECT id FROM oe_modules WHERE release_id = {0});",
+                    releaseId);
+            }
+            await using (var check = _db.NewContext())
+            {
+                (await check.OeModuleSystemReferences.AsNoTracking()
+                    .CountAsync(r => r.Module!.ReleaseId == releaseId)).Should().Be(0);
+            }
+
+            await using (var b = _db.NewContext())
+            {
+                await NewCalImporter(b).BackfillSystemReferencesAsync(releaseId);
+            }
+
+            await using var read = _db.NewContext();
+            var sysRefs = await read.OeModuleSystemReferences.AsNoTracking()
+                .Where(r => r.Module!.ReleaseId == releaseId)
+                .ToListAsync();
+            sysRefs.Should().Contain(r => r.SystemMethodName.ToUpper() == "INSERT"
+                && r.ReferenceKind == "method_call"
+                && r.TargetObjectId == 18
+                && r.SourceSymbolId != null);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
     public async Task Stores_per_object_version_list_from_object_properties()
     {
         // The C/SIDE "Version List" property is per-object; the import stamps it

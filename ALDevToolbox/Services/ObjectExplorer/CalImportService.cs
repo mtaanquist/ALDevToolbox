@@ -187,6 +187,114 @@ public sealed class CalImportService
         }
     }
 
+    /// <summary>
+    /// Backfill path (#291): repopulates <c>oe_module_system_references</c> for
+    /// an already-imported C/AL release by re-parsing each object's stored
+    /// source slice (no original TXT needed) and re-running the call-site walker
+    /// in system-references-only mode. Idempotent — deletes the release's
+    /// existing system-reference rows first — and leaves
+    /// <c>oe_module_references</c> and the source untouched. Routed here (rather
+    /// than the AL path) by the worker when the release's files are C/AL slices.
+    /// </summary>
+    public async Task BackfillSystemReferencesAsync(int releaseId, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+
+        var preview = await _db.OeReleases.AsNoTracking()
+            .Where(r => r.Id == releaseId)
+            .Select(r => new { r.Status, r.DeletedAt })
+            .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+        if (preview is null || preview.DeletedAt is not null
+            || !string.Equals(preview.Status, "ready", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Release {releaseId} isn't ready to backfill (status = {preview?.Status ?? "missing"}).");
+        }
+
+        _db.Database.SetCommandTimeout(TimeSpan.FromMinutes(10));
+
+        await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM oe_module_system_references WHERE module_id IN (SELECT id FROM oe_modules WHERE release_id = {0});",
+            new object[] { releaseId }, ct).ConfigureAwait(false);
+
+        var modules = await _db.OeModules.AsNoTracking()
+            .Where(m => m.ReleaseId == releaseId)
+            .Select(m => new { m.Id, m.AppId })
+            .ToListAsync(ct).ConfigureAwait(false);
+
+        int emitted = 0;
+        foreach (var module in modules)
+        {
+            var objectIds = await _db.OeModuleObjects.AsNoTracking()
+                .Where(o => o.ModuleId == module.Id && o.SourceFileId != null)
+                .Select(o => o.Id)
+                .ToListAsync(ct).ConfigureAwait(false);
+
+            foreach (var objId in objectIds)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var obj = await _db.OeModuleObjects
+                    .Include(o => o.SourceFile!).ThenInclude(f => f.FileContent!)
+                    .Include(o => o.Symbols)
+                    .FirstOrDefaultAsync(o => o.Id == objId, ct).ConfigureAwait(false);
+                if (obj?.SourceFile?.FileContent?.Content is not { Length: > 0 } content)
+                {
+                    _db.ChangeTracker.Clear();
+                    continue;
+                }
+
+                // Re-derive the parsed object from the stored slice. UTF-8
+                // round-trips the already-decoded string losslessly, so the
+                // splitter/parser reproduce the original structure (and line
+                // numbers, which we match back to the existing symbol rows).
+                CalParsedObject parsed;
+                using (var ms = new MemoryStream(Encoding.UTF8.GetBytes(content)))
+                {
+                    var block = CalObjectSplitter.Split(ms, Encoding.UTF8, _ => { }).FirstOrDefault();
+                    if (block is null) { _db.ChangeTracker.Clear(); continue; }
+                    parsed = CalObjectParser.Parse(block);
+                }
+
+                var symByLine = new Dictionary<int, OeModuleSymbol>();
+                foreach (var s in obj.Symbols)
+                {
+                    if (s.Kind is "procedure" or "local_procedure" or "trigger")
+                        symByLine[s.LineNumber] = s;
+                }
+
+                var ownerId = parsed.ObjectId;
+                CalTypeRef? recRef = parsed.Kind == "table"
+                    ? new CalTypeRef("table", parsed.ObjectId)
+                    : parsed.Kind == "page" && int.TryParse(parsed.SourceTableId, out var stid)
+                        ? new CalTypeRef("table", stid)
+                        : null;
+                var globalVars = BuildVarMap(parsed.Globals);
+
+                foreach (var p in parsed.Procedures)
+                {
+                    if (!symByLine.TryGetValue(p.LineNumber, out var sym)) continue;
+                    EmitBodyReferences(orgId, module.Id, module.AppId, obj, sym, p.Body, p.BodyLine,
+                        globalVars, p.Parameters, p.Locals, parsed.Kind, ownerId, recRef, ref emitted,
+                        systemReferencesOnly: true);
+                }
+                foreach (var t in parsed.Triggers)
+                {
+                    if (!symByLine.TryGetValue(t.LineNumber, out var sym)) continue;
+                    EmitBodyReferences(orgId, module.Id, module.AppId, obj, sym, t.Body, t.BodyLine,
+                        globalVars, Array.Empty<CalVariable>(), t.Locals, parsed.Kind, ownerId, recRef, ref emitted,
+                        systemReferencesOnly: true);
+                }
+
+                await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+                _db.ChangeTracker.Clear();
+            }
+        }
+
+        _logger.LogInformation(
+            "Backfilled system references (C/AL): ReleaseId={ReleaseId} Emitted={Count}", releaseId, emitted);
+    }
+
     /// <summary>Builds the entity rows for one parsed object and queues its source slice for the blob store.</summary>
     private void EmitObject(
         int orgId, long moduleId, Guid appId,
@@ -355,7 +463,8 @@ public sealed class CalImportService
         OeModuleObject obj, OeModuleSymbol sourceSym, string body, int bodyLine,
         IReadOnlyDictionary<string, CalTypeRef> globals,
         IEnumerable<CalVariable> parameters, IEnumerable<CalVariable> locals,
-        string ownerKind, int ownerId, CalTypeRef? recRef, ref int referencesImported)
+        string ownerKind, int ownerId, CalTypeRef? recRef, ref int referencesImported,
+        bool systemReferencesOnly = false)
     {
         if (string.IsNullOrEmpty(body)) return;
 
@@ -365,6 +474,9 @@ public sealed class CalImportService
         foreach (var v in locals) AddTypedVar(scope.Variables, v);
 
         var result = CalReferenceExtractor.Extract(body, scope);
+        // Normal call-site references. Skipped on the backfill path (#291),
+        // which only repopulates oe_module_system_references.
+        if (!systemReferencesOnly)
         foreach (var r in result.References)
         {
             // The walker numbers lines from 1 within the body text it was given;

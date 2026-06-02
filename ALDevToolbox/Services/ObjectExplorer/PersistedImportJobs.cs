@@ -71,6 +71,10 @@ public sealed class PersistedImportJobs
                 row.Kind = "cal_txt";
                 row.StagedZipPath = cal.TempPath;
                 break;
+            case ReleaseImportSource.Backfill:
+                // No payload — re-extracts from already-stored source (#291).
+                row.Kind = "backfill_system_references";
+                break;
             default:
                 throw new InvalidOperationException($"Unknown import source {source.GetType().Name}.");
         }
@@ -152,6 +156,16 @@ public sealed class PersistedImportJobs
                         Source: new ReleaseImportSource.Url(row.DownloadUrl),
                         StoreSymbolReference: row.StoreSymbolReference,
                         JobRowId: row.Id));
+                    break;
+                case "backfill_system_references":
+                    // A maintenance backfill interrupted by a restart. The
+                    // release stays ready (backfill never flips its status); its
+                    // system refs may be partially repopulated. Nothing to
+                    // resume — mark failed so the admin re-triggers, which is
+                    // cheap and idempotent. No lost upload to report. See #291.
+                    row.Status = "failed";
+                    row.ErrorMessage = "The system-reference backfill was interrupted by a restart. Re-trigger it from the release.";
+                    row.CompletedAt = now;
                     break;
                 default:
                     // Staged-zip / cal-txt can't be resumed — the temp file is
