@@ -992,6 +992,48 @@ public sealed class ObjectExplorerServiceTests : IDisposable
         matches.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task FindReferencesForSymbolAsync_call_rows_carry_the_enclosing_member()
+    {
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+
+        // Self-discovering: pick a real call-site row the import stamped with a
+        // source symbol (the enclosing procedure / trigger) so the test doesn't
+        // hard-code fixture-specific names. This is exactly the shape the
+        // References panel groups under its object header.
+        var seed = await read.OeModuleReferences.AsNoTracking()
+            .Where(r => r.Module!.ReleaseId == releaseId)
+            .Where(r => r.ReferenceKind == "method_call" || r.ReferenceKind == "field_access")
+            .Where(r => r.SourceSymbolId != null && r.TargetMemberName != null && r.TargetObjectName != null)
+            .Select(r => new
+            {
+                r.TargetAppId,
+                r.TargetObjectKind,
+                r.TargetObjectId,
+                r.TargetObjectName,
+                r.TargetMemberName,
+                r.TargetMemberKind,
+                EnclosingName = r.SourceSymbol!.Name,
+            })
+            .FirstOrDefaultAsync();
+        seed.Should().NotBeNull(
+            because: "the fixture import emits method_call/field_access rows stamped with a source symbol");
+
+        var matches = await NewReferences(read).FindReferencesForSymbolAsync(releaseId, new FindReferencesQuery(
+            TargetAppId: seed!.TargetAppId,
+            TargetObjectKind: seed.TargetObjectKind,
+            TargetObjectId: seed.TargetObjectId,
+            TargetObjectName: seed.TargetObjectName!,
+            TargetMemberName: seed.TargetMemberName,
+            TargetMemberKind: seed.TargetMemberKind));
+
+        // The enclosing procedure/trigger, resolved from source_symbol_id, must
+        // reach the DTO so the panel can show "where in the object" each call sits.
+        matches.Should().Contain(m => m.Category == "call" && m.SourceMemberName == seed.EnclosingName,
+            because: "call-site references should surface their enclosing procedure/trigger");
+    }
+
     // ── Find references — parent-chain walk + shadowing ────────────────
 
     [Fact]

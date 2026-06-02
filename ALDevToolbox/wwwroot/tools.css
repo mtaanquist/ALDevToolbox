@@ -2633,6 +2633,12 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     align-items: baseline;
 }
 
+.source-viewer__refs-line {
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+}
+
 .source-viewer__refs-snippet {
     display: block;
     margin-top: 4px;
