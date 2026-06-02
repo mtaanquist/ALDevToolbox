@@ -3555,6 +3555,9 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     border-radius: 6px;
     overflow: hidden;
     background: var(--color-surface);
+    /* Row so the editor and the KDiff3-style overview ruler sit side by side
+       (the base .source-viewer is a column). */
+    flex-direction: row;
     /* min-height: 0 keeps the grid item from forcing the cm-scroller's
        intrinsic content height up the cascade — without it, long files
        blow the viewport on browsers that compute grid items' min size
@@ -3587,6 +3590,40 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 .cm-diff-gutter-inserted { background-color: rgb(38, 176, 80); }
 .cm-diff-gutter-deleted  { background-color: rgb(179, 33, 33); }
 .cm-diff-gutter-modified { background-color: rgb(234, 179, 8); }
+
+/* KDiff3-style overview ruler (compare panes, built in source-viewer.js's
+   buildDiffOverview). A thin full-height strip on the right edge of each pane
+   that maps every changed line in the WHOLE file to a coloured mark, so the
+   spread of changes is visible without scrolling. Each mark is a button that
+   jumps the editor to that change. */
+.oe-diff-overview {
+    position: relative;
+    flex: 0 0 14px;
+    align-self: stretch;
+    background: var(--color-surface-strong);
+    border-left: 1px solid var(--color-border);
+}
+.oe-diff-overview__mark {
+    position: absolute;
+    left: 2px;
+    right: 2px;
+    padding: 0;
+    border: 0;
+    border-radius: 1px;
+    min-height: 3px;
+    cursor: pointer;
+    opacity: 0.85;
+}
+.oe-diff-overview__mark:hover {
+    left: 0;
+    right: 0;
+    opacity: 1;
+    outline: 1px solid var(--color-text-muted);
+}
+.oe-diff-overview__mark--inserted  { background-color: rgb(38, 176, 80); }
+.oe-diff-overview__mark--deleted   { background-color: rgb(179, 33, 33); }
+.oe-diff-overview__mark--modified  { background-color: rgb(234, 179, 8); }
+.oe-diff-overview__mark--imaginary { background-color: var(--color-border); }
 
 /* Change summary line in the compare header. */
 .oe-compare-file__summary { margin: 6px 0 0; font-weight: 500; }
