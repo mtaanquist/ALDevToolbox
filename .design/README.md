@@ -18,7 +18,7 @@ Living specification for the AL Dev Toolbox. The code in `ALDevToolbox/` is the 
 | `roadmap.md` | Uncommitted forward-looking ideas (successor to the retired `milestones.md`). |
 | `migration-history.md` | Where to find the EF migration history. |
 
-`template.toml` and `well-known-deps.toml` are reference samples for the seed format documented in `templates-and-seeding.md`. `al-workspace-builder/` carries reference material from the legacy in-browser tool this app replaces; everything load-bearing has migrated into the docs above.
+`template.toml` and `well-known-deps.toml` are reference samples for the seed format documented in `templates-and-seeding.md`.
 
 ## Contributing changes
 
