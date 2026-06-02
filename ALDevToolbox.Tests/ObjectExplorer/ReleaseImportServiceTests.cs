@@ -822,6 +822,35 @@ public sealed class ReleaseImportServiceTests : IDisposable
         });
     }
 
+    [Fact]
+    public async Task Import_emits_system_references_for_builtin_calls()
+    {
+        // #279: built-in/system method calls (Insert / Modify / SetRange / …)
+        // that find-references drops are captured in oe_module_system_references.
+        // DK Core's bodies are full of them.
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        await using var s1 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        var summary = await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "System-refs DK Core",
+            Kind: "first_party",
+            ParentReleaseId: null,
+            ApplicationVersionId: null,
+            Uploads: new[] { new AppFileUpload("dk.app", s1, null) }));
+
+        await using var read = _db.NewContext();
+        var sysRefs = await read.OeModuleSystemReferences.AsNoTracking()
+            .Where(r => r.Module!.ReleaseId == summary.ReleaseId)
+            .Select(r => new { r.SystemMethodName, r.ReferenceKind, r.TargetObjectKind, r.SourceSymbolId })
+            .ToListAsync();
+
+        sysRefs.Should().NotBeEmpty(
+            because: "DK Core calls built-in record methods the normal extractor drops");
+        sysRefs.Should().Contain(r => r.ReferenceKind == "method_call" && r.SystemMethodName != string.Empty);
+        // System calls from inside a procedure body carry the enclosing symbol.
+        sysRefs.Where(r => r.SourceSymbolId is not null).Should().NotBeEmpty();
+    }
+
     // ── Amend (issue #216) ──────────────────────────────────────────────
 
     /// <summary>

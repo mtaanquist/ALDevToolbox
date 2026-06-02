@@ -76,6 +76,42 @@ public sealed class ReferenceSessionService
     }
 
     /// <summary>
+    /// "Find System References" on an object: every call to a built-in /
+    /// system method (<c>Insert</c>, <c>Modify</c>, <c>SetRange</c>, …) on the
+    /// object, from the separate system-reference table. Same object lookup as
+    /// <see cref="CreateFromSymbolAsync"/>; renders through the same panel.
+    /// </summary>
+    public async Task<ReferenceSession?> CreateSystemReferencesFromObjectAsync(
+        long objectId, string ownerKey, CancellationToken ct = default)
+    {
+        var head = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Id == objectId)
+            .Select(o => new
+            {
+                o.Kind,
+                o.ObjectId,
+                o.Name,
+                AppId = o.Module!.AppId,
+                ReleaseId = o.Module!.ReleaseId,
+            })
+            .SingleOrDefaultAsync(ct);
+        if (head is null) return null;
+
+        var query = new FindSystemReferencesQuery(
+            TargetAppId: head.AppId,
+            TargetObjectKind: head.Kind,
+            TargetObjectId: head.ObjectId,
+            TargetObjectName: head.Name);
+
+        var results = await _references.FindSystemReferencesAsync(head.ReleaseId, query, ct);
+        var label = head.ObjectId is { } oid
+            ? $"system references to {head.Kind} {oid} {head.Name}"
+            : $"system references to {head.Kind} {head.Name}";
+
+        return Store(label, head.ReleaseId, results, ownerKey);
+    }
+
+    /// <summary>
     /// Member-scoped variant: mints a session for a specific procedure /
     /// field / trigger on an owner object. Used by the outline right-click
     /// path (where the symbol id is known directly) and by the at-position

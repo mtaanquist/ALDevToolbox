@@ -103,6 +103,44 @@ public sealed class CalImportServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Emits_system_references_for_builtin_calls()
+    {
+        // #279: a built-in call on a receiver (Cust.INSERT) becomes a system
+        // reference in oe_module_system_references, not a normal reference.
+        const string cal =
+            "OBJECT Codeunit 50000 Mgt\r\n"
+          + "{\r\n"
+          + "  CODE\r\n"
+          + "  {\r\n"
+          + "    VAR\r\n"
+          + "      Cust@1000 : Record 18;\r\n"
+          + "\r\n"
+          + "    PROCEDURE Foo@1();\r\n"
+          + "    BEGIN\r\n"
+          + "      Cust.INSERT();\r\n"
+          + "    END;\r\n"
+          + "\r\n"
+          + "    BEGIN\r\n"
+          + "    END.\r\n"
+          + "  }\r\n"
+          + "}\r\n";
+        var path = Path.GetTempFileName();
+        await File.WriteAllTextAsync(path, cal, Encoding.ASCII);
+        try
+        {
+            var releaseId = await ImportAsync(path, "Sys");
+            await using var read = _db.NewContext();
+            var sysRefs = await read.OeModuleSystemReferences.AsNoTracking()
+                .Where(r => r.Module!.ReleaseId == releaseId)
+                .ToListAsync();
+            sysRefs.Should().Contain(r => r.SystemMethodName.ToUpper() == "INSERT"
+                && r.ReferenceKind == "method_call"
+                && r.TargetObjectId == 18);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
     public async Task Resolves_object_targets_by_id_within_the_release()
     {
         // A tiny self-contained export: a codeunit with a global typed to the

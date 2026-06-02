@@ -86,7 +86,8 @@ public static class AlReferenceExtractor
             return new AlExtractionResult(
                 Array.Empty<ExtractedReference>(),
                 new ExtractionStats(0, 0, Array.Empty<UnresolvedSample>()),
-                Array.Empty<ExtractedSymbolScope>());
+                Array.Empty<ExtractedSymbolScope>(),
+                Array.Empty<ExtractedSystemReference>());
         }
 
         var tokens = AlLexer.Tokenize(source);
@@ -156,7 +157,8 @@ public static class AlReferenceExtractor
             return new AlExtractionResult(
                 _state.Refs,
                 new ExtractionStats(_state.Resolved, _state.Unresolved, _state.UnresolvedSamples),
-                _state.SymbolScopes);
+                _state.SymbolScopes,
+                _state.SystemRefs);
         }
 
         /// <summary>
@@ -1596,6 +1598,27 @@ public sealed record ExtractedReference(
     string? SourceMemberKind = null,
     int? SourceMemberLine = null);
 
+/// <summary>
+/// One call to a built-in / system method on a resolved receiver object —
+/// the calls the normal extractor drops via <c>AlBuiltinMethods.IsBuiltin</c>.
+/// Captured separately so "Find System References" can surface them without
+/// inflating <see cref="ExtractedReference"/>. The target triplet is the
+/// receiver object; <see cref="SystemMethodName"/> is the built-in invoked.
+/// See issue #279.
+/// </summary>
+public sealed record ExtractedSystemReference(
+    int Line,
+    int Column,
+    Guid TargetAppId,
+    string TargetObjectKind,
+    int? TargetObjectId,
+    string TargetObjectName,
+    string SystemMethodName,
+    string ReferenceKind,
+    string? SourceMemberName = null,
+    string? SourceMemberKind = null,
+    int? SourceMemberLine = null);
+
 /// <summary>Per-file extraction statistics — used for diagnostic logging.</summary>
 public sealed record ExtractionStats(
     int ResolvedReferences,
@@ -1657,4 +1680,5 @@ public sealed record ExtractedSymbolScope(
 public sealed record AlExtractionResult(
     IReadOnlyList<ExtractedReference> References,
     ExtractionStats Stats,
-    IReadOnlyList<ExtractedSymbolScope> SymbolScopes);
+    IReadOnlyList<ExtractedSymbolScope> SymbolScopes,
+    IReadOnlyList<ExtractedSystemReference> SystemReferences);

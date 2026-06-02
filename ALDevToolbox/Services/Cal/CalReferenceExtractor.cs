@@ -28,7 +28,10 @@ public sealed record CalRef(
     string? MemberName, string MemberKind,
     string ReferenceKind);
 
-public sealed record CalExtractionResult(IReadOnlyList<CalRef> References, int UnresolvedReceivers);
+public sealed record CalExtractionResult(
+    IReadOnlyList<CalRef> References,
+    int UnresolvedReceivers,
+    IReadOnlyList<CalRef> SystemReferences);
 
 /// <summary>
 /// Walks a C/AL procedure / trigger body and emits <c>method_call</c> and
@@ -58,6 +61,7 @@ public static class CalReferenceExtractor
     public static CalExtractionResult Extract(string body, CalExtractScope scope)
     {
         var refs = new List<CalRef>();
+        var sysRefs = new List<CalRef>();
         int unresolved = 0;
         var t = CalLexer.Tokenize(body);
 
@@ -93,6 +97,9 @@ public static class CalReferenceExtractor
                 {
                     if (CalBuiltinMethods.IsReceiverMethod(member.Text))
                     {
+                        // Built-in like Cust.INSERT() — a system reference (#279).
+                        sysRefs.Add(new CalRef(member.Line, member.Column,
+                            receiver.Value.Kind, receiver.Value.Id, member.Text, "system", "method_call"));
                         if (CalBuiltinMethods.IsFieldNameTaking(member.Text))
                             EmitFieldArg(t, k + 3, receiver.Value, refs);
                     }
@@ -123,10 +130,21 @@ public static class CalReferenceExtractor
 
                 if (CalBuiltinMethods.IsFieldNameTaking(tok.Text) && scope.Rec is not null)
                 {
+                    // Implicit Rec built-in like TESTFIELD("X") — system ref (#279)
+                    // plus the field arg as a normal field_access.
+                    sysRefs.Add(new CalRef(tok.Line, tok.Column,
+                        scope.Rec.Value.Kind, scope.Rec.Value.Id, tok.Text, "system", "method_call"));
                     EmitFieldArg(t, k + 1, scope.Rec.Value, refs); // implicit Rec.TESTFIELD("X")
                     continue;
                 }
-                if (CalBuiltinMethods.IsReceiverMethod(tok.Text)) continue; // implicit Rec built-in
+                if (CalBuiltinMethods.IsReceiverMethod(tok.Text))
+                {
+                    // Implicit Rec built-in like INSERT / MODIFY — system ref on Rec (#279).
+                    if (scope.Rec is not null)
+                        sysRefs.Add(new CalRef(tok.Line, tok.Column,
+                            scope.Rec.Value.Kind, scope.Rec.Value.Id, tok.Text, "system", "method_call"));
+                    continue; // implicit Rec built-in
+                }
 
                 // A procedure on the owner object.
                 if (scope.OwnerKind is not null && scope.OwnerId is not null)
@@ -143,7 +161,7 @@ public static class CalReferenceExtractor
             }
         }
 
-        return new CalExtractionResult(refs, unresolved);
+        return new CalExtractionResult(refs, unresolved, sysRefs);
     }
 
     private static CalTypeRef? ResolveHead(CalToken head, CalExtractScope scope)

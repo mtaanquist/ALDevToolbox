@@ -7,6 +7,7 @@ using OeModule = ALDevToolbox.Domain.Entities.ObjectExplorer.Module;
 using OeModuleFile = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleFile;
 using OeModuleObject = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleObject;
 using OeModuleReference = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleReference;
+using OeModuleSystemReference = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSystemReference;
 using OeModuleSymbol = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSymbol;
 using OeModuleVariable = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleVariable;
 
@@ -382,6 +383,30 @@ public sealed class CalImportService
                 ReferenceKind = r.ReferenceKind,
                 LineNumber = bodyLine + r.Line - 1,
                 ColumnNumber = r.Column,
+            });
+            referencesImported++;
+        }
+
+        // System / built-in method calls (INSERT, MODIFY, SETRANGE, …) go to
+        // the separate oe_module_system_references table — see #279. Within a
+        // single C/AL export the receiver id is enough; the target name stays
+        // empty (the find-system-references query matches by id).
+        foreach (var sr in result.SystemReferences)
+        {
+            _db.OeModuleSystemReferences.Add(new OeModuleSystemReference
+            {
+                OrganizationId = orgId,
+                ModuleId = moduleId,
+                SourceObject = obj,
+                SourceSymbol = sourceSym,
+                TargetAppId = appId,
+                TargetObjectKind = sr.TargetKind,
+                TargetObjectId = sr.TargetId,
+                TargetObjectName = string.Empty,
+                SystemMethodName = sr.MemberName ?? string.Empty,
+                ReferenceKind = sr.ReferenceKind,
+                LineNumber = bodyLine + sr.Line - 1,
+                ColumnNumber = sr.Column,
             });
             referencesImported++;
         }

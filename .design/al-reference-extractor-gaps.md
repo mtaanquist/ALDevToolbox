@@ -13,7 +13,7 @@ The extractor walks an AL source file tokenised by `AlLexer`, maintains a scope 
 - **Heads**: bare variable, type literal (`Customer.Insert(true)`), implicit `Rec` / `xRec` inside a table/page, and `Kind::"Name"` typed-literal (`Codeunit::"Sales-Post".Run(...)`).
 - **Scope frames**: procedure-local var-block declarations + parameters innermost, object-scoped globals (from `oe_module_variables`) outermost. Locals shadow globals.
 - **Chained access**: `a.b.c` walks the receiver type forward through field/method return types when those resolve to AL objects.
-- **Built-in filter**: runtime methods (`Insert`, `Get`, `Find`, `SetRange`, `Run`, …) and system fields (`SystemId`, `SystemCreatedAt`, …) skip silently instead of inflating the unresolved counter. Curated in `AlBuiltinMethods`.
+- **Built-in filter**: runtime methods (`Insert`, `Get`, `Find`, `SetRange`, `Run`, …) and system fields (`SystemId`, `SystemCreatedAt`, …) are kept out of the normal reference set (so they don't inflate the unresolved counter or flood Find references). Curated in `AlBuiltinMethods`. As of issue #279 the *method* calls among them are no longer dropped — they're emitted to the separate `oe_module_system_references` table and surfaced through the dedicated "Find System References" action / `find_system_references` MCP tool, keeping `oe_module_references` lean.
 - **Numeric grammar**: hex, scientific, suffixed literals tokenise correctly even though the extractor never inspects values.
 - **Compound assignment**: `+=`, `-=`, `*=`, `/=` are single tokens.
 

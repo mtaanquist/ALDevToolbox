@@ -156,6 +156,40 @@ public sealed class ObjectExplorerTools
         return matches.Count > MaxResults ? matches.Take(MaxResults).ToList() : matches;
     }
 
+    [McpServerTool(Name = "find_system_references", ReadOnly = true)]
+    [Description("Finds every call to a built-in / system method (Insert, Modify, ModifyAll, Delete, DeleteAll, SetRange, Validate, etc.) on a specific object in a BC release — the calls that find_references deliberately omits. Use this to answer 'where is this table inserted/modified/deleted?'. Optionally narrow to one method.")]
+    public async Task<IReadOnlyList<ReferenceMatch>> FindSystemReferencesAsync(
+        [Description("Release Label or numeric id.")] string releaseLabelOrId,
+        [Description("Name of the target object — usually a table. Resolved case-insensitively against oe_module_objects.")] string targetObject,
+        [Description("AL kind of the target object. Defaults to 'table'.")] string targetKind = "table",
+        [Description("Optional system method name to narrow to, e.g. 'Insert', 'Modify', 'Delete', 'SetRange'.")] string? systemMethod = null,
+        CancellationToken ct = default)
+    {
+        var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
+
+        var kind = targetKind.Trim().ToLowerInvariant();
+        var owner = await _db.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == releaseId
+                        && o.Kind == kind
+                        && o.Name.ToLower() == targetObject.Trim().ToLower())
+            .Include(o => o.Module)
+            .FirstOrDefaultAsync(ct);
+        if (owner is null || owner.Module is null)
+        {
+            throw new McpException($"Could not find a {kind} named '{targetObject}' in release {releaseLabelOrId}. Try search_objects to discover the exact name.");
+        }
+
+        var query = new FindSystemReferencesQuery(
+            TargetAppId: owner.Module.AppId,
+            TargetObjectKind: owner.Kind,
+            TargetObjectId: owner.ObjectId,
+            TargetObjectName: owner.Name,
+            SystemMethodName: string.IsNullOrWhiteSpace(systemMethod) ? null : systemMethod.Trim());
+
+        var matches = await _references.FindSystemReferencesAsync(releaseId, query, ct);
+        return matches.Count > MaxResults ? matches.Take(MaxResults).ToList() : matches;
+    }
+
     [McpServerTool(Name = "get_object_outline", ReadOnly = true)]
     [Description("Returns the outline of one AL object (table, page, codeunit, etc.) in a BC release — its declared procedures, triggers, event publishers, and fields with their line numbers and symbol ids. Use this to discover what an object exposes before calling get_procedure_source or list_procedure_calls. The returned symbol ids disambiguate procedure name collisions (page actions and table fields each carry an OnAction / OnValidate trigger with the same name).")]
     public async Task<ObjectOutline> GetObjectOutlineAsync(

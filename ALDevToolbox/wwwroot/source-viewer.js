@@ -233,6 +233,21 @@ function initOne(root) {
         });
         menu.appendChild(item);
 
+        // "Find system references" — built-in/system method calls (Insert,
+        // Modify, SetRange, …) on the object. Object rows only; system calls
+        // target a whole object, not a member. See #279.
+        if (objectId) {
+            const sysItem = document.createElement("button");
+            sysItem.type = "button";
+            sysItem.className = "source-viewer__outline-menu-item";
+            sysItem.textContent = "Find system references";
+            sysItem.addEventListener("click", async () => {
+                menu.remove();
+                await mintObjectSystemSession(objectId);
+            });
+            menu.appendChild(sysItem);
+        }
+
         document.body.appendChild(menu);
         const close = () => menu.remove();
         document.addEventListener("click", close, { once: true });
@@ -271,6 +286,24 @@ function initOne(root) {
             applyReferenceSession(session);
         } catch (err) {
             console.warn("from-symbol failed:", err);
+            showNotice("Couldn't reach the server.");
+        }
+    }
+
+    async function mintObjectSystemSession(objectId) {
+        clearNotice();
+        try {
+            const res = await fetch(
+                `/api/object-explorer/system-references/sessions/from-object/${objectId}`,
+                { credentials: "same-origin" });
+            if (!res.ok) {
+                showNotice("Couldn't mint system references for that object.");
+                return;
+            }
+            const session = await res.json();
+            applyReferenceSession(session);
+        } catch (err) {
+            console.warn("system-references from-object failed:", err);
             showNotice("Couldn't reach the server.");
         }
     }
