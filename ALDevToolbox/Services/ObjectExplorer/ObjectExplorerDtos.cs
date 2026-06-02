@@ -236,10 +236,9 @@ public sealed record ObjectVariableRow(
 /// (interfaces, some extensions).
 ///
 /// When <see cref="TargetMemberName"/> is non-null the query scopes to a
-/// member (procedure / field / trigger) inside that owner: phase 1 returns
-/// sibling declarations of the same name + the owner-object reference rows,
-/// phase 2 (when method-call extraction lands) will additionally surface
-/// the new <c>method_call</c> / <c>field_access</c> rows.
+/// member (procedure / field / trigger) inside that owner: it returns
+/// sibling declarations of the same name plus the <c>method_call</c> /
+/// <c>field_access</c> rows emitted by call-site extraction.
 /// </summary>
 public sealed record FindReferencesQuery(
     Guid TargetAppId,
@@ -258,8 +257,16 @@ public sealed record FindReferencesQuery(
 /// For member-scoped searches the row's <see cref="Category"/> indicates
 /// which strategy produced it — "declaration" (the matched symbol itself
 /// elsewhere in the chain), "owner_type" (a variable / parameter / return
-/// referencing the owner object), or "call" (a future method-call row).
-/// The UI groups results by category before rendering.
+/// referencing the owner object), "call" (a method-call / field-access row
+/// emitted by call-site extraction), or "implementation" (an interface
+/// method's implementing procedure). The UI groups results by source object.
+///
+/// <see cref="MemberName"/> / <see cref="MemberKind"/> / <see cref="MemberSignature"/>
+/// describe the <em>target</em> member (the thing referenced). The
+/// <c>SourceMember*</c> trio describes the <em>enclosing</em> procedure /
+/// trigger the reference sits inside (resolved from the reference's
+/// <c>source_symbol_id</c>) — null for declarations and object-scope
+/// references that aren't inside a member body.
 /// </summary>
 public sealed record ReferenceMatch(
     long Id,
@@ -276,7 +283,10 @@ public sealed record ReferenceMatch(
     string Category = "object",
     string? MemberName = null,
     string? MemberKind = null,
-    string? MemberSignature = null);
+    string? MemberSignature = null,
+    string? SourceMemberName = null,
+    string? SourceMemberKind = null,
+    string? SourceMemberSignature = null);
 
 /// <summary>
 /// Read-only projection of an <c>oe_module_files</c> row for the source viewer.

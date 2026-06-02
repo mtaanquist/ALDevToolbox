@@ -297,11 +297,18 @@ public sealed class ReferenceQueryService
                 END                      AS "Category",
                 mr.target_member_name    AS "MemberName",
                 mr.target_member_kind    AS "MemberKind",
-                NULL::text               AS "MemberSignature"
+                NULL::text               AS "MemberSignature",
+                -- Enclosing procedure / trigger the reference sits inside,
+                -- resolved from source_symbol_id. Null for object-scope refs
+                -- and rows imported before the symbol link existed.
+                ss.name                  AS "SourceMemberName",
+                ss.kind                  AS "SourceMemberKind",
+                ss.signature             AS "SourceMemberSignature"
             FROM oe_module_references mr
             JOIN oe_module_objects so ON so.id = mr.source_object_id
             JOIN oe_modules        m  ON m.id  = mr.module_id
             JOIN winning           w  ON w.id  = mr.module_id
+            LEFT JOIN oe_module_symbols ss ON ss.id = mr.source_symbol_id
             WHERE mr.target_app_id      = {1}::uuid
               AND mr.target_object_kind = {2}
               AND (
@@ -411,7 +418,11 @@ public sealed class ReferenceQueryService
                 'declaration'::text      AS "Category",
                 s.name                   AS "MemberName",
                 s.kind                   AS "MemberKind",
-                s.signature              AS "MemberSignature"
+                s.signature              AS "MemberSignature",
+                -- A declaration isn't a call site inside a member body.
+                NULL::text               AS "SourceMemberName",
+                NULL::text               AS "SourceMemberKind",
+                NULL::text               AS "SourceMemberSignature"
             FROM oe_module_symbols s
             JOIN oe_module_objects o  ON o.id = s.object_id
             JOIN oe_modules        m  ON m.id = o.module_id
@@ -521,7 +532,11 @@ public sealed class ReferenceQueryService
                 'implementation'::text   AS "Category",
                 s.name                   AS "MemberName",
                 s.kind                   AS "MemberKind",
-                s.signature              AS "MemberSignature"
+                s.signature              AS "MemberSignature",
+                -- An implementing-procedure declaration, not a call site.
+                NULL::text               AS "SourceMemberName",
+                NULL::text               AS "SourceMemberKind",
+                NULL::text               AS "SourceMemberSignature"
             FROM oe_module_references mr
             JOIN oe_module_objects    so ON so.id = mr.source_object_id
             JOIN oe_modules           sm ON sm.id = mr.module_id

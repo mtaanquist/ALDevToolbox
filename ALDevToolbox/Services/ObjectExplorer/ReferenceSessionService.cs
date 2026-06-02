@@ -166,7 +166,13 @@ public sealed class ReferenceSessionService
                 "variable_use",
                 null,
                 null,
-                null))
+                null,
+                // Enclosing procedure / trigger that uses the global (LEFT
+                // JOIN via the optional SourceSymbol nav — null when the
+                // reference wasn't stamped with a source symbol).
+                r.SourceSymbol!.Name,
+                r.SourceSymbol!.Kind,
+                r.SourceSymbol!.Signature))
             .OrderBy(m => m.SourceObjectName)
             .ThenBy(m => m.LineNumber)
             .ToListAsync(ct);

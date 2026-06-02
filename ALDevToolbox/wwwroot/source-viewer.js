@@ -629,21 +629,20 @@ function renderReferencesPanel(root, session, fileId, editorId) {
         p.textContent = "No references in this Release's chain.";
         panel.appendChild(p);
     } else {
-        // Group by category so declarations / calls / indirect refs render
-        // under their own headings. Order matters: declarations are the
-        // most direct match, calls the actual usages (phase 2), owner_type
-        // the indirect-via-type bucket, and any unknown category falls in
-        // last. Within a group, server-side ordering (module, object,
-        // line) is preserved.
-        const groups = groupByCategory(session.results);
-        for (const [category, rows] of groups) {
+        // Group references by their source object so every place that
+        // touches the target clusters under one header — repeated calls
+        // from the same table / page no longer scatter down a flat list.
+        // Each row then shows the enclosing procedure / trigger so you can
+        // tell where in the object's code the reference sits.
+        const groups = groupByObject(session.results);
+        for (const group of groups) {
             const section = document.createElement("section");
             // Re-use the outline section vocabulary so the chevron / toggle
             // affordance reads the same in both panels. Sections open by
             // default; the click handler on the toggle flips data state +
             // chevron + list hidden.
             section.className = "source-viewer__refs-group source-viewer__outline-section is-open";
-            section.dataset.category = category;
+            if (group.objectId != null) section.dataset.objectId = String(group.objectId);
 
             const toggle = document.createElement("button");
             toggle.type = "button";
@@ -655,21 +654,24 @@ function renderReferencesPanel(root, session, fileId, editorId) {
             chevron.textContent = "›";
             toggle.appendChild(chevron);
 
+            // The object kind badge + name is the section header now.
+            if (group.objectKind) toggle.appendChild(buildKindBadge(group.objectKind));
+
             const title = document.createElement("span");
             title.className = "source-viewer__outline-section-title";
-            title.textContent = categoryLabel(category);
+            title.textContent = group.objectName;
             toggle.appendChild(title);
 
             const countSpan = document.createElement("span");
             countSpan.className = "source-viewer__outline-section-count";
-            countSpan.textContent = `(${rows.length.toLocaleString()})`;
+            countSpan.textContent = `(${group.rows.length.toLocaleString()})`;
             toggle.appendChild(countSpan);
 
             section.appendChild(toggle);
 
             const list = document.createElement("ul");
             list.className = "source-viewer__refs-list";
-            for (const r of rows) {
+            for (const r of group.rows) {
                 list.appendChild(buildRefsRow(r, session, fileId, editorId));
             }
             section.appendChild(list);
@@ -686,18 +688,40 @@ function renderReferencesPanel(root, session, fileId, editorId) {
     }
 }
 
-function groupByCategory(rows) {
-    const order = ["declaration", "call", "owner_type", "object"];
-    const buckets = new Map();
-    for (const c of order) buckets.set(c, []);
+// Within an object, order rows by reference category (declarations first,
+// then call sites), then by line so they read top-to-bottom like the file.
+const REFS_CATEGORY_ORDER = { declaration: 0, call: 1, implementation: 2, owner_type: 3, object: 4 };
+
+function groupByObject(rows) {
+    const groups = new Map();
     for (const r of rows ?? []) {
-        const c = r.category ?? "object";
-        if (!buckets.has(c)) buckets.set(c, []);
-        buckets.get(c).push(r);
+        const key = r.sourceObjectId ?? `${r.sourceObjectKind ?? ""}/${r.sourceObjectName ?? ""}`;
+        let g = groups.get(key);
+        if (!g) {
+            g = {
+                objectId: r.sourceObjectId,
+                objectKind: r.sourceObjectKind ?? "",
+                objectName: r.sourceObjectName ?? "",
+                rows: [],
+            };
+            groups.set(key, g);
+        }
+        g.rows.push(r);
     }
-    // Drop empty buckets in their declared order; preserve insertion order
-    // for any unknown categories that slipped through.
-    return Array.from(buckets.entries()).filter(([, v]) => v.length > 0);
+    const list = Array.from(groups.values());
+    for (const g of list) {
+        g.rows.sort((a, b) => {
+            const ca = REFS_CATEGORY_ORDER[a.category] ?? 9;
+            const cb = REFS_CATEGORY_ORDER[b.category] ?? 9;
+            if (ca !== cb) return ca - cb;
+            return (a.lineNumber ?? 0) - (b.lineNumber ?? 0);
+        });
+    }
+    // Stable, scannable order: by object kind, then name.
+    list.sort((a, b) =>
+        a.objectKind.localeCompare(b.objectKind) ||
+        a.objectName.localeCompare(b.objectName));
+    return list;
 }
 
 function categoryLabel(category) {
@@ -716,10 +740,11 @@ function buildRefsRow(r, session, fileId, editorId) {
 
     const srcFid = r.sourceFileId;
     const ln = r.lineNumber;
-    const objectKind = r.sourceObjectKind ?? "";
-    if (srcFid != null && ln != null) {
+    const hasLoc = srcFid != null && ln != null;
+
+    const a = document.createElement("a");
+    if (hasLoc) {
         const inSameFile = srcFid === fileId;
-        const a = document.createElement("a");
         a.href = `${FILE_URL_PREFIX}${srcFid}?line=${ln}&refSet=${encodeURIComponent(session.token)}`;
         if (inSameFile) {
             a.dataset.line = String(ln);
@@ -732,38 +757,59 @@ function buildRefsRow(r, session, fileId, editorId) {
                 }
             });
         }
-        appendRowTop(a, objectKind, r.sourceObjectName);
+    } else {
+        a.href = `/object-explorer/object/${r.sourceObjectId}`;
+    }
+
+    // The object now lives in the section header, so the row leads with the
+    // enclosing procedure / trigger ("where in the object") when we know it.
+    // Falls back to the target member, then the reference category.
+    if (r.sourceMemberName) {
+        appendRefsTop(a, r.sourceMemberKind, r.sourceMemberName, r.lineNumber, false);
+        // Still show the target member — what the enclosing member references.
         if (r.memberName) {
             appendMemberRow(a, r.memberKind, r.memberName, r.memberSignature);
         }
-        if (r.snippet) {
-            const snip = document.createElement("code");
-            snip.className = "source-viewer__refs-snippet";
-            snip.textContent = r.snippet;
-            a.appendChild(snip);
-        }
-        attachRefsTooltip(a, r);
-        li.appendChild(a);
+    } else if (r.memberName) {
+        appendRefsTop(a, r.memberKind, r.memberName, r.lineNumber, false);
     } else {
-        const a = document.createElement("a");
-        a.href = `/object-explorer/object/${r.sourceObjectId}`;
-        appendRowTop(a, objectKind, r.sourceObjectName);
-        attachRefsTooltip(a, r);
-        li.appendChild(a);
+        // Object-scope reference (variable_type, extends_target, …): no member
+        // context, so lead with the humanised reference kind.
+        const label = r.referenceKind
+            ? r.referenceKind.replace(/_/g, " ")
+            : categoryLabel(r.category);
+        appendRefsTop(a, null, label, r.lineNumber, true);
     }
+
+    if (r.snippet) {
+        const snip = document.createElement("code");
+        snip.className = "source-viewer__refs-snippet";
+        snip.textContent = r.snippet;
+        a.appendChild(snip);
+    }
+    attachRefsTooltip(a, r);
+    li.appendChild(a);
     return li;
 }
 
-function appendRowTop(anchor, kind, name) {
+function appendRefsTop(anchor, kind, name, line, muted) {
     const top = document.createElement("div");
     top.className = "source-viewer__refs-row-top";
     if (kind) {
         top.appendChild(buildKindBadge(kind));
     }
     const nameSpan = document.createElement("span");
-    nameSpan.className = "source-viewer__refs-name";
+    nameSpan.className = muted
+        ? "source-viewer__refs-name muted"
+        : "source-viewer__refs-name";
     nameSpan.textContent = name;
     top.appendChild(nameSpan);
+    if (line != null) {
+        const lineSpan = document.createElement("span");
+        lineSpan.className = "source-viewer__refs-line muted";
+        lineSpan.textContent = `L${line}`;
+        top.appendChild(lineSpan);
+    }
     anchor.appendChild(top);
 }
 
@@ -832,6 +878,17 @@ function showRefsTooltip(anchor, r) {
         loc.textContent = "no source available";
     }
     el.appendChild(loc);
+
+    // Enclosing procedure / trigger the reference sits inside, when known.
+    if (r.sourceMemberName) {
+        const inMember = document.createElement("div");
+        inMember.className = "source-viewer__refs-tooltip-member";
+        const enclosingKind = expandKindLabel(r.sourceMemberKind);
+        inMember.textContent = enclosingKind
+            ? `in ${enclosingKind} ${r.sourceMemberName}`
+            : `in ${r.sourceMemberName}`;
+        el.appendChild(inMember);
+    }
 
     // Member kind+name when present (the reference is to a specific
     // procedure / field, not just the owner object).
