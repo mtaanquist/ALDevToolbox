@@ -156,7 +156,52 @@ function initOne(root) {
     // explicit. Likewise initial line isn't useful when both panes start
     // pinned to line 1.
     if (isCompare) {
+        // KDiff3-style overview ruler: a full-height strip mapping every
+        // changed line in the WHOLE file to a coloured mark, so the spread of
+        // changes is visible without scrolling (the inline change-gutter only
+        // covers on-screen rows). Click a mark to jump there.
+        const totalLines = content ? content.split("\n").length : 1;
+        buildDiffOverview(root, editorId, diffData, totalLines);
         return editorId;
+    }
+
+    /// Builds the compare-pane overview ruler. Coalesces consecutive same-kind
+    /// changed lines into runs (so a block of edits reads as one bar, like
+    /// KDiff3), positions each run proportionally over the full file height,
+    /// and wires a click to jump to its first line.
+    function buildDiffOverview(paneRoot, edId, rows, totalLines) {
+        if (!Array.isArray(rows) || rows.length === 0 || !(totalLines > 0)) return;
+        const sorted = rows
+            .filter(r => r && Number.isFinite(r.line) && r.kind)
+            .sort((a, b) => a.line - b.line);
+        if (sorted.length === 0) return;
+
+        const runs = [];
+        for (const r of sorted) {
+            const last = runs[runs.length - 1];
+            if (last && last.kind === r.kind && r.line === last.end + 1) {
+                last.end = r.line;
+            } else {
+                runs.push({ start: r.line, end: r.line, kind: r.kind });
+            }
+        }
+
+        const overview = document.createElement("div");
+        overview.className = "oe-diff-overview";
+        overview.title = "Changes overview — click a mark to jump";
+        for (const run of runs) {
+            const mark = document.createElement("button");
+            mark.type = "button";
+            mark.className = `oe-diff-overview__mark oe-diff-overview__mark--${run.kind}`;
+            mark.style.top = ((run.start - 1) / totalLines) * 100 + "%";
+            mark.style.height = `max(3px, ${((run.end - run.start + 1) / totalLines) * 100}%)`;
+            const span = run.end > run.start ? `lines ${run.start}–${run.end}` : `line ${run.start}`;
+            mark.title = `${run.kind} · ${span}`;
+            mark.setAttribute("aria-label", `Jump to ${run.kind} change at ${span}`);
+            mark.addEventListener("click", () => scrollToLine(edId, run.start, true));
+            overview.appendChild(mark);
+        }
+        paneRoot.appendChild(overview);
     }
 
     if (Number.isFinite(initialLine) && initialLine >= 1) {
