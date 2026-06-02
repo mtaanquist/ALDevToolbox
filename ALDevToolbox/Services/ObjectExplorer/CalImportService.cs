@@ -216,6 +216,8 @@ public sealed class CalImportService
             Kind = parsed.Kind,
             ObjectId = parsed.ObjectId,
             Name = parsed.Name,
+            // Per-object C/SIDE Version List (issue #271). Trimmed; null when blank.
+            VersionList = string.IsNullOrWhiteSpace(parsed.VersionList) ? null : parsed.VersionList.Trim(),
             // Numeric source-table id is stored verbatim now and resolved to the
             // table name in ResolveTargetsByIdAsync (mirrors the AL path).
             SourceTableName = parsed.SourceTableId,

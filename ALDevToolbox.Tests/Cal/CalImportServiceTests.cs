@@ -141,6 +141,47 @@ public sealed class CalImportServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Stores_per_object_version_list_from_object_properties()
+    {
+        // The C/SIDE "Version List" property is per-object; the import stamps it
+        // onto each oe_module_objects row so it can be shown + searched (#271).
+        const string cal =
+            "OBJECT Table 50000 Acme Setup\r\n"
+          + "{\r\n"
+          + "  OBJECT-PROPERTIES\r\n"
+          + "  {\r\n"
+          + "    Date=01-01-25;\r\n"
+          + "    Time=12:00:00;\r\n"
+          + "    Version List=NAVW111.00,CON001;\r\n"
+          + "  }\r\n"
+          + "  PROPERTIES\r\n"
+          + "  {\r\n"
+          + "  }\r\n"
+          + "  FIELDS\r\n"
+          + "  {\r\n"
+          + "    { 1   ;   ;Code                ;Code10        }\r\n"
+          + "  }\r\n"
+          + "  CODE\r\n"
+          + "  {\r\n"
+          + "    BEGIN\r\n"
+          + "    END.\r\n"
+          + "  }\r\n"
+          + "}\r\n";
+        var path = Path.GetTempFileName();
+        await File.WriteAllTextAsync(path, cal, Encoding.ASCII);
+        try
+        {
+            var releaseId = await ImportAsync(path, "VL");
+            await using var read = _db.NewContext();
+            var obj = await read.OeModuleObjects.AsNoTracking()
+                .SingleAsync(o => o.Module!.ReleaseId == releaseId && o.ObjectId == 50000);
+            obj.VersionList.Should().NotBeNull();
+            obj.VersionList!.Should().Contain("CON001");
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
     public async Task Resolves_object_targets_by_id_within_the_release()
     {
         // A tiny self-contained export: a codeunit with a global typed to the

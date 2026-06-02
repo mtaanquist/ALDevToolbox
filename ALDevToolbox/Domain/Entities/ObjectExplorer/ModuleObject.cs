@@ -33,6 +33,16 @@ public class ModuleObject
     public string? Namespace { get; set; }
 
     /// <summary>
+    /// The C/SIDE <c>Version List</c> property (e.g.
+    /// <c>NAVW111.00,NAVDK11.00,CON001</c>) — a per-object, comma-separated tag
+    /// of the apps/customisations that touched the object. Populated only from
+    /// C/AL (.txt) imports; null for AL <c>.app</c> objects, which have no such
+    /// property. Shown in the release object list and folded into object search
+    /// so e.g. <c>*CON*</c> finds every object tagged with it. See issue #271.
+    /// </summary>
+    public string? VersionList { get; set; }
+
+    /// <summary>
     /// For extension objects (<c>tableextension</c>, <c>pageextension</c>, etc.): the AppId of
     /// the module declaring the base object being extended. Null when the object isn't an
     /// extension. Used by the resolver to walk a tableextension's field references back to

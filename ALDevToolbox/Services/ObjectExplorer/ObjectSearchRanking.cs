@@ -91,20 +91,27 @@ internal static class ObjectSearchRanking
                 {
                     GlobKind.Prefix => ApplyPredicate(q, token.Negated, o => o.Name.ToLower().StartsWith(needle)),
                     GlobKind.Suffix => ApplyPredicate(q, token.Negated, o => o.Name.ToLower().EndsWith(needle)),
-                    _               => ApplyPredicate(q, token.Negated, o => o.Name.ToLower().Contains(needle)),
+                    // Contains also matches the C/AL Version List, so `*CON*`
+                    // finds objects tagged with it (issue #271).
+                    _               => ApplyPredicate(q, token.Negated,
+                        o => o.Name.ToLower().Contains(needle)
+                            || (o.VersionList != null && o.VersionList.ToLower().Contains(needle))),
                 };
                 if (!token.Negated) rankTokens.Add(needle);
                 continue;
             }
 
-            // Default: case-insensitive substring on the name.
+            // Default: case-insensitive substring on the name or the C/AL
+            // Version List (so a bare `CON001` finds version-list tagged objects).
             if (token.Negated)
             {
-                q = q.Where(o => !o.Name.ToLower().Contains(text));
+                q = q.Where(o => !(o.Name.ToLower().Contains(text)
+                    || (o.VersionList != null && o.VersionList.ToLower().Contains(text))));
             }
             else
             {
-                q = q.Where(o => o.Name.ToLower().Contains(text));
+                q = q.Where(o => o.Name.ToLower().Contains(text)
+                    || (o.VersionList != null && o.VersionList.ToLower().Contains(text)));
                 rankTokens.Add(text);
             }
         }
@@ -231,7 +238,8 @@ internal static class ObjectSearchRanking
                 o.Id, o.Kind, o.ObjectId, o.Name, o.Namespace,
                 o.ModuleId, o.Module!.Name,
                 o.SourceFileId, o.LineNumber,
-                o.SourceFile != null ? o.SourceFile.LineCount : 0))
+                o.SourceFile != null ? o.SourceFile.LineCount : 0,
+                o.VersionList))
             .ToListAsync(ct);
 
         if (tokens.Count == 0)

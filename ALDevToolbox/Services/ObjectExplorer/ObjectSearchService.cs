@@ -85,7 +85,8 @@ public sealed class ObjectSearchService
                 o.Id, o.Kind, o.ObjectId, o.Name, o.Namespace,
                 o.ModuleId, o.Module!.Name,
                 o.SourceFileId, o.LineNumber,
-                o.SourceFile != null ? o.SourceFile.LineCount : 0))
+                o.SourceFile != null ? o.SourceFile.LineCount : 0,
+                o.VersionList))
             .ToListAsync(ct);
         return new ObjectSearchPage(rows, total);
     }

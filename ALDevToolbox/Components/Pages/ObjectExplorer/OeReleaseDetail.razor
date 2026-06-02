@@ -842,6 +842,10 @@
                             {
                                 <span title="Source not shipped with this module" class="muted">@r.Name</span>
                             }
+                            @if (!string.IsNullOrEmpty(r.VersionList))
+                            {
+                                <div class="oe-version-list muted" title="Version List">@r.VersionList</div>
+                            }
                         </td>
                         <td>@r.ModuleName</td>
                         <td class="muted">@(r.Namespace ?? "—")</td>
