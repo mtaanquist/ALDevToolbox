@@ -552,10 +552,21 @@
                 break;
 
             case SearchScope.Content:
-                _contentResults = string.IsNullOrEmpty(trimmedSearch)
-                    ? new()
-                    : await Search.SearchContentInReleaseAsync(
+                if (string.IsNullOrEmpty(trimmedSearch))
+                {
+                    _contentResults = new();
+                }
+                else
+                {
+                    // Clear the previous results first so the panel shows its
+                    // "Searching…" state (the _contentResults is null branch)
+                    // while this query runs, rather than leaving a stale
+                    // "No lines match…" message up until the query returns.
+                    _contentResults = null;
+                    StateHasChanged();
+                    _contentResults = await Search.SearchContentInReleaseAsync(
                         ReleaseId, trimmedSearch, moduleId, take: 200);
+                }
                 break;
 
             case SearchScope.Compare:
