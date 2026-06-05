@@ -1,4 +1,5 @@
 using ALDevToolbox.Data;
+using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.Translation;
 using ALDevToolbox.Tests.Infrastructure;
@@ -151,5 +152,125 @@ public sealed class TranslationMemoryServiceTests : IDisposable
             otherCtx, otherOrg, NullLogger<TranslationMemoryService>.Instance)
             .SuggestAsync("Posting Date", "en-US", "da-DK");
         hits.Should().BeEmpty(because: "the tenant query filter scopes memory to the acting org");
+    }
+
+    // ── Curation: vote / delete / restore / search ──────────────────────────
+
+    /// <summary>Creates a user in the default org and points the org context's CurrentUserId at it (votes need an acting user).</summary>
+    private async Task<int> SeedActingUserAsync(UserRole role = UserRole.Editor)
+    {
+        int id;
+        await using (var ctx = _db.NewContext())
+        {
+            var user = new User
+            {
+                OrganizationId = TestDb.DefaultOrgId,
+                Email = $"u{Guid.NewGuid():N}@example.test",
+                PasswordHash = "x",
+                DisplayName = "Tester",
+                Role = role,
+                CreatedAt = DateTime.UtcNow,
+            };
+            ctx.Users.Add(user);
+            await ctx.SaveChangesAsync();
+            id = user.Id;
+        }
+        _db.OrgContext.CurrentUserId = id;
+        return id;
+    }
+
+    private async Task<long> EntryIdAsync(string sourceText, string targetText)
+    {
+        await using var read = _db.NewContext();
+        return await read.TranslationMemory
+            .Where(e => e.SourceText == sourceText && e.TargetText == targetText)
+            .Select(e => e.Id).SingleAsync();
+    }
+
+    [Fact]
+    public async Task Vote_adjusts_score_clears_and_switches()
+    {
+        await SeedActingUserAsync();
+        await using (var ctx = _db.NewContext())
+            await NewMemory(ctx).UpsertAsync(new[] { Pair("Vote me", "Stem på mig") });
+        var entryId = await EntryIdAsync("Vote me", "Stem på mig");
+
+        await using (var ctx = _db.NewContext())
+        {
+            var m = NewMemory(ctx);
+            (await m.VoteAsync(entryId, 1)).Should().BeEquivalentTo(new { Score = 1, MyVote = 1 });
+            (await m.VoteAsync(entryId, 0)).Should().BeEquivalentTo(new { Score = 0, MyVote = 0 });   // clear
+            (await m.VoteAsync(entryId, -1)).Should().BeEquivalentTo(new { Score = -1, MyVote = -1 });
+            (await m.VoteAsync(entryId, 1)).Should().BeEquivalentTo(new { Score = 1, MyVote = 1 });    // switch -1 -> +1
+        }
+
+        await using (var read = _db.NewContext())
+        {
+            (await read.TranslationMemoryVotes.CountAsync(v => v.EntryId == entryId))
+                .Should().Be(1, because: "one vote row per user, replaced not duplicated");
+            (await read.TranslationMemory.Where(e => e.Id == entryId).Select(e => e.Score).SingleAsync())
+                .Should().Be(1);
+        }
+    }
+
+    [Fact]
+    public async Task Suggest_ranks_upvoted_above_more_frequent()
+    {
+        await SeedActingUserAsync();
+        await using (var ctx = _db.NewContext())
+        {
+            var m = NewMemory(ctx);
+            await m.UpsertAsync(new[] { Pair("Status", "Tilstand") });       // A
+            await m.UpsertAsync(new[] { Pair("Status", "Tilstand") });       // A again -> hit_count 2
+            await m.UpsertAsync(new[] { Pair("Status", "Status-felt") });    // B -> hit_count 1
+        }
+        var bId = await EntryIdAsync("Status", "Status-felt");
+        await using (var ctx = _db.NewContext())
+            await NewMemory(ctx).VoteAsync(bId, 1);
+
+        await using (var ctx = _db.NewContext())
+        {
+            var hits = await NewMemory(ctx).SuggestAsync("Status", "en-US", "da-DK");
+            hits.Should().HaveCountGreaterThanOrEqualTo(2);
+            hits[0].TargetText.Should().Be("Status-felt", because: "an upvoted pair outranks a more-frequent unvoted one");
+            hits[0].MyVote.Should().Be(1);
+        }
+    }
+
+    [Fact]
+    public async Task Delete_hides_from_suggestions_and_restore_brings_it_back()
+    {
+        await using (var ctx = _db.NewContext())
+            await NewMemory(ctx).UpsertAsync(new[] { Pair("Remove me", "Slet mig") });
+        var id = await EntryIdAsync("Remove me", "Slet mig");
+
+        await using (var ctx = _db.NewContext()) await NewMemory(ctx).DeleteAsync(id);
+        await using (var ctx = _db.NewContext())
+            (await NewMemory(ctx).SuggestAsync("Remove me", "en-US", "da-DK")).Should().BeEmpty();
+
+        await using (var ctx = _db.NewContext()) await NewMemory(ctx).RestoreAsync(id);
+        await using (var ctx = _db.NewContext())
+            (await NewMemory(ctx).SuggestAsync("Remove me", "en-US", "da-DK")).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Search_filters_text_and_respects_include_deleted()
+    {
+        await using (var ctx = _db.NewContext())
+            await NewMemory(ctx).UpsertAsync(new[] { Pair("Apple", "Æble"), Pair("Banana", "Banan") });
+        var appleId = await EntryIdAsync("Apple", "Æble");
+        await using (var ctx = _db.NewContext()) await NewMemory(ctx).DeleteAsync(appleId);
+
+        await using (var ctx = _db.NewContext())
+        {
+            var m = NewMemory(ctx);
+
+            var active = await m.SearchAsync(new MemorySearchQuery(Text: "an"));
+            active.Items.Should().OnlyContain(i => !i.IsDeleted);
+            active.Items.Select(i => i.SourceText).Should().Contain("Banana").And.NotContain("Apple");
+
+            var withDeleted = await m.SearchAsync(new MemorySearchQuery(Text: "Apple", IncludeDeleted: true));
+            withDeleted.Items.Should().ContainSingle(i => i.SourceText == "Apple" && i.IsDeleted);
+        }
     }
 }

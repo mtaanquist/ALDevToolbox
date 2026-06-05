@@ -36,6 +36,9 @@ public sealed class TranslationMemoryService
     private int RequireOrganizationId() => _orgContext.CurrentOrganizationId
         ?? throw new InvalidOperationException("No organization in scope; TranslationMemoryService called outside an authenticated request.");
 
+    private int RequireUserId() => _orgContext.CurrentUserId
+        ?? throw new InvalidOperationException("No user in scope; TranslationMemoryService vote called outside an authenticated request.");
+
     /// <summary>
     /// Inserts new <c>(source, target)</c> pairs and bumps
     /// <see cref="TranslationMemoryEntry.HitCount"/> / <c>LastSeenAt</c> on
@@ -132,10 +135,13 @@ public sealed class TranslationMemoryService
     /// <summary>
     /// Suggests translations for <paramref name="sourceText"/> in
     /// <paramref name="targetLanguage"/>: exact matches first (similarity 1.0),
-    /// then trigram-similar sources ranked by similarity. When
-    /// <paramref name="sourceLanguage"/> is null the source locale isn't
-    /// constrained (useful when a file hasn't declared one). Results are
-    /// de-duplicated by target text and capped at <paramref name="limit"/>.
+    /// then trigram-similar sources. Within each tier the ranking key is the
+    /// net vote <see cref="TranslationMemoryEntry.Score"/> (a thumbs-up floats a
+    /// good pair above a more-frequent but worse one), then <c>hit_count</c>,
+    /// then recency. When <paramref name="sourceLanguage"/> is null the source
+    /// locale isn't constrained. Results are de-duplicated by target text and
+    /// capped at <paramref name="limit"/>; each carries the acting user's own
+    /// vote so the chip can show its state.
     /// </summary>
     public async Task<List<TranslationSuggestion>> SuggestAsync(
         string sourceText,
@@ -156,9 +162,9 @@ public sealed class TranslationMemoryService
             .Where(e => e.DeletedAt == null && e.TargetLanguage == tgt
                 && (src == null || e.SourceLanguage == src)
                 && e.SourceHash == srcHash && e.SourceText == sourceText)
-            .OrderByDescending(e => e.HitCount).ThenByDescending(e => e.LastSeenAt)
+            .OrderByDescending(e => e.Score).ThenByDescending(e => e.HitCount).ThenByDescending(e => e.LastSeenAt)
             .Take(limit)
-            .Select(e => new TranslationSuggestion(e.TargetText, e.Origin, e.Kind, 1.0))
+            .Select(e => new TranslationSuggestion(e.Id, e.TargetText, e.Origin, e.Kind, 1.0, e.Score, 0))
             .ToListAsync(ct).ConfigureAwait(false);
 
         var results = new List<TranslationSuggestion>(exact);
@@ -167,8 +173,8 @@ public sealed class TranslationMemoryService
         if (results.Count < limit)
         {
             // Trigram fuzzy. TrigramsAreSimilar maps to the `%` operator, which
-            // the GIN index accelerates (default threshold 0.3); we then rank
-            // by the exact similarity score.
+            // the GIN index accelerates (default threshold 0.3); we rank by
+            // closeness first, then vote score.
             var fuzzy = await _db.TranslationMemory.AsNoTracking()
                 .Where(e => e.DeletedAt == null && e.TargetLanguage == tgt
                     && (src == null || e.SourceLanguage == src)
@@ -176,12 +182,15 @@ public sealed class TranslationMemoryService
                     && EF.Functions.TrigramsAreSimilar(e.SourceText, sourceText))
                 .Select(e => new
                 {
+                    e.Id,
                     e.TargetText,
                     e.Origin,
                     e.Kind,
+                    e.Score,
                     Similarity = EF.Functions.TrigramsSimilarity(e.SourceText, sourceText),
                 })
                 .OrderByDescending(x => x.Similarity)
+                .ThenByDescending(x => x.Score)
                 .ThenByDescending(x => x.TargetText)
                 .Take(limit * 3)
                 .ToListAsync(ct).ConfigureAwait(false);
@@ -190,7 +199,28 @@ public sealed class TranslationMemoryService
             {
                 if (results.Count >= limit) break;
                 if (!seenTargets.Add(f.TargetText)) continue;
-                results.Add(new TranslationSuggestion(f.TargetText, f.Origin, f.Kind, f.Similarity));
+                results.Add(new TranslationSuggestion(f.Id, f.TargetText, f.Origin, f.Kind, f.Similarity, f.Score, 0));
+            }
+        }
+
+        // Stamp the acting user's own vote on each result so the chips render
+        // their up/down state (one extra query for the handful we return).
+        var userId = _orgContext.CurrentUserId;
+        if (userId is not null && results.Count > 0)
+        {
+            var ids = results.Select(r => r.EntryId).ToList();
+            var mine = await _db.TranslationMemoryVotes.AsNoTracking()
+                .Where(v => v.UserId == userId && ids.Contains(v.EntryId))
+                .Select(v => new { v.EntryId, v.Value })
+                .ToListAsync(ct).ConfigureAwait(false);
+            if (mine.Count > 0)
+            {
+                var byEntry = mine.ToDictionary(v => v.EntryId, v => (int)v.Value);
+                for (var i = 0; i < results.Count; i++)
+                {
+                    if (byEntry.TryGetValue(results[i].EntryId, out var mv))
+                        results[i] = results[i] with { MyVote = mv };
+                }
             }
         }
 
@@ -236,19 +266,174 @@ public sealed class TranslationMemoryService
                 .Where(e => e.DeletedAt == null && e.TargetLanguage == tgt
                     && (src == null || e.SourceLanguage == src)
                     && set.Contains(e.SourceHash))
-                .OrderByDescending(e => e.HitCount).ThenByDescending(e => e.LastSeenAt)
-                .Select(e => new { e.SourceText, e.TargetText, e.Origin, e.Kind })
+                .OrderByDescending(e => e.Score).ThenByDescending(e => e.HitCount).ThenByDescending(e => e.LastSeenAt)
+                .Select(e => new { e.Id, e.SourceText, e.TargetText, e.Origin, e.Kind, e.Score })
                 .ToListAsync(ct).ConfigureAwait(false);
 
             foreach (var r in rows)
             {
-                // First row per source wins (ordered by hit_count desc above).
+                // First row per source wins (best score, then hit_count, above).
                 if (result.ContainsKey(r.SourceText)) continue;
-                result[r.SourceText] = new TranslationSuggestion(r.TargetText, r.Origin, r.Kind, 1.0);
+                result[r.SourceText] = new TranslationSuggestion(r.Id, r.TargetText, r.Origin, r.Kind, 1.0, r.Score, 0);
             }
         }
 
         return result;
+    }
+
+    // ── Curation: vote / delete / restore / search ─────────────────────────
+
+    /// <summary>
+    /// Records the acting user's vote on an entry. <paramref name="direction"/>
+    /// &gt; 0 = up, &lt; 0 = down, 0 = clear. One vote per user (re-voting
+    /// replaces it); the entry's denormalised <see cref="TranslationMemoryEntry.Score"/>
+    /// is adjusted by the delta so suggestion ranking reflects it immediately.
+    /// Returns the new score and the user's resulting vote.
+    /// </summary>
+    public async Task<VoteResult> VoteAsync(long entryId, int direction, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+        var userId = RequireUserId();
+        var newValue = (short)(direction > 0 ? 1 : direction < 0 ? -1 : 0);
+        var now = DateTime.UtcNow;
+
+        var entry = await _db.TranslationMemory.FirstOrDefaultAsync(e => e.Id == entryId, ct).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Translation memory entry {entryId} not found in this organisation.");
+
+        var vote = await _db.TranslationMemoryVotes
+            .FirstOrDefaultAsync(v => v.EntryId == entryId && v.UserId == userId, ct).ConfigureAwait(false);
+        var oldValue = vote?.Value ?? 0;
+        var delta = newValue - oldValue;
+
+        if (newValue == 0)
+        {
+            if (vote is not null) _db.TranslationMemoryVotes.Remove(vote);
+        }
+        else if (vote is null)
+        {
+            _db.TranslationMemoryVotes.Add(new TranslationMemoryVote
+            {
+                OrganizationId = orgId,
+                EntryId = entryId,
+                UserId = userId,
+                Value = newValue,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+        }
+        else
+        {
+            vote.Value = newValue;
+            vote.UpdatedAt = now;
+        }
+
+        if (delta != 0)
+        {
+            entry.Score += delta;
+            entry.UpdatedAt = now;
+        }
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        return new VoteResult(entry.Id, entry.Score, newValue);
+    }
+
+    /// <summary>
+    /// Soft-deletes an entry (sets <c>deleted_at</c>) so it stops appearing in
+    /// suggestions. Recoverable via <see cref="RestoreAsync"/>. Authorisation
+    /// (Editor/Admin) is enforced by the caller — the management page and the
+    /// MCP tool — matching how the rest of the content-authoring surface gates.
+    /// </summary>
+    public async Task DeleteAsync(long entryId, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var entry = await _db.TranslationMemory.FirstOrDefaultAsync(e => e.Id == entryId, ct).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Translation memory entry {entryId} not found in this organisation.");
+        if (entry.DeletedAt is null)
+        {
+            entry.DeletedAt = DateTime.UtcNow;
+            entry.UpdatedAt = entry.DeletedAt.Value;
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            _logger.LogInformation("Translation memory entry {EntryId} soft-deleted.", entryId);
+        }
+    }
+
+    /// <summary>Un-deletes a previously soft-deleted entry.</summary>
+    public async Task RestoreAsync(long entryId, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var entry = await _db.TranslationMemory.FirstOrDefaultAsync(e => e.Id == entryId, ct).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Translation memory entry {entryId} not found in this organisation.");
+        if (entry.DeletedAt is not null)
+        {
+            entry.DeletedAt = null;
+            entry.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            _logger.LogInformation("Translation memory entry {EntryId} restored.", entryId);
+        }
+    }
+
+    /// <summary>
+    /// Browse / search the memory for the management page and the MCP tool:
+    /// optional text (source or target substring), language / kind / origin
+    /// filters, and an include-deleted toggle. Ranked the same way suggestions
+    /// are (score, then hit_count, then recency) and paged. Returns the page
+    /// plus the total match count.
+    /// </summary>
+    public async Task<MemorySearchResult> SearchAsync(MemorySearchQuery q, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var userId = _orgContext.CurrentUserId;
+
+        var query = _db.TranslationMemory.AsNoTracking().AsQueryable();
+        if (!q.IncludeDeleted) query = query.Where(e => e.DeletedAt == null);
+        if (!string.IsNullOrWhiteSpace(q.TargetLanguage))
+        {
+            var t = NormaliseLanguage(q.TargetLanguage);
+            query = query.Where(e => e.TargetLanguage == t);
+        }
+        if (!string.IsNullOrWhiteSpace(q.SourceLanguage))
+        {
+            var s = NormaliseLanguage(q.SourceLanguage);
+            query = query.Where(e => e.SourceLanguage == s);
+        }
+        if (!string.IsNullOrWhiteSpace(q.Kind)) query = query.Where(e => e.Kind == q.Kind);
+        if (!string.IsNullOrWhiteSpace(q.Origin))
+        {
+            var o = q.Origin.Trim().ToLower();
+            query = query.Where(e => e.Origin != null && e.Origin.ToLower().Contains(o));
+        }
+        if (!string.IsNullOrWhiteSpace(q.Text))
+        {
+            var needle = q.Text.Trim().ToLower();
+            query = query.Where(e => e.SourceText.ToLower().Contains(needle) || e.TargetText.ToLower().Contains(needle));
+        }
+
+        var total = await query.CountAsync(ct).ConfigureAwait(false);
+        var take = Math.Clamp(q.Take, 1, 200);
+        var rows = await query
+            .OrderByDescending(e => e.Score).ThenByDescending(e => e.HitCount).ThenByDescending(e => e.LastSeenAt)
+            .Skip(Math.Max(0, q.Skip)).Take(take)
+            .Select(e => new
+            {
+                e.Id, e.SourceLanguage, e.TargetLanguage, e.SourceText, e.TargetText,
+                e.Kind, e.Origin, e.HitCount, e.Score, e.CreatedAt, e.LastSeenAt, e.DeletedAt,
+            })
+            .ToListAsync(ct).ConfigureAwait(false);
+
+        var myVotes = new Dictionary<long, int>();
+        if (userId is not null && rows.Count > 0)
+        {
+            var ids = rows.Select(r => r.Id).ToList();
+            myVotes = (await _db.TranslationMemoryVotes.AsNoTracking()
+                .Where(v => v.UserId == userId && ids.Contains(v.EntryId))
+                .Select(v => new { v.EntryId, v.Value })
+                .ToListAsync(ct).ConfigureAwait(false))
+                .ToDictionary(v => v.EntryId, v => (int)v.Value);
+        }
+
+        var items = rows.Select(r => new MemoryEntryView(
+            r.Id, r.SourceLanguage, r.TargetLanguage, r.SourceText, r.TargetText, r.Kind, r.Origin,
+            r.HitCount, r.Score, myVotes.GetValueOrDefault(r.Id), r.CreatedAt, r.LastSeenAt, r.DeletedAt != null)).ToList();
+        return new MemorySearchResult(items, total);
     }
 
     private sealed class PreparedEntry
@@ -310,9 +495,49 @@ public sealed record TranslationMemoryUpsert(
     string Kind,
     string? Origin);
 
-/// <summary>One suggested target for a source string, with its provenance and match strength (0–1).</summary>
+/// <summary>
+/// One suggested target for a source string: its memory-entry id (for voting /
+/// removal), provenance, match strength (0–1), net vote score, and the acting
+/// user's own vote (-1/0/1).
+/// </summary>
 public sealed record TranslationSuggestion(
+    long EntryId,
     string TargetText,
     string? Origin,
     string Kind,
-    double Similarity);
+    double Similarity,
+    int Score,
+    int MyVote);
+
+/// <summary>Result of a vote: the entry's new net score and the user's resulting vote (-1/0/1).</summary>
+public sealed record VoteResult(long EntryId, int Score, int MyVote);
+
+/// <summary>Filters for browsing the memory (management page + MCP search).</summary>
+public sealed record MemorySearchQuery(
+    string? Text = null,
+    string? SourceLanguage = null,
+    string? TargetLanguage = null,
+    string? Kind = null,
+    string? Origin = null,
+    bool IncludeDeleted = false,
+    int Skip = 0,
+    int Take = 50);
+
+/// <summary>One memory entry as shown in the management list.</summary>
+public sealed record MemoryEntryView(
+    long Id,
+    string SourceLanguage,
+    string TargetLanguage,
+    string SourceText,
+    string TargetText,
+    string Kind,
+    string? Origin,
+    int HitCount,
+    int Score,
+    int MyVote,
+    DateTime CreatedAt,
+    DateTime LastSeenAt,
+    bool IsDeleted);
+
+/// <summary>A page of <see cref="MemoryEntryView"/> plus the total match count.</summary>
+public sealed record MemorySearchResult(IReadOnlyList<MemoryEntryView> Items, int Total);

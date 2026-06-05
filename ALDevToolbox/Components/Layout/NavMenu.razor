@@ -180,6 +180,12 @@
                             <span>Object Explorer</span>
                         </NavLink>
                     </li>
+                    <li>
+                        <NavLink class="nav-link" href="/admin/translation-memory" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                            <Icon Name="languages" Width="18" Height="18" Css="nav-link__icon" />
+                            <span>Translation memory</span>
+                        </NavLink>
+                    </li>
 
                     @if (isAdmin && !isSystemOrg)
                     {

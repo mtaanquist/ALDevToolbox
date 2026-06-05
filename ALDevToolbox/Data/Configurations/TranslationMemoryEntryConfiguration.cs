@@ -21,6 +21,7 @@ internal sealed class TranslationMemoryEntryConfiguration : IEntityTypeConfigura
         entity.Property(e => e.Kind).HasColumnName("kind").IsRequired();
         entity.Property(e => e.Origin).HasColumnName("origin");
         entity.Property(e => e.HitCount).HasColumnName("hit_count").IsRequired();
+        entity.Property(e => e.Score).HasColumnName("score").IsRequired().HasDefaultValue(0);
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.Property(e => e.LastSeenAt).HasColumnName("last_seen_at").IsRequired();

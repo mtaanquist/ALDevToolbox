@@ -167,6 +167,7 @@ public class AppDbContext : DbContext
     public DbSet<OeImportJob> OeImportJobs => Set<OeImportJob>();
     // Translator tool — cross-source translation memory (see .design/translator/).
     public DbSet<TranslationMemoryEntry> TranslationMemory => Set<TranslationMemoryEntry>();
+    public DbSet<TranslationMemoryVote> TranslationMemoryVotes => Set<TranslationMemoryVote>();
     public DbSet<Recipe> Recipes => Set<Recipe>();
     public DbSet<RecipeFile> RecipeFiles => Set<RecipeFile>();
     public DbSet<RecipeSuggestion> RecipeSuggestions => Set<RecipeSuggestion>();
@@ -250,6 +251,7 @@ public class AppDbContext : DbContext
         // reached via the OeModuleFile.FileContent nav from an org-scoped file
         // row — never queried as a root. Do not add a filter here.
         ScopeToOrganization<TranslationMemoryEntry>(modelBuilder);
+        ScopeToOrganization<TranslationMemoryVote>(modelBuilder);
         ScopeToOrganization<Recipe>(modelBuilder);
         ScopeToOrganization<RecipeFile>(modelBuilder);
         ScopeToOrganization<RecipeSuggestion>(modelBuilder);

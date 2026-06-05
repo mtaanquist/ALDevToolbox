@@ -55,6 +55,15 @@ public class TranslationMemoryEntry
     /// <summary>How many times this exact pair has been seen — a recency/popularity tie-breaker for ranking.</summary>
     public int HitCount { get; set; }
 
+    /// <summary>
+    /// Denormalised net vote score (sum of up/down votes from
+    /// <see cref="TranslationMemoryVote"/>). The primary suggestion-ranking key
+    /// — a translator's thumbs-up floats a good pair above a more-frequent but
+    /// worse one; thumbs-down sinks it. Kept on the row so ranking is a plain
+    /// ORDER BY rather than a per-query aggregate.
+    /// </summary>
+    public int Score { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public DateTime LastSeenAt { get; set; }

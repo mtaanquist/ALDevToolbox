@@ -1,0 +1,218 @@
+@page "/admin/translation-memory"
+@attribute [Authorize(Roles = "Admin,Editor")]
+@rendermode InteractiveServer
+@using ALDevToolbox.Services.Translation
+@inject TranslationMemoryService Memory
+@inject ILogger<AdminTranslationMemory> Log
+
+@*
+    Curate the org's translation memory: browse / search, vote good pairs up and
+    bad ones down (which re-ranks suggestions), and soft-delete bad entries
+    (recoverable via the "include removed" toggle). See the Translator curation
+    feature.
+*@
+
+<PageTitle>Translation memory · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page tr-mem-page">
+    <header class="admin-page__header">
+        <div>
+            <h1>Translation memory</h1>
+            <p class="muted">
+                Every source→target pair your organisation has learned (from Object Explorer imports and
+                the Translator). Vote good translations up and bad ones down to steer suggestion ranking,
+                or remove a bad pair so it stops being suggested. Removals are recoverable.
+            </p>
+        </div>
+        <div class="admin-page__header-actions">
+            <a class="btn btn--sm" href="/admin">
+                <Icon Name="arrow-left" Width="14" Height="14" />
+                <span>Back to admin</span>
+            </a>
+        </div>
+    </header>
+
+    <form class="admin-filter-form tr-mem-filters" @onsubmit="SearchAsync" @onsubmit:preventDefault="true">
+        <input class="admin-search-input" placeholder="Search source or target…" @bind="_text" @bind:event="oninput" />
+        <input class="tr-mem-mini" placeholder="Target lang (e.g. da-DK)" @bind="_targetLang" @bind:event="oninput" />
+        <select class="tr-mem-mini" @bind="_kind">
+            <option value="">All kinds</option>
+            <option value="caption">Caption</option>
+            <option value="tooltip">Tooltip</option>
+            <option value="label">Label</option>
+            <option value="option">Option</option>
+            <option value="instructional">Instructional</option>
+            <option value="other">Other</option>
+        </select>
+        <input class="tr-mem-mini" placeholder="Origin contains…" @bind="_origin" @bind:event="oninput" />
+        <label class="check-row tr-mem-incl">
+            <input type="checkbox" @bind="_includeDeleted" />
+            <span>Include removed</span>
+        </label>
+        <button type="submit" class="btn btn--sm btn--primary">
+            <Icon Name="search" Width="14" Height="14" /><span>Search</span>
+        </button>
+    </form>
+
+    @if (_result is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (_result.Items.Count == 0)
+    {
+        <p class="muted">No memory entries match. Translations accumulate as you import XLIFFs and use the Translator.</p>
+    }
+    else
+    {
+        <div class="tr-mem-count muted">@_result.Total entr@(_result.Total == 1 ? "y" : "ies") · showing @(_skip + 1)–@(_skip + _result.Items.Count)</div>
+        <table class="data-table tr-mem-table">
+            <thead>
+                <tr>
+                    <th>Source</th>
+                    <th>Target</th>
+                    <th>Kind</th>
+                    <th>Origin</th>
+                    <th class="tr-mem-num">Score</th>
+                    <th class="tr-mem-num">Hits</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var e in _result.Items)
+                {
+                    <tr class="@(e.IsDeleted ? "tr-mem-removed" : "")">
+                        <td class="tr-mem-src">@e.SourceText<span class="tr-mem-lang">@e.SourceLanguage</span></td>
+                        <td>@e.TargetText<span class="tr-mem-lang">@e.TargetLanguage</span></td>
+                        <td><span class="tr-mem-kind">@e.Kind</span></td>
+                        <td class="muted">@(e.Origin ?? "—")</td>
+                        <td class="tr-mem-num">
+                            <div class="tr-vote">
+                                <button class="tr-vbtn @(e.MyVote > 0 ? "on" : "")" title="Vote up"
+                                        @onclick="() => VoteAsync(e.Id, e.MyVote > 0 ? 0 : 1)">
+                                    <Icon Name="thumbs-up" Width="13" Height="13" />
+                                </button>
+                                <span class="tr-vscore @(e.Score > 0 ? "pos" : e.Score < 0 ? "neg" : "")">@e.Score</span>
+                                <button class="tr-vbtn @(e.MyVote < 0 ? "on" : "")" title="Vote down"
+                                        @onclick="() => VoteAsync(e.Id, e.MyVote < 0 ? 0 : -1)">
+                                    <Icon Name="thumbs-down" Width="13" Height="13" />
+                                </button>
+                            </div>
+                        </td>
+                        <td class="tr-mem-num muted">@e.HitCount</td>
+                        <td class="tr-mem-actions">
+                            @if (e.IsDeleted)
+                            {
+                                <button class="btn btn--sm" @onclick="() => RestoreAsync(e.Id)">
+                                    <Icon Name="history" Width="13" Height="13" /><span>Restore</span>
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="btn btn--sm btn--danger" @onclick="() => ConfirmDeleteAsync(e)">
+                                    <Icon Name="trash-2" Width="13" Height="13" /><span>Remove</span>
+                                </button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        @if (_result.Total > _pageSize)
+        {
+            <div class="tr-mem-pager">
+                <button class="btn btn--sm" disabled="@(_skip == 0)" @onclick="() => PageAsync(-1)">Previous</button>
+                <span class="muted">Page @(_skip / _pageSize + 1) of @(((_result.Total - 1) / _pageSize) + 1)</span>
+                <button class="btn btn--sm" disabled="@(_skip + _pageSize >= _result.Total)" @onclick="() => PageAsync(1)">Next</button>
+            </div>
+        }
+    }
+</div>
+
+<ConfirmDialog @ref="_confirm"
+               Title="Remove this translation?"
+               Message="It will stop appearing as a suggestion. You can restore it from this page (toggle “Include removed”)."
+               ConfirmLabel="Remove"
+               ConfirmIcon="trash-2" />
+
+@code {
+    private string _text = "";
+    private string _targetLang = "";
+    private string _kind = "";
+    private string _origin = "";
+    private bool _includeDeleted;
+
+    private const int _pageSize = 50;
+    private int _skip;
+    private MemorySearchResult? _result;
+    private ConfirmDialog? _confirm;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task SearchAsync()
+    {
+        _skip = 0;
+        await LoadAsync();
+    }
+
+    private async Task PageAsync(int dir)
+    {
+        _skip = Math.Max(0, _skip + dir * _pageSize);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _result = await Memory.SearchAsync(new MemorySearchQuery(
+                Text: _text, TargetLanguage: _targetLang, Kind: string.IsNullOrEmpty(_kind) ? null : _kind,
+                Origin: _origin, IncludeDeleted: _includeDeleted, Skip: _skip, Take: _pageSize));
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Translation memory search failed.");
+        }
+    }
+
+    private async Task VoteAsync(long entryId, int direction)
+    {
+        try
+        {
+            await Memory.VoteAsync(entryId, direction);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning(ex, "Vote on memory entry {EntryId} failed.", entryId);
+        }
+    }
+
+    private async Task ConfirmDeleteAsync(MemoryEntryView e)
+    {
+        if (_confirm is null) return;
+        if (!await _confirm.OpenAsync()) return;
+        try
+        {
+            await Memory.DeleteAsync(e.Id);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning(ex, "Remove of memory entry {EntryId} failed.", e.Id);
+        }
+    }
+
+    private async Task RestoreAsync(long entryId)
+    {
+        try
+        {
+            await Memory.RestoreAsync(entryId);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning(ex, "Restore of memory entry {EntryId} failed.", entryId);
+        }
+    }
+}
