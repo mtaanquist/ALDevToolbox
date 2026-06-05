@@ -143,6 +143,28 @@ export async function exportNow(fileName, editsJson) {
     return true;
 }
 
+// Browser-level guard against losing edits to a full reload, tab close, or a
+// browser back that exits the SPA. In-app navigation goes through Blazor's
+// LocationChangingHandler + a proper modal instead (see Translator.razor).
+let beforeUnloadAttached = false;
+function beforeUnloadHandler(e) {
+    e.preventDefault();
+    // Modern browsers ignore the message and show their own copy, but Chrome
+    // still needs a non-empty returnValue to trigger the dialog.
+    e.returnValue = "";
+    return "";
+}
+
+export function setBeforeUnload(enabled) {
+    if (enabled && !beforeUnloadAttached) {
+        window.addEventListener("beforeunload", beforeUnloadHandler);
+        beforeUnloadAttached = true;
+    } else if (!enabled && beforeUnloadAttached) {
+        window.removeEventListener("beforeunload", beforeUnloadHandler);
+        beforeUnloadAttached = false;
+    }
+}
+
 export function initKeys(ref) {
     detachKeys();
     dotNetRef = ref;
