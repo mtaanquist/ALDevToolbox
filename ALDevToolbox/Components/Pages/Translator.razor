@@ -34,9 +34,12 @@
         {
             <div class="tr-restore">
                 <Icon Name="history" Width="16" Height="16" />
-                <span>You have an unsaved session for <strong>@_restoreName</strong>.</span>
-                <button class="btn btn--sm" @onclick="RestoreAsync" disabled="@_busy">Restore</button>
-                <button class="btn btn--sm btn--ghost" @onclick="DiscardAsync" disabled="@_busy">Discard</button>
+                <span>
+                    You were translating <strong>@_restoreName</strong> (last edited @_restoreAge).
+                    Continue where you left off, or start fresh?
+                </span>
+                <button class="btn btn--sm" @onclick="RestoreAsync" disabled="@_busy">Continue</button>
+                <button class="btn btn--sm btn--ghost" @onclick="DiscardAsync" disabled="@_busy">Start fresh</button>
             </div>
         }
 
@@ -383,6 +386,12 @@
         [JsonPropertyName("s")] public string? S { get; set; }
     }
 
+    private sealed class SessionPeek
+    {
+        [JsonPropertyName("fileName")] public string FileName { get; set; } = string.Empty;
+        [JsonPropertyName("savedAt")] public long SavedAt { get; set; }
+    }
+
     private sealed class SessionMeta
     {
         [JsonPropertyName("fileName")] public string FileName { get; set; } = string.Empty;
@@ -398,6 +407,12 @@
     private bool _busy;
     private string? _parseError;
     private string? _restoreName;
+    private string _restoreAge = "";
+
+    // A saved session older than this is dropped on re-open rather than
+    // offered — coming back after a weekend to a silently-restored file is
+    // more surprising than helpful.
+    private static readonly TimeSpan MaxSessionAge = TimeSpan.FromDays(7);
 
     private string _fileName = "";
     private string _sourceLang = "en-US";
@@ -473,11 +488,24 @@
         {
             try
             {
-                var name = await _module.InvokeAsync<string?>("peek");
-                if (!string.IsNullOrEmpty(name))
+                var session = await _module.InvokeAsync<SessionPeek?>("peek");
+                if (session is not null && !string.IsNullOrEmpty(session.FileName))
                 {
-                    _restoreName = name;
-                    StateHasChanged();
+                    var savedAt = DateTimeOffset.FromUnixTimeMilliseconds(session.SavedAt);
+                    var age = DateTimeOffset.UtcNow - savedAt;
+                    if (session.SavedAt <= 0 || age > MaxSessionAge)
+                    {
+                        // Too old to be useful (or a pre-timestamp record) —
+                        // drop it silently and start clean rather than surprise
+                        // the user with a week-old file.
+                        await _module.InvokeVoidAsync("clear");
+                    }
+                    else
+                    {
+                        _restoreName = session.FileName;
+                        _restoreAge = HumanizeAge(age);
+                        StateHasChanged();
+                    }
                 }
             }
             catch { /* storage unavailable */ }
@@ -1008,6 +1036,17 @@
         var dash = code.IndexOf('-');
         var lang = dash > 0 ? code[..dash] : code;
         return lang.ToUpperInvariant();
+    }
+
+    private static string HumanizeAge(TimeSpan age)
+    {
+        if (age < TimeSpan.FromMinutes(1)) return "just now";
+        if (age < TimeSpan.FromHours(1)) return Plural((int)age.TotalMinutes, "minute");
+        if (age < TimeSpan.FromHours(24)) return Plural((int)age.TotalHours, "hour");
+        var days = (int)age.TotalDays;
+        return days == 1 ? "yesterday" : Plural(days, "day");
+
+        static string Plural(int n, string unit) => $"{n} {unit}{(n == 1 ? "" : "s")} ago";
     }
 
     private static string Pct(int n, int total) => total == 0 ? "0%" : $"{n * 100.0 / total:0.###}%";

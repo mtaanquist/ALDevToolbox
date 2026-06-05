@@ -51,6 +51,7 @@ async function getRec() {
 
 async function putRec(rec) {
     try {
+        rec.savedAt = Date.now();
         const db = await openDb();
         await new Promise((resolve, reject) => {
             const tx = db.transaction(STORE, "readwrite");
@@ -89,10 +90,12 @@ export async function putMeta(fileName, targetLang) {
     await putRec(rec);
 }
 
-// Lightweight check for the restore prompt — returns just the file name.
+// Lightweight check for the restore prompt — the file name + when it was last
+// saved (epoch ms, 0 for sessions written before timestamps existed).
 export async function peek() {
     const rec = await getRec();
-    return rec ? rec.fileName : null;
+    if (!rec) return null;
+    return { fileName: rec.fileName, savedAt: rec.savedAt || 0 };
 }
 
 // Small metadata for an explicit restore (no original XML — that streams).
