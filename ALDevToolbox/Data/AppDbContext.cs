@@ -165,6 +165,8 @@ public class AppDbContext : DbContext
     public DbSet<OeModuleSystemReference> OeModuleSystemReferences => Set<OeModuleSystemReference>();
     public DbSet<OeModuleTranslation> OeModuleTranslations => Set<OeModuleTranslation>();
     public DbSet<OeImportJob> OeImportJobs => Set<OeImportJob>();
+    // Translator tool — cross-source translation memory (see .design/translator/).
+    public DbSet<TranslationMemoryEntry> TranslationMemory => Set<TranslationMemoryEntry>();
     public DbSet<Recipe> Recipes => Set<Recipe>();
     public DbSet<RecipeFile> RecipeFiles => Set<RecipeFile>();
     public DbSet<RecipeSuggestion> RecipeSuggestions => Set<RecipeSuggestion>();
@@ -199,6 +201,13 @@ public class AppDbContext : DbContext
         // them before any IOrganizationContext exists. Org attribution lives
         // in OpenIddict's free-form Properties JSON column on each row.
         modelBuilder.UseOpenIddict();
+
+        // pg_trgm powers the Translator's fuzzy translation-memory suggestions
+        // (GIN trigram index on translation_memory.source_text). Declaring the
+        // extension here makes the migration emit `CREATE EXTENSION IF NOT
+        // EXISTS pg_trgm`. Stays inside the "Postgres is the only persistence
+        // layer" fence — it's a contrib module shipped with the standard image.
+        modelBuilder.HasPostgresExtension("pg_trgm");
 
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
 
@@ -240,6 +249,7 @@ public class AppDbContext : DbContext
         // it has no organization_id. Isolation holds because it is only ever
         // reached via the OeModuleFile.FileContent nav from an org-scoped file
         // row — never queried as a root. Do not add a filter here.
+        ScopeToOrganization<TranslationMemoryEntry>(modelBuilder);
         ScopeToOrganization<Recipe>(modelBuilder);
         ScopeToOrganization<RecipeFile>(modelBuilder);
         ScopeToOrganization<RecipeSuggestion>(modelBuilder);

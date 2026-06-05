@@ -22,15 +22,18 @@ public class TranslationImportService
 {
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
+    private readonly ALDevToolbox.Services.Translation.TranslationMemoryService _memory;
     private readonly ILogger<TranslationImportService> _logger;
 
     public TranslationImportService(
         AppDbContext db,
         IOrganizationContext orgContext,
+        ALDevToolbox.Services.Translation.TranslationMemoryService memory,
         ILogger<TranslationImportService> logger)
     {
         _db = db;
         _orgContext = orgContext;
+        _memory = memory;
         _logger = logger;
     }
 
@@ -89,7 +92,7 @@ public class TranslationImportService
                 fileName, parsed.OriginalName, module.Name, moduleId);
         }
 
-        var inserted = await ReplaceForModuleAsync(orgId, moduleId, parsed, ct).ConfigureAwait(false);
+        var inserted = await ReplaceForModuleAsync(orgId, moduleId, parsed, module.Name, ct).ConfigureAwait(false);
         return new TranslationImportSummary(
             LanguageCode: parsed.TargetLanguage,
             ModuleName: module.Name,
@@ -170,7 +173,7 @@ public class TranslationImportService
                 continue;
             }
 
-            var inserted = await ReplaceForModuleAsync(orgId, moduleId, parsed, ct).ConfigureAwait(false);
+            var inserted = await ReplaceForModuleAsync(orgId, moduleId, parsed, parsed.OriginalName, ct).ConfigureAwait(false);
             matched++;
             totalInserted += inserted;
             matchedSummaries.Add(new TranslationImportSummary(
@@ -197,7 +200,7 @@ public class TranslationImportService
     /// was already uploaded, it's fine for it to clobber existing".
     /// </summary>
     private async Task<int> ReplaceForModuleAsync(
-        int orgId, long moduleId, XliffDocument parsed, CancellationToken ct)
+        int orgId, long moduleId, XliffDocument parsed, string? originName, CancellationToken ct)
     {
         // Skip XLIFFs whose source-language matches their target-language.
         // That's the shape the AL compiler emits as <Module>.g.xlf — the
@@ -301,6 +304,36 @@ public class TranslationImportService
         _logger.LogInformation(
             "Imported XLIFF translations: Module={ModuleId} Lang={Lang} Inserted={Inserted}",
             moduleId, parsed.TargetLanguage, inserted);
+
+        // Feed the org-wide translation memory so these pairs surface as
+        // suggestions in the Translator tool (and later as LLM glossary hints).
+        // Only meaningful when the file declares a source language; BC XLIFFs
+        // carry source-language="en-US". Best-effort — a memory hiccup must not
+        // fail the import the admin actually asked for.
+        if (!string.IsNullOrEmpty(parsed.SourceLanguage))
+        {
+            try
+            {
+                var origin = string.IsNullOrEmpty(originName) ? null : originName;
+                var pairs = parsed.Units
+                    .Where(u => !string.IsNullOrEmpty(u.TargetText))
+                    .Select(u => new ALDevToolbox.Services.Translation.TranslationMemoryUpsert(
+                        parsed.SourceLanguage!,
+                        parsed.TargetLanguage,
+                        u.SourceText,
+                        u.TargetText,
+                        AlXliffParser.BucketKind(u.Hint),
+                        origin));
+                await _memory.UpsertAsync(pairs, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Translation memory population failed for module {ModuleId} ({Lang}); import itself succeeded.",
+                    moduleId, parsed.TargetLanguage);
+            }
+        }
+
         return inserted;
     }
 

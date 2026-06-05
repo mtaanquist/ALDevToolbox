@@ -1,0 +1,965 @@
+@page "/translator"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using System.Text
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@using Microsoft.AspNetCore.Components.Forms
+@using ALDevToolbox.Services.ObjectExplorer
+@using ALDevToolbox.Services.Translation
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject TranslationMemoryService Memory
+@inject ILogger<Translator> Log
+
+<PageTitle>Translator · AL Dev Toolbox</PageTitle>
+
+<div class="tr-page">
+    @if (!_hasFile)
+    {
+        <header class="tr-head">
+            <div class="tr-title">
+                <h1><span class="tr-title__icon"><Icon Name="languages" Width="24" Height="24" /></span>Translator</h1>
+            </div>
+            <p class="muted">
+                Upload an XLIFF (<code>.xlf</code>) file from your PTE extension to translate it. Fields that
+                still need work are shown first, with suggestions drawn from translations already in your
+                organisation's memory. Export keeps the file's exact formatting so git diffs stay clean.
+            </p>
+        </header>
+
+        @if (_restoreName is not null)
+        {
+            <div class="tr-restore">
+                <Icon Name="history" Width="16" Height="16" />
+                <span>You have an unsaved session for <strong>@_restoreName</strong>.</span>
+                <button class="btn btn--sm" @onclick="RestoreAsync" disabled="@_busy">Restore</button>
+                <button class="btn btn--sm btn--ghost" @onclick="DiscardAsync" disabled="@_busy">Discard</button>
+            </div>
+        }
+
+        <div class="tr-drop">
+            <label class="tr-drop__label">
+                <Icon Name="upload" Width="22" Height="22" />
+                <span class="tr-drop__title">Choose an XLIFF file</span>
+                <span class="tr-drop__hint">.xlf or .xliff · up to @(_maxFileMb) MB</span>
+                <InputFile OnChange="OnUploadAsync" accept=".xlf,.xliff" class="tr-drop__input" />
+            </label>
+            @if (_busy)
+            {
+                <p class="muted">Reading file…</p>
+            }
+            @if (_parseError is not null)
+            {
+                <p class="tr-error"><Icon Name="x" Width="14" Height="14" /> @_parseError</p>
+            }
+        </div>
+    }
+    else
+    {
+        var c = Counts();
+        <div class="tr">
+            <div class="tr-head">
+                <div class="tr-head__row">
+                    <div>
+                        <div class="tr-title">
+                            <h1><span class="tr-title__icon"><Icon Name="languages" Width="24" Height="24" /></span>Translator</h1>
+                            @if (_editingName)
+                            {
+                                <input class="tr-fname mono" @bind="_fileName" @bind:event="oninput"
+                                       @onblur="StopRenameAsync" @onkeydown="OnFilenameKey" autofocus />
+                            }
+                            else
+                            {
+                                <span class="tr-fname" @onclick="() => _editingName = true" title="Rename">
+                                    @_fileName
+                                    <span class="tr-fname__ed"><Icon Name="pencil" Width="13" Height="13" /></span>
+                                </span>
+                            }
+                        </div>
+                        <div class="tr-sub">
+                            <span class="tr-lang"><span class="tr-flag">@FlagOf(_sourceLang)</span> @_sourceLang</span>
+                            <Icon Name="arrow-right" Width="14" Height="14" Css="tr-arrow" />
+                            <select class="tr-langsel" @onchange="OnTargetLangChanged">
+                                @foreach (var l in Languages)
+                                {
+                                    <option value="@l.Code" selected="@(l.Code == _targetLang)">@l.Name (@l.Code)</option>
+                                }
+                            </select>
+                            @if (!string.IsNullOrEmpty(_original))
+                            {
+                                <span class="tr-dotsep"></span>
+                                <span class="tr-orig mono">&lt;file original="@_original"&gt;</span>
+                            }
+                            <span class="tr-dotsep"></span>
+                            <span>@_units.Count trans-units</span>
+                        </div>
+                    </div>
+                    <div class="tr-actions">
+                        <button class="btn" @onclick="PreTranslateAsync" disabled="@_busy">
+                            <Icon Name="zap" Width="14" Height="14" /><span>Pre-translate from memory</span>
+                        </button>
+                        <button class="btn" @onclick="CloseFileAsync" disabled="@_busy">
+                            <Icon Name="x" Width="14" Height="14" /><span>Close</span>
+                        </button>
+                        <button class="btn btn--primary" @onclick="ExportAsync" disabled="@_busy">
+                            <Icon Name="download" Width="14" Height="14" /><span>Export .xlf</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="tr-progress">
+                    <div class="tr-pbar">
+                        <span class="tr-seg tr-seg--final" style="width:@Pct(c.Final, c.Total)"></span>
+                        <span class="tr-seg tr-seg--trans" style="width:@Pct(c.Translated, c.Total)"></span>
+                        <span class="tr-seg tr-seg--review" style="width:@Pct(c.Review, c.Total)"></span>
+                        <span class="tr-seg tr-seg--todo" style="width:@Pct(c.Todo, c.Total)"></span>
+                    </div>
+                    <div class="tr-pfoot">
+                        <div class="tr-counts">
+                            <span class="tr-count"><span class="tr-dot tr-dot--final"></span>@c.Final final</span>
+                            <span class="tr-count"><span class="tr-dot tr-dot--trans"></span>@c.Translated translated</span>
+                            <span class="tr-count"><span class="tr-dot tr-dot--review"></span>@c.Review review</span>
+                            <span class="tr-count"><span class="tr-dot tr-dot--todo"></span>@c.Todo to do</span>
+                        </div>
+                        <div class="tr-pct">@c.Pct% <small>done</small></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tr-toolbar">
+                <div class="tr-ftabs">
+                    <button class="@(_filter == "todo" ? "on" : "")" @onclick='() => SetFilter("todo")'>
+                        Needs translation <span class="tr-cb">@(c.Todo)</span>
+                    </button>
+                    <button class="@(_filter == "all" ? "on" : "")" @onclick='() => SetFilter("all")'>
+                        All <span class="tr-cb">@c.Total</span>
+                    </button>
+                    <button class="@(_filter == "done" ? "on" : "")" @onclick='() => SetFilter("done")'>
+                        Translated <span class="tr-cb">@(c.Translated + c.Final)</span>
+                    </button>
+                </div>
+                <select class="tr-kindsel" @onchange="OnKindChanged">
+                    @foreach (var k in KindOptions())
+                    {
+                        <option value="@k" selected="@(k == _kind)">@k</option>
+                    }
+                </select>
+                <div class="tr-search">
+                    <Icon Name="search" Width="14" Height="14" />
+                    <input placeholder="Search source or target…" value="@_search" @oninput="OnSearchInput" />
+                </div>
+                <div class="tr-spacer"></div>
+                @if (HiddenCount() is var hidden && hidden > 0)
+                {
+                    <div class="tr-hidden"><strong>@hidden</strong> hidden by filter</div>
+                }
+                <div class="tr-viewtoggle" role="group" aria-label="View">
+                    <button class="@(_view == "list" ? "on" : "")" @onclick='() => _view = "list"' title="Focused editor">
+                        <Icon Name="book-open" Width="15" Height="15" />List
+                    </button>
+                    <button class="@(_view == "grid" ? "on" : "")" @onclick='() => _view = "grid"' title="Compact grid — fast first pass">
+                        <Icon Name="layout-dashboard" Width="15" Height="15" />Grid
+                    </button>
+                </div>
+            </div>
+
+            @if (_filtered.Count == 0)
+            {
+                <div class="tr-empty">
+                    <span class="tr-empty__icon"><Icon Name="search" Width="20" Height="20" /></span>
+                    <div class="tr-empty__title">No units match</div>
+                    <div class="muted">Try a different filter, kind, or search term.</div>
+                    <button class="btn btn--sm" @onclick="ClearFilters">Clear filters</button>
+                </div>
+            }
+            else if (_view == "list")
+            {
+                <div class="tr-la">
+                    <div class="tr-la__list">
+                        <Virtualize Items="_filtered" Context="u" OverscanCount="12">
+                            <div class="tr-urow @(u.Id == _selId ? "sel" : "")" @onclick="() => SelectAsync(u.Id)">
+                                <div class="tr-urow__st"><span class="tr-dot @DotClass(u.State)"></span></div>
+                                <div class="tr-urow__body">
+                                    <div class="tr-urow__meta">
+                                        <span class="tr-kind">@u.Kind</span>
+                                        <span class="tr-id mono">@u.Short</span>
+                                    </div>
+                                    <div class="tr-urow__src">@u.Source</div>
+                                    @if (string.IsNullOrEmpty(u.Target))
+                                    {
+                                        <div class="tr-urow__tgt empty">Needs translation</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="tr-urow__tgt">@u.Target</div>
+                                    }
+                                </div>
+                            </div>
+                        </Virtualize>
+                    </div>
+                    <div class="tr-la__rail">
+                        @if (_sel is not null)
+                        {
+                            <div class="tr-detail">
+                                <div class="tr-detail__head">
+                                    <span class="tr-detail__unit mono">@(SelIndex() + 1) of @_filtered.Count · @_sel.Short</span>
+                                    <div class="tr-detail__nav">
+                                        <button @onclick="() => Nav(-1)" title="Previous (Alt+↑)"><Icon Name="arrow-up" Width="15" Height="15" /></button>
+                                        <button @onclick="() => Nav(1)" title="Next (Alt+↓)"><Icon Name="arrow-down" Width="15" Height="15" /></button>
+                                    </div>
+                                </div>
+
+                                <div class="tr-field">
+                                    <div class="tr-field__label">
+                                        <span>Source · @_sourceLang</span>
+                                        <span class="tr-kind">@_sel.Kind</span>
+                                    </div>
+                                    <div class="tr-srcbox">@_sel.Source</div>
+                                    @if (!string.IsNullOrEmpty(_sel.Note))
+                                    {
+                                        <div class="tr-notebox">@_sel.Note</div>
+                                    }
+                                </div>
+
+                                <div class="tr-field">
+                                    <div class="tr-field__label">
+                                        <span>Target · @TargetLangName()</span>
+                                        <span class="tr-state @DotClass(_sel.State)">@StateLabel(_sel.State)</span>
+                                    </div>
+                                    <textarea class="tr-tgtarea" value="@_sel.Target"
+                                              placeholder="Type the @TargetLangName() translation…"
+                                              @oninput="OnTargetInput"></textarea>
+                                    <div class="tr-statepick">
+                                        @foreach (var opt in StatePickOptions)
+                                        {
+                                            <button class="@StateBtnClass(opt.Token)" @onclick="() => SetState(opt.Token)">
+                                                <span class="tr-dot @DotClass(opt.Token)"></span>@opt.Label
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
+
+                                <div class="tr-field">
+                                    <div class="tr-sugg__head">
+                                        <span>Suggestions</span>
+                                        <span class="tr-mempill">Translation memory</span>
+                                    </div>
+                                    <div class="tr-sugg__list">
+                                        @if (_suggLoading)
+                                        {
+                                            <div class="tr-sugg__empty">Looking up memory…</div>
+                                        }
+                                        else if (_suggestions.Count == 0)
+                                        {
+                                            <div class="tr-sugg__empty">No memory matches yet — your translation will seed it.</div>
+                                        }
+                                        else
+                                        {
+                                            @for (var i = 0; i < _suggestions.Count; i++)
+                                            {
+                                                var s = _suggestions[i];
+                                                var n = i + 1;
+                                                <div class="tr-sugg" @onclick="() => Fill(s.TargetText)">
+                                                    <span class="tr-skey">@n</span>
+                                                    <div class="tr-sugg__body">
+                                                        <div class="tr-stext">@s.TargetText</div>
+                                                        <div class="tr-smeta">
+                                                            <span class="tr-sorigin"><Icon Name="database" Width="12" Height="12" />@(s.Origin ?? "memory")</span>
+                                                        </div>
+                                                    </div>
+                                                    <span class="tr-ssim @SimClass(s.Similarity)">@SimLabel(s.Similarity)</span>
+                                                </div>
+                                            }
+                                        }
+                                    </div>
+                                </div>
+
+                                <div class="tr-kbd">
+                                    <div class="tr-kbd__row"><span class="muted">Save · set translated · next</span><span><kbd>Alt</kbd><kbd>↵</kbd></span></div>
+                                    <div class="tr-kbd__row"><span class="muted">Previous / next unit</span><span><kbd>Alt</kbd><kbd>↑</kbd><kbd>↓</kbd></span></div>
+                                    <div class="tr-kbd__row"><span class="muted">Apply suggestion 1–9</span><span><kbd>Alt</kbd><kbd>1</kbd><kbd>…</kbd></span></div>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="tr-detail"><div class="tr-sugg__empty">Select a unit to translate.</div></div>
+                        }
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="tr-lc">
+                    <div class="tr-cgrid__head">
+                        <span class="tr-cgrid__c-st"></span>
+                        <span class="tr-cgrid__c-unit">Unit</span>
+                        <span class="tr-cgrid__c-src">Source · @_sourceLang</span>
+                        <span class="tr-cgrid__c-tgt">Target · @TargetLangName()</span>
+                    </div>
+                    <Virtualize Items="_filtered" Context="u" OverscanCount="12">
+                        <div class="tr-crow @(u.Id == _selId ? "active" : "")" @onclick="() => SelectAsync(u.Id)">
+                            <span class="tr-cgrid__c-st"><span class="tr-dot @DotClass(u.State)"></span></span>
+                            <span class="tr-cgrid__c-unit"><span class="tr-id mono">@u.Short</span><span class="tr-state @DotClass(u.State)">@StateLabel(u.State)</span></span>
+                            <span class="tr-cgrid__c-src">@u.Source</span>
+                            <span class="tr-cgrid__c-tgt">
+                                <input class="tr-cellinput" value="@u.Target" placeholder="Needs translation…"
+                                       @onfocus="() => SelectAsync(u.Id)" @oninput="e => OnGridTargetInput(u, e)" />
+                            </span>
+                        </div>
+                    </Virtualize>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@* Off-circuit export: JS fills these from IndexedDB then submits. The
+   original XML never travels over the Blazor connection. *@
+<form id="tr-export-form" method="post" action="/api/translator/export" enctype="multipart/form-data" class="tr-hiddenform">
+    <AntiforgeryToken />
+    <input type="hidden" name="FileName" id="tr-export-filename" />
+    <input type="hidden" name="OriginalXml" id="tr-export-original" />
+    <input type="hidden" name="Edits" id="tr-export-edits" />
+</form>
+
+<div class="tr-toast @(_toast is not null ? "show" : "")">
+    <Icon Name="circle-check" Width="16" Height="16" />@_toast
+</div>
+
+@code {
+    // ── XLIFF state vocabulary (the four buckets the UI works in) ──────────
+    private const string StTodo = "needs-translation";
+    private const string StReview = "needs-review-translation";
+    private const string StTranslated = "translated";
+    private const string StFinal = "final";
+
+    private static readonly (string Token, string Label)[] StatePickOptions =
+    {
+        (StTodo, "Needs translation"),
+        (StTranslated, "Translated"),
+        (StFinal, "Final"),
+    };
+
+    private sealed record Lang(string Code, string Name);
+
+    // Common Business Central target languages (BCP-47).
+    private static readonly Lang[] Languages =
+    {
+        new("da-DK", "Dansk"), new("de-DE", "Deutsch"), new("sv-SE", "Svenska"),
+        new("nb-NO", "Norsk (bokmål)"), new("nl-NL", "Nederlands"), new("fr-FR", "Français"),
+        new("fr-CA", "Français (Canada)"), new("es-ES", "Español"), new("fi-FI", "Suomi"),
+        new("is-IS", "Íslenska"), new("it-IT", "Italiano"), new("en-GB", "English (UK)"),
+        new("en-US", "English (US)"),
+    };
+
+    private sealed class UnitVm
+    {
+        public required string Id { get; init; }
+        public required string Short { get; init; }
+        public required string Kind { get; init; }
+        public required string Source { get; init; }
+        public string? Note { get; init; }
+        public string Target { get; set; } = string.Empty;
+        public string State { get; set; } = StTodo;
+        // True once the user has touched this unit — only dirty units are
+        // written back on export, keeping every other byte identical.
+        public bool Dirty { get; set; }
+    }
+
+    private sealed class EditDto
+    {
+        [JsonPropertyName("t")] public string T { get; set; } = string.Empty;
+        [JsonPropertyName("s")] public string? S { get; set; }
+    }
+
+    private sealed class SessionMeta
+    {
+        [JsonPropertyName("fileName")] public string FileName { get; set; } = string.Empty;
+        [JsonPropertyName("sourceLang")] public string? SourceLang { get; set; }
+        [JsonPropertyName("targetLang")] public string? TargetLang { get; set; }
+        [JsonPropertyName("edits")] public Dictionary<string, EditDto> Edits { get; set; } = new();
+    }
+
+    private readonly int _maxFileMb = 32;
+    private long MaxFileBytes => (long)_maxFileMb * 1024 * 1024;
+
+    private bool _hasFile;
+    private bool _busy;
+    private string? _parseError;
+    private string? _restoreName;
+
+    private string _fileName = "";
+    private string _sourceLang = "en-US";
+    private string _targetLang = "da-DK";
+    private string? _original;
+    private bool _editingName;
+
+    private List<UnitVm> _units = new();
+    private List<UnitVm> _filtered = new();
+    private string _filter = "todo";
+    private string _kind = "All kinds";
+    private string _search = "";
+    private string _view = "list";
+
+    private string? _selId;
+    private UnitVm? _sel;
+    private List<TranslationSuggestion> _suggestions = new();
+    private bool _suggLoading;
+
+    private string? _toast;
+    private CancellationTokenSource? _toastCts;
+    private CancellationTokenSource? _persistCts;
+
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<Translator>? _selfRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Pages/Translator.razor.js");
+        _selfRef = DotNetObjectReference.Create(this);
+        await _module.InvokeVoidAsync("initKeys", _selfRef);
+        if (!_hasFile)
+        {
+            try
+            {
+                var name = await _module.InvokeAsync<string?>("peek");
+                if (!string.IsNullOrEmpty(name))
+                {
+                    _restoreName = name;
+                    StateHasChanged();
+                }
+            }
+            catch { /* storage unavailable */ }
+        }
+    }
+
+    // ── Upload ────────────────────────────────────────────────────────────
+    private async Task OnUploadAsync(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+        _busy = true;
+        _parseError = null;
+        try
+        {
+            byte[] bytes;
+            await using (var stream = file.OpenReadStream(MaxFileBytes))
+            using (var ms = new MemoryStream())
+            {
+                await stream.CopyToAsync(ms);
+                bytes = ms.ToArray();
+            }
+
+            XliffDocument parsed;
+            try
+            {
+                using var ps = new MemoryStream(bytes);
+                parsed = AlXliffParser.Parse(ps);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException)
+            {
+                _parseError = $"Could not read \"{file.Name}\" as XLIFF v1.2: {ex.Message}";
+                return;
+            }
+
+            LoadParsed(file.Name, parsed);
+
+            // Hand the verbatim original to IndexedDB via a stream (off the
+            // 32 KB interop arg path), so a refresh can restore it.
+            if (_module is not null)
+            {
+                using var dotNetStream = new DotNetStreamReference(new MemoryStream(bytes), leaveOpen: false);
+                await _module.InvokeVoidAsync("putBaseStream", _fileName, _sourceLang, _targetLang, dotNetStream);
+            }
+            await SelectAsync(_filtered.FirstOrDefault()?.Id ?? _units.FirstOrDefault()?.Id);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void LoadParsed(string fileName, XliffDocument parsed)
+    {
+        _fileName = fileName;
+        _sourceLang = string.IsNullOrEmpty(parsed.SourceLanguage) ? "en-US" : parsed.SourceLanguage!;
+        _targetLang = string.IsNullOrEmpty(parsed.TargetLanguage) ? _targetLang : parsed.TargetLanguage;
+        _original = parsed.OriginalName;
+        _units = parsed.Units.Select(ToVm).ToList();
+        _hasFile = true;
+        _restoreName = null;
+        _filter = "todo";
+        _kind = "All kinds";
+        _search = "";
+        RecomputeFiltered();
+    }
+
+    private static UnitVm ToVm(XliffTransUnit u)
+    {
+        var kind = DisplayKind(AlXliffParser.BucketKind(u.Hint));
+        return new UnitVm
+        {
+            Id = u.Id,
+            Short = u.Id.Replace(" - ", " · "),
+            Kind = kind,
+            Source = u.SourceText,
+            Note = u.DeveloperNote,
+            Target = u.TargetText,
+            State = NormaliseState(u.TargetState, u.TargetText),
+        };
+    }
+
+    // ── Restore / close ───────────────────────────────────────────────────
+    private async Task RestoreAsync()
+    {
+        if (_module is null) return;
+        _busy = true;
+        try
+        {
+            var meta = await _module.InvokeAsync<SessionMeta?>("loadMeta");
+            if (meta is null) { _restoreName = null; return; }
+
+            var streamRef = await _module.InvokeAsync<IJSStreamReference>("loadOriginalStream");
+            string xml;
+            await using (var s = await streamRef.OpenReadStreamAsync(MaxFileBytes))
+            using (var reader = new StreamReader(s, Encoding.UTF8))
+            {
+                xml = await reader.ReadToEndAsync();
+            }
+            if (string.IsNullOrEmpty(xml)) { _restoreName = null; return; }
+
+            XliffDocument parsed;
+            try
+            {
+                using var ps = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+                parsed = AlXliffParser.Parse(ps);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or System.Xml.XmlException)
+            {
+                _parseError = $"Could not restore the saved session: {ex.Message}";
+                _restoreName = null;
+                return;
+            }
+
+            LoadParsed(meta.FileName, parsed);
+            if (!string.IsNullOrEmpty(meta.TargetLang)) _targetLang = meta.TargetLang!;
+
+            // Re-apply the saved edit overlay.
+            var byId = _units.ToDictionary(u => u.Id, StringComparer.Ordinal);
+            foreach (var (id, ed) in meta.Edits)
+            {
+                if (!byId.TryGetValue(id, out var vm)) continue;
+                vm.Target = ed.T;
+                if (!string.IsNullOrEmpty(ed.S)) vm.State = ed.S!;
+                vm.Dirty = true;
+            }
+            RecomputeFiltered();
+            await SelectAsync(_filtered.FirstOrDefault()?.Id ?? _units.FirstOrDefault()?.Id);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DiscardAsync()
+    {
+        if (_module is not null) await _module.InvokeVoidAsync("clear");
+        _restoreName = null;
+    }
+
+    private async Task CloseFileAsync()
+    {
+        if (_module is not null) await _module.InvokeVoidAsync("clear");
+        _hasFile = false;
+        _units = new();
+        _filtered = new();
+        _sel = null;
+        _selId = null;
+        _suggestions = new();
+        _parseError = null;
+    }
+
+    // ── Selection + suggestions ───────────────────────────────────────────
+    private async Task SelectAsync(string? id)
+    {
+        _selId = id;
+        _sel = id is null ? null : _units.FirstOrDefault(u => u.Id == id);
+        await LoadSuggestionsAsync();
+    }
+
+    private async Task LoadSuggestionsAsync()
+    {
+        _suggestions = new();
+        if (_sel is null || string.IsNullOrWhiteSpace(_sel.Source)) { _suggLoading = false; return; }
+        _suggLoading = true;
+        var forId = _sel.Id;
+        var source = _sel.Source;
+        try
+        {
+            var hits = await Memory.SuggestAsync(source, _sourceLang, _targetLang, 9);
+            if (_sel?.Id == forId) _suggestions = hits;
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning(ex, "Suggestion lookup failed.");
+        }
+        finally
+        {
+            _suggLoading = false;
+        }
+    }
+
+    // ── Editing ───────────────────────────────────────────────────────────
+    private void OnTargetInput(ChangeEventArgs e)
+    {
+        if (_sel is null) return;
+        _sel.Target = e.Value?.ToString() ?? string.Empty;
+        _sel.Dirty = true;
+        PersistEditsSoon();
+    }
+
+    private void OnGridTargetInput(UnitVm u, ChangeEventArgs e)
+    {
+        u.Target = e.Value?.ToString() ?? string.Empty;
+        u.Dirty = true;
+        PersistEditsSoon();
+    }
+
+    private void SetState(string token)
+    {
+        if (_sel is null) return;
+        _sel.State = token;
+        _sel.Dirty = true;
+        RecomputeFiltered();
+        PersistEditsSoon();
+    }
+
+    private async Task Fill(string target)
+    {
+        if (_sel is null) return;
+        _sel.Target = target;
+        _sel.State = StTranslated;
+        _sel.Dirty = true;
+        RecomputeFiltered();
+        PersistEditsSoon();
+        Flash("Filled from translation memory · marked translated");
+        await Task.CompletedTask;
+    }
+
+    private void SaveAndNext()
+    {
+        if (_sel is null) return;
+        if (!string.IsNullOrWhiteSpace(_sel.Target) && _sel.State == StTodo)
+        {
+            _sel.State = StTranslated;
+            _sel.Dirty = true;
+        }
+        var next = _units.FirstOrDefault(u => u.Id != _sel!.Id && IsNeeding(u));
+        RecomputeFiltered();
+        PersistEditsSoon();
+        if (next is not null)
+        {
+            _ = SelectAsync(next.Id);
+            Flash("Saved · jumped to next unit needing translation");
+        }
+        else
+        {
+            Flash("Saved · nothing left to translate");
+        }
+    }
+
+    private void Nav(int dir)
+    {
+        if (_filtered.Count == 0) return;
+        var i = _filtered.FindIndex(u => u.Id == _selId);
+        if (i < 0) { _ = SelectAsync(_filtered[0].Id); return; }
+        var n = Math.Clamp(i + dir, 0, _filtered.Count - 1);
+        _ = SelectAsync(_filtered[n].Id);
+    }
+
+    private async Task PreTranslateAsync()
+    {
+        _busy = true;
+        try
+        {
+            var needing = _units.Where(IsNeeding).ToList();
+            var sources = needing.Select(u => u.Source).Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.Ordinal).ToList();
+            if (sources.Count == 0) { Flash("Nothing to pre-translate"); return; }
+
+            var matches = await Memory.GetExactMatchesAsync(sources, _sourceLang, _targetLang);
+            var filled = 0;
+            foreach (var u in needing)
+            {
+                if (matches.TryGetValue(u.Source, out var m))
+                {
+                    u.Target = m.TargetText;
+                    u.State = StTranslated;
+                    u.Dirty = true;
+                    filled++;
+                }
+            }
+            RecomputeFiltered();
+            if (_sel is not null) await LoadSuggestionsAsync();
+            PersistEditsSoon();
+            Flash(filled > 0
+                ? $"Pre-filled {filled} exact match{(filled == 1 ? "" : "es")} from memory"
+                : "No exact memory matches to pre-fill");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // ── Header controls ───────────────────────────────────────────────────
+    private async Task OnTargetLangChanged(ChangeEventArgs e)
+    {
+        _targetLang = e.Value?.ToString() ?? _targetLang;
+        if (_module is not null) await _module.InvokeVoidAsync("putMeta", _fileName, _targetLang);
+        await LoadSuggestionsAsync();
+    }
+
+    private void OnKindChanged(ChangeEventArgs e)
+    {
+        _kind = e.Value?.ToString() ?? "All kinds";
+        RecomputeFiltered();
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        _search = e.Value?.ToString() ?? "";
+        RecomputeFiltered();
+    }
+
+    private void SetFilter(string f) { _filter = f; RecomputeFiltered(); }
+
+    private void ClearFilters() { _filter = "all"; _kind = "All kinds"; _search = ""; RecomputeFiltered(); }
+
+    private async Task StopRenameAsync()
+    {
+        _editingName = false;
+        if (_module is not null) await _module.InvokeVoidAsync("putMeta", _fileName, _targetLang);
+    }
+
+    private async Task OnFilenameKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await StopRenameAsync();
+    }
+
+    // ── Export ────────────────────────────────────────────────────────────
+    private async Task ExportAsync()
+    {
+        if (_module is null) return;
+        var editsJson = SerializeEdits();
+        var ok = await _module.InvokeAsync<bool>("exportNow", _fileName, editsJson);
+        if (!ok) Flash("Nothing to export yet");
+    }
+
+    // ── Keyboard (from Translator.razor.js) ───────────────────────────────
+    [JSInvokable]
+    public Task SaveAndNextFromKey() { SaveAndNext(); StateHasChanged(); return Task.CompletedTask; }
+
+    [JSInvokable]
+    public Task NavFromKey(int dir) { Nav(dir); StateHasChanged(); return Task.CompletedTask; }
+
+    [JSInvokable]
+    public async Task ApplySuggestionFromKey(int n)
+    {
+        if (_sel is not null && n >= 1 && n <= _suggestions.Count)
+        {
+            await Fill(_suggestions[n - 1].TargetText);
+            StateHasChanged();
+        }
+    }
+
+    // ── Filtering / counts ────────────────────────────────────────────────
+    private void RecomputeFiltered()
+    {
+        var q = _search.Trim();
+        IEnumerable<UnitVm> src = _units;
+        src = _filter switch
+        {
+            "todo" => src.Where(IsNeeding),
+            "done" => src.Where(u => u.State is StTranslated or StFinal && !string.IsNullOrEmpty(u.Target)),
+            _ => src,
+        };
+        if (_kind != "All kinds") src = src.Where(u => u.Kind == _kind);
+        if (!string.IsNullOrEmpty(q))
+            src = src.Where(u => u.Source.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || (u.Target ?? "").Contains(q, StringComparison.OrdinalIgnoreCase));
+        _filtered = src.ToList();
+
+        // Keep a valid selection within the filtered set.
+        if (_filtered.Count > 0 && (_selId is null || _filtered.All(u => u.Id != _selId)))
+        {
+            _selId = _filtered[0].Id;
+            _sel = _filtered[0];
+        }
+    }
+
+    private static bool IsNeeding(UnitVm u) =>
+        u.State is StTodo or StReview || string.IsNullOrEmpty(u.Target);
+
+    private readonly record struct CountSet(int Total, int Final, int Translated, int Review, int Todo, int Pct);
+
+    private CountSet Counts()
+    {
+        int final = 0, trans = 0, review = 0, todo = 0;
+        foreach (var u in _units)
+        {
+            if (IsNeeding(u))
+            {
+                if (u.State == StReview) review++; else todo++;
+            }
+            else if (u.State == StFinal) final++;
+            else trans++;
+        }
+        var total = _units.Count;
+        var done = final + trans;
+        var pct = total == 0 ? 0 : (int)Math.Round(done * 100.0 / total);
+        return new CountSet(total, final, trans, review, todo, pct);
+    }
+
+    private int HiddenCount() => _units.Count - _filtered.Count;
+    private int SelIndex() => _filtered.FindIndex(u => u.Id == _selId);
+
+    private List<string> KindOptions()
+    {
+        var kinds = _units.Select(u => u.Kind).Distinct().OrderBy(k => k).ToList();
+        kinds.Insert(0, "All kinds");
+        return kinds;
+    }
+
+    // ── Persistence (debounced) ───────────────────────────────────────────
+    private void PersistEditsSoon()
+    {
+        _persistCts?.Cancel();
+        _persistCts?.Dispose();
+        _persistCts = new CancellationTokenSource();
+        var token = _persistCts.Token;
+        var json = SerializeEdits();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(400, token);
+                if (token.IsCancellationRequested || _module is null) return;
+                await _module.InvokeVoidAsync("putEdits", json);
+            }
+            catch { /* debounced away or storage unavailable */ }
+        });
+    }
+
+    private string SerializeEdits()
+    {
+        var map = new Dictionary<string, EditDto>(StringComparer.Ordinal);
+        foreach (var u in _units.Where(u => u.Dirty))
+        {
+            map[u.Id] = new EditDto { T = u.Target, S = u.State };
+        }
+        return JsonSerializer.Serialize(map);
+    }
+
+    private void Flash(string msg)
+    {
+        _toast = msg;
+        _toastCts?.Cancel();
+        _toastCts?.Dispose();
+        _toastCts = new CancellationTokenSource();
+        var token = _toastCts.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(2000, token);
+                if (token.IsCancellationRequested) return;
+                await InvokeAsync(() => { _toast = null; StateHasChanged(); });
+            }
+            catch { }
+        });
+    }
+
+    // ── Display helpers ───────────────────────────────────────────────────
+    private static string DisplayKind(string bucket) => bucket switch
+    {
+        "caption" => "Caption",
+        "tooltip" => "Tooltip",
+        "label" => "Label",
+        "option" => "Option",
+        "instructional" => "Instructional",
+        _ => "Other",
+    };
+
+    private static string NormaliseState(string? raw, string target)
+    {
+        var s = (raw ?? "").Trim().ToLowerInvariant();
+        return s switch
+        {
+            "translated" => StTranslated,
+            "final" or "signed-off" => StFinal,
+            "needs-translation" or "new" => StTodo,
+            _ when s.StartsWith("needs-review") || s.StartsWith("needs-adaptation") => StReview,
+            "" => string.IsNullOrEmpty(target) ? StTodo : StTranslated,
+            _ => string.IsNullOrEmpty(target) ? StTodo : StTranslated,
+        };
+    }
+
+    private string StateBtnClass(string token)
+    {
+        var on = _sel is not null && _sel.State == token ? "on " : "";
+        return on + DotClass(token);
+    }
+
+    private static string DotClass(string state) => state switch
+    {
+        StFinal => "is-final",
+        StTranslated => "is-trans",
+        StReview => "is-review",
+        _ => "is-todo",
+    };
+
+    private static string StateLabel(string state) => state switch
+    {
+        StFinal => "Final",
+        StTranslated => "Translated",
+        StReview => "Review",
+        _ => "Needs",
+    };
+
+    private string TargetLangName()
+    {
+        var l = Languages.FirstOrDefault(x => x.Code == _targetLang);
+        return l is null ? _targetLang : $"{l.Name} ({l.Code})";
+    }
+
+    private static string FlagOf(string code)
+    {
+        var dash = code.IndexOf('-');
+        var lang = dash > 0 ? code[..dash] : code;
+        return lang.ToUpperInvariant();
+    }
+
+    private static string Pct(int n, int total) => total == 0 ? "0%" : $"{n * 100.0 / total:0.###}%";
+
+    private static string SimClass(double sim) => sim >= 0.99 ? "exact" : sim >= 0.8 ? "high" : "mid";
+    private static string SimLabel(double sim) => sim >= 0.99 ? "Exact" : $"{Math.Round(sim * 100)}%";
+
+    public async ValueTask DisposeAsync()
+    {
+        _toastCts?.Cancel();
+        _toastCts?.Dispose();
+        _persistCts?.Cancel();
+        _persistCts?.Dispose();
+        if (_module is not null)
+        {
+            try { await _module.InvokeVoidAsync("detachKeys"); } catch { }
+            try { await _module.DisposeAsync(); } catch { }
+        }
+        _selfRef?.Dispose();
+    }
+}

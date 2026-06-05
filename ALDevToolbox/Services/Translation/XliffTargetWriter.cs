@@ -1,0 +1,164 @@
+using System.Text;
+using System.Text.RegularExpressions;
+
+namespace ALDevToolbox.Services.Translation;
+
+/// <summary>One edited target: the new text and, optionally, a new <c>state</c>.</summary>
+public sealed record TargetEdit(string Target, string? State);
+
+/// <summary>
+/// Writes edited <c>&lt;target&gt;</c> values back into an XLIFF file's
+/// <b>original text</b>, touching only the bytes inside the trans-units the
+/// user actually edited. Everything else — indentation, attribute order,
+/// self-closing tags, notes, the XML declaration, line endings, BOM — is left
+/// exactly as the source tool (AL compiler, Poedit, VS Code extension, …)
+/// wrote it. A no-edit run is therefore byte-identical to its input, which is
+/// the whole point: git diffs show only the lines that changed.
+///
+/// We deliberately do <i>not</i> round-trip through <c>XDocument</c> — that
+/// normalises tool-specific quirks and would noise up every diff. See
+/// <c>.design/translator/</c> and the Translator plan for the rationale.
+/// </summary>
+public static class XliffTargetWriter
+{
+    // One trans-unit block. trans-units don't nest, so a non-greedy match
+    // between the open tag and its close is safe. Singleline so '.' spans
+    // newlines.
+    private static readonly Regex TransUnitRegex = new(
+        @"<trans-unit\b[^>]*>.*?</trans-unit>",
+        RegexOptions.Singleline | RegexOptions.Compiled);
+
+    // The id attribute on a trans-unit open tag (single or double quoted).
+    private static readonly Regex IdAttrRegex = new(
+        "\\bid\\s*=\\s*(?:\"(?<v>[^\"]*)\"|'(?<v>[^']*)')",
+        RegexOptions.Compiled);
+
+    // <target ...>inner</target> (inner may be empty / multi-line).
+    private static readonly Regex TargetElementRegex = new(
+        @"<target\b(?<attrs>[^>]*)>(?<inner>.*?)</target>",
+        RegexOptions.Singleline | RegexOptions.Compiled);
+
+    // Self-closing <target ... /> (an empty target).
+    private static readonly Regex TargetSelfClosingRegex = new(
+        @"<target\b(?<attrs>[^>]*?)/>",
+        RegexOptions.Singleline | RegexOptions.Compiled);
+
+    private static readonly Regex StateAttrRegex = new(
+        "\\bstate\\s*=\\s*(?:\"[^\"]*\"|'[^']*')",
+        RegexOptions.Compiled);
+
+    private static readonly Regex SourceCloseRegex = new(
+        @"</source>",
+        RegexOptions.Compiled);
+
+    private static readonly Regex SourceIndentRegex = new(
+        @"(?<indent>[^\S\r\n]*)<source\b",
+        RegexOptions.Compiled);
+
+    /// <summary>
+    /// Returns <paramref name="originalXml"/> with the edited targets applied.
+    /// <paramref name="edits"/> is keyed by trans-unit id. Ids not present in
+    /// the document are ignored; trans-units not present in the map are left
+    /// untouched.
+    /// </summary>
+    public static string ApplyEdits(string originalXml, IReadOnlyDictionary<string, TargetEdit> edits)
+    {
+        ArgumentNullException.ThrowIfNull(originalXml);
+        ArgumentNullException.ThrowIfNull(edits);
+        if (edits.Count == 0) return originalXml;
+
+        return TransUnitRegex.Replace(originalXml, match =>
+        {
+            var block = match.Value;
+            var idMatch = IdAttrRegex.Match(block);
+            if (!idMatch.Success) return block;
+            var id = DecodeXml(idMatch.Groups["v"].Value);
+            if (!edits.TryGetValue(id, out var edit)) return block;
+            return ApplyToBlock(block, edit);
+        });
+    }
+
+    private static string ApplyToBlock(string block, TargetEdit edit)
+    {
+        var escaped = EncodeXmlText(edit.Target);
+
+        // 1) Existing <target>…</target>.
+        var te = TargetElementRegex.Match(block);
+        if (te.Success)
+        {
+            var attrs = SetState(te.Groups["attrs"].Value, edit.State);
+            var replacement = $"<target{attrs}>{escaped}</target>";
+            return block.Substring(0, te.Index) + replacement + block.Substring(te.Index + te.Length);
+        }
+
+        // 2) Self-closing <target/>.
+        var ts = TargetSelfClosingRegex.Match(block);
+        if (ts.Success)
+        {
+            var attrs = SetState(ts.Groups["attrs"].Value.TrimEnd(), edit.State);
+            var replacement = $"<target{attrs}>{escaped}</target>";
+            return block.Substring(0, ts.Index) + replacement + block.Substring(ts.Index + ts.Length);
+        }
+
+        // 3) No target at all — insert one right after </source>, matching the
+        // source line's indentation so the inserted line reads naturally.
+        var src = SourceCloseRegex.Match(block);
+        if (src.Success)
+        {
+            var indent = SourceIndentRegex.Match(block) is { Success: true } im
+                ? im.Groups["indent"].Value
+                : "          ";
+            var stateAttr = string.IsNullOrEmpty(edit.State) ? string.Empty : $" state=\"{edit.State}\"";
+            var insertion = $"\n{indent}<target{stateAttr}>{escaped}</target>";
+            var at = src.Index + src.Length;
+            return block.Substring(0, at) + insertion + block.Substring(at);
+        }
+
+        // No <source> either — leave the block alone rather than guess.
+        return block;
+    }
+
+    /// <summary>
+    /// Sets / replaces / removes the <c>state</c> attribute inside a target
+    /// open-tag's attribute string. <paramref name="state"/> null leaves the
+    /// existing attributes untouched.
+    /// </summary>
+    private static string SetState(string attrs, string? state)
+    {
+        if (state is null) return attrs;
+
+        if (StateAttrRegex.IsMatch(attrs))
+        {
+            return StateAttrRegex.Replace(attrs, $"state=\"{state}\"", 1);
+        }
+        // Append, keeping a single leading space before the new attribute.
+        var trimmed = attrs.TrimEnd();
+        return $"{trimmed} state=\"{state}\"";
+    }
+
+    /// <summary>Minimal XML text escaping: only the characters that must be escaped in element content.</summary>
+    private static string EncodeXmlText(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return string.Empty;
+        var sb = new StringBuilder(text.Length + 16);
+        foreach (var ch in text)
+        {
+            switch (ch)
+            {
+                case '&': sb.Append("&amp;"); break;
+                case '<': sb.Append("&lt;"); break;
+                case '>': sb.Append("&gt;"); break;
+                default: sb.Append(ch); break;
+            }
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>Decodes the handful of entities that can appear in an id attribute so map keys line up.</summary>
+    private static string DecodeXml(string value) => value
+        .Replace("&lt;", "<")
+        .Replace("&gt;", ">")
+        .Replace("&quot;", "\"")
+        .Replace("&apos;", "'")
+        .Replace("&amp;", "&");
+}

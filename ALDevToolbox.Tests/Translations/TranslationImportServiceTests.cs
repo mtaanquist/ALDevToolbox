@@ -27,11 +27,11 @@ public sealed class TranslationImportServiceTests : IDisposable
 
     private ReleaseImportService NewImporter(Data.AppDbContext ctx) =>
         new(ctx, _db.OrgContext, _db.NewQuotaGuard(ctx),
-            new TranslationImportService(ctx, _db.OrgContext, NullLogger<TranslationImportService>.Instance),
+            new TranslationImportService(ctx, _db.OrgContext, new ALDevToolbox.Services.Translation.TranslationMemoryService(ctx, _db.OrgContext, NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance), NullLogger<TranslationImportService>.Instance),
             NullLogger<ReleaseImportService>.Instance);
 
     private TranslationImportService NewTranslator(Data.AppDbContext ctx) =>
-        new(ctx, _db.OrgContext, NullLogger<TranslationImportService>.Instance);
+        new(ctx, _db.OrgContext, new ALDevToolbox.Services.Translation.TranslationMemoryService(ctx, _db.OrgContext, NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance), NullLogger<TranslationImportService>.Instance);
 
     /// <summary>
     /// Seeds a release containing the Microsoft OIOUBL <c>.app</c> fixture
@@ -103,6 +103,33 @@ public sealed class TranslationImportServiceTests : IDisposable
             label.SubKind.Should().Be("namedtype");
             label.Kind.Should().Be("label");
             label.TargetText.Should().Contain("linjerabatbeløb");
+        }
+    }
+
+    [Fact]
+    public async Task ImportSingleAsync_populates_the_translation_memory()
+    {
+        var (releaseId, moduleId) = await SeedOioublReleaseAsync();
+
+        await using (var ctx = _db.NewContext())
+        {
+            var svc = NewTranslator(ctx);
+            await using var s = File.OpenRead(Path.Combine(FixtureRoot, "OIOUBL.daDK.xlf"));
+            await svc.ImportSingleAsync(releaseId, moduleId, s, "OIOUBL.daDK.xlf");
+        }
+
+        await using (var read = _db.NewContext())
+        {
+            // The import should have seeded the org-wide memory with the same
+            // pairs (origin = module name), so the Translator can suggest them.
+            (await read.TranslationMemory.CountAsync()).Should().BeGreaterThan(0);
+
+            var memory = new ALDevToolbox.Services.Translation.TranslationMemoryService(
+                read, _db.OrgContext,
+                NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance);
+            var hits = await memory.SuggestAsync(
+                "The total Line Discount Amount cannot be negative.", "en-US", "da-DK");
+            hits.Should().Contain(h => h.TargetText.Contains("linjerabatbeløb"));
         }
     }
 

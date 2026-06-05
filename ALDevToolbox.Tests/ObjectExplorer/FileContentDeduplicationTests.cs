@@ -25,7 +25,7 @@ public sealed class FileContentDeduplicationTests : IDisposable
 
     private ReleaseImportService NewService(Data.AppDbContext ctx) =>
         new(ctx, _db.OrgContext, _db.NewQuotaGuard(ctx),
-            new TranslationImportService(ctx, _db.OrgContext, NullLogger<TranslationImportService>.Instance),
+            new TranslationImportService(ctx, _db.OrgContext, new ALDevToolbox.Services.Translation.TranslationMemoryService(ctx, _db.OrgContext, NullLogger<ALDevToolbox.Services.Translation.TranslationMemoryService>.Instance), NullLogger<TranslationImportService>.Instance),
             NullLogger<ReleaseImportService>.Instance);
 
     private async Task<int> ImportDkCoreAsync(int orgId, string label)

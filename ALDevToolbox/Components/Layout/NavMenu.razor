@@ -59,6 +59,12 @@
                     <span>Piper</span>
                 </NavLink>
             </li>
+            <li>
+                <NavLink class="nav-link" href="/translator" Match="NavLinkMatch.Prefix" ActiveClass="active">
+                    <Icon Name="languages" Width="18" Height="18" Css="nav-link__icon" />
+                    <span>Translator</span>
+                </NavLink>
+            </li>
             @* MCP link only shows when the user is signed in, the SiteAdmin
                has enabled MCP under /site-admin/settings, *and* the user's
                own organisation hasn't opted out under
