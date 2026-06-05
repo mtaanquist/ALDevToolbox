@@ -139,6 +139,10 @@ export async function exportNow(fileName, editsJson) {
     if (!rec || !rec.originalXml) return false;
     const form = document.getElementById("tr-export-form");
     if (!form) return false;
+    // The form submit below is a navigation, which would otherwise fire the
+    // unsaved-changes beforeunload prompt. Detach it first — exporting is a
+    // deliberate save, not an accidental exit.
+    setBeforeUnload(false);
     form.querySelector("#tr-export-filename").value = fileName;
     form.querySelector("#tr-export-original").value = rec.originalXml;
     form.querySelector("#tr-export-edits").value = editsJson;
