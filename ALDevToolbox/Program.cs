@@ -146,6 +146,7 @@ builder.Services.AddScoped<RecipeSuggestionService>();
 builder.Services.AddScoped<ModuleService>();
 builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<ApplicationVersionService>();
+builder.Services.AddScoped<ALDevToolbox.Services.Translation.TranslationMemoryService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationImportService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseImportService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.CalImportService>();
@@ -582,6 +583,7 @@ app.MapHealthChecks("/readyz", new Microsoft.AspNetCore.Diagnostics.HealthChecks
 
 // Endpoint groups (see Endpoints/ — one extension per concern).
 app.MapGenerationEndpoints();
+app.MapTranslatorEndpoints();
 app.MapAdminEndpoints();
 app.MapAccountEndpoints();
 app.MapAdminUserEndpoints();

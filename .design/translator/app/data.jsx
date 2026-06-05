@@ -1,0 +1,238 @@
+/* ============================================================
+   Sample data — a generated PTE extension's da-DK XLIFF,
+   mid-translation. EN -> DA (Danish). Realistic BC strings.
+   States: untrans (needs translation) | fuzzy | trans | final
+   ============================================================ */
+
+const FILE = {
+  name: "ACME.Core.da-DK.xlf",
+  original: "ACME Core",
+  srcLang: "en-US",
+  tgtLang: "da-DK",
+};
+
+// helper to build suggestion objects
+const s = (text, origin, sim) => ({ text, origin, sim });
+
+const UNITS = [
+  {
+    id: "Table 50100 - Field 1 - Property Caption",
+    short: "T50100·F1·Caption",
+    kind: "Caption",
+    src: "Customer No.",
+    note: "Field 'Customer No.' on table 'ACME Order Header'.",
+    tgt: "Debitornr.",
+    state: "final",
+    suggs: [ s("Debitornr.", "Base Application · Microsoft.Sales", 100) ],
+  },
+  {
+    id: "Table 50100 - Field 1 - Property ToolTip",
+    short: "T50100·F1·ToolTip",
+    kind: "Tooltip",
+    src: "Specifies the number of the customer.",
+    note: "ToolTip for field 'Customer No.'.",
+    tgt: "Angiver nummeret på debitoren.",
+    state: "final",
+    suggs: [ s("Angiver nummeret på debitoren.", "Base Application · Microsoft.Sales", 100) ],
+  },
+  {
+    id: "Table 50100 - Field 10 - Property Caption",
+    short: "T50100·F10·Caption",
+    kind: "Caption",
+    src: "Posting Date",
+    note: "Field 'Posting Date' on table 'ACME Order Header'.",
+    tgt: "Bogføringsdato",
+    state: "trans",
+    suggs: [ s("Bogføringsdato", "Base Application · Microsoft.Finance", 100) ],
+  },
+  {
+    id: "Table 50100 - Field 12 - Property Caption",
+    short: "T50100·F12·Caption",
+    kind: "Caption",
+    src: "Document No.",
+    note: "Field 'Document No.' on table 'ACME Order Header'.",
+    tgt: "Bilagsnr.",
+    state: "trans",
+    suggs: [ s("Bilagsnr.", "Base Application · Microsoft.Foundation", 100) ],
+  },
+  {
+    id: "Table 50100 - Field 10 - Property ToolTip",
+    short: "T50100·F10·ToolTip",
+    kind: "Tooltip",
+    src: "Specifies the posting date for the entry.",
+    note: "ToolTip for field 'Posting Date'.",
+    tgt: "",
+    state: "untrans",
+    suggs: [
+      s("Angiver bogføringsdatoen for posteringen.", "Base Application · Microsoft.Finance", 96),
+      s("Angiver bogføringsdatoen.", "ACME Core · Translator", 71),
+    ],
+  },
+  {
+    id: "Page 50101 - Control 22 - Property Caption",
+    short: "P50101·C22·Caption",
+    kind: "Caption",
+    src: "Unit Price",
+    note: "Control 'Unit Price' on page 'ACME Order Subform'.",
+    tgt: "",
+    state: "untrans",
+    suggs: [
+      s("Enhedspris", "Base Application · Microsoft.Sales", 100),
+      s("Kostpris", "Continia Banking · v28", 62),
+    ],
+  },
+  {
+    id: "Table 50100 - Field 14 - Property Caption",
+    short: "T50100·F14·Caption",
+    kind: "Caption",
+    src: "Location Code",
+    note: "Field 'Location Code' on table 'ACME Order Header'.",
+    tgt: "Lokationskode",
+    state: "final",
+    suggs: [ s("Lokationskode", "Base Application · Microsoft.Inventory", 100) ],
+  },
+  {
+    id: "Table 50100 - Field 14 - Property ToolTip",
+    short: "T50100·F14·ToolTip",
+    kind: "Tooltip",
+    src: "Specifies the location code for the line.",
+    note: "ToolTip for field 'Location Code'. Marked needs-review by import.",
+    tgt: "Lokationskode.",
+    state: "fuzzy",
+    suggs: [
+      s("Angiver lokationskoden for linjen.", "Base Application · Microsoft.Inventory", 100),
+      s("Angiver lokationskoden.", "ACME Core · Translator", 82),
+    ],
+  },
+  {
+    id: "Page 50101 - Control 30 - Property Caption",
+    short: "P50101·C30·Caption",
+    kind: "Caption",
+    src: "Quantity",
+    note: "Control 'Quantity' on page 'ACME Order Subform'.",
+    tgt: "Antal",
+    state: "final",
+    suggs: [ s("Antal", "Base Application · Microsoft.Foundation", 100) ],
+  },
+  {
+    id: "Codeunit 50102 - NamedType ReservationHandledLbl",
+    short: "CU50102·ReservationHandledLbl",
+    kind: "Label",
+    src: "Reservation handled",
+    note: "Label 'ReservationHandledLbl'.",
+    tgt: "",
+    state: "untrans",
+    suggs: [ s("Reservation håndteret", "ACME Core · Translator", 88) ],
+  },
+  {
+    id: "Page 50100 - Property Caption",
+    short: "P50100·Caption",
+    kind: "Caption",
+    src: "Sales Order",
+    note: "Caption on page 'ACME Order'.",
+    tgt: "Salgsordre",
+    state: "trans",
+    suggs: [ s("Salgsordre", "Base Application · Microsoft.Sales", 100) ],
+  },
+  {
+    id: "Table 50100 - Field 20 - Property Caption",
+    short: "T50100·F20·Caption",
+    kind: "Caption",
+    src: "Posting Description",
+    note: "Field 'Posting Description' on table 'ACME Order Header'.",
+    tgt: "",
+    state: "untrans",
+    suggs: [
+      s("Bogføringsbeskrivelse", "Base Application · Microsoft.Finance", 100),
+      s("Posteringsbeskrivelse", "ForNAV Reports · v28", 84),
+    ],
+  },
+  {
+    id: "Page 50101 - Control 12 - Property Caption",
+    short: "P50101·C12·Caption",
+    kind: "Caption",
+    src: "Item No.",
+    note: "Control 'Item No.' on page 'ACME Order Subform'.",
+    tgt: "Varenr.",
+    state: "trans",
+    suggs: [ s("Varenr.", "Base Application · Microsoft.Inventory", 100) ],
+  },
+  {
+    id: "Page 50101 - Control 12 - Property ToolTip",
+    short: "P50101·C12·ToolTip",
+    kind: "Tooltip",
+    src: "Specifies the item number.",
+    note: "ToolTip for control 'Item No.'.",
+    tgt: "",
+    state: "untrans",
+    suggs: [
+      s("Angiver varenummeret.", "Base Application · Microsoft.Inventory", 100),
+      s("Angiver nummeret på varen.", "ACME Core · Translator", 73),
+    ],
+  },
+  {
+    id: "Table 50100 - Field 40 - Property Caption",
+    short: "T50100·F40·Caption",
+    kind: "Caption",
+    src: "Outstanding Amount (LCY)",
+    note: "Field 'Outstanding Amount (LCY)' on table 'ACME Order Header'.",
+    tgt: "Udestående beløb (RV)",
+    state: "trans",
+    suggs: [ s("Udestående beløb (RV)", "Base Application · Microsoft.Finance", 100) ],
+  },
+  {
+    id: "Page 50100 - Action 7 - Property Caption",
+    short: "P50100·A7·Caption",
+    kind: "Caption",
+    src: "Apply Entries",
+    note: "Action 'Apply Entries' on page 'ACME Order'.",
+    tgt: "",
+    state: "untrans",
+    suggs: [
+      s("Udlign poster", "Base Application · Microsoft.Finance", 100),
+      s("Anvend poster", "Continia Document Capture · v28", 58),
+    ],
+  },
+  {
+    id: "Codeunit 50102 - NamedType MustBePositiveErr",
+    short: "CU50102·MustBePositiveErr",
+    kind: "Label",
+    src: "The %1 must be greater than zero.",
+    note: "Error label. '%1' is replaced with a field caption at runtime.",
+    tgt: "",
+    state: "untrans",
+    suggs: [
+      s("%1 skal være større end nul.", "Base Application · Microsoft.Foundation", 93),
+    ],
+  },
+  {
+    id: "Table 50100 - Field 50 - Property OptionCaption",
+    short: "T50100·F50·OptionCaption",
+    kind: "Option",
+    src: "Open,Released,Pending Approval",
+    note: "OptionCaption for field 'Status'. Comma-separated; keep the same number of members.",
+    tgt: "Åben,Frigivet,Afventer godkendelse",
+    state: "trans",
+    suggs: [ s("Åben,Frigivet,Afventer godkendelse", "Base Application · Microsoft.Foundation", 100) ],
+  },
+];
+
+const KINDS = ["All kinds", "Caption", "Tooltip", "Label", "Option"];
+
+// Common Business Central translation targets (BCP-47).
+const LANGS = [
+  { code: "da-DK", name: "Dansk",            flag: "DA" },
+  { code: "de-DE", name: "Deutsch",          flag: "DE" },
+  { code: "sv-SE", name: "Svenska",          flag: "SV" },
+  { code: "nb-NO", name: "Norsk (bokmål)",   flag: "NB" },
+  { code: "nl-NL", name: "Nederlands",       flag: "NL" },
+  { code: "fr-FR", name: "Français",         flag: "FR" },
+  { code: "fr-CA", name: "Français (Canada)",flag: "FR" },
+  { code: "es-ES", name: "Español",          flag: "ES" },
+  { code: "fi-FI", name: "Suomi",            flag: "FI" },
+  { code: "is-IS", name: "Íslenska",         flag: "IS" },
+  { code: "it-IT", name: "Italiano",         flag: "IT" },
+  { code: "en-GB", name: "English (UK)",     flag: "EN" },
+];
+
+Object.assign(window, { FILE, UNITS, KINDS, LANGS });
