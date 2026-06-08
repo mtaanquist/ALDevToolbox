@@ -344,3 +344,18 @@ input.tr-fname { cursor: text; color: var(--color-text); min-width: 240px; }
     .tr-la__list { border-right: none; border-bottom: 1px solid var(--color-border); max-height: 40vh; }
     .tr-la__rail { max-height: none; }
 }
+
+/* ── Suggestion vote / remove controls ──────────────────────────────────── */
+.tr-sugg__side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.tr-vote { display: inline-flex; align-items: center; gap: 4px; }
+.tr-vbtn {
+    appearance: none; border: 1px solid var(--color-border); background: var(--color-surface);
+    color: var(--color-text-secondary); border-radius: 6px; padding: 3px; cursor: pointer;
+    display: grid; place-items: center; line-height: 0;
+}
+.tr-vbtn:hover { background: var(--color-surface-2); color: var(--color-text); }
+.tr-vbtn.on { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.tr-vbtn--del:hover { color: var(--color-error-text); border-color: var(--color-error-text); background: transparent; }
+.tr-vscore { font-size: 0.72rem; font-weight: 700; min-width: 16px; text-align: center; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+.tr-vscore.pos { color: var(--color-valid); }
+.tr-vscore.neg { color: var(--color-error-text); }

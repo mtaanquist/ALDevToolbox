@@ -273,7 +273,26 @@
                                                             <span class="tr-sorigin"><Icon Name="database" Width="12" Height="12" />@(s.Origin ?? "memory")</span>
                                                         </div>
                                                     </div>
-                                                    <span class="tr-ssim @SimClass(s.Similarity)">@SimLabel(s.Similarity)</span>
+                                                    <div class="tr-sugg__side">
+                                                        <span class="tr-ssim @SimClass(s.Similarity)">@SimLabel(s.Similarity)</span>
+                                                        <div class="tr-vote" @onclick:stopPropagation="true">
+                                                            <button class="tr-vbtn @(s.MyVote > 0 ? "on" : "")" title="Good translation — vote up"
+                                                                    @onclick="() => VoteSuggestionAsync(s.EntryId, s.MyVote > 0 ? 0 : 1)">
+                                                                <Icon Name="thumbs-up" Width="13" Height="13" />
+                                                            </button>
+                                                            <span class="tr-vscore @(s.Score > 0 ? "pos" : s.Score < 0 ? "neg" : "")">@s.Score</span>
+                                                            <button class="tr-vbtn @(s.MyVote < 0 ? "on" : "")" title="Bad translation — vote down"
+                                                                    @onclick="() => VoteSuggestionAsync(s.EntryId, s.MyVote < 0 ? 0 : -1)">
+                                                                <Icon Name="thumbs-down" Width="13" Height="13" />
+                                                            </button>
+                                                            <AuthorizeView Roles="Admin,Editor" Context="curate">
+                                                                <button class="tr-vbtn tr-vbtn--del" title="Remove this translation from the memory"
+                                                                        @onclick="() => RemoveSuggestionAsync(s.EntryId)">
+                                                                    <Icon Name="trash-2" Width="13" Height="13" />
+                                                                </button>
+                                                            </AuthorizeView>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             }
                                         }
@@ -732,6 +751,45 @@
         PersistEditsSoon();
         Flash("Filled from translation memory · marked translated");
         await Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Up/down votes a memory suggestion (toggling off when the same direction
+    /// is clicked again) and reflects the new score/own-vote on the chip. Votes
+    /// re-rank suggestions on the next lookup.
+    /// </summary>
+    private async Task VoteSuggestionAsync(long entryId, int direction)
+    {
+        try
+        {
+            var res = await Memory.VoteAsync(entryId, direction);
+            var idx = _suggestions.FindIndex(x => x.EntryId == entryId);
+            if (idx >= 0) _suggestions[idx] = _suggestions[idx] with { Score = res.Score, MyVote = res.MyVote };
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning(ex, "Vote on memory entry {EntryId} failed.", entryId);
+            Flash("Couldn't record that vote");
+        }
+    }
+
+    /// <summary>
+    /// Editor/Admin only: soft-deletes a bad memory entry so it stops appearing
+    /// as a suggestion. Recoverable from the Translation memory admin page.
+    /// </summary>
+    private async Task RemoveSuggestionAsync(long entryId)
+    {
+        try
+        {
+            await Memory.DeleteAsync(entryId);
+            _suggestions.RemoveAll(x => x.EntryId == entryId);
+            Flash("Removed from memory · recoverable in admin");
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning(ex, "Remove of memory entry {EntryId} failed.", entryId);
+            Flash("Couldn't remove that entry");
+        }
     }
 
     private void SaveAndNext()
