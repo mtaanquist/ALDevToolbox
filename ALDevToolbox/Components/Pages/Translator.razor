@@ -900,13 +900,15 @@
     {
         if (_module is null) return;
         var editsJson = SerializeEdits();
+        // Exporting *is* saving: the user now has a copy on disk. Drop the
+        // unsaved-changes guard *before* the submit so the form POST (which the
+        // browser treats as a navigation) doesn't trip the leave-confirm modal
+        // or the beforeunload prompt. This also flips `_unsaved` off so the
+        // LocationChanging handler stays quiet; the JS side detaches the
+        // beforeunload listener synchronously right before `form.submit()`.
+        SetUnsaved(false);
         var ok = await _module.InvokeAsync<bool>("exportNow", _fileName, editsJson);
-        if (ok)
-        {
-            // The user now has a saved copy on disk — clear the unsaved guard.
-            SetUnsaved(false);
-        }
-        else
+        if (!ok)
         {
             Flash("Nothing to export yet");
         }
