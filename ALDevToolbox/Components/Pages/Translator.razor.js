@@ -180,10 +180,27 @@ export function initKeys(ref) {
         if (ev.code === "Enter") { ev.preventDefault(); dotNetRef.invokeMethodAsync("SaveAndNextFromKey"); return; }
         if (ev.code === "ArrowUp") { ev.preventDefault(); dotNetRef.invokeMethodAsync("NavFromKey", -1); return; }
         if (ev.code === "ArrowDown") { ev.preventDefault(); dotNetRef.invokeMethodAsync("NavFromKey", 1); return; }
+        // #307: Alt+Left/Right are the browser's Back/Forward on Windows/Linux —
+        // swallow them so an accidental press doesn't throw the translator off
+        // the page mid-edit. They are deliberately NOT unit navigation (that
+        // stays on Alt+Up/Down).
+        if (ev.code === "ArrowLeft" || ev.code === "ArrowRight") { ev.preventDefault(); return; }
         const m = /^Digit([1-9])$/.exec(ev.code);
         if (m) { ev.preventDefault(); dotNetRef.invokeMethodAsync("ApplySuggestionFromKey", parseInt(m[1], 10)); }
     };
     document.addEventListener("keydown", keyHandler);
+}
+
+// #304: move the cursor into the target box for the current selection and put
+// it at the end of any existing text, so the user can start typing immediately
+// after picking a unit. List view only — there's no .tr-tgtarea in grid view,
+// where the clicked cell already holds focus.
+export function focusTarget() {
+    const el = document.querySelector(".tr-tgtarea");
+    if (!el) return;
+    el.focus();
+    const end = el.value.length;
+    try { el.setSelectionRange(end, end); } catch { /* not all inputs support it */ }
 }
 
 export function detachKeys() {
