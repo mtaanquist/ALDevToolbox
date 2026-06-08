@@ -15,6 +15,12 @@ permissions:
   contents: read
   packages: write
 
+env:
+  # The docker/* and actions/checkout actions still ship on Node 20, which
+  # GitHub forces to Node 24 on 2026-06-16. Opt in early so the cutover is a
+  # non-event; drop this once those actions default to Node 24.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   image:
     runs-on: ubuntu-latest
