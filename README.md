@@ -136,6 +136,79 @@ Upgrading from a v1 (SQLite) deployment? See [`migrating-from-sqlite.md`](./.des
 
 The container terminates HTTP only — run TLS at the reverse proxy. `app.UseForwardedHeaders()` is wired so cookies pick up `Secure` correctly behind a proxy.
 
+### Deploy from the published image
+
+The compose stack above builds the app from source (`build: .`). For a deployment you don't need to build locally — releases are published to the GitHub Container Registry as `ghcr.io/mtaanquist/aldevtoolbox`. Each `vX.Y.Z` tag publishes the exact version plus moving `latest`, major (`6`), and minor (`6.0`) tags, so you can pin as loosely or tightly as you like. (Release versioning follows "one major per shipped tool" — see [`CLAUDE.md`](./CLAUDE.md) under *Releases and image publishing*.)
+
+Drop this `compose.yaml` next to a `.env` file and run `docker compose up -d`. It's the same shape as the repo's `compose.yml`, with `build: .` swapped for the published image:
+
+```yaml
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aldevtoolbox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a strong password}
+      POSTGRES_DB: ${POSTGRES_DB:-aldevtoolbox}
+    volumes:
+      # Mount the parent, not .../data — postgres:18 keeps data under
+      # /var/lib/postgresql/<major>/docker/ so in-place pg_upgrade works.
+      - pg-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aldevtoolbox} -d ${POSTGRES_DB:-aldevtoolbox}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  aldevtoolbox:
+    # Pin a release (e.g. ghcr.io/mtaanquist/aldevtoolbox:6.0.0) for
+    # reproducible deploys; :latest or :6 follow newer releases automatically.
+    image: ghcr.io/mtaanquist/aldevtoolbox:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:-aldevtoolbox};Username=${POSTGRES_USER:-aldevtoolbox};Password=${POSTGRES_PASSWORD}"
+      # Read once on a fresh database; ignored after the first user exists.
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      DATA_PROTECTION_KEY_DIR: /var/lib/aldevtoolbox/dp-keys
+      BACKUPS_DIR: /var/lib/aldevtoolbox/backups
+      # Passkeys — leave blank to disable the WebAuthn UI.
+      Auth__WebAuthn__RpId: ${AUTH_WEBAUTHN_RP_ID:-}
+      Auth__WebAuthn__OriginsCsv: ${AUTH_WEBAUTHN_ORIGINS:-}
+    volumes:
+      - app-keys:/var/lib/aldevtoolbox/dp-keys
+      - app-backups:/var/lib/aldevtoolbox/backups
+    # The image already declares a HEALTHCHECK against /healthz; compose picks
+    # it up automatically.
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+  app-keys:
+  app-backups:
+```
+
+```bash
+# .env in the same directory — at minimum set the password and bootstrap admin.
+cat > .env <<'EOF'
+POSTGRES_PASSWORD=change-me-to-something-strong
+BOOTSTRAP_ADMIN_EMAIL=admin@example.com
+BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars
+EOF
+
+docker compose up -d
+docker compose pull   # later: grab the newest :latest (or :6) and recreate
+```
+
+Visit <http://localhost:8080> and sign in with the bootstrap credentials. The full env-var table from [Run in Docker](#run-in-docker) applies unchanged — only the image source differs.
+
 ## Backup
 
 The database lives in the `pg-data` named volume. Backups live in `app-backups` (mounted at `/var/lib/aldevtoolbox/backups`); both are managed by the compose stack.

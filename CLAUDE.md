@@ -187,11 +187,43 @@ When picking which tests to add for a new feature, prefer tests that go through 
 ## Pull request hygiene
 
 - One milestone per PR (or one coherent slice of one). Don't roll three milestones into a single review.
+- Name branches with a type prefix that fits the work, slash-separated from a short kebab-case description: `feat/translator-xliff-editor`, `fix/audit-diff-empty-state`, `chore/bump-npgsql`, `docs/release-flow`, `refactor/generation-service`, `test/id-range-allocation`, `ci/ghcr-release`, `perf/object-explorer-ingest`. Use `feat` for a new user-visible capability, `fix` for a bug, `chore` for deps/tooling/housekeeping, `docs` for docs-only, `refactor` for behaviour-preserving restructuring, `test` for test-only work, `ci` for workflow/pipeline changes, `perf` for performance work. Pick the one that best describes the change; when a branch spans a couple, name it for the primary one.
 - PR title: short, present tense ("Milestone 4: live preview"). Body: what changed, what was deliberately left out, how to verify.
 - Commit messages explain *why*. The diff already shows *what*.
 - If you change `.design/`, call it out in the PR body — design changes deserve review attention, not just the code.
 - We squash-merge, so a merged branch shares no commit ancestry with main — `git log main..branch` will look "ahead" even when the content already landed. After a PR merges, that branch is done: start follow-up work from a fresh branch off main, never push new commits onto an already-merged branch. (The repo has *auto-delete head branches* on to enforce this.)
 - Auditing whether a stray branch is unmerged means comparing *content*, not commits — check whether main already contains the equivalent change, since the squash drops the original SHAs.
+
+## Releases and image publishing
+
+Releases are cut by pushing a git tag; `.github/workflows/release.yml` builds the Dockerfile and pushes `ghcr.io/mtaanquist/aldevtoolbox` to GHCR. There is no release on every merge — `main` stays continuously green via `build.yml`, and a release is a deliberate tag on a commit that's already passed CI.
+
+**Version scheme — one major per shipped end-user tool.** The major number is the count of distinct tools in the sidebar's Tools section. Each new tool bumps the major; everything else (features within a tool, cross-cutting work like auth/backups/hosting, polish) is a minor or a patch. The mapping as of 6.0.0:
+
+| Major | Tool that opened it      | Landed |
+|-------|--------------------------|--------|
+| 1     | Projects (Workspace + Extension generators) | the original product |
+| 2     | Piper                    | #64    |
+| 3     | Object Explorer          | #103   |
+| 4     | MCP server               | #173   |
+| 5     | Cookbook (née Snippets)  | ~#180  |
+| 6     | Translator               | #295   |
+
+- **Major** — a new top-level tool ships (the next entry in the table). Don't bump major for anything short of a genuinely new tool surface.
+- **Minor** — a new feature, page, or capability inside an existing tool, or cross-cutting work (a new role, backup tooling, a hosting endpoint). Most releases are minor bumps.
+- **Patch** — bug fixes and copy/UX tweaks with no new surface.
+
+**Cutting a release:**
+
+1. Make sure `main` is green (the commit you're tagging passed `build.yml`).
+2. Pick the version per the scheme above. Tag and push:
+   ```bash
+   git tag v6.0.0
+   git push origin v6.0.0
+   ```
+3. `release.yml` fires on the `v*.*.*` tag, builds the image, and pushes the moving tags `latest`, `6`, `6.0` plus the exact `6.0.0`. Operators pin as loosely or tightly as they want.
+
+Never move or re-push a published tag — cut a new patch instead. The image name is derived from `github.repository`, lowercased by `docker/metadata-action`, so it always resolves to `ghcr.io/mtaanquist/aldevtoolbox` regardless of the repo's casing.
 
 ## When in doubt
 

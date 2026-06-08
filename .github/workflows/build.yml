@@ -1,8 +1,25 @@
 name: build
 
 on:
+  # Skip the build/test/compose-smoke run for docs-only changes — they can't
+  # affect compilation, tests, or the image. Safe because `protect-main` does
+  # not require a status check (a skipped workflow won't block a PR), and the
+  # release flow is independent (release.yml fires on v*.*.* tags, not here).
+  # Anything outside these globs — including the workflows themselves — still
+  # runs the full pipeline. Use the Actions "Run workflow" button for a manual
+  # run if you ever need one on a docs-only branch.
   push:
+    paths-ignore:
+      - '**.md'
+      - '.design/**'
+      - 'docs/**'
+      - 'LICENSE'
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - '.design/**'
+      - 'docs/**'
+      - 'LICENSE'
   workflow_dispatch:
 
 jobs:
