@@ -318,11 +318,18 @@ input.tr-fname { cursor: text; color: var(--color-text); min-width: 240px; }
     color: var(--color-text-muted);
     transition: border-color 120ms ease, background 120ms ease;
 }
-/* #306: the file input fills the whole dashed zone (transparent) so dropping an
-   .xlf anywhere on it — or clicking anywhere — goes through the same
-   OnUploadAsync path. Browsers fire `change` when a file is dropped onto a
-   native file input, so no extra drag-drop JS is needed. */
-.tr-drop:hover { border-color: var(--color-accent); background: var(--color-accent-soft); }
+/* #306: the file input fills the whole dashed zone (transparent) so clicking
+   anywhere on it opens the picker. Dropping a file is handled explicitly in
+   Translator.razor.js (initDropZone) — a native file input doesn't reliably
+   fire `change` on drop, so without that the browser would just navigate to
+   the dropped file. */
+.tr-drop:hover,
+.tr-drop--over { border-color: var(--color-accent); background: var(--color-accent-soft); }
+/* The no-file state fills the content area so the drop target is easy to hit;
+   the dashed zone grows to take whatever the header (and optional restore
+   banner) leave behind. The content column's own padding is the bottom gap. */
+.tr-page--empty { min-height: 100%; }
+.tr-page--empty .tr-drop { flex: 1; justify-content: center; }
 .tr-drop__label { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; }
 .tr-drop__title { font-size: 1rem; font-weight: 600; color: var(--color-text); }
 .tr-drop__hint { font-size: 0.8rem; color: var(--color-text-muted); }
