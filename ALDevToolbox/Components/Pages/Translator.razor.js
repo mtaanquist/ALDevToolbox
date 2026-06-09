@@ -172,6 +172,66 @@ export function setBeforeUnload(enabled) {
     }
 }
 
+// #306 follow-up: a native <input type=file> does NOT reliably fire `change`
+// when a file is *dropped* on it — Firefox never does, and in every browser a
+// drop that lands even a pixel outside the input is ignored. The browser then
+// falls back to its default action for a file dropped on the page: navigate to
+// it, which the user sees as the file "downloading". So we wire the drop
+// ourselves: stash the dropped file on the hidden input via a DataTransfer and
+// dispatch `change`, which runs Blazor's InputFile -> OnUploadAsync exactly as
+// a click-to-browse pick would. A window-level guard swallows drops that miss
+// the zone so an off-target drop can't navigate the page and lose the session.
+let dropTeardown = null;
+
+export function initDropZone(zoneSelector, inputSelector) {
+    teardownDropZone();
+    const zone = document.querySelector(zoneSelector);
+    const input = document.querySelector(inputSelector);
+    if (!zone || !input) return;
+
+    const swallow = (e) => { e.preventDefault(); };
+    const onDragEnter = (e) => { e.preventDefault(); zone.classList.add("tr-drop--over"); };
+    const onDragOver = (e) => {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    };
+    const onDragLeave = (e) => {
+        // Child elements bubble their own dragleave; only clear the highlight
+        // when the pointer has actually left the zone's subtree.
+        if (!zone.contains(e.relatedTarget)) zone.classList.remove("tr-drop--over");
+    };
+    const onDrop = (e) => {
+        e.preventDefault();
+        zone.classList.remove("tr-drop--over");
+        const files = e.dataTransfer && e.dataTransfer.files;
+        if (!files || !files.length) return;
+        const dt = new DataTransfer();
+        dt.items.add(files[0]);
+        input.files = dt.files;
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+
+    zone.addEventListener("dragenter", onDragEnter);
+    zone.addEventListener("dragover", onDragOver);
+    zone.addEventListener("dragleave", onDragLeave);
+    zone.addEventListener("drop", onDrop);
+    window.addEventListener("dragover", swallow);
+    window.addEventListener("drop", swallow);
+
+    dropTeardown = () => {
+        zone.removeEventListener("dragenter", onDragEnter);
+        zone.removeEventListener("dragover", onDragOver);
+        zone.removeEventListener("dragleave", onDragLeave);
+        zone.removeEventListener("drop", onDrop);
+        window.removeEventListener("dragover", swallow);
+        window.removeEventListener("drop", swallow);
+    };
+}
+
+export function teardownDropZone() {
+    if (dropTeardown) { dropTeardown(); dropTeardown = null; }
+}
+
 export function initKeys(ref) {
     detachKeys();
     dotNetRef = ref;

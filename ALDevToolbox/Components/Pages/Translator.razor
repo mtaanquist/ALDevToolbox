@@ -16,7 +16,7 @@
 
 <PageTitle>Translator · AL Dev Toolbox</PageTitle>
 
-<div class="tr-page">
+<div class="tr-page @(_hasFile ? null : "tr-page--empty")">
     @if (!_hasFile)
     {
         <header class="tr-head">
@@ -475,6 +475,7 @@
 
     private IJSObjectReference? _module;
     private DotNetObjectReference<Translator>? _selfRef;
+    private bool _dropZoneActive;
 
     // True when there are edits that haven't been exported. Drives both the
     // in-app navigation guard (the modal) and the browser-level beforeunload
@@ -526,6 +527,7 @@
                 _focusTargetPending = false;
                 try { await _module.InvokeVoidAsync("focusTarget"); } catch { }
             }
+            await SyncDropZoneAsync();
             return;
         }
         _module = await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Pages/Translator.razor.js");
@@ -556,6 +558,25 @@
                 }
             }
             catch { /* storage unavailable */ }
+        }
+        await SyncDropZoneAsync();
+    }
+
+    // Keep the drag-and-drop handlers wired only while the no-file uploader is
+    // on screen. Tearing down on file-load removes the window-level guard so
+    // drops elsewhere behave normally once the user is translating.
+    private async Task SyncDropZoneAsync()
+    {
+        if (_module is null) return;
+        if (!_hasFile && !_dropZoneActive)
+        {
+            _dropZoneActive = true;
+            try { await _module.InvokeVoidAsync("initDropZone", ".tr-drop", ".tr-drop__input"); } catch { }
+        }
+        else if (_hasFile && _dropZoneActive)
+        {
+            _dropZoneActive = false;
+            try { await _module.InvokeVoidAsync("teardownDropZone"); } catch { }
         }
     }
 
@@ -1296,6 +1317,7 @@
         {
             try { await _module.InvokeVoidAsync("setBeforeUnload", false); } catch { }
             try { await _module.InvokeVoidAsync("detachKeys"); } catch { }
+            try { await _module.InvokeVoidAsync("teardownDropZone"); } catch { }
             try { await _module.DisposeAsync(); } catch { }
         }
         _selfRef?.Dispose();
