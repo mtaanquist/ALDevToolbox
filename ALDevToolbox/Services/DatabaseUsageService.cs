@@ -21,17 +21,20 @@ public sealed class DatabaseUsageService
     private readonly SystemSettingsService _systemSettings;
     private readonly IOrganizationContext _orgContext;
     private readonly ILogger<DatabaseUsageService> _logger;
+    private readonly TimeProvider _clock;
 
     public DatabaseUsageService(
         AppDbContext db,
         SystemSettingsService systemSettings,
         IOrganizationContext orgContext,
-        ILogger<DatabaseUsageService> logger)
+        ILogger<DatabaseUsageService> logger,
+        TimeProvider clock)
     {
         _db = db;
         _systemSettings = systemSettings;
         _orgContext = orgContext;
         _logger = logger;
+        _clock = clock;
     }
 
     /// <summary>Per-org usage row for the SiteAdmin storage page.</summary>
@@ -48,7 +51,11 @@ public sealed class DatabaseUsageService
         int? OrgOverrideMb,
         int? SystemDefaultMb,
         decimal Multiplier,
-        double? UsedFraction);
+        double? UsedFraction,
+        // UTC instant the figures were computed. Null on a live computation
+        // (ListAsync / GetForCurrentOrgAsync); set when read from a persisted
+        // snapshot so the SiteAdmin page can show "updated N ago".
+        DateTime? ComputedAt = null);
 
     /// <summary>
     /// Cross-organisation usage listing. SiteAdmin-only — bypasses the EF
@@ -144,6 +151,147 @@ public sealed class DatabaseUsageService
             logical, index, total, billable,
             effectiveQuota, org.StorageQuotaMb, settings.DefaultStorageQuotaMb,
             settings.IndexSizeMultiplier, usedFraction);
+    }
+
+    /// <summary>
+    /// Recomputes every organisation's footprint and persists it to
+    /// <c>organization_usage_snapshots</c>. Called on a schedule by
+    /// <c>UsageSnapshotScheduler</c> so the per-navigation display surfaces
+    /// (<c>StorageBar</c>, the SiteAdmin storage page) read a cheap indexed
+    /// lookup instead of the expensive live <c>COUNT(*)</c> sweep.
+    ///
+    /// Runs off-request (no org context): writes go through raw SQL UPSERT so
+    /// they neither trip the EF tenant filter nor need an audit principal.
+    /// Snapshots for deleted orgs are reaped by the FK cascade, so we only
+    /// ever insert/update rows for orgs that still exist.
+    /// </summary>
+    public async Task RecomputeSnapshotsAsync(CancellationToken ct)
+    {
+        var rows = await ListAsync(ct);
+        var now = _clock.GetUtcNow().UtcDateTime;
+
+        var connection = _db.Database.GetDbConnection();
+        await EnsureOpenAsync(connection, ct);
+        foreach (var row in rows)
+        {
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = """
+                INSERT INTO organization_usage_snapshots
+                    (organization_id, logical_bytes, index_bytes, computed_at)
+                VALUES (@org, @logical, @index, @at)
+                ON CONFLICT (organization_id) DO UPDATE SET
+                    logical_bytes = EXCLUDED.logical_bytes,
+                    index_bytes = EXCLUDED.index_bytes,
+                    computed_at = EXCLUDED.computed_at
+                """;
+            AddParam(cmd, "@org", row.OrganizationId);
+            AddParam(cmd, "@logical", row.LogicalBytes);
+            AddParam(cmd, "@index", row.IndexBytes);
+            AddParam(cmd, "@at", now);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        _logger.LogInformation(
+            "Recomputed storage usage snapshots for {OrgCount} organisation(s).", rows.Count);
+    }
+
+    /// <summary>
+    /// Reads the persisted snapshot for the acting organisation, deriving
+    /// billable size / quota / used-fraction from the *current* settings so a
+    /// quota change applies before the next recompute. Returns
+    /// <see langword="null"/> if no snapshot has been written yet (e.g. the
+    /// first few seconds after a cold start, before the scheduler's first run).
+    /// Cheap: a single primary-key lookup, no per-table counts.
+    /// </summary>
+    public async Task<OrgUsageRow?> GetSnapshotForCurrentOrgAsync(CancellationToken ct)
+    {
+        var orgId = _orgContext.CurrentOrganizationId;
+        if (orgId is null) return null;
+
+        var settings = await _systemSettings.GetViewAsync(ct);
+        var connection = _db.Database.GetDbConnection();
+        await EnsureOpenAsync(connection, ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT o.id, o.name, o.slug, o.is_system, o.storage_quota_mb,
+                   s.logical_bytes, s.index_bytes, s.computed_at
+            FROM organizations o
+            JOIN organization_usage_snapshots s ON s.organization_id = o.id
+            WHERE o.id = @org
+            """;
+        AddParam(cmd, "@org", orgId.Value);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) return null;
+        return MapRow(reader, settings.IndexSizeMultiplier, settings.DefaultStorageQuotaMb);
+    }
+
+    /// <summary>
+    /// Cross-organisation snapshot listing for the SiteAdmin storage page.
+    /// LEFT JOIN so an org with no snapshot yet still shows (as zero bytes,
+    /// null <c>ComputedAt</c>). SiteAdmin-only; reads raw SQL so the EF tenant
+    /// filter doesn't apply (matching <see cref="ListAsync"/>'s cross-org reach).
+    /// </summary>
+    public async Task<IReadOnlyList<OrgUsageRow>> ListFromSnapshotsAsync(CancellationToken ct)
+    {
+        var settings = await _systemSettings.GetViewAsync(ct);
+        var connection = _db.Database.GetDbConnection();
+        await EnsureOpenAsync(connection, ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT o.id, o.name, o.slug, o.is_system, o.storage_quota_mb,
+                   COALESCE(s.logical_bytes, 0), COALESCE(s.index_bytes, 0), s.computed_at
+            FROM organizations o
+            LEFT JOIN organization_usage_snapshots s ON s.organization_id = o.id
+            ORDER BY o.is_system DESC, o.name
+            """;
+        var rows = new List<OrgUsageRow>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add(MapRow(reader, settings.IndexSizeMultiplier, settings.DefaultStorageQuotaMb));
+        }
+        return rows;
+    }
+
+    /// <summary>
+    /// Projects a snapshot result row (org columns + logical/index bytes +
+    /// computed_at) into an <see cref="OrgUsageRow"/>, deriving billable size,
+    /// effective quota and used fraction from the supplied settings. Column
+    /// order matches the SELECTs in <see cref="GetSnapshotForCurrentOrgAsync"/>
+    /// and <see cref="ListFromSnapshotsAsync"/>.
+    /// </summary>
+    private static OrgUsageRow MapRow(
+        System.Data.Common.DbDataReader reader, decimal multiplier, int? systemDefault)
+    {
+        var id = reader.GetInt32(0);
+        var name = reader.GetString(1);
+        var slug = reader.GetString(2);
+        var isSystem = reader.GetBoolean(3);
+        int? orgOverride = reader.IsDBNull(4) ? null : reader.GetInt32(4);
+        var logical = reader.GetInt64(5);
+        var index = reader.GetInt64(6);
+        DateTime? computedAt = reader.IsDBNull(7) ? null : reader.GetDateTime(7);
+
+        var total = logical + index;
+        var billable = logical + (long)(index * (double)multiplier);
+        var effectiveQuota = orgOverride ?? systemDefault;
+        double? usedFraction = effectiveQuota is { } q && q > 0
+            ? (double)billable / (q * 1024d * 1024d)
+            : null;
+
+        return new OrgUsageRow(
+            id, name, slug, isSystem,
+            logical, index, total, billable,
+            effectiveQuota, orgOverride, systemDefault,
+            multiplier, usedFraction, computedAt);
+    }
+
+    private static void AddParam(System.Data.Common.DbCommand cmd, string name, object value)
+    {
+        var p = cmd.CreateParameter();
+        p.ParameterName = name;
+        p.Value = value;
+        cmd.Parameters.Add(p);
     }
 
     /// <summary>
