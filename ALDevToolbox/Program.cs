@@ -489,6 +489,12 @@ if (Environment.GetEnvironmentVariable("DISABLE_OE_VACUUM_SCHEDULER") != "1")
 {
     builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ObjectExplorerVacuumScheduler>();
 }
+// Refreshes per-org storage snapshots so StorageBar reads a cached row rather
+// than counting every tenanted table on each navigation. Same opt-out pattern.
+if (Environment.GetEnvironmentVariable("DISABLE_USAGE_SNAPSHOT_SCHEDULER") != "1")
+{
+    builder.Services.AddHostedService<ALDevToolbox.Services.UsageSnapshotScheduler>();
+}
 // Email shares the AppDbContext lifetime (Scoped) so it can read the
 // hybrid SMTP override from system_settings.
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();

@@ -13,8 +13,24 @@
         data; index/metadata is the supporting on-disk overhead.
         Billable size is <code>logical + multiplier × index</code> and
         drives the quota check. Per-org sizes are prorated by row count —
-        accurate within a few percent for typical workloads.
+        accurate within a few percent for typical workloads. Figures are
+        refreshed in the background roughly every 15 minutes.
     </p>
+
+    @if (_rows is { Count: > 0 })
+    {
+        var refreshed = LastRefreshed();
+        <p class="muted">
+            @if (refreshed is { } at)
+            {
+                <span>Last refreshed @at.ToString("yyyy-MM-dd HH:mm") UTC.</span>
+            }
+            else
+            {
+                <span>Not computed yet — the first snapshot runs shortly after startup.</span>
+            }
+        </p>
+    }
 
     @if (Ok == "quota-saved")
     {
@@ -117,7 +133,19 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _rows = await Usage.ListAsync(CancellationToken.None);
+        // Reads the background-maintained snapshots, not a live count — the
+        // live sweep counts every tenanted table and is too slow for a page load.
+        _rows = await Usage.ListFromSnapshotsAsync(CancellationToken.None);
+    }
+
+    private DateTime? LastRefreshed()
+    {
+        DateTime? latest = null;
+        foreach (var r in _rows ?? [])
+        {
+            if (r.ComputedAt is { } at && (latest is null || at > latest)) latest = at;
+        }
+        return latest;
     }
 
     private static string FormatBytes(long bytes)

@@ -35,6 +35,11 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Reads the pre-computed snapshot (UsageSnapshotScheduler), not a live
+        // count — computing usage on every navigation was a per-click DB
+        // sweep over every tenanted table. The bar hides until the first
+        // snapshot exists.
+        //
         // The layout's DbContext is scoped to the same request as the page
         // body's DbContext. Hitting both at once during prerender (page
         // OnInitializedAsync + this one) triggers EF's concurrency detector.
@@ -46,7 +51,7 @@
         if (usage is null) return;
         try
         {
-            _row = await usage.GetForCurrentOrgAsync(CancellationToken.None);
+            _row = await usage.GetSnapshotForCurrentOrgAsync(CancellationToken.None);
         }
         catch
         {

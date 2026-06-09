@@ -188,11 +188,21 @@ public sealed class TestDb : IDisposable
     /// </summary>
     public StorageQuotaGuard NewQuotaGuard(AppDbContext ctx)
     {
+        var usage = NewDatabaseUsageService(ctx);
+        return new StorageQuotaGuard(usage, OrgContext, _memoryCache, NullLogger<StorageQuotaGuard>.Instance);
+    }
+
+    /// <summary>
+    /// Returns a <see cref="DatabaseUsageService"/> wired to the per-fixture
+    /// context. With no system-settings row it treats storage as unlimited;
+    /// tests exercising the snapshot recompute/read path use this directly.
+    /// </summary>
+    public DatabaseUsageService NewDatabaseUsageService(AppDbContext ctx)
+    {
         var systemSettings = new SystemSettingsService(
             ctx, DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, TimeProvider.System);
-        var usage = new DatabaseUsageService(
-            ctx, systemSettings, OrgContext, NullLogger<DatabaseUsageService>.Instance);
-        return new StorageQuotaGuard(usage, OrgContext, _memoryCache, NullLogger<StorageQuotaGuard>.Instance);
+        return new DatabaseUsageService(
+            ctx, systemSettings, OrgContext, NullLogger<DatabaseUsageService>.Instance, TimeProvider.System);
     }
 
     /// <summary>
