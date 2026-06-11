@@ -17,10 +17,19 @@ namespace ALDevToolbox.Services.Generation;
 /// </summary>
 public sealed class WorkspaceZipBuilder
 {
+    /// <summary>
+    /// Output options for every JSON file the generator re-serialises (the
+    /// per-extension <c>app.json</c> and the <c>.code-workspace</c>): 2-space
+    /// indentation (System.Text.Json's <c>WriteIndented</c> default) so the
+    /// files match the style Microsoft's own app.json uses, and the relaxed
+    /// encoder so free-text like a brief or publisher containing <c>&amp;</c> or
+    /// <c>&lt;</c> round-trips literally instead of as <c>&</c>-style escapes.
+    /// </summary>
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
     private static readonly JsonSerializerOptions CompactJsonOptions = new()
@@ -585,6 +594,15 @@ public sealed class WorkspaceZipBuilder
             var content = file.MustacheEnabled
                 ? _mustache.Render(file.Content, ctx with { FolderPath = file.Path })
                 : file.Content;
+            // Re-serialise app.json into Microsoft's 2-space, pretty-printed-array
+            // style so the inline {{dependencies_array}}/{{id_ranges_array}}
+            // interpolations don't land as compact single-line JSON. Scoped to
+            // app.json only — AppSourceCop.json and the ruleset are authored
+            // verbatim by admins (see WorkspaceGenerationTests).
+            if (string.Equals(file.Path, PlatformOrganizationFiles.AppJsonPath, StringComparison.OrdinalIgnoreCase))
+            {
+                content = FormatAppJson(content);
+            }
             WriteString(archive, $"{extensionFolderPath}/{file.Path}", content);
             written++;
         }
@@ -714,4 +732,26 @@ public sealed class WorkspaceZipBuilder
 
     private static string SerializeIndented(JsonNode node) =>
         JsonSerializer.Serialize(node, JsonOptions);
+
+    /// <summary>
+    /// Re-serialises the substituted app.json so the generated file matches the
+    /// 2-space, pretty-printed-array style Microsoft's own app.json uses instead
+    /// of carrying the compact <c>{{dependencies_array}}</c> /
+    /// <c>{{id_ranges_array}}</c> interpolations inline. A parse failure (a
+    /// malformed admin template) falls back to the verbatim content so
+    /// generation still emits a file — the AL compiler then surfaces the JSON
+    /// error to the user — rather than aborting the whole ZIP.
+    /// </summary>
+    private static string FormatAppJson(string substituted)
+    {
+        try
+        {
+            var node = JsonNode.Parse(substituted);
+            return node is null ? substituted : SerializeIndented(node);
+        }
+        catch (JsonException)
+        {
+            return substituted;
+        }
+    }
 }
