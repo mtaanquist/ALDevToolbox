@@ -13,11 +13,12 @@ public static class PlanBuilder
         IReadOnlyList<string>? selectedExtensions = null,
         bool includeExamples = true,
         int coreFrom = 90000,
-        int coreTo = 90999) => new(
+        int coreTo = 90999,
+        string brief = "Test brief.") => new(
             TemplateKey: templateKey,
             WorkspaceName: workspaceName,
             ExtensionPrefix: extensionPrefix,
-            Brief: "Test brief.",
+            Brief: brief,
             Description: "Test description.",
             ApplicationVersion: "24.0.0.0",
             RuntimeVersion: "15",

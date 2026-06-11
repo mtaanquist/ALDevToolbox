@@ -296,6 +296,55 @@ public sealed class WorkspaceGenerationTests : IDisposable
     }
 
     [Fact]
+    public async Task App_json_is_emitted_in_microsoft_two_space_pretty_printed_style()
+    {
+        // The canonical template interpolates {{dependencies_array}} and
+        // {{id_ranges_array}} as compact single-line JSON; the generator
+        // re-serialises the whole app.json so those land as pretty-printed,
+        // 2-space-indented arrays matching Microsoft's own app.json style.
+        var template = TemplateBuilder.Default();
+        template.WorkspaceExtensions.Single().Dependencies.Add(new WorkspaceExtensionDependency
+        {
+            OrganizationId = template.OrganizationId,
+            LitId = "63ca2fa4-4f03-4f2b-a480-172fef340d3f",
+            LitName = "System Application",
+            LitPublisher = "Microsoft",
+            LitVersion = "27.0.0.0",
+            Ordering = 0,
+        });
+        await SeedTemplateAsync(template);
+
+        using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
+        var content = ReadEntry(zip.GetEntry("AcmeCustomer/Core/app.json")!);
+
+        // Top-level keys indent two spaces (not the canonical template's four).
+        content.Should().Contain("\n  \"id\":");
+        // dependencies + idRanges are pretty-printed arrays, not the compact
+        // single-line interpolation.
+        content.Should().Contain(
+            "\n  \"dependencies\": [\n    {\n      \"id\": \"63ca2fa4-4f03-4f2b-a480-172fef340d3f\",");
+        content.Should().Contain("\n  \"idRanges\": [\n    {\n      \"from\": 90000,");
+        // …and it's still valid JSON with the expected single dependency.
+        JsonDocument.Parse(content).RootElement.GetProperty("dependencies")
+            .EnumerateArray().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task App_json_free_text_is_not_over_escaped()
+    {
+        // The relaxed encoder keeps ampersands/angle brackets literal so a
+        // brief like "Acme & Co" doesn't render as "Acme & Co".
+        var template = TemplateBuilder.Default();
+        await SeedTemplateAsync(template);
+
+        using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan(brief: "Acme & Co <reporting>"));
+        var content = ReadEntry(zip.GetEntry("AcmeCustomer/Core/app.json")!);
+
+        content.Should().Contain("\"brief\": \"Acme & Co <reporting>\"");
+        content.Should().NotContain("\\u0026");
+    }
+
+    [Fact]
     public async Task Per_extension_id_range_override_takes_precedence_over_template_defaults()
     {
         var template = TemplateBuilder.Default();
