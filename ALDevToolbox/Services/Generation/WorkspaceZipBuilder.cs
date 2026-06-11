@@ -53,6 +53,13 @@ public sealed class WorkspaceZipBuilder
         var stream = new MemoryStream();
         var fileCount = 0;
 
+        // {{publisher}} resolves to the org's configuration default, falling
+        // back to the template default for a fresh org whose settings row is
+        // still blank. Matches the per-extension publisher carried on each
+        // EmittableExtension (see GenerationService) and the standalone flow.
+        var publisher = GenerationNaming.ResolvePublisher(
+            orgConfig.Settings.DefaultPublisher, template.Defaults.Publisher);
+
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
             // Workspace-level assets: org logo + the always-included files the
@@ -66,7 +73,7 @@ public sealed class WorkspaceZipBuilder
             // per-extension subset gets written inside each extension folder
             // by WriteExtension below.
             var includedFiles = FilterIncluded(orgConfig.Files, template);
-            fileCount += WriteOrgFiles(archive, rootFolder, includedFiles, plan, template);
+            fileCount += WriteOrgFiles(archive, rootFolder, includedFiles, plan, template, publisher);
 
             // Per-extension folders.
             foreach (var ext in extensions)
@@ -81,10 +88,9 @@ public sealed class WorkspaceZipBuilder
                 WorkspaceName: plan.WorkspaceName,
                 ShortName: shortName,
                 ModuleName: plan.WorkspaceName,
-                // Sourced from the template defaults to match WriteOrgFiles
-                // (the always-included files use the same substitution table)
-                // and to handle fresh orgs whose settings row is still blank.
-                Publisher: template.Defaults.Publisher,
+                // Same resolved publisher the always-included files and each
+                // extension's app.json use (org default, template fallback).
+                Publisher: publisher,
                 ExtensionPrefix: plan.ExtensionPrefix,
                 Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
                 FolderPath: string.Empty,
@@ -207,7 +213,11 @@ public sealed class WorkspaceZipBuilder
                     WorkspaceName: sibling.WorkspaceName,
                     ShortName: siblingShort,
                     ModuleName: sibling.WorkspaceName,
-                    Publisher: template.Defaults.Publisher,
+                    // Matches the standalone extension's resolved publisher
+                    // (org default, template fallback) — keep the rewritten
+                    // sibling workspace in step with how it was generated.
+                    Publisher: GenerationNaming.ResolvePublisher(
+                        orgConfig.Settings.DefaultPublisher, template.Defaults.Publisher),
                     ExtensionPrefix: string.Empty,
                     Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
                     FolderPath: string.Empty);
@@ -513,7 +523,8 @@ public sealed class WorkspaceZipBuilder
         string rootFolder,
         IReadOnlyList<OrganizationFile> files,
         ProjectPlan plan,
-        RuntimeTemplate template)
+        RuntimeTemplate template,
+        string publisher)
     {
         if (files.Count == 0) return 0;
         var written = 0;
@@ -522,7 +533,7 @@ public sealed class WorkspaceZipBuilder
             WorkspaceName: plan.WorkspaceName,
             ShortName: GenerationNaming.StripWhitespace(plan.WorkspaceName),
             ModuleName: plan.WorkspaceName,
-            Publisher: template.Defaults.Publisher,
+            Publisher: publisher,
             ExtensionPrefix: plan.ExtensionPrefix,
             Affix: template.Defaults.AffixType == AffixType.None ? string.Empty : template.Defaults.Affix,
             FolderPath: string.Empty,
