@@ -355,6 +355,44 @@ public sealed class WorkspaceGenerationTests : IDisposable
     }
 
     [Fact]
+    public async Task Publisher_resolves_to_org_configuration_default_over_template_default()
+    {
+        // {{publisher}} is documented as "Organisation publisher from the
+        // configuration defaults" — the value an admin sets at
+        // /admin/configuration/defaults (OrganizationSettings.DefaultPublisher),
+        // not the template's own defaults_json.publisher. A populated org
+        // setting wins. Regression guard for the publisher going missing from
+        // generated app.json after it moved off the workspace form onto org
+        // settings (the standalone flow already sourced it from there).
+        var template = TemplateBuilder.Default();
+        template.Defaults.Publisher = "Template Default Publisher";
+        await SeedTemplateAsync(template);
+        await SetOrgPublisherAsync("Acme Software A/S");
+
+        using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
+
+        ReadPublisher(zip, "AcmeCustomer/Core/app.json").Should().Be("Acme Software A/S",
+            "the org configuration default publisher should win over the template default");
+    }
+
+    [Fact]
+    public async Task Publisher_falls_back_to_template_default_when_org_default_is_blank()
+    {
+        // A fresh org whose settings row carries no publisher yet still renders
+        // a sensible {{publisher}} from the template default rather than an
+        // empty string — the fallback the original code relied on.
+        var template = TemplateBuilder.Default();
+        template.Defaults.Publisher = "Template Default Publisher";
+        await SeedTemplateAsync(template);
+        // No OrganizationSettings row → DefaultPublisher is blank.
+
+        using var zip = await GenerateAsync(PlanBuilder.WorkspacePlan());
+
+        ReadPublisher(zip, "AcmeCustomer/Core/app.json").Should().Be("Template Default Publisher",
+            "a blank org default should fall back to the template default publisher");
+    }
+
+    [Fact]
     public async Task Overlapping_id_ranges_surface_a_field_keyed_validation_error()
     {
         // Two extensions with explicit overlapping ranges.
@@ -436,6 +474,25 @@ public sealed class WorkspaceGenerationTests : IDisposable
     {
         var archive = await NewService().GenerateWorkspaceAsync(plan);
         return new ZipArchive(archive.Stream, ZipArchiveMode.Read, leaveOpen: false);
+    }
+
+    private async Task SetOrgPublisherAsync(string publisher)
+    {
+        await using var ctx = _db.NewContext();
+        ctx.OrganizationSettings.Add(new OrganizationSettings
+        {
+            OrganizationId = TemplateBuilder.DefaultOrganizationId,
+            DefaultPublisher = publisher,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await ctx.SaveChangesAsync();
+    }
+
+    private static string ReadPublisher(ZipArchive archive, string path)
+    {
+        var entry = archive.GetEntry(path)
+            ?? throw new InvalidOperationException($"ZIP entry '{path}' not found.");
+        return JsonDocument.Parse(ReadEntry(entry)).RootElement.GetProperty("publisher").GetString()!;
     }
 
     private static string ReadEntry(ZipArchiveEntry entry)

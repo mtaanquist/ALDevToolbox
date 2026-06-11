@@ -75,7 +75,14 @@ public class GenerationService
         var modules = await LoadSelectedModulesAsync(plan.SelectedModuleKeys, ct);
         var orgConfig = await GetOrgConfigAsync(ct);
 
-        var extensions = BuildExtensionList(template, plan, modules);
+        // {{publisher}} resolves to the org's configuration default, falling
+        // back to the template default for a fresh org. Resolved once here and
+        // threaded into every extension so the per-extension app.json and the
+        // workspace-root files agree. See GenerationNaming.ResolvePublisher.
+        var publisher = GenerationNaming.ResolvePublisher(
+            orgConfig.Settings.DefaultPublisher, template.Defaults.Publisher);
+
+        var extensions = BuildExtensionList(template, plan, modules, publisher);
         ValidateIdRanges(extensions);
 
         var (stream, fileCount) = await _zipBuilder.BuildWorkspaceAsync(plan, template, extensions, orgConfig, ct);
@@ -204,7 +211,7 @@ public class GenerationService
     /// <see cref="EmittableExtension"/> carries a fresh GUID, its resolved
     /// id-range, the substituted display name, and the source folder tree.
     /// </summary>
-    private List<EmittableExtension> BuildExtensionList(RuntimeTemplate template, ProjectPlan plan, IReadOnlyList<Module> modules)
+    private List<EmittableExtension> BuildExtensionList(RuntimeTemplate template, ProjectPlan plan, IReadOnlyList<Module> modules, string publisher)
     {
         var selectedOptional = new HashSet<string>(plan.SelectedExtensionPaths, StringComparer.Ordinal);
         var list = new List<EmittableExtension>();
@@ -223,7 +230,7 @@ public class GenerationService
             cursor = advancedCursor;
             if (ext.IdRangeFrom is null && ext.IdRangeTo is null) firstAuto = false;
 
-            list.Add(BuildFromTemplate(ext, template, plan, from, to));
+            list.Add(BuildFromTemplate(ext, template, plan, from, to, publisher));
         }
 
         foreach (var module in modules)
@@ -232,7 +239,7 @@ public class GenerationService
             var from = cursor;
             var to = from + size - 1;
             cursor = to + 1;
-            list.Add(BuildFromModule(module, template, plan, from, to));
+            list.Add(BuildFromModule(module, template, plan, from, to, publisher));
         }
 
         return list;
@@ -256,7 +263,7 @@ public class GenerationService
         return (cursor, cursor + size - 1, cursor + size);
     }
 
-    private EmittableExtension BuildFromTemplate(WorkspaceExtension ext, RuntimeTemplate template, ProjectPlan plan, int from, int to)
+    private EmittableExtension BuildFromTemplate(WorkspaceExtension ext, RuntimeTemplate template, ProjectPlan plan, int from, int to, string publisher)
     {
         var name = SubstituteScalar(ext.NameTemplate, plan, template);
         return new EmittableExtension(
@@ -267,7 +274,7 @@ public class GenerationService
             IdRangeTo: to,
             Application: !string.IsNullOrEmpty(ext.Application) ? ext.Application : plan.ApplicationVersion,
             Runtime: !string.IsNullOrEmpty(ext.Runtime) ? ext.Runtime : plan.RuntimeVersion,
-            Publisher: template.Defaults.Publisher,
+            Publisher: publisher,
             IsModuleClone: false,
             ModuleKey: null,
             ModuleName: name,
@@ -278,7 +285,7 @@ public class GenerationService
                 .ToList());
     }
 
-    private EmittableExtension BuildFromModule(Module module, RuntimeTemplate template, ProjectPlan plan, int from, int to)
+    private EmittableExtension BuildFromModule(Module module, RuntimeTemplate template, ProjectPlan plan, int from, int to, string publisher)
     {
         // The cloned extension's folder name and rendered AL name both come
         // from Module.ExtensionName (a PascalCase admin-controlled value).
@@ -305,7 +312,7 @@ public class GenerationService
             IdRangeTo: to,
             Application: plan.ApplicationVersion,
             Runtime: plan.RuntimeVersion,
-            Publisher: template.Defaults.Publisher,
+            Publisher: publisher,
             IsModuleClone: true,
             ModuleKey: module.Key,
             ModuleName: module.ExtensionName,
