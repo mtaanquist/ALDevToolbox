@@ -50,6 +50,16 @@ internal static class EndpointHelpers
         return new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
     }
 
+    /// <summary>
+    /// Marks the auth cookie persistent so it survives browser restarts for
+    /// the full <c>ExpireTimeSpan</c> window (see Program.cs). Without this the
+    /// cookie is a session cookie and the browser drops it on close, defeating
+    /// the long expiry. Returns a fresh instance per call — the auth stack
+    /// mutates the properties bag during sign-in.
+    /// </summary>
+    public static Microsoft.AspNetCore.Authentication.AuthenticationProperties PersistentSignIn() =>
+        new() { IsPersistent = true };
+
     /// <summary>Open-redirect guard: only allow same-site relative paths.</summary>
     public static string ResolveSafeReturn(string requestedReturn) =>
         !string.IsNullOrEmpty(requestedReturn)
