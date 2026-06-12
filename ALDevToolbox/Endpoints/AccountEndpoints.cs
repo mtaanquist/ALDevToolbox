@@ -73,7 +73,7 @@ internal static class AccountEndpoints
             var identity = BuildIdentity(user);
             await ctx.SignInAsync(
                 CookieAuthenticationDefaults.AuthenticationScheme,
-                new ClaimsPrincipal(identity));
+                new ClaimsPrincipal(identity), PersistentSignIn());
             logger.LogInformation("Signed in {Email} (org {OrgId}, role {Role}).", user.Email, user.OrganizationId, user.Role);
             ctx.Response.Redirect(safeReturn);
         });
@@ -139,7 +139,7 @@ internal static class AccountEndpoints
                     user.Organization = org;
                     await ctx.SignInAsync(
                         CookieAuthenticationDefaults.AuthenticationScheme,
-                        new ClaimsPrincipal(BuildIdentity(user)));
+                        new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn());
                     logger.LogInformation("Auto-approved new-org signup {Email} as admin of {OrgSlug}.", user.Email, org.Slug);
                     ctx.Response.Redirect("/");
                     return;
@@ -321,7 +321,7 @@ internal static class AccountEndpoints
                     user.Organization = org;
                     await ctx.SignInAsync(
                         CookieAuthenticationDefaults.AuthenticationScheme,
-                        new ClaimsPrincipal(BuildIdentity(user)));
+                        new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn());
                     logger.LogInformation("Verified signup signed in {Email} (org {OrgSlug}, newOrg={New}).",
                         user.Email, org.Slug, outcome == SignupOutcome.OrganizationProvisioned);
                     ctx.Response.Redirect("/");
@@ -456,7 +456,7 @@ internal static class AccountEndpoints
                 var user = await passwordReset.ConsumeMagicLoginTokenAsync(token, ct);
                 await ctx.SignInAsync(
                     CookieAuthenticationDefaults.AuthenticationScheme,
-                    new ClaimsPrincipal(BuildIdentity(user)));
+                    new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn());
                 logger.LogInformation("Magic-link sign-in for {Email} (org {OrgId}).", user.Email, user.OrganizationId);
                 ctx.Response.Redirect("/");
             }
@@ -490,7 +490,7 @@ internal static class AccountEndpoints
 
                 await ctx.SignInAsync(
                     CookieAuthenticationDefaults.AuthenticationScheme,
-                    new ClaimsPrincipal(BuildIdentity(user)));
+                    new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn());
                 logger.LogInformation("Invite accepted; {Email} signed in to org {OrgId}.",
                     user.Email, user.OrganizationId);
                 ctx.Response.Redirect("/");
@@ -589,7 +589,7 @@ internal static class AccountEndpoints
             var user = await auth.CompleteMfaAsync(state.UserId, ResolveIp(ctx), ct);
             await ctx.SignInAsync(
                 CookieAuthenticationDefaults.AuthenticationScheme,
-                new ClaimsPrincipal(BuildIdentity(user)));
+                new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn());
             ClearMfaPendingCookie(ctx);
             logger.LogInformation("MFA-gated sign-in completed for {Email} (org {OrgId}).", user.Email, user.OrganizationId);
             ctx.Response.Redirect(string.IsNullOrEmpty(state.ReturnUrl) ? "/" : state.ReturnUrl);
@@ -945,7 +945,7 @@ internal static class AccountEndpoints
                 var user = await passkeys.CompleteLoginAsync(rawResponse, envelope, ct);
                 await ctx.SignInAsync(
                     CookieAuthenticationDefaults.AuthenticationScheme,
-                    new ClaimsPrincipal(BuildIdentity(user)));
+                    new ClaimsPrincipal(BuildIdentity(user)), PersistentSignIn());
                 logger.LogInformation("Passkey sign-in for {Email}.", user.Email);
                 ctx.Response.ContentType = "application/json";
                 await ctx.Response.WriteAsync("{\"ok\":true}");
