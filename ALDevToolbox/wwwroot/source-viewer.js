@@ -11,7 +11,7 @@
 // /code-editor.js doesn't stay cached after a deploy that bumped both.
 const moduleVersion = new URL(import.meta.url).searchParams.get("v") ?? "";
 const codeEditorUrl = moduleVersion ? `/code-editor.js?v=${moduleVersion}` : "/code-editor.js";
-const { mountReadOnly, scrollToLine, openSearch, selectAll, containsNode } = await import(codeEditorUrl);
+const { mountReadOnly, scrollToLine, openSearch, selectAll, containsNode, syncComparePanes } = await import(codeEditorUrl);
 
 const FILE_URL_PREFIX = "/object-explorer/file/";
 
@@ -27,30 +27,47 @@ function init() {
     });
 
     // Compare-page scroll-sync: two .source-viewer--compare roots side-by-side.
-    // Each pane's CodeMirror scroller gets a scroll listener that mirrors its
-    // scrollTop onto the other pane, with a re-entrancy flag so the
-    // mirror-back doesn't bounce.
     if (editorsByPane.length === 2
         && editorsByPane[0].root.classList.contains("source-viewer--compare")
         && editorsByPane[1].root.classList.contains("source-viewer--compare")) {
-        wireCompareScrollSync(editorsByPane[0].root, editorsByPane[1].root);
+        wireCompareScrollSync(editorsByPane[0], editorsByPane[1]);
     }
 }
 
-function wireCompareScrollSync(leftRoot, rightRoot) {
-    const leftScroller = leftRoot.querySelector(".cm-scroller");
-    const rightScroller = rightRoot.querySelector(".cm-scroller");
+// Vertical sync is line-anchored (syncComparePanes maps the source's top line to
+// its counterpart and scrolls there via CodeMirror's measured geometry) so the
+// panes don't drift the way raw scrollTop mirroring did once filler block
+// widgets enter CodeMirror's height estimation. Horizontal sync stays a plain
+// mirror — columns aren't affected by fillers. Each programmatic scroll fires a
+// scroll event; the `prog` guard recognises that echo by its target scrollTop
+// and skips it, so the two-way binding doesn't ping-pong.
+function wireCompareScrollSync(left, right) {
+    const leftScroller = left.root.querySelector(".cm-scroller");
+    const rightScroller = right.root.querySelector(".cm-scroller");
     if (!leftScroller || !rightScroller) return;
-    let syncing = false;
-    const link = (src, dst) => src.addEventListener("scroll", () => {
-        if (syncing) return;
-        syncing = true;
-        dst.scrollTop = src.scrollTop;
-        dst.scrollLeft = src.scrollLeft;
-        requestAnimationFrame(() => { syncing = false; });
+    let progLeft = null;
+    let progRight = null;
+
+    leftScroller.addEventListener("scroll", () => {
+        if (progLeft !== null && Math.abs(leftScroller.scrollTop - progLeft) < 2) {
+            progLeft = null;
+            return;
+        }
+        syncComparePanes(left.editorId, right.editorId, (t) => { progRight = t; });
+        if (rightScroller.scrollLeft !== leftScroller.scrollLeft) {
+            rightScroller.scrollLeft = leftScroller.scrollLeft;
+        }
     });
-    link(leftScroller, rightScroller);
-    link(rightScroller, leftScroller);
+    rightScroller.addEventListener("scroll", () => {
+        if (progRight !== null && Math.abs(rightScroller.scrollTop - progRight) < 2) {
+            progRight = null;
+            return;
+        }
+        syncComparePanes(right.editorId, left.editorId, (t) => { progLeft = t; });
+        if (leftScroller.scrollLeft !== rightScroller.scrollLeft) {
+            leftScroller.scrollLeft = rightScroller.scrollLeft;
+        }
+    });
 }
 
 function initOne(root) {

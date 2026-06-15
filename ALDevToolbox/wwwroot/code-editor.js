@@ -616,6 +616,9 @@ export function mountReadOnly(container, value, language, options) {
         view,
         pristine: initial,
         dirty: false,
+        // Alignment fillers (compare page) — needed by the line-anchored
+        // scroll sync to map a source line to its counterpart in the other pane.
+        fillers: Array.isArray(opts.fillers) ? opts.fillers : [],
         dispose: () => {
             container.removeEventListener("contextmenu", onContextMenu);
             container.removeEventListener("click", onClickForDefinition);
@@ -726,6 +729,84 @@ export function scrollToLine(id, lineNumber, flash) {
         requestAnimationFrame(() => {
             doScroll();
         });
+    });
+}
+
+// ── Compare-pane line-anchored scroll sync ───────────────────────────
+//
+// Mirroring raw scrollTop between the two compare panes drifts: CodeMirror
+// estimates the height of off-screen rows (lines + filler block widgets), and
+// since each pane holds a different number of fillers above any given row, the
+// estimates diverge and the panes slip apart on long or jump scrolls. Instead
+// we anchor on the *line*: read the source pane's top line (a measured,
+// therefore exact, coordinate), map it to the counterpart line in the other
+// pane via the filler arithmetic, and scroll there with CodeMirror's own
+// scrollIntoView (which measures, so it lands exactly). See the compare-view
+// fix in .design / PR history.
+
+// Cumulative filler rows inserted before (above) a 1-based source line.
+function fillersAbove(fillers, line) {
+    let sum = 0;
+    for (const f of fillers) {
+        if (f && f.before <= line) sum += f.size;
+        else break; // serialized ascending by `before`
+    }
+    return sum;
+}
+
+// The aligned (visual) row a source line sits at = real lines above it + filler
+// rows above it. Identical aligned rows line up across the two panes.
+function alignedRow(fillers, line) {
+    return (line - 1) + fillersAbove(fillers, line);
+}
+
+// Inverse: the source line whose aligned row is at/just above `row`. Fixed-point
+// iteration — `fillersAbove` is monotonic, so this settles in a couple of passes.
+function lineAtAlignedRow(fillers, row, maxLine) {
+    let line = row + 1;
+    for (let i = 0; i < 4; i++) {
+        const next = (row + 1) - fillersAbove(fillers, line);
+        if (next === line) break;
+        line = next;
+    }
+    return Math.max(1, Math.min(maxLine, line));
+}
+
+/// Syncs the destination compare pane to the source pane by line, not by raw
+/// pixels. Reads the source's top line + sub-line offset (measured, exact),
+/// maps it to the counterpart line in the destination via the filler
+/// arithmetic, and scrolls there with scrollIntoView so CodeMirror measures the
+/// target and lands precisely. Returns the destination scrollTop it settled on
+/// (or null if it couldn't run), so the caller can keep its re-entrancy guard
+/// honest.
+export function syncComparePanes(srcId, dstId, beforeSet) {
+    const src = editors.get(srcId);
+    const dst = editors.get(dstId);
+    if (!src || !dst) return;
+    const srcView = src.view;
+    const top = srcView.scrollDOM.scrollTop;
+    const block = srcView.lineBlockAtHeight(top);
+    if (!block) return;
+    const anchorLine = srcView.state.doc.lineAt(block.from).number;
+    const frac = top - block.top;
+
+    const row = alignedRow(src.fillers || [], anchorLine);
+    const dstView = dst.view;
+    const dstLine = lineAtAlignedRow(dst.fillers || [], row, dstView.state.doc.lines);
+    const pos = dstView.state.doc.line(dstLine).from;
+    dstView.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "start" }) });
+    dstView.requestMeasure({
+        read: () => {
+            const b = dstView.lineBlockAt(pos);
+            const scroller = dstView.scrollDOM;
+            const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+            const target = Math.max(0, Math.min(max, b.top + frac));
+            // Announce the programmatic target *before* the assignment so the
+            // caller's scroll handler can recognise (and ignore) the echo this
+            // scroll fires — keeps the two-way sync from ping-ponging.
+            if (beforeSet) beforeSet(target);
+            scroller.scrollTop = target;
+        },
     });
 }
 
