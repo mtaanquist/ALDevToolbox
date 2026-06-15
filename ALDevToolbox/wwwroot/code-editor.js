@@ -879,35 +879,51 @@ class FillerWidget extends WidgetType {
     }
 }
 
+// Builds the block-widget filler set for the given editor state. `before` is a
+// 1-based source line the gap precedes; `before > doc.lines` means a trailing
+// gap (the opposite pane appended lines past this one's end), anchored after the
+// last line. The serializer emits gaps in ascending line order, which is what
+// RangeSetBuilder requires.
+function buildFillerSet(state, fillers) {
+    const builder = new RangeSetBuilder();
+    const doc = state.doc;
+    for (const f of fillers) {
+        const size = Number(f?.size);
+        const before = Number(f?.before);
+        if (!Number.isFinite(size) || size < 1) continue;
+        if (!Number.isFinite(before) || before < 1) continue;
+        const widget = Decoration.widget({
+            widget: new FillerWidget(size),
+            block: true,
+            // side -1 places the spacer above the anchored line; +1 below.
+            side: before > doc.lines ? 1 : -1,
+        });
+        const pos = before > doc.lines
+            ? doc.line(doc.lines).to
+            : doc.line(before).from;
+        builder.add(pos, pos, widget);
+    }
+    return builder.finish();
+}
+
 // Translates the C# [{before, size}] filler list into block-widget decorations
 // that pad each compare pane so matching lines align across the two editors.
-// `before` is a 1-based source line the gap precedes; `before > doc.lines`
-// means a trailing gap (the opposite pane appended lines past this one's end),
-// anchored after the last line. The serializer emits gaps in ascending line
-// order, which is what RangeSetBuilder requires.
+// Block widgets affect vertical layout, so CodeMirror only honours them from a
+// static decoration source — a StateField here, NOT the view-function form of
+// EditorView.decorations.of (which silently drops block decorations). The doc
+// is read-only on the compare page, so the set is computed once at create.
 function buildFillerDecorationExtensions(fillers) {
     if (!Array.isArray(fillers) || fillers.length === 0) return [];
-    return [EditorView.decorations.of((view) => {
-        const builder = new RangeSetBuilder();
-        const doc = view.state.doc;
-        for (const f of fillers) {
-            const size = Number(f?.size);
-            const before = Number(f?.before);
-            if (!Number.isFinite(size) || size < 1) continue;
-            if (!Number.isFinite(before) || before < 1) continue;
-            const widget = Decoration.widget({
-                widget: new FillerWidget(size),
-                block: true,
-                // side -1 places the spacer above the anchored line; +1 below.
-                side: before > doc.lines ? 1 : -1,
-            });
-            const pos = before > doc.lines
-                ? doc.line(doc.lines).to
-                : doc.line(before).from;
-            builder.add(pos, pos, widget);
-        }
-        return builder.finish();
-    })];
+    const field = StateField.define({
+        create(state) {
+            return buildFillerSet(state, fillers);
+        },
+        update(value, tr) {
+            return tr.docChanged ? buildFillerSet(tr.state, fillers) : value;
+        },
+        provide: (f) => EditorView.decorations.from(f),
+    });
+    return [field];
 }
 
 // A GutterMarker that renders no content — just an element class, so CSS can
