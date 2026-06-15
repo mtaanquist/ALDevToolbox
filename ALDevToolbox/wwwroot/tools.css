@@ -2607,7 +2607,10 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 
 .source-viewer__outline-item {
     line-height: 1.5;
-    font-size: 14px;
+    /* 13px (not 14) so the JetBrains Mono symbol names sit at the same
+       apparent size as the editor's code, which renders in the system
+       monospace face — JetBrains Mono is visibly larger at a given px. */
+    font-size: 13px;
 }
 
 .source-viewer__outline-item--child {
@@ -2674,7 +2677,7 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: var(--mono);
-    font-size: 14px;
+    font-size: 13px;
     min-width: 0;
 }
 
