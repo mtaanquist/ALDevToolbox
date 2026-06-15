@@ -12,7 +12,9 @@ on:
       - "v*.*.*"
 
 permissions:
-  contents: read
+  # contents: write so the run can publish the GitHub Release for the tag
+  # (see the "Publish GitHub Release" step); packages: write to push the image.
+  contents: write
   packages: write
 
 env:
@@ -64,3 +66,15 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Publish the GitHub Release for the tag, with GitHub's auto-generated
+      # "What's Changed" notes. Runs last so a failed image build never
+      # announces a release. The tag is taken from github.ref; creating the
+      # Release with GITHUB_TOKEN doesn't re-trigger this workflow (or build.yml),
+      # so there's no loop. Before this step releases were image-only and the
+      # GitHub Release had to be cut by hand — see CLAUDE.md "Releases and image
+      # publishing".
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
