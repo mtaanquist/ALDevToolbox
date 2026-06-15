@@ -36,10 +36,12 @@
     }
     else
     {
-        <div class="workspace-layout">
-            <form method="post" action="/generate/workspace" class="form-grid workspace-layout__form" data-loading-form>
-                <AntiforgeryToken />
-                <input type="hidden" name="GenToken" value="" />
+        <form method="post" action="/generate/workspace" class="workspace-shell" data-loading-form>
+            <AntiforgeryToken />
+            <input type="hidden" name="GenToken" value="" />
+
+            <div class="workspace-layout">
+                <div class="form-grid workspace-layout__form">
 
                 <section class="form-section">
                     <label class="section-label" for="ws-template">Workspace template</label>
@@ -170,6 +172,7 @@
                                     <input type="checkbox" name="SelectedExtensionPaths" value="@ext.Path"
                                            checked="@_selectedExtensionPaths.Contains(ext.Path)"
                                            @onchange="e => OnExtensionToggled(ext.Path, (bool)(e.Value ?? false))" />
+                                    <span class="module-card__check"><Icon Name="check" Width="13" Height="13" /></span>
                                     <span class="module-card__body">
                                         <span class="module-card__name">@ext.Path</span>
                                         <span class="module-card__caption muted">@ext.NameTemplate</span>
@@ -181,7 +184,16 @@
                 }
 
                 <section class="form-section">
-                    <label class="section-label">Modules</label>
+                    <div class="module-head">
+                        <label class="section-label">Modules</label>
+                        @if (_modules.Count > 0)
+                        {
+                            <span class="selcount">
+                                <b>@_selectedModuleKeys.Count</b> selected ·
+                                <b>@CountDependencies()</b> dependencies pulled in
+                            </span>
+                        }
+                    </div>
                     @if (_modules.Count == 0)
                     {
                         <p class="muted">No modules available.</p>
@@ -195,9 +207,11 @@
                                     <input type="checkbox" name="SelectedModuleKeys" value="@m.Key"
                                            checked="@_selectedModuleKeys.Contains(m.Key)"
                                            @onchange="e => OnModuleToggled(m.Key, (bool)(e.Value ?? false))" />
+                                    <span class="module-card__check"><Icon Name="check" Width="13" Height="13" /></span>
                                     <span class="module-card__body">
                                         <span class="module-card__name">@m.Name</span>
-                                        <span class="module-card__caption muted">
+                                        <span class="module-card__caption">
+                                            <Icon Name="link" Width="13" Height="13" />
                                             + @m.Dependencies.Count
                                             @(m.Dependencies.Count == 1 ? "dependency" : "dependencies")
                                         </span>
@@ -217,31 +231,48 @@
                     </label>
                 </section>
 
-                <button type="submit" class="btn btn--primary workspace-layout__generate" data-loading-button>
-                    <span class="btn__spinner" aria-hidden="true"></span>
-                    <span class="btn__label">Generate</span>
-                    <span class="btn__label-busy">Generating…</span>
-                </button>
-            </form>
+                </div>
 
-            <aside class="workspace-layout__preview">
-                <section class="preview-card">
-                    <div class="section-label">Preview</div>
-                    <FolderTreePreview Root="BuildPreview()" />
-                </section>
+                <aside class="workspace-layout__preview">
+                    <section class="preview-card">
+                        <div class="preview-card__head">
+                            <span class="section-label">Preview</span>
+                            <span class="status-pill status-pill--live"><span class="status-pill__dot"></span>Live</span>
+                        </div>
+                        <div class="preview-card__body preview-card__body--scroll">
+                            <FolderTreePreview Root="BuildPreview()" />
+                        </div>
+                    </section>
 
-                <section class="preview-stats">
-                    <div class="stat-card">
-                        <div class="stat-card__value">@CountExtensions()</div>
-                        <div class="stat-card__label">Extensions</div>
+                    <section class="preview-stats">
+                        <div class="stat-card stat-card--accent">
+                            <div class="stat-card__value">@CountExtensions()</div>
+                            <div class="stat-card__label">Extensions</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-card__value">@CountDependencies()</div>
+                            <div class="stat-card__label">Dependencies</div>
+                        </div>
+                    </section>
+                </aside>
+            </div>
+
+            <div class="actionbar">
+                <div class="actionbar__inner">
+                    <div class="actionbar__info">
+                        Generating <b>@CountExtensions() @(CountExtensions() == 1 ? "extension" : "extensions")</b>@if (_selected is not null)
+                        {<text> from <b>@_selected.Name</b></text>}
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-card__value">@CountDependencies()</div>
-                        <div class="stat-card__label">Dependencies</div>
+                    <div class="actionbar__actions">
+                        <button type="submit" class="btn btn--primary btn--lg" data-loading-button>
+                            <span class="btn__spinner" aria-hidden="true"></span>
+                            <span class="btn__label"><Icon Name="download" Width="15" Height="15" /> Download ZIP</span>
+                            <span class="btn__label-busy">Generating…</span>
+                        </button>
                     </div>
-                </section>
-            </aside>
-        </div>
+                </div>
+            </div>
+        </form>
     }
 </div>
 
