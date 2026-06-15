@@ -40,41 +40,66 @@
 
 .workspace-form { max-width: 640px; }
 
-/* Two-column shell for the New Workspace / New Extension pages: the form
-   scrolls on the left, the preview sticks to the top of the viewport on the
-   right so it stays visible while the user works through a long modules list. */
-.workspace-page { max-width: 1100px; }
+/* ============================================================
+   New Workspace / New Extension — restyled to the design hand-off
+   (.design/translator/styles/screens.css "workspace"). Everything below is
+   scoped under .workspace-page so the shared primitives (.module-card,
+   .section-label, .form-section, form inputs) keep their default look on the
+   admin pages that also use them. The form wraps the whole page so the
+   Generate button stays inside it for generate.js' loading plumbing.
+   ============================================================ */
+.workspace-page { max-width: 1320px; }
 
+/* Page head — bigger title + lead paragraph (design .page-head). */
+.workspace-page .page-header h1 { font-size: 27px; font-weight: 700; letter-spacing: -0.5px; margin: 0 0 8px; }
+.workspace-page .page-header p { color: var(--ink-3); font-size: 14px; max-width: 760px; line-height: 1.55; margin: 0; }
 
+/* Two-column shell: form on the left, sticky preview rail on the right. */
 .workspace-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 360px;
+    grid-template-columns: minmax(0, 1fr) 392px;
     gap: 32px;
     align-items: start;
 }
 
 .workspace-layout__form { min-width: 0; }
 
-.workspace-layout__generate { align-self: flex-start; }
-
 .workspace-layout__preview {
     position: sticky;
-    top: 16px;
+    top: 8px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
 }
 
+/* Preview → the design's elevated .card with a header strip. */
 .preview-card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--r);
-    padding: 14px 16px;
-    max-height: calc(100vh - 120px);
-    overflow: auto;
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow);
+    overflow: hidden;
 }
 
-.preview-card .section-label { margin-bottom: 8px; display: block; }
+.preview-card__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.preview-card__head .section-label { margin: 0; }
+
+.preview-card__body { padding: 14px 16px; }
+
+/* The file-tree body scrolls when the tree is taller than the viewport;
+   the short rail cards (import config, after-download tip) don't. */
+.preview-card__body--scroll {
+    padding: 12px 14px;
+    max-height: calc(100vh - 260px);
+    overflow: auto;
+}
 
 /* Import-config card on the New Workspace / New Extension pages. Lives at
    the top of the right-hand column and reuses .preview-card for chrome. */
@@ -128,32 +153,182 @@
 .preview-stats {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    gap: 16px;
 }
 
+/* Stat tiles → the design's .stat: big tabular number over a micro-label. */
 .stat-card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--r);
-    padding: 10px 12px;
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow);
+    padding: 16px 18px;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
 }
 
 .stat-card__value {
-    font-size: 20px;
-    font-weight: 600;
+    font-size: 30px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -1px;
     color: var(--ink);
+    font-variant-numeric: tabular-nums;
 }
+
+.stat-card--accent .stat-card__value { color: var(--blue); }
 
 .stat-card__label {
     font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.06em;
+    font-weight: 700;
+    letter-spacing: 0.9px;
     text-transform: uppercase;
     color: var(--ink-4);
 }
+
+/* ---- scoped form controls (design .fld / .cap-label / .input) ---- */
+.workspace-page .section-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.9px;
+    text-transform: uppercase;
+    color: var(--ink-4);
+    margin-bottom: 2px;
+}
+
+.workspace-page .form-section input[type="text"],
+.workspace-page .form-section input[type="number"],
+.workspace-page .form-section select,
+.workspace-page .form-section textarea {
+    border: 1px solid var(--border-input);
+    border-radius: var(--r);
+    padding: 10px 13px;
+    font-size: 14px;
+}
+
+.workspace-page .form-section input[type="text"],
+.workspace-page .form-section input[type="number"],
+.workspace-page .form-section select {
+    height: 40px;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+/* Field helper text (the <small class="muted"> / .caption under inputs). */
+.workspace-page .form-section small.muted,
+.workspace-page .form-section .caption {
+    color: var(--ink-3);
+    font-size: 12.5px;
+    line-height: 1.5;
+}
+
+/* Inline mustache/version chips in helper copy. */
+.workspace-page .form-section small code,
+.workspace-page .form-section .caption code {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink-2);
+    background: var(--surface-sunken);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 1px 5px;
+}
+
+/* ---- module cards → the design's selectable .mod ---- */
+.workspace-page .module-list { gap: 10px; }
+
+.workspace-page .module-card {
+    align-items: center;
+    gap: 13px;
+    padding: 14px 16px;
+    border: 1px solid var(--border-input);
+    border-radius: var(--r-lg);
+    transition: border-color 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+
+.workspace-page .module-card:hover { background: var(--surface); border-color: var(--border-strong); }
+
+.workspace-page .module-card:has(input:checked) {
+    border-color: var(--blue);
+    background: var(--blue-50);
+    box-shadow: 0 0 0 3px var(--blue-50);
+}
+
+:root[data-theme="dark"] .workspace-page .module-card:has(input:checked) { background: #121a2a; }
+
+/* Hide the native checkbox; a styled .module-card__check renders the box. */
+.workspace-page .module-card > input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+}
+
+.workspace-page .module-card__check {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+    border-radius: 6px;
+    border: 1.6px solid var(--border-strong);
+    background: var(--surface);
+    display: grid;
+    place-items: center;
+    color: transparent;
+    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.workspace-page .module-card:has(input:checked) .module-card__check {
+    background: var(--blue);
+    border-color: var(--blue);
+    color: #fff;
+}
+
+.workspace-page .module-card__body { flex: 1; gap: 4px; }
+.workspace-page .module-card__name { font-size: 14px; font-weight: 600; color: var(--ink); }
+.workspace-page .module-card__caption {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--ink-3);
+}
+.workspace-page .module-card__caption svg { width: 13px; height: 13px; color: var(--ink-4); }
+
+/* Modules header tally row. */
+.workspace-page .module-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.workspace-page .module-head .selcount { font-size: 12.5px; color: var(--ink-3); }
+.workspace-page .module-head .selcount b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* ---- sticky action bar (design .actionbar) ---- */
+.workspace-page .actionbar {
+    position: sticky;
+    bottom: 0;
+    margin: 24px -32px 0;
+    padding: 16px 32px;
+    background: color-mix(in srgb, var(--surface) 90%, transparent);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -8px 18px -6px rgba(15, 23, 42, 0.10);
+}
+
+:root[data-theme="dark"] .workspace-page .actionbar { box-shadow: 0 -8px 20px -6px rgba(0, 0, 0, 0.5); }
+
+.workspace-page .actionbar__inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.workspace-page .actionbar__info { font-size: 13px; color: var(--ink-3); }
+.workspace-page .actionbar__info b { color: var(--ink); }
+
+.btn--lg { padding: 11px 18px; font-size: 14px; }
 
 /* ---------- Folder tree preview ---------- */
 
@@ -167,8 +342,8 @@
 .ftp.ftp--root {
     font-family: var(--mono);
     font-size: 12.5px;
-    line-height: 1.7;
-    color: var(--ink-4);
+    line-height: 1.9;
+    color: var(--ink-2);
 }
 
 .ftp__children {

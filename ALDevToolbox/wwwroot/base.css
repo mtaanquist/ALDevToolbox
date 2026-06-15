@@ -869,6 +869,28 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .status-pill--inline { margin-left: 6px; }
 
+/* "Live" / "Ready" pill with a glowing green dot, per the design hand-off
+   (.design/translator/styles/screens.css). A modifier so the existing blue
+   pills are untouched. */
+.status-pill--live {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 10px 4px 8px;
+    background: var(--good-bg);
+    color: var(--good);
+    font-weight: 600;
+    font-size: 12px;
+}
+
+.status-pill--live .status-pill__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--good);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 22%, transparent);
+}
+
 /* ---------- Errors ---------- */
 
 #blazor-error-ui {

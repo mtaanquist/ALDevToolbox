@@ -37,10 +37,12 @@
     }
     else
     {
-        <div class="workspace-layout">
-            <form method="post" action="/generate/extension" class="form-grid workspace-layout__form" data-loading-form>
-                <AntiforgeryToken />
-                <input type="hidden" name="GenToken" value="" />
+        <form method="post" action="/generate/extension" class="workspace-shell" data-loading-form>
+            <AntiforgeryToken />
+            <input type="hidden" name="GenToken" value="" />
+
+            <div class="workspace-layout">
+                <div class="form-grid workspace-layout__form">
 
                 @* Sibling-extension flow: when a workspace config is loaded, ship
                    the workspace's identity through to the generation endpoint so
@@ -178,90 +180,109 @@
                     </label>
                 </section>
 
-                <button type="submit" class="btn btn--primary workspace-layout__generate" data-loading-button>
-                    <span class="btn__spinner" aria-hidden="true"></span>
-                    <span class="btn__label">Generate</span>
-                    <span class="btn__label-busy">Generating…</span>
-                </button>
-            </form>
+                </div>
 
-            <aside class="workspace-layout__preview">
-                <section class="preview-card import-card">
-                    <div class="section-label">Import config</div>
-                    <div class="import-card__row">
-                        <label class="btn btn--sm import-card__button">
-                            <Icon Name="upload" Width="14" Height="14" />
-                            <span>Choose file…</span>
-                            <InputFile OnChange="OnImportFileChosen" accept=".toml" class="import-card__input" />
-                        </label>
-                        @if (!string.IsNullOrEmpty(_importFileName))
-                        {
-                            <span class="import-card__filename" title="@_importFileName">@_importFileName</span>
-                        }
+                <aside class="workspace-layout__preview">
+                    <section class="preview-card import-card">
+                        <div class="preview-card__head"><span class="section-label">Import config</span></div>
+                        <div class="preview-card__body">
+                            <div class="import-card__row">
+                                <label class="btn btn--sm import-card__button">
+                                    <Icon Name="upload" Width="14" Height="14" />
+                                    <span>Choose file…</span>
+                                    <InputFile OnChange="OnImportFileChosen" accept=".toml" class="import-card__input" />
+                                </label>
+                                @if (!string.IsNullOrEmpty(_importFileName))
+                                {
+                                    <span class="import-card__filename" title="@_importFileName">@_importFileName</span>
+                                }
+                                @if (_workspaceContext is not null)
+                                {
+                                    <button type="button" class="btn btn--sm" @onclick="ClearImportedWorkspace">Clear</button>
+                                }
+                            </div>
+                            <p class="caption muted import-card__hint">
+                                Restore this form from a previously saved <code>@WorkspaceConfigService.FileName</code>.
+                                A workspace config locks the template and scaffolds a sibling extension;
+                                an extension config restores every field.
+                            </p>
+                            @if (!string.IsNullOrEmpty(_importMessage))
+                            {
+                                <p class="caption muted">@_importMessage</p>
+                            }
+                            @if (_importErrors.Count > 0)
+                            {
+                                <ul class="form-field-error" role="alert">
+                                    @foreach (var err in _importErrors)
+                                    {
+                                        <li>@err.Key: @err.Value</li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                    </section>
+
+                    <section class="preview-card">
+                        <div class="preview-card__head">
+                            <span class="section-label">Preview</span>
+                            <span class="status-pill status-pill--live"><span class="status-pill__dot"></span>Live</span>
+                        </div>
+                        <div class="preview-card__body preview-card__body--scroll">
+                            <FolderTreePreview Root="BuildPreview()" />
+                        </div>
+                    </section>
+
+                    <section class="preview-stats">
+                        <div class="stat-card stat-card--accent">
+                            <div class="stat-card__value">1</div>
+                            <div class="stat-card__label">Extensions</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-card__value">@_dependencies.Count</div>
+                            <div class="stat-card__label">Dependencies</div>
+                        </div>
+                    </section>
+
+                    <section class="success-tip">
+                        <div class="section-label">After downloading</div>
                         @if (_workspaceContext is not null)
                         {
-                            <button type="button" class="btn btn--sm" @onclick="ClearImportedWorkspace">Clear</button>
+                            <p class="caption">
+                                Drop the <code>@FolderName/</code> folder and the regenerated
+                                <code>@($"{_workspaceContext.WorkspaceName}.code-workspace")</code>
+                                file into your existing workspace, replacing the old workspace
+                                file. The new <code>folders</code> array already lists every
+                                extension plus the new one.
+                            </p>
                         }
-                    </div>
-                    <p class="caption muted import-card__hint">
-                        Restore this form from a previously saved <code>@WorkspaceConfigService.FileName</code>.
-                        A workspace config locks the template and scaffolds a sibling extension;
-                        an extension config restores every field.
-                    </p>
-                    @if (!string.IsNullOrEmpty(_importMessage))
-                    {
-                        <p class="caption muted">@_importMessage</p>
-                    }
-                    @if (_importErrors.Count > 0)
-                    {
-                        <ul class="form-field-error" role="alert">
-                            @foreach (var err in _importErrors)
-                            {
-                                <li>@err.Key: @err.Value</li>
-                            }
-                        </ul>
-                    }
-                </section>
+                        else
+                        {
+                            <p class="caption">
+                                Drop <code>@FolderName/</code> into your existing workspace folder, then add this
+                                line to the <code>folders</code> array in your <code>.code-workspace</code>:
+                            </p>
+                            <pre class="success-tip__snippet"><code>@WorkspaceFoldersSnippet</code></pre>
+                        }
+                    </section>
+                </aside>
+            </div>
 
-                <section class="preview-card">
-                    <div class="section-label">Preview</div>
-                    <FolderTreePreview Root="BuildPreview()" />
-                </section>
-
-                <section class="preview-stats">
-                    <div class="stat-card">
-                        <div class="stat-card__value">1</div>
-                        <div class="stat-card__label">Extensions</div>
+            <div class="actionbar">
+                <div class="actionbar__inner">
+                    <div class="actionbar__info">
+                        Generating <b>1 extension</b>@if (_selected is not null)
+                        {<text> for <b>@_selected.Name</b></text>}
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-card__value">@_dependencies.Count</div>
-                        <div class="stat-card__label">Dependencies</div>
+                    <div class="actionbar__actions">
+                        <button type="submit" class="btn btn--primary btn--lg" data-loading-button>
+                            <span class="btn__spinner" aria-hidden="true"></span>
+                            <span class="btn__label"><Icon Name="download" Width="15" Height="15" /> Download ZIP</span>
+                            <span class="btn__label-busy">Generating…</span>
+                        </button>
                     </div>
-                </section>
-
-                <section class="success-tip">
-                    <div class="section-label">After downloading</div>
-                    @if (_workspaceContext is not null)
-                    {
-                        <p class="caption">
-                            Drop the <code>@FolderName/</code> folder and the regenerated
-                            <code>@($"{_workspaceContext.WorkspaceName}.code-workspace")</code>
-                            file into your existing workspace, replacing the old workspace
-                            file. The new <code>folders</code> array already lists every
-                            extension plus the new one.
-                        </p>
-                    }
-                    else
-                    {
-                        <p class="caption">
-                            Drop <code>@FolderName/</code> into your existing workspace folder, then add this
-                            line to the <code>folders</code> array in your <code>.code-workspace</code>:
-                        </p>
-                        <pre class="success-tip__snippet"><code>@WorkspaceFoldersSnippet</code></pre>
-                    }
-                </section>
-            </aside>
-        </div>
+                </div>
+            </div>
+        </form>
     }
 </div>
 
