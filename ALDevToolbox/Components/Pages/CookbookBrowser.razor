@@ -63,11 +63,12 @@
         var rows = ApplyTypeFilter(_results);
         if (rows.Count == 0)
         {
+            var emptyOrg = string.IsNullOrWhiteSpace(_query) && _typeFilter is null && !_includeDeprecated;
             <div class="rel-empty">
-                <div class="rel-empty-ico"><Icon Name="search" Width="24" Height="24" /></div>
-                <div class="rel-empty-h">No recipes match</div>
+                <div class="rel-empty-ico"><Icon Name="@(emptyOrg ? "lightbulb" : "search")" Width="24" Height="24" /></div>
+                <div class="rel-empty-h">@(emptyOrg ? "No recipes yet" : "No recipes match")</div>
                 <p class="rel-empty-p">
-                    @if (string.IsNullOrWhiteSpace(_query) && _typeFilter is null)
+                    @if (emptyOrg)
                     {
                         <text>No recipes in this organisation yet. If you have a useful AL pattern to share, click <strong>Suggest a recipe</strong> — an admin will review and publish it.</text>
                     }

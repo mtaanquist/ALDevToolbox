@@ -74,9 +74,9 @@ public sealed class CookbookBrowserTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            var cards = cut.FindAll("a.snippet-card__title");
+            var cards = cut.FindAll("a.recipe-card");
             cards.Should().HaveCount(2);
-            cards.Select(c => c.TextContent).Should().BeEquivalentTo(
+            cards.Select(c => c.QuerySelector("h3")!.TextContent.Trim()).Should().BeEquivalentTo(
                 new[] { "Generic table proxy", "Posting routine skeleton" });
             cards.Select(c => c.GetAttribute("href"))
                 .Should().AllSatisfy(h => h!.StartsWith("/cookbook/").Should().BeTrue());
@@ -99,7 +99,7 @@ public sealed class CookbookBrowserTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.FindAll("a.snippet-card__title").Should().HaveCount(1,
+            cut.FindAll("a.recipe-card").Should().HaveCount(1,
                 "deprecated rows are hidden by default — RecipeService.SearchAsync's "
                 + "includeDeprecated parameter defaults to false");
             cut.Markup.Should().Contain("Active pattern");
@@ -114,7 +114,7 @@ public sealed class CookbookBrowserTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            cut.FindAll("a.snippet-card__title").Should().HaveCount(2);
+            cut.FindAll("a.recipe-card").Should().HaveCount(2);
             cut.Markup.Should().Contain("Old pattern");
         });
     }
