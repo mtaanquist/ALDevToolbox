@@ -196,7 +196,7 @@ When picking which tests to add for a new feature, prefer tests that go through 
 
 ## Releases and image publishing
 
-Releases are cut by pushing a git tag; `.github/workflows/release.yml` builds the Dockerfile and pushes `ghcr.io/mtaanquist/aldevtoolbox` to GHCR. There is no release on every merge — `main` stays continuously green via `build.yml`, and a release is a deliberate tag on a commit that's already passed CI.
+Releases are cut by pushing a git tag; `.github/workflows/release.yml` builds the Dockerfile, pushes `ghcr.io/mtaanquist/aldevtoolbox` to GHCR, and publishes the matching GitHub Release with auto-generated notes. There is no release on every merge — `main` stays continuously green via `build.yml`, and a release is a deliberate tag on a commit that's already passed CI.
 
 **Version scheme — one major per shipped end-user tool.** The major number is the count of distinct tools in the sidebar's Tools section. Each new tool bumps the major; everything else (features within a tool, cross-cutting work like auth/backups/hosting, polish) is a minor or a patch. The mapping as of 6.0.0:
 
@@ -221,7 +221,7 @@ Releases are cut by pushing a git tag; `.github/workflows/release.yml` builds th
    git tag v6.0.0
    git push origin v6.0.0
    ```
-3. `release.yml` fires on the `v*.*.*` tag, builds the image, and pushes the moving tags `latest`, `6`, `6.0` plus the exact `6.0.0`. Operators pin as loosely or tightly as they want.
+3. `release.yml` fires on the `v*.*.*` tag, builds the image, pushes the moving tags `latest`, `6`, `6.0` plus the exact `6.0.0`, and publishes the GitHub Release with generated notes. Nothing to publish by hand. Operators pin the image as loosely or tightly as they want.
 
 Never move or re-push a published tag — cut a new patch instead. The image name is derived from `github.repository`, lowercased by `docker/metadata-action`, so it always resolves to `ghcr.io/mtaanquist/aldevtoolbox` regardless of the repo's casing.
 
