@@ -48,14 +48,12 @@
    admin pages that also use them. The form wraps the whole page so the
    Generate button stays inside it for generate.js' loading plumbing.
    ============================================================ */
-/* Fill the scroll viewport so the sticky action bar pins to the bottom even
-   when the form is shorter than the screen (drop .content's bottom padding so
-   the bar sits flush). The page → form → grid all stretch; the grid grows and
-   pushes the action bar down. */
+/* The page spans the full content width so the action bar's background can go
+   edge to edge; the grid and the action bar's inner content are what cap at
+   1320px and centre, so the form + button stay aligned under the content. */
 .content:has(.workspace-page) { padding-bottom: 0; }
 
 .workspace-page {
-    max-width: 1320px;
     min-height: 100%;
     display: flex;
     flex-direction: column;
@@ -75,12 +73,16 @@
 .workspace-page .page-header h1 { font-size: 27px; font-weight: 700; letter-spacing: -0.5px; margin: 0 0 8px; }
 .workspace-page .page-header p { color: var(--ink-3); font-size: 14px; max-width: 760px; line-height: 1.55; margin: 0; }
 
-/* Two-column shell: form on the left, sticky preview rail on the right. */
+/* Two-column shell: form on the left, sticky preview rail on the right.
+   Capped + centred (the page itself is full-width for the action bar). */
 .workspace-layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 392px;
     gap: 32px;
     align-items: start;
+    width: 100%;
+    max-width: 1320px;
+    margin-inline: auto;
 }
 
 .workspace-layout__form { min-width: 0; }
@@ -348,6 +350,9 @@
     align-items: center;
     justify-content: space-between;
     gap: 16px;
+    width: 100%;
+    max-width: 1320px;
+    margin-inline: auto;
 }
 
 .workspace-page .actionbar__info { font-size: 13px; color: var(--ink-3); }
