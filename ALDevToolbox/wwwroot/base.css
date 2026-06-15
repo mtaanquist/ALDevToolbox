@@ -169,6 +169,15 @@
     --shadow-lg: 0 18px 44px rgba(0,0,0,.6);
 }
 
+/* Code syntax-highlight accents for the Cookbook recipe view
+   (.design/explorer-cookbook). Mirrors the app's theme model: light default,
+   plus both the system-dark media query and the explicit data-theme override. */
+:root { --code-type: #0e7490; --code-num: #9333ea; }
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --code-type: #67d6e8; --code-num: #c084fc; }
+}
+:root[data-theme="dark"] { --code-type: #67d6e8; --code-num: #c084fc; }
+
 * { box-sizing: border-box; }
 
 html, body {
