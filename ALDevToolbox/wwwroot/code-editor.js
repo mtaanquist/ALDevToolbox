@@ -17,7 +17,7 @@
 
 import { EditorView, lineNumbers, highlightActiveLineGutter, highlightSpecialChars,
     drawSelection, dropCursor, rectangularSelection, crosshairCursor,
-    highlightActiveLine, keymap, Decoration, showPanel, gutter, GutterMarker }
+    highlightActiveLine, keymap, Decoration, WidgetType, showPanel, gutter, GutterMarker }
     from "https://esm.sh/@codemirror/view@6.34.1?deps=@codemirror/state@6.4.1";
 import { EditorState, Compartment, RangeSetBuilder, StateField, StateEffect }
     from "https://esm.sh/@codemirror/state@6.4.1";
@@ -378,6 +378,12 @@ export function mount(container, initialValue, language) {
 // works but typing is rejected.
 // options:
 //   lineDecorations: { [1-basedLineNumber]: cssClass }  — full-line backgrounds (diff view)
+//   fillers:         [{ before, size }] — blank alignment gaps (compare view).
+//                     Inserts `size` line-heights of empty space before source
+//                     line `before` (or after the last line when
+//                     `before > doc.lines`) so the two compare panes stay
+//                     vertically aligned KDiff3-style. Real text and gutter
+//                     line numbers are untouched — a filler is empty space.
 //   declarations:    [{ line, columnStart, columnEnd, symbolId, kind, name }]
 //                     ranges that get a click affordance + right-click "Find references"
 //   resolvables:     [{ line, columnStart, columnEnd }] — extra ranges that
@@ -405,6 +411,10 @@ export function mountReadOnly(container, value, language, options) {
     // mark (i.e. the compare page). The single-file viewer passes none, so it
     // gets no extra gutter.
     const diffGutterExtensions = buildDiffGutterExtensions(opts.lineDecorations);
+    // Alignment fillers, compare page only. Blank block widgets that pad the
+    // shorter side so matching lines line up across panes (single-file viewer
+    // passes none, so it gets no fillers).
+    const fillerExtensions = buildFillerDecorationExtensions(opts.fillers);
     const declarationExtensions = buildDeclarationDecorationExtensions(opts.declarations);
     const resolvableExtensions = buildResolvableDecorationExtensions(opts.resolvables);
     // Opt-in status bar: only the source-file viewer asks for it today.
@@ -444,6 +454,7 @@ export function mountReadOnly(container, value, language, options) {
                 keymap.of([...defaultKeymap, ...searchKeymap, ...foldKeymap]),
                 languageExtensionFor(lang),
                 ...decorationExtensions,
+                ...fillerExtensions,
                 ...declarationExtensions,
                 ...resolvableExtensions,
                 ...statusBarExtensions,
@@ -838,6 +849,62 @@ function buildLineDecorationExtensions(lineDecorations) {
             if (!cls) continue;
             const line = view.state.doc.line(i);
             builder.add(line.from, line.from, Decoration.line({ class: cls }));
+        }
+        return builder.finish();
+    })];
+}
+
+// A block widget that renders `size` line-heights of empty space — the
+// KDiff3-style alignment gap on the compare page. Height is computed from the
+// editor's measured line height so it tracks the font/zoom, and `eq` lets
+// CodeMirror skip re-rendering an unchanged filler.
+class FillerWidget extends WidgetType {
+    constructor(size) {
+        super();
+        this._size = size;
+    }
+    eq(other) {
+        return other instanceof FillerWidget && other._size === this._size;
+    }
+    toDOM(view) {
+        const el = document.createElement("div");
+        el.className = "cm-diff-filler";
+        el.style.height = (view.defaultLineHeight * this._size) + "px";
+        el.setAttribute("aria-hidden", "true");
+        return el;
+    }
+    // No DOM events to ignore inside a passive spacer.
+    ignoreEvent() {
+        return false;
+    }
+}
+
+// Translates the C# [{before, size}] filler list into block-widget decorations
+// that pad each compare pane so matching lines align across the two editors.
+// `before` is a 1-based source line the gap precedes; `before > doc.lines`
+// means a trailing gap (the opposite pane appended lines past this one's end),
+// anchored after the last line. The serializer emits gaps in ascending line
+// order, which is what RangeSetBuilder requires.
+function buildFillerDecorationExtensions(fillers) {
+    if (!Array.isArray(fillers) || fillers.length === 0) return [];
+    return [EditorView.decorations.of((view) => {
+        const builder = new RangeSetBuilder();
+        const doc = view.state.doc;
+        for (const f of fillers) {
+            const size = Number(f?.size);
+            const before = Number(f?.before);
+            if (!Number.isFinite(size) || size < 1) continue;
+            if (!Number.isFinite(before) || before < 1) continue;
+            const widget = Decoration.widget({
+                widget: new FillerWidget(size),
+                block: true,
+                // side -1 places the spacer above the anchored line; +1 below.
+                side: before > doc.lines ? 1 : -1,
+            });
+            const pos = before > doc.lines
+                ? doc.line(doc.lines).to
+                : doc.line(before).from;
+            builder.add(pos, pos, widget);
         }
         return builder.finish();
     })];

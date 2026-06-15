@@ -105,6 +105,82 @@ public sealed class CompareFileDiffSerializerTests
     }
 
     [Fact]
+    public void SerializeFillers_pads_the_left_side_where_the_right_inserts_lines()
+    {
+        // Right inserts two lines near the top. The left pane is "missing"
+        // those two lines, so it needs a filler of size 2 before the line that
+        // follows them (line2, at left source position 2).
+        const string left =
+            "line1\n" +
+            "line2\n" +
+            "line3\n" +
+            "line4\n";
+        const string right =
+            "line1\n" +
+            "NEW_A\n" +
+            "NEW_B\n" +
+            "line2\n" +
+            "line3\n" +
+            "line4\n";
+
+        var model = SideBySideDiffBuilder.Diff(left, right);
+
+        var leftFillers = CompareFileDiffSerializer.SerializeFillers(model.OldText);
+        leftFillers.Should().Contain("\"before\":2").And.Contain("\"size\":2");
+
+        // The right side is the longer one here — nothing to pad.
+        var rightFillers = CompareFileDiffSerializer.SerializeFillers(model.NewText);
+        rightFillers.Should().Be("[]");
+    }
+
+    [Fact]
+    public void SerializeFillers_pads_the_right_side_where_the_left_deletes_lines()
+    {
+        // Left has two lines the right doesn't — symmetric to the insertion
+        // case, so the right pane gets the filler this time.
+        const string left =
+            "alpha\n" +
+            "GONE_A\n" +
+            "GONE_B\n" +
+            "beta\n";
+        const string right =
+            "alpha\n" +
+            "beta\n";
+
+        var model = SideBySideDiffBuilder.Diff(left, right);
+
+        var rightFillers = CompareFileDiffSerializer.SerializeFillers(model.NewText);
+        rightFillers.Should().Contain("\"before\":2").And.Contain("\"size\":2");
+
+        var leftFillers = CompareFileDiffSerializer.SerializeFillers(model.OldText);
+        leftFillers.Should().Be("[]");
+    }
+
+    [Fact]
+    public void SerializeFillers_anchors_a_trailing_gap_past_the_last_source_line()
+    {
+        // Right appends two lines past the end of the left file. There's no
+        // following real row on the left to anchor to, so the gap uses the
+        // sentinel `before = lineCount + 1` (left has 2 lines → before 3).
+        const string left = "a\nb\n";
+        const string right = "a\nb\nc\nd\n";
+
+        var model = SideBySideDiffBuilder.Diff(left, right);
+
+        var leftFillers = CompareFileDiffSerializer.SerializeFillers(model.OldText);
+        leftFillers.Should().Contain("\"before\":3").And.Contain("\"size\":2");
+    }
+
+    [Fact]
+    public void SerializeFillers_emits_nothing_for_identical_files()
+    {
+        var model = SideBySideDiffBuilder.Diff("a\nb\nc\n", "a\nb\nc\n");
+
+        CompareFileDiffSerializer.SerializeFillers(model.OldText).Should().Be("[]");
+        CompareFileDiffSerializer.SerializeFillers(model.NewText).Should().Be("[]");
+    }
+
+    [Fact]
     public void Summarize_reports_identical_when_no_changes()
     {
         var model = SideBySideDiffBuilder.Diff("a\nb\nc\n", "a\nb\nc\n");

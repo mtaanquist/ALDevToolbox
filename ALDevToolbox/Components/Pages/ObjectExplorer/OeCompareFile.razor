@@ -61,6 +61,7 @@
                      data-language="al"
                      data-content="@_left.Content"
                      data-diff="@_leftDiffJson"
+                     data-fillers="@_leftFillersJson"
                      data-procedures="@_leftProceduresJson"
                      spellcheck="false"></div>
             </div>
@@ -71,6 +72,7 @@
                      data-language="al"
                      data-content="@_right.Content"
                      data-diff="@_rightDiffJson"
+                     data-fillers="@_rightFillersJson"
                      data-procedures="@_rightProceduresJson"
                      spellcheck="false"></div>
             </div>
@@ -85,6 +87,8 @@
     private SourceFileHeader? _rightHeader;
     private string _leftDiffJson = "[]";
     private string _rightDiffJson = "[]";
+    private string _leftFillersJson = "[]";
+    private string _rightFillersJson = "[]";
     private string _leftProceduresJson = "[]";
     private string _rightProceduresJson = "[]";
     private int _added;
@@ -109,6 +113,8 @@
         var model = SideBySideDiffBuilder.Diff(_left.Content, _right.Content);
         _leftDiffJson = CompareFileDiffSerializer.SerializeSide(model.OldText);
         _rightDiffJson = CompareFileDiffSerializer.SerializeSide(model.NewText);
+        _leftFillersJson = CompareFileDiffSerializer.SerializeFillers(model.OldText);
+        _rightFillersJson = CompareFileDiffSerializer.SerializeFillers(model.NewText);
 
         var summary = CompareFileDiffSerializer.Summarize(model);
         _added = summary.Added;
