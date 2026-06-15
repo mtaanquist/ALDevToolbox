@@ -1,0 +1,77 @@
+@*
+    Split-button + dropdown for a results-table row, per the Object Explorer
+    design study (.design/translator/styles/screens.css "split-button row
+    actions"). The primary segment ("View reference") is a plain link; the
+    caret opens a menu with the same link, an optional "Compare with…" submenu
+    of other releases, and a "Download source" link.
+
+    Open / close, one-open-at-a-time, and close-on-outside-click / scroll /
+    Escape are handled globally by wwwroot/row-actions-menu.js so every row
+    shares one set of document listeners rather than wiring interop per row.
+    The menu is built on native <details> elements so it works even before the
+    behaviour script attaches.
+
+    Lives in Components/Shared/ per the CLAUDE.md folder map.
+*@
+
+<div class="ra">
+    <a class="ra__main" href="@ViewHref">
+        <Icon Name="eye" Width="15" Height="15" />
+        <span>View reference</span>
+    </a>
+    <details class="ra__menu">
+        <summary class="ra__caret" title="More actions" aria-label="More actions" aria-haspopup="menu">
+            <Icon Name="chevron-down" Width="14" Height="14" />
+        </summary>
+        <div class="ra__pop" role="menu">
+            <a class="ra__item" href="@ViewHref" role="menuitem">
+                <Icon Name="eye" Width="15" Height="15" />
+                <span>View reference</span>
+            </a>
+
+            @if (CompareTargets is { Count: > 0 })
+            {
+                <details class="ra__sub">
+                    <summary class="ra__item ra__item--parent" role="menuitem" aria-haspopup="menu">
+                        <Icon Name="git-compare" Width="15" Height="15" />
+                        <span>Compare with…</span>
+                        <Icon Name="chevron-right" Width="14" Height="14" Css="ra__subcaret" />
+                    </summary>
+                    <div class="ra__sublist" role="menu">
+                        @foreach (var target in CompareTargets)
+                        {
+                            <button type="button" class="ra__item ra__item--leaf" role="menuitem"
+                                    @onclick="() => OnCompare.InvokeAsync(target.Id)">
+                                <span class="mono">@target.Label</span>
+                            </button>
+                        }
+                    </div>
+                </details>
+            }
+
+            <div class="ra__divider"></div>
+
+            <a class="ra__item" href="@DownloadHref" role="menuitem">
+                <Icon Name="download" Width="15" Height="15" />
+                <span>Download source</span>
+            </a>
+        </div>
+    </details>
+</div>
+
+@code {
+    /// <summary>Where the primary "View reference" link points (the source viewer).</summary>
+    [Parameter, EditorRequired] public string ViewHref { get; set; } = string.Empty;
+
+    /// <summary>Download URL for the row's source file.</summary>
+    [Parameter, EditorRequired] public string DownloadHref { get; set; } = string.Empty;
+
+    /// <summary>Releases offered in the "Compare with…" submenu. Empty hides the entry.</summary>
+    [Parameter] public IReadOnlyList<CompareTarget> CompareTargets { get; set; } = Array.Empty<CompareTarget>();
+
+    /// <summary>Raised with the chosen release id when a "Compare with…" item is clicked.</summary>
+    [Parameter] public EventCallback<int> OnCompare { get; set; }
+
+    /// <summary>A release the row can be compared against — id + display label.</summary>
+    public sealed record CompareTarget(int Id, string Label);
+}
