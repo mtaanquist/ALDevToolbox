@@ -869,6 +869,26 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
 
 .status-pill--inline { margin-left: 6px; }
 
+/* Tiny uppercase caption label (design .cap-label) — section captions,
+   "Latest import" / "Files" headers across the reimagined screens. */
+.cap-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.9px;
+    text-transform: uppercase;
+    color: var(--ink-4);
+}
+
+/* 3px dot separator used between inline meta items. */
+.dotsep {
+    display: inline-block;
+    width: 3px;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--border-strong);
+    flex: 0 0 auto;
+}
+
 /* "Live" / "Ready" pill with a glowing green dot, per the design hand-off
    (.design/translator/styles/screens.css). A modifier so the existing blue
    pills are untouched. */
