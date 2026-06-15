@@ -1898,6 +1898,102 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 .data-table--objects .col-id { width: 7rem; }
 .data-table--objects .col-extension { width: 12rem; }
 .data-table--objects .col-lines { width: 5rem; }
+.data-table--objects .col-actions { width: 14rem; }
+
+/* ============================================================
+   Object Explorer — restyled to the design hand-off
+   (.design/translator/styles/screens.css "Object Explorer"). Scoped under
+   .object-explorer__browser; keeps the existing markup classes and all four
+   search scopes (Objects / Procedures / File content / Compare). The table is
+   given a card look WITHOUT overflow:hidden so the row split-button menu
+   (absolutely positioned) is never clipped.
+   ============================================================ */
+
+/* header */
+.object-explorer__browser .admin-page__header h1 {
+    font-size: 27px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+}
+
+/* filter micro-labels → the design's .flabel */
+.object-explorer__filters .field__label {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--ink-4);
+}
+
+/* results table → elevated card */
+.object-explorer__browser .data-table {
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    border-collapse: separate;
+    border-spacing: 0;
+    box-shadow: var(--shadow);
+    background: var(--surface);
+}
+
+.object-explorer__browser .data-table thead th {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--ink-4);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+}
+
+.object-explorer__browser .data-table thead th:first-child { border-top-left-radius: var(--r-lg); }
+.object-explorer__browser .data-table thead th:last-child { border-top-right-radius: var(--r-lg); }
+
+.object-explorer__browser .data-table tbody td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13.5px;
+    vertical-align: middle;
+}
+
+.object-explorer__browser .data-table tbody tr:last-child td { border-bottom: 0; }
+.object-explorer__browser .data-table tbody tr { transition: background 0.1s ease; }
+.object-explorer__browser .data-table tbody tr:hover { background: var(--surface-2); }
+
+/* object cells */
+.object-explorer__browser .otype {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: lowercase;
+    padding: 2px 8px;
+    border-radius: 5px;
+    white-space: nowrap;
+    border: 1px solid transparent;
+    color: var(--ink-3);
+    background: var(--surface-sunken);
+}
+
+.object-explorer__browser .otype.codeunit { color: var(--blue-700); background: var(--blue-50); border-color: var(--blue-100); }
+.object-explorer__browser .otype.table { color: var(--st-final); background: var(--st-final-bg); }
+.object-explorer__browser .otype.page { color: var(--st-untrans); background: var(--st-untrans-bg); }
+.object-explorer__browser .otype.report { color: #9333ea; background: color-mix(in srgb, #9333ea 12%, transparent); }
+:root[data-theme="dark"] .object-explorer__browser .otype.report { color: #c084fc; }
+
+.object-explorer__browser .oid {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--ink-4);
+    font-variant-numeric: tabular-nums;
+}
+
+.object-explorer__browser .oname { color: var(--blue-700); font-weight: 600; }
+.object-explorer__browser .oext { font-size: 12.5px; color: var(--ink-2); }
+.object-explorer__browser .ons { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+.object-explorer__browser .ons .ns-tail { color: var(--ink); }
+
+/* actions column — sized to the split-button, right-aligned */
+.object-explorer__browser .oe-cell-actions { text-align: right; white-space: nowrap; }
 
 /* Bottom-of-list sentinel that triggers the next lazy-load page. */
 .oe-scroll-sentinel {

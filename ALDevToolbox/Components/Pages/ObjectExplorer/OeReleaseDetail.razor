@@ -249,6 +249,9 @@
     private List<string>? _kinds;
     private List<string>? _namespaces;
     private List<ReleaseListItem>? _otherReleases;
+    // Other releases reshaped for the per-row "Compare with…" submenu. Built
+    // once after _otherReleases loads so each row reuses the same list.
+    private IReadOnlyList<RowActionsMenu.CompareTarget> _compareTargets = Array.Empty<RowActionsMenu.CompareTarget>();
 
     private SearchScope _scope = SearchScope.Objects;
     private string _search = string.Empty;
@@ -297,6 +300,9 @@
         var allReleases = await ObjectExplorer.ListReleasesAsync();
         _otherReleases = allReleases
             .Where(r => r.Id != ReleaseId && r.Status == "ready" && r.DeletedAt is null)
+            .ToList();
+        _compareTargets = _otherReleases
+            .Select(r => new RowActionsMenu.CompareTarget(r.Id, r.Label))
             .ToList();
 
         // Seed filter state from the URL query string so back-navigation
@@ -465,6 +471,36 @@
         _sortColumn = null;
         _sortDescending = false;
         await ReloadAsync();
+    }
+
+    /// <summary>
+    /// Invoked from a row's "Compare with…" submenu. Flips the page into the
+    /// Compare scope against the picked release, comparing by objects (the most
+    /// useful granularity when you started from a single object row), and
+    /// reloads — same state the Compare dropdowns would set, so URL sync and
+    /// the existing compare query path work unchanged.
+    /// </summary>
+    private async Task SeedCompareWith(int releaseId)
+    {
+        _compareRight = releaseId.ToString();
+        _compareBy = "objects";
+        _scope = SearchScope.Compare;
+        await OnScopeChanged();
+        StateHasChanged();
+    }
+
+    /// <summary>Namespace up to and including the last dot (the muted prefix).</summary>
+    private static string NamespaceHead(string ns)
+    {
+        var i = ns.LastIndexOf('.');
+        return i < 0 ? string.Empty : ns[..(i + 1)];
+    }
+
+    /// <summary>Namespace after the last dot (the emphasised trailing segment).</summary>
+    private static string NamespaceTail(string ns)
+    {
+        var i = ns.LastIndexOf('.');
+        return i < 0 ? ns : ns[(i + 1)..];
     }
 
     // Debounce window for text inputs. Without it, every keystroke triggered
@@ -816,6 +852,7 @@
                 <col class="col-extension" />
                 <col />
                 <col class="col-lines" />
+                <col class="col-actions" />
             </colgroup>
             <thead>
                 <tr>
@@ -825,18 +862,19 @@
                     <th scope="col">@SortHeader("Extension", ObjectSortColumn.Module)</th>
                     <th scope="col">@SortHeader("Namespace", ObjectSortColumn.Namespace)</th>
                     <th scope="col">@SortHeader("Lines", ObjectSortColumn.Lines)</th>
+                    <th scope="col" class="oe-cell-actions"><span class="visually-hidden">Actions</span></th>
                 </tr>
             </thead>
             <tbody>
                 @foreach (var r in _objectResults)
                 {
                     <tr>
-                        <td><span class="badge muted">@r.Kind</span></td>
-                        <td>@(r.ObjectId?.ToString() ?? "—")</td>
+                        <td><span class="otype @r.Kind.ToLowerInvariant()">@r.Kind</span></td>
+                        <td><span class="oid">@(r.ObjectId?.ToString() ?? "—")</span></td>
                         <td>
                             @if (r.SourceFileId is { } fid)
                             {
-                                <a href="@Links.SourceFile(fid, r.LineNumber)">@r.Name</a>
+                                <a class="oname" href="@Links.SourceFile(fid, r.LineNumber)">@r.Name</a>
                             }
                             else
                             {
@@ -847,9 +885,27 @@
                                 <div class="oe-version-list muted" title="Version List">@r.VersionList</div>
                             }
                         </td>
-                        <td>@r.ModuleName</td>
-                        <td class="muted">@(r.Namespace ?? "—")</td>
+                        <td><span class="oext">@r.ModuleName</span></td>
+                        <td>
+                            @if (string.IsNullOrEmpty(r.Namespace))
+                            {
+                                <span class="muted">—</span>
+                            }
+                            else
+                            {
+                                <span class="ons">@NamespaceHead(r.Namespace)<span class="ns-tail">@NamespaceTail(r.Namespace)</span></span>
+                            }
+                        </td>
                         <td>@(r.SourceFileId is null ? "—" : r.FileLineCount.ToString("N0"))</td>
+                        <td class="oe-cell-actions">
+                            @if (r.SourceFileId is { } afid)
+                            {
+                                <RowActionsMenu ViewHref="@Links.SourceFile(afid, r.LineNumber)"
+                                                DownloadHref="@($"/api/object-explorer/files/{afid}/download")"
+                                                CompareTargets="_compareTargets"
+                                                OnCompare="SeedCompareWith" />
+                            }
+                        </td>
                     </tr>
                 }
             </tbody>
