@@ -997,8 +997,8 @@ const currentLineField = StateField.define({
 // without disturbing the line's text layout (no padding shift).
 const currentLineTheme = EditorView.baseTheme({
     ".cm-line--current": {
-        backgroundColor: "var(--color-current-line-bg, rgba(99, 102, 241, 0.08))",
-        boxShadow: "inset 3px 0 0 var(--color-accent, #6366f1)",
+        backgroundColor: "var(--editor-current-line-bg, rgba(99, 102, 241, 0.08))",
+        boxShadow: "inset 3px 0 0 var(--blue, #6366f1)",
     },
     // Native ::selection on the highlighted line — the user expected
     // to be able to drag-select text inside a `?line=N` highlighted
@@ -1008,12 +1008,12 @@ const currentLineTheme = EditorView.baseTheme({
     // (text/background swap) so selection always stands out, even when
     // it overlaps the highlight tint.
     ".cm-line--current ::selection": {
-        backgroundColor: "var(--color-text, #1f2024)",
-        color: "var(--color-bg, #ffffff)",
+        backgroundColor: "var(--ink, #1f2024)",
+        color: "var(--bg, #ffffff)",
     },
     ".cm-line--current::selection": {
-        backgroundColor: "var(--color-text, #1f2024)",
-        color: "var(--color-bg, #ffffff)",
+        backgroundColor: "var(--ink, #1f2024)",
+        color: "var(--bg, #ffffff)",
     },
 });
 

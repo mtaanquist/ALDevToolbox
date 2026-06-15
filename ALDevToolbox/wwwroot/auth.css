@@ -13,23 +13,23 @@
 .tab-bar {
     display: flex;
     gap: 6px;
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--border);
     margin-bottom: 24px;
 }
 
 .tab {
     padding: 8px 14px;
-    color: var(--color-text-muted);
+    color: var(--ink-3);
     font-size: 13.5px;
     border-bottom: 2px solid transparent;
     margin-bottom: -1px;
 }
 
-.tab:hover { color: var(--color-text); text-decoration: none; }
+.tab:hover { color: var(--ink); text-decoration: none; }
 
 .tab.active {
-    color: var(--color-text);
-    border-bottom-color: var(--color-accent);
+    color: var(--ink);
+    border-bottom-color: var(--blue);
     font-weight: 500;
 }
 
@@ -51,7 +51,7 @@
 .account-section {
     margin-top: 32px;
     padding-top: 20px;
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid var(--border);
 }
 
 .account-section:first-of-type {
@@ -68,12 +68,12 @@
 }
 
 .account-section.danger > h2 {
-    color: var(--color-danger);
+    color: var(--danger);
 }
 
 .account-subsection {
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
     padding: 14px 16px;
     margin-top: 12px;
 }
@@ -123,14 +123,14 @@
 }
 
 .inactive-tokens > summary {
-    color: var(--color-muted, #666);
+    color: var(--ink-3, #666);
     cursor: pointer;
     font-size: 13px;
     padding: 4px 0;
 }
 
 .inactive-tokens > summary:hover {
-    color: var(--color-text);
+    color: var(--ink);
 }
 
 .inactive-tokens[open] > summary {
@@ -144,10 +144,10 @@
 
 .pat-token pre,
 .pat-snippet pre {
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
+    background: var(--bg);
+    border: 1px solid var(--border);
     padding: 12px 16px;
-    font-family: var(--font-mono);
+    font-family: var(--mono);
     font-size: 13px;
     line-height: 1.55;
     overflow-x: auto;
@@ -172,7 +172,7 @@
     display: flex;
     gap: 4px;
     margin-bottom: 8px;
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--border);
 }
 
 .pat-tab {
@@ -181,13 +181,13 @@
     padding: 8px 14px;
     font-size: 14px;
     cursor: pointer;
-    color: var(--color-muted, #666);
+    color: var(--ink-3, #666);
     border-bottom: 2px solid transparent;
 }
 
 .pat-tab--active {
-    color: var(--color-text);
-    border-bottom-color: var(--color-accent, #4a6fa5);
+    color: var(--ink);
+    border-bottom-color: var(--blue, #4a6fa5);
 }
 
 /* ---------- Login page ---------- */
@@ -214,15 +214,15 @@
 .login-form__inline-link {
     align-self: flex-start;
     font-size: 12.5px;
-    color: var(--color-text-muted);
+    color: var(--ink-3);
 }
 
-.login-form__inline-link:hover { color: var(--color-accent); }
+.login-form__inline-link:hover { color: var(--blue); }
 
 .login-passkey {
     margin-top: 16px;
     padding-top: 16px;
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid var(--border);
     text-align: center;
 }
 .login-passkey p { margin: 0 0 8px; }

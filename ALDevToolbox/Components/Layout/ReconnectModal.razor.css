@@ -21,14 +21,14 @@
 
 
 #components-reconnect-modal {
-    background-color: var(--color-surface);
-    color: var(--color-text);
+    background-color: var(--surface);
+    color: var(--ink);
     width: 20rem;
     margin: 20vh auto;
     padding: 2rem;
     border: 0;
     border-radius: 0.5rem;
-    box-shadow: 0 3px 6px 2px var(--color-shadow);
+    box-shadow: 0 3px 6px 2px var(--shadow-color);
     opacity: 0;
     transition: display 0.5s allow-discrete, overlay 0.5s allow-discrete;
     animation: components-reconnect-modal-fadeOutOpacity 0.5s both;

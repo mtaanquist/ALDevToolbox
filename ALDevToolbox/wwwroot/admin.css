@@ -13,9 +13,9 @@
     align-items: center;
     justify-content: center;
     padding: 16px;
-    background: var(--color-bg);
-    border: 1px dashed var(--color-border);
-    border-radius: var(--radius);
+    background: var(--bg);
+    border: 1px dashed var(--border);
+    border-radius: var(--r);
     margin-bottom: 12px;
     min-height: 120px;
 }
@@ -40,9 +40,9 @@
     flex-direction: column;
     gap: 8px;
     padding: 10px 12px;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
 }
 
 .org-file-row__head {
@@ -54,7 +54,7 @@
 }
 
 .org-file-row__head code {
-    font-family: var(--font-mono);
+    font-family: var(--mono);
     font-size: 12.5px;
 }
 
@@ -63,9 +63,9 @@
 .org-file-row__content {
     margin: 0;
     padding: 8px 10px;
-    background: var(--color-bg);
-    border-radius: var(--radius);
-    font-family: var(--font-mono);
+    background: var(--bg);
+    border-radius: var(--r);
+    font-family: var(--mono);
     font-size: 12px;
     white-space: pre-wrap;
     word-break: break-word;
@@ -131,9 +131,9 @@
     gap: 12px 16px;
     margin: 16px 0 20px;
     padding: 16px;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
 }
 
 .admin-filter-form > label {
@@ -143,7 +143,7 @@
     font-size: 12px;
     font-weight: 500;
     letter-spacing: 0.02em;
-    color: var(--color-text-secondary);
+    color: var(--ink-4);
     text-transform: uppercase;
 }
 
@@ -157,7 +157,7 @@
     margin-bottom: 8px;
 }
 
-.audit-panel__icon { color: var(--color-text-secondary); }
+.audit-panel__icon { color: var(--ink-4); }
 
 .audit-panel__title {
     font-size: 16px;
@@ -167,19 +167,19 @@
 
 .audit-table summary {
     cursor: pointer;
-    color: var(--color-text-secondary);
+    color: var(--ink-4);
     font-size: 12.5px;
 }
 
-.audit-table summary:hover { color: var(--color-text); }
+.audit-table summary:hover { color: var(--ink); }
 
 .audit-snapshot {
     margin: 6px 0 0;
     padding: 10px 12px;
-    background: var(--color-surface-alt, var(--color-surface));
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    font-family: var(--font-mono);
+    background: var(--surface-2, var(--surface));
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    font-family: var(--mono);
     font-size: 12px;
     line-height: 1.45;
     white-space: pre-wrap;
@@ -196,9 +196,9 @@
     font-size: 11.5px;
     font-weight: 500;
     text-transform: lowercase;
-    border: 1px solid var(--color-border);
-    background: var(--color-surface);
-    color: var(--color-text-secondary);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--ink-4);
 }
 
 .audit-action--created { color: #1a7f37; border-color: rgba(26, 127, 55, 0.4); }
@@ -219,7 +219,7 @@
 
 .audit-diff__title { margin: 0; font-size: 16px; font-weight: 500; }
 
-.audit-diff__icon { color: var(--color-text-secondary); }
+.audit-diff__icon { color: var(--ink-4); }
 
 .audit-diff__labels { margin: 0; display: inline-flex; gap: 8px; font-size: 12.5px; }
 
@@ -232,14 +232,14 @@
 
 .audit-diff__meta div { display: flex; gap: 8px; align-items: baseline; }
 
-.audit-diff__meta dt { color: var(--color-text-secondary); font-size: 12.5px; margin: 0; }
+.audit-diff__meta dt { color: var(--ink-4); font-size: 12.5px; margin: 0; }
 
 .audit-diff__meta dd { margin: 0; font-size: 13px; }
 
 .audit-diff__table { table-layout: fixed; width: 100%; }
 
 .audit-diff__cell {
-    font-family: var(--font-mono);
+    font-family: var(--mono);
     font-size: 12px;
     word-break: break-word;
     vertical-align: top;
@@ -252,7 +252,7 @@
     font-size: 11.5px;
     font-weight: 500;
     text-transform: lowercase;
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border);
 }
 
 .audit-diff__kind--added { color: #1a7f37; border-color: rgba(26, 127, 55, 0.4); }
@@ -260,7 +260,7 @@
 .audit-diff__kind--changed { color: #9a6700; border-color: rgba(154, 103, 0, 0.4); }
 
 .audit-diff__redacted {
-    color: var(--color-text-secondary);
+    color: var(--ink-4);
     font-style: italic;
 }
 
@@ -275,9 +275,9 @@
     position: sticky;
     top: 0;
     z-index: 5;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
     padding: 10px 12px;
     margin-bottom: 12px;
     display: flex;
@@ -308,7 +308,7 @@
 .bulk-failures {
     margin-top: 10px;
     border: 1px solid rgba(207, 34, 46, 0.4);
-    border-radius: var(--radius);
+    border-radius: var(--r);
     padding: 10px 12px;
     background: rgba(207, 34, 46, 0.05);
 }
@@ -360,10 +360,10 @@
    the rest of the row; this tightens it without losing the focus ring. */
 .row-role-select {
     padding: 4px 8px;
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
-    background: var(--color-surface);
-    color: var(--color-text);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    background: var(--surface);
+    color: var(--ink);
     font: inherit;
     font-size: 12.5px;
 }
@@ -378,7 +378,7 @@
     gap: 8px;
     margin-top: 20px;
     padding-top: 16px;
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid var(--border);
 }
 
 .data-table__row--muted td { opacity: 0.65; }
@@ -409,16 +409,16 @@
 /* Cards on the per-release Manage page — details / content / danger sections,
    each a bordered block stacked down the admin-page column. */
 .manage-card {
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    background: var(--color-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--surface);
     padding: 20px;
     margin-bottom: 20px;
     max-width: 640px;
 }
 
 .manage-card--danger {
-    border-color: color-mix(in srgb, var(--color-danger, #c0233f) 45%, var(--color-border));
+    border-color: color-mix(in srgb, var(--danger, #c0233f) 45%, var(--border));
 }
 
 .manage-card__title {
@@ -443,9 +443,9 @@
 .worker-failure__error {
     margin: 0;
     padding: 12px;
-    border-radius: var(--radius);
-    background: var(--color-bg, #1116);
-    color: var(--color-text);
+    border-radius: var(--r);
+    background: var(--bg, #1116);
+    color: var(--ink);
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 12px;
     line-height: 1.45;
@@ -466,10 +466,10 @@
 .field__input--file::file-selector-button {
     margin-right: 12px;
     padding: 7px 14px;
-    border-radius: var(--radius);
-    border: 1px solid var(--color-border-strong);
-    background: var(--color-surface);
-    color: var(--color-text);
+    border-radius: var(--r);
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--ink);
     font: inherit;
     font-size: 13px;
     font-weight: 500;
@@ -478,7 +478,7 @@
 }
 
 .field__input--file::file-selector-button:hover {
-    background: var(--color-bg);
+    background: var(--bg);
 }
 
 /* Upload + ingest feedback on the Import Release form, shown as a top-of-form
@@ -492,9 +492,9 @@
     gap: 8px;
     margin-bottom: 20px;
     padding: 14px 16px;
-    border: 1px solid var(--color-accent);
-    border-radius: var(--radius);
-    background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
+    border: 1px solid var(--blue);
+    border-radius: var(--r);
+    background: color-mix(in srgb, var(--blue) 10%, var(--surface));
 }
 
 .oe-import-progress__row {
@@ -507,7 +507,7 @@
 
 .oe-import-progress__pct {
     font-variant-numeric: tabular-nums;
-    color: var(--color-text-muted, var(--color-text));
+    color: var(--ink-3, var(--ink));
 }
 
 .oe-import-progress__bar {
@@ -518,23 +518,23 @@
     height: 10px;
     border: none;
     border-radius: 999px;
-    background: var(--color-bg);
+    background: var(--bg);
     overflow: hidden;
 }
 
 .oe-import-progress__bar::-webkit-progress-bar {
-    background: var(--color-bg);
+    background: var(--bg);
     border-radius: 999px;
 }
 
 .oe-import-progress__bar::-webkit-progress-value {
-    background: var(--color-accent);
+    background: var(--blue);
     border-radius: 999px;
     transition: width 0.15s linear;
 }
 
 .oe-import-progress__bar::-moz-progress-bar {
-    background: var(--color-accent);
+    background: var(--blue);
     border-radius: 999px;
 }
 
@@ -570,10 +570,10 @@
 }
 
 .form-success {
-    color: var(--color-valid);
-    background: var(--color-surface);
-    border: 1px solid var(--color-valid);
-    border-radius: var(--radius);
+    color: var(--good);
+    background: var(--surface);
+    border: 1px solid var(--good);
+    border-radius: var(--r);
     padding: 8px 12px;
     /* Separate the toast from the form below — without bottom margin the
        success message sat flush against the next section header. */
@@ -583,7 +583,7 @@
 
 .form-field-error {
     display: block;
-    color: var(--color-error-text);
+    color: var(--error-text);
     font-size: 12px;
     margin-top: 4px;
 }
@@ -598,7 +598,7 @@ ul.form-field-error {
 }
 
 .form-section textarea.json-editor {
-    font-family: var(--font-mono);
+    font-family: var(--mono);
     font-size: 12.5px;
     line-height: 1.5;
 }
@@ -608,6 +608,6 @@ ul.form-field-error {
 .oe-status-error {
     margin: 4px 0 0;
     font-size: 12px;
-    color: var(--color-error-text);
+    color: var(--error-text);
     max-width: 32ch;
 }
