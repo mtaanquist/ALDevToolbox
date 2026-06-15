@@ -4,13 +4,18 @@
 @inject OrganizationConfigService Config
 
 <div class="app-shell">
-    <header class="top-bar">
-        <a href="/" class="top-bar__brand top-bar__brand--link" aria-label="Home">
-            <Icon Name="hammer" Css="brand-icon" Width="20" Height="20" />
-            <span class="brand-name">AL Dev Toolbox</span>
+    <aside class="sidebar">
+        <a href="/" class="sidebar-brand" aria-label="Home">
+            <Icon Name="hammer" Css="sidebar-brand__logo" Width="22" Height="22" />
+            <span class="sidebar-brand__name">AL Dev Toolbox</span>
         </a>
-        <div class="top-bar__user">
-            <ThemeToggle />
+        <NavMenu />
+    </aside>
+
+    <div class="main-col">
+        <header class="top-bar">
+            <div class="top-bar__user">
+                <ThemeToggle />
             <AuthorizeView>
                 <Authorized>
                     @{
@@ -56,16 +61,13 @@
                     </a>
                 </NotAuthorized>
             </AuthorizeView>
-        </div>
-    </header>
+            </div>
+        </header>
 
-    <aside class="sidebar">
-        <NavMenu />
-    </aside>
-
-    <main class="content">
-        @Body
-    </main>
+        <main class="content">
+            @Body
+        </main>
+    </div>
 </div>
 
 <div id="blazor-error-ui" data-nosnippet>

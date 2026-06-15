@@ -14,27 +14,27 @@
 .data-table {
     width: 100%;
     border-collapse: collapse;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
     overflow: hidden;
     font-size: 13px;
 }
 .data-table th, .data-table td {
     padding: 8px 12px;
     text-align: left;
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--border);
 }
 .data-table th {
-    background: var(--color-bg);
+    background: var(--bg);
     font-weight: 500;
-    color: var(--color-text-secondary);
+    color: var(--ink-4);
     font-size: 12px;
     letter-spacing: 0.02em;
     text-transform: uppercase;
 }
 .data-table tr:last-child td { border-bottom: 0; }
-.data-table code { font-family: var(--font-mono); font-size: 12.5px; }
+.data-table code { font-family: var(--mono); font-size: 12.5px; }
 
 /* ---------- Workspace form ---------- */
 
@@ -66,9 +66,9 @@
 }
 
 .preview-card {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
     padding: 14px 16px;
     max-height: calc(100vh - 120px);
     overflow: auto;
@@ -115,7 +115,7 @@
 
 .import-card__filename {
     font-size: 12.5px;
-    color: var(--color-text-secondary);
+    color: var(--ink-4);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -132,9 +132,9 @@
 }
 
 .stat-card {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
     padding: 10px 12px;
     display: flex;
     flex-direction: column;
@@ -144,7 +144,7 @@
 .stat-card__value {
     font-size: 20px;
     font-weight: 600;
-    color: var(--color-text);
+    color: var(--ink);
 }
 
 .stat-card__label {
@@ -152,7 +152,7 @@
     font-weight: 500;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--color-text-secondary);
+    color: var(--ink-4);
 }
 
 /* ---------- Folder tree preview ---------- */
@@ -165,15 +165,15 @@
 }
 
 .ftp.ftp--root {
-    font-family: var(--font-mono);
+    font-family: var(--mono);
     font-size: 12.5px;
     line-height: 1.7;
-    color: var(--color-text-secondary);
+    color: var(--ink-4);
 }
 
 .ftp__children {
     padding-left: 18px;
-    border-left: 1px dashed var(--color-border);
+    border-left: 1px dashed var(--border);
     margin-left: 6px;
 }
 
@@ -194,14 +194,14 @@
     cursor: pointer;
 }
 
-.ftp__row--toggle:hover .ftp__name { color: var(--color-text); }
+.ftp__row--toggle:hover .ftp__name { color: var(--ink); }
 
 .ftp__chevron {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 12px;
-    color: var(--color-text-secondary);
+    color: var(--ink-4);
     flex: 0 0 auto;
 }
 
@@ -210,7 +210,7 @@
 .ftp__icon {
     display: inline-flex;
     align-items: center;
-    color: var(--color-text-secondary);
+    color: var(--ink-4);
     flex: 0 0 auto;
 }
 
@@ -223,7 +223,7 @@
 .ftp__node--workspace > .ftp__row > .ftp__name,
 .ftp__node--extension > .ftp__row > .ftp__icon,
 .ftp__node--extension > .ftp__row > .ftp__name {
-    color: var(--color-info);
+    color: var(--info);
 }
 
 .ftp__node--workspace > .ftp__row > .ftp__name,
@@ -231,7 +231,7 @@
     font-weight: 500;
 }
 
-.ftp__node--file > .ftp__row > .ftp__name { color: var(--color-text-muted); }
+.ftp__node--file > .ftp__row > .ftp__name { color: var(--ink-3); }
 
 /* Marker pinned next to a node that's been added relative to an existing
    workspace — used by New Extension's sibling-extension preview. */
@@ -247,8 +247,8 @@
 }
 
 .ftp__badge--new {
-    background: var(--color-accent-soft);
-    color: var(--color-accent);
+    background: var(--blue-50);
+    color: var(--blue);
 }
 
 /* ---------- Dependency picker ---------- */
@@ -262,7 +262,7 @@
 .dep-picker__category-name {
     font-size: 12px;
     font-weight: 500;
-    color: var(--color-text-muted);
+    color: var(--ink-3);
     padding: 4px 0 2px;
 }
 
@@ -273,15 +273,15 @@
     align-items: center;
     gap: 10px;
     padding: 8px 10px;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
     cursor: pointer;
     transition: background 0.1s ease;
 }
 
-.dep-row:hover { background: var(--color-bg); }
-.dep-row--selected { background: var(--color-accent-soft); border-color: var(--color-accent); }
+.dep-row:hover { background: var(--bg); }
+.dep-row--selected { background: var(--blue-50); border-color: var(--blue); }
 
 .dep-row__body { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
 .dep-row__name { font-weight: 500; }
@@ -290,11 +290,11 @@
 .dep-row__version {
     flex: 0 0 110px;
     padding: 5px 8px;
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
-    font-family: var(--font-mono);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    font-family: var(--mono);
     font-size: 12px;
-    background: var(--color-surface);
+    background: var(--surface);
 }
 
 .dep-picker__manual {
@@ -306,14 +306,14 @@
 
 .dep-picker__manual input {
     padding: 7px 9px;
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
     font-size: 13px;
-    background: var(--color-surface);
+    background: var(--surface);
     min-width: 0;
 }
 
-.dep-picker__error { color: var(--color-danger); margin: 0; }
+.dep-picker__error { color: var(--danger); margin: 0; }
 
 .dep-picker__manual-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 
@@ -322,33 +322,33 @@
     align-items: center;
     gap: 8px;
     padding: 6px 10px;
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
     font-size: 13px;
 }
 
 .dep-chip__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.dep-chip__id { font-family: var(--font-mono); font-size: 11px; }
+.dep-chip__id { font-family: var(--mono); font-size: 11px; }
 
 .dep-chip__remove {
     border: 0;
     background: transparent;
-    color: var(--color-text-muted);
+    color: var(--ink-3);
     font-size: 18px;
     line-height: 1;
     cursor: pointer;
     padding: 0 4px;
 }
 
-.dep-chip__remove:hover { color: var(--color-danger); }
+.dep-chip__remove:hover { color: var(--danger); }
 
 /* ---------- Success tip (New Extension) ---------- */
 
 .success-tip {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
     padding: 14px 16px;
     display: flex;
     flex-direction: column;
@@ -358,9 +358,9 @@
 .success-tip p { margin: 0; }
 
 .success-tip code {
-    font-family: var(--font-mono);
+    font-family: var(--mono);
     font-size: 12px;
-    background: var(--color-bg);
+    background: var(--bg);
     padding: 1px 4px;
     border-radius: 3px;
 }
@@ -368,10 +368,10 @@
 .success-tip__snippet {
     margin: 0;
     padding: 8px 10px;
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    font-family: var(--font-mono);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    font-family: var(--mono);
     font-size: 12px;
     overflow-x: auto;
 }
@@ -381,9 +381,9 @@
 .mustache-hint {
     margin: 0 0 16px;
     padding: 10px 12px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    background: var(--color-surface-muted, var(--color-surface));
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--surface-2, var(--surface));
     font-size: 13px;
 }
 
@@ -417,7 +417,7 @@
 
 .mustache-hint__list dd {
     margin: 0;
-    color: var(--color-text-muted);
+    color: var(--ink-3);
     font-size: 12px;
 }
 
@@ -447,15 +447,15 @@
 }
 
 .template-detail__section textarea.json-editor {
-    font-family: var(--font-mono);
+    font-family: var(--mono);
     font-size: 12.5px;
     line-height: 1.5;
     width: 100%;
     padding: 8px 10px;
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
-    background: var(--color-surface);
-    color: var(--color-text);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    background: var(--surface);
+    color: var(--ink);
     resize: vertical;
 }
 
@@ -474,7 +474,7 @@
 }
 
 .kv-grid dt {
-    color: var(--color-text-muted, #57606a);
+    color: var(--ink-3, #57606a);
     font-weight: 500;
 }
 
@@ -559,7 +559,7 @@
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--color-text-secondary);
+    color: var(--ink-4);
 }
 
 .preview-card__summary::-webkit-details-marker { display: none; }
@@ -598,7 +598,7 @@
 
 .mustache-vars dt { margin: 0; }
 .mustache-vars dt code { font-size: 12px; white-space: nowrap; }
-.mustache-vars dd { margin: 0; color: var(--color-text-muted); }
+.mustache-vars dd { margin: 0; color: var(--ink-3); }
 .mustache-vars dd code { font-size: 11px; }
 
 .admin-template-edit__form { max-width: 880px; }
@@ -613,10 +613,10 @@
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--color-text-secondary);
+    color: var(--ink-4);
     margin: 24px 0 4px;
     padding-top: 16px;
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid var(--border);
 }
 
 .admin-template-edit__group-heading:first-of-type {
@@ -630,9 +630,9 @@
    by default and doesn't dominate the section. */
 .admin-template-edit__org-base {
     margin-bottom: 8px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    background: var(--color-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--bg);
 }
 
 .admin-template-edit__org-base > summary {
@@ -642,7 +642,7 @@
     align-items: center;
     gap: 8px;
     font-size: 12.5px;
-    color: var(--color-text-secondary);
+    color: var(--ink-4);
     list-style: none;
 }
 
@@ -650,15 +650,15 @@
 .admin-template-edit__org-base > summary::marker { content: ""; }
 
 .admin-template-edit__org-base[open] > summary {
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--border);
 }
 
 .admin-template-edit__org-base-body {
     margin: 0;
     padding: 10px 12px;
-    font-family: var(--font-mono, monospace);
+    font-family: var(--mono, monospace);
     font-size: 12.5px;
-    color: var(--color-text);
+    color: var(--ink);
     white-space: pre;
     overflow-x: auto;
     max-height: 220px;
@@ -673,10 +673,10 @@
     display: inline-flex;
     gap: 0;
     margin-bottom: 16px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
     padding: 2px;
-    background: var(--color-surface);
+    background: var(--surface);
 }
 
 .pill-tab {
@@ -685,8 +685,8 @@
 }
 
 .pill-tab--active {
-    background: var(--color-bg);
-    border-color: var(--color-border);
+    background: var(--bg);
+    border-color: var(--border);
 }
 
 /* Anchor variant is used when pill tabs are route navigation links
@@ -699,8 +699,8 @@ button.pill-tab {
     align-items: center;
     gap: 6px;
     padding: 6px 12px;
-    border-radius: calc(var(--radius) - 2px);
-    color: var(--color-text);
+    border-radius: calc(var(--r) - 2px);
+    color: var(--ink);
     text-decoration: none;
     font-size: 13px;
     line-height: 1.2;
@@ -715,7 +715,7 @@ button.pill-tab {
 a.pill-tab:hover,
 button.pill-tab:hover { text-decoration: none; }
 a.pill-tab.pill-tab--active,
-button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
+button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 
 .admin-template-edit__toml-form { max-width: 880px; }
 
@@ -725,15 +725,15 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
    extension in wwwroot/code-editor.js — we only frame the box. */
 .admin-template-edit__toml {
     height: 540px;
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
     overflow: hidden;
-    background: var(--color-surface);
+    background: var(--surface);
 }
 
 .admin-template-edit__toml .cm-editor {
     height: 100%;
-    font-family: var(--font-mono);
+    font-family: var(--mono);
     font-size: 12.5px;
 }
 
@@ -765,10 +765,10 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     width: 100%;
     padding: 6px 8px;
     font-size: 13px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    background: var(--color-surface);
-    color: var(--color-text);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--surface);
+    color: var(--ink);
 }
 
 .folder-editor__handle { width: 1%; white-space: nowrap; }
@@ -782,9 +782,9 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 
 .folder-editor__row {
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    background: var(--color-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--surface);
 }
 
 .folder-editor__row-head {
@@ -817,27 +817,27 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     width: 100%;
     padding: 6px 8px;
     font-size: 13px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    background: var(--color-bg);
-    color: var(--color-text);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--bg);
+    color: var(--ink);
 }
 
 .folder-editor__files {
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid var(--border);
     padding: 8px;
     display: flex;
     flex-direction: column;
     gap: 8px;
-    background: var(--color-bg);
+    background: var(--bg);
 }
 
 .folder-editor__files-empty { margin: 0; }
 
 .folder-editor__file {
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    background: var(--color-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--surface);
     padding: 8px;
     display: flex;
     flex-direction: column;
@@ -875,9 +875,9 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 /* Visual nesting cue for child folders inside the recursive editor. The
    border-left tracks depth without indenting via padding so reorder buttons
    stay flush with the parent's edge. */
-.folder-editor__row--depth-1 { border-left: 2px solid var(--color-border-strong, var(--color-border)); }
-.folder-editor__row--depth-2 { border-left: 2px solid var(--color-border-strong, var(--color-border)); margin-left: 4px; }
-.folder-editor__row--depth-3 { border-left: 2px solid var(--color-border-strong, var(--color-border)); margin-left: 8px; }
+.folder-editor__row--depth-1 { border-left: 2px solid var(--border-strong, var(--border)); }
+.folder-editor__row--depth-2 { border-left: 2px solid var(--border-strong, var(--border)); margin-left: 4px; }
+.folder-editor__row--depth-3 { border-left: 2px solid var(--border-strong, var(--border)); margin-left: 8px; }
 
 /* Application versions editor: the reorder block has four buttons in a 2x2
    grid (top row moves up, bottom row moves down), and the input box plus
@@ -924,16 +924,16 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 
 .extension-editor__row {
-    background: var(--color-bg);
+    background: var(--bg);
 }
 
 .extension-editor__body {
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid var(--border);
     padding: 12px;
     display: flex;
     flex-direction: column;
     gap: 12px;
-    background: var(--color-surface);
+    background: var(--surface);
 }
 
 .extension-editor__body .form-section { margin: 0; }
@@ -944,10 +944,10 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     width: 100%;
     padding: 6px 8px;
     font-size: 13px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    background: var(--color-bg);
-    color: var(--color-text);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--bg);
+    color: var(--ink);
 }
 
 /* Per-row field grid used by the module dependency editor and the catalogue
@@ -964,10 +964,10 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     width: 100%;
     padding: 6px 8px;
     font-size: 13px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    background: var(--color-bg);
-    color: var(--color-text);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--bg);
+    color: var(--ink);
 }
 
 /* Module dependency editor: catalogue picker row above the selected-rows list,
@@ -986,10 +986,10 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     min-width: 0;
     padding: 6px 8px;
     font-size: 13px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    background: var(--color-bg);
-    color: var(--color-text);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--bg);
+    color: var(--ink);
 }
 
 .mod-dep-row__heading {
@@ -1008,9 +1008,9 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     font-size: 11px;
     padding: 1px 6px;
     border-radius: 999px;
-    background: var(--color-bg);
-    color: var(--color-text-muted);
-    border: 1px solid var(--color-border);
+    background: var(--bg);
+    color: var(--ink-3);
+    border: 1px solid var(--border);
 }
 
 .mod-dep-row__fields {
@@ -1022,7 +1022,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 
 .mod-dep-row__id code {
     display: block;
-    font-family: var(--font-mono);
+    font-family: var(--mono);
     font-size: 12px;
     word-break: break-all;
 }
@@ -1037,10 +1037,10 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     width: 100%;
     padding: 6px 8px;
     font-size: 13px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    background: var(--color-bg);
-    color: var(--color-text);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--bg);
+    color: var(--ink);
 }
 
 /* ---------- Generate button loading state ---------- */
@@ -1096,10 +1096,10 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 
 .snippet-card {
-    border: 1px solid var(--color-border, #d0d7de);
+    border: 1px solid var(--border, #d0d7de);
     border-radius: 6px;
     padding: 14px 16px;
-    background: var(--color-surface, #fff);
+    background: var(--surface, #fff);
 }
 
 .snippet-card__title {
@@ -1114,14 +1114,14 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     font-size: 0.75em;
     padding: 1px 6px;
     border-radius: 8px;
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    color: var(--color-text-muted);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--ink-3);
 }
 
 .snippet-card__description {
     margin: 8px 0;
-    color: var(--color-text-muted);
+    color: var(--ink-3);
 }
 
 .snippet-card__keywords {
@@ -1134,9 +1134,9 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     font-size: 0.75em;
     padding: 2px 8px;
     border-radius: 8px;
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    color: var(--color-text-muted);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--ink-3);
 }
 
 .snippet-detail--with-outline {
@@ -1171,8 +1171,8 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 .snippet-detail__instructions {
     margin: 16px 0 20px;
     padding: 12px 16px;
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
+    background: var(--bg);
+    border: 1px solid var(--border);
     border-radius: 6px;
 }
 
@@ -1190,15 +1190,15 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 
 .snippet-detail__instructions-body pre {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
+    background: var(--surface);
+    border: 1px solid var(--border);
     border-radius: 4px;
     padding: 8px 12px;
     overflow-x: auto;
 }
 
 .snippet-detail__instructions-body code {
-    font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+    font-family: var(--mono, ui-monospace, SFMono-Regular, monospace);
     font-size: 0.9em;
 }
 
@@ -1218,10 +1218,10 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 
 .snippet-file-view {
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border);
     border-radius: 6px;
     overflow: hidden;
-    background: var(--color-surface);
+    background: var(--surface);
 }
 
 .snippet-file-view__header {
@@ -1230,9 +1230,9 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     align-items: center;
     gap: 8px;
     padding: 4px 12px 4px 6px;
-    background: var(--color-bg);
-    color: var(--color-text);
-    border-bottom: 1px solid var(--color-border);
+    background: var(--bg);
+    color: var(--ink);
+    border-bottom: 1px solid var(--border);
 }
 
 .snippet-file-view--collapsed .snippet-file-view__header {
@@ -1256,12 +1256,12 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 
 .snippet-file-view__toggle:hover {
-    background: var(--color-surface);
+    background: var(--surface);
 }
 
 .snippet-file-view__toggle code {
-    color: var(--color-text);
-    font-family: var(--font-mono);
+    color: var(--ink);
+    font-family: var(--mono);
     font-size: 12.5px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1270,8 +1270,8 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 
 .snippet-file-view__header code {
-    color: var(--color-text);
-    font-family: var(--font-mono);
+    color: var(--ink);
+    font-family: var(--mono);
     font-size: 12.5px;
 }
 
@@ -1295,9 +1295,9 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 
 .snippet-outline__inner {
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border);
     border-radius: 6px;
-    background: var(--color-surface);
+    background: var(--surface);
     padding: 12px 14px;
     overflow: auto;
     max-height: calc(100vh - 32px);
@@ -1308,7 +1308,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     text-transform: uppercase;
     letter-spacing: 0.05em;
     margin: 0 0 8px;
-    color: var(--color-text-muted, var(--color-text));
+    color: var(--ink-3, var(--ink));
 }
 
 .snippet-outline__list {
@@ -1323,9 +1323,9 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     display: block;
     padding: 4px 6px;
     border-radius: 4px;
-    font-family: var(--font-mono);
+    font-family: var(--mono);
     font-size: 12.5px;
-    color: var(--color-text);
+    color: var(--ink);
     text-decoration: none;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1333,7 +1333,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 
 .snippet-outline__link:hover {
-    background: var(--color-bg);
+    background: var(--bg);
 }
 
 @media (max-width: 960px) {
@@ -1356,10 +1356,10 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 
 .snippet-file {
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
     padding: 10px 12px;
-    background: var(--color-surface);
+    background: var(--surface);
 }
 
 .snippet-file--expanded { padding-bottom: 12px; }
@@ -1381,15 +1381,15 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     height: 32px;
     margin-bottom: 1px;
     border: none;
-    border-radius: var(--radius);
+    border-radius: var(--r);
     background: transparent;
-    color: var(--color-text-secondary);
+    color: var(--ink-4);
     cursor: pointer;
 }
 
 .snippet-file__toggle:hover {
-    background: var(--color-bg);
-    color: var(--color-text);
+    background: var(--bg);
+    color: var(--ink);
 }
 
 .snippet-file__name {
@@ -1403,12 +1403,12 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 .snippet-file__name input {
     width: 100%;
     padding: 8px 10px;
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
     font-family: inherit;
     font-size: 13.5px;
-    background: var(--color-surface);
-    color: var(--color-text);
+    background: var(--surface);
+    color: var(--ink);
 }
 
 .snippet-file__actions {
@@ -1431,10 +1431,10 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 .snippet-file__content textarea {
     width: 100%;
     padding: 8px 10px;
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
-    background: var(--color-surface);
-    color: var(--color-text);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    background: var(--surface);
+    color: var(--ink);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.85em;
     resize: vertical;
@@ -1448,7 +1448,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 
 .snippet-suggestion {
-    border: 1px solid var(--color-border, #d0d7de);
+    border: 1px solid var(--border, #d0d7de);
     border-radius: 6px;
     padding: 16px;
 }
@@ -1456,8 +1456,8 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 /* Applied when /admin/snippets/suggestions?focus={id} matches this row, so
    the admin lands directly on the suggestion the Review link pointed at. */
 .snippet-suggestion--focused {
-    border-color: var(--color-accent);
-    box-shadow: 0 0 0 2px var(--color-accent-soft);
+    border-color: var(--blue);
+    box-shadow: 0 0 0 2px var(--blue-50);
 }
 
 .snippet-suggestion__header {
@@ -1492,7 +1492,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+    font-family: var(--mono, "SFMono-Regular", Consolas, monospace);
     font-size: 11px;
 }
 
@@ -1578,20 +1578,20 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     width: 100%;
     box-sizing: border-box;
     padding: 8px 10px;
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
     font-family: inherit;
     font-size: 13.5px;
-    background: var(--color-surface);
-    color: var(--color-text);
+    background: var(--surface);
+    color: var(--ink);
 }
 
 .object-explorer__filters .field__input:focus,
 .object-explorer__compare .field__input:focus,
 .source-viewer__compare-picker .field__input:focus {
-    outline: 2px solid var(--color-accent);
+    outline: 2px solid var(--blue);
     outline-offset: -1px;
-    border-color: var(--color-accent);
+    border-color: var(--blue);
 }
 
 /* Custom chevron on the <select> variants so they read as intentional
@@ -1606,8 +1606,8 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     -webkit-appearance: none;
     padding-right: 28px;
     background-image:
-        linear-gradient(45deg, transparent 50%, var(--color-text-muted) 50%),
-        linear-gradient(135deg, var(--color-text-muted) 50%, transparent 50%);
+        linear-gradient(45deg, transparent 50%, var(--ink-3) 50%),
+        linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
     background-position:
         calc(100% - 14px) 50%,
         calc(100% - 9px) 50%;
@@ -1619,8 +1619,8 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 .object-explorer__compare select.field__input:focus,
 .source-viewer__compare-picker select.field__input:focus {
     background-image:
-        linear-gradient(45deg, transparent 50%, var(--color-accent) 50%),
-        linear-gradient(135deg, var(--color-accent) 50%, transparent 50%);
+        linear-gradient(45deg, transparent 50%, var(--blue) 50%),
+        linear-gradient(135deg, var(--blue) 50%, transparent 50%);
 }
 
 .object-explorer__filters .admin-search-input {
@@ -1658,14 +1658,14 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     height: 0;
     border-left: 4px solid transparent;
     border-right: 4px solid transparent;
-    border-top: 5px solid var(--color-text-muted);
+    border-top: 5px solid var(--ink-3);
     flex: 0 0 auto;
 }
 
 .kind-filter[open] .kind-filter__summary {
-    outline: 2px solid var(--color-accent);
+    outline: 2px solid var(--blue);
     outline-offset: -1px;
-    border-color: var(--color-accent);
+    border-color: var(--blue);
 }
 
 .kind-filter__panel {
@@ -1677,9 +1677,9 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     max-height: 280px;
     overflow-y: auto;
     padding: 6px;
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
-    background: var(--color-surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    background: var(--surface);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
 }
 
@@ -1688,14 +1688,14 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     align-items: center;
     gap: 8px;
     padding: 5px 8px;
-    border-radius: var(--radius);
+    border-radius: var(--r);
     font-size: 13px;
     white-space: nowrap;
     cursor: pointer;
 }
 
 .kind-filter__option:hover {
-    background: var(--color-bg);
+    background: var(--bg);
 }
 
 /* Fixed column widths on the objects grid so sorting / lazy-loading new rows
@@ -1950,8 +1950,8 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
    active one carries a brighter background. */
 .oe-search-tabs {
     display: inline-flex;
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
     overflow: hidden;
     margin-bottom: 16px;
 }
@@ -1964,7 +1964,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     font: inherit;
     font-size: 13px;
     cursor: pointer;
-    border-right: 1px solid var(--color-border-strong);
+    border-right: 1px solid var(--border-strong);
 }
 
 .oe-search-tab:last-child {
@@ -1976,8 +1976,8 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 
 .oe-search-tab--active {
-    background: var(--color-accent, #ffd54f);
-    color: var(--color-bg, #1a1a26);
+    background: var(--blue, #ffd54f);
+    color: var(--bg, #1a1a26);
     font-weight: 600;
 }
 
@@ -2036,7 +2036,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 
 .source-viewer__resizer:hover::before,
 .source-viewer__resizer.is-dragging::before {
-    background: var(--color-accent);
+    background: var(--blue);
     opacity: 0.55;
 }
 
@@ -2054,7 +2054,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     }
     .source-viewer__outline-inner {
         height: auto;
-        max-height: calc(100vh - var(--top-bar-height, 52px) - 36px);
+        max-height: calc(100vh - var(--top-h, 52px) - 36px);
     }
     /* The drag handle only makes sense in the side-by-side layout. */
     .source-viewer__resizer {
@@ -2072,9 +2072,9 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
        and bottom status bar all sit inside the rounded box.
        CodeMirror's own cm-scroller handles horizontal scrolling. */
     overflow: hidden;
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
-    background: var(--color-surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    background: var(--surface);
 }
 
 /* Bound cm-editor to the code column's height so cm-scroller actually
@@ -2114,10 +2114,10 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     height: 100%;
     overflow-y: auto;
     overflow-x: hidden;
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
     padding: 12px 14px;
-    background: var(--color-surface);
+    background: var(--surface);
 }
 
 
@@ -2128,7 +2128,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     gap: 4px;
     margin: 0 0 12px 0;
     padding: 0 0 4px 0;
-    border-bottom: 1px solid var(--color-border-strong);
+    border-bottom: 1px solid var(--border-strong);
 }
 
 .source-viewer__tab {
@@ -2137,7 +2137,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
-    color: var(--color-text-muted);
+    color: var(--ink-3);
     font: inherit;
     font-size: 12.5px;
     font-weight: 500;
@@ -2148,12 +2148,12 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 
 .source-viewer__tab:hover {
-    color: var(--color-text);
+    color: var(--ink);
 }
 
 .source-viewer__tab.is-active {
-    color: var(--color-text);
-    border-bottom-color: var(--color-accent);
+    color: var(--ink);
+    border-bottom-color: var(--blue);
 }
 
 .source-viewer__tab[hidden] {
@@ -2174,7 +2174,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 .source-viewer__help dt {
     margin-top: 10px;
     font-weight: 600;
-    color: var(--color-text);
+    color: var(--ink);
 }
 
 .source-viewer__help dt:first-of-type {
@@ -2183,16 +2183,16 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 
 .source-viewer__help dd {
     margin: 2px 0 0 0;
-    color: var(--color-text-secondary);
+    color: var(--ink-4);
 }
 
 .source-viewer__help kbd {
     display: inline-block;
     padding: 1px 6px;
     border-radius: 4px;
-    border: 1px solid var(--color-border-strong);
-    background: var(--color-surface-2, rgba(124, 124, 144, 0.12));
-    font-family: var(--font-mono);
+    border: 1px solid var(--border-strong);
+    background: var(--surface-2, rgba(124, 124, 144, 0.12));
+    font-family: var(--mono);
     font-size: 11.5px;
     line-height: 1.4;
 }
@@ -2201,11 +2201,11 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     display: inline-block;
     min-width: 18px;
     padding: 0 5px;
-    background: var(--color-surface-2);
+    background: var(--surface-2);
     border-radius: 999px;
     font-size: 10.5px;
     text-align: center;
-    color: var(--color-text-muted);
+    color: var(--ink-3);
 }
 
 .source-viewer__panel {
@@ -2235,24 +2235,24 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     box-sizing: border-box;
     padding: 8px 10px;
     margin: 0 0 10px 0;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
-    color: var(--color-text);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    color: var(--ink);
     font-family: inherit;
     font-size: 13.5px;
 }
 
 .source-viewer__outline-filter::placeholder,
 .source-viewer__refs-filter::placeholder {
-    color: var(--color-text-secondary);
+    color: var(--ink-4);
 }
 
 .source-viewer__outline-filter:focus,
 .source-viewer__refs-filter:focus {
-    outline: 2px solid var(--color-accent);
+    outline: 2px solid var(--blue);
     outline-offset: -1px;
-    border-color: var(--color-accent);
+    border-color: var(--blue);
 }
 
 .source-viewer__outline-section + .source-viewer__outline-section {
@@ -2365,7 +2365,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-family: var(--font-mono);
+    font-family: var(--mono);
 }
 
 .source-viewer__outline-sig {
@@ -2377,7 +2377,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-family: var(--font-mono);
+    font-family: var(--mono);
     font-size: 14px;
     min-width: 0;
 }
@@ -2401,15 +2401,15 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     display: inline-block;
     padding: 1px 6px;
     border-radius: 3px;
-    font-family: var(--font-mono);
+    font-family: var(--mono);
     font-size: 10.5px;
     font-weight: 500;
     letter-spacing: 0.02em;
     text-transform: lowercase;
     line-height: 1.4;
-    color: var(--color-text);
-    background: var(--color-surface-2, rgba(124, 124, 144, 0.12));
-    border: 1px solid var(--color-border, rgba(124, 124, 144, 0.2));
+    color: var(--ink);
+    background: var(--surface-2, rgba(124, 124, 144, 0.12));
+    border: 1px solid var(--border, rgba(124, 124, 144, 0.2));
     white-space: nowrap;
 }
 
@@ -2457,13 +2457,13 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 .source-viewer__outline-badge--object {
     background: rgba(124, 124, 144, 0.18);
     border-color: rgba(124, 124, 144, 0.4);
-    color: var(--color-text-muted);
+    color: var(--ink-3);
 }
 
 .source-viewer__outline-find-heading {
     margin-top: 16px;
     padding-top: 12px;
-    border-top: 1px solid var(--color-border-strong);
+    border-top: 1px solid var(--border-strong);
 }
 
 .source-viewer__find-list {
@@ -2496,8 +2496,8 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 .source-viewer__notice {
     margin-top: 12px;
     padding: 8px 10px;
-    border: 1px dashed var(--color-border-strong);
-    border-radius: var(--radius);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--r);
     font-size: 12.5px;
 }
 
@@ -2512,11 +2512,11 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     z-index: 1000;
     max-width: 320px;
     padding: 8px 12px;
-    background: var(--color-surface-2, #262a30);
-    color: var(--color-text, #e6e7ea);
-    border: 1px solid var(--color-border-strong, #3a3e47);
-    border-radius: var(--radius, 6px);
-    box-shadow: 0 4px 16px var(--color-shadow, rgba(0, 0, 0, 0.4));
+    background: var(--surface-2, #262a30);
+    color: var(--ink, #e6e7ea);
+    border: 1px solid var(--border-strong, #3a3e47);
+    border-radius: var(--r, 6px);
+    box-shadow: 0 4px 16px var(--shadow-color, rgba(0, 0, 0, 0.4));
     font-size: 12.5px;
     line-height: 1.4;
     pointer-events: none;
@@ -2562,12 +2562,12 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     text-decoration: none;
     display: block;
     padding: 6px 8px;
-    border-radius: var(--radius);
-    color: var(--color-text);
+    border-radius: var(--r);
+    color: var(--ink);
 }
 
 .source-viewer__refs-item a:hover {
-    background: var(--color-surface-strong);
+    background: var(--surface-sunken);
 }
 
 .source-viewer__refs-item a:hover .source-viewer__refs-name {
@@ -2598,9 +2598,9 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 
 .source-viewer__refs-member-name {
-    font-family: var(--font-mono);
+    font-family: var(--mono);
     font-size: 12.5px;
-    color: var(--color-text);
+    color: var(--ink);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -2614,10 +2614,10 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 .source-viewer__outline-menu {
     position: fixed;
     z-index: 100;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
-    box-shadow: 0 4px 12px var(--color-shadow, rgba(0, 0, 0, 0.4));
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    box-shadow: 0 4px 12px var(--shadow-color, rgba(0, 0, 0, 0.4));
     padding: 4px 0;
     min-width: 180px;
 }
@@ -2628,7 +2628,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     padding: 6px 12px;
     background: transparent;
     border: 0;
-    color: var(--color-text);
+    color: var(--ink);
     font: inherit;
     font-size: 12.5px;
     text-align: left;
@@ -2636,7 +2636,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 
 .source-viewer__outline-menu-item:hover {
-    background: var(--color-surface-2, rgba(124, 124, 144, 0.12));
+    background: var(--surface-2, rgba(124, 124, 144, 0.12));
 }
 
 /* Object-row: badge + name on the left, module/line meta pinned right.
@@ -2651,19 +2651,19 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 .source-viewer__refs-line {
     flex: 0 0 auto;
     font-size: 11px;
-    font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+    font-family: var(--mono, "SFMono-Regular", Consolas, monospace);
 }
 
 .source-viewer__refs-snippet {
     display: block;
     margin-top: 4px;
     margin-left: 4px;
-    font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+    font-family: var(--mono, "SFMono-Regular", Consolas, monospace);
     font-size: 12px;
-    color: var(--color-text-muted);
-    background: var(--color-surface-2);
+    color: var(--ink-3);
+    background: var(--surface-2);
     padding: 3px 8px;
-    border-left: 2px solid var(--color-border-strong);
+    border-left: 2px solid var(--border-strong);
     border-radius: 0 3px 3px 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2671,12 +2671,12 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 
 .source-viewer__refs-item.is-current a {
-    background: var(--color-accent-soft, rgba(99, 102, 241, 0.15));
+    background: var(--blue-50, rgba(99, 102, 241, 0.15));
     font-weight: 500;
 }
 
 .source-viewer__refs-name {
-    font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+    font-family: var(--mono, "SFMono-Regular", Consolas, monospace);
     font-size: 13px;
     font-weight: 500;
     overflow: hidden;
@@ -2693,14 +2693,14 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 .source-viewer__refs-tooltip {
     position: absolute;
     z-index: 200;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
-    box-shadow: 0 6px 18px var(--color-shadow);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    box-shadow: 0 6px 18px var(--shadow-color);
     padding: 8px 10px;
     font-size: 12px;
     line-height: 1.45;
-    color: var(--color-text);
+    color: var(--ink);
     pointer-events: none;
 }
 
@@ -2714,15 +2714,15 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 
 .source-viewer__refs-tooltip-loc {
-    font-family: var(--font-mono);
+    font-family: var(--mono);
     font-size: 11.5px;
-    color: var(--color-text-muted);
+    color: var(--ink-3);
     word-break: break-all;
 }
 
 .source-viewer__refs-tooltip-member {
     margin-top: 6px;
-    font-family: var(--font-mono);
+    font-family: var(--mono);
     font-size: 11.5px;
 }
 
@@ -2733,9 +2733,9 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 .source-viewer__body {
     padding: 0;
     margin: 0;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
     overflow-x: auto;
     max-height: calc(100vh - 220px);
     overflow-y: auto;
@@ -2743,7 +2743,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 
 .source-viewer__body > code {
     display: block;
-    font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+    font-family: var(--mono, "SFMono-Regular", Consolas, monospace);
     font-size: 12.5px;
     line-height: 1.5;
 }
@@ -2762,7 +2762,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 
 .source-viewer__line--hit {
     background: rgba(255, 213, 79, 0.14);
-    border-left: 3px solid var(--color-accent, #ffd54f);
+    border-left: 3px solid var(--blue, #ffd54f);
     padding-left: 9px;
 }
 
@@ -2943,8 +2943,8 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
    styling renders bare inputs/buttons; bring them in line with the
    app's button + input look. */
 .cm-panels.cm-panels-top {
-    border-bottom: 1px solid var(--color-border-strong);
-    background: var(--color-surface);
+    border-bottom: 1px solid var(--border-strong);
+    background: var(--surface);
 }
 
 /* Bottom-docked status bar (built by buildStatusBarExtension in
@@ -2952,8 +2952,8 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
    from the editor's container. Left/right split mirrors VS Code's
    layout — cursor position on the left, document totals on the right. */
 .cm-panels.cm-panels-bottom {
-    border-top: 1px solid var(--color-border-strong);
-    background: var(--color-surface);
+    border-top: 1px solid var(--border-strong);
+    background: var(--surface);
 }
 
 .cm-status-bar {
@@ -2964,8 +2964,8 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     padding: 3px 10px;
     font-size: 11.5px;
     font-variant-numeric: tabular-nums;
-    color: var(--color-text-muted);
-    font-family: var(--font-mono);
+    color: var(--ink-3);
+    font-family: var(--mono);
 }
 
 .cm-status-bar__left,
@@ -2981,8 +2981,8 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
-    background: var(--color-surface);
-    color: var(--color-text);
+    background: var(--surface);
+    color: var(--ink);
     font-family: inherit;
 }
 
@@ -2990,31 +2990,31 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     font-family: inherit;
     font-size: 13px;
     padding: 4px 8px;
-    color: var(--color-text);
-    background: var(--color-surface-2, var(--color-bg));
-    border: 1px solid var(--color-border-strong);
+    color: var(--ink);
+    background: var(--surface-2, var(--bg));
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius-sm, 4px);
     outline: none;
 }
 
 .cm-search .cm-textfield:focus {
-    border-color: var(--color-accent);
+    border-color: var(--blue);
 }
 
 .cm-search .cm-button {
     font-family: inherit;
     font-size: 12.5px;
     padding: 4px 10px;
-    color: var(--color-text);
+    color: var(--ink);
     background: transparent;
     background-image: none;
-    border: 1px solid var(--color-border-strong);
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius-sm, 4px);
     cursor: pointer;
 }
 
 .cm-search .cm-button:hover {
-    background: var(--color-surface-2, rgba(124, 124, 144, 0.12));
+    background: var(--surface-2, rgba(124, 124, 144, 0.12));
 }
 
 .cm-search label {
@@ -3022,12 +3022,12 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     align-items: center;
     gap: 4px;
     font-size: 12.5px;
-    color: var(--color-text-muted);
+    color: var(--ink-3);
     cursor: pointer;
 }
 
 .cm-search label input[type="checkbox"] {
-    accent-color: var(--color-accent);
+    accent-color: var(--blue);
     margin: 0;
 }
 
@@ -3036,19 +3036,19 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     padding: 0 8px;
     font-size: 16px;
     line-height: 1;
-    color: var(--color-text-muted);
+    color: var(--ink-3);
     background: transparent;
     border: 0;
     cursor: pointer;
 }
 
 .cm-panel button[name="close"]:hover {
-    color: var(--color-text);
+    color: var(--ink);
 }
 
 /* Sticky highlight on the line the user navigated to via a deep link
    or a References-panel click. Backing colour comes from
-   --color-accent-soft so it tracks the active theme. The actual
+   --blue-50 so it tracks the active theme. The actual
    line.background rule lives in CM6's baseTheme (currentLineTheme in
    code-editor.js) so it survives CodeMirror's row virtualisation. */
 
@@ -3087,7 +3087,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
        own internal scrollbar instead of overflowing the screen. */
     position: sticky;
     top: 16px;
-    max-height: calc(100vh - var(--top-bar-height) - 32px);
+    max-height: calc(100vh - var(--top-h) - 32px);
     border: 1px solid var(--border, #2a2a35);
     border-radius: 6px;
     background: var(--surface-1, #1a1c22);
@@ -3472,10 +3472,10 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     gap: 8px;
     margin-top: 8px;
     padding: 8px 10px;
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    font-family: var(--font-mono);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    font-family: var(--mono);
     font-size: 12.5px;
     overflow-x: auto;
 }
@@ -3495,7 +3495,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 }
 
 .email-change-row td {
-    background: var(--color-bg);
+    background: var(--bg);
     padding: 12px 16px;
 }
 
@@ -3551,10 +3551,10 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     margin-top: 12px;
 }
 .oe-compare-file__panes > .source-viewer--compare {
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border);
     border-radius: 6px;
     overflow: hidden;
-    background: var(--color-surface);
+    background: var(--surface);
     /* Row so the editor and the KDiff3-style overview ruler sit side by side
        (the base .source-viewer is a column). */
     flex-direction: row;
@@ -3578,7 +3578,7 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
 .cm-line.cm-diff-inserted   { background-color: rgba(38, 176, 80, 0.16); }
 .cm-line.cm-diff-deleted    { background-color: rgba(179, 33, 33, 0.18); }
 .cm-line.cm-diff-modified   { background-color: rgba(234, 179, 8, 0.20); }
-.cm-line.cm-diff-imaginary  { background-color: var(--color-surface-strong); color: var(--color-text-muted); }
+.cm-line.cm-diff-imaginary  { background-color: var(--surface-sunken); color: var(--ink-3); }
 
 /* Alignment filler — a blank block widget (built in code-editor.js's
    buildFillerDecorationExtensions) that pads the shorter compare pane so
@@ -3586,15 +3586,15 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
    muted surface reads as "no content here" without drawing the eye like real
    code, with hairline borders marking where the gap opens and closes. */
 .cm-diff-filler {
-    background-color: var(--color-surface-strong);
+    background-color: var(--surface-sunken);
     background-image: repeating-linear-gradient(
         135deg,
         transparent 0,
         transparent 5px,
-        var(--color-border) 5px,
-        var(--color-border) 6px);
-    border-top: 1px solid var(--color-border);
-    border-bottom: 1px solid var(--color-border);
+        var(--border) 5px,
+        var(--border) 6px);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
     opacity: 0.6;
 }
 
@@ -3618,8 +3618,8 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     position: relative;
     flex: 0 0 14px;
     align-self: stretch;
-    background: var(--color-surface-strong);
-    border-left: 1px solid var(--color-border);
+    background: var(--surface-sunken);
+    border-left: 1px solid var(--border);
 }
 .oe-diff-overview__mark {
     position: absolute;
@@ -3636,12 +3636,12 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     left: 0;
     right: 0;
     opacity: 1;
-    outline: 1px solid var(--color-text-muted);
+    outline: 1px solid var(--ink-3);
 }
 .oe-diff-overview__mark--inserted  { background-color: rgb(38, 176, 80); }
 .oe-diff-overview__mark--deleted   { background-color: rgb(179, 33, 33); }
 .oe-diff-overview__mark--modified  { background-color: rgb(234, 179, 8); }
-.oe-diff-overview__mark--imaginary { background-color: var(--color-border); }
+.oe-diff-overview__mark--imaginary { background-color: var(--border); }
 
 /* Change summary line in the compare header. */
 .oe-compare-file__summary { margin: 6px 0 0; font-weight: 500; }
@@ -3685,13 +3685,13 @@ button.pill-tab.pill-tab--active { color: var(--color-text); font-weight: 500; }
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--color-text-muted);
+    color: var(--ink-3);
 }
 
 /* Status-row badges in the Compare-with-release results table. Reuse the
    same flat-pill shape as the existing kind badges but with semantic colour. */
-.badge--success { background-color: rgba(38, 176, 80, 0.18); color: var(--color-valid); padding: 2px 8px; border-radius: 999px; font-size: 12px; }
-.badge--danger  { background-color: rgba(179, 33, 33, 0.18); color: var(--color-danger); padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+.badge--success { background-color: rgba(38, 176, 80, 0.18); color: var(--good); padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+.badge--danger  { background-color: rgba(179, 33, 33, 0.18); color: var(--danger); padding: 2px 8px; border-radius: 999px; font-size: 12px; }
 .badge--warning { background-color: rgba(234, 179, 8, 0.20); color: #8a6d00; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
 @media (prefers-color-scheme: dark) {
     .badge--warning { color: #ffd05a; }
