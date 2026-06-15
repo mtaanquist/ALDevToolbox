@@ -14,21 +14,14 @@
 <PageTitle>New extension · AL Dev Toolbox</PageTitle>
 
 <div class="workspace-page">
-    <header class="page-header">
-        <h1>New extension</h1>
-        <p class="muted">
-            Scaffold a standalone extension that drops into an existing AL
-            workspace. Pick the workspace template it should sit alongside
-            and the modules it depends on.
-        </p>
-    </header>
-
     @if (_templates is null || _catalog is null || _modules is null || _applicationVersions is null)
     {
+        @PageHeader
         <p class="muted">Loading…</p>
     }
     else if (_templates.Count == 0)
     {
+        @PageHeader
         <p class="muted">
             No active workspace templates are available. Ask an admin to add
             one under <a href="/admin/templates">Templates</a> before
@@ -43,6 +36,8 @@
 
             <div class="workspace-layout">
                 <div class="form-grid workspace-layout__form">
+
+                @PageHeader
 
                 @* Sibling-extension flow: when a workspace config is loaded, ship
                    the workspace's identity through to the generation endpoint so
@@ -287,6 +282,17 @@
 </div>
 
 @code {
+    // Rendered in the loading/empty states and at the top of the left column
+    // in the populated state, so the preview rail lines up with the title row.
+    private RenderFragment PageHeader =>@<header class="page-header">
+        <h1>New extension</h1>
+        <p class="muted">
+            Scaffold a standalone extension that drops into an existing AL
+            workspace. Pick the workspace template it should sit alongside
+            and the modules it depends on.
+        </p>
+    </header>;
+
     private List<RuntimeTemplate>? _templates;
     private List<WellKnownDependency>? _catalog;
     // Loaded once at init so the sibling-extension preview can resolve folder

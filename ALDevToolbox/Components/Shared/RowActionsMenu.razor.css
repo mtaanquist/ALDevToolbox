@@ -3,7 +3,9 @@
    absolutely under the caret; the Object Explorer table wrapper keeps
    overflow visible so it isn't clipped. */
 
-.ra { display: inline-flex; }
+/* stretch so the caret (a <summary> inside a <details>) matches the height of
+   the primary button rather than sizing to its own short content */
+.ra { display: inline-flex; align-items: stretch; }
 
 .ra__main,
 .ra__caret {
@@ -39,7 +41,7 @@
 .ra__caret:hover { background: var(--surface-sunken); color: var(--ink); }
 .ra__caret:hover ::deep svg { color: var(--blue); }
 
-.ra__menu { position: relative; }
+.ra__menu { position: relative; display: inline-flex; }
 .ra__menu[open] > .ra__caret { background: var(--blue-50); border-color: var(--blue); color: var(--blue-700); }
 .ra__menu[open] > .ra__caret ::deep svg { color: var(--blue); transform: rotate(180deg); }
 

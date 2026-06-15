@@ -1,7 +1,7 @@
 @*
     Split-button + dropdown for a results-table row, per the Object Explorer
     design study (.design/translator/styles/screens.css "split-button row
-    actions"). The primary segment ("View reference") is a plain link; the
+    actions"). The primary segment ("View source") is a plain link; the
     caret opens a menu with the same link, an optional "Compare with…" submenu
     of other releases, and a "Download source" link.
 
@@ -17,7 +17,7 @@
 <div class="ra">
     <a class="ra__main" href="@ViewHref">
         <Icon Name="eye" Width="15" Height="15" />
-        <span>View reference</span>
+        <span>View source</span>
     </a>
     <details class="ra__menu">
         <summary class="ra__caret" title="More actions" aria-label="More actions" aria-haspopup="menu">
@@ -26,7 +26,7 @@
         <div class="ra__pop" role="menu">
             <a class="ra__item" href="@ViewHref" role="menuitem">
                 <Icon Name="eye" Width="15" Height="15" />
-                <span>View reference</span>
+                <span>View source</span>
             </a>
 
             @if (CompareTargets is { Count: > 0 })

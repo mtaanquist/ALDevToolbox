@@ -851,7 +851,6 @@
                 <col />
                 <col class="col-extension" />
                 <col />
-                <col class="col-lines" />
                 <col class="col-actions" />
             </colgroup>
             <thead>
@@ -861,7 +860,6 @@
                     <th scope="col">@SortHeader("Name", ObjectSortColumn.Name)</th>
                     <th scope="col">@SortHeader("Extension", ObjectSortColumn.Module)</th>
                     <th scope="col">@SortHeader("Namespace", ObjectSortColumn.Namespace)</th>
-                    <th scope="col">@SortHeader("Lines", ObjectSortColumn.Lines)</th>
                     <th scope="col" class="oe-cell-actions"><span class="visually-hidden">Actions</span></th>
                 </tr>
             </thead>
@@ -896,7 +894,6 @@
                                 <span class="ons">@NamespaceHead(r.Namespace)<span class="ns-tail">@NamespaceTail(r.Namespace)</span></span>
                             }
                         </td>
-                        <td>@(r.SourceFileId is null ? "—" : r.FileLineCount.ToString("N0"))</td>
                         <td class="oe-cell-actions">
                             @if (r.SourceFileId is { } afid)
                             {

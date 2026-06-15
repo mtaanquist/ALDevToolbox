@@ -48,9 +48,30 @@
    admin pages that also use them. The form wraps the whole page so the
    Generate button stays inside it for generate.js' loading plumbing.
    ============================================================ */
-.workspace-page { max-width: 1320px; }
+/* Fill the scroll viewport so the sticky action bar pins to the bottom even
+   when the form is shorter than the screen (drop .content's bottom padding so
+   the bar sits flush). The page → form → grid all stretch; the grid grows and
+   pushes the action bar down. */
+.content:has(.workspace-page) { padding-bottom: 0; }
 
-/* Page head — bigger title + lead paragraph (design .page-head). */
+.workspace-page {
+    max-width: 1320px;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.workspace-shell {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.workspace-shell > .workspace-layout { flex: 1; }
+
+/* Page head — bigger title + lead paragraph (design .page-head). Lives inside
+   the left column so the preview rail rises to the same top line. */
+.workspace-page .page-header { margin-bottom: 22px; }
 .workspace-page .page-header h1 { font-size: 27px; font-weight: 700; letter-spacing: -0.5px; margin: 0 0 8px; }
 .workspace-page .page-header p { color: var(--ink-3); font-size: 14px; max-width: 760px; line-height: 1.55; margin: 0; }
 
@@ -107,6 +128,10 @@
     max-height: none;
     overflow: visible;
 }
+
+/* A touch more room above the file picker so it isn't cramped against the
+   card-head divider. */
+.import-card .preview-card__body { padding-top: 18px; }
 
 .import-card__row {
     display: flex;
@@ -2582,7 +2607,10 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 
 .source-viewer__outline-item {
     line-height: 1.5;
-    font-size: 14px;
+    /* 13px (not 14) so the JetBrains Mono symbol names sit at the same
+       apparent size as the editor's code, which renders in the system
+       monospace face — JetBrains Mono is visibly larger at a given px. */
+    font-size: 13px;
 }
 
 .source-viewer__outline-item--child {
@@ -2649,7 +2677,7 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: var(--mono);
-    font-size: 14px;
+    font-size: 13px;
     min-width: 0;
 }
 
