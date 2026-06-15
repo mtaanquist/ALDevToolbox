@@ -170,7 +170,7 @@ function initOne(root) {
         // changes is visible without scrolling (the inline change-gutter only
         // covers on-screen rows). Click a mark to jump there.
         const totalLines = content ? content.split("\n").length : 1;
-        buildDiffOverview(root, editorId, diffData, totalLines);
+        buildDiffOverview(root, editorId, diffData, totalLines, fillerData);
         return editorId;
     }
 
@@ -178,7 +178,13 @@ function initOne(root) {
     /// changed lines into runs (so a block of edits reads as one bar, like
     /// KDiff3), positions each run proportionally over the full file height,
     /// and wires a click to jump to its first line.
-    function buildDiffOverview(paneRoot, edId, rows, totalLines) {
+    ///
+    /// Positions are computed in *visual* space, not source-line space: the
+    /// alignment fillers (`[{before, size}]`) add blank rows that push real
+    /// lines down, so a mark's fraction is `visualRow / (totalLines +
+    /// totalFiller)`. Both panes share the same visual height, so a change at
+    /// the same aligned row reads at the same height on both ruler strips.
+    function buildDiffOverview(paneRoot, edId, rows, totalLines, fillers) {
         if (!Array.isArray(rows) || rows.length === 0 || !(totalLines > 0)) return;
         const sorted = rows
             .filter(r => r && Number.isFinite(r.line) && r.kind)
@@ -195,6 +201,16 @@ function initOne(root) {
             }
         }
 
+        // Filler-aware geometry. `offsetBefore(L)` is the blank space rendered
+        // above source line L (gaps anchored before any line ≤ L); the total
+        // visual height adds every filler, including a trailing one past EOF.
+        const gaps = (Array.isArray(fillers) ? fillers : [])
+            .filter(f => f && Number.isFinite(f.before) && Number.isFinite(f.size) && f.size > 0);
+        const totalFiller = gaps.reduce((sum, f) => sum + f.size, 0);
+        const totalVisual = totalLines + totalFiller;
+        const offsetBefore = (line) =>
+            gaps.reduce((sum, f) => sum + (f.before <= line ? f.size : 0), 0);
+
         const overview = document.createElement("div");
         overview.className = "oe-diff-overview";
         overview.title = "Changes overview — click a mark to jump";
@@ -202,8 +218,14 @@ function initOne(root) {
             const mark = document.createElement("button");
             mark.type = "button";
             mark.className = `oe-diff-overview__mark oe-diff-overview__mark--${run.kind}`;
-            mark.style.top = ((run.start - 1) / totalLines) * 100 + "%";
-            mark.style.height = `max(3px, ${((run.end - run.start + 1) / totalLines) * 100}%)`;
+            // Visual top of the run's first line, and a height that also
+            // absorbs any fillers sitting between start and end (interior gaps
+            // can occur when the opposite side inserts mid-run).
+            const top = (run.start - 1) + offsetBefore(run.start);
+            const height = (run.end - run.start + 1)
+                + (offsetBefore(run.end) - offsetBefore(run.start));
+            mark.style.top = (top / totalVisual) * 100 + "%";
+            mark.style.height = `max(3px, ${(height / totalVisual) * 100}%)`;
             const span = run.end > run.start ? `lines ${run.start}–${run.end}` : `line ${run.start}`;
             mark.title = `${run.kind} · ${span}`;
             mark.setAttribute("aria-label", `Jump to ${run.kind} change at ${span}`);
