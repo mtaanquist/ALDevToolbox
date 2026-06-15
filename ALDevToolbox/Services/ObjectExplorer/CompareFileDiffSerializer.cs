@@ -37,6 +37,56 @@ internal static class CompareFileDiffSerializer
     }
 
     /// <summary>
+    /// Emits the alignment gaps for one pane: the visual counterpart to the
+    /// <see cref="ChangeType.Imaginary"/> rows that <see cref="SerializeSide"/>
+    /// deliberately drops. DiffPlex pads each pane with imaginary placeholders
+    /// where the opposite pane has extra lines; the CodeMirror viewer renders
+    /// only real source, so to keep matching lines aligned (KDiff3-style) we
+    /// turn each run of imaginaries into a blank filler block of <c>size</c>
+    /// line-heights, anchored <c>before</c> the next real source line.
+    ///
+    /// <para>Output: <c>[{before, size}, …]</c>. <c>before</c> is the 1-based
+    /// source line the gap precedes; a trailing run of imaginaries (the
+    /// opposite pane appended lines past this pane's end) uses the sentinel
+    /// <c>before = lineCount + 1</c> so the viewer attaches it after the last
+    /// line. Empty <c>[]</c> when the panes are already the same length.</para>
+    /// </summary>
+    public static string SerializeFillers(DiffPaneModel pane)
+    {
+        var fillers = new List<object>();
+        var realLineCount = 0;
+        var pendingGap = 0;
+        foreach (var line in pane.Lines)
+        {
+            if (line.Type is ChangeType.Imaginary)
+            {
+                pendingGap++;
+                continue;
+            }
+            realLineCount++;
+            if (pendingGap > 0 && line.Position is int position)
+            {
+                fillers.Add(new { before = position, size = pendingGap });
+                pendingGap = 0;
+            }
+            else if (pendingGap > 0)
+            {
+                // Real row without a Position is unexpected, but don't lose the
+                // gap: flush it before this line's (computed) source index.
+                fillers.Add(new { before = realLineCount, size = pendingGap });
+                pendingGap = 0;
+            }
+        }
+        // A run of imaginaries at the end has no following real row to anchor
+        // to — sentinel it past the last source line.
+        if (pendingGap > 0)
+        {
+            fillers.Add(new { before = realLineCount + 1, size = pendingGap });
+        }
+        return JsonSerializer.Serialize(fillers);
+    }
+
+    /// <summary>
     /// Per-side change counts for the compare header. Modified lines appear
     /// (aligned) in both panes, so they're counted once from the new side;
     /// inserted/deleted are unique to their pane.

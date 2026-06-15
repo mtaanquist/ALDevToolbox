@@ -139,10 +139,17 @@ function initOne(root) {
     }
     codeHost.removeAttribute("data-diff");
 
+    // Alignment fillers (compare page only). data-fillers carries
+    // `[{before, size}, …]` — blank gaps of `size` line-heights anchored
+    // before source line `before`, so the two panes stay aligned KDiff3-style.
+    const fillerData = parseJsonAttr(codeHost.dataset.fillers);
+    codeHost.removeAttribute("data-fillers");
+
     const editorId = mountReadOnly(codeHost, content, language, {
         declarations,
         resolvables,
         lineDecorations,
+        fillers: Array.isArray(fillerData) ? fillerData : [],
         procedures,
         dotNetRef: jsBridge,
         // VS Code-style status bar at the bottom of the editor. Shows
