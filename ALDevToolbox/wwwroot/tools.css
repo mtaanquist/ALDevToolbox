@@ -2025,6 +2025,173 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 /* actions column — sized to the split-button, right-aligned */
 .object-explorer__browser .oe-cell-actions { text-align: right; white-space: nowrap; }
 
+/* ============================================================
+   Object Explorer — landing / release picker
+   (.design/explorer-cookbook/styles/screens2.css). Featured "latest import"
+   hero + source tabs with counts + version-grouped release cards. Class names
+   (rel-*, rh-*, rc-*, rg-*, src-tabs) are unique to this screen.
+   ============================================================ */
+.oe-landing { max-width: 1280px; }
+
+.oe-landing .page-head { margin-bottom: 22px; }
+.oe-landing .page-head h1 { margin: 0; font-size: 27px; font-weight: 700; letter-spacing: -0.5px; }
+.oe-landing .page-head .sub { margin: 8px 0 0; color: var(--ink-3); font-size: 14px; max-width: 680px; line-height: 1.55; }
+
+/* source tabs (segmented) */
+.src-tabs {
+    display: inline-flex;
+    gap: 3px;
+    margin-bottom: 26px;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    padding: 4px;
+}
+.src-tabs button {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-3);
+    padding: 8px 15px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.12s, color 0.12s, box-shadow 0.12s;
+}
+.src-tabs button svg { width: 16px; height: 16px; color: var(--ink-4); }
+.src-tabs button:hover { color: var(--ink); }
+.src-tabs button.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-xs); }
+.src-tabs button.on svg { color: var(--blue); }
+.src-tabs .src-n {
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface-sunken);
+    color: var(--ink-4);
+    border: 1px solid var(--border);
+}
+.src-tabs button.on .src-n { background: var(--blue-50); color: var(--blue-700); border-color: var(--blue-100); }
+
+/* featured "latest import" hero */
+.rel-hero {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 28px;
+    align-items: stretch;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-xl);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    margin-bottom: 30px;
+    position: relative;
+}
+.rel-hero::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: var(--blue);
+}
+.rel-hero .rh-main { padding: 26px 28px; display: flex; flex-direction: column; gap: 13px; justify-content: center; }
+.rh-cap { display: flex; align-items: center; gap: 12px; }
+.rh-title { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.8px; color: var(--ink); line-height: 1; }
+.rh-meta { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; font-size: 13px; color: var(--ink-3); }
+.rh-meta .mono { color: var(--ink-2); font-size: 12.5px; }
+.rh-date { display: inline-flex; align-items: center; gap: 6px; }
+.rh-date svg { color: var(--ink-4); }
+.rel-hero .rh-side {
+    background: var(--surface-2);
+    border-left: 1px solid var(--border);
+    padding: 24px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    justify-content: center;
+    min-width: 280px;
+}
+.rh-stat { display: flex; flex-direction: column; gap: 3px; }
+.rh-num { font-size: 38px; font-weight: 800; color: var(--ink); line-height: 1; letter-spacing: -1.5px; font-variant-numeric: tabular-nums; }
+.rh-lbl { font-size: 11px; font-weight: 700; letter-spacing: 0.9px; text-transform: uppercase; color: var(--ink-4); }
+.rh-actions { display: flex; gap: 10px; }
+.rh-actions .btn { flex: 1; justify-content: center; }
+
+/* hero collapses to a single column on narrow viewports */
+@media (max-width: 720px) {
+    .rel-hero { grid-template-columns: 1fr; }
+    .rel-hero .rh-side { border-left: 0; border-top: 1px solid var(--border); min-width: 0; }
+}
+
+.rel-count { font-size: 13px; color: var(--ink-3); margin-bottom: 18px; }
+.rel-count b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* version-grouped release cards */
+.rel-group { margin-bottom: 8px; }
+.rel-group-head { display: flex; align-items: center; gap: 12px; padding: 18px 0 14px; }
+.rg-dot { width: 9px; height: 9px; border-radius: 999px; background: var(--blue); box-shadow: 0 0 0 4px var(--blue-50); flex: 0 0 auto; }
+.rg-title { font-size: 13px; font-weight: 700; color: var(--ink); letter-spacing: 0.2px; }
+.rg-line { flex: 1; height: 1px; background: var(--border); }
+.rg-count { font-size: 11.5px; color: var(--ink-4); font-variant-numeric: tabular-nums; }
+
+.rel-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(296px, 1fr)); gap: 14px; }
+.rel-card {
+    appearance: none;
+    text-align: left;
+    font: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-xs);
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 13px;
+    transition: border-color 0.14s, box-shadow 0.14s, transform 0.14s;
+}
+.rel-card:hover { border-color: var(--blue); box-shadow: var(--shadow); transform: translateY(-2px); text-decoration: none; }
+.rel-card .rc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.rel-card .rc-name { font-size: 15px; font-weight: 700; color: var(--ink); letter-spacing: -0.2px; }
+.rel-card .rc-ver { font-size: 11.5px; color: var(--ink-3); margin-top: 3px; }
+.rel-card .rc-arrow { color: var(--ink-4); transition: transform 0.14s, color 0.14s; flex: 0 0 auto; margin-top: 1px; display: inline-flex; }
+.rel-card:hover .rc-arrow { color: var(--blue); transform: translateX(3px); }
+.rel-card .rc-foot { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--ink-3); }
+.rc-files b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.rc-date { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-4); }
+
+/* empty state (customer tab / no packages) — also reused by the cookbook */
+.rel-empty {
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--r-xl);
+    background: var(--surface-2);
+    padding: 52px 32px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 11px;
+}
+.rel-empty-ico { width: 58px; height: 58px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); display: grid; place-items: center; color: var(--ink-4); box-shadow: var(--shadow-xs); margin-bottom: 4px; }
+.rel-empty-h { font-size: 17px; font-weight: 700; color: var(--ink); }
+.rel-empty-p { font-size: 13.5px; color: var(--ink-3); max-width: 460px; line-height: 1.55; margin: 0; }
+.rel-empty .btn { margin-top: 8px; }
+
+
 /* Bottom-of-list sentinel that triggers the next lazy-load page. */
 .oe-scroll-sentinel {
     padding: 12px 0;
