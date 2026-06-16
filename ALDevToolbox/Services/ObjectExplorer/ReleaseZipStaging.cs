@@ -23,7 +23,16 @@ public static class ReleaseZipStaging
         string tempZipPath, bool isDvd, List<Stream> openedStreams)
     {
         var archive = new ZipArchive(File.OpenRead(tempZipPath), ZipArchiveMode.Read);
-        var entries = isDvd ? FolderZipWalker.WalkDvd(archive) : FolderZipWalker.Walk(archive);
+        // DVD path is explicit; otherwise auto-detect a VS Code AL workspace
+        // (folders each holding an app.json) and scope to each app's own build
+        // output, so an admin can zip a multi-root workspace and upload it
+        // through the same box. Falls back to the flat whole-archive walk for a
+        // plain applications/ folder zip (no app.json).
+        var entries = isDvd
+            ? FolderZipWalker.WalkDvd(archive)
+            : FolderZipWalker.LooksLikeWorkspace(archive)
+                ? FolderZipWalker.WalkWorkspace(archive)
+                : FolderZipWalker.Walk(archive);
 
         var uploads = new List<AppFileUpload>(entries.Count);
         foreach (var entry in entries)

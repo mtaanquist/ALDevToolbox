@@ -239,6 +239,95 @@ public sealed class FolderZipWalkerTests
         FolderZipWalker.WalkDvd(archive).Should().BeEmpty();
     }
 
+    // ── WalkWorkspace: zipped VS Code AL workspace ─────────────────────
+
+    [Fact]
+    public void LooksLikeWorkspace_true_when_app_json_present_false_for_dvd()
+    {
+        using var workspace = BuildArchive(
+            "Core/app.json",
+            "Core/Consortio_Dansani Core_1.0.0.0.app");
+        using var dvd = BuildArchive(
+            "applications/DKCore/Source/Microsoft_DK Core.app");
+
+        FolderZipWalker.LooksLikeWorkspace(workspace).Should().BeTrue();
+        FolderZipWalker.LooksLikeWorkspace(dvd).Should().BeFalse();
+    }
+
+    [Fact]
+    public void WalkWorkspace_one_module_per_app_folder_ignoring_alpackages()
+    {
+        // A multi-root workspace: each folder is an app (app.json + .app), and
+        // each folder's .alpackages/ holds dependency copies that must NOT be
+        // imported — otherwise Dansani Core would come in twice (once as its
+        // own app, once as EDI's cached dependency).
+        using var archive = BuildArchive(
+            "Core/app.json",
+            "Core/Consortio_Dansani Core_1.1.29.336.app",
+            "Core/.alpackages/Microsoft_Application_14.24.46857.0.app",
+            "Core/src/codeunits/Foo.Codeunit.al",
+            "EDI/app.json",
+            "EDI/Consortio_Dansani EDI_1.0.8.77.app",
+            "EDI/.alpackages/Consortio_Dansani Core_1.1.28.250.app",
+            "EDI/.alpackages/Microsoft_Application_14.24.46857.0.app");
+
+        var entries = FolderZipWalker.WalkWorkspace(archive);
+
+        entries.Select(e => e.FileName).Should().BeEquivalentTo(new[]
+        {
+            "Consortio_Dansani Core_1.1.29.336.app",
+            "Consortio_Dansani EDI_1.0.8.77.app",
+        });
+    }
+
+    [Fact]
+    public void WalkWorkspace_keeps_only_the_newest_version_and_drops_dep_app()
+    {
+        // One folder, many historical builds plus the .dep.app sidecars. Only
+        // the highest version's plain .app should survive.
+        using var archive = BuildArchive(
+            "Core/app.json",
+            "Core/Consortio_Dansani Core_1.1.28.300.app",
+            "Core/Consortio_Dansani Core_1.1.29.310.app",
+            "Core/Consortio_Dansani Core_1.1.29.310.dep.app",
+            "Core/Consortio_Dansani Core_1.1.29.336.app",
+            "Core/Consortio_Dansani Core_1.1.29.336.dep.app");
+
+        var entries = FolderZipWalker.WalkWorkspace(archive);
+
+        entries.Select(e => e.FileName).Should().BeEquivalentTo(
+            new[] { "Consortio_Dansani Core_1.1.29.336.app" });
+    }
+
+    [Fact]
+    public void WalkWorkspace_pairs_sibling_source_zip_when_present()
+    {
+        using var archive = BuildArchive(
+            "Core/app.json",
+            "Core/Consortio_Dansani Core_1.0.0.0.app",
+            "Core/Dansani Core.Source.zip");
+
+        var entry = FolderZipWalker.WalkWorkspace(archive).Should().ContainSingle().Subject;
+        entry.SourceZipEntry.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void DescribeUncompiledAppRoots_names_folders_with_no_built_app()
+    {
+        // FMA declares an app.json but was never compiled — no .app anywhere in
+        // its folder. Core is built. Only FMA should be reported.
+        using var archive = BuildArchive(
+            "Core/app.json",
+            "Core/Consortio_Dansani Core_1.0.0.0.app",
+            "FMA/app.json",
+            "FMA/src/codeunits/Foo.Codeunit.al");
+
+        FolderZipWalker.WalkWorkspace(archive).Select(e => e.FileName)
+            .Should().BeEquivalentTo(new[] { "Consortio_Dansani Core_1.0.0.0.app" });
+        FolderZipWalker.DescribeUncompiledAppRoots(archive)
+            .Should().BeEquivalentTo(new[] { "FMA" });
+    }
+
     /// <summary>
     /// Builds a throwaway <see cref="ZipArchive"/> in memory with the supplied
     /// entry paths. File bodies are empty — none of the walker's behaviour
