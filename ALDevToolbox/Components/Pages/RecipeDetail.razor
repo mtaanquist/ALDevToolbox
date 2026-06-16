@@ -6,127 +6,158 @@
 @inject MarkdownRenderer Markdown
 @inject IJSRuntime JS
 @using ALDevToolbox.Domain.Entities
+@using ALDevToolbox.Services.Cookbook
 
 <PageTitle>@(_recipe?.Title ?? "Recipe") · AL Dev Toolbox</PageTitle>
 
-<div class="snippet-detail @(HasOutline ? "snippet-detail--with-outline" : null)">
-    <div class="snippet-detail__main">
-        <div class="snippet-detail__topbar">
-            <a class="btn btn--sm" href="/cookbook">
-                <Icon Name="arrow-left" Width="14" Height="14" />
-                <span>Back to cookbook</span>
-            </a>
-            @if (_recipe is not null && _recipe.Files.Count > 0)
-            {
-                <a class="btn btn--sm" href="@($"/api/cookbook/{_recipe.Id}/download")"
-                   title="Download all files in this recipe as a ZIP archive (folders preserved)">
-                    <Icon Name="download" Width="14" Height="14" />
-                    <span>Download all</span>
-                </a>
-            }
-        </div>
-
-        @if (_loaded && _recipe is null)
-        {
-            <p class="form-error" role="alert">Recipe not found.</p>
-        }
-        else if (_recipe is null)
-        {
-            <p class="muted">Loading…</p>
-        }
-        else
-        {
-            <header class="snippet-detail__header">
-                <h1>@_recipe.Title</h1>
-                <span class="snippet-card__badge" title="Recipe type">@_recipe.Type</span>
-                @if (_recipe.Deprecated)
-                {
-                    <span class="snippet-card__badge">Deprecated</span>
-                }
-                @if (_recipe.MinimumApplicationVersion is { } minV)
-                {
-                    <span class="snippet-card__badge" title="Minimum BC application version this recipe targets">
-                        Min: @minV.Name (@minV.Application)
-                    </span>
-                }
-            </header>
-            <p class="snippet-detail__description">@_recipe.Description</p>
-            @if (!string.IsNullOrWhiteSpace(_recipe.Keywords))
-            {
-                <div class="snippet-card__keywords">
-                    @foreach (var kw in _recipe.Keywords.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-                    {
-                        <span class="snippet-card__keyword">@kw</span>
-                    }
-                </div>
-            }
-
-            @if (!string.IsNullOrWhiteSpace(_recipe.Instructions))
-            {
-                <section class="snippet-detail__instructions">
-                    <h2>Instructions</h2>
-                    <div class="snippet-detail__instructions-body">
-                        @Markdown.Render(_recipe.Instructions)
-                    </div>
-                </section>
-            }
-
-            <h2>Files</h2>
-            @if (_recipe.Files.Count == 0)
-            {
-                <p class="muted">No files attached.</p>
-            }
-            else
-            {
-                <ol class="snippet-detail__files">
-                    @foreach (var file in _recipe.Files)
-                    {
-                        var displayPath = DisplayPath(file);
-                        var anchor = AnchorFor(displayPath);
-                        var isCollapsed = _collapsed.Contains(displayPath);
-                        <li id="@anchor" class="snippet-file-view @(isCollapsed ? "snippet-file-view--collapsed" : null)">
-                            <div class="snippet-file-view__header">
-                                <button type="button"
-                                        class="snippet-file-view__toggle"
-                                        aria-expanded="@((!isCollapsed).ToString().ToLowerInvariant())"
-                                        aria-controls="@($"{anchor}-content")"
-                                        @onclick="() => ToggleCollapsed(displayPath)">
-                                    <Icon Name="@(isCollapsed ? "chevron-right" : "chevron-down")" Width="14" Height="14" />
-                                    <code>@displayPath</code>
-                                </button>
-                                <button type="button" class="btn btn--sm" @onclick="() => CopyAsync(file.Content, displayPath)">
-                                    <Icon Name="copy" Width="14" Height="14" />
-                                    <span>@(IsJustCopied(displayPath) ? "Copied!" : "Copy")</span>
-                                </button>
-                            </div>
-                            <pre id="@($"{anchor}-content")" class="snippet-file-view__content"><code>@file.Content</code></pre>
-                        </li>
-                    }
-                </ol>
-            }
-        }
+<div class="recipe-detail">
+    <div class="rd-topbar">
+        <a class="btn" href="/cookbook">
+            <Icon Name="arrow-left" Width="14" Height="14" />
+            <span>Back to cookbook</span>
+        </a>
     </div>
 
-    @if (HasOutline)
+    @if (_loaded && _recipe is null)
     {
-        <aside class="snippet-outline" aria-label="Files in this recipe">
-            <div class="snippet-outline__inner">
-                <h2 class="snippet-outline__title">Files</h2>
-                <ul class="snippet-outline__list">
-                    @foreach (var file in _recipe!.Files)
+        <p class="form-error" role="alert">Recipe not found.</p>
+    }
+    else if (_recipe is null)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        var tags = SplitKeywords(_recipe.Keywords);
+        <div class="rd-grid">
+            <div class="rd-main">
+                <div class="rd-head">
+                    <div class="rd-badges">
+                        <RecipeTypeBadge Type="_recipe.Type" />
+                        @if (_recipe.Deprecated)
+                        {
+                            <span class="rd-deprecated">Deprecated</span>
+                        }
+                        @if (_recipe.MinimumApplicationVersion is { } minV)
+                        {
+                            <span class="rd-min">
+                                <Icon Name="tag" Width="13" Height="13" />
+                                <span>Min: @minV.Name <span class="mono">(@minV.Application)</span></span>
+                            </span>
+                        }
+                    </div>
+                    <h1>@_recipe.Title</h1>
+                    <p class="rd-desc">@_recipe.Description</p>
+                    @if (tags.Count > 0)
                     {
-                        var displayPath = DisplayPath(file);
-                        var anchor = AnchorFor(displayPath);
-                        <li>
-                            <a class="snippet-outline__link"
-                               href="@($"#{anchor}")"
-                               @onclick="() => ExpandForJump(displayPath)"
-                               @onclick:preventDefault="false">@displayPath</a>
-                        </li>
+                        <div class="rd-tags">
+                            @foreach (var tag in tags)
+                            {
+                                <span class="rcd-tag">@tag</span>
+                            }
+                        </div>
                     }
-                </ul>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_recipe.Instructions))
+                {
+                    <section class="rd-instructions">
+                        <div class="rd-files-h"><span class="cap-label">Instructions</span></div>
+                        <div class="rd-instructions-body">
+                            @Markdown.Render(_recipe.Instructions)
+                        </div>
+                    </section>
+                }
+
+                <div class="rd-files-h">
+                    <span class="cap-label">Files</span>
+                    <span class="rd-files-n">@_recipe.Files.Count file@(_recipe.Files.Count == 1 ? "" : "s")</span>
+                </div>
+
+                @if (_recipe.Files.Count == 0)
+                {
+                    <p class="muted">No files attached.</p>
+                }
+                else
+                {
+                    @foreach (var file in _recipe.Files)
+                    {
+                        var path = DisplayPath(file);
+                        var anchor = AnchorFor(path);
+                        var collapsed = _collapsed.Contains(path);
+                        var lines = SplitLines(file.Content);
+                        <div id="@anchor" class="codeblock @(collapsed ? "collapsed" : "")">
+                            <div class="cb-bar">
+                                <button type="button" class="cb-name"
+                                        aria-expanded="@((!collapsed).ToString().ToLowerInvariant())"
+                                        aria-controls="@($"{anchor}-body")"
+                                        @onclick="() => ToggleCollapsed(path)">
+                                    <span class="chev"><Icon Name="chevron-down" Width="15" Height="15" /></span>
+                                    <Icon Name="file-code" Width="15" Height="15" />
+                                    <span class="mono">@path</span>
+                                    <span class="cb-lines">@lines.Length lines</span>
+                                </button>
+                                <button type="button" class="cb-copy" @onclick="() => CopyAsync(file.Content, path)">
+                                    <Icon Name="copy" Width="14" Height="14" />
+                                    <span>Copy</span>
+                                </button>
+                            </div>
+                            @if (!collapsed)
+                            {
+                                <div class="cb-body" id="@($"{anchor}-body")">
+                                    <pre><code>@for (var li = 0; li < lines.Length; li++)
+{<span class="cl"><span class="cl-n">@(li + 1)</span><span class="cl-c">@if (lines[li].Length == 0){<text>&#8203;</text>}else{@foreach (var tok in AlSyntaxHighlighter.TokenizeLine(lines[li])){<span class="tok-@tok.Cls">@tok.Text</span>}}</span></span>}</code></pre>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
             </div>
-        </aside>
+
+            <aside class="rd-rail">
+                <div class="card">
+                    <div class="card-head"><span class="cap-label">Files</span></div>
+                    <div class="rail-files">
+                        @foreach (var file in _recipe.Files)
+                        {
+                            var path = DisplayPath(file);
+                            var anchor = AnchorFor(path);
+                            <a class="rail-file @(_active == path ? "on" : "")"
+                               href="@($"#{anchor}")"
+                               @onclick="() => SelectFile(path)"
+                               @onclick:preventDefault="false">
+                                <Icon Name="file-code" Width="14" Height="14" />
+                                <span class="rf-name">@path</span>
+                            </a>
+                        }
+                    </div>
+                </div>
+                <div class="rd-meta">
+                    <div class="rdm-row"><span>Type</span><RecipeTypeBadge Type="_recipe.Type" /></div>
+                    <div class="rdm-row">
+                        <span>Min. version</span>
+                        <b class="mono">@(_recipe.MinimumApplicationVersion?.Application ?? "—")</b>
+                    </div>
+                    <div class="rdm-row"><span>Files</span><b>@_recipe.Files.Count</b></div>
+                    @if (_recipe.Files.Count > 0)
+                    {
+                        <a class="btn btn--primary rd-download" href="@($"/api/cookbook/{_recipe.Id}/download")"
+                           title="Download all files in this recipe as a ZIP archive (folders preserved)">
+                            <Icon Name="download" Width="15" Height="15" />
+                            <span>Download all</span>
+                        </a>
+                    }
+                </div>
+            </aside>
+        </div>
+    }
+</div>
+
+<div class="toast @(_toast is null ? "" : "show")" role="status" aria-live="polite">
+    @if (_toast is not null)
+    {
+        <Icon Name="circle-check" Width="16" Height="16" />
+        <span>@_toast</span>
     }
 </div>
 
@@ -135,22 +166,28 @@
 
     private Recipe? _recipe;
     private bool _loaded;
-    private string? _justCopied;
-    private CancellationTokenSource? _copyTimer;
+    private string? _active;
+    private string? _toast;
+    private CancellationTokenSource? _toastTimer;
     private readonly HashSet<string> _collapsed = new(StringComparer.Ordinal);
-
-    private bool HasOutline => _recipe is not null && _recipe.Files.Count > 1;
 
     protected override async Task OnInitializedAsync()
     {
         _recipe = await Recipes.GetAsync(Id);
         _loaded = true;
+        _active = _recipe?.Files.Count > 0 ? DisplayPath(_recipe.Files[0]) : null;
     }
 
     private static string DisplayPath(RecipeFile file) =>
         string.IsNullOrEmpty(file.RelativePath) ? file.FileName : file.RelativePath + "/" + file.FileName;
 
-    private bool IsJustCopied(string path) => _justCopied == path;
+    private static string[] SplitLines(string content) =>
+        content.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+
+    private static List<string> SplitKeywords(string? keywords) =>
+        string.IsNullOrWhiteSpace(keywords)
+            ? new List<string>()
+            : keywords.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
 
     private void ToggleCollapsed(string path)
     {
@@ -160,12 +197,13 @@
         }
     }
 
-    /// <summary>
-    /// When the user clicks an aside link, expand the target file (if
-    /// collapsed) so the browser's hash-scroll lands on visible content
-    /// instead of a collapsed stub.
-    /// </summary>
-    private void ExpandForJump(string path) => _collapsed.Remove(path);
+    /// <summary>Rail click: mark the file active and ensure its block is expanded
+    /// so the hash-scroll lands on visible content.</summary>
+    private void SelectFile(string path)
+    {
+        _active = path;
+        _collapsed.Remove(path);
+    }
 
     private static string AnchorFor(string path)
     {
@@ -182,36 +220,41 @@
         try
         {
             await JS.InvokeVoidAsync("navigator.clipboard.writeText", content);
-            _justCopied = path;
-            _copyTimer?.Cancel();
-            _copyTimer?.Dispose();
-            _copyTimer = new CancellationTokenSource();
-            var token = _copyTimer.Token;
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await Task.Delay(1500, token);
-                    if (token.IsCancellationRequested) return;
-                    await InvokeAsync(() =>
-                    {
-                        _justCopied = null;
-                        StateHasChanged();
-                    });
-                }
-                catch (TaskCanceledException) { }
-            });
+            ShowToast($"Copied {path}");
         }
         catch
         {
-            // Clipboard write can fail (insecure context, denied permission).
-            // Surface nothing — the textarea is still selectable.
+            // Clipboard write can fail (insecure context, denied permission) —
+            // the code is still selectable, so surface nothing.
         }
+    }
+
+    private void ShowToast(string message)
+    {
+        _toast = message;
+        _toastTimer?.Cancel();
+        _toastTimer?.Dispose();
+        _toastTimer = new CancellationTokenSource();
+        var token = _toastTimer.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(1900, token);
+                if (token.IsCancellationRequested) return;
+                await InvokeAsync(() =>
+                {
+                    _toast = null;
+                    StateHasChanged();
+                });
+            }
+            catch (TaskCanceledException) { }
+        });
     }
 
     public void Dispose()
     {
-        _copyTimer?.Cancel();
-        _copyTimer?.Dispose();
+        _toastTimer?.Cancel();
+        _toastTimer?.Dispose();
     }
 }

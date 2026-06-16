@@ -1,0 +1,23 @@
+@*
+    Coloured recipe-type pill (design .rtype) — snippet (teal / scissors),
+    pattern (purple / puzzle), module (green / package). Shared by the Cookbook
+    grid cards and the recipe-detail head + meta card.
+*@
+@using ALDevToolbox.Domain.ValueObjects
+
+<span class="rtype @_meta.Css">
+    <Icon Name="@_meta.Icon" Width="13" Height="13" />
+    @_meta.Label
+</span>
+
+@code {
+    [Parameter, EditorRequired] public RecipeType Type { get; set; }
+
+    private (string Css, string Icon, string Label) _meta => Type switch
+    {
+        RecipeType.Snippet => ("snippet", "scissors", "Snippet"),
+        RecipeType.Pattern => ("pattern", "puzzle", "Pattern"),
+        RecipeType.Module => ("module", "package", "Module"),
+        _ => ("snippet", "scissors", Type.ToString()),
+    };
+}

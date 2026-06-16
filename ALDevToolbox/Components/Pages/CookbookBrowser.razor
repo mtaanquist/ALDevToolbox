@@ -9,11 +9,11 @@
 
 <PageTitle>Cookbook · AL Dev Toolbox</PageTitle>
 
-<div class="snippets-browser">
-    <header class="admin-page__header">
+<div class="cookbook">
+    <div class="cb-head">
         <div>
             <h1>Cookbook</h1>
-            <p class="muted">
+            <p class="sub">
                 Reusable AL recipes — from one-file snippets to almost-complete
                 modules. Search by title, description, or keywords; open one to
                 view its files and copy them into your project.
@@ -23,35 +23,34 @@
             <Icon Name="lightbulb" Width="16" Height="16" />
             <span>Suggest a recipe</span>
         </a>
-    </header>
+    </div>
 
-    <div class="snippets-browser__toolbar">
-        <div class="admin-search-form snippets-browser__search">
+    <div class="cb-toolbar">
+        <div class="cb-search">
+            <Icon Name="search" Width="17" Height="17" />
             <input type="search"
-                   class="admin-search-input"
+                   class="input"
                    placeholder="Search the cookbook…"
                    value="@_query"
                    @oninput="OnQueryChanged"
                    aria-label="Search the cookbook" />
-            <button type="button" class="btn btn--icon" @onclick="ReloadAsync" aria-label="Search" title="Search">
-                <Icon Name="search" Width="14" Height="14" />
-            </button>
         </div>
-        <div class="snippets-browser__chips" role="group" aria-label="Filter by type">
+        <div class="cb-pills" role="group" aria-label="Filter by type">
             @foreach (var option in _typeOptions)
             {
-                var isActive = _typeFilter == option.Value;
+                var active = _typeFilter == option.Value;
                 <button type="button"
-                        class="btn @(isActive ? "btn--primary" : null)"
+                        class="cb-pill @(active ? "on" : "")"
                         @onclick="() => SetTypeFilter(option.Value)"
-                        aria-pressed="@(isActive ? "true" : "false")">
+                        aria-pressed="@(active ? "true" : "false")">
                     @option.Label
                 </button>
             }
         </div>
-        <label class="check-row">
+        <label class="cb-toggle">
             <input type="checkbox" @bind="_includeDeprecated" @bind:after="ReloadAsync" />
-            <span>Include deprecated</span>
+            <span class="cbx-box"><Icon Name="check" Width="12" Height="12" /></span>
+            Include deprecated
         </label>
     </div>
 
@@ -64,54 +63,69 @@
         var rows = ApplyTypeFilter(_results);
         if (rows.Count == 0)
         {
-            @if (string.IsNullOrWhiteSpace(_query) && _typeFilter is null)
-            {
-                <p class="muted">
-                    No recipes in this organisation yet. If you have a useful AL
-                    pattern to share, click <strong>Suggest a recipe</strong> — an
-                    admin will review and publish it.
+            var emptyOrg = string.IsNullOrWhiteSpace(_query) && _typeFilter is null && !_includeDeprecated;
+            <div class="rel-empty">
+                <div class="rel-empty-ico"><Icon Name="@(emptyOrg ? "lightbulb" : "search")" Width="24" Height="24" /></div>
+                <div class="rel-empty-h">@(emptyOrg ? "No recipes yet" : "No recipes match")</div>
+                <p class="rel-empty-p">
+                    @if (emptyOrg)
+                    {
+                        <text>No recipes in this organisation yet. If you have a useful AL pattern to share, click <strong>Suggest a recipe</strong> — an admin will review and publish it.</text>
+                    }
+                    else
+                    {
+                        <text>Try a different keyword or clear the type filter.</text>
+                    }
                 </p>
-            }
-            else if (_typeFilter is not null && string.IsNullOrWhiteSpace(_query))
-            {
-                <p class="muted">No <strong>@_typeFilter</strong> recipes in this organisation yet.</p>
-            }
-            else
-            {
-                <p class="muted">No recipes match "<strong>@_query</strong>".</p>
-            }
+            </div>
         }
         else
         {
-            <ul class="snippet-list">
+            <div class="cb-grid">
                 @foreach (var s in rows)
                 {
-                    <li class="snippet-card">
-                        <a class="snippet-card__title" href="@($"/cookbook/{s.Id}")">@s.Title</a>
-                        <span class="snippet-card__badge" title="Recipe type">@s.Type</span>
-                        @if (s.Deprecated)
-                        {
-                            <span class="snippet-card__badge">Deprecated</span>
-                        }
-                        @if (s.MinimumApplicationVersion is { } minV)
-                        {
-                            <span class="snippet-card__badge" title="Minimum BC application version">
-                                Min: @minV.Name
-                            </span>
-                        }
-                        <p class="snippet-card__description">@s.Description</p>
-                        @if (!string.IsNullOrWhiteSpace(s.Keywords))
-                        {
-                            <div class="snippet-card__keywords">
-                                @foreach (var kw in s.Keywords.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                    var tags = SplitKeywords(s.Keywords);
+                    var fileCount = _fileCounts.GetValueOrDefault(s.Id);
+                    <a class="recipe-card" href="@($"/cookbook/{s.Id}")">
+                        <div class="rcd-top">
+                            <RecipeTypeBadge Type="s.Type" />
+                            <span class="rcd-min">
+                                @if (s.Deprecated)
                                 {
-                                    <span class="snippet-card__keyword">@kw</span>
+                                    <span class="rcd-deprecated">Deprecated</span>
+                                }
+                                else if (s.MinimumApplicationVersion is { } minV)
+                                {
+                                    <Icon Name="tag" Width="12" Height="12" />
+                                    <span>Min: @minV.Name</span>
+                                }
+                            </span>
+                        </div>
+                        <h3>@s.Title</h3>
+                        <p class="rcd-desc">@s.Description</p>
+                        @if (tags.Count > 0)
+                        {
+                            <div class="rcd-tags">
+                                @foreach (var tag in tags.Take(6))
+                                {
+                                    <span class="rcd-tag">@tag</span>
+                                }
+                                @if (tags.Count > 6)
+                                {
+                                    <span class="rcd-tag more">+@(tags.Count - 6)</span>
                                 }
                             </div>
                         }
-                    </li>
+                        <div class="rcd-foot">
+                            <span class="rcd-files">
+                                <Icon Name="file-code" Width="14" Height="14" />
+                                <span>@fileCount file@(fileCount == 1 ? "" : "s")</span>
+                            </span>
+                            <span class="rcd-open">View recipe<Icon Name="arrow-right" Width="14" Height="14" /></span>
+                        </div>
+                    </a>
                 }
-            </ul>
+            </div>
         }
     }
 </div>
@@ -121,6 +135,7 @@
     private bool _includeDeprecated;
     private RecipeType? _typeFilter;
     private List<Recipe>? _results;
+    private Dictionary<int, int> _fileCounts = new();
     private CancellationTokenSource? _debounce;
 
     private readonly (string Label, RecipeType? Value)[] _typeOptions =
@@ -131,7 +146,16 @@
         ("Module", RecipeType.Module),
     };
 
-    protected override Task OnInitializedAsync() => ReloadAsync();
+    private static List<string> SplitKeywords(string? keywords) =>
+        string.IsNullOrWhiteSpace(keywords)
+            ? new List<string>()
+            : keywords.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _fileCounts = await Recipes.GetFileCountsAsync();
+        await ReloadAsync();
+    }
 
     private void OnQueryChanged(ChangeEventArgs e)
     {

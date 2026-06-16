@@ -93,6 +93,21 @@ public sealed class RecipeService
             .ToListAsync(ct);
     }
 
+    /// <summary>
+    /// File counts keyed by recipe id, for the Cookbook grid card foot
+    /// ("N files"). Cheaper than hydrating <see cref="Recipe.Files"/> with their
+    /// content; recipes with no files are simply absent from the map (treat as 0).
+    /// </summary>
+    public async Task<Dictionary<int, int>> GetFileCountsAsync(CancellationToken ct = default)
+    {
+        var rows = await _db.RecipeFiles
+            .AsNoTracking()
+            .GroupBy(f => f.RecipeId)
+            .Select(g => new { RecipeId = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+        return rows.ToDictionary(r => r.RecipeId, r => r.Count);
+    }
+
     /// <summary>Returns every recipe (optionally including soft-deleted), with files. Drives the admin list.</summary>
     public Task<List<Recipe>> GetAllForAdminAsync(bool includeDeleted, CancellationToken ct = default)
     {

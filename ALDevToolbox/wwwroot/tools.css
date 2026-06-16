@@ -2191,6 +2191,325 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 .rel-empty-p { font-size: 13.5px; color: var(--ink-3); max-width: 460px; line-height: 1.55; margin: 0; }
 .rel-empty .btn { margin-top: 8px; }
 
+/* ============================================================
+   Shared card + toast + recipe-type badge primitives
+   (.design/explorer-cookbook) — used by the Cookbook + Recipe screens.
+   ============================================================ */
+.card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow);
+}
+.card-head {
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.card-head .cap-label { margin: 0; }
+
+.toast {
+    position: fixed;
+    bottom: 22px;
+    left: 50%;
+    transform: translateX(-50%) translateY(8px);
+    background: var(--ink);
+    color: #fff;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: var(--shadow-lg);
+    z-index: 90;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s, transform 0.18s;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast svg { width: 16px; height: 16px; color: var(--good); }
+:root[data-theme="dark"] .toast { background: #1c2430; border: 1px solid var(--border-strong); color: #f1f5f9; }
+
+.rtype {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 7px;
+}
+.rtype svg { width: 13px; height: 13px; }
+.rtype.snippet { color: var(--st-trans); background: var(--st-trans-bg); }
+.rtype.pattern { color: var(--code-num); background: color-mix(in srgb, var(--code-num) 12%, transparent); }
+.rtype.module { color: var(--st-final); background: var(--st-final-bg); }
+
+/* deprecated tag (not in the design study; the app has deprecated recipes) */
+.rcd-deprecated,
+.rd-deprecated {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--st-fuzzy);
+    background: var(--st-fuzzy-bg);
+    border-radius: 999px;
+    padding: 2px 9px;
+    white-space: nowrap;
+}
+
+/* ============================================================
+   Cookbook grid
+   ============================================================ */
+.cookbook { max-width: 1280px; }
+.cb-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+.cb-head h1 { margin: 0; font-size: 27px; font-weight: 700; color: var(--ink); letter-spacing: -0.5px; }
+.cb-head .sub { margin: 8px 0 0; color: var(--ink-3); font-size: 14px; max-width: 680px; line-height: 1.55; }
+.cb-head .btn { flex: 0 0 auto; }
+
+.cb-toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; flex-wrap: wrap; }
+.cb-search { position: relative; flex: 1; min-width: 260px; }
+.cb-search > svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--ink-4); width: 17px; height: 17px; pointer-events: none; }
+.cb-search .input {
+    width: 100%;
+    height: 40px;
+    font: inherit;
+    font-size: 14px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--border-input);
+    border-radius: var(--r);
+    padding: 0 13px 0 40px;
+    outline: none;
+    transition: border-color 0.12s, box-shadow 0.12s;
+}
+.cb-search .input::placeholder { color: var(--ink-4); }
+.cb-search .input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-50); }
+
+.cb-pills { display: inline-flex; gap: 8px; }
+.cb-pill {
+    appearance: none;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 8px 15px;
+    border-radius: 9px;
+    border: 1px solid var(--border-input);
+    background: var(--surface);
+    color: var(--ink-2);
+    transition: background 0.12s, color 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+.cb-pill:hover { background: var(--surface-sunken); }
+.cb-pill.on { background: var(--blue); border-color: var(--blue); color: #fff; box-shadow: var(--shadow-xs); }
+
+.cb-toggle { display: inline-flex; align-items: center; gap: 9px; font-size: 13px; color: var(--ink-2); cursor: pointer; user-select: none; }
+.cb-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.cb-toggle .cbx-box { width: 19px; height: 19px; border-radius: 6px; border: 1.6px solid var(--border-strong); background: var(--surface); display: grid; place-items: center; color: transparent; transition: background 0.12s, border-color 0.12s, color 0.12s; }
+.cb-toggle input:checked + .cbx-box { background: var(--blue); border-color: var(--blue); color: #fff; }
+.cb-toggle .cbx-box svg { width: 12px; height: 12px; }
+
+.cb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 18px; }
+.recipe-card {
+    appearance: none;
+    text-align: left;
+    font: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-xs);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 13px;
+    transition: border-color 0.14s, box-shadow 0.14s, transform 0.14s;
+}
+.recipe-card:hover { border-color: var(--blue); box-shadow: var(--shadow); transform: translateY(-2px); text-decoration: none; }
+.rcd-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rcd-min { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--ink-4); white-space: nowrap; }
+.rcd-min svg { color: var(--ink-4); }
+.recipe-card h3 { margin: 0; font-size: 16px; font-weight: 700; color: var(--ink); letter-spacing: -0.2px; line-height: 1.3; }
+.recipe-card:hover h3 { color: var(--blue-700); }
+.rcd-desc {
+    margin: 0;
+    font-size: 13px;
+    color: var(--ink-3);
+    line-height: 1.55;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.rcd-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.rcd-tag {
+    font-size: 11px;
+    color: var(--ink-3);
+    background: var(--surface-sunken);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px 9px;
+    white-space: nowrap;
+}
+.rcd-tag.more { color: var(--ink-4); font-weight: 600; }
+.rcd-foot {
+    margin-top: auto;
+    padding-top: 13px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12.5px;
+    color: var(--ink-3);
+}
+.rcd-files { display: inline-flex; align-items: center; gap: 6px; }
+.rcd-files svg { color: var(--ink-4); }
+.rcd-open { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-4); font-weight: 600; transition: gap 0.14s, color 0.14s; }
+.recipe-card:hover .rcd-open { color: var(--blue); gap: 8px; }
+
+/* ============================================================
+   Recipe detail
+   ============================================================ */
+.recipe-detail { max-width: 1180px; }
+.rd-topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+.rd-grid { display: grid; grid-template-columns: 1fr 264px; gap: 32px; align-items: start; }
+.rd-main { min-width: 0; }
+.rd-head { margin-bottom: 26px; }
+.rd-badges { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 13px; }
+.rd-min { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-3); }
+.rd-min svg { color: var(--ink-4); }
+.rd-min .mono { color: var(--ink-4); font-size: 11.5px; }
+.rd-head h1 { margin: 0; font-size: 26px; font-weight: 700; color: var(--ink); letter-spacing: -0.5px; line-height: 1.25; }
+.rd-desc { margin: 12px 0 0; font-size: 14px; color: var(--ink-2); line-height: 1.6; max-width: 760px; }
+.rd-tags { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 16px; }
+
+.rd-instructions { margin-bottom: 26px; }
+.rd-instructions-body { font-size: 14px; color: var(--ink-2); line-height: 1.6; max-width: 760px; }
+.rd-instructions-body :first-child { margin-top: 0; }
+.rd-instructions-body code { font-family: var(--mono); font-size: 12.5px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
+
+.rd-files-h { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.rd-files-h .cap-label { margin: 0; }
+.rd-files-n { font-size: 12px; color: var(--ink-4); font-variant-numeric: tabular-nums; }
+
+/* code block */
+.codeblock { border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; background: var(--surface); box-shadow: var(--shadow-xs); margin-bottom: 18px; }
+.cb-bar { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px 9px 10px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.codeblock.collapsed .cb-bar { border-bottom: 0; }
+.cb-name {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink);
+    min-width: 0;
+}
+.cb-name .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cb-name .chev { color: var(--ink-4); display: inline-flex; transition: transform 0.15s; }
+.codeblock.collapsed .cb-name .chev { transform: rotate(-90deg); }
+.cb-name > svg { width: 15px; height: 15px; flex: 0 0 auto; }
+.cb-name .cb-lines { font-family: var(--sans); font-size: 11px; font-weight: 500; color: var(--ink-4); margin-left: 4px; white-space: nowrap; flex: 0 0 auto; }
+.cb-copy {
+    appearance: none;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 11px;
+    border-radius: 7px;
+    border: 1px solid var(--border-input);
+    background: var(--surface);
+    color: var(--ink-2);
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+    flex: 0 0 auto;
+}
+.cb-copy:hover { background: var(--surface-sunken); color: var(--ink); }
+.cb-copy svg { color: var(--ink-4); }
+.cb-copy:hover svg { color: var(--blue); }
+
+.cb-body { overflow-x: auto; background: var(--surface); }
+/* white-space:normal on pre/code so the inter-row whitespace this is rendered
+   with doesn't add blank lines; .cl-c keeps the code's own spacing (pre). */
+.cb-body pre { margin: 0; white-space: normal; }
+.cb-body code { display: block; font-family: var(--mono); font-size: 12.5px; line-height: 1.7; padding: 12px 0; white-space: normal; }
+.cb-body .cl { display: grid; grid-template-columns: 46px 1fr; }
+.cb-body .cl-n { text-align: right; padding-right: 16px; color: var(--ink-4); opacity: 0.65; user-select: none; font-variant-numeric: tabular-nums; }
+.cb-body .cl-c { white-space: pre; padding-right: 20px; color: var(--ink-2); }
+
+.tok-kw { color: var(--blue-700); font-weight: 600; }
+.tok-type { color: var(--code-type); }
+.tok-str { color: var(--st-final); }
+.tok-id { color: var(--st-fuzzy); }
+.tok-num { color: var(--code-num); }
+.tok-com { color: var(--ink-4); font-style: italic; }
+.tok-punc, .tok-txt { color: var(--ink-2); }
+
+/* recipe rail */
+.rd-rail { position: sticky; top: 30px; display: flex; flex-direction: column; gap: 16px; }
+.rail-files { padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+.rail-file {
+    appearance: none;
+    font: inherit;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 0;
+    background: transparent;
+    color: var(--ink-2);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    transition: background 0.12s, color 0.12s;
+}
+.rail-file svg { color: var(--ink-4); flex: 0 0 auto; }
+.rail-file .rf-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-file:hover { background: var(--surface-sunken); color: var(--ink); text-decoration: none; }
+.rail-file.on { background: var(--blue-50); color: var(--blue-700); }
+.rail-file.on svg { color: var(--blue); }
+
+.rd-meta {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 13px;
+}
+.rdm-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--ink-3); }
+.rdm-row b { color: var(--ink); }
+.rdm-row b.mono { font-size: 11.5px; }
+.rd-download { width: 100%; justify-content: center; margin-top: 4px; }
+
+@media (max-width: 980px) {
+    .rd-grid { grid-template-columns: 1fr; }
+    .rd-rail { position: static; flex-direction: row; flex-wrap: wrap; }
+    .rd-rail > * { flex: 1; min-width: 240px; }
+}
+
 
 /* Bottom-of-list sentinel that triggers the next lazy-load page. */
 .oe-scroll-sentinel {
