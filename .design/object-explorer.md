@@ -58,7 +58,7 @@ applications/
 └── …
 ```
 
-Full real-world DVD is ~500 MB compressed. A `.app` file is a ZIP with a 40-byte `NAVX` header prefix you have to strip; the inner ZIP contains `NavxManifest.xml`, `SymbolReference.json`, an embedded `src/` source tree (when `IncludeSourceInSymbolFile="true"`), translations, layouts, and the entitlement XML.
+Full real-world DVD is ~500 MB compressed. A `.app` file is a ZIP with a 40-byte `NAVX` header prefix you have to strip; the inner ZIP contains `NavxManifest.xml`, `SymbolReference.json`, an embedded `src/` source tree (when `IncludeSourceInSymbolFile="true"`), translations, layouts, and the entitlement XML. BC 14 (runtime 3.0, the oldest supported `.app`) predates `<ResourceExposurePolicy IncludeSourceInSymbolFile="…">` — those manifests ship an empty policy element and signal embedded source with `ShowMyCode="True"` on `<App>` instead. The reader falls back to that flag when the modern attribute is absent so a BC 14 app's embedded source still loads; without the fallback the objects ingest but their source goes missing.
 
 ### What we filter
 

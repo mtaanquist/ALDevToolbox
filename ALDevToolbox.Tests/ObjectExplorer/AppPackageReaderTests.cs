@@ -293,6 +293,54 @@ public sealed class AppPackageReaderTests
     }
 
     [Fact]
+    public async Task ReadAsync_reads_embedded_source_from_bc14_app_with_show_my_code()
+    {
+        // BC 14 (runtime 3.0) .apps predate <ResourceExposurePolicy
+        // IncludeSourceInSymbolFile="…">. They still embed the src/ tree but
+        // signal it via ShowMyCode="True" on <App>, leaving the policy element
+        // empty. The reader must fall back to ShowMyCode so the embedded source
+        // is read — otherwise the object loads but its source goes missing.
+        var bytes = BuildSyntheticAppFile(
+            manifestEntryName: "NavxManifest.xml",
+            appElementExtraAttributes: "Runtime=\"3.0\" ShowMyCode=\"True\" ",
+            embeddedSource: new Dictionary<string, string>
+            {
+                // .app files double-nest under src/src/…; the reader collapses
+                // that to a single src/ like the paired .Source.zip uses.
+                ["src/src/codeunits/Foo.Codeunit.al"] = "codeunit 90000 \"Foo\"\n{\n}\n",
+            });
+        await using var stream = new MemoryStream(bytes);
+
+        var pkg = await AppPackageReader.ReadAsync(stream);
+
+        pkg.Manifest.IncludeSourceInSymbolFile.Should().BeTrue(
+            "ShowMyCode=\"True\" stands in for IncludeSourceInSymbolFile on BC 14 manifests");
+        pkg.SourceFiles.Should().ContainSingle(f =>
+            f.Path == "src/codeunits/Foo.Codeunit.al"
+            && f.Content.Contains("codeunit 90000"));
+    }
+
+    [Fact]
+    public async Task ReadAsync_skips_embedded_source_when_show_my_code_absent()
+    {
+        // The fallback must not over-read: a BC 14 app with ShowMyCode absent
+        // (protected / no source exposed) leaves IncludeSourceInSymbolFile
+        // false and ships no source rows, even if a stray src/ entry exists.
+        var bytes = BuildSyntheticAppFile(
+            manifestEntryName: "NavxManifest.xml",
+            embeddedSource: new Dictionary<string, string>
+            {
+                ["src/src/codeunits/Foo.Codeunit.al"] = "codeunit 90000 \"Foo\"\n{\n}\n",
+            });
+        await using var stream = new MemoryStream(bytes);
+
+        var pkg = await AppPackageReader.ReadAsync(stream);
+
+        pkg.Manifest.IncludeSourceInSymbolFile.Should().BeFalse();
+        pkg.SourceFiles.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task ReadAsync_handles_empty_dependencies_block()
     {
         await using var stream = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
@@ -442,7 +490,9 @@ public sealed class AppPackageReaderTests
     private static byte[] BuildSyntheticAppFile(
         string? manifestEntryName,
         bool includeSymbolReference = true,
-        string? symbolReferenceJson = null)
+        string? symbolReferenceJson = null,
+        string? appElementExtraAttributes = null,
+        IReadOnlyDictionary<string, string>? embeddedSource = null)
     {
         // Build the ZIP into its own buffer first; ZipArchive in Create mode
         // writes its central directory using offsets relative to the start
@@ -460,7 +510,13 @@ public sealed class AppPackageReaderTests
                     w.Write(
                         "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
                         + "<Package xmlns=\"http://schemas.microsoft.com/navx/2015/manifest\">"
-                        + "<App Id=\"11111111-1111-1111-1111-111111111111\" Name=\"Synthetic\" Publisher=\"Test\" Version=\"1.0.0.0\" />"
+                        + "<App Id=\"11111111-1111-1111-1111-111111111111\" Name=\"Synthetic\" Publisher=\"Test\" Version=\"1.0.0.0\" "
+                        + (appElementExtraAttributes ?? string.Empty)
+                        + "/>"
+                        // BC 14 manifests ship an empty <ResourceExposurePolicy />
+                        // (no IncludeSourceInSymbolFile attribute); mirror that so the
+                        // ShowMyCode fallback path is exercised faithfully.
+                        + "<ResourceExposurePolicy />"
                         + "</Package>");
                 }
                 if (includeSymbolReference)
@@ -468,6 +524,15 @@ public sealed class AppPackageReaderTests
                     var sym = zip.CreateEntry("SymbolReference.json");
                     using var sw = new StreamWriter(sym.Open());
                     sw.Write(symbolReferenceJson ?? "{\"RuntimeVersion\":\"14.0\",\"Namespaces\":[]}");
+                }
+                if (embeddedSource is not null)
+                {
+                    foreach (var (path, content) in embeddedSource)
+                    {
+                        var srcEntry = zip.CreateEntry(path);
+                        using var sw = new StreamWriter(srcEntry.Open());
+                        sw.Write(content);
+                    }
                 }
             }
             zipBytes = zipMs.ToArray();
