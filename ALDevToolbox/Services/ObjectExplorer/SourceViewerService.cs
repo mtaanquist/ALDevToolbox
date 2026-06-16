@@ -295,17 +295,14 @@ public sealed class SourceViewerService
             return new GoToDefinitionTarget(fileId, targetLine);
         }
 
-        // 3. Same-Release lookup by object name. Chain-walk semantics (for
-        //    customer Releases sitting on top of BC) are a follow-up — the
-        //    dominant case is Microsoft-DVD-ingest where everything lives in
-        //    a single Release.
-        var target = await _db.OeModuleObjects.AsNoTracking()
-            .Where(o => o.Module!.ReleaseId == meta.ReleaseId)
-            .Where(o => o.SourceFileId != null)
-            .Where(o => o.Name == word)
-            .OrderBy(o => o.Kind)
-            .Select(o => new { o.SourceFileId, o.LineNumber })
-            .FirstOrDefaultAsync(ct);
+        // 3. Object-name lookup across the visible release chain. Walks
+        //    parent_release_id (child shadows parent) so a base object
+        //    referenced from a customer Release lands on the ancestor Release
+        //    that defines it — e.g. clicking `Customer` in a Dansani file
+        //    navigates to the base table in the BC parent Release. See
+        //    ChainObjectResolution.
+        var target = await ChainObjectResolution.ResolveObjectAsync(
+            _db, meta.ReleaseId, word, kind: null, objectId: null, ct);
         if (target?.SourceFileId is null) return null;
         return new GoToDefinitionTarget(target.SourceFileId.Value, target.LineNumber);
     }

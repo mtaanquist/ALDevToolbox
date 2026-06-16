@@ -114,15 +114,14 @@ public sealed class ObjectExplorerTools
         var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
 
         var kind = targetKind.Trim().ToLowerInvariant();
-        var owner = await _db.OeModuleObjects.AsNoTracking()
-            .Where(o => o.Module!.ReleaseId == releaseId
-                        && o.Kind == kind
-                        && o.Name.ToLower() == targetObject.Trim().ToLower())
-            .Include(o => o.Module)
-            .FirstOrDefaultAsync(ct);
-        if (owner is null || owner.Module is null)
+        // Resolve the target across the release chain (a customer Release's
+        // parent BC base, etc.) so you can target a base object — Customer,
+        // Sales Header — from a child Release where it isn't redefined.
+        var owner = await ChainObjectResolution.ResolveObjectAsync(
+            _db, releaseId, targetObject.Trim(), kind, objectId: null, ct);
+        if (owner is null)
         {
-            throw new McpException($"Could not find a {kind} named '{targetObject}' in release {releaseLabelOrId}. Try search_objects to discover the exact name.");
+            throw new McpException($"Could not find a {kind} named '{targetObject}' in release {releaseLabelOrId} or its parent releases. Try search_objects to discover the exact name.");
         }
 
         string? memberName = null;
@@ -139,7 +138,7 @@ public sealed class ObjectExplorerTools
         }
 
         var query = new FindReferencesQuery(
-            TargetAppId: owner.Module.AppId,
+            TargetAppId: owner.AppId,
             TargetObjectKind: owner.Kind,
             TargetObjectId: owner.ObjectId,
             TargetObjectName: owner.Name,
@@ -168,19 +167,17 @@ public sealed class ObjectExplorerTools
         var releaseId = await ResolveReleaseAsync(releaseLabelOrId, ct);
 
         var kind = targetKind.Trim().ToLowerInvariant();
-        var owner = await _db.OeModuleObjects.AsNoTracking()
-            .Where(o => o.Module!.ReleaseId == releaseId
-                        && o.Kind == kind
-                        && o.Name.ToLower() == targetObject.Trim().ToLower())
-            .Include(o => o.Module)
-            .FirstOrDefaultAsync(ct);
-        if (owner is null || owner.Module is null)
+        // Chain-aware (same as find_references) so a base object can be the
+        // target from a child Release.
+        var owner = await ChainObjectResolution.ResolveObjectAsync(
+            _db, releaseId, targetObject.Trim(), kind, objectId: null, ct);
+        if (owner is null)
         {
-            throw new McpException($"Could not find a {kind} named '{targetObject}' in release {releaseLabelOrId}. Try search_objects to discover the exact name.");
+            throw new McpException($"Could not find a {kind} named '{targetObject}' in release {releaseLabelOrId} or its parent releases. Try search_objects to discover the exact name.");
         }
 
         var query = new FindSystemReferencesQuery(
-            TargetAppId: owner.Module.AppId,
+            TargetAppId: owner.AppId,
             TargetObjectKind: owner.Kind,
             TargetObjectId: owner.ObjectId,
             TargetObjectName: owner.Name,
