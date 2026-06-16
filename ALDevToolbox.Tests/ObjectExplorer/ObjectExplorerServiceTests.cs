@@ -1275,6 +1275,77 @@ public sealed class ObjectExplorerServiceTests : IDisposable
             because: "the child's same-AppId module shadows the parent's");
     }
 
+    // ── Cross-release object resolution (ChainObjectResolution) ────────
+
+    [Fact]
+    public async Task ResolveObjectAsync_resolves_an_object_living_in_the_parent_release_from_the_child()
+    {
+        // Parent: DK Core. Child: OIOUBL on top. An object that physically
+        // lives in the parent must resolve when looked up from the child —
+        // the gap that left base tables "unresolved" from a customer Release.
+        int parentId, childId;
+        await using (var ctx = _db.NewContext())
+        {
+            var imp = NewImporter(ctx);
+            await using var s1 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+            var parent = await imp.ImportReleaseAsync(new ReleaseImportRequest(
+                "BC Parent", "first_party", null, null,
+                new[] { new AppFileUpload("dk.app", s1, null) }));
+            parentId = parent.ReleaseId;
+
+            await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
+            var child = await imp.ImportReleaseAsync(new ReleaseImportRequest(
+                "Customer X", "customer", parent.ReleaseId, null,
+                new[] { new AppFileUpload("oioubl.app", s2, null) }));
+            childId = child.ReleaseId;
+        }
+
+        await using var read = _db.NewContext();
+
+        // A codeunit that exists only in the parent (DK Core), picked from the
+        // data so the test doesn't hard-code a symbol-package-specific name.
+        var parentObject = read.OeModuleObjects.AsNoTracking()
+            .Where(o => o.Module!.ReleaseId == parentId && o.Kind == "codeunit")
+            .OrderBy(o => o.Name)
+            .First();
+
+        var hit = await ChainObjectResolution.ResolveObjectAsync(
+            read, childId, parentObject.Name, "codeunit", null, CancellationToken.None);
+
+        hit.Should().NotBeNull(because: "the object lives in the parent and the chain walk reaches it from the child");
+        hit!.Id.Should().Be(parentObject.Id);
+        hit.ModuleName.Should().Be("DK Core");
+    }
+
+    [Fact]
+    public async Task ResolveObjectAsync_does_not_resolve_a_child_only_object_from_the_parent()
+    {
+        // Chain walk is parent-ward only: an object that lives in the child
+        // (OIOUBL's "OIOUBL-Profile" table) must NOT resolve from the parent.
+        int parentId;
+        await using (var ctx = _db.NewContext())
+        {
+            var imp = NewImporter(ctx);
+            await using var s1 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+            var parent = await imp.ImportReleaseAsync(new ReleaseImportRequest(
+                "BC Parent", "first_party", null, null,
+                new[] { new AppFileUpload("dk.app", s1, null) }));
+            parentId = parent.ReleaseId;
+
+            await using var s2 = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_OIOUBL.app"));
+            await imp.ImportReleaseAsync(new ReleaseImportRequest(
+                "Customer X", "customer", parent.ReleaseId, null,
+                new[] { new AppFileUpload("oioubl.app", s2, null) }));
+        }
+
+        await using var read = _db.NewContext();
+
+        var hit = await ChainObjectResolution.ResolveObjectAsync(
+            read, parentId, "OIOUBL-Profile", "table", null, CancellationToken.None);
+
+        hit.Should().BeNull(because: "the chain walk only reaches ancestors, never descendant Releases");
+    }
+
     // ── Find references — member-scoped ────────────────────────────────
 
     [Fact]

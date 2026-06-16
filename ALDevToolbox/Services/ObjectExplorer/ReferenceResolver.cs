@@ -151,35 +151,25 @@ public sealed class ReferenceResolver
     private async Task<DbMatch?> ResolveObjectByNameAsync(
         int releaseId, string name, CancellationToken ct)
     {
-        // AL is case-insensitive; the schema stores names with original
-        // casing, so query lower-cased on both sides.
-        var lowered = name.ToLowerInvariant();
-        return await _db.OeModuleObjects.AsNoTracking()
-            .Where(o => o.Module!.ReleaseId == releaseId)
-            .Where(o => o.Name.ToLower() == lowered)
-            .OrderBy(o => o.Kind)
-            .Select(o => new DbMatch(o.Id))
-            .FirstOrDefaultAsync(ct);
+        // Walk the visible release chain (child shadows parent) so a base
+        // object referenced from a customer Release resolves to the ancestor
+        // it actually lives in. See ChainObjectResolution.
+        var hit = await ChainObjectResolution.ResolveObjectAsync(
+            _db, releaseId, name, kind: null, objectId: null, ct);
+        return hit is null ? null : new DbMatch(hit.Id);
     }
 
     /// <summary>
     /// Finds a member symbol (procedure / field / trigger) by name on the
-    /// named owner object in the supplied release. Picks the first match
-    /// when multiple kinds share the name (rare but possible — e.g. a
-    /// procedure and a field with identical names).
+    /// named owner object across the visible release chain. Picks the closest
+    /// Release's match when the name exists at multiple depths.
     /// </summary>
     private async Task<DbMatch?> ResolveMemberSymbolAsync(
         int releaseId, string ownerName, string memberName, CancellationToken ct)
     {
-        var loweredOwner = ownerName.ToLowerInvariant();
-        var loweredMember = memberName.ToLowerInvariant();
-        return await _db.OeModuleSymbols.AsNoTracking()
-            .Where(s => s.Object!.Module!.ReleaseId == releaseId)
-            .Where(s => s.Object!.Name.ToLower() == loweredOwner)
-            .Where(s => s.Name.ToLower() == loweredMember)
-            .OrderBy(s => s.Kind)
-            .Select(s => new DbMatch(s.Id))
-            .FirstOrDefaultAsync(ct);
+        var symbolId = await ChainObjectResolution.ResolveMemberSymbolIdAsync(
+            _db, releaseId, ownerName, memberName, ct);
+        return symbolId is null ? null : new DbMatch(symbolId.Value);
     }
 
     /// <summary>
@@ -233,19 +223,12 @@ public sealed class ReferenceResolver
             .FirstOrDefaultAsync(ct);
         if (refRow is null) return null;
 
-        var loweredName = refRow.TargetObjectName.ToLowerInvariant();
-        var loweredKind = refRow.TargetObjectKind.ToLowerInvariant();
-        var query = _db.OeModuleObjects.AsNoTracking()
-            .Where(o => o.Module!.ReleaseId == releaseId)
-            .Where(o => o.Kind.ToLower() == loweredKind)
-            .Where(o => o.Name.ToLower() == loweredName);
-        if (refRow.TargetObjectId is { } targetObjId)
-        {
-            query = query.Where(o => o.ObjectId == targetObjId);
-        }
-        return await query
-            .Select(o => new DbMatch(o.Id))
-            .FirstOrDefaultAsync(ct);
+        // Resolve the reference's (kind, objectId|name) triplet across the
+        // visible chain so a recorded reference to a base object lands on the
+        // ancestor Release that defines it, not just the seed.
+        var hit = await ChainObjectResolution.ResolveObjectAsync(
+            _db, releaseId, refRow.TargetObjectName, refRow.TargetObjectKind, refRow.TargetObjectId, ct);
+        return hit is null ? null : new DbMatch(hit.Id);
     }
 
     /// <summary>
