@@ -38,7 +38,8 @@
         </div>
 
         var rows = _releases.Where(r => r.Kind == _kind)
-            .OrderByDescending(r => r.ImportedAt)
+            .OrderByDescending(VersionKey)
+            .ThenByDescending(r => r.ImportedAt)
             .ToList();
 
         if (rows.Count == 0)
@@ -66,7 +67,7 @@
             <div class="rel-hero">
                 <div class="rh-main">
                     <div class="rh-cap">
-                        <span class="cap-label">Latest import</span>
+                        <span class="cap-label">Latest release</span>
                         <span class="status-pill status-pill--live"><span class="status-pill__dot"></span>Ready</span>
                     </div>
                     <h2 class="rh-title">@featured.Label</h2>
@@ -214,6 +215,21 @@
         var m = Regex.Match(r.BcVersion ?? string.Empty, @"(\d+)\.");
         if (!m.Success) m = Regex.Match(r.Label ?? string.Empty, @"(\d+)\.");
         return m.Success ? m.Groups[1].Value : "—";
+    }
+
+    /// <summary>
+    /// "Newest first" sort key by release <em>version</em> rather than import
+    /// date, so the hero features the greatest version and cards within a group
+    /// run highest-first. Parses the numeric version from <c>BcVersion</c>
+    /// (e.g. "28.2.50931.51034") or the label ("Business Central 28.2"); rows
+    /// with no parseable version sort last.
+    /// </summary>
+    private static Version VersionKey(ReleaseListItem r)
+    {
+        if (Version.TryParse(r.BcVersion, out var v)) return v;
+        var m = Regex.Match(r.Label ?? string.Empty, @"\d+(?:\.\d+)+");
+        if (m.Success && Version.TryParse(m.Value, out var lv)) return lv;
+        return new Version(0, 0);
     }
 
     /// <summary>Human "imported N ago" string relative to today (UTC).</summary>
