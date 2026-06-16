@@ -1,4 +1,6 @@
 using System.IO.Compression;
+using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace ALDevToolbox.Services.ObjectExplorer;
@@ -253,11 +255,15 @@ public static class FolderZipWalker
     {
         ArgumentNullException.ThrowIfNull(archive);
 
-        var appRoots = FindAppRoots(archive);
+        var appRoots = FindAppRootIdentities(archive);
 
-        // Bucket every own-output .app (excluding .dep.app) by its containing
-        // directory in one pass, so the per-root selection below is a lookup
-        // rather than a re-scan of the whole archive.
+        // Bucket each app folder's own-output .app (excluding .dep.app) by its
+        // containing directory in one pass, so the per-root selection below is a
+        // lookup rather than a re-scan of the whole archive. A folder's root can
+        // legitimately hold a *stray* copy of a sibling app's .app (a dependency
+        // dropped next to app.json rather than in .alpackages); those are
+        // filtered out by the app.json identity check so they don't get claimed
+        // by — and imported under — the wrong folder.
         var appsByDir = new Dictionary<string, List<ZipArchiveEntry>>(StringComparer.OrdinalIgnoreCase);
         var sourceZips = new Dictionary<(string Directory, string Stem), ZipArchiveEntry>(new DirectoryStemComparer());
         foreach (var e in archive.Entries)
@@ -277,7 +283,8 @@ public static class FolderZipWalker
             if (full.EndsWith(".dep.app", StringComparison.OrdinalIgnoreCase)) continue;
 
             var dir = GetDirectory(full);
-            if (!appRoots.Contains(dir)) continue; // only an app's own folder, never .alpackages
+            if (!appRoots.TryGetValue(dir, out var identity)) continue; // only an app's own folder, never .alpackages
+            if (!AppMatchesRootIdentity(Path.GetFileNameWithoutExtension(name), identity)) continue;
             if (!appsByDir.TryGetValue(dir, out var list))
             {
                 list = new List<ZipArchiveEntry>();
@@ -333,7 +340,22 @@ public static class FolderZipWalker
                     IsLanguagePack: LanguagePackPattern.IsMatch(Path.GetFileNameWithoutExtension(name))));
             }
         }
-        return result;
+
+        // Safety net: never emit the same app identity (publisher_name +
+        // version) twice across folders. The app.json check above already keeps
+        // a stray sibling copy from being claimed by the wrong folder, but two
+        // folders sharing an app.json id would still collide — and a duplicate
+        // (AppId, Version) aborts the *entire* release at import time, so it's
+        // worth being certain here rather than failing the whole upload.
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var deduped = new List<FolderZipEntry>(result.Count);
+        foreach (var entry in result)
+        {
+            var (stem, version) = SplitAppNameAndVersion(Path.GetFileNameWithoutExtension(entry.FileName));
+            var key = NormalizeIdentity(stem) + "@" + (version?.ToString() ?? "?");
+            if (seen.Add(key)) deduped.Add(entry);
+        }
+        return deduped;
     }
 
     /// <summary>
@@ -347,7 +369,7 @@ public static class FolderZipWalker
     {
         ArgumentNullException.ThrowIfNull(archive);
 
-        var appRoots = FindAppRoots(archive);
+        var appRoots = FindAppRootIdentities(archive);
         var builtRoots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var e in archive.Entries)
         {
@@ -355,10 +377,17 @@ public static class FolderZipWalker
             if (!full.EndsWith(".app", StringComparison.OrdinalIgnoreCase)) continue;
             if (full.EndsWith(".dep.app", StringComparison.OrdinalIgnoreCase)) continue;
             var dir = GetDirectory(full);
-            if (appRoots.Contains(dir)) builtRoots.Add(dir);
+            // A folder counts as "built" only when it holds its *own* app — a
+            // stray sibling .app in the root (see WalkWorkspace) doesn't make
+            // the folder's own app compiled, so it stays reported as uncompiled.
+            if (appRoots.TryGetValue(dir, out var identity)
+                && AppMatchesRootIdentity(Path.GetFileNameWithoutExtension(LeafName(full)), identity))
+            {
+                builtRoots.Add(dir);
+            }
         }
 
-        return appRoots
+        return appRoots.Keys
             .Where(r => !builtRoots.Contains(r))
             .OrderBy(r => r, StringComparer.OrdinalIgnoreCase)
             .Select(r => r.Length == 0 ? "(workspace root)" : r)
@@ -367,19 +396,103 @@ public static class FolderZipWalker
 
     private static readonly Version EmptyVersion = new(0, 0);
 
-    private static HashSet<string> FindAppRoots(ZipArchive archive)
+    /// <summary>
+    /// Maps each app-root directory (one that holds an <c>app.json</c>) to its
+    /// app identity — the normalised <c>publisher_name</c> from that
+    /// <c>app.json</c> — or <see langword="null"/> when the manifest is missing
+    /// or unparseable. The identity is what ties a folder to its own compiled
+    /// <c>.app</c> so a stray dependency copy sitting in the folder root isn't
+    /// mistaken for the folder's output.
+    /// </summary>
+    private static Dictionary<string, string?> FindAppRootIdentities(ZipArchive archive)
     {
-        var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var roots = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         foreach (var e in archive.Entries)
         {
             var full = Normalize(e.FullName);
             if (IsUnderIgnoredWorkspaceDir(full)) continue;
-            if (string.Equals(LeafName(full), "app.json", StringComparison.OrdinalIgnoreCase))
-            {
-                roots.Add(GetDirectory(full));
-            }
+            if (!string.Equals(LeafName(full), "app.json", StringComparison.OrdinalIgnoreCase)) continue;
+            var dir = GetDirectory(full);
+            if (roots.ContainsKey(dir)) continue;
+            roots[dir] = ReadAppJsonIdentity(e);
         }
         return roots;
+    }
+
+    /// <summary>
+    /// True when an <c>.app</c> filename belongs to a folder with the given
+    /// identity. When the identity is unknown (<paramref name="identityNorm"/>
+    /// is <see langword="null"/> — unreadable app.json), fall back to accepting
+    /// any <c>.app</c> in the folder so a single-app project with an odd
+    /// manifest still imports.
+    /// </summary>
+    private static bool AppMatchesRootIdentity(string appFileNameNoExt, string? identityNorm)
+    {
+        if (identityNorm is null) return true;
+        var (stem, _) = SplitAppNameAndVersion(appFileNameNoExt);
+        return string.Equals(NormalizeIdentity(stem), identityNorm, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Reads <c>publisher</c> + <c>name</c> from an <c>app.json</c> entry and
+    /// returns them as a normalised identity. Returns <see langword="null"/> on
+    /// any read/parse failure or missing field — callers fall back to
+    /// filename-only behaviour rather than dropping the folder.
+    /// </summary>
+    private static string? ReadAppJsonIdentity(ZipArchiveEntry entry)
+    {
+        try
+        {
+            using var s = entry.Open();
+            using var doc = JsonDocument.Parse(s, new JsonDocumentOptions
+            {
+                AllowTrailingCommas = true,
+                CommentHandling = JsonCommentHandling.Skip,
+            });
+            var name = GetStringProperty(doc.RootElement, "name");
+            var publisher = GetStringProperty(doc.RootElement, "publisher");
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(publisher)) return null;
+            return NormalizeIdentity($"{publisher}_{name}");
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (InvalidDataException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Case-insensitive string-property lookup on a JSON object.</summary>
+    private static string? GetStringProperty(JsonElement obj, string name)
+    {
+        if (obj.ValueKind != JsonValueKind.Object) return null;
+        foreach (var prop in obj.EnumerateObject())
+        {
+            if (string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase)
+                && prop.Value.ValueKind == JsonValueKind.String)
+            {
+                return prop.Value.GetString();
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Collapses an app name/identity to its comparable core — letters and
+    /// digits only, lower-cased — so a folder's <c>publisher_name</c> from
+    /// <c>app.json</c> matches the <c>.app</c> filename stem regardless of the
+    /// spaces, dots, dashes, ampersands, and underscores either side uses.
+    /// </summary>
+    private static string NormalizeIdentity(string s)
+    {
+        var sb = new StringBuilder(s.Length);
+        foreach (var c in s)
+        {
+            if (char.IsLetterOrDigit(c)) sb.Append(char.ToLowerInvariant(c));
+        }
+        return sb.ToString();
     }
 
     private static bool IsUnderIgnoredWorkspaceDir(string normalizedFull)

@@ -328,6 +328,63 @@ public sealed class FolderZipWalkerTests
             .Should().BeEquivalentTo(new[] { "FMA" });
     }
 
+    [Fact]
+    public void WalkWorkspace_ignores_stray_sibling_app_in_a_folder_root()
+    {
+        // MultiCompany's app.json is for "Dansani Multi-Company" but a stray
+        // "Dansani Monitoring" .app sits in its root (a dependency dropped next
+        // to app.json rather than in .alpackages). Without the app.json identity
+        // check, Monitoring 1.0.6.8 gets claimed by BOTH folders and the import
+        // aborts on the duplicate (AppId, Version). Only Monitoring's own folder
+        // should contribute it; MultiCompany contributes nothing and reads as
+        // uncompiled. (Regression for the failure reported on v6.4.0.)
+        using var archive = BuildArchiveWithContent(
+            ("Monitoring/app.json", Manifest("Consortio IT ApS", "Dansani Monitoring")),
+            ("Monitoring/Consortio IT ApS_Dansani Monitoring_1.0.6.8.app", "monitoring-bytes"),
+            ("MultiCompany/app.json", Manifest("Consortio IT ApS", "Dansani Multi-Company")),
+            ("MultiCompany/Consortio IT ApS_Dansani Monitoring_1.0.6.8.app", "different-bytes"));
+
+        FolderZipWalker.WalkWorkspace(archive).Select(e => e.FileName)
+            .Should().BeEquivalentTo(
+                new[] { "Consortio IT ApS_Dansani Monitoring_1.0.6.8.app" },
+                because: "only Monitoring's own folder owns that app; the stray copy in MultiCompany is skipped");
+        FolderZipWalker.DescribeUncompiledAppRoots(archive)
+            .Should().BeEquivalentTo(new[] { "MultiCompany" });
+    }
+
+    [Fact]
+    public void WalkWorkspace_dedupes_when_two_folders_share_an_app_identity()
+    {
+        // Pathological: two folders with the same app.json identity, each
+        // holding the app with different bytes. The dedupe safety net keeps one
+        // so the import can't hard-fail on a duplicate (AppId, Version).
+        using var archive = BuildArchiveWithContent(
+            ("A/app.json", Manifest("Pub", "Shared App")),
+            ("A/Pub_Shared App_1.0.0.0.app", "a"),
+            ("B/app.json", Manifest("Pub", "Shared App")),
+            ("B/Pub_Shared App_1.0.0.0.app", "b"));
+
+        FolderZipWalker.WalkWorkspace(archive).Should().ContainSingle()
+            .Which.FileName.Should().Be("Pub_Shared App_1.0.0.0.app");
+    }
+
+    [Fact]
+    public void WalkWorkspace_matches_own_app_across_punctuation_differences()
+    {
+        // app.json name/publisher and the .app filename can differ in spaces,
+        // pluses and the like; the normalised identity match must still bind
+        // them so a real build isn't mistaken for a stray.
+        using var archive = BuildArchiveWithContent(
+            ("App/app.json", Manifest("Consortio IT ApS", "Dansani OSS + WEB")),
+            ("App/Consortio IT ApS_Dansani OSS + WEB_1.0.5.2.app", "bytes"));
+
+        FolderZipWalker.WalkWorkspace(archive).Select(e => e.FileName)
+            .Should().BeEquivalentTo(new[] { "Consortio IT ApS_Dansani OSS + WEB_1.0.5.2.app" });
+    }
+
+    private static string Manifest(string publisher, string name) =>
+        $$"""{"id":"00000000-0000-0000-0000-000000000000","name":"{{name}}","publisher":"{{publisher}}","version":"1.0.0.0"}""";
+
     /// <summary>
     /// Builds a throwaway <see cref="ZipArchive"/> in memory with the supplied
     /// entry paths. File bodies are empty — none of the walker's behaviour
@@ -346,6 +403,27 @@ public sealed class FolderZipWalkerTests
         ms.Position = 0;
         // Caller is responsible for disposing the returned archive (which
         // also disposes the backing MemoryStream).
+        return new ZipArchive(ms, ZipArchiveMode.Read, leaveOpen: false);
+    }
+
+    /// <summary>
+    /// Like <see cref="BuildArchive"/> but writes a body for each entry — needed
+    /// for the workspace tests, which parse <c>app.json</c> content to bind a
+    /// folder to its own app.
+    /// </summary>
+    private static ZipArchive BuildArchiveWithContent(params (string Path, string Content)[] files)
+    {
+        var ms = new MemoryStream();
+        using (var z = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var (path, content) in files)
+            {
+                var entry = z.CreateEntry(path);
+                using var w = new StreamWriter(entry.Open());
+                w.Write(content);
+            }
+        }
+        ms.Position = 0;
         return new ZipArchive(ms, ZipArchiveMode.Read, leaveOpen: false);
     }
 }
