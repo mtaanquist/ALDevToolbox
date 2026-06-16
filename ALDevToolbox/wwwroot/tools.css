@@ -2859,8 +2859,9 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
        and bottom status bar all sit inside the rounded box.
        CodeMirror's own cm-scroller handles horizontal scrolling. */
     overflow: hidden;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow);
     background: var(--surface);
 }
 
@@ -2882,7 +2883,6 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
        so a stale localStorage value still renders a usable column. */
     flex: 0 0 auto;
     align-self: stretch;
-    margin-right: 16px;
     display: flex;
     flex-direction: column;
     width: clamp(220px,
@@ -2901,8 +2901,9 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
     height: 100%;
     overflow-y: auto;
     overflow-x: hidden;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow);
     padding: 12px 14px;
     background: var(--surface);
 }
