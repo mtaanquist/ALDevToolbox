@@ -186,6 +186,24 @@ public sealed class ReleaseImportWorker : BackgroundService
                 return;
             }
 
+            // Workspace uploads: surface any app folder that declares an
+            // app.json but shipped no compiled .app (not built yet). Those are
+            // absent from the release by design — the importer only ingests
+            // build output — but the admin should know which apps were skipped
+            // so they can build and amend them in. Log-only for now.
+            if (archive is not null
+                && job.Source is ReleaseImportSource.StagedZip { IsDvd: false }
+                && FolderZipWalker.LooksLikeWorkspace(archive))
+            {
+                var uncompiled = FolderZipWalker.DescribeUncompiledAppRoots(archive);
+                if (uncompiled.Count > 0)
+                {
+                    _logger.LogWarning(
+                        "Release {ReleaseId}: workspace import skipped {Count} app folder(s) with no compiled .app: {Folders}. Build them and amend the release to include them.",
+                        job.ReleaseId, uncompiled.Count, string.Join(", ", uncompiled));
+                }
+            }
+
             try
             {
                 await importer.ProcessReleaseAsync(job.ReleaseId, uploads, job.StoreSymbolReference, ct).ConfigureAwait(false);

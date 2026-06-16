@@ -161,6 +161,12 @@
                     (Microsoft's <code>_Exclude_</code> marker), and language
                     packs (translation-only modules) automatically.
                     Up to 1 GB.
+                    <br />
+                    Also accepts a zipped <strong>VS Code AL workspace</strong> —
+                    any folder with an <code>app.json</code> is treated as one
+                    app and we import its compiled <code>.app</code> (newest
+                    version), ignoring the <code>.alpackages</code> dependency
+                    cache. App folders that haven't been built yet are skipped.
                 </small>
             </label>
         </section>

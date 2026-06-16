@@ -357,7 +357,17 @@ public static class AppPackageReader
         var runtime = AttrOptional(app, "Runtime");
 
         var policy = doc.Root?.Element(ns + "ResourceExposurePolicy");
-        var includeSource = ParseBoolAttr(policy, "IncludeSourceInSymbolFile", defaultValue: false);
+        // BC 15+ governs embedded source via <ResourceExposurePolicy
+        // IncludeSourceInSymbolFile="…">. BC 14 (runtime 3.0) predates that
+        // element — its .apps still embed the src/ tree but signal it with
+        // ShowMyCode="True" on the <App> element (the manifest ships an empty
+        // <ResourceExposurePolicy /> with no attributes). Fall back to that flag
+        // only when the modern attribute is absent, so a BC 14 customer .app's
+        // embedded source still gets read and modern apps (which set the policy
+        // explicitly, including the "false" case) keep their current behaviour.
+        // See .design/object-explorer.md (BC 14 is the oldest supported .app).
+        var includeSource = ParseBoolAttrOptional(policy, "IncludeSourceInSymbolFile")
+            ?? ParseBoolAttr(app, "ShowMyCode", defaultValue: false);
         var allowDebugging = ParseBoolAttr(policy, "AllowDebugging", defaultValue: false);
         var allowSrcDownload = ParseBoolAttr(policy, "AllowDownloadingSource", defaultValue: false);
 
@@ -396,11 +406,19 @@ public static class AppPackageReader
     private static string? AttrOptional(XElement el, string name) => el.Attribute(name)?.Value;
 
     private static bool ParseBoolAttr(XElement? el, string name, bool defaultValue)
+        => ParseBoolAttrOptional(el, name) ?? defaultValue;
+
+    /// <summary>
+    /// Reads a boolean attribute, returning <see langword="null"/> when the
+    /// element or attribute is absent (or unparseable) so callers can tell
+    /// "explicitly false" apart from "not specified" — the distinction the
+    /// BC 14 <c>ShowMyCode</c> fallback in <see cref="ReadManifest"/> hinges on.
+    /// </summary>
+    private static bool? ParseBoolAttrOptional(XElement? el, string name)
     {
-        if (el is null) return defaultValue;
-        var v = el.Attribute(name)?.Value;
-        if (string.IsNullOrEmpty(v)) return defaultValue;
-        return bool.TryParse(v, out var parsed) ? parsed : defaultValue;
+        var v = el?.Attribute(name)?.Value;
+        if (string.IsNullOrEmpty(v)) return null;
+        return bool.TryParse(v, out var parsed) ? parsed : null;
     }
 
     // ── SymbolReference.json ────────────────────────────────────────────

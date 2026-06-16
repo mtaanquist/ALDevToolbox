@@ -19,6 +19,11 @@ Forward-looking ideas that are **not committed**. This is the wishlist; the reco
 - **Conditional folders / files.** "Include this folder only when module X is selected." Expressible today by splitting templates; a real conditional grammar would compress that.
 - **Binary files in template folders.** v1 was text-only; some templates (icons, splash assets) want bytes.
 
+## Object Explorer
+
+- **Source-only ingest for uncompiled apps.** The workspace-zip import (`FolderZipWalker.WalkWorkspace`) brings in every *compiled* app from a zipped VS Code AL workspace and skips folders that declare an `app.json` but were never built. Building those from source means synthesising the object catalogue from the `.al` headers (no `SymbolReference.json`) with `app.json` as the manifest substitute — a parallel, lower-fidelity ingest path structurally like the C/AL TXT importer (`CalImportService`). Cross-module type links the symbol package hands us for free (resolved `ModuleId`s, method/field types) have to be re-derived by name. Wants its own design pass before implementation.
+- **Import a workspace straight from Azure DevOps (PAT).** Point the importer at a DevOps repo + branch with a Personal Access Token, pull it (REST/git), and run the same workspace import — no manual zip step. Gated on the environment's outbound network policy (the host would need `dev.azure.com` on the allow-list, same as the DVD download-URL feature). Natural follow-on once the two paths above are solid.
+
 ## Out of scope, even here
 
 Recorded so they don't get pulled in by accident:
