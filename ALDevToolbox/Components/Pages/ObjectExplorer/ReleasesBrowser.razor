@@ -61,7 +61,6 @@
         else
         {
             var featured = rows[0];
-            var rest = rows.Skip(1).ToList();
             var totalFiles = rows.Sum(r => (long)r.SourceFileCount);
 
             <div class="rel-hero">
@@ -112,7 +111,11 @@
             </div>
 
             <div class="rel-timeline">
-                @foreach (var group in GroupReleases(rest))
+                @* All releases are grouped — including the featured "latest
+                   import" — so each version group's count is complete (the
+                   latest also appears under its own version, not only in the
+                   hero above). *@
+                @foreach (var group in GroupReleases(rows))
                 {
                     <div class="rel-group">
                         @if (group.Title is not null)
