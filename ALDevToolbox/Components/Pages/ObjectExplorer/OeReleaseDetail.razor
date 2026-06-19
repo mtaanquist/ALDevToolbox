@@ -64,7 +64,7 @@
             </div>
         </header>
 
-        <div class="object-explorer__filters object-explorer__filters--with-scope">
+        <div class="object-explorer__filters">
             <label class="field">
                 <span class="field__label">Search in</span>
                 <select class="field__input" @bind="_scope" @bind:after="OnScopeChanged"
@@ -115,7 +115,7 @@
             }
             else
             {
-                <label class="field">
+                <label class="field field--search">
                     <span class="field__label">Search</span>
                     @*
                         Uncontrolled input — no `value="@_search"` binding.
@@ -215,7 +215,7 @@
                 <div class="field object-explorer__filters-reset">
                     <button type="button" class="btn btn--sm btn--icon" @onclick="ResetFilters" disabled="@(!HasActiveFilters)"
                             title="Reset filters" aria-label="Reset filters">
-                        <Icon Name="rotate-ccw" Width="14" Height="14" />
+                        <Icon Name="funnel-x" Width="14" Height="14" />
                     </button>
                 </div>
             }
@@ -286,7 +286,7 @@
     {
         SearchScope.Procedures => "Procedure name",
         SearchScope.Content    => "Text to grep across source",
-        _                      => "Name, ID, 50000..99999, sales*, \"exact\"",
+        _                      => "Name, ID, 50000..99999, sales*, \"exact\", t:item",
     };
 
     protected override async Task OnInitializedAsync()
@@ -398,18 +398,6 @@
                 await JS.InvokeVoidAsync("aldt.setTitle", $"{_release.Label} · AL Dev Toolbox");
             }
 
-            // Seed the uncontrolled text inputs with whatever filter values
-            // we hydrated from the URL. After this single call the DOM owns
-            // the input value so fast typing can never race a render diff.
-            if (!string.IsNullOrEmpty(_search))
-            {
-                await JS.InvokeVoidAsync("aldt.seedInput", _searchInputRef, _search);
-            }
-            if (!string.IsNullOrEmpty(_namespace))
-            {
-                await JS.InvokeVoidAsync("aldt.seedInput", _namespaceInputRef, _namespace);
-            }
-
             // Park focus in the search box on first render so a keyboard-first
             // user can land on the page and start typing. Compare mode doesn't
             // render a search input, so skip it there.
@@ -424,6 +412,26 @@
                 "import", "./Components/Pages/ObjectExplorer/OeReleaseDetail.razor.js");
             _selfRef = DotNetObjectReference.Create(this);
             await _keybindModule.InvokeVoidAsync("init", _selfRef);
+        }
+
+        // Re-seed the uncontrolled text inputs from the URL-hydrated filter
+        // state on every render, not just first render: returning to this page
+        // via Blazor's enhanced navigation (e.g. browser-back from the
+        // source viewer) leaves `?search=…` in the URL but blanks the input
+        // node, so a once-only seed leaves the box empty. seedInput only
+        // writes when the box is empty, so this re-asserts the value after a
+        // nav diff without ever clobbering an in-progress query. After a Reset
+        // `_search`/`_namespace` are empty, so this is a no-op there.
+        if (_isInteractive && _scope != SearchScope.Compare)
+        {
+            if (!string.IsNullOrEmpty(_search))
+            {
+                await JS.InvokeVoidAsync("aldt.seedInput", _searchInputRef, _search);
+            }
+            if (_scope == SearchScope.Objects && !string.IsNullOrEmpty(_namespace))
+            {
+                await JS.InvokeVoidAsync("aldt.seedInput", _namespaceInputRef, _namespace);
+            }
         }
 
         // Re-point the infinite-scroll observer at the current sentinel after
@@ -682,13 +690,14 @@
         _sortDescending = false;
         if (_isInteractive)
         {
-            // Both are uncontrolled inputs; clear their DOM values. The search
-            // box renders in every non-Compare scope; the namespace box only in
-            // Objects, so only seed it there.
-            await JS.InvokeVoidAsync("aldt.seedInput", _searchInputRef, string.Empty);
+            // Both are uncontrolled inputs; clear their DOM values. Use the
+            // unconditional setter — seedInput refuses to overwrite a non-empty
+            // box, so it can't wipe text the user typed. The search box renders
+            // in every non-Compare scope; the namespace box only in Objects.
+            await JS.InvokeVoidAsync("aldt.setInputValue", _searchInputRef, string.Empty);
             if (_scope == SearchScope.Objects)
             {
-                await JS.InvokeVoidAsync("aldt.seedInput", _namespaceInputRef, string.Empty);
+                await JS.InvokeVoidAsync("aldt.setInputValue", _namespaceInputRef, string.Empty);
             }
         }
         await ReloadAsync();

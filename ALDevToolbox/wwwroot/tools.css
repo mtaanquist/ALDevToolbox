@@ -1682,12 +1682,21 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 /* ---------- Object Explorer ---------- */
 /* Release browser, module/object detail, search filters, results tables. */
 .object-explorer__filters {
-    display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+    display: flex;
+    flex-wrap: wrap;
     gap: 16px;
     align-items: end;
     margin: 16px 0;
 }
+
+/* Each filter field grows to share the row evenly; the search box gets a
+   double share so it stays the widest. The reset button hugs its content so
+   the inputs fill the whole width up to it (instead of an empty grid track
+   eating the trailing space). flex-wrap drops fields onto a second row on
+   narrow viewports — no media query needed. */
+.object-explorer__filters .field { flex: 1 1 180px; min-width: 0; }
+.object-explorer__filters .field--search { flex: 2 1 240px; }
+.object-explorer__filters .object-explorer__filters-reset { flex: 0 0 auto; }
 
 /* Per-object C/AL Version List, shown under the object name in the results
    table (issue #271). Long; truncated with the full value on hover (title). */
@@ -1699,25 +1708,6 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
     white-space: nowrap;
     font-family: var(--mono, "SFMono-Regular", Consolas, monospace);
     font-size: 11px;
-}
-
-/* With the scope selector added, the Objects-mode row needs five
-   columns (scope + search + three filters); procedures / content modes
-   need just the two leading columns. `--with-scope` puts the narrow
-   scope select first, hands the rest of the width to the search box,
-   and lets the three filter columns (when present) sit at their
-   natural fraction. */
-.object-explorer__filters--with-scope {
-    grid-template-columns: minmax(160px, 0.8fr) minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
-}
-
-/* Wrap onto a second row on narrower viewports so the Extension column
-   doesn't squeeze the search input down to nothing. The grid stays
-   filter-shaped; one row gives way to two. */
-@media (max-width: 1400px) {
-    .object-explorer__filters--with-scope {
-        grid-template-columns: minmax(160px, 0.8fr) minmax(0, 2fr) repeat(2, minmax(0, 1fr));
-    }
 }
 
 /* Sortable column headers in the version browser. Keeps the <th>'s
@@ -1831,6 +1821,16 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 .object-explorer__filters .admin-search-input {
     width: 100%;
     box-sizing: border-box;
+}
+
+/* The reset button aligns to the bottom of the filter row (no label above
+   it), so size it to match the inputs' height instead of the shared 28×28
+   .btn--icon square. Width hugs the icon so the inputs keep the rest of the
+   row. */
+.object-explorer__filters-reset .btn--icon {
+    width: auto;
+    height: 38px;
+    padding: 0 12px;
 }
 
 .object-explorer__row {

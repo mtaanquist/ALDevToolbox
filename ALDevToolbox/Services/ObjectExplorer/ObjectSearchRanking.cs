@@ -16,6 +16,73 @@ internal static class ObjectSearchRanking
     private readonly record struct SearchToken(string Text, bool Negated, bool Quoted);
 
     /// <summary>
+    /// Maps a search-box kind prefix to the canonical lower-case
+    /// <see cref="ModuleObject.Kind"/> value. Both a short letter form
+    /// (<c>t</c>) and the full kind name (<c>table</c>) point at the same
+    /// kind so users can type whichever they remember; lookups are
+    /// case-insensitive. When Microsoft adds a new object kind, add its
+    /// shortcut + full name here so <c>kind:name</c> search keeps working.
+    /// </summary>
+    private static readonly Dictionary<string, string> KindPrefixes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["t"] = "table",                       ["table"] = "table",
+        ["p"] = "page",                        ["page"] = "page",
+        ["c"] = "codeunit",                    ["codeunit"] = "codeunit",
+        ["r"] = "report",                      ["report"] = "report",
+        ["q"] = "query",                       ["query"] = "query",
+        ["x"] = "xmlport",                     ["xmlport"] = "xmlport",
+        ["e"] = "enum",                        ["enum"] = "enum",
+        ["i"] = "interface",                   ["interface"] = "interface",
+        ["ps"] = "permissionset",              ["permissionset"] = "permissionset",
+        ["ca"] = "controladdin",               ["controladdin"] = "controladdin",
+        ["te"] = "tableextension",             ["tableextension"] = "tableextension",
+        ["pe"] = "pageextension",              ["pageextension"] = "pageextension",
+        ["re"] = "reportextension",            ["reportextension"] = "reportextension",
+        ["ee"] = "enumextension",              ["enumextension"] = "enumextension",
+        ["pse"] = "permissionsetextension",    ["permissionsetextension"] = "permissionsetextension",
+        ["ms"] = "menusuite",                  ["menusuite"] = "menusuite",
+        ["pr"] = "profile",                    ["profile"] = "profile",
+        // Legacy C/AL kinds from pre-2013 exports.
+        ["form"] = "form",                     ["dataport"] = "dataport",
+    };
+
+    /// <summary>
+    /// Splits a leading <c>kind:</c> prefix off the search string so a user
+    /// can scope a search to one object kind from the box (<c>t:item</c> →
+    /// tables named "item", <c>table:item</c> likewise, bare <c>t:</c> →
+    /// every table). Only the <em>first</em> whitespace-delimited token is
+    /// inspected, and only when it isn't quoted (<c>"t:foo"</c> is a literal
+    /// phrase) or negated (<c>-t:foo</c> stays literal). An unrecognised
+    /// prefix (<c>foo:bar</c>) returns <c>(null, original)</c> so it falls
+    /// through to the normal name match — safe because AL object names never
+    /// contain a colon. The returned kind is meant to be ANDed into the
+    /// caller's kind filter; the remainder feeds <see cref="ApplySearchTokens"/>.
+    /// </summary>
+    public static (string? Kind, string Remainder) ExtractKindPrefix(string? search)
+    {
+        if (string.IsNullOrWhiteSpace(search)) return (null, search ?? string.Empty);
+
+        var trimmed = search.TrimStart();
+        if (trimmed.Length == 0 || trimmed[0] is '"' or '-') return (null, search);
+
+        // Only the first token may carry the prefix; `t:sales p:invoice`
+        // scopes by table and leaves `p:invoice` as literal text.
+        var end = trimmed.IndexOf(' ');
+        var firstToken = end < 0 ? trimmed : trimmed[..end];
+        var colon = firstToken.IndexOf(':');
+        if (colon <= 0) return (null, search);
+
+        var prefix = firstToken[..colon];
+        if (!KindPrefixes.TryGetValue(prefix, out var kind)) return (null, search);
+
+        // Strip `prefix:` from the first token, keep the rest of the string
+        // (the remainder may be empty for a bare `t:`).
+        var rest = firstToken[(colon + 1)..];
+        var tail = end < 0 ? string.Empty : trimmed[end..];
+        return (kind, (rest + tail).Trim());
+    }
+
+    /// <summary>
     /// Trims, lower-cases, and de-duplicates a kind filter list, collapsing an
     /// empty/all-blank list to null so callers can treat "no kinds" uniformly.
     /// </summary>

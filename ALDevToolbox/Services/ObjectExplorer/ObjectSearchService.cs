@@ -104,7 +104,18 @@ public sealed class ObjectSearchService
         var q = _db.OeModuleObjects.AsNoTracking()
             .Where(o => o.Module!.ReleaseId == releaseId);
 
+        // A leading `kind:` prefix in the search box (e.g. `t:item`) scopes the
+        // query to one kind; fold it into the explicit Kinds filter so the
+        // prefix and the Object-type dropdown AND together. The remainder is
+        // what actually matches the object name.
+        var (kindFromPrefix, searchRemainder) = ObjectSearchRanking.ExtractKindPrefix(filter.Search);
         var kinds = ObjectSearchRanking.NormalizeKinds(filter.Kinds);
+        if (kindFromPrefix is not null)
+        {
+            kinds = kinds is null
+                ? new[] { kindFromPrefix }
+                : kinds.Append(kindFromPrefix).Distinct().ToList();
+        }
         if (kinds is { Count: > 0 })
         {
             q = q.Where(o => kinds.Contains(o.Kind));
@@ -118,7 +129,7 @@ public sealed class ObjectSearchService
             var ns = namespacePrefix.Trim();
             q = q.Where(o => o.Namespace != null && o.Namespace.StartsWith(ns));
         }
-        (q, tokens) = ObjectSearchRanking.ApplySearchTokens(q, filter.Search);
+        (q, tokens) = ObjectSearchRanking.ApplySearchTokens(q, searchRemainder);
         return q;
     }
 
