@@ -38,6 +38,15 @@
         el.value = value;
     };
 
+    // Unconditionally writes a value to an uncontrolled input. Unlike
+    // seedInput (which only fills an empty box), this overwrites whatever
+    // the user typed — needed to *clear* a box on a Reset action, where
+    // seedInput's empty-guard would otherwise refuse to wipe the text.
+    window.aldt.setInputValue = function (el, value) {
+        if (!el || typeof value !== "string") return;
+        el.value = value;
+    };
+
     // Sets document.title from an interactive component. PageTitle alone
     // doesn't reach the static-SSR HeadOutlet on pages rendered with
     // `prerender: false` (the head has no initial title and the

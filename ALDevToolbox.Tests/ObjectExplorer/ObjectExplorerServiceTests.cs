@@ -179,6 +179,42 @@ public sealed class ObjectExplorerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchObjectsInReleaseAsync_kind_prefix_scopes_search_to_that_kind()
+    {
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+        var query = NewSearch(read);
+
+        // `t:OIOUBL-Profile` is a table-scoped search for the name; only the
+        // OIOUBL-Profile table comes back, never a like-named codeunit/page.
+        var named = await query.SearchObjectsInReleaseAsync(releaseId,
+            new ObjectListFilter(Search: "t:OIOUBL-Profile"));
+        named.Should().NotBeEmpty();
+        named.Should().OnlyContain(o => o.Kind == "table");
+        named.Should().Contain(o => o.Name == "OIOUBL-Profile");
+
+        // Bare `t:` (no name remainder) returns every table in the release.
+        var bare = await query.SearchObjectsInReleaseAsync(releaseId,
+            new ObjectListFilter(Search: "t:"), take: 1000);
+        bare.Should().NotBeEmpty();
+        bare.Should().OnlyContain(o => o.Kind == "table");
+    }
+
+    [Fact]
+    public async Task SearchObjectsInReleaseAsync_kind_prefix_ands_with_dropdown_kinds()
+    {
+        var releaseId = await SeedSingleReleaseAsync();
+        await using var read = _db.NewContext();
+
+        // Prefix kind (codeunit) and an explicit dropdown kind (table) are
+        // disjoint, so ANDing them yields nothing — the prefix narrows, it
+        // doesn't replace, the dropdown selection.
+        var hits = await NewSearch(read).SearchObjectsInReleaseAsync(releaseId,
+            new ObjectListFilter(Kinds: new[] { "table" }, Search: "c:"), take: 1000);
+        hits.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task SearchObjectsPageInReleaseAsync_returns_contiguous_sorted_windows()
     {
         var releaseId = await SeedSingleReleaseAsync();
