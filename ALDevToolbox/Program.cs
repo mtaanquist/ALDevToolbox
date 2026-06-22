@@ -429,6 +429,13 @@ builder.Services.Configure<ALDevToolbox.Services.Mcp.McpOptions>(builder.Configu
 builder.Services.AddSingleton<ALDevToolbox.Services.Mcp.McpAvailabilityState>();
 builder.Services.AddSingleton<ALDevToolbox.Services.Mcp.IMcpAvailability>(
     sp => sp.GetRequiredService<ALDevToolbox.Services.Mcp.McpAvailabilityState>());
+// Single-tenant deployment flag. Fixed at boot from SINGLE_TENANT_MODE — an
+// immutable singleton (no DB priming) that hides and disables the
+// multi-tenant surfaces (storage quotas, per-tenant snapshots, self-service
+// org creation at signup). See Services/SingleTenant/ISingleTenantMode.cs.
+var singleTenantMode = Environment.GetEnvironmentVariable("SINGLE_TENANT_MODE") == "1";
+builder.Services.AddSingleton<ALDevToolbox.Services.SingleTenant.ISingleTenantMode>(
+    new ALDevToolbox.Services.SingleTenant.SingleTenantModeState(singleTenantMode));
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.WorkspaceTools>();
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.CookbookTools>();
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.ObjectExplorerTools>();
@@ -491,7 +498,9 @@ if (Environment.GetEnvironmentVariable("DISABLE_OE_VACUUM_SCHEDULER") != "1")
 }
 // Refreshes per-org storage snapshots so StorageBar reads a cached row rather
 // than counting every tenanted table on each navigation. Same opt-out pattern.
-if (Environment.GetEnvironmentVariable("DISABLE_USAGE_SNAPSHOT_SCHEDULER") != "1")
+// Single-tenant mode hides the StorageBar entirely, so there's nothing to feed —
+// skip the timer there too.
+if (Environment.GetEnvironmentVariable("DISABLE_USAGE_SNAPSHOT_SCHEDULER") != "1" && !singleTenantMode)
 {
     builder.Services.AddHostedService<ALDevToolbox.Services.UsageSnapshotScheduler>();
 }

@@ -100,6 +100,25 @@ internal static class StartupTasks
                 + "These environment variables only take effect on a fresh database; remove them once the bootstrap account is in place.");
         }
 
+        // Single-tenant first-run seeding: name the Default (system) org and
+        // claim its email domain(s) from env vars so the one organisation comes
+        // up configured. Same fresh-database window as the bootstrap admin —
+        // self-service org creation is off, so this is how the org gets its
+        // identity. See Services/SingleTenant/SingleTenantSeeder.cs.
+        var singleTenant = scope.ServiceProvider
+            .GetRequiredService<ALDevToolbox.Services.SingleTenant.ISingleTenantMode>();
+        if (!anyUsers && singleTenant.IsEnabled)
+        {
+            await ALDevToolbox.Services.SingleTenant.SingleTenantSeeder.SeedAsync(
+                db,
+                orgName: Environment.GetEnvironmentVariable("SINGLE_TENANT_ORG_NAME"),
+                orgSlug: Environment.GetEnvironmentVariable("SINGLE_TENANT_ORG_SLUG"),
+                emailDomainsCsv: Environment.GetEnvironmentVariable("SINGLE_TENANT_EMAIL_DOMAINS"),
+                now: DateTime.UtcNow,
+                logger: logger,
+                ct: stopping);
+        }
+
         // Reconcile durable import-job rows: re-enqueue URL downloads that were
         // queued or running at restart (the download is idempotent and we have
         // the URL on the row); flip staged-zip jobs to failed because their

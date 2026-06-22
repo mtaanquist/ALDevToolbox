@@ -3,7 +3,9 @@ using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.Account;
+using ALDevToolbox.Services.SingleTenant;
 using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using static ALDevToolbox.Endpoints.EndpointHelpers;
 
@@ -106,7 +108,8 @@ internal static class SiteAdminEndpoints
                 SaveSectionAsync(ctx, settings, antiforgery, ct,
                     (current, form) => SettingsInputBuilder.WithQuotas(current, form),
                     "/site-admin/settings/quotas"))
-            .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+            .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole))
+            .AddEndpointFilter(BlockInSingleTenant);
 
         app.MapPost("/site-admin/settings/general/save", (
             HttpContext ctx, SystemSettingsService settings, IAntiforgery antiforgery, CancellationToken ct) =>
@@ -421,7 +424,8 @@ internal static class SiteAdminEndpoints
                 ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
                     + Uri.EscapeDataString("Snapshot failed: " + ex.Message));
             }
-        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole))
+          .AddEndpointFilter(BlockInSingleTenant);
 
         app.MapGet("/site-admin/tenant-backups/{id:int}/download", async (
             int id, HttpContext ctx, PerTenantBackupService backups, CancellationToken ct) =>
@@ -439,7 +443,8 @@ internal static class SiteAdminEndpoints
                 await stream.CopyToAsync(ctx.Response.Body, ct);
             }
             finally { await stream.DisposeAsync(); }
-        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole))
+          .AddEndpointFilter(BlockInSingleTenant);
 
         app.MapPost("/site-admin/tenant-backups/{id:int}/upload", async (
             int id, HttpContext ctx, OffsiteBackupService offsite, IAntiforgery antiforgery, CancellationToken ct) =>
@@ -461,7 +466,8 @@ internal static class SiteAdminEndpoints
                 ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
                     + Uri.EscapeDataString("Upload failed: " + ex.Message));
             }
-        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole))
+          .AddEndpointFilter(BlockInSingleTenant);
 
         app.MapPost("/site-admin/tenant-backups/offsite/download", async (
             HttpContext ctx, OffsiteBackupService offsite, OffsiteRestoreJobs jobs,
@@ -490,7 +496,8 @@ internal static class SiteAdminEndpoints
             }
             var id = jobs.Enqueue(OffsiteRestoreJobKind.PerTenant, match.Key, match.FileName);
             ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?job={Uri.EscapeDataString(id.ToString())}");
-        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole))
+          .AddEndpointFilter(BlockInSingleTenant);
 
         app.MapPost("/site-admin/tenant-backups/{id:int}/pin", async (
             int id, HttpContext ctx, PerTenantBackupService backups, IAntiforgery antiforgery, CancellationToken ct) =>
@@ -504,7 +511,8 @@ internal static class SiteAdminEndpoints
                 return;
             }
             ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.OkQuery}=pinned");
-        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole))
+          .AddEndpointFilter(BlockInSingleTenant);
 
         app.MapPost("/site-admin/tenant-backups/{id:int}/unpin", async (
             int id, HttpContext ctx, PerTenantBackupService backups, IAntiforgery antiforgery, CancellationToken ct) =>
@@ -518,7 +526,8 @@ internal static class SiteAdminEndpoints
                 return;
             }
             ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.OkQuery}=unpinned");
-        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole))
+          .AddEndpointFilter(BlockInSingleTenant);
 
         app.MapPost("/site-admin/tenant-backups/{id:int}/delete", async (
             int id, HttpContext ctx, PerTenantBackupService backups, IAntiforgery antiforgery, CancellationToken ct) =>
@@ -532,7 +541,8 @@ internal static class SiteAdminEndpoints
                 return;
             }
             ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.OkQuery}=deleted");
-        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole))
+          .AddEndpointFilter(BlockInSingleTenant);
 
         app.MapPost("/site-admin/tenant-backups/{id:int}/restore", async (
             int id, HttpContext ctx, PerTenantBackupService backups, IAntiforgery antiforgery, CancellationToken ct) =>
@@ -553,7 +563,8 @@ internal static class SiteAdminEndpoints
                 ctx.Response.Redirect($"{RouteConstants.SiteAdminTenantBackups}?{RouteConstants.MsgQuery}="
                     + Uri.EscapeDataString("Restore failed: " + ex.Message));
             }
-        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole))
+          .AddEndpointFilter(BlockInSingleTenant);
 
         app.MapPost("/site-admin/storage/{orgId:int}/quota", async (
             int orgId, HttpContext ctx, DatabaseUsageService usage, IAntiforgery antiforgery, CancellationToken ct) =>
@@ -585,8 +596,34 @@ internal static class SiteAdminEndpoints
                 ctx.Response.Redirect($"{RouteConstants.SiteAdminStorage}?{RouteConstants.MsgQuery}="
                     + Uri.EscapeDataString(ex.Message));
             }
-        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole));
+        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.SiteAdminRole))
+          .AddEndpointFilter(BlockInSingleTenant);
 
         return app;
+    }
+
+    /// <summary>
+    /// Endpoint filter that 404s storage-quota and tenant-snapshot routes when
+    /// the deployment runs in single-tenant mode — those surfaces are hidden
+    /// from the UI, so their POST/GET handlers must refuse too. Writes a
+    /// plain-text body and disables status-code-pages re-execute for the same
+    /// reason as <see cref="McpEndpoints"/>: a re-executed GET /not-found
+    /// would mismatch the POST binding and surface a 400.
+    /// </summary>
+    private static async ValueTask<object?> BlockInSingleTenant(
+        EndpointFilterInvocationContext ctx, EndpointFilterDelegate next)
+    {
+        var single = ctx.HttpContext.RequestServices.GetRequiredService<ISingleTenantMode>();
+        if (single.IsEnabled)
+        {
+            var http = ctx.HttpContext;
+            var statusCodes = http.Features.Get<IStatusCodePagesFeature>();
+            if (statusCodes is not null) statusCodes.Enabled = false;
+            http.Response.StatusCode = StatusCodes.Status404NotFound;
+            http.Response.ContentType = "text/plain; charset=utf-8";
+            await http.Response.WriteAsync("This feature is disabled on this deployment.");
+            return null;
+        }
+        return await next(ctx);
     }
 }

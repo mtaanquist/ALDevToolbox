@@ -4,6 +4,7 @@
 @inject AppDbContext Db
 @inject TimeProvider Clock
 @inject NavigationManager Nav
+@inject ALDevToolbox.Services.SingleTenant.ISingleTenantMode SingleTenant
 @using ALDevToolbox.Data
 @using ALDevToolbox.Endpoints
 @using ALDevToolbox.Services
@@ -21,6 +22,10 @@
         {
             <text>You'll join <strong>@_domainOrgName</strong>. Pick a display name and password to finish.</text>
         }
+        else if (SingleTenant.IsEnabled)
+        {
+            <text>No organisation has claimed this email's domain. Ask an administrator to invite you — self-service organisations aren't available on this site.</text>
+        }
         else
         {
             <text>No organisation has claimed this email's domain, so you'll start a new one and become its first admin.</text>
@@ -32,41 +37,48 @@
         <p class="form-error" role="alert"><strong>@Field:</strong> @Message</p>
     }
 
-    <form method="post" action="/auth/signup/complete" class="form-grid login-form">
-        <AntiforgeryToken />
+    @if (!_domainMatched && SingleTenant.IsEnabled)
+    {
+        <p class="caption muted"><a href="/login">Back to sign in</a>.</p>
+    }
+    else
+    {
+        <form method="post" action="/auth/signup/complete" class="form-grid login-form">
+            <AntiforgeryToken />
 
-        <section class="form-section">
-            <label class="section-label" for="su-display">Display name</label>
-            <input id="su-display" type="text" name="DisplayName" required minlength="2" maxlength="80"
-                   autofocus placeholder="e.g. Bob — Engineering" />
-        </section>
-
-        <section class="form-section">
-            <label class="section-label" for="su-password">Password</label>
-            <input id="su-password" type="password" name="Password" required minlength="12" autocomplete="new-password" />
-            <small class="muted">At least 12 characters. Length beats classes.</small>
-        </section>
-
-        @if (!_domainMatched)
-        {
             <section class="form-section">
-                <label class="section-label" for="su-org-name">Organisation name</label>
-                <input id="su-org-name" type="text" name="OrganizationName" required minlength="2" maxlength="80" placeholder="e.g. Acme" />
-                <small class="muted">The display name for your new organisation.</small>
+                <label class="section-label" for="su-display">Display name</label>
+                <input id="su-display" type="text" name="DisplayName" required minlength="2" maxlength="80"
+                       autofocus placeholder="e.g. Bob — Engineering" />
             </section>
 
             <section class="form-section">
-                <label class="section-label" for="su-org-slug">Organisation short ID</label>
-                <input id="su-org-slug" type="text" name="OrganizationSlug" pattern="[a-z0-9-]*" maxlength="64" placeholder="e.g. acme" />
-                <small class="muted">Lowercase letters, digits and hyphens. We fill this in from the name — edit it if you'd like something different.</small>
+                <label class="section-label" for="su-password">Password</label>
+                <input id="su-password" type="password" name="Password" required minlength="12" autocomplete="new-password" />
+                <small class="muted">At least 12 characters. Length beats classes.</small>
             </section>
-        }
 
-        <button type="submit" class="btn">
-            <Icon Name="user-plus" Width="16" Height="16" />
-            <span>@(_domainMatched ? "Join organisation" : "Create organisation")</span>
-        </button>
-    </form>
+            @if (!_domainMatched)
+            {
+                <section class="form-section">
+                    <label class="section-label" for="su-org-name">Organisation name</label>
+                    <input id="su-org-name" type="text" name="OrganizationName" required minlength="2" maxlength="80" placeholder="e.g. Acme" />
+                    <small class="muted">The display name for your new organisation.</small>
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label" for="su-org-slug">Organisation short ID</label>
+                    <input id="su-org-slug" type="text" name="OrganizationSlug" pattern="[a-z0-9-]*" maxlength="64" placeholder="e.g. acme" />
+                    <small class="muted">Lowercase letters, digits and hyphens. We fill this in from the name — edit it if you'd like something different.</small>
+                </section>
+            }
+
+            <button type="submit" class="btn">
+                <Icon Name="user-plus" Width="16" Height="16" />
+                <span>@(_domainMatched ? "Join organisation" : "Create organisation")</span>
+            </button>
+        </form>
+    }
 </div>
 
 @code {

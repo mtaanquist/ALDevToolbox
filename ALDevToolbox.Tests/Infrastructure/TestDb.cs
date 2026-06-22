@@ -170,6 +170,8 @@ public sealed class TestDb : IDisposable
         services.TryAddSingleton(DataProtectionProvider);
         services.TryAddSingleton<IMemoryCache>(_memoryCache);
         services.TryAddSingleton<ALDevToolbox.Services.Mcp.IMcpAvailability>(McpAvailability);
+        services.TryAddSingleton<ALDevToolbox.Services.SingleTenant.ISingleTenantMode>(
+            new ALDevToolbox.Services.SingleTenant.SingleTenantModeState(false));
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<DatabaseUsageService>();
         services.AddScoped<StorageQuotaGuard>();
@@ -186,10 +188,13 @@ public sealed class TestDb : IDisposable
     /// system_settings row or the organisation override before exercising
     /// the guarded path.
     /// </summary>
-    public StorageQuotaGuard NewQuotaGuard(AppDbContext ctx)
+    public StorageQuotaGuard NewQuotaGuard(AppDbContext ctx, bool singleTenant = false)
     {
         var usage = NewDatabaseUsageService(ctx);
-        return new StorageQuotaGuard(usage, OrgContext, _memoryCache, NullLogger<StorageQuotaGuard>.Instance);
+        return new StorageQuotaGuard(
+            usage, OrgContext, _memoryCache,
+            new ALDevToolbox.Services.SingleTenant.SingleTenantModeState(singleTenant),
+            NullLogger<StorageQuotaGuard>.Instance);
     }
 
     /// <summary>

@@ -6,6 +6,8 @@
 *@
 
 @using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Services.SingleTenant
+@inject ISingleTenantMode SingleTenant
 
 <header class="admin-page__header">
     <div>
@@ -35,11 +37,18 @@
 
     protected override void OnParametersSet()
     {
-        _tabs = new[]
+        // Single-tenant deployments keep only the system pg_dump ("Database");
+        // per-tenant snapshots and storage quotas are hidden multi-tenant
+        // surfaces. See Services/SingleTenant/ISingleTenantMode.cs.
+        var tabs = new List<PillTabs.PillTabItem>
         {
-            new PillTabs.PillTabItem("Database",        "/site-admin/backup-storage/database",  "database-backup", ActiveTab == Tab.Database),
-            new PillTabs.PillTabItem("Tenant snapshots","/site-admin/backup-storage/snapshots", "archive-restore", ActiveTab == Tab.Snapshots),
-            new PillTabs.PillTabItem("Storage",         "/site-admin/backup-storage/storage",   "hard-drive",      ActiveTab == Tab.Storage),
+            new("Database", "/site-admin/backup-storage/database", "database-backup", ActiveTab == Tab.Database),
         };
+        if (!SingleTenant.IsEnabled)
+        {
+            tabs.Add(new("Tenant snapshots", "/site-admin/backup-storage/snapshots", "archive-restore", ActiveTab == Tab.Snapshots));
+            tabs.Add(new("Storage",          "/site-admin/backup-storage/storage",   "hard-drive",      ActiveTab == Tab.Storage));
+        }
+        _tabs = tabs;
     }
 }

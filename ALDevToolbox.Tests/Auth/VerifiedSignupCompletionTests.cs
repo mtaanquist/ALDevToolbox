@@ -23,10 +23,11 @@ public sealed class VerifiedSignupCompletionTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
-    private AccountService NewAccounts(Data.AppDbContext ctx) =>
+    private AccountService NewAccounts(Data.AppDbContext ctx, bool singleTenant = false) =>
         new(ctx,
             new AuthService(ctx, NullLogger<AuthService>.Instance, _clock),
             new SystemSettingsService(ctx, _db.DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, _clock),
+            new ALDevToolbox.Services.SingleTenant.SingleTenantModeState(singleTenant),
             NullLogger<AccountService>.Instance,
             _clock);
 

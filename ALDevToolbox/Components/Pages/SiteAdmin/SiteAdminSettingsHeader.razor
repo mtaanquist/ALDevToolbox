@@ -7,6 +7,8 @@
 *@
 
 @using ALDevToolbox.Components.Shared
+@using ALDevToolbox.Services.SingleTenant
+@inject ISingleTenantMode SingleTenant
 
 <header class="admin-page__header">
     <div>
@@ -36,14 +38,20 @@
 
     protected override void OnParametersSet()
     {
-        _tabs = new[]
+        // Storage quotas are a multi-tenant surface — hidden in single-tenant
+        // deployments. See Services/SingleTenant/ISingleTenantMode.cs.
+        var tabs = new List<PillTabs.PillTabItem>
         {
-            new PillTabs.PillTabItem("SMTP",            "/site-admin/settings/smtp",     "mail",         ActiveTab == Tab.Smtp),
-            new PillTabs.PillTabItem("Backups",         "/site-admin/settings/backups",  "database-backup", ActiveTab == Tab.Backups),
-            new PillTabs.PillTabItem("Off-site (S3)",   "/site-admin/settings/offsite",  "upload",       ActiveTab == Tab.Offsite),
-            new PillTabs.PillTabItem("Storage quotas",  "/site-admin/settings/quotas",   "hard-drive",   ActiveTab == Tab.Quotas),
-            new PillTabs.PillTabItem("Banner & signup", "/site-admin/settings/general",  "server-cog",   ActiveTab == Tab.General),
-            new PillTabs.PillTabItem("MCP",             "/site-admin/settings/mcp",      "bot",          ActiveTab == Tab.Mcp),
+            new("SMTP",          "/site-admin/settings/smtp",    "mail",            ActiveTab == Tab.Smtp),
+            new("Backups",       "/site-admin/settings/backups", "database-backup", ActiveTab == Tab.Backups),
+            new("Off-site (S3)", "/site-admin/settings/offsite", "upload",          ActiveTab == Tab.Offsite),
         };
+        if (!SingleTenant.IsEnabled)
+        {
+            tabs.Add(new("Storage quotas", "/site-admin/settings/quotas", "hard-drive", ActiveTab == Tab.Quotas));
+        }
+        tabs.Add(new("Banner & signup", "/site-admin/settings/general", "server-cog", ActiveTab == Tab.General));
+        tabs.Add(new("MCP",             "/site-admin/settings/mcp",     "bot",        ActiveTab == Tab.Mcp));
+        _tabs = tabs;
     }
 }

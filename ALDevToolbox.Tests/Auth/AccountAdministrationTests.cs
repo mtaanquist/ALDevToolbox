@@ -325,7 +325,9 @@ public sealed class AccountAdministrationTests : IDisposable
     /// ChangeDisplayName, DeleteAccount.
     /// </summary>
     private AccountService NewService(Data.AppDbContext ctx) =>
-        new(ctx, NewAuth(ctx), NewSettings(ctx), NullLogger<AccountService>.Instance, _clock);
+        new(ctx, NewAuth(ctx), NewSettings(ctx),
+            new ALDevToolbox.Services.SingleTenant.SingleTenantModeState(false),
+            NullLogger<AccountService>.Instance, _clock);
 
     /// <summary>
     /// UserAdministrationService — admin actions on existing users. Used for
