@@ -34,6 +34,7 @@ public sealed class AuthenticationRequiredTests : IDisposable
     [InlineData("/generate/workspace")]
     [InlineData("/generate/extension")]
     [InlineData("/admin/export/download")]
+    [InlineData("/admin/object-explorer/import")]
     public async Task Unauthenticated_post_to_a_protected_endpoint_redirects_to_login(string path)
     {
         using var client = _factory.CreateClient();

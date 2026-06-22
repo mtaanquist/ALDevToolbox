@@ -189,7 +189,7 @@ internal static class ObjectExplorerEndpoints
                 Redirect(ctx, first.Key, first.Value);
             }
         })
-        .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole))
+        .RequireObjectExplorerAuthoring()
         .WithMetadata(new RequestSizeLimitAttribute(MaxUploadBytes))
         .WithMetadata(new RequestFormLimitsAttribute
         {
@@ -269,7 +269,7 @@ internal static class ObjectExplorerEndpoints
                 }
             }
         })
-        .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole))
+        .RequireObjectExplorerAuthoring()
         .WithMetadata(new RequestSizeLimitAttribute(MaxUploadBytes))
         .WithMetadata(new RequestFormLimitsAttribute
         {
@@ -491,7 +491,7 @@ internal static class ObjectExplorerEndpoints
                 RedirectTranslations(ctx, releaseId, first.Key, first.Value);
             }
         })
-        .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole))
+        .RequireObjectExplorerAuthoring()
         .WithMetadata(new RequestSizeLimitAttribute(64L * 1024 * 1024));
 
         app.MapPost("/admin/object-explorer/release/{releaseId:int}/translations-zip", async (
@@ -525,7 +525,7 @@ internal static class ObjectExplorerEndpoints
                 RedirectTranslations(ctx, releaseId, first.Key, first.Value);
             }
         })
-        .RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole))
+        .RequireObjectExplorerAuthoring()
         .WithMetadata(new RequestSizeLimitAttribute(64L * 1024 * 1024));
 
         app.MapPost("/admin/object-explorer/{id:int}/soft-delete", async (
@@ -547,7 +547,7 @@ internal static class ObjectExplorerEndpoints
                 var first = ex.Errors.First();
                 RedirectManage(ctx, id, first.Key, first.Value);
             }
-        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
+        }).RequireObjectExplorerAuthoring();
 
         // Maintenance: re-extract system references over already-stored source
         // for one release (no re-upload) — backfills oe_module_system_references
@@ -569,7 +569,7 @@ internal static class ObjectExplorerEndpoints
             await queue.EnqueueAsync(
                 new ReleaseImportJob(id, identity, source, StoreSymbolReference: false, jobRowId), ct);
             ctx.Response.Redirect($"/admin/object-explorer/release/{id}/manage?ok=backfill-queued");
-        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
+        }).RequireObjectExplorerAuthoring();
 
         // Bulk variant: enqueue a backfill for every ready, non-deleted release
         // in the org — the "I don't want to reimport my whole catalogue" path.
@@ -597,7 +597,7 @@ internal static class ObjectExplorerEndpoints
                     new ReleaseImportJob(rid, identity, source, StoreSymbolReference: false, jobRowId), ct);
             }
             ctx.Response.Redirect($"/admin/object-explorer?ok=backfill-all-queued&id={releaseIds.Count}");
-        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
+        }).RequireObjectExplorerAuthoring();
 
         app.MapPost("/admin/object-explorer/{id:int}/restore", async (
             int id,
@@ -618,7 +618,7 @@ internal static class ObjectExplorerEndpoints
                 var first = ex.Errors.First();
                 RedirectManage(ctx, id, first.Key, first.Value);
             }
-        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
+        }).RequireObjectExplorerAuthoring();
 
         app.MapPost("/admin/object-explorer/{id:int}/metadata", async (
             int id,
@@ -642,7 +642,7 @@ internal static class ObjectExplorerEndpoints
                 var first = ex.Errors.First();
                 RedirectManage(ctx, id, first.Key, first.Value);
             }
-        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
+        }).RequireObjectExplorerAuthoring();
 
         app.MapPost("/admin/object-explorer/{id:int}/hard-delete", async (
             int id,
@@ -666,10 +666,24 @@ internal static class ObjectExplorerEndpoints
                 var first = ex.Errors.First();
                 RedirectManage(ctx, id, first.Key, first.Value);
             }
-        }).RequireAuthorization(policy => policy.RequireRole(HttpOrganizationContext.AdminRole));
+        }).RequireObjectExplorerAuthoring();
 
         return app;
     }
+
+    /// <summary>
+    /// Authorisation shared by every mutating Object Explorer admin endpoint:
+    /// the same <c>Admin,Editor</c> set the OE admin pages declare
+    /// (<c>[Authorize(Roles = "Admin,Editor")]</c>). Object Explorer is a
+    /// content-authoring surface, so Editors operate it fully — see CLAUDE.md's
+    /// role model. Centralised here so the endpoint policy can't silently drift
+    /// from the page policy again: when they disagreed, an Editor's POST 403'd
+    /// and the cookie handler's AccessDeniedPath bounced them to /login, which
+    /// looked like being logged out mid-upload.
+    /// </summary>
+    private static RouteHandlerBuilder RequireObjectExplorerAuthoring(this RouteHandlerBuilder builder) =>
+        builder.RequireAuthorization(policy => policy.RequireRole(
+            HttpOrganizationContext.AdminRole, HttpOrganizationContext.EditorRole));
 
     private static void RedirectManage(HttpContext ctx, int releaseId, string errKey, string message)
     {
