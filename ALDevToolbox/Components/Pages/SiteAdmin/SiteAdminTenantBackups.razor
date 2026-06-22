@@ -1,10 +1,13 @@
 @page "/site-admin/backup-storage/snapshots"
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
 @using ALDevToolbox.Services
+@using ALDevToolbox.Services.SingleTenant
 @inject PerTenantBackupService Backups
 @inject SystemSettingsService Settings
 @inject OffsiteBackupService Offsite
 @inject OffsiteRestoreJobs RestoreJobs
+@inject ISingleTenantMode SingleTenant
+@inject NavigationManager Nav
 @inject ILogger<SiteAdminTenantBackups> Log
 
 <PageTitle>Tenant snapshots · Site administration · AL Dev Toolbox</PageTitle>
@@ -355,6 +358,13 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Tenant snapshots are a multi-tenant surface — hidden in single-tenant
+        // deployments. Bounce a typed URL back to the surviving Database tab.
+        if (SingleTenant.IsEnabled)
+        {
+            Nav.NavigateTo("/site-admin/backup-storage/database", replace: true);
+            return;
+        }
         _rows = await Backups.ListAsync(null, CancellationToken.None);
         _localFiles = _rows.Select(r => (r.OrganizationSlug, r.FileName)).ToHashSet();
         _localSlugs = _rows.Select(r => r.OrganizationSlug).ToHashSet(StringComparer.Ordinal);

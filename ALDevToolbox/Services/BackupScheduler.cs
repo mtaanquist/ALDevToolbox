@@ -1,5 +1,6 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Services.SingleTenant;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services;
@@ -24,13 +25,15 @@ public sealed class BackupScheduler : BackgroundService
 
     private readonly IServiceProvider _services;
     private readonly TimeProvider _clock;
+    private readonly ISingleTenantMode _singleTenant;
     private readonly ILogger<BackupScheduler> _logger;
     private readonly WorkerHeartbeat _heartbeat;
 
-    public BackupScheduler(IServiceProvider services, TimeProvider clock, ILogger<BackupScheduler> logger, WorkerHeartbeatRegistry heartbeats)
+    public BackupScheduler(IServiceProvider services, TimeProvider clock, ISingleTenantMode singleTenant, ILogger<BackupScheduler> logger, WorkerHeartbeatRegistry heartbeats)
     {
         _services = services;
         _clock = clock;
+        _singleTenant = singleTenant;
         _logger = logger;
         // Poll every minute; flag stale if no tick has landed in 5 (~3× the
         // poll interval). Active-duration ceiling matches the longest legitimate
@@ -146,6 +149,11 @@ public sealed class BackupScheduler : BackgroundService
                 _logger.LogError(ex, "Off-site prune failed.");
             }
         }
+
+        // Per-tenant snapshots are a multi-tenant surface — single-tenant
+        // deployments rely on the full pg_dump above and hide snapshots, so
+        // skip the loop entirely there.
+        if (_singleTenant.IsEnabled) return;
 
         // Per-tenant snapshots run after the full backup so the full pg_dump
         // still exists if a per-tenant write fails midway. Each org is

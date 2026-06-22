@@ -2,7 +2,9 @@
 @attribute [Authorize(Roles = "Admin")]
 @using Microsoft.AspNetCore.Authorization
 @using ALDevToolbox.Services
+@using ALDevToolbox.Services.SingleTenant
 @inject IOrganizationContext OrgContext
+@inject ISingleTenantMode SingleTenant
 
 <PageTitle>Admin · AL Dev Toolbox</PageTitle>
 
@@ -20,11 +22,14 @@
         @{
             var isSiteAdmin = adminCtx.User.IsInRole(HttpOrganizationContext.SiteAdminRole);
             var isSystemOrg = OrgContext.IsSystemOrganization;
+            // Single-tenant: the lone org IS the system org but manages its own
+            // content, so show the per-org Administration tile and copy.
+            var showPerOrgContent = !isSystemOrg || SingleTenant.IsEnabled;
         }
         <div class="admin-dashboard">
             <h1>Admin</h1>
             <p class="muted">
-                @if (isSystemOrg)
+                @if (isSystemOrg && !SingleTenant.IsEnabled)
                 {
                     <text>System organisation — curate the starter templates, modules, snippets and catalogue that other orgs import.</text>
                 }
@@ -71,7 +76,7 @@
                     </div>
                 </a>
 
-                @if (!isSystemOrg)
+                @if (showPerOrgContent)
                 {
                     <a class="tile tile--link" href="/admin/administration">
                         <Icon Name="settings" Width="20" Height="20" Css="tile__icon" />
@@ -116,7 +121,11 @@
                         <Icon Name="database-backup" Width="20" Height="20" Css="tile__icon" />
                         <div class="tile__body">
                             <div class="tile__title">Backup &amp; storage</div>
-                            <div class="tile__caption">Database backups, per-tenant snapshots, and storage quotas in one place.</div>
+                            <div class="tile__caption">
+                                @(SingleTenant.IsEnabled
+                                    ? "Database backups for this deployment."
+                                    : "Database backups, per-tenant snapshots, and storage quotas in one place.")
+                            </div>
                         </div>
                     </a>
                     <a class="tile tile--link" href="/site-admin/settings">

@@ -1,6 +1,8 @@
 using ALDevToolbox.Components.Layout;
+using ALDevToolbox.Components.Shared;
 using ALDevToolbox.Services;
 using ALDevToolbox.Services.Mcp;
+using ALDevToolbox.Services.SingleTenant;
 using Bunit;
 using Bunit.TestDoubles;
 using FluentAssertions;
@@ -23,6 +25,7 @@ public sealed class NavMenuTests : IDisposable
     private readonly AmbientOrganizationContext _orgCtx = new();
     private readonly TestAuthorizationContext _auth;
     private readonly FakeMcpAvailability _mcpAvailability = new();
+    private readonly FakeSingleTenantMode _singleTenant = new();
 
     public NavMenuTests()
     {
@@ -30,9 +33,16 @@ public sealed class NavMenuTests : IDisposable
         _ctx.Services.AddSingleton<IOrganizationContext>(_orgCtx);
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton<IMcpAvailability>(_mcpAvailability);
+        _ctx.Services.AddSingleton<ISingleTenantMode>(_singleTenant);
     }
 
     private sealed class FakeMcpAvailability : IMcpAvailability
+    {
+        public bool Enabled { get; set; }
+        public bool IsEnabled => Enabled;
+    }
+
+    private sealed class FakeSingleTenantMode : ISingleTenantMode
     {
         public bool Enabled { get; set; }
         public bool IsEnabled => Enabled;
@@ -156,6 +166,35 @@ public sealed class NavMenuTests : IDisposable
         cut.FindAll("a[href='/site-admin/connections']").Should().NotBeEmpty(
             "Access tokens and OAuth clients merged behind one Connections entry");
         cut.FindAll("a[href='/site-admin/settings']").Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Storage_bar_shown_for_admin_in_non_system_org_by_default()
+    {
+        _auth.SetAuthorized("admin@example.com");
+        _auth.SetRoles("Admin");
+        _orgCtx.CurrentOrganizationId = 1;
+        _orgCtx.IsSystemOrganization = false;
+
+        var cut = _ctx.RenderComponent<NavMenu>();
+
+        cut.FindComponents<StorageBar>().Should().ContainSingle(
+            "the capacity indicator renders for org admins in the multi-tenant default");
+    }
+
+    [Fact]
+    public void Storage_bar_hidden_in_single_tenant_mode()
+    {
+        _auth.SetAuthorized("admin@example.com");
+        _auth.SetRoles("Admin");
+        _orgCtx.CurrentOrganizationId = 1;
+        _orgCtx.IsSystemOrganization = false;
+        _singleTenant.Enabled = true;
+
+        var cut = _ctx.RenderComponent<NavMenu>();
+
+        cut.FindComponents<StorageBar>().Should().BeEmpty(
+            "single-tenant deployments hide storage quotas, so the bar isn't rendered");
     }
 
     [Fact]

@@ -29,8 +29,10 @@ public sealed class AccountServiceTests : IDisposable
     private SystemSettingsService NewSettings(Data.AppDbContext ctx) =>
         new(ctx, _db.DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, _clock);
 
-    private AccountService NewAccounts(Data.AppDbContext ctx) =>
-        new(ctx, NewAuth(ctx), NewSettings(ctx), NullLogger<AccountService>.Instance, _clock);
+    private AccountService NewAccounts(Data.AppDbContext ctx, bool singleTenant = false) =>
+        new(ctx, NewAuth(ctx), NewSettings(ctx),
+            new ALDevToolbox.Services.SingleTenant.SingleTenantModeState(singleTenant),
+            NullLogger<AccountService>.Instance, _clock);
 
     private UserAdministrationService NewUserAdmin(Data.AppDbContext ctx) =>
         new(ctx, _clock);
@@ -70,6 +72,47 @@ public sealed class AccountServiceTests : IDisposable
         user.Should().NotBeNull();
         user!.Status.Should().Be(UserStatus.Pending);
         user.Role.Should().Be(UserRole.User);
+        org!.Slug.Should().Be("acme");
+    }
+
+    [Fact]
+    public async Task Single_tenant_mode_blocks_new_org_creation_at_signup()
+    {
+        var ctx = _db.NewContext();
+        var svc = NewAccounts(ctx, singleTenant: true);
+
+        // No claimed domain and no existing slug would normally provision a
+        // brand-new org — single-tenant mode refuses that path.
+        var act = () => svc.SignupAsync(
+            "bob@example.com", "Bob", "verylongpassword12345", null, "Bob's Org");
+
+        await act.Should().ThrowAsync<PlanValidationException>();
+
+        await using var read = _db.NewContext();
+        (await read.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == "bob@example.com"))
+            .Should().BeFalse("the refused signup must not create a user");
+    }
+
+    [Fact]
+    public async Task Single_tenant_mode_still_lets_users_join_an_existing_org()
+    {
+        await using (var seed = _db.NewContext())
+        {
+            seed.Organizations.Add(new Organization
+            {
+                Id = 99, Name = "Acme", Slug = "acme",
+                IsPending = false, CreatedAt = _clock.GetUtcNow().UtcDateTime,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var ctx = _db.NewContext();
+        var svc = NewAccounts(ctx, singleTenant: true);
+        var (outcome, user, org) = await svc.SignupAsync(
+            "alice@example.com", "Alice", "verylongpassword12345", "acme", null);
+
+        outcome.Should().Be(SignupOutcome.PendingApproval);
+        user!.Status.Should().Be(UserStatus.Pending);
         org!.Slug.Should().Be("acme");
     }
 

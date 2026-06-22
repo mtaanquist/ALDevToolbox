@@ -1,7 +1,10 @@
 @page "/site-admin/settings/quotas"
 @attribute [Authorize(Roles = HttpOrganizationContext.SiteAdminRole)]
 @using ALDevToolbox.Services
+@using ALDevToolbox.Services.SingleTenant
 @inject SystemSettingsService Settings
+@inject ISingleTenantMode SingleTenant
+@inject NavigationManager Nav
 
 <PageTitle>Storage quotas · Site administration · AL Dev Toolbox</PageTitle>
 
@@ -67,6 +70,13 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Storage quotas are a multi-tenant surface — hidden in single-tenant
+        // deployments. Bounce a typed URL back to the first settings tab.
+        if (SingleTenant.IsEnabled)
+        {
+            Nav.NavigateTo("/site-admin/settings/smtp", replace: true);
+            return;
+        }
         _view = await Settings.GetViewAsync();
     }
 }

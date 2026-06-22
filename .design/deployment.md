@@ -24,6 +24,10 @@ The canonical compose file lives at the repo root (`compose.yml`). It defines tw
 |---------------------------|-----------------------------------------------------|--------------------------|
 | `BOOTSTRAP_ADMIN_EMAIL`   | First admin email (only on a fresh database)       | none                     |
 | `BOOTSTRAP_ADMIN_PASSWORD`| First admin password (only on a fresh database)    | none                     |
+| `SINGLE_TENANT_MODE`      | `1` hides/disables multi-tenant surfaces (storage quotas, per-tenant snapshots, self-service org creation at signup) for internal single-org hosting | `0` (multi-tenant) |
+| `SINGLE_TENANT_ORG_NAME`  | First-run only: names the lone organisation (single-tenant mode) | none (stays "Default") |
+| `SINGLE_TENANT_ORG_SLUG`  | First-run only: optional slug for the lone organisation            | none (stays `default`) |
+| `SINGLE_TENANT_EMAIL_DOMAINS` | First-run only: comma/space-separated email domains the lone org claims; verified signups from them auto-join active | none |
 | `ConnectionStrings__DefaultConnection` | Postgres connection string (Npgsql format) | none — required          |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Read by the `db` compose service | `aldevtoolbox` (set `POSTGRES_PASSWORD` for any real deployment) |
 | `ASPNETCORE_URLS`         | Standard ASP.NET Core binding                       | `http://+:8080`          |
@@ -43,6 +47,22 @@ On first start against an empty database:
 The Default org's template catalogue starts empty. SiteAdmins author canonical templates via the regular `/admin/templates` pages; other organisations fork them at import time via `TemplateImportService` (wired to the "From the site catalogue" section of `/admin/templates`).
 
 On subsequent starts the app applies any pending migrations and starts serving.
+
+## Single-tenant mode
+
+`SINGLE_TENANT_MODE=1` adapts the app for a company hosting it internally for one organisation. The multi-tenant machinery becomes noise in that shape, so the flag hides and disables it:
+
+- **Storage quotas** — the SiteAdmin "Storage quotas" settings tab and the per-org "Storage" page are removed, the sidebar capacity bar is hidden, the usage-snapshot scheduler is skipped, and `StorageQuotaGuard` never blocks a write (no invisible limits). The quota and storage endpoints 404.
+- **Tenant snapshots** — the "Tenant snapshots" tab and its endpoints are removed and `BackupScheduler` skips the per-tenant snapshot loop. The system-level `pg_dump` ("Database" tab) is unaffected and keeps running.
+- **Signup** — the org-name/short-ID fields are hidden and `AccountService` refuses to provision a new organisation. Existing-org onboarding (claimed email domain, admin invite) still works; self-service org creation does not.
+
+What's deliberately kept: the cross-org Site Admin user/audit views and `pg_dump` backups. The lone organisation **is** the Default/system org, so the per-org Administration and template-authoring pages — normally hidden in the system org — are surfaced again, letting that one org manage its own content.
+
+**First-run seeding.** Because self-service org creation is off, the org needs to come up configured. On a fresh database (the same window the bootstrap admin uses) the app reads three optional env vars and applies them to the Default org: `SINGLE_TENANT_ORG_NAME`, `SINGLE_TENANT_ORG_SLUG`, and `SINGLE_TENANT_EMAIL_DOMAINS`. Seeding a domain also flips the org's auto-join-verified-domain-users setting on, so staff who verify an email at that domain join as active users without an admin pre-claiming the domain in the UI. Auto-join applies to the **verified (SMTP) signup path** — with SMTP off, domain-matched signups still land Pending for admin approval. After the first run these vars are ignored (like `BOOTSTRAP_ADMIN_*`); later edits go through `/admin/administration/identity`.
+
+**One-way switch.** Single-tenant is a deployment-time choice. Because the single tenant is the system org and self-service org creation is disabled, there is **no in-place path back to multi-tenant** — if you need multi-tenant later, stand up a fresh installation. This is intentional: we don't carry a single→multi migration path.
+
+The flag is read once at boot (an immutable singleton, like the scheduler opt-outs); flip it and restart.
 
 ## Backups
 

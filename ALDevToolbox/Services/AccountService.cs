@@ -3,6 +3,7 @@ using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Domain.ValueObjects;
 using ALDevToolbox.Services.Account;
+using ALDevToolbox.Services.SingleTenant;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services;
@@ -66,16 +67,32 @@ public sealed class AccountService
     private readonly AppDbContext _db;
     private readonly AuthService _auth;
     private readonly SystemSettingsService _settings;
+    private readonly ISingleTenantMode _singleTenant;
     private readonly ILogger<AccountService> _logger;
     private readonly TimeProvider _clock;
 
-    public AccountService(AppDbContext db, AuthService auth, SystemSettingsService settings, ILogger<AccountService> logger, TimeProvider clock)
+    public AccountService(AppDbContext db, AuthService auth, SystemSettingsService settings, ISingleTenantMode singleTenant, ILogger<AccountService> logger, TimeProvider clock)
     {
         _db = db;
         _auth = auth;
         _settings = settings;
+        _singleTenant = singleTenant;
         _logger = logger;
         _clock = clock;
+    }
+
+    /// <summary>
+    /// Refuses self-service organisation creation when the deployment runs in
+    /// single-tenant mode. Joining a claimed domain or an existing org by slug
+    /// stays open — onboarding goes through admin invites or domain routing.
+    /// </summary>
+    private void ThrowIfNewOrgBlocked()
+    {
+        if (!_singleTenant.IsEnabled) return;
+        throw new PlanValidationException(new Dictionary<string, string>
+        {
+            ["Email"] = "This site doesn't allow creating new organisations. Ask an administrator to invite you.",
+        });
     }
 
     /// <summary>
@@ -150,6 +167,7 @@ public sealed class AccountService
         }
         else if (slug.Length == 0)
         {
+            ThrowIfNewOrgBlocked();
             ValidateOrganizationName(organizationName, errors);
             if (errors.Count > 0) throw new PlanValidationException(errors);
             var trimmedName = organizationName!.Trim();
@@ -163,6 +181,7 @@ public sealed class AccountService
                 .FirstOrDefaultAsync(o => o.Slug == slug, ct);
             if (match is null)
             {
+                ThrowIfNewOrgBlocked();
                 ValidateOrganizationName(organizationName, errors);
                 if (errors.Count > 0) throw new PlanValidationException(errors);
                 var trimmedName = organizationName!.Trim();
@@ -284,6 +303,7 @@ public sealed class AccountService
         else
         {
             // No claimed domain → the only path is a brand-new org.
+            ThrowIfNewOrgBlocked();
             ValidateOrganizationName(organizationName, errors);
             if (errors.Count > 0) throw new PlanValidationException(errors);
             var trimmedName = organizationName!.Trim();

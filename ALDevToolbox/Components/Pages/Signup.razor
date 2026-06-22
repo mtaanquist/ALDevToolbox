@@ -1,5 +1,6 @@
 @page "/signup"
 @inject IEmailService Email
+@inject ALDevToolbox.Services.SingleTenant.ISingleTenantMode SingleTenant
 @using ALDevToolbox.Services
 
 <PageTitle>Sign up · AL Dev Toolbox</PageTitle>
@@ -72,14 +73,26 @@
     }
     else
     {
-        <p class="caption muted">
-            If your email domain is already linked to an organisation, we'll route
-            you to it automatically. Otherwise, either join an existing
-            organisation by its short ID (an admin there will approve you), or
-            leave the short ID blank and pick a name to start a brand-new
-            organisation. New organisations are activated straight away — you'll
-            be signed in as their first admin.
-        </p>
+        @if (SingleTenant.IsEnabled)
+        {
+            <p class="caption muted">
+                If your email domain is linked to the organisation, we'll route
+                you to it automatically and an admin will approve you. Otherwise,
+                ask an administrator to invite you — self-service organisations
+                aren't available on this site.
+            </p>
+        }
+        else
+        {
+            <p class="caption muted">
+                If your email domain is already linked to an organisation, we'll route
+                you to it automatically. Otherwise, either join an existing
+                organisation by its short ID (an admin there will approve you), or
+                leave the short ID blank and pick a name to start a brand-new
+                organisation. New organisations are activated straight away — you'll
+                be signed in as their first admin.
+            </p>
+        }
 
         <form method="post" action="/auth/signup" class="form-grid login-form">
             <AntiforgeryToken />
@@ -100,17 +113,20 @@
                 <small class="muted">At least 12 characters. Length beats classes.</small>
             </section>
 
-            <section class="form-section">
-                <label class="section-label" for="su-org-name">Organisation name</label>
-                <input id="su-org-name" type="text" name="OrganizationName" minlength="2" maxlength="80" placeholder="e.g. Acme" />
-                <small class="muted">Required when you're creating a new organisation. Ignored if you're joining an existing one.</small>
-            </section>
+            @if (!SingleTenant.IsEnabled)
+            {
+                <section class="form-section">
+                    <label class="section-label" for="su-org-name">Organisation name</label>
+                    <input id="su-org-name" type="text" name="OrganizationName" minlength="2" maxlength="80" placeholder="e.g. Acme" />
+                    <small class="muted">Required when you're creating a new organisation. Ignored if you're joining an existing one.</small>
+                </section>
 
-            <section class="form-section">
-                <label class="section-label" for="su-org">Organisation short ID (optional)</label>
-                <input id="su-org" type="text" name="OrganizationSlug" pattern="[a-z0-9-]*" maxlength="64" placeholder="e.g. acme" />
-                <small class="muted">The short, lowercase ID of the organisation you'd like to join. Leave blank to start a new one with the name above.</small>
-            </section>
+                <section class="form-section">
+                    <label class="section-label" for="su-org">Organisation short ID (optional)</label>
+                    <input id="su-org" type="text" name="OrganizationSlug" pattern="[a-z0-9-]*" maxlength="64" placeholder="e.g. acme" />
+                    <small class="muted">The short, lowercase ID of the organisation you'd like to join. Leave blank to start a new one with the name above.</small>
+                </section>
+            }
 
             <button type="submit" class="btn">
                 <Icon Name="user-plus" Width="16" Height="16" />

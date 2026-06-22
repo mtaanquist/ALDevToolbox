@@ -1,4 +1,5 @@
 using ALDevToolbox.Domain.ValueObjects;
+using ALDevToolbox.Services.SingleTenant;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace ALDevToolbox.Services;
@@ -25,17 +26,20 @@ public sealed class StorageQuotaGuard
     private readonly DatabaseUsageService _usage;
     private readonly IOrganizationContext _orgContext;
     private readonly IMemoryCache _cache;
+    private readonly ISingleTenantMode _singleTenant;
     private readonly ILogger<StorageQuotaGuard> _logger;
 
     public StorageQuotaGuard(
         DatabaseUsageService usage,
         IOrganizationContext orgContext,
         IMemoryCache cache,
+        ISingleTenantMode singleTenant,
         ILogger<StorageQuotaGuard> logger)
     {
         _usage = usage;
         _orgContext = orgContext;
         _cache = cache;
+        _singleTenant = singleTenant;
         _logger = logger;
     }
 
@@ -48,6 +52,9 @@ public sealed class StorageQuotaGuard
     /// </summary>
     public async Task EnsureCanWriteAsync(CancellationToken ct)
     {
+        // Single-tenant deployments hide quotas entirely — never block a write
+        // on a limit the operator can't see or manage.
+        if (_singleTenant.IsEnabled) return;
         if (_orgContext.IsSiteAdmin) return;
         if (_orgContext.IsSystemOrganization) return;
 

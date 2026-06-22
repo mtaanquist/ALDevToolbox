@@ -1,7 +1,9 @@
 @using ALDevToolbox.Services
 @using ALDevToolbox.Services.Mcp
+@using ALDevToolbox.Services.SingleTenant
 @inject IOrganizationContext OrgContext
 @inject IMcpAvailability McpAvailability
+@inject ISingleTenantMode SingleTenant
 
 @*
     Sidebar navigation. The Admin section is a single merged list — when the
@@ -97,6 +99,10 @@
                 var isSiteAdmin = adminCtx.User.IsInRole(HttpOrganizationContext.SiteAdminRole);
                 var isSystemOrg = OrgContext.IsSystemOrganization;
                 var isAdmin = adminCtx.User.IsInRole("Admin");
+                // In single-tenant mode the lone org IS the system org, so it
+                // owns its own templates and Administration — surface the
+                // per-org content pages that are otherwise hidden there.
+                var showPerOrgContent = !isSystemOrg || SingleTenant.IsEnabled;
             }
             <div class="nav-section">
                 <div class="nav-divider"></div>
@@ -111,7 +117,7 @@
                             </NavLink>
                         </li>
                     }
-                    @if (!isSystemOrg)
+                    @if (showPerOrgContent)
                     {
                         <li>
                             <div class="nav-group">
@@ -187,7 +193,7 @@
                         </NavLink>
                     </li>
 
-                    @if (isAdmin && !isSystemOrg)
+                    @if (isAdmin && showPerOrgContent)
                     {
                         <li>
                             <NavLink class="nav-link" href="/admin/administration" Match="NavLinkMatch.Prefix" ActiveClass="active">
@@ -275,7 +281,7 @@
     <div class="sidebar-footer">
         <AuthorizeView Roles="Admin">
             <Authorized>
-                @if (!OrgContext.IsSystemOrganization)
+                @if (!OrgContext.IsSystemOrganization && !SingleTenant.IsEnabled)
                 {
                     <StorageBar />
                 }
