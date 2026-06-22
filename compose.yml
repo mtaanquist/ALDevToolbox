@@ -137,6 +137,37 @@ services:
         reservations:
           memory: 256m
 
+  # --- Optional HTTPS reverse proxy (Caddy) ----------------------------------
+  # Uncomment this service to terminate TLS with automatic Let's Encrypt certs.
+  # The app itself stays HTTP-only on 8080; Caddy fronts it on 80/443. One-time
+  # setup:
+  #   1. Point a DNS A/AAAA record at this host and open ports 80 + 443.
+  #   2. Set SITE_ADDRESS (your domain) and ACME_EMAIL in .env.
+  #   3. Uncomment this service AND the caddy-data / caddy-config volumes below.
+  #   4. (recommended) remove the aldevtoolbox `ports:` mapping above so the app
+  #      is reachable only through the proxy.
+  #   5. (passkeys) set AUTH_WEBAUTHN_RP_ID + AUTH_WEBAUTHN_ORIGINS to the domain.
+  # Email links (verify/reset/invite) automatically use https://<domain> because
+  # Caddy preserves the inbound Host header and the app honours X-Forwarded-Proto
+  # (UseForwardedHeaders) — reach the app through the domain, not the raw :8080.
+  # The Caddyfile at the repo root carries the proxy config.
+  # caddy:
+  #   image: caddy:2-alpine
+  #   depends_on:
+  #     - aldevtoolbox
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #     - "443:443/udp"   # HTTP/3
+  #   environment:
+  #     SITE_ADDRESS: ${SITE_ADDRESS:?set your domain, e.g. aldevtoolbox.example.com}
+  #     ACME_EMAIL: ${ACME_EMAIL:?set a Let's Encrypt contact email, e.g. ops@example.com}
+  #   volumes:
+  #     - ./Caddyfile:/etc/caddy/Caddyfile:ro
+  #     - caddy-data:/data      # ACME account + issued certs — persist to avoid LE rate limits
+  #     - caddy-config:/config
+  #   restart: unless-stopped
+
 # Volume layout (M21).
 # - pg-data:     Postgres data files. The only thing that needs a real backup
 #                if you're not relying on app-backups.
@@ -148,3 +179,6 @@ volumes:
   pg-data:
   app-keys:
   app-backups:
+  # Uncomment alongside the optional `caddy` service above.
+  # caddy-data:     # Caddy ACME account + issued certificates (persist!)
+  # caddy-config:   # Caddy autosave config
