@@ -28,7 +28,10 @@ public sealed class NeaEncryptedAppException : Exception
 /// <list type="bullet">
 ///   <item><c>NavxManifest.xml</c> — app identity and policy flags</item>
 ///   <item><c>SymbolReference.json</c> — the symbol tree (UTF-8 BOM)</item>
-///   <item><c>src/</c> (optional) — embedded source when <c>IncludeSourceInSymbolFile="true"</c></item>
+///   <item><c>src/</c> (optional) — embedded source. Read whenever the tree is
+///         physically present, even if the manifest's
+///         <c>IncludeSourceInSymbolFile</c> policy flag is <c>false</c> (some
+///         partner apps ship source with the flag off).</item>
 ///   <item>translations, layouts, images — ignored at this layer</item>
 /// </list>
 ///
@@ -110,9 +113,21 @@ public static class AppPackageReader
 
         var manifest = ReadManifest(archive);
         var (symbols, symbolReferenceJson) = ReadSymbolPackage(archive, captureSymbolReferenceJson);
-        var sourceFiles = manifest.IncludeSourceInSymbolFile
-            ? ReadEmbeddedSource(archive)
-            : Array.Empty<AppSourceFile>();
+
+        // Read whatever source is physically embedded under src/, regardless of
+        // the manifest's IncludeSourceInSymbolFile / ShowMyCode policy flag. That
+        // flag is a *policy declaration* (does the publisher intend to expose
+        // source), not a statement of what the archive actually carries. Some
+        // partner apps ship the full src/ tree while still leaving
+        // IncludeSourceInSymbolFile="false" — Tasklet's Mobile WMS (Tenant
+        // Edition) is the observed case: 311 .al files under src/ with the flag
+        // off. Gating on the flag dropped that source on the floor (objects
+        // imported, 0 files). ReadEmbeddedSource returns an empty list when no
+        // .al files are present, so a genuinely source-free protected app still
+        // yields no rows — we just no longer refuse source the publisher put in
+        // the box. See .design/object-explorer.md (the "heuristic path" for
+        // IncludeSourceInSymbolFile="false" partner apps) and GitHub issue #216.
+        var sourceFiles = ReadEmbeddedSource(archive);
 
         return new AppPackage(manifest, symbols, sourceFiles, hash, symbolReferenceJson);
     }
@@ -702,7 +717,9 @@ public static class AppPackageReader
     /// The .app uses a double prefix (<c>src/src/...</c>) — the inner one is
     /// the project's own source root inside the build output. We keep paths
     /// relative to that inner root, matching the layout a paired
-    /// <c>.Source.zip</c> uses.
+    /// <c>.Source.zip</c> uses. Returns an empty list when the archive embeds
+    /// no <c>.al</c> source (a genuinely protected app), so callers can run it
+    /// unconditionally without first consulting the manifest's policy flag.
     /// </summary>
     private static IReadOnlyList<AppSourceFile> ReadEmbeddedSource(ZipArchive archive)
     {

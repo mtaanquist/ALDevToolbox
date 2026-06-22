@@ -321,17 +321,39 @@ public sealed class AppPackageReaderTests
     }
 
     [Fact]
-    public async Task ReadAsync_skips_embedded_source_when_show_my_code_absent()
+    public async Task ReadAsync_reads_embedded_source_even_when_policy_flag_false()
     {
-        // The fallback must not over-read: a BC 14 app with ShowMyCode absent
-        // (protected / no source exposed) leaves IncludeSourceInSymbolFile
-        // false and ships no source rows, even if a stray src/ entry exists.
+        // Some partner apps ship the full src/ tree while leaving the manifest's
+        // IncludeSourceInSymbolFile flag false (and no ShowMyCode) — Tasklet's
+        // Mobile WMS (Tenant Edition) is the observed case: 311 .al files under
+        // src/ with the flag off. The reader used to gate on the flag and drop
+        // that source on the floor (objects imported, 0 files). It must now read
+        // whatever source is physically present; the flag is a policy
+        // declaration, not a statement of archive contents. See GitHub issue #216.
         var bytes = BuildSyntheticAppFile(
             manifestEntryName: "NavxManifest.xml",
             embeddedSource: new Dictionary<string, string>
             {
                 ["src/src/codeunits/Foo.Codeunit.al"] = "codeunit 90000 \"Foo\"\n{\n}\n",
             });
+        await using var stream = new MemoryStream(bytes);
+
+        var pkg = await AppPackageReader.ReadAsync(stream);
+
+        pkg.Manifest.IncludeSourceInSymbolFile.Should().BeFalse(
+            "the manifest still declares the policy flag false");
+        pkg.SourceFiles.Should().ContainSingle(f =>
+            f.Path == "src/codeunits/Foo.Codeunit.al"
+            && f.Content.Contains("codeunit 90000"));
+    }
+
+    [Fact]
+    public async Task ReadAsync_yields_no_source_when_app_embeds_none()
+    {
+        // The protected app with no src/ tree at all (the common
+        // IncludeSourceInSymbolFile="false" shape) still yields zero source
+        // rows — reading unconditionally must not invent files that aren't there.
+        var bytes = BuildSyntheticAppFile(manifestEntryName: "NavxManifest.xml");
         await using var stream = new MemoryStream(bytes);
 
         var pkg = await AppPackageReader.ReadAsync(stream);
