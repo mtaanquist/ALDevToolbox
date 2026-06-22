@@ -1,16 +1,27 @@
-# Off-site (S3-compatible) backups
+# Off-site backups (S3-compatible or Azure Blob)
 
 The in-app backup scheduler already writes `pg_dump` files and per-tenant
 snapshot ZIPs to the `app-backups` named volume (see
 [operator-runbook.md](operator-runbook.md)). Off-site backup adds a
 second, disaster-recovery copy by uploading every scheduled full backup
-*and* every scheduled per-tenant snapshot to an S3-compatible bucket and
+*and* every scheduled per-tenant snapshot to a remote object store and
 pruning objects past a configurable retention window.
 
-Tested against AWS S3 and MinIO; any S3-compatible server (Backblaze B2,
-Wasabi, Cloudflare R2, Hetzner Object Storage, Ceph RGW, SeaweedFS, …)
-should work — most just need **Force path-style addressing** turned on
-and an endpoint URL.
+Two backends are supported, selected by the **Provider** dropdown on the
+settings form:
+
+- **S3-compatible** — tested against AWS S3 and MinIO; any S3-compatible
+  server (Backblaze B2, Wasabi, Cloudflare R2, Hetzner Object Storage,
+  Ceph RGW, SeaweedFS, …) should work — most just need **Force path-style
+  addressing** turned on and an endpoint URL.
+- **Azure Blob Storage** — a storage account + container, authenticated
+  with the **account name** and an **account key**. Region and path-style
+  addressing don't apply and are ignored.
+
+The two backends share everything else: object-key layout, the
+deployment-id fingerprint guard, staging-and-rename on download, retention
+prune, and the DR catalogues. The rest of this doc reads "bucket" for the
+S3 case; for Azure substitute "container" — they're the same field.
 
 ## What ends up off-site, and what doesn't
 
@@ -41,21 +52,31 @@ until the SiteAdmin re-enters them.
    - **MinIO / S3-compatible:** create a service account with read/write
      on the bucket. Note the endpoint URL (e.g. `https://minio.example.com`).
 
-2. **Open `/site-admin/settings`** as a SiteAdmin. Scroll to **Off-site
-   backups (S3-compatible)** and fill in:
+2. **Open `/site-admin/settings`** as a SiteAdmin. Go to the **Off-site
+   backups** tab, pick the **Provider**, and fill in:
 
    | Field                         | What to enter                                                                 |
    |-------------------------------|-------------------------------------------------------------------------------|
-   | Endpoint                      | Blank for AWS. URL for MinIO / other S3-compatible (`https://s3.example.com`). |
-   | Region                        | The bucket region (`eu-west-1`, `us-east-1`, …). Optional for non-AWS, but most servers tolerate it being set. |
-   | Bucket                        | The bucket name. Required.                                                    |
+   | Provider                      | `S3-compatible` or `Azure Blob Storage`.                                       |
+   | Endpoint                      | Blank for AWS / the Azure default host. URL for MinIO / other S3-compatible (`https://s3.example.com`) or an Azure custom / Azurite blob endpoint. |
+   | Region                        | The bucket region (`eu-west-1`, `us-east-1`, …). S3 only — ignored for Azure. |
+   | Bucket / Container            | The bucket name (S3) or container name (Azure). Required.                     |
    | Prefix                        | Optional key prefix, e.g. `aldevtoolbox/prod/`. Leave blank to write to the bucket root. |
-   | Access key id / Secret access key | The two credentials from step 1. Leave blank on subsequent edits to keep the stored value; tick **Clear stored …** to wipe. |
-   | Force path-style addressing   | Tick for MinIO and most non-AWS providers. Leave unticked for AWS S3.         |
+   | Access key id / Storage account name | S3 access key id, or the Azure **storage account name**. Leave blank on subsequent edits to keep the stored value; tick **Clear stored …** to wipe. |
+   | Secret access key / Account key | S3 secret access key, or the Azure **account key**. Same keep-blank-to-preserve behaviour. |
+   | Force path-style addressing   | Tick for MinIO and most non-AWS providers. Leave unticked for AWS S3. S3 only — ignored for Azure. |
    | Retention (days)              | Objects under the prefix older than this are deleted on every prune pass. 1–3650. |
    | Upload scheduled backups …    | Tick to actually start uploading. Leave unticked to "save the credentials but stay off".|
 
    Save.
+
+   For **Azure Blob Storage** specifically: create a storage account and a
+   container scoped to these backups, then take an access key from the
+   account's **Access keys** blade (or rotate one in for this use). Enter
+   the account name in **Storage account name** and the key in **Account
+   key**. The default endpoint `https://<account>.blob.core.windows.net`
+   is derived from the account name — only set **Endpoint** for a
+   sovereign cloud or the Azurite emulator.
 
 3. **Click `Test off-site connection`.** The button HEADs the bucket using
    the stored credentials. Look for `OK: Connected to bucket '<name>'.` in

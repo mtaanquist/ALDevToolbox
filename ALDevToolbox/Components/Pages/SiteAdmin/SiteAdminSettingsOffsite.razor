@@ -31,10 +31,12 @@
 
     <p class="muted">
         When enabled, every successful scheduled full backup is uploaded
-        to the configured bucket and objects older than the retention
-        window are pruned. Access and secret keys are encrypted with the
+        to the configured bucket or container and objects older than the
+        retention window are pruned. Credentials are encrypted with the
         Data Protection key ring; leave blank to keep the stored value,
-        tick the clear box to wipe it.
+        tick the clear box to wipe it. For Azure Blob Storage, the access
+        key is the storage account name and the secret key is the account
+        key; Region and path-style addressing are S3-only.
     </p>
 
     @if (_offsite is null)
@@ -47,24 +49,40 @@
             <AntiforgeryToken />
             <label class="checkbox-label">
                 <input type="checkbox" name="Enabled" value="true" checked="@_offsite.Enabled" />
-                Upload scheduled backups to the off-site bucket
+                Upload scheduled backups to the off-site bucket or container
             </label>
+            <div class="form-row">
+                <label>
+                    Provider
+                    <select name="Provider">
+                        <option value="s3" selected="@(_offsite.Provider != "azure-blob")">
+                            S3-compatible (AWS, MinIO, R2, B2)
+                        </option>
+                        <option value="azure-blob" selected="@(_offsite.Provider == "azure-blob")">
+                            Azure Blob Storage
+                        </option>
+                    </select>
+                </label>
+            </div>
             <div class="form-row">
                 <label>
                     Endpoint
                     <input type="text" name="Endpoint" value="@_offsite.Endpoint"
-                           placeholder="https://s3.example.com (blank = AWS default)" />
+                           placeholder="blank = provider default" />
+                    <small class="muted">Optional. S3 custom endpoint, or an Azure custom / Azurite blob endpoint.</small>
                 </label>
                 <label>
                     Region
                     <input type="text" name="Region" value="@_offsite.Region"
                            placeholder="eu-west-1" />
+                    <small class="muted">S3 only — ignored for Azure Blob.</small>
                 </label>
             </div>
             <div class="form-row">
                 <label>
-                    Bucket
+                    Bucket / Container
                     <input type="text" name="Bucket" value="@_offsite.Bucket" />
+                    <small class="muted">S3: bucket name. Azure: container name.</small>
                 </label>
                 <label>
                     Prefix
@@ -73,12 +91,12 @@
             </div>
             <div class="form-row">
                 <label>
-                    Access key id
+                    Access key id / Storage account name
                     <input type="text" name="AccessKey" autocomplete="off"
                            placeholder="@(_offsite.HasAccessKey ? "(stored — leave blank to keep)" : "")" />
                 </label>
                 <label>
-                    Secret access key
+                    Secret access key / Account key
                     <input type="password" name="SecretKey" autocomplete="new-password"
                            placeholder="@(_offsite.HasSecretKey ? "(stored — leave blank to keep)" : "")" />
                 </label>
@@ -96,7 +114,7 @@
             <div class="form-row">
                 <label class="checkbox-label">
                     <input type="checkbox" name="ForcePathStyle" value="true" checked="@_offsite.ForcePathStyle" />
-                    Force path-style addressing (MinIO and most S3-compatible servers)
+                    Force path-style addressing (MinIO and most S3-compatible servers; S3 only)
                 </label>
                 <label>
                     Retention (days)
@@ -111,7 +129,7 @@
                 <Icon Name="refresh-cw" Width="14" Height="14" />
                 <span>Test off-site connection</span>
             </button>
-            <span class="muted">HEADs the configured bucket using the stored credentials.</span>
+            <span class="muted">Checks the configured bucket or container using the stored credentials.</span>
         </form>
     }
 </div>

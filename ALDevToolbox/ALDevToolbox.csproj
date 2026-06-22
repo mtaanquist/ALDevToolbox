@@ -22,6 +22,9 @@
          AWS S3 as well as MinIO / Cloudflare R2 / Backblaze B2 (set
          OffsiteForcePathStyle=true for the non-AWS providers). -->
     <PackageReference Include="AWSSDK.S3" Version="3.*" />
+    <!-- Azure Blob Storage off-site backup target, selectable alongside the
+         S3-compatible client above (system_settings.offsite_provider). -->
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.*" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
     <PackageReference Include="DiffPlex" Version="1.7.2" />
     <!-- Fido2NetLib (passkeys / WebAuthn). The .AspNet meta package pulls in

@@ -124,6 +124,18 @@ public class SystemSettings
     public int OffsiteRetentionDays { get; set; } = 90;
 
     /// <summary>
+    /// Off-site storage backend: <c>"s3"</c> (default, S3-compatible — AWS,
+    /// MinIO, R2, B2) or <c>"azure-blob"</c> (Azure Blob Storage). Selects
+    /// which <see cref="Services.Offsite.IOffsiteStorageProvider"/> the
+    /// <see cref="Services.OffsiteBackupService"/> drives. For Azure the
+    /// access-key column holds the storage account name and the secret-key
+    /// column holds the account key; <see cref="OffsiteBucket"/> is the
+    /// container name. Region and <see cref="OffsiteForcePathStyle"/> are
+    /// S3-only and ignored for Azure.
+    /// </summary>
+    public string OffsiteProvider { get; set; } = "s3";
+
+    /// <summary>
     /// SiteAdmin runtime toggle for the MCP server. The deployment-level
     /// <c>Mcp:Enabled</c> setting in appsettings still controls whether
     /// the route is mapped at startup; this flag lets SiteAdmins flip

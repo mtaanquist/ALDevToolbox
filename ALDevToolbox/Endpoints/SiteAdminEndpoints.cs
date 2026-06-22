@@ -132,6 +132,7 @@ internal static class SiteAdminEndpoints
             var form = await ctx.Request.ReadFormAsync(ct);
             var input = new OffsiteSettingsInput(
                 Enabled: form["Enabled"] == "true" || form["Enabled"] == "on",
+                Provider: form["Provider"].ToString(),
                 Endpoint: form["Endpoint"].ToString(),
                 Region: form["Region"].ToString(),
                 Bucket: form["Bucket"].ToString(),

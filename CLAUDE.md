@@ -57,7 +57,7 @@ When you add a new file, match the folder. Resist creating top-level folders —
 ### DRY, but not prematurely
 
 - Factor shared logic out the **second** time it's needed, not the first. The split between workspace and standalone generation reuses `WriteExtensionAsync` because both flows need the same per-extension layout — that's the bar.
-- Don't introduce interfaces for services until there's a second implementation or a real test seam. `GenerationService` is a concrete class injected as itself; keep it that way until something forces the change.
+- Don't introduce interfaces for services until there's a second implementation or a real test seam. `GenerationService` is a concrete class injected as itself; keep it that way until something forces the change. The one place that *has* cleared this bar is off-site storage: `IOffsiteStorageProvider` (in `Services/Offsite/`) has two real implementations — `S3Provider` and `AzureBlobProvider` — selected per request by `OffsiteStorageProviderFactory` from the `offsite_provider` setting. `OffsiteBackupService` owns all orchestration and only delegates raw transport to the provider; that's the sanctioned extension point for a third backend.
 - Reusable UI is what `Components/Shared/` is for. The design doc names the components we should pull out (`FolderTreePreview`, `DependencyPicker`, `AuditHistoryPanel`, `JsonEditor`) — use those names so they're easy to find.
 - Three similar lines is fine. A premature abstraction over two callers is worse than the duplication.
 

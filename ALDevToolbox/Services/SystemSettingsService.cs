@@ -66,6 +66,7 @@ public sealed record SystemSettingsInput(
 /// </summary>
 public sealed record OffsiteSettingsView(
     bool Enabled,
+    string Provider,
     string? Endpoint,
     string? Region,
     string? Bucket,
@@ -82,6 +83,7 @@ public sealed record OffsiteSettingsView(
 /// </summary>
 public sealed record OffsiteSettingsInput(
     bool Enabled,
+    string? Provider,
     string? Endpoint,
     string? Region,
     string? Bucket,
@@ -99,6 +101,7 @@ public sealed record OffsiteSettingsInput(
 /// never logged.
 /// </summary>
 public sealed record ResolvedOffsiteSettings(
+    string Provider,
     string? Endpoint,
     string? Region,
     string Bucket,
@@ -157,6 +160,12 @@ public sealed class SystemSettingsService
 
     /// <summary>Data Protection purpose string for off-site S3 secret access key.</summary>
     public const string OffsiteSecretKeyProtectionPurpose = "ALDevToolbox.SystemSettings.OffsiteSecretKey";
+
+    /// <summary>Discriminator for the default S3-compatible off-site backend.</summary>
+    public const string S3ProviderName = "s3";
+
+    /// <summary>Discriminator for the Azure Blob Storage off-site backend.</summary>
+    public const string AzureBlobProviderName = "azure-blob";
 
     private readonly AppDbContext _db;
     private readonly IDataProtector _protector;
@@ -357,6 +366,7 @@ public sealed class SystemSettingsService
         var row = await LoadAsync(ct);
         return new OffsiteSettingsView(
             Enabled: row.OffsiteBackupEnabled,
+            Provider: NormaliseProvider(row.OffsiteProvider),
             Endpoint: row.OffsiteEndpoint,
             Region: row.OffsiteRegion,
             Bucket: row.OffsiteBucket,
@@ -375,11 +385,14 @@ public sealed class SystemSettingsService
     /// </summary>
     public async Task SaveOffsiteAsync(OffsiteSettingsInput input, CancellationToken ct = default)
     {
+        var provider = NormaliseProvider(input.Provider);
         var errors = new Dictionary<string, string>();
         if (input.Enabled)
         {
             if (string.IsNullOrWhiteSpace(input.Bucket))
-                errors["OffsiteBucket"] = "Bucket is required when off-site backup is enabled.";
+                errors["OffsiteBucket"] = provider == AzureBlobProviderName
+                    ? "Container is required when off-site backup is enabled."
+                    : "Bucket is required when off-site backup is enabled.";
         }
         if (input.RetentionDays < 1 || input.RetentionDays > 3650)
         {
@@ -389,6 +402,7 @@ public sealed class SystemSettingsService
 
         var row = await LoadAsync(ct);
         row.OffsiteBackupEnabled = input.Enabled;
+        row.OffsiteProvider = provider;
         row.OffsiteEndpoint = NullIfBlank(input.Endpoint);
         row.OffsiteRegion = NullIfBlank(input.Region);
         row.OffsiteBucket = NullIfBlank(input.Bucket);
@@ -436,6 +450,7 @@ public sealed class SystemSettingsService
             return null;
         }
         return new ResolvedOffsiteSettings(
+            Provider: NormaliseProvider(row.OffsiteProvider),
             Endpoint: NullIfBlank(row.OffsiteEndpoint),
             Region: NullIfBlank(row.OffsiteRegion),
             Bucket: row.OffsiteBucket!,
@@ -520,6 +535,17 @@ public sealed class SystemSettingsService
 
     private static string? NullIfBlank(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>
+    /// Coerces an off-site provider discriminator to a known value, defaulting
+    /// to <see cref="S3ProviderName"/>. Keeps a blank column (pre-migration
+    /// rows / hand-built test settings) and any unrecognised value safely on
+    /// the S3 path rather than failing the resolve.
+    /// </summary>
+    private static string NormaliseProvider(string? value) =>
+        string.Equals(value, AzureBlobProviderName, StringComparison.OrdinalIgnoreCase)
+            ? AzureBlobProviderName
+            : S3ProviderName;
 
     private static readonly System.Text.RegularExpressions.Regex AllowlistDomainRegex = new(
         "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$",
