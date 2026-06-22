@@ -1,6 +1,6 @@
 # AL Dev Toolbox
 
-A self-hosted Blazor Server toolbox for Microsoft Dynamics 365 Business Central (AL) development. It started as a workspace/extension generator and has grown into a small suite of focused tools that a BC team can run for itself, plus a read-only MCP surface so AI agents can reach the same knowledge humans do.
+A self-hosted Blazor Server toolbox for Microsoft Dynamics 365 Business Central (AL) development. It bundles a suite of focused tools that a BC team can run for itself, plus a read-only MCP surface so AI agents can reach the same knowledge humans do.
 
 The design lives under [`.design/`](./.design/) — read it before non-trivial changes. [`CLAUDE.md`](./CLAUDE.md) covers the conventions and the architectural fences to stay inside.
 
