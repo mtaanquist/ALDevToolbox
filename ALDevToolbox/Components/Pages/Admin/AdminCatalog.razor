@@ -10,15 +10,18 @@
 
 @*
     Table editor for the well-known dependency catalogue. Each entry is a single
-    table row of inline inputs (Object Explorer data-table style); reorder, add
-    and remove live in a toolbar that acts on the selected row. The whole list is
-    submitted on Save; the service reconciles row by row so unchanged entries
-    keep their primary keys and the audit log only records real changes.
+    table row of inline inputs (Object Explorer data-table style); a blank
+    "ghost" row sits permanently at the bottom and becomes a real row the moment
+    you type in it (a fresh ghost then appears), so there's no explicit "add"
+    step. Reorder and remove live in a toolbar that acts on the selected row. The
+    whole list is submitted on Save; the service reconciles row by row so
+    unchanged entries keep their primary keys and the audit log only records real
+    changes.
 *@
 
 <PageTitle>Catalogue · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page admin-template-edit">
+<div class="admin-page admin-template-edit admin-page--wide">
     <header class="admin-page__header">
         <div>
             <h1>Well-known dependencies</h1>
@@ -61,127 +64,113 @@
             <section class="form-section">
                 <div class="row-editor" @ref="_editorRef">
                     <div class="row-editor__toolbar">
-                        <button type="button" class="btn btn--sm" @onclick="AddEntry">
-                            <Icon Name="plus" Width="14" Height="14" />
-                            <span>Add row</span>
-                        </button>
-                        <span class="row-editor__divider" aria-hidden="true"></span>
                         <button type="button" class="btn btn--sm" title="Move to top"
-                                disabled="@(SelectedIndex <= 0)"
+                                disabled="@(!CanMoveUp)"
                                 @onclick="() => MoveEntryToTop(SelectedIndex)">
                             <Icon Name="chevrons-up" Width="14" Height="14" />
                         </button>
                         <button type="button" class="btn btn--sm" title="Move up"
-                                disabled="@(SelectedIndex <= 0)"
+                                disabled="@(!CanMoveUp)"
                                 @onclick="() => MoveEntry(SelectedIndex, -1)">
                             <Icon Name="chevron-up" Width="14" Height="14" />
                         </button>
                         <button type="button" class="btn btn--sm" title="Move down"
-                                disabled="@(SelectedIndex < 0 || SelectedIndex >= _form.Entries.Count - 1)"
+                                disabled="@(!CanMoveDown)"
                                 @onclick="() => MoveEntry(SelectedIndex, 1)">
                             <Icon Name="chevron-down" Width="14" Height="14" />
                         </button>
                         <button type="button" class="btn btn--sm" title="Move to bottom"
-                                disabled="@(SelectedIndex < 0 || SelectedIndex >= _form.Entries.Count - 1)"
+                                disabled="@(!CanMoveDown)"
                                 @onclick="() => MoveEntryToBottom(SelectedIndex)">
                             <Icon Name="chevrons-down" Width="14" Height="14" />
                         </button>
                         <span class="row-editor__divider" aria-hidden="true"></span>
                         <button type="button" class="btn btn--sm btn--danger" title="Remove selected row"
-                                disabled="@(SelectedIndex < 0)"
+                                disabled="@(!SelectedIsReal)"
                                 @onclick="() => RemoveEntry(SelectedIndex)">
                             <Icon Name="trash-2" Width="14" Height="14" />
                             <span>Remove</span>
                         </button>
                     </div>
 
-                    @if (_form.Entries.Count == 0)
-                    {
-                        <p class="muted">
-                            No catalogue entries. Click <strong>Add row</strong>
-                            to add the dependencies your team commonly references.
-                        </p>
-                    }
-                    else
-                    {
-                        <table class="data-table row-editor__table">
-                            <colgroup>
-                                <col class="row-editor__col-guid" />
-                                <col />
-                                <col />
-                                <col class="row-editor__col-version" />
-                                <col class="row-editor__col-category" />
-                            </colgroup>
-                            <thead>
-                                <tr>
-                                    <th scope="col">GUID</th>
-                                    <th scope="col">Name</th>
-                                    <th scope="col">Publisher</th>
-                                    <th scope="col">Default version</th>
-                                    <th scope="col">Category</th>
+                    <table class="data-table row-editor__table">
+                        <colgroup>
+                            <col class="row-editor__col-guid" />
+                            <col />
+                            <col />
+                            <col class="row-editor__col-version" />
+                            <col class="row-editor__col-category" />
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th scope="col">GUID</th>
+                                <th scope="col">Name</th>
+                                <th scope="col">Publisher</th>
+                                <th scope="col">Default version</th>
+                                <th scope="col">Category</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (var i = 0; i < _form.Entries.Count; i++)
+                            {
+                                var index = i;
+                                var row = _form.Entries[index];
+                                <tr @key="row" class="@RowCss(index, row)"
+                                    @onfocusin="() => _selected = row">
+                                    <td>
+                                        <input type="text" required placeholder="12345678-1234-1234-1234-1234567890ab"
+                                               pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                                               title="Must be a GUID in 8-4-4-4-12 hex form. Press F8 to copy the cell above."
+                                               data-row="@index" data-col="0"
+                                               @bind="row.DepId" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
+                                               @onkeydown="e => OnCellKeyDown(e, index, Col.DepId)" />
+                                        <FieldError Field="@($"Entries[{index}].DepId")" Errors="_fieldErrors" />
+                                    </td>
+                                    <td>
+                                        <input type="text" required placeholder="Name"
+                                               title="Press F8 to copy the cell above."
+                                               data-row="@index" data-col="1"
+                                               @bind="row.DepName" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
+                                               @onkeydown="e => OnCellKeyDown(e, index, Col.DepName)" />
+                                        <FieldError Field="@($"Entries[{index}].DepName")" Errors="_fieldErrors" />
+                                    </td>
+                                    <td>
+                                        <input type="text" required placeholder="Publisher"
+                                               title="Press F8 to copy the cell above."
+                                               data-row="@index" data-col="2"
+                                               @bind="row.DepPublisher" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
+                                               @onkeydown="e => OnCellKeyDown(e, index, Col.DepPublisher)" />
+                                        <FieldError Field="@($"Entries[{index}].DepPublisher")" Errors="_fieldErrors" />
+                                    </td>
+                                    <td>
+                                        <input type="text" required placeholder="1.0.0.0"
+                                               title="Press F8 to copy the cell above."
+                                               data-row="@index" data-col="3"
+                                               @bind="row.DepVersionDefault" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
+                                               @onkeydown="e => OnCellKeyDown(e, index, Col.DepVersionDefault)" />
+                                        <FieldError Field="@($"Entries[{index}].DepVersionDefault")" Errors="_fieldErrors" />
+                                    </td>
+                                    <td>
+                                        <input type="text" placeholder="e.g. Continia"
+                                               title="Press F8 to copy the cell above."
+                                               data-row="@index" data-col="4"
+                                               @bind="row.Category" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
+                                               @onkeydown="e => OnCellKeyDown(e, index, Col.Category)" />
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                @for (var i = 0; i < _form.Entries.Count; i++)
-                                {
-                                    var index = i;
-                                    var row = _form.Entries[index];
-                                    <tr class="@(row == _selected ? "is-selected" : null)"
-                                        @onfocusin="() => _selected = row">
-                                        <td>
-                                            <input type="text" required placeholder="12345678-1234-1234-1234-1234567890ab"
-                                                   pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-                                                   title="Must be a GUID in 8-4-4-4-12 hex form. Press F8 to copy the cell above."
-                                                   data-row="@index" data-col="0"
-                                                   @bind="row.DepId" @bind:event="oninput"
-                                                   @onkeydown="e => OnCellKeyDown(e, index, Col.DepId)" />
-                                            <FieldError Field="@($"Entries[{index}].DepId")" Errors="_fieldErrors" />
-                                        </td>
-                                        <td>
-                                            <input type="text" required placeholder="Name"
-                                                   title="Press F8 to copy the cell above."
-                                                   data-row="@index" data-col="1"
-                                                   @bind="row.DepName" @bind:event="oninput"
-                                                   @onkeydown="e => OnCellKeyDown(e, index, Col.DepName)" />
-                                            <FieldError Field="@($"Entries[{index}].DepName")" Errors="_fieldErrors" />
-                                        </td>
-                                        <td>
-                                            <input type="text" required placeholder="Publisher"
-                                                   title="Press F8 to copy the cell above."
-                                                   data-row="@index" data-col="2"
-                                                   @bind="row.DepPublisher" @bind:event="oninput"
-                                                   @onkeydown="e => OnCellKeyDown(e, index, Col.DepPublisher)" />
-                                            <FieldError Field="@($"Entries[{index}].DepPublisher")" Errors="_fieldErrors" />
-                                        </td>
-                                        <td>
-                                            <input type="text" required placeholder="1.0.0.0"
-                                                   title="Press F8 to copy the cell above."
-                                                   data-row="@index" data-col="3"
-                                                   @bind="row.DepVersionDefault" @bind:event="oninput"
-                                                   @onkeydown="e => OnCellKeyDown(e, index, Col.DepVersionDefault)" />
-                                            <FieldError Field="@($"Entries[{index}].DepVersionDefault")" Errors="_fieldErrors" />
-                                        </td>
-                                        <td>
-                                            <input type="text" placeholder="e.g. Continia"
-                                                   title="Press F8 to copy the cell above."
-                                                   data-row="@index" data-col="4"
-                                                   @bind="row.Category" @bind:event="oninput"
-                                                   @onkeydown="e => OnCellKeyDown(e, index, Col.Category)" />
-                                        </td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                        <small class="muted">
-                            Click a row to select it, then use the toolbar to move
-                            or remove it. Press <kbd>F8</kbd> in any cell to copy
-                            the value from the row above, or paste a range copied
-                            from Excel to fill multiple rows at once (new rows are
-                            added as needed). The default version pre-fills the
-                            picker; users can override it per extension. Category
-                            groups items in the picker UI.
-                        </small>
-                    }
+                            }
+                        </tbody>
+                    </table>
+                    <small class="muted">
+                        Start typing in the blank row at the bottom to add an
+                        entry — a fresh blank row always follows. Click a row to
+                        select it, then use the toolbar to move or remove it.
+                        Press <kbd>F8</kbd> in any cell to copy the value from the
+                        row above, or paste a range copied from Excel to fill
+                        multiple rows at once. The default version pre-fills the
+                        picker; users can override it per extension. Category
+                        groups items in the picker UI.
+                    </small>
                 </div>
             </section>
 
@@ -212,8 +201,22 @@
     private int SelectedIndex =>
         _selected is null || _form is null ? -1 : _form.Entries.IndexOf(_selected);
 
+    // The last row is always the blank "ghost" placeholder; a real row is any
+    // selected row that isn't it. Move/remove only apply to real rows, and a
+    // real row can never be pushed below the ghost.
+    private bool SelectedIsReal => _form is not null && SelectedIndex >= 0 && SelectedIndex < _form.Entries.Count - 1;
+    private bool CanMoveUp => SelectedIsReal && SelectedIndex > 0;
+    private bool CanMoveDown => SelectedIsReal && SelectedIndex < _form!.Entries.Count - 2;
+
     /// <summary>Columns that participate in the F8 "copy cell above" shortcut.</summary>
     private enum Col { DepId, DepName, DepPublisher, DepVersionDefault, Category }
+
+    private string RowCss(int index, EntryRow row)
+    {
+        var css = row == _selected ? "is-selected" : "";
+        if (index == _form!.Entries.Count - 1) css = (css + " is-ghost").Trim();
+        return css;
+    }
 
     protected override Task OnInitializedAsync() => ReloadAsync();
 
@@ -241,14 +244,21 @@
         StateHasChanged();
         var rows = await Catalog.GetAllAsync();
         _form = FormState.From(rows);
+        EnsureTrailingBlank();
     }
 
-    private void AddEntry()
+    /// <summary>
+    /// Keeps exactly one empty row at the end of the list so there's always a
+    /// place to start a new entry. Called after every cell edit (via
+    /// <c>@bind:after</c>), F8, paste, removal, and load.
+    /// </summary>
+    private void EnsureTrailingBlank()
     {
         if (_form is null) return;
-        var row = new EntryRow();
-        _form.Entries.Add(row);
-        _selected = row;
+        if (_form.Entries.Count == 0 || !_form.Entries[^1].IsBlank())
+        {
+            _form.Entries.Add(new EntryRow());
+        }
     }
 
     private void RemoveEntry(int index)
@@ -258,6 +268,7 @@
         {
             if (_form.Entries[index] == _selected) _selected = null;
             _form.Entries.RemoveAt(index);
+            EnsureTrailingBlank();
         }
     }
 
@@ -269,6 +280,8 @@
         {
             return;
         }
+        // Never swap a real row past the trailing ghost.
+        if (target == _form.Entries.Count - 1) return;
         (_form.Entries[index], _form.Entries[target]) =
             (_form.Entries[target], _form.Entries[index]);
     }
@@ -285,10 +298,11 @@
     private void MoveEntryToBottom(int index)
     {
         if (_form is null) return;
-        if (index < 0 || index >= _form.Entries.Count - 1) return;
+        // Move to the last *real* slot — immediately above the trailing ghost.
+        if (index < 0 || index >= _form.Entries.Count - 2) return;
         var row = _form.Entries[index];
         _form.Entries.RemoveAt(index);
-        _form.Entries.Add(row);
+        _form.Entries.Insert(_form.Entries.Count - 1, row);
     }
 
     /// <summary>
@@ -308,6 +322,7 @@
             case Col.DepVersionDefault: cur.DepVersionDefault = above.DepVersionDefault; break;
             case Col.Category: cur.Category = above.Category; break;
         }
+        EnsureTrailingBlank();
     }
 
     /// <summary>
@@ -338,6 +353,7 @@
 
         var lastRow = startRow + grid.Count - 1;
         if (lastRow >= 0 && lastRow < _form.Entries.Count) _selected = _form.Entries[lastRow];
+        EnsureTrailingBlank();
         StateHasChanged();
     }
 
@@ -371,6 +387,7 @@
             // assigned primary key and ordering reflects the saved state.
             var rows = await Catalog.GetAllAsync();
             _form = FormState.From(rows);
+            EnsureTrailingBlank();
             _selected = null;
             _saveSuccess = "Saved.";
         }
@@ -425,15 +442,26 @@
             return state;
         }
 
-        public List<CatalogEntryInput> ToInputs() => Entries
-            .Select(e => new CatalogEntryInput(
-                Id: e.Id,
-                DepId: e.DepId,
-                DepName: e.DepName,
-                DepPublisher: e.DepPublisher,
-                DepVersionDefault: e.DepVersionDefault,
-                Category: string.IsNullOrWhiteSpace(e.Category) ? null : e.Category))
-            .ToList();
+        /// <summary>
+        /// Maps rows to service inputs, dropping trailing blank rows (the
+        /// always-present ghost) so the add-placeholder is never validated or
+        /// persisted. Only trailing blanks are dropped, which keeps every
+        /// remaining row's index aligned with the <c>Entries[N]</c> error keys.
+        /// </summary>
+        public List<CatalogEntryInput> ToInputs()
+        {
+            var rows = Entries.ToList();
+            while (rows.Count > 0 && rows[^1].IsBlank()) rows.RemoveAt(rows.Count - 1);
+            return rows
+                .Select(e => new CatalogEntryInput(
+                    Id: e.Id,
+                    DepId: e.DepId,
+                    DepName: e.DepName,
+                    DepPublisher: e.DepPublisher,
+                    DepVersionDefault: e.DepVersionDefault,
+                    Category: string.IsNullOrWhiteSpace(e.Category) ? null : e.Category))
+                .ToList();
+        }
     }
 
     private sealed class EntryRow
@@ -444,5 +472,11 @@
         public string DepPublisher { get; set; } = string.Empty;
         public string DepVersionDefault { get; set; } = string.Empty;
         public string Category { get; set; } = string.Empty;
+
+        /// <summary>A row with no content — the ghost, or a fully-cleared row.</summary>
+        public bool IsBlank() =>
+            string.IsNullOrWhiteSpace(DepId) && string.IsNullOrWhiteSpace(DepName)
+            && string.IsNullOrWhiteSpace(DepPublisher) && string.IsNullOrWhiteSpace(DepVersionDefault)
+            && string.IsNullOrWhiteSpace(Category);
     }
 }

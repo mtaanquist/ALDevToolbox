@@ -11,16 +11,18 @@
 @*
     Table editor for the curated application-version catalogue (Milestone P2.4).
     Each entry is a single table row of inline inputs (Object Explorer
-    data-table style); reorder, add and remove live in a toolbar that acts on
-    the selected row. The whole list is submitted on Save; the service
-    reconciles row by row so unchanged entries keep their primary keys and the
-    audit log only records real changes. Removed rows are soft-deleted so
-    existing template foreign keys stay resolvable.
+    data-table style); a blank "ghost" row sits permanently at the bottom and
+    becomes a real row the moment you type in it (a fresh ghost then appears),
+    so there's no explicit "add" step. Reorder and remove live in a toolbar
+    that acts on the selected row. The whole list is submitted on Save; the
+    service reconciles row by row so unchanged entries keep their primary keys
+    and the audit log only records real changes. Removed rows are soft-deleted
+    so existing template foreign keys stay resolvable.
 *@
 
 <PageTitle>Application versions · Admin · AL Dev Toolbox</PageTitle>
 
-<div class="admin-page admin-template-edit">
+<div class="admin-page admin-template-edit admin-page--wide">
     <header class="admin-page__header">
         <div>
             <h1>Application versions</h1>
@@ -80,144 +82,129 @@
             <section class="form-section">
                 <div class="row-editor" @ref="_editorRef">
                     <div class="row-editor__toolbar">
-                        <button type="button" class="btn btn--sm" @onclick="AddEntry">
-                            <Icon Name="plus" Width="14" Height="14" />
-                            <span>Add row</span>
-                        </button>
-                        <span class="row-editor__divider" aria-hidden="true"></span>
                         <button type="button" class="btn btn--sm" title="Move to top"
-                                disabled="@(SelectedIndex <= 0)"
+                                disabled="@(!CanMoveUp)"
                                 @onclick="() => MoveEntryToTop(SelectedIndex)">
                             <Icon Name="chevrons-up" Width="14" Height="14" />
                         </button>
                         <button type="button" class="btn btn--sm" title="Move up"
-                                disabled="@(SelectedIndex <= 0)"
+                                disabled="@(!CanMoveUp)"
                                 @onclick="() => MoveEntry(SelectedIndex, -1)">
                             <Icon Name="chevron-up" Width="14" Height="14" />
                         </button>
                         <button type="button" class="btn btn--sm" title="Move down"
-                                disabled="@(SelectedIndex < 0 || SelectedIndex >= _form.Entries.Count - 1)"
+                                disabled="@(!CanMoveDown)"
                                 @onclick="() => MoveEntry(SelectedIndex, 1)">
                             <Icon Name="chevron-down" Width="14" Height="14" />
                         </button>
                         <button type="button" class="btn btn--sm" title="Move to bottom"
-                                disabled="@(SelectedIndex < 0 || SelectedIndex >= _form.Entries.Count - 1)"
+                                disabled="@(!CanMoveDown)"
                                 @onclick="() => MoveEntryToBottom(SelectedIndex)">
                             <Icon Name="chevrons-down" Width="14" Height="14" />
                         </button>
                         <span class="row-editor__divider" aria-hidden="true"></span>
                         <button type="button" class="btn btn--sm btn--danger" title="Remove selected row"
-                                disabled="@(SelectedIndex < 0)"
+                                disabled="@(!SelectedIsReal)"
                                 @onclick="() => RemoveEntry(SelectedIndex)">
                             <Icon Name="trash-2" Width="14" Height="14" />
                             <span>Remove</span>
                         </button>
                     </div>
 
-                    @if (_form.Entries.Count == 0)
-                    {
-                        <p class="muted">
-                            No application versions. Click <strong>Add row</strong>
-                            to seed the list with the BC releases your team supports
-                            (BC v22 → v28 etc.).
-                        </p>
-                    }
-                    else
-                    {
-                        <table class="data-table row-editor__table">
-                            <colgroup>
-                                <col class="row-editor__col-key" />
-                                <col />
-                                <col class="row-editor__col-version" />
-                                <col class="row-editor__col-version" />
-                                <col class="row-editor__col-flag" />
-                                <col class="row-editor__col-flag" />
-                            </colgroup>
-                            <thead>
-                                <tr>
-                                    <th scope="col">Key</th>
-                                    <th scope="col">Friendly name</th>
-                                    <th scope="col">Application</th>
-                                    <th scope="col">Runtime</th>
-                                    <th scope="col">Deprecated</th>
-                                    <th scope="col">In use</th>
+                    <table class="data-table row-editor__table">
+                        <colgroup>
+                            <col class="row-editor__col-key" />
+                            <col />
+                            <col class="row-editor__col-version" />
+                            <col class="row-editor__col-version" />
+                            <col class="row-editor__col-flag" />
+                            <col class="row-editor__col-flag" />
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th scope="col">Key</th>
+                                <th scope="col">Friendly name</th>
+                                <th scope="col">Application</th>
+                                <th scope="col">Runtime</th>
+                                <th scope="col">Deprecated</th>
+                                <th scope="col">In use</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (var i = 0; i < _form.Entries.Count; i++)
+                            {
+                                var index = i;
+                                var row = _form.Entries[index];
+                                <tr @key="row" class="@RowCss(index, row)"
+                                    @onfocusin="() => _selected = row">
+                                    <td>
+                                        <input type="text" required placeholder="bc-2026-w1"
+                                               pattern="[a-z0-9-]+"
+                                               title="Lowercase letters, digits, hyphens. Press F8 to copy the cell above."
+                                               data-row="@index" data-col="0"
+                                               @bind="row.Key" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
+                                               @onkeydown="e => OnCellKeyDown(e, index, Col.Key)" />
+                                        <FieldError Field="@($"Entries[{index}].Key")" Errors="_fieldErrors" />
+                                    </td>
+                                    <td>
+                                        <input type="text" required placeholder="Business Central 2026 Release Wave 1"
+                                               title="Press F8 to copy the cell above."
+                                               data-row="@index" data-col="1"
+                                               @bind="row.Name" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
+                                               @onkeydown="e => OnCellKeyDown(e, index, Col.Name)" />
+                                        <FieldError Field="@($"Entries[{index}].Name")" Errors="_fieldErrors" />
+                                    </td>
+                                    <td>
+                                        <input type="text" required placeholder="28.0.0.0"
+                                               title="Type a number; missing parts auto-pad with .0 on blur. Press F8 to copy the cell above."
+                                               data-row="@index" data-col="2"
+                                               @bind="row.Application" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
+                                               @onblur="() => NormaliseApplication(row)"
+                                               @onkeydown="e => OnCellKeyDown(e, index, Col.Application)" />
+                                        <FieldError Field="@($"Entries[{index}].Application")" Errors="_fieldErrors" />
+                                    </td>
+                                    <td>
+                                        <input type="text" required placeholder="15.2"
+                                               title="Type a number; missing parts auto-pad with .0 on blur. Press F8 to copy the cell above."
+                                               data-row="@index" data-col="3"
+                                               @bind="row.Runtime" @bind:event="oninput" @bind:after="EnsureTrailingBlank"
+                                               @onblur="() => NormaliseRuntime(row)"
+                                               @onkeydown="e => OnCellKeyDown(e, index, Col.Runtime)" />
+                                        <FieldError Field="@($"Entries[{index}].Runtime")" Errors="_fieldErrors" />
+                                    </td>
+                                    <td class="row-editor__cell-center">
+                                        <input type="checkbox" @bind="row.Deprecated" />
+                                        <FieldError Field="@($"Entries[{index}].Deprecated")" Errors="_fieldErrors" />
+                                    </td>
+                                    <td class="row-editor__cell-center">
+                                        @if (row.Id is int rowId && _usage.TryGetValue(rowId, out var usingTemplates) && usingTemplates.Count > 0)
+                                        {
+                                            <span class="row-editor__usage"
+                                                  title="@($"In use by {usingTemplates.Count} active template{(usingTemplates.Count == 1 ? "" : "s")}: {string.Join(", ", usingTemplates)}")">
+                                                @usingTemplates.Count
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="muted">—</span>
+                                        }
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                @for (var i = 0; i < _form.Entries.Count; i++)
-                                {
-                                    var index = i;
-                                    var row = _form.Entries[index];
-                                    <tr class="@(row == _selected ? "is-selected" : null)"
-                                        @onfocusin="() => _selected = row">
-                                        <td>
-                                            <input type="text" required placeholder="bc-2026-w1"
-                                                   pattern="[a-z0-9-]+"
-                                                   title="Lowercase letters, digits, hyphens. Press F8 to copy the cell above."
-                                                   data-row="@index" data-col="0"
-                                                   @bind="row.Key" @bind:event="oninput"
-                                                   @onkeydown="e => OnCellKeyDown(e, index, Col.Key)" />
-                                            <FieldError Field="@($"Entries[{index}].Key")" Errors="_fieldErrors" />
-                                        </td>
-                                        <td>
-                                            <input type="text" required placeholder="Business Central 2026 Release Wave 1"
-                                                   title="Press F8 to copy the cell above."
-                                                   data-row="@index" data-col="1"
-                                                   @bind="row.Name" @bind:event="oninput"
-                                                   @onkeydown="e => OnCellKeyDown(e, index, Col.Name)" />
-                                            <FieldError Field="@($"Entries[{index}].Name")" Errors="_fieldErrors" />
-                                        </td>
-                                        <td>
-                                            <input type="text" required placeholder="28.0.0.0"
-                                                   title="Type a number; missing parts auto-pad with .0 on blur. Press F8 to copy the cell above."
-                                                   data-row="@index" data-col="2"
-                                                   @bind="row.Application" @bind:event="oninput"
-                                                   @onblur="() => NormaliseApplication(row)"
-                                                   @onkeydown="e => OnCellKeyDown(e, index, Col.Application)" />
-                                            <FieldError Field="@($"Entries[{index}].Application")" Errors="_fieldErrors" />
-                                        </td>
-                                        <td>
-                                            <input type="text" required placeholder="15.2"
-                                                   title="Type a number; missing parts auto-pad with .0 on blur. Press F8 to copy the cell above."
-                                                   data-row="@index" data-col="3"
-                                                   @bind="row.Runtime" @bind:event="oninput"
-                                                   @onblur="() => NormaliseRuntime(row)"
-                                                   @onkeydown="e => OnCellKeyDown(e, index, Col.Runtime)" />
-                                            <FieldError Field="@($"Entries[{index}].Runtime")" Errors="_fieldErrors" />
-                                        </td>
-                                        <td class="row-editor__cell-center">
-                                            <input type="checkbox" @bind="row.Deprecated" />
-                                            <FieldError Field="@($"Entries[{index}].Deprecated")" Errors="_fieldErrors" />
-                                        </td>
-                                        <td class="row-editor__cell-center">
-                                            @if (row.Id is int rowId && _usage.TryGetValue(rowId, out var usingTemplates) && usingTemplates.Count > 0)
-                                            {
-                                                <span class="row-editor__usage"
-                                                      title="@($"In use by {usingTemplates.Count} active template{(usingTemplates.Count == 1 ? "" : "s")}: {string.Join(", ", usingTemplates)}")">
-                                                    @usingTemplates.Count
-                                                </span>
-                                            }
-                                            else
-                                            {
-                                                <span class="muted">—</span>
-                                            }
-                                        </td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                        <small class="muted">
-                            Click a row to select it, then use the toolbar to move
-                            or remove it. Press <kbd>F8</kbd> in any cell to copy
-                            the value from the row above, or paste a range copied
-                            from Excel to fill multiple rows at once (new rows are
-                            added as needed). Picking an entry on the builder forms
-                            fills both <code>application</code> and
-                            <code>runtime</code> atomically. The <code>key</code>
-                            is what <code>template.toml</code> stores in
-                            <code>default_application_version</code>.
-                        </small>
-                    }
+                            }
+                        </tbody>
+                    </table>
+                    <small class="muted">
+                        Start typing in the blank row at the bottom to add an
+                        entry — a fresh blank row always follows. Click a row to
+                        select it, then use the toolbar to move or remove it.
+                        Press <kbd>F8</kbd> in any cell to copy the value from the
+                        row above, or paste a range copied from Excel to fill
+                        multiple rows at once. Picking an entry on the builder
+                        forms fills both <code>application</code> and
+                        <code>runtime</code> atomically. The <code>key</code> is
+                        what <code>template.toml</code> stores in
+                        <code>default_application_version</code>.
+                    </small>
                 </div>
             </section>
 
@@ -250,8 +237,22 @@
     private int SelectedIndex =>
         _selected is null || _form is null ? -1 : _form.Entries.IndexOf(_selected);
 
+    // The last row is always the blank "ghost" placeholder; a real row is any
+    // selected row that isn't it. Move/remove only apply to real rows, and a
+    // real row can never be pushed below the ghost.
+    private bool SelectedIsReal => _form is not null && SelectedIndex >= 0 && SelectedIndex < _form.Entries.Count - 1;
+    private bool CanMoveUp => SelectedIsReal && SelectedIndex > 0;
+    private bool CanMoveDown => SelectedIsReal && SelectedIndex < _form!.Entries.Count - 2;
+
     /// <summary>Columns that participate in the F8 "copy cell above" shortcut.</summary>
     private enum Col { Key, Name, Application, Runtime }
+
+    private string RowCss(int index, EntryRow row)
+    {
+        var css = row == _selected ? "is-selected" : "";
+        if (index == _form!.Entries.Count - 1) css = (css + " is-ghost").Trim();
+        return css;
+    }
 
     protected override Task OnInitializedAsync() => ReloadAsync();
 
@@ -284,6 +285,21 @@
         var rows = await Versions.GetActiveAsync(includeDeprecated: true);
         _usage = await Versions.GetActiveUsageAsync();
         _form = FormState.From(rows);
+        EnsureTrailingBlank();
+    }
+
+    /// <summary>
+    /// Keeps exactly one empty row at the end of the list so there's always a
+    /// place to start a new entry. Called after every cell edit (via
+    /// <c>@bind:after</c>), F8, paste, removal, and load.
+    /// </summary>
+    private void EnsureTrailingBlank()
+    {
+        if (_form is null) return;
+        if (_form.Entries.Count == 0 || !_form.Entries[^1].IsBlank())
+        {
+            _form.Entries.Add(new EntryRow());
+        }
     }
 
     private void NormaliseApplication(EntryRow row) =>
@@ -311,14 +327,6 @@
         return string.Join('.', segments);
     }
 
-    private void AddEntry()
-    {
-        if (_form is null) return;
-        var row = new EntryRow();
-        _form.Entries.Add(row);
-        _selected = row;
-    }
-
     private void RemoveEntry(int index)
     {
         if (_form is null) return;
@@ -326,6 +334,7 @@
         {
             if (_form.Entries[index] == _selected) _selected = null;
             _form.Entries.RemoveAt(index);
+            EnsureTrailingBlank();
         }
     }
 
@@ -337,6 +346,8 @@
         {
             return;
         }
+        // Never swap a real row past the trailing ghost.
+        if (target == _form.Entries.Count - 1) return;
         (_form.Entries[index], _form.Entries[target]) =
             (_form.Entries[target], _form.Entries[index]);
     }
@@ -353,10 +364,11 @@
     private void MoveEntryToBottom(int index)
     {
         if (_form is null) return;
-        if (index < 0 || index >= _form.Entries.Count - 1) return;
+        // Move to the last *real* slot — immediately above the trailing ghost.
+        if (index < 0 || index >= _form.Entries.Count - 2) return;
         var row = _form.Entries[index];
         _form.Entries.RemoveAt(index);
-        _form.Entries.Add(row);
+        _form.Entries.Insert(_form.Entries.Count - 1, row);
     }
 
     /// <summary>
@@ -375,6 +387,7 @@
             case Col.Application: cur.Application = above.Application; break;
             case Col.Runtime: cur.Runtime = above.Runtime; break;
         }
+        EnsureTrailingBlank();
     }
 
     /// <summary>
@@ -407,6 +420,7 @@
 
         var lastRow = startRow + grid.Count - 1;
         if (lastRow >= 0 && lastRow < _form.Entries.Count) _selected = _form.Entries[lastRow];
+        EnsureTrailingBlank();
         StateHasChanged();
     }
 
@@ -448,6 +462,7 @@
             var rows = await Versions.GetActiveAsync(includeDeprecated: true);
             _usage = await Versions.GetActiveUsageAsync();
             _form = FormState.From(rows);
+            EnsureTrailingBlank();
             _selected = null;
             _saveSuccess = "Saved.";
         }
@@ -510,15 +525,26 @@
             return state;
         }
 
-        public List<ApplicationVersionInput> ToInputs() => Entries
-            .Select(e => new ApplicationVersionInput(
-                Id: e.Id,
-                Key: e.Key,
-                Name: e.Name,
-                Application: e.Application,
-                Runtime: e.Runtime,
-                Deprecated: e.Deprecated))
-            .ToList();
+        /// <summary>
+        /// Maps rows to service inputs, dropping trailing blank rows (the
+        /// always-present ghost) so the add-placeholder is never validated or
+        /// persisted. Only trailing blanks are dropped, which keeps every
+        /// remaining row's index aligned with the <c>Entries[N]</c> error keys.
+        /// </summary>
+        public List<ApplicationVersionInput> ToInputs()
+        {
+            var rows = Entries.ToList();
+            while (rows.Count > 0 && rows[^1].IsBlank()) rows.RemoveAt(rows.Count - 1);
+            return rows
+                .Select(e => new ApplicationVersionInput(
+                    Id: e.Id,
+                    Key: e.Key,
+                    Name: e.Name,
+                    Application: e.Application,
+                    Runtime: e.Runtime,
+                    Deprecated: e.Deprecated))
+                .ToList();
+        }
     }
 
     private sealed class EntryRow
@@ -529,5 +555,11 @@
         public string Application { get; set; } = string.Empty;
         public string Runtime { get; set; } = string.Empty;
         public bool Deprecated { get; set; }
+
+        /// <summary>A row with no text content — the ghost, or a cleared row.
+        /// <c>Deprecated</c> is ignored: a deprecated-only row is meaningless.</summary>
+        public bool IsBlank() =>
+            string.IsNullOrWhiteSpace(Key) && string.IsNullOrWhiteSpace(Name)
+            && string.IsNullOrWhiteSpace(Application) && string.IsNullOrWhiteSpace(Runtime);
     }
 }
