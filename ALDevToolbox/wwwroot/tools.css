@@ -1084,43 +1084,121 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
 .folder-editor__row--depth-2 { border-left: 2px solid var(--border-strong, var(--border)); margin-left: 4px; }
 .folder-editor__row--depth-3 { border-left: 2px solid var(--border-strong, var(--border)); margin-left: 8px; }
 
-/* Application versions editor: the reorder block has four buttons in a 2x2
-   grid (top row moves up, bottom row moves down), and the input box plus
-   the destructive Remove button stretch to match its height so the
-   row-head reads as a single aligned strip. */
-.app-versions-editor__row-head {
-    align-items: stretch;
-}
-
-.app-versions-editor__order {
+/* Row-table editor (catalogue, application versions): a toolbar that acts on
+   the selected row sits above an editable data-table where every cell is an
+   inline input. Reuses the Object Explorer elevated-card table styling. */
+.row-editor {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 12px;
 }
 
-.app-versions-editor__order-row {
+.row-editor__toolbar {
     display: flex;
-    gap: 2px;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
 }
 
-.app-versions-editor__order-btn {
-    width: 28px;
-    height: 14px;
-    padding: 0;
-    justify-content: center;
-    gap: 0;
-}
-
-.app-versions-editor__path {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-}
-
-.app-versions-editor__remove {
+.row-editor__divider {
+    width: 1px;
     align-self: stretch;
-    padding: 0 10px;
+    min-height: 20px;
+    background: var(--border);
+    margin: 0 2px;
 }
+
+/* Elevated card look, mirroring .object-explorer__browser .data-table. */
+.row-editor__table.data-table {
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    border-collapse: separate;
+    border-spacing: 0;
+    box-shadow: var(--shadow);
+    background: var(--surface);
+    table-layout: fixed;
+}
+
+.row-editor__table.data-table thead th {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--ink-4);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 12px;
+}
+
+.row-editor__table.data-table thead th:first-child { border-top-left-radius: var(--r-lg); }
+.row-editor__table.data-table thead th:last-child { border-top-right-radius: var(--r-lg); }
+
+.row-editor__table.data-table tbody td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+
+.row-editor__table.data-table tbody tr:last-child td { border-bottom: 0; }
+.row-editor__table.data-table tbody tr { transition: background 0.1s ease; }
+.row-editor__table.data-table tbody tr:hover { background: var(--surface-2); }
+
+/* Selected row wins over :hover so the highlight is unambiguous. */
+.row-editor__table.data-table tbody tr.is-selected,
+.row-editor__table.data-table tbody tr.is-selected:hover {
+    background: var(--blue-50);
+    box-shadow: inset 3px 0 0 0 var(--blue-700);
+}
+
+/* Inline-cell inputs read as table text until focused. */
+.row-editor__table input[type="text"] {
+    width: 100%;
+    padding: 6px 8px;
+    font-size: 13px;
+    border: 1px solid transparent;
+    border-radius: var(--r);
+    background: transparent;
+    color: var(--ink);
+}
+
+.row-editor__table input[type="text"]:hover {
+    border-color: var(--border);
+    background: var(--surface);
+}
+
+.row-editor__table input[type="text"]:focus {
+    outline: none;
+    border-color: var(--blue-700);
+    background: var(--surface);
+    box-shadow: 0 0 0 2px var(--blue-50);
+}
+
+.row-editor__cell-center { text-align: center; }
+.row-editor__cell-center input[type="checkbox"] { margin: 6px 0 0; }
+
+/* "In use by N templates" pill; full list lives in the title= tooltip. */
+.row-editor__usage {
+    display: inline-block;
+    min-width: 20px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    background: var(--surface-sunken);
+    color: var(--ink-3);
+    border: 1px solid var(--border);
+    cursor: help;
+}
+
+/* Column sizing for the two row-table editors. */
+.row-editor__col-guid { width: 22rem; }
+.row-editor__col-key { width: 12rem; }
+.row-editor__col-version { width: 9rem; }
+.row-editor__col-category { width: 11rem; }
+.row-editor__col-flag { width: 7rem; }
+
+/* FieldError sits under its input inside the cell. */
+.row-editor__table .form-field-error { display: block; margin-top: 2px; }
 
 /* Extension list — each extension is a folder-editor-style row with a richer
    body of nested sections (metadata, dependencies, folders). */

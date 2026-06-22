@@ -12,11 +12,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace ALDevToolbox.Tests.Components;
 
 /// <summary>
-/// Smoke test for the well-known dependency catalogue editor. Unlike the
-/// other admin lists this is a form, not a table — the empty state lives
-/// inside the form and the "Add entry" button is the recovery action. The
-/// test also pins the GUID <c>pattern=</c> attribute on the DepId input,
-/// since that's the HTML mirror of the server-side validation rule.
+/// Smoke test for the well-known dependency catalogue editor — a table where
+/// each entry is one row of inline inputs and the empty state names the
+/// "Add row" recovery action. The test also pins the GUID <c>pattern=</c>
+/// attribute on the DepId input, since that's the HTML mirror of the
+/// server-side validation rule.
 /// </summary>
 public sealed class AdminCatalogTests : IDisposable
 {
@@ -25,6 +25,10 @@ public sealed class AdminCatalogTests : IDisposable
 
     public AdminCatalogTests()
     {
+        // The editor registers an Excel-paste handler via JS interop in
+        // OnAfterRenderAsync; loose mode lets those calls no-op under bunit.
+        _ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
         var auth = _ctx.AddTestAuthorization();
         auth.SetAuthorized("admin@example.com");
         auth.SetRoles("Admin");
@@ -53,9 +57,9 @@ public sealed class AdminCatalogTests : IDisposable
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("No catalogue entries");
-            cut.Markup.Should().Contain("Add entry",
+            cut.Markup.Should().Contain("Add row",
                 "the empty-state copy must name the recovery action — the same "
-                + "button is rendered above the empty message");
+                + "button is rendered in the toolbar above the empty message");
         });
     }
 
@@ -75,14 +79,14 @@ public sealed class AdminCatalogTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            var rows = cut.FindAll("div.folder-editor__row");
+            var rows = cut.FindAll("tbody tr");
             rows.Should().HaveCount(2);
 
             // The first text input on each row is the DepId. It must carry
             // the GUID pattern so the browser surfaces the same rule the
             // server enforces — CLAUDE.md §"Always have the end user in mind"
             // requires the two to stay in sync.
-            var firstInput = cut.Find("div.folder-editor__path input[type=text]");
+            var firstInput = cut.Find("tbody tr td input[type=text]");
             firstInput.HasAttribute("pattern").Should().BeTrue();
             firstInput.GetAttribute("pattern").Should().Contain("[0-9a-fA-F]",
                 "the pattern must accept hex GUIDs in 8-4-4-4-12 form");
@@ -101,12 +105,12 @@ public sealed class AdminCatalogTests : IDisposable
         var cut = _ctx.RenderComponent<AdminCatalog>();
 
         // The form hydrates from the DB on OnInitializedAsync; wait until
-        // the "Add entry" button is rendered before interacting.
+        // the "Add row" button is rendered before interacting.
         cut.WaitForState(() =>
-            cut.FindAll("button").Any(b => b.TextContent.Contains("Add entry")));
+            cut.FindAll("button").Any(b => b.TextContent.Contains("Add row")));
 
         cut.FindAll("button")
-            .First(b => b.TextContent.Contains("Add entry"))
+            .First(b => b.TextContent.Contains("Add row"))
             .Click();
 
         // The new row should now be rendered with all four fields empty.
@@ -114,7 +118,7 @@ public sealed class AdminCatalogTests : IDisposable
         // renderer and intermittently sees zero rows (CI run 25865334267
         // failed exactly this way on the same SHA a push-trigger run passed).
         cut.WaitForAssertion(() =>
-            cut.FindAll("div.folder-editor__row").Should().HaveCount(1));
+            cut.FindAll("tbody tr").Should().HaveCount(1));
 
         // Submit the form; CatalogService.SaveAsync collects one error per
         // missing field and throws PlanValidationException, which the page

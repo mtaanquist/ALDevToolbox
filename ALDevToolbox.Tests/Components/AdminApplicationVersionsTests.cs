@@ -24,6 +24,10 @@ public sealed class AdminApplicationVersionsTests : IDisposable
 
     public AdminApplicationVersionsTests()
     {
+        // The editor registers an Excel-paste handler via JS interop in
+        // OnAfterRenderAsync; loose mode lets those calls no-op under bunit.
+        _ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
         var auth = _ctx.AddTestAuthorization();
         auth.SetAuthorized("admin@example.com");
         auth.SetRoles("Admin");
@@ -52,7 +56,7 @@ public sealed class AdminApplicationVersionsTests : IDisposable
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("No application versions");
-            cut.Markup.Should().Contain("Add entry");
+            cut.Markup.Should().Contain("Add row");
         });
     }
 
@@ -90,10 +94,10 @@ public sealed class AdminApplicationVersionsTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
-            var rows = cut.FindAll("div.folder-editor__row");
+            var rows = cut.FindAll("tbody tr");
             rows.Should().HaveCount(2);
 
-            var keyInput = cut.Find("div.folder-editor__path input[type=text]");
+            var keyInput = cut.Find("tbody tr td input[type=text]");
             keyInput.HasAttribute("pattern").Should().BeTrue();
             keyInput.GetAttribute("pattern").Should().Be("[a-z0-9-]+",
                 "the HTML pattern= mirrors the server's kebab-case rule on the Key column");
