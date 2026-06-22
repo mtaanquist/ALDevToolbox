@@ -1,46 +1,69 @@
 # AL Dev Toolbox
 
-Internal Blazor Server tool for generating Microsoft Dynamics 365 Business Central (AL) workspace skeletons and standalone extensions from runtime templates.
+A self-hosted Blazor Server toolbox for Microsoft Dynamics 365 Business Central (AL) development. It bundles a suite of focused tools that a BC team can run for itself, plus a read-only MCP surface so AI agents can reach the same knowledge humans do.
 
-The end-user surface is two forms:
+The design lives under [`.design/`](./.design/). Read it before non-trivial changes. [`CLAUDE.md`](./CLAUDE.md) covers the conventions and the architectural fences to stay inside.
 
-- **New Workspace** — pick a runtime template, name the project, tick the modules you need, and click **Generate** to download a multi-folder workspace ZIP.
-- **New Extension** — generate a single standalone extension folder ZIP that drops into an existing workspace, including a dependency picker fed by a well-known catalogue.
+## What's in the box
 
-The admin surface lets a small team curate the templates, modules, catalogue, application versions, organisation defaults, logo, and always-included files that drive those generators, with full audit history and a TOML export for backups.
+Six end-user tools live in the sidebar's **Tools** section. Every tool requires a signed-in user; anonymous traffic redirects to `/login`.
 
-The design lives under [`.design/`](./.design/). Read those before non-trivial changes; [`CLAUDE.md`](./CLAUDE.md) covers conventions and the architectural fences to stay inside.
+| Tool | Route | What it does |
+|------|-------|--------------|
+| **Projects** | `/projects/new`, `/projects/extension` | Generate a multi-folder AL **Workspace** ZIP from a runtime template, or a single standalone **Extension** ZIP that drops into an existing workspace (with a dependency picker fed by a well-known catalogue). Browse the available templates and modules at `/templates`. |
+| **Cookbook** | `/cookbook` | Reusable AL recipes (snippets, patterns, whole module skeletons), searchable by title, description, or keywords. Open a recipe to read its instructions and copy its files. Users can submit suggestions (`/cookbook/suggest`) into an admin review queue. |
+| **Object Explorer** | `/object-explorer` | Browse AL source from imported BC symbol packages. Search objects, fields, and procedures across releases; follow references and implementations; and diff objects side-by-side (built for the legacy C/AL Base-vs-Customer comparison). |
+| **Piper** | `/piper` | A text-transformation utility: turn comma/tab/semicolon/pipe-separated values into piped strings, SQL `IN` lists, or custom formats, with a table input mode and column selection. |
+| **Translator** | `/translator` | An XLIFF (`.xlf`) translator for PTE extensions. Upload a file, translate trans-units with suggestions drawn from the org's translation memory, vote suggestions up or down, and export with formatting preserved for clean git diffs. |
+| **MCP** | `/tools/mcp` | Setup page for the Model Context Protocol server (see below). Visible only when MCP is enabled site-wide and the org hasn't opted out. |
+
+The admin surface (Editors and Admins) curates the content behind these tools: templates, modules, the dependency catalogue, application versions, cookbook recipes, object-explorer releases, and the translation memory. It carries full audit history and a TOML round-trip for backup or org-to-org transfer.
+
+## MCP server
+
+A read-only-leaning Model Context Protocol server is mounted at `/mcp` over OAuth, so AI clients (Claude Desktop, Claude Code, Cursor, VS Code Copilot agent mode) can use the toolbox's knowledge directly. The tools mirror the web UI:
+
+- **Projects**: `list_templates`, `list_modules`, `list_well_known_dependencies`, `generate_workspace`, `generate_extension`.
+- **Cookbook**: `search_recipes`, `get_recipe`, `get_cookbook_guidance`, `suggest_recipe`, `update_recipe_suggestion`.
+- **Object Explorer**: `list_releases`, `compare_releases`, `search_objects`, `search_procedures`, `search_content`, `find_references`, `find_system_references`, `get_object_outline`, `get_procedure_source`, `list_procedure_calls`, `list_release_modules`, `download_symbol_reference`, plus the per-release translation lookups `list_translation_languages` / `search_translations`.
+- **Translator**: `search_translation_memory`, `vote_translation`, `remove_translation`.
+
+SiteAdmins toggle MCP availability on `/site-admin/settings`; each org can opt out under `/admin/administration/mcp`. The OAuth model (DCR / CIMD for hosted Claude clients, plus a static PAT bearer for desktop/CLI) is documented in [`.design/mcp-oauth.md`](./.design/mcp-oauth.md), and client setup in [`docs/mcp-clients.md`](./docs/mcp-clients.md).
 
 ## Stack
 
-- .NET 10, Blazor Server (interactive server render mode where needed).
-- EF Core 10 + Npgsql against PostgreSQL 18. App + db as sibling compose services, named volumes for data, Data Protection keys, and `pg_dump` backups.
-- Tomlyn for the TOML import/export format. MailKit for SMTP. Lucide icons vendored as embedded SVGs under `Resources/Icons/` (no NuGet dependency).
-- OpenIddict for the MCP OAuth surface, `Fido2.AspNet` for passkey/WebAuthn login, `AWSSDK.S3` for off-site backups.
-- No client-side framework beyond Blazor itself.
+- **.NET 10**, **Blazor Server** (interactive server render where needed). No client-side framework beyond Blazor, only tiny `.razor.js` companions where unavoidable.
+- **EF Core 10 + Npgsql** against **PostgreSQL 18**. The database is the single source of truth at runtime for templates, recipes, releases, translation memory, organisations, users, and settings.
+- **Tomlyn** for the TOML import/export format. **Markdig** renders recipe instructions (sanitised). **DiffPlex** powers the side-by-side object diff.
+- **MailKit/MimeKit** for SMTP. **OpenIddict** for the MCP OAuth surface. **Fido2.AspNet** for passkey/WebAuthn login, **Otp.NET** + **QRCoder** for TOTP MFA, **BCrypt.Net-Next** for password hashing.
+- **AWSSDK.S3** and **Azure.Storage.Blobs** for off-site backup targets (chosen per deployment).
+- Lucide icons are vendored as embedded SVGs under `Resources/Icons/`, with no icon NuGet dependency.
 
 ## Quickstart
 
-The shortest path is the compose stack:
+The shortest path is the compose stack. The repo's [`compose.yml`](./compose.yml) defaults to the published GHCR image, so a plain `up` pulls and runs it with no local build:
 
 ```bash
 # From the repo root.
+HOST_PORT=8080 \
+POSTGRES_PASSWORD=$(openssl rand -hex 16) \
 BOOTSTRAP_ADMIN_EMAIL=admin@example.com \
 BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars \
-docker compose up --build
+docker compose up
 ```
 
-This brings up Postgres and the app, runs migrations, ensures the singleton **system org** (`Default`, flagged `IsSystem = true` — the canonical templates other orgs fork from) exists, and creates the bootstrap admin on a fresh database. Visit <http://localhost:8080> and sign in with the bootstrap credentials.
+This brings up Postgres and the app, runs migrations, ensures the singleton **system org** exists (`Default`, flagged `IsSystem = true`, the canonical templates other orgs fork from), and creates the bootstrap admin on a fresh database. Visit <http://localhost:8080> and sign in with the bootstrap credentials.
 
-Run the operator runbook in [`docs/operator-runbook.md`](./docs/operator-runbook.md) for every other deployment flow — fresh deploy, backup and restore, SMTP rotation, SiteAdmin promotion, key-ring recovery.
+Pin a specific release with `ALDEVTOOLBOX_TAG` (e.g. `ALDEVTOOLBOX_TAG=6.0.0`); it defaults to `latest`. To **build from source** instead, comment out `image:` and uncomment `build: .` on the `aldevtoolbox` service in `compose.yml`, then run `docker compose up --build`.
+
+The operator runbook in [`docs/operator-runbook.md`](./docs/operator-runbook.md) covers every other deployment flow: fresh deploy, backup and restore, SMTP rotation, SiteAdmin promotion, and key-ring recovery.
 
 ## Run locally without Docker
 
-Requires the .NET 10 SDK and a reachable PostgreSQL 18. The shortest path is the compose stack above; for an out-of-container `dotnet run`, point the connection string at any Postgres you have handy.
+Requires the .NET 10 SDK and a reachable PostgreSQL 18.
 
 ```bash
-# Start a local Postgres (or run `docker compose up db -d` against the
-# repo's compose file).
+# Start a Postgres (or run `docker compose up db -d` against the repo's compose file).
 docker run -d --name aldt-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:18-alpine
 
 # From the repo root.
@@ -51,48 +74,44 @@ BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars \
 dotnet run --project ALDevToolbox
 ```
 
-Then visit <http://localhost:5000> (the port comes from `ALDevToolbox/Properties/launchSettings.json`).
+Then visit the URL from `ALDevToolbox/Properties/launchSettings.json` (typically <http://localhost:5000>).
 
-Run the tests with `dotnet test` from the repo root — same workflow CI uses. Tests use Testcontainers locally (Docker required) or the `ALDT_TEST_POSTGRES_CONNECTION` env var when you have a Postgres already running and want to skip container startup.
+Run the tests with `dotnet test` from the repo root, the same workflow CI uses. Tests use Testcontainers locally (Docker required), or set `ALDT_TEST_POSTGRES_CONNECTION` to point at an already-running Postgres and skip container startup.
 
-On first start the app:
+### What happens on first start
 
 1. Runs EF Core migrations against the configured Postgres database.
-2. Ensures the **Default** organisation exists and carries `IsSystem = true` — it's the singleton system org that holds the canonical templates other orgs fork from via `TemplateImportService`.
-3. Backfills the platform per-extension files (e.g. canonical `app.json`) for every organisation that's missing them.
-4. Creates the bootstrap admin from `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` (only if no users exist yet). The bootstrap admin is stamped `IsSiteAdmin = true` so the **Site Admin** console is reachable out of the box.
+2. Ensures the **Default** organisation exists and carries `IsSystem = true`, marking the singleton system org that holds the canonical templates other orgs fork from via `TemplateImportService`.
+3. Backfills the platform per-extension files (e.g. the canonical `app.json`) for any organisation missing them.
+4. Creates the bootstrap admin from `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD`, only if no users exist yet, and stamps it `IsSiteAdmin = true` so the **Site Admin** console is reachable out of the box.
 
-Re-runs reuse the same database. Drop the database (or `docker compose down -v`) to start over.
+Re-runs reuse the same database; every step is idempotent. Drop the database (or `docker compose down -v`) to start over.
 
-## Accounts and signup
+## Accounts, roles, and signup
 
 Authentication is email + password, scoped to organisations. Three org-scoped roles:
 
-- **`User`** — uses the generators only.
-- **`Editor`** — additionally sees the content-authoring admin pages (templates, modules, catalogue, snippets, app versions, object explorer). Does not see the Administration tab, Dashboard, or audit log.
-- **`Admin`** — sees everything in the org: the audit log, organisation configuration, user management, backups exposed to org admins, and everything an Editor sees.
+- **`User`**: uses the tools only.
+- **`Editor`**: additionally sees the content-authoring admin pages (templates, modules, catalogue, application versions, cookbook, object explorer, translation memory). Does not see the Administration tab, Dashboard, or audit log.
+- **`Admin`**: sees everything in the org, including the audit log, organisation configuration, user management, backups exposed to org admins, and everything an Editor sees.
 
 **SiteAdmin** is a separate cross-org flag for hosting operators. It surfaces the `/site-admin/*` console (system settings, all-orgs user management, backups, MCP toggle) regardless of which org the user belongs to. Granted explicitly via `/site-admin/users`, or stamped on the bootstrap admin on a fresh database. The "last SiteAdmin" guard refuses to demote the final one.
 
-- **Bootstrap admin.** Set `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` on first boot. The values are read once on a fresh database and ignored after a user exists. See `.design/auth-and-audit.md` for the full lifecycle.
-- **Existing-org signups** land as `Pending` and need an admin in the same org to approve them via `/admin/users`. SMTP, if configured, notifies the org's admins.
-- **New-org signups** auto-approve and sign the user in as that org's admin. New orgs start empty — admins import templates on demand from `/admin/templates`, which forks the canonical content from the system org via `TemplateImportService`. There is no superuser. To suppress public signup, hide `/signup` at the proxy.
-- **Password reset** uses single-use tokens emailed via SMTP. Tokens expire after one hour.
-- **Passkeys / WebAuthn.** Available when `Auth__WebAuthn__RpId` and `Auth__WebAuthn__OriginsCsv` are configured (compose passes these through from `AUTH_WEBAUTHN_RP_ID` / `AUTH_WEBAUTHN_ORIGINS`). Leave blank to disable the passkey UI; users fall back to password + optional TOTP / email MFA.
+- **Bootstrap admin.** Set `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` on first boot. The values are read once on a fresh database and ignored after a user exists.
+- **Existing-org signups** land as `Pending` and need an admin in the same org to approve them under `/admin/administration/users`. SMTP, if configured, notifies the org's admins.
+- **New-org signups** auto-approve and sign the user in as that org's admin. New orgs start empty, so admins import templates on demand from `/admin/templates`, which forks the canonical content from the system org. There is no superuser. To suppress public signup, hide `/signup` at the proxy.
 
-The end-user generators (`/projects/new`, `/projects/extension`, `/templates`) require a signed-in user — anonymous traffic redirects to `/login`.
+See [`.design/auth-and-audit.md`](./.design/auth-and-audit.md) for the full lifecycle.
 
-## Beyond the generators
+### Sign-in options
 
-The codebase has grown a few read-and-author surfaces alongside the workspace and extension generators. Each has its own design doc; the summary below is just orientation.
-
-- **MCP server.** Read-only AL knowledge tools (search objects, find references, get procedure source, list templates / snippets / well-known deps, generate workspace and extension ZIPs) exposed at `/mcp` over OAuth. SiteAdmins toggle availability on `/site-admin/settings`. See [`docs/mcp-clients.md`](./docs/mcp-clients.md) for client setup and [`.design/mcp-oauth.md`](./.design/mcp-oauth.md) for the auth model.
-- **Object Explorer.** Browse imported BC symbol packages, jump between objects, and follow references and implementations across an org's installed app versions. Editors and admins import releases under `/admin/object-explorer`. See [`.design/object-explorer.md`](./.design/object-explorer.md).
-- **Snippets.** Reusable AL snippets at `/snippets` with admin curation under `/admin/snippets`. Also surfaced through the MCP `search_snippets` / `get_snippet` tools so agents can reach the same content humans do.
+- **Password** is always available, optionally backed by **TOTP** (authenticator app) or **email** MFA, configured per user.
+- **Password reset** uses single-use tokens emailed via SMTP, expiring after one hour.
+- **Passkeys / WebAuthn** are available when `Auth__WebAuthn__RpId` and `Auth__WebAuthn__OriginsCsv` are configured (compose passes these through from `AUTH_WEBAUTHN_RP_ID` / `AUTH_WEBAUTHN_ORIGINS`). Leave blank to disable the passkey UI; users fall back to password + optional MFA. Org-level identity options live under `/admin/administration/identity`.
 
 ## SMTP configuration
 
-Required for signup notifications and password reset emails. With SMTP unconfigured the app boots fine; the affected pages just say "Email is not configured; ask an admin." rather than failing silently.
+Required for signup notifications and password-reset emails. With SMTP unconfigured the app boots fine; the affected pages just say "Email is not configured; ask an admin." rather than failing silently. Send failures log a warning and never roll back the underlying action; a failed approval email shouldn't unapprove the user.
 
 | Variable               | Purpose                                                  |
 |------------------------|----------------------------------------------------------|
@@ -103,199 +122,125 @@ Required for signup notifications and password reset emails. With SMTP unconfigu
 | `SMTP_FROM`            | The `From:` address on outbound mail.                    |
 | `SMTP_USE_STARTTLS`    | `true` to upgrade the connection with STARTTLS.          |
 
-Email send failures log a warning and never roll back the underlying action — a failed approval email shouldn't unapprove the user.
+SMTP can also be configured at runtime on `/site-admin/settings` (the env vars are a pre-DB fallback); the password is encrypted with the Data Protection key ring. Configuring SMTP also changes signup: `/signup` switches to an **email-first verified flow** (the visitor confirms a one-time link/code before the account is created). With SMTP unset, signup falls back to the single-form path with no email verification.
 
 ## Run in Docker
 
 ```bash
-# Build and start the stack; database persists in the named pg-data volume.
+# Pull and start the stack; the database persists in the named pg-data volume.
 HOST_PORT=8080 \
 POSTGRES_PASSWORD=$(openssl rand -hex 16) \
 BOOTSTRAP_ADMIN_EMAIL=admin@example.com \
 BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars \
-docker compose up --build
+docker compose up -d
 ```
 
-That starts the app on <http://localhost:8080>, with the database in the `pg-data` named volume.
+The container terminates HTTP only; run TLS at a reverse proxy. `app.UseForwardedHeaders()` is wired so cookies pick up `Secure` correctly behind a proxy. The stack ships sensible CPU/memory ceilings in `compose.yml`; note the app limit is **4 GiB** because Object Explorer ingestion of Microsoft's Base Application peaks at 2-3 GiB of heap (1 GiB OOMs). Lower it only if you won't import large symbol packages.
 
 | Variable                                      | Purpose                                                   | Default                |
 |-----------------------------------------------|-----------------------------------------------------------|------------------------|
-| `BOOTSTRAP_ADMIN_EMAIL`                       | First admin email (only on a fresh database)              | none                   |
-| `BOOTSTRAP_ADMIN_PASSWORD`                    | First admin password (only on a fresh database)           | none                   |
-| `ConnectionStrings__DefaultConnection`        | Postgres connection string (Npgsql format). Built from `POSTGRES_*` by compose. | none — required |
+| `ALDEVTOOLBOX_TAG`                            | Image tag the `aldevtoolbox` service pulls from GHCR.     | `latest`               |
+| `BOOTSTRAP_ADMIN_EMAIL`                       | First admin email. Read once on a fresh database (no users yet); ignored after. | none |
+| `BOOTSTRAP_ADMIN_PASSWORD`                    | First admin password. Same fresh-database-only rule.      | none                   |
+| `ConnectionStrings__DefaultConnection`        | Postgres connection string (Npgsql format). Built from `POSTGRES_*` by compose. | required |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Read by the `db` compose service. Set at least `POSTGRES_PASSWORD`. | `aldevtoolbox` |
+| `SINGLE_TENANT_MODE`                          | `1` to run as a single-organisation install (see below).  | `0` (multi-tenant)     |
+| `SINGLE_TENANT_ORG_NAME` / `SINGLE_TENANT_ORG_SLUG` / `SINGLE_TENANT_EMAIL_DOMAINS` | First-run-only seeding for the lone org in single-tenant mode. | none |
 | `DATA_PROTECTION_KEY_DIR`                     | Where the Data Protection key ring lives (cookie auth keys, SMTP-password ciphertext). Mounted on the `app-keys` volume. | `/var/lib/aldevtoolbox/dp-keys` |
-| `BACKUPS_DIR`                                 | Where `pg_dump` files land (mounted on the `app-backups` volume) | `/var/lib/aldevtoolbox/backups` |
-| `DISABLE_BACKUP_SCHEDULER`                    | `1` to disable the daily backup scheduler (tests / CI)    | unset                  |
-| `AUTH_WEBAUTHN_RP_ID` / `AUTH_WEBAUTHN_ORIGINS` | Passkey relying-party id and comma-separated allowed origins. Leave blank to disable the passkey UI. | unset |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD_FILE` / `SMTP_FROM` / `SMTP_USE_STARTTLS` | SMTP relay used for signup and password-reset emails | none                   |
-| `ASPNETCORE_URLS`                             | Standard ASP.NET Core binding                             | `http://+:8080`        |
-| `ASPNETCORE_ENVIRONMENT`                      | Standard ASP.NET Core environment                         | `Production`           |
+| `BACKUPS_DIR`                                 | Where `pg_dump` files land (mounted on the `app-backups` volume). | `/var/lib/aldevtoolbox/backups` |
+| `DISABLE_BACKUP_SCHEDULER`                    | `1` to disable the daily `pg_dump` (+ per-tenant snapshot) scheduler. | unset            |
+| `DISABLE_OE_VACUUM_SCHEDULER`                 | `1` to disable the nightly VACUUM over Object Explorer tables. | unset               |
+| `DISABLE_USAGE_SNAPSHOT_SCHEDULER`            | `1` to disable the 15-minute storage-usage snapshots.     | unset                  |
+| `AUTH_WEBAUTHN_RP_ID` / `AUTH_WEBAUTHN_ORIGINS` | Passkey relying-party id and comma-separated `https://` origins. Leave blank to disable the passkey UI. | unset |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD_FILE` / `SMTP_FROM` / `SMTP_USE_STARTTLS` | SMTP relay used for signup and password-reset emails. | none |
+| `PG_DUMP_PATH` / `PG_RESTORE_PATH`            | Override only if the Postgres client binaries aren't on `PATH`. | on `PATH` in the image |
+| `OAUTH_KEY_DIR`                               | MCP OAuth signing-key directory.                          | `DATA_PROTECTION_KEY_DIR` |
+| `ASPNETCORE_URLS`                             | Standard ASP.NET Core binding.                            | `http://+:8080`        |
+| `ASPNETCORE_ENVIRONMENT`                      | Standard ASP.NET Core environment.                        | `Production`           |
 
-Upgrading from a v1 (SQLite) deployment? See [`migrating-from-sqlite.md`](./.design/migrating-from-sqlite.md).
+The annotated, copy-to-`.env` reference for all of these lives in [`.env-sample`](./.env-sample). Upgrading from a v1 (SQLite) deployment? See [`.design/migrating-from-sqlite.md`](./.design/migrating-from-sqlite.md).
 
-The container terminates HTTP only — run TLS at the reverse proxy. `app.UseForwardedHeaders()` is wired so cookies pick up `Secure` correctly behind a proxy.
+## Single-tenant vs multi-tenant
 
-### HTTPS with Caddy (optional)
+By default the app is **multi-tenant**: organisations are isolated by an EF query filter, new-org signups auto-provision an org, and SiteAdmins manage storage quotas and per-tenant snapshots across all of them.
 
-`compose.yml` ships an optional, commented-out `caddy` service that fronts the app on ports 80/443 and provisions Let's Encrypt certificates automatically. Bring-your-own Traefik/nginx still works exactly as before — this is just a batteries-included path. To enable it (a one-time setup):
+Set `SINGLE_TENANT_MODE=1` when one company hosts the toolbox for itself. The multi-tenant machinery is unnecessary in that shape, so the flag **hides and disables** it:
 
-1. Point a DNS `A`/`AAAA` record at the host and open ports **80** and **443**.
-2. In `.env`, set `SITE_ADDRESS` (your domain) and `ACME_EMAIL` (for Let's Encrypt expiry notices) — both are required once the service is enabled.
-3. Uncomment the `caddy` service **and** the `caddy-data` / `caddy-config` volumes in `compose.yml`.
-4. *(Recommended)* remove the `aldevtoolbox` `ports:` mapping so the app is reachable only through the proxy.
-5. `docker compose up -d`. Caddy issues a cert for `SITE_ADDRESS` and reverse-proxies to the app (gating traffic on `/readyz` until startup finishes). The proxy config lives in the repo's `Caddyfile`.
+- **Storage quotas** are gone: the settings tab, the per-org Storage page, the sidebar capacity bar, and the usage-snapshot scheduler are all removed, and no write is ever silently blocked.
+- **Per-tenant snapshots** are gone; the system-level `pg_dump` backups keep running.
+- **Signup** no longer offers org creation; existing-org onboarding (claimed email domain, admin invite) still works.
 
-No public domain handy? Set `SITE_ADDRESS=localhost` (Caddy mints an internal-CA cert — your browser will warn) or `SITE_ADDRESS=:80` (plain HTTP) to exercise the same service locally.
+The lone organisation *is* the Default/system org, so its Administration and template-authoring pages (normally hidden in the system org) are surfaced so it can manage its own content. On a fresh database (the same window the bootstrap admin uses), `SINGLE_TENANT_ORG_NAME`, `SINGLE_TENANT_ORG_SLUG`, and `SINGLE_TENANT_EMAIL_DOMAINS` seed the org's name, slug, and claimed email domains; a seeded domain turns on auto-join for verified (SMTP) signups from it. These vars are ignored after first run; later edits go through `/admin/administration/identity`.
 
-**Email links and passkeys.** Links in outbound emails (signup verification, password reset, invites) are built from the request host, and Caddy preserves it while the app honours `X-Forwarded-Proto` — so they automatically render as `https://<your-domain>/…`. Just make sure users reach the app through the domain, not the raw `:8080` host port. To enable **passkeys** on the domain, set `AUTH_WEBAUTHN_RP_ID` to it and `AUTH_WEBAUTHN_ORIGINS` to `https://<your-domain>`.
+> **One-way switch.** Single-tenant is a deployment-time choice read once at boot. Because the single tenant is the system org and self-service org creation is off, there is **no in-place path back to multi-tenant**; stand up a fresh install if you need it. The flag does *not* relax tenant isolation; it only removes surfaces. See [`.design/deployment.md`](./.design/deployment.md).
 
-### Deploy from the published image
+## Releases and published images
 
-The compose stack above builds the app from source (`build: .`). For a deployment you don't need to build locally — releases are published to the GitHub Container Registry as `ghcr.io/mtaanquist/aldevtoolbox`. Each `vX.Y.Z` tag publishes the exact version plus moving `latest`, major (`6`), and minor (`6.0`) tags, so you can pin as loosely or tightly as you like. (Release versioning follows "one major per shipped tool" — see [`CLAUDE.md`](./CLAUDE.md) under *Releases and image publishing*.)
+Releases are published to the GitHub Container Registry as `ghcr.io/mtaanquist/aldevtoolbox`. Each `vX.Y.Z` tag publishes the exact version plus moving `latest`, major (e.g. `6`), and minor (`6.0`) tags, so you can pin as loosely or tightly as you like. (Release versioning follows "one major per shipped tool"; see [`CLAUDE.md`](./CLAUDE.md) under *Releases and image publishing*.)
 
-Drop this `compose.yaml` next to a `.env` file and run `docker compose up -d`. It's the same shape as the repo's `compose.yml`, with `build: .` swapped for the published image:
-
-```yaml
-services:
-  db:
-    image: postgres:18-alpine
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-aldevtoolbox}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a strong password}
-      POSTGRES_DB: ${POSTGRES_DB:-aldevtoolbox}
-    volumes:
-      # Mount the parent, not .../data — postgres:18 keeps data under
-      # /var/lib/postgresql/<major>/docker/ so in-place pg_upgrade works.
-      - pg-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aldevtoolbox} -d ${POSTGRES_DB:-aldevtoolbox}"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 30s
-    restart: unless-stopped
-
-  aldevtoolbox:
-    # Pin a release (e.g. ghcr.io/mtaanquist/aldevtoolbox:6.0.0) for
-    # reproducible deploys; :latest or :6 follow newer releases automatically.
-    image: ghcr.io/mtaanquist/aldevtoolbox:latest
-    depends_on:
-      db:
-        condition: service_healthy
-    ports:
-      - "${HOST_PORT:-8080}:8080"
-    environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:-aldevtoolbox};Username=${POSTGRES_USER:-aldevtoolbox};Password=${POSTGRES_PASSWORD}"
-      # Read once on a fresh database; ignored after the first user exists.
-      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
-      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
-      DATA_PROTECTION_KEY_DIR: /var/lib/aldevtoolbox/dp-keys
-      BACKUPS_DIR: /var/lib/aldevtoolbox/backups
-      # Passkeys — leave blank to disable the WebAuthn UI.
-      Auth__WebAuthn__RpId: ${AUTH_WEBAUTHN_RP_ID:-}
-      Auth__WebAuthn__OriginsCsv: ${AUTH_WEBAUTHN_ORIGINS:-}
-    volumes:
-      - app-keys:/var/lib/aldevtoolbox/dp-keys
-      - app-backups:/var/lib/aldevtoolbox/backups
-    # The image already declares a HEALTHCHECK against /healthz; compose picks
-    # it up automatically.
-    restart: unless-stopped
-
-  # --- Optional HTTPS reverse proxy (Caddy) ----------------------------------
-  # Uncomment (plus the caddy-data / caddy-config volumes) to terminate TLS with
-  # automatic Let's Encrypt certs. Needs a public domain pointing here, ports
-  # 80 + 443 open, and SITE_ADDRESS + ACME_EMAIL in .env. Drop a `Caddyfile`
-  # next to this compose.yaml (copy it from the repo root). See the README
-  # "HTTPS with Caddy (optional)" section.
-  # caddy:
-  #   image: caddy:2-alpine
-  #   depends_on:
-  #     - aldevtoolbox
-  #   ports:
-  #     - "80:80"
-  #     - "443:443"
-  #     - "443:443/udp"   # HTTP/3
-  #   environment:
-  #     SITE_ADDRESS: ${SITE_ADDRESS:?set your domain, e.g. aldevtoolbox.example.com}
-  #     ACME_EMAIL: ${ACME_EMAIL:?set a Let's Encrypt contact email, e.g. ops@example.com}
-  #   volumes:
-  #     - ./Caddyfile:/etc/caddy/Caddyfile:ro
-  #     - caddy-data:/data      # ACME account + issued certs — persist to avoid LE rate limits
-  #     - caddy-config:/config
-  #   restart: unless-stopped
-
-volumes:
-  pg-data:
-  app-keys:
-  app-backups:
-  # Uncomment alongside the optional `caddy` service above.
-  # caddy-data:
-  # caddy-config:
-```
+The repo's [`compose.yml`](./compose.yml) already deploys from these images: the `aldevtoolbox` service is `image: ghcr.io/mtaanquist/aldevtoolbox:${ALDEVTOOLBOX_TAG:-latest}`. So a production deployment is just that file plus a `.env`:
 
 ```bash
-# .env in the same directory — at minimum set the password and bootstrap admin.
-cat > .env <<'EOF'
-POSTGRES_PASSWORD=change-me-to-something-strong
-BOOTSTRAP_ADMIN_EMAIL=admin@example.com
-BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars
-EOF
+# Copy the annotated sample and fill in the essentials.
+cp .env-sample .env
+#   POSTGRES_PASSWORD=change-me-to-something-strong
+#   BOOTSTRAP_ADMIN_EMAIL=admin@example.com
+#   BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars
+#   ALDEVTOOLBOX_TAG=6.0.0        # optional: pin a release; defaults to latest
 
 docker compose up -d
-docker compose pull   # later: grab the newest :latest (or :6) and recreate
+docker compose pull && docker compose up -d   # later: grab a newer image and recreate
 ```
 
-Visit <http://localhost:8080> and sign in with the bootstrap credentials. The full env-var table from [Run in Docker](#run-in-docker) applies unchanged — only the image source differs.
+To build the image locally instead of pulling it, comment out `image:` and uncomment `build: .` on the `aldevtoolbox` service, then `docker compose up --build`.
 
-## Backup
+## HTTPS with Caddy (optional)
 
-The database lives in the `pg-data` named volume. Backups live in `app-backups` (mounted at `/var/lib/aldevtoolbox/backups`); both are managed by the compose stack.
+[`compose.yml`](./compose.yml) ships an optional, commented-out `caddy` service that fronts the app on ports 80/443 and provisions Let's Encrypt certificates automatically. Bring-your-own Traefik/nginx still works; this is just a batteries-included path. To enable it (one-time setup):
 
-SiteAdmins drive backup tooling from `/site-admin/backups`:
+1. Point a DNS `A`/`AAAA` record at the host and open ports **80** and **443**.
+2. In `.env`, set `SITE_ADDRESS` (your domain) and `ACME_EMAIL` (for Let's Encrypt expiry notices). Both are required once the service is enabled.
+3. Uncomment the `caddy` service **and** the `caddy-data` / `caddy-config` volumes in `compose.yml`.
+4. *(Recommended)* remove the `aldevtoolbox` `ports:` mapping so the app is reachable only through the proxy.
+5. `docker compose up -d`. Caddy issues a cert for `SITE_ADDRESS`, reverse-proxies to the app, and gates traffic on `/readyz` until startup finishes. The proxy config lives in the repo's [`Caddyfile`](./Caddyfile).
 
-- **Ad-hoc backup.** Click *Take a backup now* to run `pg_dump -Fc` against the live database and write a file to the backups volume.
-- **Scheduled backup.** A background hosted service polls every minute and triggers a daily backup at the configured UTC time (default 02:00). Toggle the schedule and edit the time-of-day on `/site-admin/settings` under the **Backups** section. To see the schedule fire without waiting overnight, set the time a minute or two ahead of now.
-- **Retention.** Configurable on the same settings page (default 14). After each backup, the service prunes the oldest *unpinned* files past the retention count. Pinned backups are exempt — pin a backup to keep it indefinitely.
+No public domain handy? Set `SITE_ADDRESS=localhost` (Caddy mints an internal-CA cert, so your browser will warn) or `SITE_ADDRESS=:80` (plain HTTP) to exercise the same service locally.
+
+**Email links and passkeys.** Links in outbound emails are built from the request host; Caddy preserves it while the app honours `X-Forwarded-Proto`, so they render as `https://<your-domain>/`. Make sure users reach the app through the domain, not the raw `:8080` host port. To enable passkeys on the domain, set `AUTH_WEBAUTHN_RP_ID` to it and `AUTH_WEBAUTHN_ORIGINS` to `https://<your-domain>`.
+
+## Backups
+
+The database lives in the `pg-data` named volume; backups land in `app-backups` (`/var/lib/aldevtoolbox/backups`). Both are managed by the compose stack. SiteAdmins drive backup tooling from `/site-admin/backups`:
+
+- **Ad-hoc backup.** *Take a backup now* runs `pg_dump -Fc` against the live database and writes a file to the backups volume.
+- **Scheduled backup.** A background hosted service polls every minute and triggers a daily backup at the configured UTC time (default 02:00). Toggle the schedule and edit the time on `/site-admin/settings` under **Backups**.
+- **Retention.** Configurable on the same settings page (default 14). After each backup the service prunes the oldest *unpinned* files past the retention count. Pinned backups are exempt.
 - **Download / restore.** Per-row actions on the backups page. *Restore* drops the `public` schema and replays the dump in place; the app enters maintenance mode (503 for non-SiteAdmin) for the duration. Restores are audited.
 
-`pg_dump` / `pg_restore` v18 ship inside the runtime image (installed from the pgdg apt repo in the Dockerfile) so they match the `postgres:18` server in the compose stack.
+`pg_dump` / `pg_restore` v18 ship inside the runtime image (from the pgdg apt repo in the Dockerfile) so they match the `postgres:18` server.
 
-**Off-site backups.** Configure an S3-compatible destination (bucket, endpoint, credentials, prefix) on `/site-admin/settings`; each successful local backup is then uploaded asynchronously, and off-site retention is enforced independently of the local volume. Restore from off-site uses the same `/site-admin/backups` page. See [`docs/offsite-backups.md`](./docs/offsite-backups.md) for the full setup, including MinIO / Backblaze / R2 worked examples.
+**Off-site backups.** Configure an S3-compatible **or** Azure Blob destination on `/site-admin/settings`; each successful local backup is then uploaded asynchronously, with off-site retention enforced independently of the local volume. Restore from off-site uses the same `/site-admin/backups` page. See [`docs/offsite-backups.md`](./docs/offsite-backups.md) for the full setup, including MinIO / Backblaze / R2 / Azure worked examples.
 
-To test the full surface end-to-end:
-
-```bash
-HOST_PORT=8080 \
-POSTGRES_PASSWORD=$(openssl rand -hex 16) \
-BOOTSTRAP_ADMIN_EMAIL=admin@example.com \
-BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars \
-docker compose up --build
-```
-
-Sign in as `admin@example.com` (the bootstrap path stamps `is_site_admin = true`, so the **Site Admin** section appears in the sidebar), then visit `Site Admin → Backups`. `docker compose down -v` wipes both volumes; `docker compose down` preserves them.
-
-For a logical export, signed-in admins can hit **Export to TOML** under `/admin/configuration` to download a ZIP of the org's templates, modules, catalogue, application versions, organisation settings, logo, and always-included files. The same screen accepts the import direction.
+For a logical export, signed-in admins can hit **Export to TOML** under `/admin/administration/export` to download a ZIP of the org's templates, modules, catalogue, application versions, organisation settings, logo, and always-included files. The same screen accepts the import direction for backup or org-to-org transfer.
 
 ## Health checks
 
-Two unauthenticated endpoints, suitable for a load balancer or `docker compose` healthcheck:
+Two unauthenticated endpoints, suitable for a load balancer or compose healthcheck:
 
-- `GET /healthz` — liveness. 200 if the database is reachable **and** the Data Protection key ring round-trips. A node that loses either should drop out of rotation.
-- `GET /readyz` — readiness. 200 once startup work (EF migrations + system-org / platform-files backfill + bootstrap admin) has finished. Until then it returns 503 so reverse proxies don't send traffic to a half-initialised container.
+- `GET /healthz`: **liveness.** 200 if the database is reachable **and** the Data Protection key ring round-trips; 503 otherwise. A node that loses either should drop out of rotation.
+- `GET /readyz`: **readiness.** 200 once startup work (migrations + system-org / platform-files backfill + bootstrap admin) has finished; 503 until then, so reverse proxies don't send traffic to a half-initialised container.
 
-The Dockerfile's `HEALTHCHECK` polls `/healthz`. The container is whole as long as it can reach the database and decrypt cookies; readiness gating lives in the reverse proxy.
+The Dockerfile's `HEALTHCHECK` polls `/healthz`.
 
 ## Project layout
 
-Two projects at the repo root, wired up through `ALDevToolbox.slnx`:
+Two projects at the repo root, wired up through [`ALDevToolbox.slnx`](./ALDevToolbox.slnx):
 
 ```
 ALDevToolbox/                The Blazor Server app
   Components/                Razor pages, layout, shared components
-  Endpoints/                 Minimal-API endpoint groups (Generation, MCP, OAuth, SiteAdmin, …)
-  Services/                  Application services (generation, accounts, admin CRUD, MCP tools, Object Explorer)
+  Endpoints/                 Minimal-API endpoint groups (Generation, MCP, OAuth, SiteAdmin, etc.)
+  Services/                  Application services (generation, accounts, admin CRUD, MCP tools, Object Explorer, Translator)
   Domain/                    EF entities, value objects, plans
   Data/                      AppDbContext, design-time factory, migrations
   Resources/                 Embedded static assets (ruleset, .gitignore template, Lucide SVGs)
@@ -307,19 +252,20 @@ See [`.design/architecture.md`](./.design/architecture.md) for what belongs wher
 
 ## Day-to-day editing
 
-- **Template / module / catalogue / application-version edits** happen in the admin UI. The DB is the source of truth at runtime.
-- **Organisation defaults / logo / always-included files** also live in the DB, edited from `/admin/configuration`.
-- **TOML round-trip.** The **Export to TOML** button under `/admin/configuration` downloads a ZIP of the org's templates, modules, catalogue, application versions, organisation settings, logo, and always-included files; the same screen accepts the import direction for backup or org-to-org transfer.
-- **System-org import.** New or empty orgs pull canonical templates / modules / catalogue from the singleton system org (`Default`, `IsSystem = true`) via `/admin/templates`. There is no on-disk seed directory — the system org is the source of truth.
-- **Migrations** are committed to the repo. New schema changes are added via `dotnet ef migrations add <Name>`.
+- **Templates, modules, catalogue, application versions, cookbook recipes, and the translation memory** are edited in the admin UI (Editor or Admin). The database is the source of truth at runtime.
+- **Organisation defaults, logo, and always-included files** also live in the DB, edited under `/admin/templates` and `/admin/administration`.
+- **TOML round-trip.** **Export to TOML** under `/admin/administration/export` downloads a ZIP of the org's configuration; the same screen accepts the import direction.
+- **System-org import.** New or empty orgs pull canonical templates / modules / catalogue from the singleton system org (`Default`, `IsSystem = true`) via `/admin/templates`. There is no on-disk seed directory.
+- **Object Explorer releases** are imported by Editors and Admins from `/admin/object-explorer`.
+- **Migrations** are committed to the repo; new schema changes are added via `dotnet ef migrations add <Name>`.
 
 ## Contributing
 
 - One coherent slice per PR. What's shipped is recorded in [`.design/completed-milestones.md`](./.design/completed-milestones.md); uncommitted ideas live in [`.design/roadmap.md`](./.design/roadmap.md).
-- Run the GitHub Actions build on every push — it's the floor for "compiles, starts, and tests pass."
-- Manual smoke test the end-user flows after any change to shared services. Bring up the app under Docker before merging anything that touches startup, env vars, or volumes.
+- The GitHub Actions build runs on every push; it's the floor for "compiles, starts, and tests pass."
+- Manual smoke test the end-user flows after any change to shared services. Bring the app up under Docker before merging anything that touches startup, env vars, or volumes.
 - Contributions are accepted under the project's licence and may be relicensed by the maintainer; see [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 ## License
 
-Source-available under the [Elastic License 2.0](LICENSE) — free to use, modify, and self-host for personal and internal company use, but not to offer as a hosted or managed service to third parties.
+Source-available under the [Elastic License 2.0](LICENSE): free to use, modify, and self-host for personal and internal company use, but not to offer as a hosted or managed service to third parties.
