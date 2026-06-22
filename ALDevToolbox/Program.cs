@@ -442,7 +442,15 @@ builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.ObjectExplorerTools>(
 builder.Services.AddScoped<ALDevToolbox.Services.Mcp.Tools.TranslatorTools>();
 builder.Services
     .AddMcpServer()
-    .WithHttpTransport()
+    // Stateless Streamable-HTTP: each POST is self-contained (single
+    // application/json reply, no Mcp-Session-Id, no SSE stream). Required for
+    // gateway-fronted clients like Copilot Studio, whose Azure APIM layer
+    // sends `Accept: application/json` only and buffers responses — the
+    // default stateful mode answers those with `406 Not Acceptable` ("must
+    // accept both application/json and text/event-stream") before a tool ever
+    // runs. Our tools are synchronous request/response with no server-initiated
+    // notifications, so we don't need sessions or streaming.
+    .WithHttpTransport(options => options.Stateless = true)
     .WithToolsFromAssembly();
 // WebAuthn (passkeys). RP id / origins live in configuration; if RpId isn't
 // set the passkey routes refuse with a clear error and the /account UI hides
