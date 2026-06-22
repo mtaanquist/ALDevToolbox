@@ -2,6 +2,7 @@ using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace ALDevToolbox.Endpoints;
 
@@ -50,7 +51,28 @@ internal static class StartupTasks
             if (orgIdsWithFiles.Contains(orgId)) continue;
             await PlatformOrganizationFileSeeder.EnsureForOrganizationAsync(db, orgId, DateTime.UtcNow, stopping);
         }
-        await db.SaveChangesAsync(stopping);
+        try
+        {
+            await db.SaveChangesAsync(stopping);
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            // A concurrent startup won the race and already seeded these
+            // org-default files between our "which orgs have files" read and
+            // this write. The unique (organization_id, path) index rejects our
+            // duplicate inserts — but the rows now exist, so the seed goal is
+            // met. Detach the losing inserts so the later SaveChangesAsync
+            // calls in this method aren't re-poisoned by them, then continue.
+            // This is a single-container app in production, but parallel
+            // WebApplicationFactory test hosts (and would-be multi-replica
+            // boots) share one database and can overlap here.
+            foreach (var entry in db.ChangeTracker.Entries<OrganizationFile>().ToList())
+            {
+                entry.State = EntityState.Detached;
+            }
+            logger.LogInformation(
+                "Platform org-file seed raced with a concurrent startup; the other writer won. Continuing.");
+        }
 
         // Bootstrap admin: only runs once, when there are no users in the
         // database. After that the env vars are read but ignored (logged).
@@ -206,4 +228,13 @@ internal static class StartupTasks
         await db.SaveChangesAsync(ct);
         return systemOrg;
     }
+
+    /// <summary>
+    /// True when <paramref name="ex"/> is a Postgres unique-constraint
+    /// violation (SQLSTATE 23505) — the signature of a concurrent startup
+    /// losing an idempotent-seed race. Any other <see cref="DbUpdateException"/>
+    /// is a real fault and must propagate rather than be swallowed.
+    /// </summary>
+    internal static bool IsUniqueViolation(DbUpdateException ex) =>
+        ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 }
