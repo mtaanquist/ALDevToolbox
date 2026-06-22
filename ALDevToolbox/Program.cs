@@ -147,6 +147,9 @@ builder.Services.AddScoped<ModuleService>();
 builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<ApplicationVersionService>();
 builder.Services.AddScoped<ALDevToolbox.Services.Translation.TranslationMemoryService>();
+builder.Services.AddScoped<ALDevToolbox.Services.Translation.MachineTranslationService>();
+builder.Services.AddSingleton<ALDevToolbox.Services.Translation.Providers.IMachineTranslationProviderFactory,
+    ALDevToolbox.Services.Translation.Providers.MachineTranslationProviderFactory>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationImportService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseImportService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.CalImportService>();
@@ -389,6 +392,14 @@ builder.Services.AddHttpClient(nameof(ALDevToolbox.Services.OAuth.CimdClientReso
         ConnectCallback = ALDevToolbox.Services.OAuth.SsrfGuard.ConnectAsync,
     });
 builder.Services.AddScoped<ALDevToolbox.Services.OAuth.CimdClientResolver>();
+
+// DeepL machine-translation client (per-tenant BYOK). Fixed public hosts
+// (api.deepl.com / api-free.deepl.com) so no SSRF guard is needed; just a
+// bounded timeout. The provider sets the host and auth header per request.
+builder.Services.AddHttpClient(ALDevToolbox.Services.Translation.Providers.DeepLProvider.HttpClientName, client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
 
 // DVD download client for the Object Explorer "import release from URL" flow.
 // Same SSRF guard as the CIMD client (dial only publicly routable IPs), but

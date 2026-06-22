@@ -498,7 +498,10 @@ public sealed record TranslationMemoryUpsert(
 /// <summary>
 /// One suggested target for a source string: its memory-entry id (for voting /
 /// removal), provenance, match strength (0–1), net vote score, and the acting
-/// user's own vote (-1/0/1).
+/// user's own vote (-1/0/1). <see cref="IsMachineTranslation"/> marks an
+/// ephemeral provider-generated suggestion (<c>EntryId</c> 0, no vote/remove
+/// controls, rendered with an "MT" badge) so the editor can tell it apart from
+/// memory and in-file matches.
 /// </summary>
 public sealed record TranslationSuggestion(
     long EntryId,
@@ -507,7 +510,8 @@ public sealed record TranslationSuggestion(
     string Kind,
     double Similarity,
     int Score,
-    int MyVote);
+    int MyVote,
+    bool IsMachineTranslation = false);
 
 /// <summary>Result of a vote: the entry's new net score and the user's resulting vote (-1/0/1).</summary>
 public sealed record VoteResult(long EntryId, int Score, int MyVote);

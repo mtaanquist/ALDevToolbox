@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using System.Text.RegularExpressions;
 using ALDevToolbox.Components.Pages;
 using ALDevToolbox.Services;
@@ -50,6 +51,7 @@ public sealed class NewWorkspaceTests : IDisposable
         _ctx.Services.AddScoped<TemplateService>();
         _ctx.Services.AddScoped<ApplicationVersionService>();
         _ctx.Services.AddScoped<OrganizationConfigService>();
+        _ctx.Services.AddDataProtection();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),

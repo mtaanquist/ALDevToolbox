@@ -1,0 +1,198 @@
+@page "/admin/administration/translation"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject OrganizationConfigService Config
+@inject MachineTranslationService Mt
+@inject ILogger<AdminAdministrationTranslation> Log
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services
+@using ALDevToolbox.Services.Translation
+
+@*
+    Per-organisation machine-translation (BYOK) configuration. Admins enter the
+    org's own provider API key — encrypted with the Data Protection key ring —
+    and choose when the Translator calls out. "Off" is the default and the master
+    switch. See .design/translator/ for the feature design.
+*@
+
+<PageTitle>Translation · Administration · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page admin-configuration">
+    <AdministrationHeader ActiveTab="AdministrationHeader.Tab.Translation" />
+
+    @if (_loading)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(_okMessage))
+        {
+            <p class="form-success" role="status">@_okMessage</p>
+        }
+        @if (!string.IsNullOrEmpty(_errMessage))
+        {
+            <div class="form-error" role="alert"><p>@_errMessage</p></div>
+        }
+        @if (!string.IsNullOrEmpty(_testMessage))
+        {
+            <p class="@(_testOk ? "form-success" : "form-error")" role="status">@_testMessage</p>
+        }
+
+        <section class="admin-section">
+            <h2>Machine translation</h2>
+            <p class="muted">
+                Connect a third-party translation service so the Translator can
+                draft targets with context. You supply your own API key; it's
+                stored encrypted and never leaves this deployment except to call
+                the provider. Today the provider is
+                <a href="https://www.deepl.com/pro-api" target="_blank" rel="noopener">DeepL</a>
+                (free or pro keys both work).
+            </p>
+
+            <div class="form-grid form-grid--narrow">
+                <section class="form-section">
+                    <label class="section-label" for="mt-trigger">When to translate</label>
+                    <select id="mt-trigger" class="input" @bind="_trigger" disabled="@_saving">
+                        <option value="@MtTrigger.Off">Off — disabled (no external calls)</option>
+                        <option value="@MtTrigger.OnDemand">On demand — only when the user clicks (cheapest)</option>
+                        <option value="@MtTrigger.AutoWhenNoExactMatch">Automatic — only when memory has no exact match</option>
+                        <option value="@MtTrigger.AlwaysAuto">Automatic — for every unit</option>
+                    </select>
+                    <small class="muted">
+                        DeepL bills per character. "On demand" keeps spend tightest;
+                        the automatic modes translate as you navigate.
+                    </small>
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label" for="mt-provider">Provider</label>
+                    <select id="mt-provider" class="input" @bind="_provider" disabled="@_saving">
+                        <option value="deepl">DeepL</option>
+                    </select>
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label" for="mt-key">
+                        API key
+                        @if (_hasStoredKey)
+                        {
+                            <span class="muted">· a key is stored</span>
+                        }
+                    </label>
+                    <input id="mt-key" type="password" class="input" autocomplete="off"
+                           placeholder="@(_hasStoredKey ? "•••••••• (leave blank to keep)" : "Paste your DeepL API key")"
+                           @bind="_apiKey" disabled="@(_saving || _clearKey)" />
+                    @if (_hasStoredKey)
+                    {
+                        <label class="section-label section-label--inline">
+                            <input type="checkbox" @bind="_clearKey" disabled="@_saving" />
+                            <span>Clear the stored key</span>
+                        </label>
+                    }
+                    <small class="muted">
+                        Free-tier keys end in <code>:fx</code> and use DeepL's free
+                        host automatically. Losing the <code>app-keys</code> volume
+                        requires re-entering this.
+                    </small>
+                </section>
+
+                <section class="form-section form-section--actions">
+                    <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
+                        <Icon Name="save" Width="14" Height="14" />
+                        <span>@(_saving ? "Saving…" : "Save changes")</span>
+                    </button>
+                    <button type="button" class="btn btn--outline" @onclick="TestAsync" disabled="@(_saving || _testing)">
+                        <Icon Name="plug" Width="14" Height="14" />
+                        <span>@(_testing ? "Testing…" : "Test connection")</span>
+                    </button>
+                </section>
+            </div>
+            <small class="muted">
+                Test connection checks the saved key — pick a mode other than Off,
+                enter a key, and save before testing.
+            </small>
+        </section>
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private bool _saving;
+    private bool _testing;
+    private string? _okMessage;
+    private string? _errMessage;
+    private string? _testMessage;
+    private bool _testOk;
+
+    private MtTrigger _trigger = MtTrigger.Off;
+    private string _provider = "deepl";
+    private string? _apiKey;
+    private bool _clearKey;
+    private bool _hasStoredKey;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+        _loading = false;
+    }
+
+    private async Task ReloadAsync()
+    {
+        var view = await Config.GetMachineTranslationViewAsync();
+        _trigger = view.Trigger;
+        _provider = view.Provider;
+        _hasStoredKey = view.HasApiKey;
+        _apiKey = null;
+        _clearKey = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving) return;
+        _saving = true;
+        _okMessage = _errMessage = _testMessage = null;
+        try
+        {
+            await Config.SaveMachineTranslationAsync(new MtSettingsInput(_provider, _apiKey, _clearKey, _trigger));
+            await ReloadAsync();
+            _okMessage = "Machine-translation settings saved.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _errMessage = ex.Errors.FirstOrDefault().Value ?? "Validation failed.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save machine-translation settings.");
+            _errMessage = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task TestAsync()
+    {
+        if (_saving || _testing) return;
+        _testing = true;
+        _okMessage = _errMessage = _testMessage = null;
+        try
+        {
+            var result = await Mt.TestConnectionAsync();
+            _testOk = result.Success;
+            _testMessage = result.Message;
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning(ex, "Machine-translation test connection failed.");
+            _testOk = false;
+            _testMessage = "Test failed: " + ex.Message;
+        }
+        finally
+        {
+            _testing = false;
+        }
+    }
+}

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using ALDevToolbox.Components.Pages.Admin;
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Builders;
@@ -49,6 +50,7 @@ public sealed class AdminTemplateEditTests : IDisposable
         // throw "no registered service" mid-paint.
         _db.AddStorageServices(_ctx.Services);
         _ctx.Services.AddScoped<OrganizationConfigService>();
+        _ctx.Services.AddDataProtection();
         // AuditHistoryPanel renders only when _existingId is set (edit mode)
         // and injects AuditService. Register it so the page doesn't crash on
         // edit-mode hydration.

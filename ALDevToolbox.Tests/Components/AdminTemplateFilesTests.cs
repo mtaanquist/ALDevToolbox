@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using ALDevToolbox.Components.Pages.Admin;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
@@ -37,6 +38,7 @@ public sealed class AdminTemplateFilesTests : IDisposable
         _ctx.Services.AddSingleton<IMemoryCache>(new MemoryCache(Options.Create(new MemoryCacheOptions())));
         _db.AddStorageServices(_ctx.Services);
         _ctx.Services.AddScoped<OrganizationConfigService>();
+        _ctx.Services.AddDataProtection();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),

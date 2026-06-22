@@ -31,6 +31,13 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
         entity.Property(e => e.CookbookGuidance).HasColumnName("cookbook_guidance").IsRequired();
         entity.Property(e => e.RequireStrongAuth).HasColumnName("require_strong_auth").IsRequired();
         entity.Property(e => e.AutoJoinVerifiedDomainUsers).HasColumnName("auto_join_verified_domain_users").IsRequired();
+        entity.Property(e => e.MachineTranslationProvider)
+            .HasColumnName("machine_translation_provider").IsRequired().HasDefaultValue("deepl");
+        entity.Property(e => e.MachineTranslationApiKeyEncrypted)
+            .HasColumnName("machine_translation_api_key_encrypted");
+        entity.Property(e => e.MachineTranslationTrigger)
+            .HasColumnName("machine_translation_trigger").HasConversion<int>().IsRequired()
+            .HasDefaultValue(ALDevToolbox.Domain.ValueObjects.MtTrigger.Off);
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.HasIndex(e => e.OrganizationId).IsUnique();
         entity.HasOne(e => e.Organization)

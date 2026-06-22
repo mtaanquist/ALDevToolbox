@@ -84,5 +84,28 @@ public class OrganizationSettings
     /// </summary>
     public bool AutoJoinVerifiedDomainUsers { get; set; }
 
+    /// <summary>
+    /// Which third-party machine-translation backend this org uses (discriminator
+    /// for <c>MachineTranslationProviderFactory</c>). Defaults to <c>"deepl"</c>,
+    /// the only backend today.
+    /// </summary>
+    public string MachineTranslationProvider { get; set; } = "deepl";
+
+    /// <summary>
+    /// The org's machine-translation API key, encrypted with the Data Protection
+    /// key ring (purpose
+    /// <see cref="Services.OrganizationConfigService.MachineTranslationApiKeyProtectionPurpose"/>).
+    /// Null when unset. Losing <c>app-keys</c> requires re-entering it. The audit
+    /// interceptor redacts this column so ciphertext never lands in history.
+    /// </summary>
+    public string? MachineTranslationApiKeyEncrypted { get; set; }
+
+    /// <summary>
+    /// When the Translator calls the provider. <see cref="MtTrigger.Off"/> (the
+    /// default) disables the feature entirely — it doubles as the master switch,
+    /// so there is no separate enabled flag.
+    /// </summary>
+    public MtTrigger MachineTranslationTrigger { get; set; } = MtTrigger.Off;
+
     public DateTime UpdatedAt { get; set; }
 }

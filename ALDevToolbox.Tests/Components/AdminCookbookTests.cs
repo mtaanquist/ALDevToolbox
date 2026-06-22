@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using ALDevToolbox.Components.Pages.Admin;
 using ALDevToolbox.Services;
 using ALDevToolbox.Tests.Builders;
@@ -35,6 +36,7 @@ public sealed class AdminCookbookTests : IDisposable
         _ctx.Services.AddScoped<RecipeService>();
         _ctx.Services.AddScoped<RecipeSuggestionService>();
         _ctx.Services.AddScoped<OrganizationConfigService>();
+        _ctx.Services.AddDataProtection();
         _ctx.Services.AddSingleton(new IconCatalog(NullLogger<IconCatalog>.Instance));
         _ctx.Services.AddSingleton(NullLoggerFactory.Instance);
         _ctx.Services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>),
