@@ -2,7 +2,9 @@
 @attribute [Authorize(Roles = "Admin,Editor")]
 @rendermode InteractiveServer
 @inject ApplicationVersionService Versions
+@inject IJSRuntime JS
 @inject ILogger<AdminApplicationVersions> Log
+@implements IAsyncDisposable
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 
@@ -76,7 +78,7 @@
 
         <form class="form-grid admin-template-edit__form" @onsubmit="SaveAsync" @onsubmit:preventDefault>
             <section class="form-section">
-                <div class="row-editor">
+                <div class="row-editor" @ref="_editorRef">
                     <div class="row-editor__toolbar">
                         <button type="button" class="btn btn--sm" @onclick="AddEntry">
                             <Icon Name="plus" Width="14" Height="14" />
@@ -152,6 +154,7 @@
                                             <input type="text" required placeholder="bc-2026-w1"
                                                    pattern="[a-z0-9-]+"
                                                    title="Lowercase letters, digits, hyphens. Press F8 to copy the cell above."
+                                                   data-row="@index" data-col="0"
                                                    @bind="row.Key" @bind:event="oninput"
                                                    @onkeydown="e => OnCellKeyDown(e, index, Col.Key)" />
                                             <FieldError Field="@($"Entries[{index}].Key")" Errors="_fieldErrors" />
@@ -159,6 +162,7 @@
                                         <td>
                                             <input type="text" required placeholder="Business Central 2026 Release Wave 1"
                                                    title="Press F8 to copy the cell above."
+                                                   data-row="@index" data-col="1"
                                                    @bind="row.Name" @bind:event="oninput"
                                                    @onkeydown="e => OnCellKeyDown(e, index, Col.Name)" />
                                             <FieldError Field="@($"Entries[{index}].Name")" Errors="_fieldErrors" />
@@ -166,6 +170,7 @@
                                         <td>
                                             <input type="text" required placeholder="28.0.0.0"
                                                    title="Type a number; missing parts auto-pad with .0 on blur. Press F8 to copy the cell above."
+                                                   data-row="@index" data-col="2"
                                                    @bind="row.Application" @bind:event="oninput"
                                                    @onblur="() => NormaliseApplication(row)"
                                                    @onkeydown="e => OnCellKeyDown(e, index, Col.Application)" />
@@ -174,6 +179,7 @@
                                         <td>
                                             <input type="text" required placeholder="15.2"
                                                    title="Type a number; missing parts auto-pad with .0 on blur. Press F8 to copy the cell above."
+                                                   data-row="@index" data-col="3"
                                                    @bind="row.Runtime" @bind:event="oninput"
                                                    @onblur="() => NormaliseRuntime(row)"
                                                    @onkeydown="e => OnCellKeyDown(e, index, Col.Runtime)" />
@@ -203,8 +209,10 @@
                         <small class="muted">
                             Click a row to select it, then use the toolbar to move
                             or remove it. Press <kbd>F8</kbd> in any cell to copy
-                            the value from the row above. Picking an entry on the
-                            builder forms fills both <code>application</code> and
+                            the value from the row above, or paste a range copied
+                            from Excel to fill multiple rows at once (new rows are
+                            added as needed). Picking an entry on the builder forms
+                            fills both <code>application</code> and
                             <code>runtime</code> atomically. The <code>key</code>
                             is what <code>template.toml</code> stores in
                             <code>default_application_version</code>.
@@ -233,6 +241,12 @@
     // reorders — the toolbar acts on whichever row this points at.
     private EntryRow? _selected;
 
+    // Excel-paste interop: the JS handler lives on this wrapper element and
+    // calls back into OnGridPaste. Registered once the editor has rendered.
+    private ElementReference _editorRef;
+    private DotNetObjectReference<AdminApplicationVersions>? _selfRef;
+    private bool _pasteBound;
+
     private int SelectedIndex =>
         _selected is null || _form is null ? -1 : _form.Entries.IndexOf(_selected);
 
@@ -240,6 +254,19 @@
     private enum Col { Key, Name, Application, Runtime }
 
     protected override Task OnInitializedAsync() => ReloadAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // The wrapper only exists once the form has hydrated (the first render
+        // shows "Loading…"), so bind on whichever render first exposes it. The
+        // element is stable across later re-renders, so bind exactly once.
+        if (!_pasteBound && _form is not null)
+        {
+            _selfRef ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("aldt.registerGridPaste", _editorRef, _selfRef);
+            _pasteBound = true;
+        }
+    }
 
     private async Task ReloadAsync()
     {
@@ -350,6 +377,51 @@
         }
     }
 
+    /// <summary>
+    /// Excel-style paste: <paramref name="text"/> is a tab/newline-separated
+    /// block dropped onto the cell at (<paramref name="startRow"/>,
+    /// <paramref name="startCol"/>). Fills cells right/down from there, adding
+    /// rows when the pasted block runs past the end of the list. Version cells
+    /// are auto-padded so a pasted "28" lands as "28.0.0.0". Non-text columns
+    /// (Deprecated, In use) and columns past them are ignored. Invoked from
+    /// grid-paste.js.
+    /// </summary>
+    [JSInvokable]
+    public void OnGridPaste(int startRow, int startCol, string text)
+    {
+        if (_form is null) return;
+        var grid = GridPasteParser.Parse(text);
+        if (grid.Count == 0) return;
+
+        for (var r = 0; r < grid.Count; r++)
+        {
+            var rowIndex = startRow + r;
+            while (_form.Entries.Count <= rowIndex) _form.Entries.Add(new EntryRow());
+            var entry = _form.Entries[rowIndex];
+            var cells = grid[r];
+            for (var c = 0; c < cells.Count; c++)
+            {
+                ApplyCell(entry, startCol + c, cells[c]);
+            }
+        }
+
+        var lastRow = startRow + grid.Count - 1;
+        if (lastRow >= 0 && lastRow < _form.Entries.Count) _selected = _form.Entries[lastRow];
+        StateHasChanged();
+    }
+
+    private static void ApplyCell(EntryRow row, int col, string value)
+    {
+        switch (col)
+        {
+            case 0: row.Key = value; break;
+            case 1: row.Name = value; break;
+            case 2: row.Application = PadVersion(value, 4); break;
+            case 3: row.Runtime = PadVersion(value, 2); break;
+            // Deprecated/In-use and any further columns are ignored.
+        }
+    }
+
     private async Task SaveAsync()
     {
         if (_form is null || _saving) return;
@@ -401,6 +473,19 @@
         {
             _saving = false;
         }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_pasteBound)
+        {
+            // The circuit may already be gone on disposal; swallow the
+            // disconnect rather than surface it as an unhandled exception.
+            try { await JS.InvokeVoidAsync("aldt.unregisterGridPaste", _editorRef); }
+            catch (JSDisconnectedException) { }
+            catch (InvalidOperationException) { }
+        }
+        _selfRef?.Dispose();
     }
 
     private sealed class FormState

@@ -24,6 +24,10 @@ public sealed class AdminApplicationVersionsTests : IDisposable
 
     public AdminApplicationVersionsTests()
     {
+        // The editor registers an Excel-paste handler via JS interop in
+        // OnAfterRenderAsync; loose mode lets those calls no-op under bunit.
+        _ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
         var auth = _ctx.AddTestAuthorization();
         auth.SetAuthorized("admin@example.com");
         auth.SetRoles("Admin");

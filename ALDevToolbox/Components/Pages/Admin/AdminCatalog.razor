@@ -2,7 +2,9 @@
 @attribute [Authorize(Roles = "Admin,Editor")]
 @rendermode InteractiveServer
 @inject CatalogService Catalog
+@inject IJSRuntime JS
 @inject ILogger<AdminCatalog> Log
+@implements IAsyncDisposable
 @using ALDevToolbox.Domain.Entities
 @using ALDevToolbox.Domain.ValueObjects
 
@@ -57,7 +59,7 @@
 
         <form class="form-grid admin-template-edit__form" @onsubmit="SaveAsync" @onsubmit:preventDefault>
             <section class="form-section">
-                <div class="row-editor">
+                <div class="row-editor" @ref="_editorRef">
                     <div class="row-editor__toolbar">
                         <button type="button" class="btn btn--sm" @onclick="AddEntry">
                             <Icon Name="plus" Width="14" Height="14" />
@@ -130,6 +132,7 @@
                                             <input type="text" required placeholder="12345678-1234-1234-1234-1234567890ab"
                                                    pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
                                                    title="Must be a GUID in 8-4-4-4-12 hex form. Press F8 to copy the cell above."
+                                                   data-row="@index" data-col="0"
                                                    @bind="row.DepId" @bind:event="oninput"
                                                    @onkeydown="e => OnCellKeyDown(e, index, Col.DepId)" />
                                             <FieldError Field="@($"Entries[{index}].DepId")" Errors="_fieldErrors" />
@@ -137,6 +140,7 @@
                                         <td>
                                             <input type="text" required placeholder="Name"
                                                    title="Press F8 to copy the cell above."
+                                                   data-row="@index" data-col="1"
                                                    @bind="row.DepName" @bind:event="oninput"
                                                    @onkeydown="e => OnCellKeyDown(e, index, Col.DepName)" />
                                             <FieldError Field="@($"Entries[{index}].DepName")" Errors="_fieldErrors" />
@@ -144,6 +148,7 @@
                                         <td>
                                             <input type="text" required placeholder="Publisher"
                                                    title="Press F8 to copy the cell above."
+                                                   data-row="@index" data-col="2"
                                                    @bind="row.DepPublisher" @bind:event="oninput"
                                                    @onkeydown="e => OnCellKeyDown(e, index, Col.DepPublisher)" />
                                             <FieldError Field="@($"Entries[{index}].DepPublisher")" Errors="_fieldErrors" />
@@ -151,6 +156,7 @@
                                         <td>
                                             <input type="text" required placeholder="1.0.0.0"
                                                    title="Press F8 to copy the cell above."
+                                                   data-row="@index" data-col="3"
                                                    @bind="row.DepVersionDefault" @bind:event="oninput"
                                                    @onkeydown="e => OnCellKeyDown(e, index, Col.DepVersionDefault)" />
                                             <FieldError Field="@($"Entries[{index}].DepVersionDefault")" Errors="_fieldErrors" />
@@ -158,6 +164,7 @@
                                         <td>
                                             <input type="text" placeholder="e.g. Continia"
                                                    title="Press F8 to copy the cell above."
+                                                   data-row="@index" data-col="4"
                                                    @bind="row.Category" @bind:event="oninput"
                                                    @onkeydown="e => OnCellKeyDown(e, index, Col.Category)" />
                                         </td>
@@ -168,9 +175,11 @@
                         <small class="muted">
                             Click a row to select it, then use the toolbar to move
                             or remove it. Press <kbd>F8</kbd> in any cell to copy
-                            the value from the row above. The default version
-                            pre-fills the picker; users can override it per
-                            extension. Category groups items in the picker UI.
+                            the value from the row above, or paste a range copied
+                            from Excel to fill multiple rows at once (new rows are
+                            added as needed). The default version pre-fills the
+                            picker; users can override it per extension. Category
+                            groups items in the picker UI.
                         </small>
                     }
                 </div>
@@ -194,6 +203,12 @@
     // reorders — the toolbar acts on whichever row this points at.
     private EntryRow? _selected;
 
+    // Excel-paste interop: the JS handler lives on this wrapper element and
+    // calls back into OnGridPaste. Registered once the editor has rendered.
+    private ElementReference _editorRef;
+    private DotNetObjectReference<AdminCatalog>? _selfRef;
+    private bool _pasteBound;
+
     private int SelectedIndex =>
         _selected is null || _form is null ? -1 : _form.Entries.IndexOf(_selected);
 
@@ -201,6 +216,19 @@
     private enum Col { DepId, DepName, DepPublisher, DepVersionDefault, Category }
 
     protected override Task OnInitializedAsync() => ReloadAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // The wrapper only exists once the form has hydrated (the first render
+        // shows "Loading…"), so bind on whichever render first exposes it. The
+        // element is stable across later re-renders, so bind exactly once.
+        if (!_pasteBound && _form is not null)
+        {
+            _selfRef ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("aldt.registerGridPaste", _editorRef, _selfRef);
+            _pasteBound = true;
+        }
+    }
 
     private async Task ReloadAsync()
     {
@@ -282,6 +310,50 @@
         }
     }
 
+    /// <summary>
+    /// Excel-style paste: <paramref name="text"/> is a tab/newline-separated
+    /// block dropped onto the cell at (<paramref name="startRow"/>,
+    /// <paramref name="startCol"/>). Fills cells right/down from there, adding
+    /// rows when the pasted block runs past the end of the list. Columns past
+    /// the last one are ignored. Invoked from grid-paste.js.
+    /// </summary>
+    [JSInvokable]
+    public void OnGridPaste(int startRow, int startCol, string text)
+    {
+        if (_form is null) return;
+        var grid = GridPasteParser.Parse(text);
+        if (grid.Count == 0) return;
+
+        for (var r = 0; r < grid.Count; r++)
+        {
+            var rowIndex = startRow + r;
+            while (_form.Entries.Count <= rowIndex) _form.Entries.Add(new EntryRow());
+            var entry = _form.Entries[rowIndex];
+            var cells = grid[r];
+            for (var c = 0; c < cells.Count; c++)
+            {
+                ApplyCell(entry, startCol + c, cells[c]);
+            }
+        }
+
+        var lastRow = startRow + grid.Count - 1;
+        if (lastRow >= 0 && lastRow < _form.Entries.Count) _selected = _form.Entries[lastRow];
+        StateHasChanged();
+    }
+
+    private static void ApplyCell(EntryRow row, int col, string value)
+    {
+        switch (col)
+        {
+            case 0: row.DepId = value; break;
+            case 1: row.DepName = value; break;
+            case 2: row.DepPublisher = value; break;
+            case 3: row.DepVersionDefault = value; break;
+            case 4: row.Category = value; break;
+            // Columns beyond the table are ignored.
+        }
+    }
+
     private async Task SaveAsync()
     {
         if (_form is null || _saving) return;
@@ -316,6 +388,19 @@
         {
             _saving = false;
         }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_pasteBound)
+        {
+            // The circuit may already be gone on disposal; swallow the
+            // disconnect rather than surface it as an unhandled exception.
+            try { await JS.InvokeVoidAsync("aldt.unregisterGridPaste", _editorRef); }
+            catch (JSDisconnectedException) { }
+            catch (InvalidOperationException) { }
+        }
+        _selfRef?.Dispose();
     }
 
     private sealed class FormState
