@@ -22,29 +22,12 @@ internal static class StartupTasks
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
         await db.Database.MigrateAsync(stopping);
 
-        // Ensure the Default org exists (covers EnsureCreated paths in tests)
-        // and that it carries the IsSystem flag — the migration stamps it for
-        // normal boots, but a freshly-created row from the test path still
-        // needs it.
-        var defaultOrg = await db.Organizations.IgnoreQueryFilters().FirstOrDefaultAsync(o => o.Slug == "default", stopping);
-        if (defaultOrg is null)
-        {
-            defaultOrg = new Organization
-            {
-                Name = "Default",
-                Slug = "default",
-                IsPending = false,
-                IsSystem = true,
-                CreatedAt = DateTime.UtcNow,
-            };
-            db.Organizations.Add(defaultOrg);
-            await db.SaveChangesAsync(stopping);
-        }
-        else if (!defaultOrg.IsSystem)
-        {
-            defaultOrg.IsSystem = true;
-            await db.SaveChangesAsync(stopping);
-        }
+        // Resolve the singleton system org. Look it up by IsSystem rather than
+        // a fixed slug: single-tenant first-run seeding (SINGLE_TENANT_ORG_SLUG)
+        // can rename the slug, and keying on "default" here would miss the
+        // renamed org on the next boot and try to INSERT a second is_system row
+        // — violating ix_organizations_is_system_singleton in a crash loop.
+        var defaultOrg = await EnsureSystemOrganizationAsync(db, stopping);
 
         // Seed the platform-default workspace files only for orgs that have
         // none yet. Once an org has any files, its admins own that list:
@@ -182,5 +165,45 @@ internal static class StartupTasks
         // survives the scope's disposal.
         app.Services.GetRequiredService<StartupReadinessState>().MarkReady();
         logger.LogInformation("Startup complete; /readyz is now green.");
+    }
+
+    /// <summary>
+    /// Idempotently resolves the singleton system organisation, creating or
+    /// stamping it as needed. Keyed on <see cref="Organization.IsSystem"/> —
+    /// not on the literal <c>default</c> slug — because single-tenant first-run
+    /// seeding can rename that slug; a slug-keyed lookup would miss the renamed
+    /// org on a later boot and attempt a second <c>is_system</c> insert, which
+    /// the <c>ix_organizations_is_system_singleton</c> unique index rejects.
+    /// Only when no system org exists does it adopt an existing <c>default</c>
+    /// org (the test <c>EnsureCreated</c> path) or create a fresh one.
+    /// </summary>
+    internal static async Task<Organization> EnsureSystemOrganizationAsync(AppDbContext db, CancellationToken ct)
+    {
+        var systemOrg = await db.Organizations.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(o => o.IsSystem, ct);
+        if (systemOrg is not null) return systemOrg;
+
+        // No system org yet. Adopt an existing "default"-slug org (created
+        // without the flag by the test EnsureCreated path) or create one.
+        systemOrg = await db.Organizations.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(o => o.Slug == "default", ct);
+        if (systemOrg is null)
+        {
+            systemOrg = new Organization
+            {
+                Name = "Default",
+                Slug = "default",
+                IsPending = false,
+                IsSystem = true,
+                CreatedAt = DateTime.UtcNow,
+            };
+            db.Organizations.Add(systemOrg);
+        }
+        else
+        {
+            systemOrg.IsSystem = true;
+        }
+        await db.SaveChangesAsync(ct);
+        return systemOrg;
     }
 }
