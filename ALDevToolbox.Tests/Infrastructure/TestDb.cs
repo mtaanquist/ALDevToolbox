@@ -128,7 +128,7 @@ public sealed class TestDb : IDisposable
     /// for the failure mode this isolation prevents.
     /// </summary>
     public OrganizationConfigService NewOrganizationConfigService(AppDbContext ctx) =>
-        new(ctx, OrgContext, NewQuotaGuard(ctx), NullLogger<OrganizationConfigService>.Instance, _memoryCache);
+        new(ctx, OrgContext, NewQuotaGuard(ctx), NullLogger<OrganizationConfigService>.Instance, _memoryCache, DataProtectionProvider);
 
     /// <summary>
     /// Per-org admin toggles + email-domain allow-list, split out of

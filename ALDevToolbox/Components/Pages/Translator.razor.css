@@ -258,7 +258,16 @@ input.tr-fname { cursor: text; color: var(--ink); min-width: 240px; }
 .tr-ssim.exact { color: var(--st-final); background: var(--st-final-bg); }
 .tr-ssim.high { color: var(--st-trans); background: var(--st-trans-bg); }
 .tr-ssim.mid { color: var(--st-review); background: var(--st-review-bg); }
+.tr-ssim--mt { color: var(--blue); background: var(--blue-50); }
 .tr-sugg__empty { color: var(--ink-4); font-size: 13px; padding: 12px 2px; font-style: italic; }
+
+/* ── Machine-translation action ─────────────────────────────────────────── */
+.tr-mtrow { margin-bottom: 9px; }
+.tr-mtbtn { font-size: 12px; padding: 5px 10px; }
+.tr-mtrow__status {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--ink-3); font-style: italic;
+}
 
 /* ── Keyboard legend ────────────────────────────────────────────────────── */
 .tr-kbd {

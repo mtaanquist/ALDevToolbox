@@ -8,10 +8,13 @@
 @using Microsoft.AspNetCore.Components.Routing
 @using ALDevToolbox.Services.ObjectExplorer
 @using ALDevToolbox.Services.Translation
+@using ALDevToolbox.Services.Translation.Providers
+@using ALDevToolbox.Domain.ValueObjects
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
 @inject TranslationMemoryService Memory
+@inject MachineTranslationService Mt
 @inject ILogger<Translator> Log
 
 <PageTitle>Translator · AL Dev Toolbox</PageTitle>
@@ -250,6 +253,21 @@
                                         <span>Suggestions</span>
                                         <span class="tr-mempill">Translation memory</span>
                                     </div>
+                                    @if (_mtTrigger != MtTrigger.Off)
+                                    {
+                                        <div class="tr-mtrow">
+                                            @if (_mtLoading)
+                                            {
+                                                <span class="tr-mtrow__status"><Icon Name="languages" Width="13" Height="13" /> Machine translating…</span>
+                                            }
+                                            else if (!_suggestions.Any(x => x.IsMachineTranslation))
+                                            {
+                                                <button type="button" class="btn btn--outline tr-mtbtn" @onclick="RequestMachineTranslationAsync">
+                                                    <Icon Name="languages" Width="14" Height="14" /> Machine translate
+                                                </button>
+                                            }
+                                        </div>
+                                    }
                                     <div class="tr-sugg__list">
                                         @if (_suggLoading)
                                         {
@@ -274,7 +292,14 @@
                                                         </div>
                                                     </div>
                                                     <div class="tr-sugg__side">
-                                                        <span class="tr-ssim @SimClass(s.Similarity)">@SimLabel(s.Similarity)</span>
+                                                        @if (s.IsMachineTranslation)
+                                                        {
+                                                            <span class="tr-ssim tr-ssim--mt" title="Machine translation">MT</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="tr-ssim @SimClass(s.Similarity)">@SimLabel(s.Similarity)</span>
+                                                        }
                                                         @if (s.EntryId > 0)
                                                         {
                                                         <div class="tr-vote" @onclick:stopPropagation="true">
@@ -464,6 +489,15 @@
     private readonly Dictionary<string, List<TranslationSuggestion>> _suggCache = new(StringComparer.Ordinal);
     private const int SuggCacheMax = 128;
 
+    // Per-tenant machine-translation trigger (loaded once on init) plus a small
+    // per-source cache of provider results so re-selecting a unit — or an auto
+    // mode firing on every selection — never re-bills the provider. Keyed by
+    // exact source text and cleared when the target language changes, mirroring
+    // _suggCache.
+    private MtTrigger _mtTrigger = MtTrigger.Off;
+    private bool _mtLoading;
+    private readonly Dictionary<string, TranslationSuggestion> _mtCache = new(StringComparer.Ordinal);
+
     // Serialises every TranslationMemoryService call so background prefetch
     // (#300) can never run concurrently with an on-demand lookup — the EF
     // DbContext behind the service is not safe for overlapping operations.
@@ -492,6 +526,23 @@
         // Full reloads / tab close go through the beforeunload guard in the JS
         // companion. Mirrors Components/Pages/Admin/AdminTemplateEdit.razor.
         _navRegistration = Navigation.RegisterLocationChangingHandler(OnLocationChangingAsync);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load the per-tenant machine-translation trigger once. This also warms
+        // the cached OrganizationConfig, so later provider resolves never hit the
+        // DB concurrently with a memory prefetch. Off (the default) renders no MT
+        // affordance and makes no external calls.
+        try
+        {
+            _mtTrigger = await Mt.GetTriggerAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning(ex, "Failed to load machine-translation settings; treating as off.");
+            _mtTrigger = MtTrigger.Off;
+        }
     }
 
     private async ValueTask OnLocationChangingAsync(LocationChangingContext context)
@@ -636,6 +687,7 @@
         _hasFile = true;
         _restoreName = null;
         _suggCache.Clear();
+        _mtCache.Clear();
         _filter = "todo";
         _kind = "All kinds";
         _search = "";
@@ -730,6 +782,7 @@
         _selId = null;
         _suggestions = new();
         _suggCache.Clear();
+        _mtCache.Clear();
         _parseError = null;
     }
 
@@ -749,6 +802,7 @@
     private async Task LoadSuggestionsAsync()
     {
         _suggestions = new();
+        _mtLoading = false;
         if (_sel is null || string.IsNullOrWhiteSpace(_sel.Source)) { _suggLoading = false; return; }
         var forId = _sel.Id;
         var source = _sel.Source;
@@ -782,6 +836,99 @@
 
         _suggestions = MergeSuggestions(source, memory);
         PrefetchUpcoming();
+        ApplyMachineTranslation(source);
+    }
+
+    /// <summary>
+    /// Decides whether to surface a machine translation for the current source,
+    /// honouring the per-tenant trigger: a warm cache hit is appended instantly;
+    /// <c>AlwaysAuto</c> always fetches; <c>AutoWhenNoExactMatch</c> fetches only
+    /// when no memory/in-file suggestion is an exact (≥0.99) match;
+    /// <c>OnDemand</c> waits for the button. The fetch is fire-and-forget so unit
+    /// navigation never blocks on the network.
+    /// </summary>
+    private void ApplyMachineTranslation(string source)
+    {
+        if (_mtTrigger == MtTrigger.Off) return;
+        if (_mtCache.TryGetValue(source, out var cached)) { AppendMtSuggestion(source, cached); return; }
+
+        var shouldAuto = _mtTrigger switch
+        {
+            MtTrigger.AlwaysAuto => true,
+            MtTrigger.AutoWhenNoExactMatch => !_suggestions.Any(s => s.Similarity >= 0.99),
+            _ => false,
+        };
+        if (shouldAuto) _ = LoadMachineTranslationAsync(source, userInitiated: false);
+    }
+
+    /// <summary>On-demand button handler — translates the current unit's source.</summary>
+    private Task RequestMachineTranslationAsync()
+    {
+        if (_sel is null || string.IsNullOrWhiteSpace(_sel.Source)) return Task.CompletedTask;
+        return LoadMachineTranslationAsync(_sel.Source, userInitiated: true);
+    }
+
+    /// <summary>
+    /// Fetches a provider translation for <paramref name="source"/> and appends it
+    /// as a suggestion chip. Best-effort: a null result (feature off / provider
+    /// error) degrades to memory-only, with a toast only when the user asked.
+    /// Guards against the user navigating away mid-request.
+    /// </summary>
+    private async Task LoadMachineTranslationAsync(string source, bool userInitiated)
+    {
+        if (_mtLoading) return;
+        var forId = _selId;
+        var context = _sel?.Note ?? (string.IsNullOrEmpty(_sel?.Kind) ? null : _sel!.Kind);
+
+        if (_mtCache.TryGetValue(source, out var warm))
+        {
+            AppendMtSuggestion(source, warm);
+            return;
+        }
+
+        _mtLoading = true;
+        StateHasChanged();
+        MtTranslation? res = null;
+        try
+        {
+            res = await Mt.TranslateAsync(source, _sourceLang, _targetLang, context);
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning(ex, "Machine translation request failed.");
+        }
+        finally
+        {
+            _mtLoading = false;
+        }
+
+        // The user may have moved to another unit while we awaited the provider.
+        if (_selId != forId) { StateHasChanged(); return; }
+
+        if (res is not null && !string.IsNullOrWhiteSpace(res.TargetText))
+        {
+            var sugg = new TranslationSuggestion(0, res.TargetText, res.ProviderName,
+                _sel?.Kind ?? string.Empty, 0.0, 0, 0, IsMachineTranslation: true);
+            _mtCache[source] = sugg;
+            AppendMtSuggestion(source, sugg);
+        }
+        else if (userInitiated)
+        {
+            Flash("No machine translation available");
+        }
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Appends a machine-translation chip to the live suggestion list (below
+    /// memory and in-file matches), unless the current selection has moved on or
+    /// the same target is already offered.
+    /// </summary>
+    private void AppendMtSuggestion(string source, TranslationSuggestion mt)
+    {
+        if (_sel is null || !string.Equals(_sel.Source, source, StringComparison.Ordinal)) return;
+        if (_suggestions.Any(s => string.Equals(s.TargetText, mt.TargetText, StringComparison.Ordinal))) return;
+        _suggestions = new List<TranslationSuggestion>(_suggestions) { mt };
     }
 
     /// <summary>
@@ -1055,6 +1202,7 @@
     {
         _targetLang = e.Value?.ToString() ?? _targetLang;
         _suggCache.Clear(); // suggestions are language-specific
+        _mtCache.Clear();
         if (_module is not null) await _module.InvokeVoidAsync("putMeta", _fileName, _targetLang);
         await LoadSuggestionsAsync();
     }

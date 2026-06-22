@@ -21,12 +21,18 @@ namespace ALDevToolbox.Services.Mcp.Tools;
 public sealed class TranslatorTools
 {
     private readonly TranslationMemoryService _memory;
+    private readonly MachineTranslationService _machineTranslation;
     private readonly AppDbContext _db;
     private readonly IOrganizationContext _orgContext;
 
-    public TranslatorTools(TranslationMemoryService memory, AppDbContext db, IOrganizationContext orgContext)
+    public TranslatorTools(
+        TranslationMemoryService memory,
+        MachineTranslationService machineTranslation,
+        AppDbContext db,
+        IOrganizationContext orgContext)
     {
         _memory = memory;
+        _machineTranslation = machineTranslation;
         _db = db;
         _orgContext = orgContext;
     }
@@ -50,6 +56,32 @@ public sealed class TranslatorTools
         return res.Items.Select(e => new TranslationMemoryHit(
             e.Id, e.SourceLanguage, e.TargetLanguage, e.SourceText, e.TargetText,
             e.Kind, e.Origin, e.Score, e.HitCount, e.IsDeleted)).ToList();
+    }
+
+    [McpServerTool(Name = "machine_translate", ReadOnly = true)]
+    [Description("Translates a string with the organisation's configured third-party machine-translation provider (e.g. DeepL), if one is set up. Use it to draft a target for a source string that has no good translation-memory match. Pass the developer note or field context to improve domain accuracy. Returns the translated text, the provider name, and the detected source language. Errors if the org hasn't configured machine translation.")]
+    public async Task<MachineTranslationResult> MachineTranslateAsync(
+        [Description("The source text to translate.")] string sourceText,
+        [Description("Target language (BCP-47, e.g. 'da-DK').")] string targetLanguage,
+        [Description("Optional source language (BCP-47, e.g. 'en-US'). Omit to let the provider auto-detect.")] string? sourceLanguage = null,
+        [Description("Optional context hint (developer note / field caption) to disambiguate domain terms.")] string? context = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourceText))
+        {
+            throw new McpException("sourceText is required.");
+        }
+        if (string.IsNullOrWhiteSpace(targetLanguage))
+        {
+            throw new McpException("targetLanguage is required.");
+        }
+
+        var result = await _machineTranslation.TranslateAsync(sourceText, sourceLanguage, targetLanguage, context, ct);
+        if (result is null)
+        {
+            throw new McpException("Machine translation is not configured for this organisation. An admin can enable it under Administration · Translation.");
+        }
+        return new MachineTranslationResult(result.TargetText, result.ProviderName, result.DetectedSourceLanguage);
     }
 
     [McpServerTool(Name = "vote_translation", ReadOnly = false, Idempotent = true)]
@@ -126,6 +158,9 @@ public sealed record TranslationMemoryHit(
     int Score,
     int HitCount,
     bool Removed);
+
+/// <summary>Result of <c>machine_translate</c>.</summary>
+public sealed record MachineTranslationResult(string TargetText, string Provider, string? DetectedSourceLanguage);
 
 /// <summary>Result of <c>vote_translation</c>.</summary>
 public sealed record TranslationVoteResult(long EntryId, int Score, int MyVote);

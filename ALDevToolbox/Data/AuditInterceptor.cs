@@ -260,6 +260,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         var hashRecipeContent = entry.Entity is RecipeFile or RecipeSuggestionFile;
         var hashAssetBytes = entry.Entity is OrganizationAsset;
         var redactSmtpPassword = entry.Entity is SystemSettings;
+        var redactMtApiKey = entry.Entity is OrganizationSettings;
         foreach (var property in entry.OriginalValues.Properties)
         {
             var value = entry.OriginalValues[property.Name];
@@ -276,6 +277,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
                 dict["ContentSha256"] = Sha256Bytes(bytes);
             }
             else if (redactSmtpPassword && property.Name == nameof(SystemSettings.SmtpPasswordEncrypted))
+            {
+                dict[property.Name] = value is null ? null : "[redacted]";
+            }
+            else if (redactMtApiKey && property.Name == nameof(OrganizationSettings.MachineTranslationApiKeyEncrypted))
             {
                 dict[property.Name] = value is null ? null : "[redacted]";
             }

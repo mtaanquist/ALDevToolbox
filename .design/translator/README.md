@@ -169,7 +169,7 @@ The target language in the header is a custom dropdown (used for setting languag
 - Source format is **XLIFF v1.2** (`.xlf`). Each `<trans-unit>` has source, optional target, a `state`, and notes (the developer/context note shown in the editor).
 - **Translation memory** suggestions come from base apps (Microsoft.*) **and** the user's own extensions/prior translations, with a similarity score. The `origin` string and `sim` number drive the suggestion UI.
 - Export round-trips back to a valid `.xlf` preserving structure.
-- **Phase 3 LLM assist (BYOK) is intentionally OUT of scope** for this design — do not build it; just don't preclude it.
+- **Phase 3 machine-translation assist (BYOK) shipped.** Per-tenant third-party machine translation behind `IMachineTranslationProvider` + `MachineTranslationProviderFactory` (modelled on the off-site storage provider pattern), DeepL first. An org admin configures it under **Administration → Translation**: an encrypted API key (Data Protection key ring) and an `MtTrigger` mode — `Off` (default), `OnDemand`, `AutoWhenNoExactMatch`, or `AlwaysAuto`. Results surface as suggestion chips with an **MT** badge, ranked below memory/in-file matches, and never bulk-applied by "Pre-translate from memory". The AL developer note / kind is passed as the provider's context hint. Exposed to agents via the `machine_translate` MCP tool. There's no universal MT wire protocol, so swappability lives in the provider interface, not an adopted standard.
 
 ---
 
