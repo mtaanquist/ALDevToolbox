@@ -262,6 +262,47 @@
                 </li>
                 <li>Save the tool, then <strong>Publish</strong> the agent.</li>
             </ol>
+            <p>
+                <strong>If the tool list comes back empty</strong> — Copilot Studio builds a
+                <em>custom connector</em> behind that tool, and its auto-generated OpenAPI
+                definition usually needs two fixes before it can talk to a .NET MCP server.
+                Open <strong>Power Apps &rarr; Custom connectors</strong> (in the same
+                environment as your agent — this is a different page from <em>Connections</em>,
+                which you can't edit), edit the AL Dev Toolbox connector, and switch on the
+                <strong>Swagger editor</strong>:
+            </p>
+            <ul>
+                <li>
+                    Make sure the operation path is <code>/mcp</code>, not <code>/</code>. The
+                    request URL is <code>host</code> + path, so a path of <code>/</code> posts
+                    to the app root and never reaches the MCP endpoint — OAuth succeeds but no
+                    request ever shows up at <code>/mcp</code>.
+                </li>
+                <li>
+                    Add a <code>produces</code> list with <strong>both</strong>
+                    <code>application/json</code> and <code>text/event-stream</code>. The
+                    server replies over an event stream, and the connector has to advertise it
+                    both <em>accepts</em> one (or the server returns <code>406 Not
+                    Acceptable</code>) and knows how to <em>parse</em> one.
+                </li>
+            </ul>
+            <pre><code>paths:
+  /mcp:
+    post:
+      operationId: InvokeServer
+      x-ms-agentic-protocol: mcp-streamable-1.0
+      produces:
+        - application/json
+        - text/event-stream
+      responses:
+        '200':
+          description: Immediate Response</code></pre>
+            <p class="muted">
+                There's no UI toggle for either of these — they live in the Swagger/YAML.
+                After saving, update the connector, then reconnect the tool in your agent and
+                reload. You should see <code>initialize</code> followed by
+                <code>tools/list</code> reach the server.
+            </p>
             <p class="muted">
                 The agent acts as the user who issued the token — same organisation, same
                 role — regardless of which Copilot channel it's surfaced in.
@@ -380,6 +421,16 @@
                 Reload the assistant after adding the connector. Verify the URL by visiting
                 <code>https://YOUR-SERVER/mcp</code> in your browser (you'll see a 401 with
                 <em>WWW-Authenticate</em> — that's the right response, not an error).
+            </dd>
+            <dt>"Connector request failed" / no tools load (Copilot Studio)</dt>
+            <dd>
+                The custom connector behind the MCP tool needs its Swagger fixed: the
+                operation path must be <code>/mcp</code> (not <code>/</code>), and its
+                <code>produces</code> list must include both <code>application/json</code>
+                and <code>text/event-stream</code>. A path of <code>/</code> never reaches
+                the MCP endpoint; a missing event-stream type makes the server answer
+                <code>406 Not Acceptable</code> before any tool runs. See the Microsoft 365
+                Copilot / Copilot Studio section above for the snippet.
             </dd>
             <dt>"Tool calls fail with field validation errors"</dt>
             <dd>
