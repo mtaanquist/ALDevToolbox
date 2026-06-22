@@ -41,7 +41,7 @@ SiteAdmins toggle MCP availability on `/site-admin/settings`; each org can opt o
 
 ## Quickstart
 
-The shortest path is the compose stack:
+The shortest path is the compose stack. The repo's [`compose.yml`](./compose.yml) defaults to the published GHCR image, so a plain `up` pulls and runs it — no local build:
 
 ```bash
 # From the repo root.
@@ -49,10 +49,12 @@ HOST_PORT=8080 \
 POSTGRES_PASSWORD=$(openssl rand -hex 16) \
 BOOTSTRAP_ADMIN_EMAIL=admin@example.com \
 BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars \
-docker compose up --build
+docker compose up
 ```
 
 This brings up Postgres and the app, runs migrations, ensures the singleton **system org** (`Default`, flagged `IsSystem = true` — the canonical templates other orgs fork from) exists, and creates the bootstrap admin on a fresh database. Visit <http://localhost:8080> and sign in with the bootstrap credentials.
+
+Pin a specific release with `ALDEVTOOLBOX_TAG` (e.g. `ALDEVTOOLBOX_TAG=6.0.0`); it defaults to `latest`. To **build from source** instead, comment out `image:` and uncomment `build: .` on the `aldevtoolbox` service in `compose.yml`, then run `docker compose up --build`.
 
 The operator runbook in [`docs/operator-runbook.md`](./docs/operator-runbook.md) covers every other deployment flow — fresh deploy, backup and restore, SMTP rotation, SiteAdmin promotion, key-ring recovery.
 
@@ -120,109 +122,79 @@ Required for signup notifications and password-reset emails. With SMTP unconfigu
 | `SMTP_FROM`            | The `From:` address on outbound mail.                    |
 | `SMTP_USE_STARTTLS`    | `true` to upgrade the connection with STARTTLS.          |
 
-SMTP can also be configured at runtime on `/site-admin/settings`; the password is encrypted with the Data Protection key ring.
+SMTP can also be configured at runtime on `/site-admin/settings` (the env vars are a pre-DB fallback); the password is encrypted with the Data Protection key ring. Configuring SMTP also changes signup: `/signup` switches to an **email-first verified flow** (the visitor confirms a one-time link/code before the account is created). With SMTP unset, signup falls back to the single-form path with no email verification.
 
 ## Run in Docker
 
 ```bash
-# Build and start the stack; the database persists in the named pg-data volume.
+# Pull and start the stack; the database persists in the named pg-data volume.
 HOST_PORT=8080 \
 POSTGRES_PASSWORD=$(openssl rand -hex 16) \
 BOOTSTRAP_ADMIN_EMAIL=admin@example.com \
 BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars \
-docker compose up --build
+docker compose up -d
 ```
 
-The container terminates HTTP only — run TLS at a reverse proxy. `app.UseForwardedHeaders()` is wired so cookies pick up `Secure` correctly behind a proxy.
+The container terminates HTTP only — run TLS at a reverse proxy. `app.UseForwardedHeaders()` is wired so cookies pick up `Secure` correctly behind a proxy. The stack ships sensible CPU/memory ceilings in `compose.yml`; note the app limit is **4 GiB** because Object Explorer ingestion of Microsoft's Base Application peaks at 2–3 GiB of heap (1 GiB OOMs). Lower it only if you won't import large symbol packages.
 
 | Variable                                      | Purpose                                                   | Default                |
 |-----------------------------------------------|-----------------------------------------------------------|------------------------|
-| `BOOTSTRAP_ADMIN_EMAIL`                       | First admin email (only on a fresh database)              | none                   |
-| `BOOTSTRAP_ADMIN_PASSWORD`                    | First admin password (only on a fresh database)           | none                   |
+| `ALDEVTOOLBOX_TAG`                            | Image tag the `aldevtoolbox` service pulls from GHCR.     | `latest`               |
+| `BOOTSTRAP_ADMIN_EMAIL`                       | First admin email. Read once on a fresh database (no users yet); ignored after. | none |
+| `BOOTSTRAP_ADMIN_PASSWORD`                    | First admin password. Same fresh-database-only rule.      | none                   |
 | `ConnectionStrings__DefaultConnection`        | Postgres connection string (Npgsql format). Built from `POSTGRES_*` by compose. | none — required |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Read by the `db` compose service. Set at least `POSTGRES_PASSWORD`. | `aldevtoolbox` |
+| `SINGLE_TENANT_MODE`                          | `1` to run as a single-organisation install (see below).  | `0` (multi-tenant)     |
+| `SINGLE_TENANT_ORG_NAME` / `SINGLE_TENANT_ORG_SLUG` / `SINGLE_TENANT_EMAIL_DOMAINS` | First-run-only seeding for the lone org in single-tenant mode. | none |
 | `DATA_PROTECTION_KEY_DIR`                     | Where the Data Protection key ring lives (cookie auth keys, SMTP-password ciphertext). Mounted on the `app-keys` volume. | `/var/lib/aldevtoolbox/dp-keys` |
-| `BACKUPS_DIR`                                 | Where `pg_dump` files land (mounted on the `app-backups` volume) | `/var/lib/aldevtoolbox/backups` |
-| `DISABLE_BACKUP_SCHEDULER`                    | `1` to disable the daily backup scheduler (tests / CI)    | unset                  |
-| `AUTH_WEBAUTHN_RP_ID` / `AUTH_WEBAUTHN_ORIGINS` | Passkey relying-party id and comma-separated allowed origins. Leave blank to disable the passkey UI. | unset |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD_FILE` / `SMTP_FROM` / `SMTP_USE_STARTTLS` | SMTP relay used for signup and password-reset emails | none |
-| `ASPNETCORE_URLS`                             | Standard ASP.NET Core binding                             | `http://+:8080`        |
-| `ASPNETCORE_ENVIRONMENT`                      | Standard ASP.NET Core environment                         | `Production`           |
+| `BACKUPS_DIR`                                 | Where `pg_dump` files land (mounted on the `app-backups` volume). | `/var/lib/aldevtoolbox/backups` |
+| `DISABLE_BACKUP_SCHEDULER`                    | `1` to disable the daily `pg_dump` (+ per-tenant snapshot) scheduler. | unset            |
+| `DISABLE_OE_VACUUM_SCHEDULER`                 | `1` to disable the nightly VACUUM over Object Explorer tables. | unset               |
+| `DISABLE_USAGE_SNAPSHOT_SCHEDULER`            | `1` to disable the 15-minute storage-usage snapshots.     | unset                  |
+| `AUTH_WEBAUTHN_RP_ID` / `AUTH_WEBAUTHN_ORIGINS` | Passkey relying-party id and comma-separated `https://` origins. Leave blank to disable the passkey UI. | unset |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD_FILE` / `SMTP_FROM` / `SMTP_USE_STARTTLS` | SMTP relay used for signup and password-reset emails. | none |
+| `PG_DUMP_PATH` / `PG_RESTORE_PATH`            | Override only if the Postgres client binaries aren't on `PATH`. | on `PATH` in the image |
+| `OAUTH_KEY_DIR`                               | MCP OAuth signing-key directory.                          | `DATA_PROTECTION_KEY_DIR` |
+| `ASPNETCORE_URLS`                             | Standard ASP.NET Core binding.                            | `http://+:8080`        |
+| `ASPNETCORE_ENVIRONMENT`                      | Standard ASP.NET Core environment.                        | `Production`           |
 
-A fuller, annotated set of variables lives in [`.env-sample`](./.env-sample). Upgrading from a v1 (SQLite) deployment? See [`.design/migrating-from-sqlite.md`](./.design/migrating-from-sqlite.md).
+The annotated, copy-to-`.env` reference for all of these lives in [`.env-sample`](./.env-sample). Upgrading from a v1 (SQLite) deployment? See [`.design/migrating-from-sqlite.md`](./.design/migrating-from-sqlite.md).
 
-### Deploy from the published image
+## Single-tenant vs multi-tenant
 
-The compose stack above builds from source (`build: .`). For a deployment you don't need to build locally — releases are published to the GitHub Container Registry as `ghcr.io/mtaanquist/aldevtoolbox`. Each `vX.Y.Z` tag publishes the exact version plus moving `latest`, major (e.g. `6`), and minor (`6.0`) tags, so you can pin as loosely or tightly as you like. (Release versioning follows "one major per shipped tool" — see [`CLAUDE.md`](./CLAUDE.md) under *Releases and image publishing*.)
+By default the app is **multi-tenant**: organisations are isolated by an EF query filter, new-org signups auto-provision an org, and SiteAdmins manage storage quotas and per-tenant snapshots across all of them.
 
-Drop a `compose.yaml` next to a `.env` and run `docker compose up -d`. It's the same shape as the repo's [`compose.yml`](./compose.yml) with `build: .` swapped for `image: ghcr.io/mtaanquist/aldevtoolbox:latest`:
+Set `SINGLE_TENANT_MODE=1` when one company hosts the toolbox for itself. The multi-tenant machinery becomes noise in that shape, so the flag **hides and disables** it:
 
-```yaml
-services:
-  db:
-    image: postgres:18-alpine
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-aldevtoolbox}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a strong password}
-      POSTGRES_DB: ${POSTGRES_DB:-aldevtoolbox}
-    volumes:
-      # Mount the parent, not .../data — postgres:18 keeps data under
-      # /var/lib/postgresql/<major>/docker/ so in-place pg_upgrade works.
-      - pg-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aldevtoolbox} -d ${POSTGRES_DB:-aldevtoolbox}"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 30s
-    restart: unless-stopped
+- **Storage quotas** are gone — the settings tab, the per-org Storage page, the sidebar capacity bar, and the usage-snapshot scheduler are all removed, and no write is ever silently blocked.
+- **Per-tenant snapshots** are gone; the system-level `pg_dump` backups keep running.
+- **Signup** no longer offers org creation — existing-org onboarding (claimed email domain, admin invite) still works.
 
-  aldevtoolbox:
-    # Pin a release (e.g. ghcr.io/mtaanquist/aldevtoolbox:6.0.0) for
-    # reproducible deploys; :latest or :6 follow newer releases automatically.
-    image: ghcr.io/mtaanquist/aldevtoolbox:latest
-    depends_on:
-      db:
-        condition: service_healthy
-    ports:
-      - "${HOST_PORT:-8080}:8080"
-    environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:-aldevtoolbox};Username=${POSTGRES_USER:-aldevtoolbox};Password=${POSTGRES_PASSWORD}"
-      # Read once on a fresh database; ignored after the first user exists.
-      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
-      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
-      DATA_PROTECTION_KEY_DIR: /var/lib/aldevtoolbox/dp-keys
-      BACKUPS_DIR: /var/lib/aldevtoolbox/backups
-      # Passkeys — leave blank to disable the WebAuthn UI.
-      Auth__WebAuthn__RpId: ${AUTH_WEBAUTHN_RP_ID:-}
-      Auth__WebAuthn__OriginsCsv: ${AUTH_WEBAUTHN_ORIGINS:-}
-    volumes:
-      - app-keys:/var/lib/aldevtoolbox/dp-keys
-      - app-backups:/var/lib/aldevtoolbox/backups
-    # The image already declares a HEALTHCHECK against /healthz; compose picks
-    # it up automatically.
-    restart: unless-stopped
+The lone organisation *is* the Default/system org, so its Administration and template-authoring pages (normally hidden in the system org) are surfaced so it can manage its own content. On a fresh database — the same window the bootstrap admin uses — `SINGLE_TENANT_ORG_NAME`, `SINGLE_TENANT_ORG_SLUG`, and `SINGLE_TENANT_EMAIL_DOMAINS` seed the org's name, slug, and claimed email domains; a seeded domain turns on auto-join for verified (SMTP) signups from it. These vars are ignored after first run — later edits go through `/admin/administration/identity`.
 
-volumes:
-  pg-data:
-  app-keys:
-  app-backups:
-```
+> **One-way switch.** Single-tenant is a deployment-time choice read once at boot. Because the single tenant is the system org and self-service org creation is off, there is **no in-place path back to multi-tenant** — stand up a fresh install if you need it. The flag does *not* relax tenant isolation; it only removes surfaces. See [`.design/deployment.md`](./.design/deployment.md).
+
+## Releases and published images
+
+Releases are published to the GitHub Container Registry as `ghcr.io/mtaanquist/aldevtoolbox`. Each `vX.Y.Z` tag publishes the exact version plus moving `latest`, major (e.g. `6`), and minor (`6.0`) tags, so you can pin as loosely or tightly as you like. (Release versioning follows "one major per shipped tool" — see [`CLAUDE.md`](./CLAUDE.md) under *Releases and image publishing*.)
+
+The repo's [`compose.yml`](./compose.yml) already deploys from these images — the `aldevtoolbox` service is `image: ghcr.io/mtaanquist/aldevtoolbox:${ALDEVTOOLBOX_TAG:-latest}`. So a production deployment is just that file plus a `.env`:
 
 ```bash
-# .env in the same directory — at minimum set the password and bootstrap admin.
-cat > .env <<'EOF'
-POSTGRES_PASSWORD=change-me-to-something-strong
-BOOTSTRAP_ADMIN_EMAIL=admin@example.com
-BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars
-EOF
+# Copy the annotated sample and fill in the essentials.
+cp .env-sample .env
+#   POSTGRES_PASSWORD=change-me-to-something-strong
+#   BOOTSTRAP_ADMIN_EMAIL=admin@example.com
+#   BOOTSTRAP_ADMIN_PASSWORD=letmein-its-12-chars
+#   ALDEVTOOLBOX_TAG=6.0.0        # optional — pin a release; defaults to latest
 
 docker compose up -d
-docker compose pull   # later: grab the newest :latest (or :6) and recreate
+docker compose pull && docker compose up -d   # later: grab a newer image and recreate
 ```
 
-### HTTPS with Caddy (optional)
+To build the image locally instead of pulling it, comment out `image:` and uncomment `build: .` on the `aldevtoolbox` service, then `docker compose up --build`.
+
+## HTTPS with Caddy (optional)
 
 [`compose.yml`](./compose.yml) ships an optional, commented-out `caddy` service that fronts the app on ports 80/443 and provisions Let's Encrypt certificates automatically. Bring-your-own Traefik/nginx still works — this is just a batteries-included path. To enable it (one-time setup):
 
