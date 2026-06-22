@@ -761,7 +761,9 @@ public static class AppPackageReader
     /// </list>
     /// All four flatten to <c>src/Codeunits/Foo.al</c> so symbol-package
     /// <c>ReferenceSourceFileName</c> lookups land on the same key
-    /// regardless of where the file originally came from.
+    /// regardless of where the file originally came from. Percent-encoded
+    /// filenames are decoded (see <see cref="DecodePercentEncoding"/>) so a
+    /// space-bearing object name reads cleanly in the file viewer.
     /// </summary>
     public static string CanonicalizeSourcePath(string fullName)
     {
@@ -783,7 +785,47 @@ public static class AppPackageReader
             fullName = fullName.Substring(4);
         }
 
-        return "src/" + fullName;
+        return "src/" + DecodePercentEncoding(fullName);
+    }
+
+    /// <summary>
+    /// Decodes percent-encoded characters in a path so the stored value reads
+    /// cleanly. Some publishers ship the embedded <c>src/</c> tree with
+    /// URL-encoded filenames: Tasklet's Mobile WMS double-encodes spaces as
+    /// <c>%2520</c> (i.e. <c>%25</c> + <c>20</c>), while BC's own
+    /// <c>ReferenceSourceFileName</c> single-encodes them as <c>%20</c>; a
+    /// paired <c>.Source.zip</c> ships clean names. Decoding here normalises all
+    /// of them to the same human-readable shape (e.g.
+    /// <c>Command XML Management.Codeunit.al</c>) rather than surfacing
+    /// <c>Command%2520XML%2520Management.Codeunit.al</c> in the file viewer.
+    /// See GitHub issue #337.
+    /// <para>Done per segment (split on <c>/</c>) so an encoded slash inside a
+    /// filename can't fabricate a directory boundary, and repeated until the
+    /// segment stops changing (bounded) to peel both single- and double-encoded
+    /// layers. Clean segments carry no <c>%</c> and pass through untouched. AL
+    /// object names — the source of these filenames — never contain a literal
+    /// <c>%</c>, so there's nothing to over-decode in practice.</para>
+    /// </summary>
+    private static string DecodePercentEncoding(string path)
+    {
+        // Fast path: the common (clean / Source.zip) case has nothing encoded.
+        if (!path.Contains('%', StringComparison.Ordinal)) return path;
+
+        var segments = path.Split('/');
+        for (var i = 0; i < segments.Length; i++)
+        {
+            var segment = segments[i];
+            // Peel encoding layers: "%2520" → "%20" → " ". Bounded so a
+            // pathological input can't spin; two layers is the most we've seen.
+            for (var pass = 0; pass < 5 && segment.Contains('%', StringComparison.Ordinal); pass++)
+            {
+                var decoded = Uri.UnescapeDataString(segment);
+                if (string.Equals(decoded, segment, StringComparison.Ordinal)) break;
+                segment = decoded;
+            }
+            segments[i] = segment;
+        }
+        return string.Join('/', segments);
     }
 
     // ── Raw deserialisation shapes (internal) ──────────────────────────

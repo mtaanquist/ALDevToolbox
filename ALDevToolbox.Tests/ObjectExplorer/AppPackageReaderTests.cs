@@ -672,6 +672,11 @@ public sealed class AppPackageReaderTests
     [InlineData("Base Application/src/Codeunits/Foo.al",    "src/Codeunits/Foo.al")]
     [InlineData("Microsoft_Base Application/src/Foo.al",    "src/Foo.al")]
     [InlineData("src\\Codeunits\\Foo.al",                  "src/Codeunits/Foo.al")]
+    // Percent-encoded filenames decode to their clean form. Single-encoded
+    // "%20" (BC's own ReferenceSourceFileName) and double-encoded "%2520"
+    // (Tasklet's Mobile WMS embedded src/) both land on the space-bearing name.
+    [InlineData("Codeunit/Sales%20Header.Codeunit.al",     "src/Codeunit/Sales Header.Codeunit.al")]
+    [InlineData("src/src/Codeunit/Command%2520XML%2520Management.Codeunit.al", "src/Codeunit/Command XML Management.Codeunit.al")]
     public void CanonicalizeSourcePath_flattens_every_known_layout(string input, string expected)
     {
         // Pins the four-plus shapes BC has shipped in the wild:
@@ -680,6 +685,7 @@ public sealed class AppPackageReaderTests
         //   - "Codeunits/Foo.al" (partner Source.zip without src/)
         //   - "<Project>/src/..." (BC 28.x first-party Source.zip wrapper)
         //   - back-slashed paths from Windows-zipped uploads
+        //   - percent-encoded filenames (single "%20" and double "%2520")
         // All flatten to the canonical "src/..." key so the importer's
         // ReferenceSourceFileName lookup is shape-agnostic.
         AppPackageReader.CanonicalizeSourcePath(input).Should().Be(expected);
