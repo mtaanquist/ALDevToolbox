@@ -13,9 +13,9 @@ namespace ALDevToolbox.Tests.Components;
 
 /// <summary>
 /// Smoke test for the application-version catalogue editor. Same shape as
-/// AdminCatalogTests — empty state + populated state — plus the key
-/// <c>pattern=</c> mirror of the server's "lowercase letters, digits,
-/// hyphens" rule.
+/// AdminCatalogTests — a permanent blank ghost row as the add affordance plus a
+/// populated state — plus the key <c>pattern=</c> mirror of the server's
+/// "lowercase letters, digits, hyphens" rule.
 /// </summary>
 public sealed class AdminApplicationVersionsTests : IDisposable
 {
@@ -49,14 +49,16 @@ public sealed class AdminApplicationVersionsTests : IDisposable
     }
 
     [Fact]
-    public void Empty_catalogue_renders_the_recovery_message_naming_the_add_button()
+    public void Empty_catalogue_renders_a_single_blank_ghost_row_and_no_add_button()
     {
         var cut = _ctx.RenderComponent<AdminApplicationVersions>();
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("No application versions");
-            cut.Markup.Should().Contain("Add row");
+            cut.FindAll("tbody tr").Should().HaveCount(1,
+                "an empty catalogue still shows the always-present blank ghost row");
+            cut.FindAll("button").Any(b => b.TextContent.Contains("Add row"))
+                .Should().BeFalse("the explicit Add button was replaced by the inline ghost row");
         });
     }
 
@@ -94,8 +96,9 @@ public sealed class AdminApplicationVersionsTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
+            // Two seeded rows plus the always-present trailing ghost row.
             var rows = cut.FindAll("tbody tr");
-            rows.Should().HaveCount(2);
+            rows.Should().HaveCount(3);
 
             var keyInput = cut.Find("tbody tr td input[type=text]");
             keyInput.HasAttribute("pattern").Should().BeTrue();

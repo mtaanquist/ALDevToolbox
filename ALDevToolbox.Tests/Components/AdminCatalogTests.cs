@@ -13,10 +13,10 @@ namespace ALDevToolbox.Tests.Components;
 
 /// <summary>
 /// Smoke test for the well-known dependency catalogue editor — a table where
-/// each entry is one row of inline inputs and the empty state names the
-/// "Add row" recovery action. The test also pins the GUID <c>pattern=</c>
-/// attribute on the DepId input, since that's the HTML mirror of the
-/// server-side validation rule.
+/// each entry is one row of inline inputs and a permanent blank "ghost" row at
+/// the bottom is the add affordance (typing in it spawns the next blank row).
+/// The test also pins the GUID <c>pattern=</c> attribute on the DepId input,
+/// since that's the HTML mirror of the server-side validation rule.
 /// </summary>
 public sealed class AdminCatalogTests : IDisposable
 {
@@ -50,16 +50,17 @@ public sealed class AdminCatalogTests : IDisposable
     }
 
     [Fact]
-    public void Empty_catalogue_renders_a_recovery_message_pointing_at_the_add_button()
+    public void Empty_catalogue_renders_a_single_blank_ghost_row_and_no_add_button()
     {
         var cut = _ctx.RenderComponent<AdminCatalog>();
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("No catalogue entries");
-            cut.Markup.Should().Contain("Add row",
-                "the empty-state copy must name the recovery action — the same "
-                + "button is rendered in the toolbar above the empty message");
+            cut.FindAll("tbody tr").Should().HaveCount(1,
+                "an empty catalogue still shows the always-present blank ghost row "
+                + "as the add affordance");
+            cut.FindAll("button").Any(b => b.TextContent.Contains("Add row"))
+                .Should().BeFalse("the explicit Add button was replaced by the inline ghost row");
         });
     }
 
@@ -79,8 +80,9 @@ public sealed class AdminCatalogTests : IDisposable
 
         cut.WaitForAssertion(() =>
         {
+            // Two seeded rows plus the always-present trailing ghost row.
             var rows = cut.FindAll("tbody tr");
-            rows.Should().HaveCount(2);
+            rows.Should().HaveCount(3);
 
             // The first text input on each row is the DepId. It must carry
             // the GUID pattern so the browser surfaces the same rule the
@@ -94,35 +96,26 @@ public sealed class AdminCatalogTests : IDisposable
     }
 
     [Fact]
-    public void Submitting_with_an_empty_required_field_renders_FieldError_inline_under_that_field()
+    public void Typing_into_the_ghost_row_then_submitting_shows_inline_errors_for_the_missing_fields()
     {
         // Pins the contract that backs #91: when the service throws a
-        // PlanValidationException with a field-keyed error dictionary, the
-        // page surfaces each message inline via <FieldError>. The test
-        // adds an empty row and submits — every required field on the row
-        // should bounce back with an inline message, plus the
-        // top-of-form summary banner.
+        // PlanValidationException with a field-keyed error dictionary, the page
+        // surfaces each message inline via <FieldError>. With the ghost-row
+        // design a fully-blank row is dropped on save, so we make the row real
+        // by filling one cell (Name) and leave the other required fields empty —
+        // those three should bounce back, but not Name.
         var cut = _ctx.RenderComponent<AdminCatalog>();
 
-        // The form hydrates from the DB on OnInitializedAsync; wait until
-        // the "Add row" button is rendered before interacting.
-        cut.WaitForState(() =>
-            cut.FindAll("button").Any(b => b.TextContent.Contains("Add row")));
+        // Empty catalogue still renders the single blank ghost row.
+        cut.WaitForAssertion(() => cut.FindAll("tbody tr").Should().HaveCount(1));
 
-        cut.FindAll("button")
-            .First(b => b.TextContent.Contains("Add row"))
-            .Click();
+        // Type into the ghost row's Name cell (data-col=1). A fresh ghost
+        // appears below, so the table grows to two rows.
+        cut.Find("tbody tr td input[data-col='1']").Input("ForNAV Core");
+        cut.WaitForAssertion(() => cut.FindAll("tbody tr").Should().HaveCount(2));
 
-        // The new row should now be rendered with all four fields empty.
-        // Click()'s re-render is async, so wait — a bare FindAll races the
-        // renderer and intermittently sees zero rows (CI run 25865334267
-        // failed exactly this way on the same SHA a push-trigger run passed).
-        cut.WaitForAssertion(() =>
-            cut.FindAll("tbody tr").Should().HaveCount(1));
-
-        // Submit the form; CatalogService.SaveAsync collects one error per
-        // missing field and throws PlanValidationException, which the page
-        // catches and stashes in _fieldErrors.
+        // Submit; CatalogService.SaveAsync collects one error per missing
+        // required field on the now-real row and throws PlanValidationException.
         cut.Find("form").Submit();
 
         cut.WaitForAssertion(() =>
@@ -130,10 +123,11 @@ public sealed class AdminCatalogTests : IDisposable
             cut.Markup.Should().Contain("Dependency id is required.",
                 "DepId is empty → CatalogService keys the error under Entries[0].DepId → "
                 + "<FieldError Field='Entries[0].DepId'> renders the message inline");
-            cut.Markup.Should().Contain("Dependency name is required.");
             cut.Markup.Should().Contain("Dependency publisher is required.");
             cut.Markup.Should().Contain("Default version is required.");
-            cut.Markup.Should().Contain("4 validation error(s)",
+            cut.Markup.Should().NotContain("Dependency name is required.",
+                "the Name cell was filled, so only the other three required fields bounce back");
+            cut.Markup.Should().Contain("3 validation error(s)",
                 "the top-of-form summary copy counts the errors so the user "
                 + "knows what to scroll back to");
         });

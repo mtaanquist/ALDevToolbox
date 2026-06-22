@@ -808,6 +808,12 @@
 
 .admin-template-edit__form { max-width: 880px; }
 
+/* The row-table editors (catalogue, application versions) opt into the wider
+   Object Explorer width — their tables have more columns than the structured
+   template form, which keeps the default 880px cap. */
+.admin-page.admin-page--wide { max-width: 1320px; }
+.admin-page--wide .admin-template-edit__form { max-width: none; }
+
 /* Section heading inside the structured form. Gives long pages a scannable
    outline so admins can find Identity / Versioning & ID ranges / Modules /
    Always-included files / Workspace settings overlay / Extensions without
@@ -1149,6 +1155,10 @@ button.pill-tab.pill-tab--active { color: var(--ink); font-weight: 500; }
     background: var(--blue-50);
     box-shadow: inset 3px 0 0 0 var(--blue-700);
 }
+
+/* The trailing "ghost" row is the always-present add placeholder — dim its
+   placeholder text a touch so it reads as the next-entry line, not real data. */
+.row-editor__table.data-table tbody tr.is-ghost input::placeholder { opacity: 0.55; }
 
 /* Inline-cell inputs read as table text until focused. */
 .row-editor__table input[type="text"] {
