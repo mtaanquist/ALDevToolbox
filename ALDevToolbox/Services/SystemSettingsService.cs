@@ -18,6 +18,7 @@ public sealed record SystemSettingsView(
     string? SmtpUser,
     bool HasSmtpPassword,
     string? SmtpFrom,
+    string? SmtpFromName,
     bool? SmtpUseStartTls,
     string? BannerText,
     bool DefaultSignupAutoApprove,
@@ -46,6 +47,7 @@ public sealed record SystemSettingsInput(
     string? SmtpPassword,
     bool ClearSmtpPassword,
     string? SmtpFrom,
+    string? SmtpFromName,
     bool? SmtpUseStartTls,
     string? BannerText,
     bool DefaultSignupAutoApprove,
@@ -122,9 +124,10 @@ public sealed record ResolvedSmtpSettings(
     string? User,
     string? Password,
     string From,
+    string? FromName,
     bool UseStartTls)
 {
-    public static ResolvedSmtpSettings? TryFrom(string? host, int? port, string? user, string? password, string? from, bool? useStartTls)
+    public static ResolvedSmtpSettings? TryFrom(string? host, int? port, string? user, string? password, string? from, string? fromName, bool? useStartTls)
     {
         if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(from)) return null;
         return new ResolvedSmtpSettings(
@@ -133,6 +136,7 @@ public sealed record ResolvedSmtpSettings(
             User: string.IsNullOrEmpty(user) ? null : user,
             Password: string.IsNullOrEmpty(password) ? null : password,
             From: from!,
+            FromName: string.IsNullOrWhiteSpace(fromName) ? null : fromName!.Trim(),
             UseStartTls: useStartTls ?? true);
     }
 }
@@ -203,6 +207,7 @@ public sealed class SystemSettingsService
             SmtpUser: row.SmtpUser,
             HasSmtpPassword: !string.IsNullOrEmpty(row.SmtpPasswordEncrypted),
             SmtpFrom: row.SmtpFrom,
+            SmtpFromName: row.SmtpFromName,
             SmtpUseStartTls: row.SmtpUseStartTls,
             BannerText: row.BannerText,
             DefaultSignupAutoApprove: row.DefaultSignupAutoApprove,
@@ -269,6 +274,7 @@ public sealed class SystemSettingsService
         row.SmtpPort = input.SmtpPort;
         row.SmtpUser = NullIfBlank(input.SmtpUser);
         row.SmtpFrom = NullIfBlank(input.SmtpFrom);
+        row.SmtpFromName = NullIfBlank(input.SmtpFromName);
         row.SmtpUseStartTls = input.SmtpUseStartTls;
         row.BannerText = NullIfBlank(input.BannerText);
         row.DefaultSignupAutoApprove = input.DefaultSignupAutoApprove;
@@ -348,6 +354,7 @@ public sealed class SystemSettingsService
             user: row.SmtpUser,
             password: plaintext,
             from: row.SmtpFrom,
+            fromName: row.SmtpFromName,
             useStartTls: row.SmtpUseStartTls);
     }
 
@@ -358,6 +365,7 @@ public sealed class SystemSettingsService
             user: Environment.GetEnvironmentVariable("SMTP_USER"),
             password: ReadSecret("SMTP_PASSWORD_FILE"),
             from: Environment.GetEnvironmentVariable("SMTP_FROM"),
+            fromName: Environment.GetEnvironmentVariable("SMTP_FROM_NAME"),
             useStartTls: ParseBool(Environment.GetEnvironmentVariable("SMTP_USE_STARTTLS")));
 
     /// <summary>Loads the off-site backup settings for the SiteAdmin form (no plaintext keys).</summary>

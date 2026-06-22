@@ -28,6 +28,13 @@ public class SystemSettings
 
     public string? SmtpFrom { get; set; }
 
+    /// <summary>
+    /// Optional display name paired with <see cref="SmtpFrom"/> on the
+    /// message envelope (e.g. <c>"AL Dev Toolbox" &lt;noreply@example.com&gt;</c>).
+    /// Empty/null sends with the bare address as both name and address.
+    /// </summary>
+    public string? SmtpFromName { get; set; }
+
     public bool? SmtpUseStartTls { get; set; }
 
     /// <summary>Free-text banner displayed at the top of every page when set.</summary>

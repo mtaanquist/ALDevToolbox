@@ -63,6 +63,7 @@ public sealed class SystemSettingsAuditTests : IDisposable
         SmtpPassword: password,
         ClearSmtpPassword: false,
         SmtpFrom: "noreply@example.com",
+        SmtpFromName: null,
         SmtpUseStartTls: true,
         BannerText: null,
         DefaultSignupAutoApprove: false,

@@ -39,6 +39,13 @@ public sealed record SiteAdminAuditRow(
     string? SnapshotJson);
 
 /// <summary>
+/// One page of audit rows plus the total match count, so the SiteAdmin
+/// audit page can render Previous/Next controls without re-running the
+/// query to count.
+/// </summary>
+public sealed record SiteAdminAuditPage(IReadOnlyList<SiteAdminAuditRow> Rows, int Total);
+
+/// <summary>
 /// SiteAdmin (hosting-operator) operations that span organisations. Reads
 /// bypass the per-org EF query filter via <c>IgnoreQueryFilters()</c>;
 /// mutations call <see cref="RequireSiteAdmin"/> so an org-scoped admin
@@ -168,17 +175,19 @@ public sealed class SiteAdminService
     }
 
     /// <summary>
-    /// Cross-organisation audit search. All filter arguments are optional;
-    /// an unfiltered call returns the newest <paramref name="limit"/> rows
-    /// across every organisation.
+    /// Cross-organisation audit search, paginated. All filter arguments are
+    /// optional; an unfiltered call returns the newest activity across every
+    /// organisation. Returns the requested page of rows plus the total match
+    /// count so the caller can render Previous/Next controls.
     /// </summary>
-    public async Task<List<SiteAdminAuditRow>> SearchAuditAsync(
+    public async Task<SiteAdminAuditPage> SearchAuditAsync(
         AuditEntityType? entityType,
         int? organizationId,
         string? actorContains,
         DateTime? fromUtc,
         DateTime? toUtc,
-        int limit = 200,
+        int skip = 0,
+        int take = 100,
         CancellationToken ct = default)
     {
         RequireSiteAdmin();
@@ -194,10 +203,13 @@ public sealed class SiteAdminService
         if (fromUtc is { } from) q = q.Where(e => e.Timestamp >= from);
         if (toUtc is { } to) q = q.Where(e => e.Timestamp <= to);
 
-        return await q
+        var total = await q.CountAsync(ct);
+
+        var rows = await q
             .OrderByDescending(e => e.Timestamp)
             .ThenByDescending(e => e.Id)
-            .Take(limit)
+            .Skip(Math.Max(0, skip))
+            .Take(take)
             .Select(e => new SiteAdminAuditRow(
                 e.Id,
                 e.Timestamp,
@@ -209,6 +221,8 @@ public sealed class SiteAdminService
                 e.Action,
                 e.SnapshotJson))
             .ToListAsync(ct);
+
+        return new SiteAdminAuditPage(rows, total);
     }
 
     /// <summary>List of all organisations for the audit search filter dropdown.</summary>

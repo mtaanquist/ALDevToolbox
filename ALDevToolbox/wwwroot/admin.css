@@ -88,6 +88,19 @@
 
 .audit-page__limit-note { margin-top: 12px; font-size: 12.5px; }
 
+.audit-pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.audit-pager .btn[aria-disabled="true"] {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
 /* Search and filter toolbars used by the SiteAdmin pages. The wider filter
    form wraps onto multiple rows on narrower screens; the search form is an
    input-group: input and button share an edge with no gap so they read as

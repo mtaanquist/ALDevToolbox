@@ -19,6 +19,7 @@ internal static class SettingsInputBuilder
         SmtpPassword = form["SmtpPassword"].ToString(),
         ClearSmtpPassword = IsChecked(form, "ClearSmtpPassword"),
         SmtpFrom = form["SmtpFrom"].ToString(),
+        SmtpFromName = form["SmtpFromName"].ToString(),
         SmtpUseStartTls = form.ContainsKey("SmtpUseStartTls") ? IsChecked(form, "SmtpUseStartTls") : null,
     };
 
@@ -77,6 +78,7 @@ internal static class SettingsInputBuilder
         SmtpPassword: null,
         ClearSmtpPassword: false,
         SmtpFrom: current.SmtpFrom,
+        SmtpFromName: current.SmtpFromName,
         SmtpUseStartTls: current.SmtpUseStartTls,
         BannerText: current.BannerText,
         DefaultSignupAutoApprove: current.DefaultSignupAutoApprove,

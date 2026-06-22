@@ -17,6 +17,7 @@ internal sealed class SystemSettingsConfiguration : IEntityTypeConfiguration<Sys
         entity.Property(e => e.SmtpUser).HasColumnName("smtp_user");
         entity.Property(e => e.SmtpPasswordEncrypted).HasColumnName("smtp_password_encrypted");
         entity.Property(e => e.SmtpFrom).HasColumnName("smtp_from");
+        entity.Property(e => e.SmtpFromName).HasColumnName("smtp_from_name");
         entity.Property(e => e.SmtpUseStartTls).HasColumnName("smtp_use_starttls");
         entity.Property(e => e.BannerText).HasColumnName("banner_text");
         entity.Property(e => e.DefaultSignupAutoApprove).HasColumnName("default_signup_auto_approve").IsRequired();

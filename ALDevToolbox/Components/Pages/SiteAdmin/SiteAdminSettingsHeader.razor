@@ -44,7 +44,7 @@
         {
             new("SMTP",          "/site-admin/settings/smtp",    "mail",            ActiveTab == Tab.Smtp),
             new("Backups",       "/site-admin/settings/backups", "database-backup", ActiveTab == Tab.Backups),
-            new("Off-site (S3)", "/site-admin/settings/offsite", "upload",          ActiveTab == Tab.Offsite),
+            new("Off-site",      "/site-admin/settings/offsite", "upload",          ActiveTab == Tab.Offsite),
         };
         if (!SingleTenant.IsEnabled)
         {
