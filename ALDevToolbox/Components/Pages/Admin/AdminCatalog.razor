@@ -7,7 +7,9 @@
 @using ALDevToolbox.Domain.ValueObjects
 
 @*
-    Flat editor for the well-known dependency catalogue. The whole list is
+    Table editor for the well-known dependency catalogue. Each entry is a single
+    table row of inline inputs (Object Explorer data-table style); reorder, add
+    and remove live in a toolbar that acts on the selected row. The whole list is
     submitted on Save; the service reconciles row by row so unchanged entries
     keep their primary keys and the audit log only records real changes.
 *@
@@ -55,97 +57,123 @@
 
         <form class="form-grid admin-template-edit__form" @onsubmit="SaveAsync" @onsubmit:preventDefault>
             <section class="form-section">
-                <div class="folder-editor__header">
-                    <label class="section-label">Catalogue entries</label>
-                    <button type="button" class="btn btn--sm" @onclick="AddEntry">
-                        <Icon Name="plus" Width="14" Height="14" />
-                        <span>Add entry</span>
-                    </button>
-                </div>
-                @if (_form.Entries.Count == 0)
-                {
-                    <p class="muted">
-                        No catalogue entries. Click <strong>Add entry</strong>
-                        to add the dependencies your team commonly references.
-                    </p>
-                }
-                else
-                {
-                    <div class="folder-editor__list">
-                        @for (var i = 0; i < _form.Entries.Count; i++)
-                        {
-                            var index = i;
-                            var row = _form.Entries[index];
-                            <div class="folder-editor__row app-versions-editor__row">
-                                <div class="folder-editor__row-head app-versions-editor__row-head">
-                                    <div class="folder-editor__order app-versions-editor__order">
-                                        <div class="app-versions-editor__order-row">
-                                            <button type="button" class="btn btn--sm app-versions-editor__order-btn"
-                                                    disabled="@(index == 0)"
-                                                    @onclick="() => MoveEntryToTop(index)" title="Move to top">
-                                                <Icon Name="chevrons-up" Width="12" Height="12" />
-                                            </button>
-                                            <button type="button" class="btn btn--sm app-versions-editor__order-btn"
-                                                    disabled="@(index == 0)"
-                                                    @onclick="() => MoveEntry(index, -1)" title="Move up">
-                                                <Icon Name="chevron-up" Width="12" Height="12" />
-                                            </button>
-                                        </div>
-                                        <div class="app-versions-editor__order-row">
-                                            <button type="button" class="btn btn--sm app-versions-editor__order-btn"
-                                                    disabled="@(index == _form.Entries.Count - 1)"
-                                                    @onclick="() => MoveEntryToBottom(index)" title="Move to bottom">
-                                                <Icon Name="chevrons-down" Width="12" Height="12" />
-                                            </button>
-                                            <button type="button" class="btn btn--sm app-versions-editor__order-btn"
-                                                    disabled="@(index == _form.Entries.Count - 1)"
-                                                    @onclick="() => MoveEntry(index, 1)" title="Move down">
-                                                <Icon Name="chevron-down" Width="12" Height="12" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div class="folder-editor__path app-versions-editor__path">
-                                        <input type="text" required placeholder="GUID (e.g. 12345678-1234-1234-1234-1234567890ab)"
-                                               pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-                                               title="Must be a GUID in 8-4-4-4-12 hex form."
-                                               @bind="row.DepId" @bind:event="oninput" />
-                                        <FieldError Field="@($"Entries[{index}].DepId")" Errors="_fieldErrors" />
-                                    </div>
-                                    <button type="button" class="btn btn--sm btn--danger app-versions-editor__remove"
-                                            @onclick="() => RemoveEntry(index)" title="Remove entry">
-                                        <Icon Name="trash-2" Width="14" Height="14" />
-                                    </button>
-                                </div>
-                                <div class="dep-editor__fields">
-                                    <div>
-                                        <input type="text" required placeholder="Name"
-                                               @bind="row.DepName" @bind:event="oninput" />
-                                        <FieldError Field="@($"Entries[{index}].DepName")" Errors="_fieldErrors" />
-                                    </div>
-                                    <div>
-                                        <input type="text" required placeholder="Publisher"
-                                               @bind="row.DepPublisher" @bind:event="oninput" />
-                                        <FieldError Field="@($"Entries[{index}].DepPublisher")" Errors="_fieldErrors" />
-                                    </div>
-                                    <div>
-                                        <input type="text" required placeholder="Default version (e.g. 1.0.0.0)"
-                                               @bind="row.DepVersionDefault" @bind:event="oninput" />
-                                        <FieldError Field="@($"Entries[{index}].DepVersionDefault")" Errors="_fieldErrors" />
-                                    </div>
-                                    <div>
-                                        <input type="text" placeholder="Category (e.g. Continia)"
-                                               @bind="row.Category" @bind:event="oninput" />
-                                    </div>
-                                </div>
-                            </div>
-                        }
+                <div class="row-editor">
+                    <div class="row-editor__toolbar">
+                        <button type="button" class="btn btn--sm" @onclick="AddEntry">
+                            <Icon Name="plus" Width="14" Height="14" />
+                            <span>Add row</span>
+                        </button>
+                        <span class="row-editor__divider" aria-hidden="true"></span>
+                        <button type="button" class="btn btn--sm" title="Move to top"
+                                disabled="@(SelectedIndex <= 0)"
+                                @onclick="() => MoveEntryToTop(SelectedIndex)">
+                            <Icon Name="chevrons-up" Width="14" Height="14" />
+                        </button>
+                        <button type="button" class="btn btn--sm" title="Move up"
+                                disabled="@(SelectedIndex <= 0)"
+                                @onclick="() => MoveEntry(SelectedIndex, -1)">
+                            <Icon Name="chevron-up" Width="14" Height="14" />
+                        </button>
+                        <button type="button" class="btn btn--sm" title="Move down"
+                                disabled="@(SelectedIndex < 0 || SelectedIndex >= _form.Entries.Count - 1)"
+                                @onclick="() => MoveEntry(SelectedIndex, 1)">
+                            <Icon Name="chevron-down" Width="14" Height="14" />
+                        </button>
+                        <button type="button" class="btn btn--sm" title="Move to bottom"
+                                disabled="@(SelectedIndex < 0 || SelectedIndex >= _form.Entries.Count - 1)"
+                                @onclick="() => MoveEntryToBottom(SelectedIndex)">
+                            <Icon Name="chevrons-down" Width="14" Height="14" />
+                        </button>
+                        <span class="row-editor__divider" aria-hidden="true"></span>
+                        <button type="button" class="btn btn--sm btn--danger" title="Remove selected row"
+                                disabled="@(SelectedIndex < 0)"
+                                @onclick="() => RemoveEntry(SelectedIndex)">
+                            <Icon Name="trash-2" Width="14" Height="14" />
+                            <span>Remove</span>
+                        </button>
                     </div>
-                    <small class="muted">
-                        The default version pre-fills the picker; users can
-                        override it on a per-extension basis. Category groups
-                        items in the picker UI.
-                    </small>
-                }
+
+                    @if (_form.Entries.Count == 0)
+                    {
+                        <p class="muted">
+                            No catalogue entries. Click <strong>Add row</strong>
+                            to add the dependencies your team commonly references.
+                        </p>
+                    }
+                    else
+                    {
+                        <table class="data-table row-editor__table">
+                            <colgroup>
+                                <col class="row-editor__col-guid" />
+                                <col />
+                                <col />
+                                <col class="row-editor__col-version" />
+                                <col class="row-editor__col-category" />
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th scope="col">GUID</th>
+                                    <th scope="col">Name</th>
+                                    <th scope="col">Publisher</th>
+                                    <th scope="col">Default version</th>
+                                    <th scope="col">Category</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (var i = 0; i < _form.Entries.Count; i++)
+                                {
+                                    var index = i;
+                                    var row = _form.Entries[index];
+                                    <tr class="@(row == _selected ? "is-selected" : null)"
+                                        @onfocusin="() => _selected = row">
+                                        <td>
+                                            <input type="text" required placeholder="12345678-1234-1234-1234-1234567890ab"
+                                                   pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                                                   title="Must be a GUID in 8-4-4-4-12 hex form. Press F8 to copy the cell above."
+                                                   @bind="row.DepId" @bind:event="oninput"
+                                                   @onkeydown="e => OnCellKeyDown(e, index, Col.DepId)" />
+                                            <FieldError Field="@($"Entries[{index}].DepId")" Errors="_fieldErrors" />
+                                        </td>
+                                        <td>
+                                            <input type="text" required placeholder="Name"
+                                                   title="Press F8 to copy the cell above."
+                                                   @bind="row.DepName" @bind:event="oninput"
+                                                   @onkeydown="e => OnCellKeyDown(e, index, Col.DepName)" />
+                                            <FieldError Field="@($"Entries[{index}].DepName")" Errors="_fieldErrors" />
+                                        </td>
+                                        <td>
+                                            <input type="text" required placeholder="Publisher"
+                                                   title="Press F8 to copy the cell above."
+                                                   @bind="row.DepPublisher" @bind:event="oninput"
+                                                   @onkeydown="e => OnCellKeyDown(e, index, Col.DepPublisher)" />
+                                            <FieldError Field="@($"Entries[{index}].DepPublisher")" Errors="_fieldErrors" />
+                                        </td>
+                                        <td>
+                                            <input type="text" required placeholder="1.0.0.0"
+                                                   title="Press F8 to copy the cell above."
+                                                   @bind="row.DepVersionDefault" @bind:event="oninput"
+                                                   @onkeydown="e => OnCellKeyDown(e, index, Col.DepVersionDefault)" />
+                                            <FieldError Field="@($"Entries[{index}].DepVersionDefault")" Errors="_fieldErrors" />
+                                        </td>
+                                        <td>
+                                            <input type="text" placeholder="e.g. Continia"
+                                                   title="Press F8 to copy the cell above."
+                                                   @bind="row.Category" @bind:event="oninput"
+                                                   @onkeydown="e => OnCellKeyDown(e, index, Col.Category)" />
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                        <small class="muted">
+                            Click a row to select it, then use the toolbar to move
+                            or remove it. Press <kbd>F8</kbd> in any cell to copy
+                            the value from the row above. The default version
+                            pre-fills the picker; users can override it per
+                            extension. Category groups items in the picker UI.
+                        </small>
+                    }
+                </div>
             </section>
 
             @* Hidden submit so pressing Enter inside an input still triggers
@@ -162,6 +190,16 @@
     private string? _saveSuccess;
     private IReadOnlyDictionary<string, string> _fieldErrors = new Dictionary<string, string>();
 
+    // Tracked by reference (not index) so the highlight follows the row across
+    // reorders — the toolbar acts on whichever row this points at.
+    private EntryRow? _selected;
+
+    private int SelectedIndex =>
+        _selected is null || _form is null ? -1 : _form.Entries.IndexOf(_selected);
+
+    /// <summary>Columns that participate in the F8 "copy cell above" shortcut.</summary>
+    private enum Col { DepId, DepName, DepPublisher, DepVersionDefault, Category }
+
     protected override Task OnInitializedAsync() => ReloadAsync();
 
     private async Task ReloadAsync()
@@ -170,6 +208,7 @@
         _saving = false;
         _saveError = null;
         _saveSuccess = null;
+        _selected = null;
         _fieldErrors = new Dictionary<string, string>();
         StateHasChanged();
         var rows = await Catalog.GetAllAsync();
@@ -178,7 +217,10 @@
 
     private void AddEntry()
     {
-        _form?.Entries.Add(new EntryRow());
+        if (_form is null) return;
+        var row = new EntryRow();
+        _form.Entries.Add(row);
+        _selected = row;
     }
 
     private void RemoveEntry(int index)
@@ -186,6 +228,7 @@
         if (_form is null) return;
         if (index >= 0 && index < _form.Entries.Count)
         {
+            if (_form.Entries[index] == _selected) _selected = null;
             _form.Entries.RemoveAt(index);
         }
     }
@@ -220,6 +263,25 @@
         _form.Entries.Add(row);
     }
 
+    /// <summary>
+    /// Business-Central-style "copy field above" (F8): copies the same column's
+    /// value from the previous row into the focused cell. No-op on the first row.
+    /// </summary>
+    private void OnCellKeyDown(KeyboardEventArgs e, int index, Col col)
+    {
+        if (e.Key != "F8" || _form is null || index <= 0 || index >= _form.Entries.Count) return;
+        var above = _form.Entries[index - 1];
+        var cur = _form.Entries[index];
+        switch (col)
+        {
+            case Col.DepId: cur.DepId = above.DepId; break;
+            case Col.DepName: cur.DepName = above.DepName; break;
+            case Col.DepPublisher: cur.DepPublisher = above.DepPublisher; break;
+            case Col.DepVersionDefault: cur.DepVersionDefault = above.DepVersionDefault; break;
+            case Col.Category: cur.Category = above.Category; break;
+        }
+    }
+
     private async Task SaveAsync()
     {
         if (_form is null || _saving) return;
@@ -237,6 +299,7 @@
             // assigned primary key and ordering reflects the saved state.
             var rows = await Catalog.GetAllAsync();
             _form = FormState.From(rows);
+            _selected = null;
             _saveSuccess = "Saved.";
         }
         catch (PlanValidationException ex)
