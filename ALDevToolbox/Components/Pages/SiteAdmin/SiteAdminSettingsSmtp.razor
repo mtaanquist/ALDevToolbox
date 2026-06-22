@@ -69,6 +69,13 @@
             </div>
             <div class="form-row">
                 <label>
+                    Sender name
+                    <input type="text" name="SmtpFromName" value="@_view.SmtpFromName" placeholder="e.g. AL Dev Toolbox" />
+                    <small class="muted">Shown alongside the from address. Leave blank to send with the bare address.</small>
+                </label>
+            </div>
+            <div class="form-row">
+                <label>
                     New password
                     <input type="password" name="SmtpPassword" value="" autocomplete="new-password"
                            placeholder="@(_view.HasSmtpPassword ? "(leave blank to keep current)" : "set a password")" />

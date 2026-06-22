@@ -157,7 +157,7 @@ public sealed class OAuthMetadataTests : IDisposable
         await svc.SaveAsync(new SystemSettingsInput(
             SmtpHost: null, SmtpPort: null, SmtpUser: null,
             SmtpPassword: null, ClearSmtpPassword: false,
-            SmtpFrom: null, SmtpUseStartTls: null, BannerText: null,
+            SmtpFrom: null, SmtpFromName: null, SmtpUseStartTls: null, BannerText: null,
             DefaultSignupAutoApprove: false,
             BackupScheduleEnabled: true,
             BackupScheduleTimeUtc: new TimeOnly(2, 0),

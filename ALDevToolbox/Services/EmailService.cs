@@ -57,7 +57,15 @@ public sealed class SmtpEmailService : IEmailService
         }
 
         var message = new MimeMessage();
-        message.From.Add(MailboxAddress.Parse(resolved.From));
+        var fromAddress = MailboxAddress.Parse(resolved.From);
+        if (!string.IsNullOrWhiteSpace(resolved.FromName))
+        {
+            // Pair the configured display name with the resolved address so
+            // recipients see "AL Dev Toolbox <noreply@…>" rather than the bare
+            // address acting as its own name.
+            fromAddress = new MailboxAddress(resolved.FromName, fromAddress.Address);
+        }
+        message.From.Add(fromAddress);
         message.To.Add(MailboxAddress.Parse(toEmail));
         message.Subject = subject;
         message.Body = new TextPart("html") { Text = htmlBody };

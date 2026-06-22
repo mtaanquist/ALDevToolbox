@@ -127,6 +127,21 @@ public sealed class SystemSettingsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Save_round_trips_sender_name_through_view_and_resolve()
+    {
+        var svc = NewService();
+        await svc.SaveAsync(NewInput(fromName: "AL Dev Toolbox"));
+
+        var view = await svc.GetViewAsync();
+        view.SmtpFromName.Should().Be("AL Dev Toolbox");
+
+        var resolved = await svc.ResolveSmtpAsync();
+        resolved!.FromName.Should().Be("AL Dev Toolbox",
+            "the resolver carries the sender name through so the email sender "
+            + "can pair it with the from address");
+    }
+
+    [Fact]
     public async Task Save_validates_smtp_port_range()
     {
         var svc = NewService();
@@ -273,6 +288,7 @@ public sealed class SystemSettingsServiceTests : IDisposable
         string? host = "smtp.example.com",
         int? port = 587,
         string? from = "noreply@example.com",
+        string? fromName = null,
         bool clear = false)
         => new(
             SmtpHost: host,
@@ -281,6 +297,7 @@ public sealed class SystemSettingsServiceTests : IDisposable
             SmtpPassword: password,
             ClearSmtpPassword: clear,
             SmtpFrom: from,
+            SmtpFromName: fromName,
             SmtpUseStartTls: true,
             BannerText: null,
             DefaultSignupAutoApprove: false,

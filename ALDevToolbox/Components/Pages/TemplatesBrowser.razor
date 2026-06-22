@@ -28,9 +28,8 @@
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Key</th>
-                    <th>Runtime</th>
                     <th>Name</th>
+                    <th>Runtime</th>
                     <th>Description</th>
                     <th>Extensions</th>
                     <th>Status</th>
@@ -41,9 +40,8 @@
                 @foreach (var t in _templates)
                 {
                     <tr>
-                        <td><code>@t.Key</code></td>
-                        <td>@t.Runtime</td>
                         <td>@t.Name</td>
+                        <td>@t.Runtime</td>
                         <td class="muted">@t.Description</td>
                         <td>@t.WorkspaceExtensions.Count</td>
                         <td>@(t.Deprecated ? "Deprecated" : "Active")</td>
@@ -80,7 +78,6 @@
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Key</th>
                     <th>Name</th>
                     <th>Dependencies</th>
                     <th>Status</th>
@@ -90,7 +87,6 @@
                 @foreach (var m in _modules)
                 {
                     <tr>
-                        <td><code>@m.Key</code></td>
                         <td>@m.Name</td>
                         <td>@m.Dependencies.Count</td>
                         <td>@(m.Deprecated ? "Deprecated" : "Active")</td>

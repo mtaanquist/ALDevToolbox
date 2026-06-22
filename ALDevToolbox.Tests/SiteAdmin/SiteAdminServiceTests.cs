@@ -152,15 +152,58 @@ public sealed class SiteAdminServiceTests : IDisposable
 
         var ctxSearch = _db.NewContext();
         var svc = new SiteAdminService(ctxSearch, NewSiteAdminContext(), NullLogger<SiteAdminService>.Instance);
-        var rows = await svc.SearchAuditAsync(
+        var result = await svc.SearchAuditAsync(
             entityType: AuditEntityType.RuntimeTemplate,
             organizationId: null,
             actorContains: null,
             fromUtc: null,
             toUtc: null);
 
-        rows.Select(r => r.OrganizationId).Where(o => o is not null).Distinct()
+        result.Rows.Select(r => r.OrganizationId).Where(o => o is not null).Distinct()
             .Should().Contain(new int?[] { TestDb.DefaultOrgId, TestDb.OtherOrgId });
+    }
+
+    [Fact]
+    public async Task Audit_search_paginates_and_reports_total()
+    {
+        // Seed five audit rows with increasing timestamps so ordering is
+        // deterministic (newest first).
+        await using (var seed = _db.NewContext())
+        {
+            for (var i = 0; i < 5; i++)
+            {
+                seed.AuditLog.Add(new AuditLogEntry
+                {
+                    OrganizationId = TestDb.DefaultOrgId,
+                    EntityType = AuditEntityType.RuntimeTemplate,
+                    EntityId = i,
+                    Action = AuditAction.Created,
+                    ChangedBy = "alice@example.com",
+                    Timestamp = new DateTime(2026, 5, 14, 10, i, 0, DateTimeKind.Utc),
+                    SnapshotJson = "{}",
+                });
+            }
+            await seed.SaveChangesAsync();
+        }
+
+        var svc = new SiteAdminService(_db.NewContext(), NewSiteAdminContext(), NullLogger<SiteAdminService>.Instance);
+
+        var firstPage = await svc.SearchAuditAsync(
+            entityType: AuditEntityType.RuntimeTemplate,
+            organizationId: null, actorContains: null, fromUtc: null, toUtc: null,
+            skip: 0, take: 2);
+        firstPage.Total.Should().Be(5, "Total counts every match regardless of the page size");
+        firstPage.Rows.Should().HaveCount(2);
+        // Newest first: EntityId 4 then 3.
+        firstPage.Rows.Select(r => r.EntityId).Should().ContainInOrder(4, 3);
+
+        var thirdPage = await svc.SearchAuditAsync(
+            entityType: AuditEntityType.RuntimeTemplate,
+            organizationId: null, actorContains: null, fromUtc: null, toUtc: null,
+            skip: 4, take: 2);
+        thirdPage.Total.Should().Be(5);
+        thirdPage.Rows.Should().HaveCount(1, "the last page holds the remainder");
+        thirdPage.Rows.Single().EntityId.Should().Be(0);
     }
 
     private async Task SeedUsers()

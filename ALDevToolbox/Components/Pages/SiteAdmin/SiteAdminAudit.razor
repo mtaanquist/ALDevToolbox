@@ -121,26 +121,77 @@
             }
             </tbody>
         </table>
+
+        @if (_total > PageSize)
+        {
+            <nav class="audit-pager" aria-label="Audit pagination">
+                @if (_page > 1)
+                {
+                    <a class="btn btn--sm" href="@PageUrl(_page - 1)">Previous</a>
+                }
+                else
+                {
+                    <span class="btn btn--sm" aria-disabled="true">Previous</span>
+                }
+                <span class="muted">Page @_page of @TotalPages · @_total entries</span>
+                @if (_page < TotalPages)
+                {
+                    <a class="btn btn--sm" href="@PageUrl(_page + 1)">Next</a>
+                }
+                else
+                {
+                    <span class="btn btn--sm" aria-disabled="true">Next</span>
+                }
+            </nav>
+        }
     }
 </div>
 
 @code {
+    private const int PageSize = 100;
+
     [SupplyParameterFromQuery(Name = "entityType")] public string? EntityType { get; set; }
     [SupplyParameterFromQuery(Name = "organizationId")] public int? OrganizationId { get; set; }
     [SupplyParameterFromQuery(Name = "actor")] public string? Actor { get; set; }
     [SupplyParameterFromQuery(Name = "from")] public string? FromUtc { get; set; }
     [SupplyParameterFromQuery(Name = "to")] public string? ToUtc { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? Page { get; set; }
 
     private List<SiteAdminAuditRow>? _rows;
     private List<Organization>? _orgs;
+    private int _total;
+    private int _page = 1;
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(_total / (double)PageSize));
 
     protected override async Task OnInitializedAsync()
     {
         _orgs = await SiteAdmin.ListOrganizationsAsync();
+        _page = Page is int p && p > 1 ? p : 1;
         AuditEntityType? entity = Enum.TryParse<AuditEntityType>(EntityType, out var et) ? et : null;
         DateTime? from = DateTime.TryParse(FromUtc, out var f) ? DateTime.SpecifyKind(f, DateTimeKind.Utc) : null;
         DateTime? to = DateTime.TryParse(ToUtc, out var t) ? DateTime.SpecifyKind(t, DateTimeKind.Utc) : null;
-        _rows = await SiteAdmin.SearchAuditAsync(entity, OrganizationId, Actor, from, to);
+        var result = await SiteAdmin.SearchAuditAsync(
+            entity, OrganizationId, Actor, from, to,
+            skip: (_page - 1) * PageSize, take: PageSize);
+        _rows = result.Rows.ToList();
+        _total = result.Total;
     }
 
+    /// <summary>
+    /// Builds a page link that carries over the current filters — the page is
+    /// static SSR, so pagination is plain bookmarkable anchors rather than
+    /// interactive button handlers, matching the GET filter form above.
+    /// </summary>
+    private string PageUrl(int page)
+    {
+        var query = new List<string>();
+        if (!string.IsNullOrEmpty(EntityType)) query.Add($"entityType={Uri.EscapeDataString(EntityType)}");
+        if (OrganizationId is int oid) query.Add($"organizationId={oid}");
+        if (!string.IsNullOrEmpty(Actor)) query.Add($"actor={Uri.EscapeDataString(Actor)}");
+        if (!string.IsNullOrEmpty(FromUtc)) query.Add($"from={Uri.EscapeDataString(FromUtc)}");
+        if (!string.IsNullOrEmpty(ToUtc)) query.Add($"to={Uri.EscapeDataString(ToUtc)}");
+        query.Add($"page={page}");
+        return "/site-admin/audit?" + string.Join("&", query);
+    }
 }
