@@ -114,6 +114,8 @@ This is a small tool. The app container needs ~256MB RAM and 0.5 CPU; the Postgr
 
 The container should *not* terminate TLS itself. Run it behind a reverse proxy (Traefik, nginx, Caddy) that handles certificates. Set `app.UseForwardedHeaders()` to handle the `X-Forwarded-Proto` header so cookies get the `Secure` flag correctly.
 
+For operators who don't already run an ingress, `compose.yml` ships an **optional, commented-out `caddy` service** (with a `Caddyfile` at the repo root) that fronts the app on 80/443 and provisions Let's Encrypt certificates automatically — uncomment it, set `SITE_ADDRESS` + `ACME_EMAIL`, and uncomment the `caddy-data` / `caddy-config` volumes. It's a convenience, not a new fence: bring-your-own Traefik/nginx is unchanged, and the app still terminates HTTP only. Caddy preserves the inbound `Host` header and sets `X-Forwarded-Proto`, so request-derived absolute URLs (email links, OAuth issuer) resolve to the public `https://` domain with no extra config; passkeys still need `Auth__WebAuthn__RpId` / `OriginsCsv` set to that domain. See `README.md` → "HTTPS with Caddy (optional)".
+
 ## What's deliberately not here
 
 - Multi-tenancy. There's one tenant: your team.

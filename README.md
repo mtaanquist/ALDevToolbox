@@ -136,6 +136,20 @@ Upgrading from a v1 (SQLite) deployment? See [`migrating-from-sqlite.md`](./.des
 
 The container terminates HTTP only — run TLS at the reverse proxy. `app.UseForwardedHeaders()` is wired so cookies pick up `Secure` correctly behind a proxy.
 
+### HTTPS with Caddy (optional)
+
+`compose.yml` ships an optional, commented-out `caddy` service that fronts the app on ports 80/443 and provisions Let's Encrypt certificates automatically. Bring-your-own Traefik/nginx still works exactly as before — this is just a batteries-included path. To enable it (a one-time setup):
+
+1. Point a DNS `A`/`AAAA` record at the host and open ports **80** and **443**.
+2. In `.env`, set `SITE_ADDRESS` (your domain) and `ACME_EMAIL` (for Let's Encrypt expiry notices) — both are required once the service is enabled.
+3. Uncomment the `caddy` service **and** the `caddy-data` / `caddy-config` volumes in `compose.yml`.
+4. *(Recommended)* remove the `aldevtoolbox` `ports:` mapping so the app is reachable only through the proxy.
+5. `docker compose up -d`. Caddy issues a cert for `SITE_ADDRESS` and reverse-proxies to the app (gating traffic on `/readyz` until startup finishes). The proxy config lives in the repo's `Caddyfile`.
+
+No public domain handy? Set `SITE_ADDRESS=localhost` (Caddy mints an internal-CA cert — your browser will warn) or `SITE_ADDRESS=:80` (plain HTTP) to exercise the same service locally.
+
+**Email links and passkeys.** Links in outbound emails (signup verification, password reset, invites) are built from the request host, and Caddy preserves it while the app honours `X-Forwarded-Proto` — so they automatically render as `https://<your-domain>/…`. Just make sure users reach the app through the domain, not the raw `:8080` host port. To enable **passkeys** on the domain, set `AUTH_WEBAUTHN_RP_ID` to it and `AUTH_WEBAUTHN_ORIGINS` to `https://<your-domain>`.
+
 ### Deploy from the published image
 
 The compose stack above builds the app from source (`build: .`). For a deployment you don't need to build locally — releases are published to the GitHub Container Registry as `ghcr.io/mtaanquist/aldevtoolbox`. Each `vX.Y.Z` tag publishes the exact version plus moving `latest`, major (`6`), and minor (`6.0`) tags, so you can pin as loosely or tightly as you like. (Release versioning follows "one major per shipped tool" — see [`CLAUDE.md`](./CLAUDE.md) under *Releases and image publishing*.)
@@ -189,10 +203,36 @@ services:
     # it up automatically.
     restart: unless-stopped
 
+  # --- Optional HTTPS reverse proxy (Caddy) ----------------------------------
+  # Uncomment (plus the caddy-data / caddy-config volumes) to terminate TLS with
+  # automatic Let's Encrypt certs. Needs a public domain pointing here, ports
+  # 80 + 443 open, and SITE_ADDRESS + ACME_EMAIL in .env. Drop a `Caddyfile`
+  # next to this compose.yaml (copy it from the repo root). See the README
+  # "HTTPS with Caddy (optional)" section.
+  # caddy:
+  #   image: caddy:2-alpine
+  #   depends_on:
+  #     - aldevtoolbox
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #     - "443:443/udp"   # HTTP/3
+  #   environment:
+  #     SITE_ADDRESS: ${SITE_ADDRESS:?set your domain, e.g. aldevtoolbox.example.com}
+  #     ACME_EMAIL: ${ACME_EMAIL:?set a Let's Encrypt contact email, e.g. ops@example.com}
+  #   volumes:
+  #     - ./Caddyfile:/etc/caddy/Caddyfile:ro
+  #     - caddy-data:/data      # ACME account + issued certs — persist to avoid LE rate limits
+  #     - caddy-config:/config
+  #   restart: unless-stopped
+
 volumes:
   pg-data:
   app-keys:
   app-backups:
+  # Uncomment alongside the optional `caddy` service above.
+  # caddy-data:
+  # caddy-config:
 ```
 
 ```bash

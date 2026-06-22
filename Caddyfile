@@ -1,0 +1,15 @@
+# Used only by the optional `caddy` service in compose.yml (commented out by
+# default). SITE_ADDRESS and ACME_EMAIL come from the container environment.
+# See README "HTTPS with Caddy (optional)".
+{
+	email {$ACME_EMAIL}
+}
+
+{$SITE_ADDRESS} {
+	reverse_proxy aldevtoolbox:8080 {
+		# /readyz is 503 until startup (migrations + seed) finishes, so Caddy
+		# holds traffic off a half-initialised container. See .design/deployment.md.
+		health_uri /readyz
+		health_interval 10s
+	}
+}
