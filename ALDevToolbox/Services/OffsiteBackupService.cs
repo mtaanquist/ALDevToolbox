@@ -1,9 +1,6 @@
-using Amazon;
-using Amazon.Runtime;
-using Amazon.S3;
-using Amazon.S3.Model;
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
+using ALDevToolbox.Services.Offsite;
 using Microsoft.EntityFrameworkCore;
 
 namespace ALDevToolbox.Services;
@@ -11,7 +8,8 @@ namespace ALDevToolbox.Services;
 /// <summary>
 /// Result of <see cref="OffsiteBackupService.TestConnectionAsync"/>. The
 /// settings form renders the message inline so SiteAdmins can verify the
-/// credentials before flipping the schedule on.
+/// credentials before flipping the schedule on. Shared with the storage
+/// providers in <see cref="Offsite"/>, which produce backend-specific messages.
 /// </summary>
 public sealed record OffsiteTestResult(bool Success, string Message);
 
@@ -34,13 +32,22 @@ public sealed record OffsitePerTenantObjectInfo(string Key, string Slug, string 
 
 /// <summary>
 /// Uploads full-database pg_dump backups and per-tenant snapshot ZIPs to
-/// the configured S3-compatible bucket and prunes objects older than
+/// the configured off-site object store and prunes objects older than
 /// <c>OffsiteRetentionDays</c>. Whole-DB dumps live at
 /// <c>&lt;prefix&gt;&lt;filename&gt;</c>; per-tenant snapshots namespace
 /// under <c>&lt;prefix&gt;tenants/&lt;slug&gt;/&lt;filename&gt;</c> so the
 /// two catalogues stay separable and a DR restore can pull either back
 /// down independently. After a whole-deployment loss, the per-tenant
 /// copies are what keeps the "restore one org to yesterday" surface alive.
+///
+/// <para>
+/// The backend (S3-compatible or Azure Blob) is chosen per request from the
+/// resolved settings via <see cref="IOffsiteStorageProviderFactory"/>. This
+/// service owns all orchestration — object-key shapes, <c>.partial</c>
+/// staging, the deployment-id fingerprint gate, retention filtering, and DB
+/// bookkeeping — so both backends behave identically; only the raw transport
+/// lives behind <see cref="IOffsiteStorageProvider"/>.
+/// </para>
 /// </summary>
 public sealed class OffsiteBackupService
 {
@@ -48,16 +55,22 @@ public sealed class OffsiteBackupService
     public const string PerTenantKeyPrefix = "tenants/";
 
     /// <summary>
-    /// S3 user-metadata key (sent as <c>x-amz-meta-deployment-id</c>) stamped
-    /// on whole-DB dumps so a restore can verify the dump came from this
-    /// deployment rather than a neighbour sharing the bucket.
+    /// User-metadata key stamped on whole-DB dumps so a restore can verify the
+    /// dump came from this deployment rather than a neighbour sharing the
+    /// bucket. Providers normalise the key to their backend's rules (S3 sends
+    /// it as <c>x-amz-meta-deployment-id</c>; Azure stores <c>deploymentid</c>)
+    /// and map it back on read, so this canonical form is all the service sees.
     /// </summary>
     public const string DeploymentMetadataKey = "deployment-id";
+
+    /// <summary>Upper bound for the prune listing — effectively "every object under the prefix".</summary>
+    private const int PruneListCap = int.MaxValue;
 
     private readonly AppDbContext _db;
     private readonly SystemSettingsService _systemSettings;
     private readonly BackupService _backups;
     private readonly PerTenantBackupService _perTenantBackups;
+    private readonly IOffsiteStorageProviderFactory _providerFactory;
     private readonly ILogger<OffsiteBackupService> _logger;
     private readonly TimeProvider _clock;
     private readonly DeploymentIdentity _deployment;
@@ -67,6 +80,7 @@ public sealed class OffsiteBackupService
         SystemSettingsService systemSettings,
         BackupService backups,
         PerTenantBackupService perTenantBackups,
+        IOffsiteStorageProviderFactory providerFactory,
         ILogger<OffsiteBackupService> logger,
         TimeProvider clock,
         DeploymentIdentity deployment)
@@ -75,12 +89,13 @@ public sealed class OffsiteBackupService
         _systemSettings = systemSettings;
         _backups = backups;
         _perTenantBackups = perTenantBackups;
+        _providerFactory = providerFactory;
         _logger = logger;
         _clock = clock;
         _deployment = deployment;
     }
 
-    /// <summary>HEADs the configured bucket as a connection test. Returns a structured result for the UI to render inline.</summary>
+    /// <summary>Reachability + auth check against the configured bucket/container. Returns a structured result for the UI to render inline.</summary>
     public async Task<OffsiteTestResult> TestConnectionAsync(CancellationToken ct)
     {
         var settings = await _systemSettings.ResolveOffsiteAsync(ct);
@@ -88,26 +103,21 @@ public sealed class OffsiteBackupService
         {
             return new OffsiteTestResult(false, "Off-site backup is not fully configured. Save the form with credentials and a bucket first.");
         }
+        var provider = _providerFactory.Create(settings);
         try
         {
-            using var client = CreateClient(settings);
-            await client.GetBucketLocationAsync(new GetBucketLocationRequest { BucketName = settings.Bucket }, ct);
-            return new OffsiteTestResult(true, $"Connected to bucket '{settings.Bucket}'.");
+            return await provider.TestConnectionAsync(ct);
         }
-        catch (AmazonS3Exception ex)
+        finally
         {
-            return new OffsiteTestResult(false, $"S3 error: {ex.ErrorCode} — {ex.Message}");
-        }
-        catch (Exception ex)
-        {
-            return new OffsiteTestResult(false, $"Connection failed: {ex.Message}");
+            DisposeProvider(provider);
         }
     }
 
     /// <summary>
-    /// Uploads a single backup row's file to the configured bucket and
-    /// stamps the row with <c>OffsiteUploadedAt</c> + <c>OffsiteObjectKey</c>.
-    /// No-op when off-site is disabled or the file is missing locally.
+    /// Uploads a single backup row's file to the configured store and stamps
+    /// the row with <c>OffsiteUploadedAt</c> + <c>OffsiteObjectKey</c>. No-op
+    /// when off-site is disabled or the file is missing locally.
     /// </summary>
     public async Task<string?> UploadAsync(int backupId, CancellationToken ct)
     {
@@ -125,28 +135,26 @@ public sealed class OffsiteBackupService
         }
 
         var objectKey = BuildObjectKey(settings.Prefix, row.FileName);
-        using var client = CreateClient(settings);
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true);
-        var putRequest = new PutObjectRequest
+        var provider = _providerFactory.Create(settings);
+        try
         {
-            BucketName = settings.Bucket,
-            Key = objectKey,
-            InputStream = stream,
-            AutoCloseStream = false,
-            ContentType = "application/octet-stream",
-            DisablePayloadSigning = settings.ForcePathStyle,
-        };
-        // Fingerprint the dump with this deployment's id so a later restore can
-        // refuse a neighbour deployment's dump found under the same prefix.
-        putRequest.Metadata.Add(DeploymentMetadataKey, _deployment.Id);
-        await client.PutObjectAsync(putRequest, ct);
+            await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true);
+            // Fingerprint the dump with this deployment's id so a later restore
+            // can refuse a neighbour deployment's dump found under the same prefix.
+            var metadata = new Dictionary<string, string>(StringComparer.Ordinal) { [DeploymentMetadataKey] = _deployment.Id };
+            await provider.UploadAsync(objectKey, stream, "application/octet-stream", metadata, ct);
+        }
+        finally
+        {
+            DisposeProvider(provider);
+        }
 
         row.OffsiteUploadedAt = _clock.GetUtcNow().UtcDateTime;
         row.OffsiteObjectKey = objectKey;
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Uploaded backup {FileName} to s3://{Bucket}/{Key}.",
+            "Uploaded backup {FileName} to off-site object {Bucket}/{Key}.",
             row.FileName, settings.Bucket, objectKey);
         return objectKey;
     }
@@ -178,24 +186,27 @@ public sealed class OffsiteBackupService
         }
 
         var objectKey = BuildPerTenantObjectKey(settings.Prefix, row.Organization.Slug, row.FileName);
-        using var client = CreateClient(settings);
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true);
-        await client.PutObjectAsync(new PutObjectRequest
+        var provider = _providerFactory.Create(settings);
+        try
         {
-            BucketName = settings.Bucket,
-            Key = objectKey,
-            InputStream = stream,
-            AutoCloseStream = false,
-            ContentType = "application/zip",
-            DisablePayloadSigning = settings.ForcePathStyle,
-        }, ct);
+            await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true);
+            // Per-tenant snapshots carry no deployment-id stamp: the manifest
+            // inside the ZIP already names the owning org, and the download path
+            // verifies it.
+            await provider.UploadAsync(objectKey, stream, "application/zip",
+                EmptyMetadata, ct);
+        }
+        finally
+        {
+            DisposeProvider(provider);
+        }
 
         row.OffsiteUploadedAt = _clock.GetUtcNow().UtcDateTime;
         row.OffsiteObjectKey = objectKey;
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Uploaded per-tenant snapshot {FileName} for {Slug} to s3://{Bucket}/{Key}.",
+            "Uploaded per-tenant snapshot {FileName} for {Slug} to off-site object {Bucket}/{Key}.",
             row.FileName, row.Organization.Slug, settings.Bucket, objectKey);
         return objectKey;
     }
@@ -208,7 +219,7 @@ public sealed class OffsiteBackupService
     /// </summary>
     /// <param name="maxObjects">Upper bound on results returned. The
     /// catalogue is meant for picking a recent DR snapshot, not for paging
-    /// a giant bucket — a small cap keeps the page fast and the S3 bill
+    /// a giant bucket — a small cap keeps the page fast and the bill
     /// predictable.</param>
     public async Task<IReadOnlyList<OffsiteObjectInfo>> ListAsync(int maxObjects, CancellationToken ct)
     {
@@ -217,30 +228,24 @@ public sealed class OffsiteBackupService
         if (maxObjects < 1) maxObjects = 1;
 
         var prefix = settings.Prefix ?? string.Empty;
-        var results = new List<OffsiteObjectInfo>(capacity: Math.Min(maxObjects, 256));
-        using var client = CreateClient(settings);
-        string? continuation = null;
-        do
+        var provider = _providerFactory.Create(settings);
+        IReadOnlyList<OffsiteStorageObject> objects;
+        try
         {
-            var resp = await client.ListObjectsV2Async(new ListObjectsV2Request
-            {
-                BucketName = settings.Bucket,
-                Prefix = prefix,
-                ContinuationToken = continuation,
-                MaxKeys = Math.Min(1000, maxObjects - results.Count),
-            }, ct);
+            objects = await provider.ListAsync(prefix, maxObjects, ct);
+        }
+        finally
+        {
+            DisposeProvider(provider);
+        }
 
-            foreach (var obj in resp.S3Objects)
-            {
-                if (!IsWholeDbDumpKey(obj.Key, prefix, out var fileName)) continue;
-                results.Add(new OffsiteObjectInfo(obj.Key, fileName, obj.Size, obj.LastModified.ToUniversalTime()));
-                if (results.Count >= maxObjects) break;
-            }
-
-            continuation = resp.IsTruncated == true && results.Count < maxObjects
-                ? resp.NextContinuationToken
-                : null;
-        } while (continuation is not null);
+        var results = new List<OffsiteObjectInfo>(capacity: Math.Min(maxObjects, 256));
+        foreach (var obj in objects)
+        {
+            if (!IsWholeDbDumpKey(obj.Key, prefix, out var fileName)) continue;
+            results.Add(new OffsiteObjectInfo(obj.Key, fileName, obj.Size, obj.LastModifiedUtc));
+            if (results.Count >= maxObjects) break;
+        }
 
         results.Sort((a, b) => b.LastModified.CompareTo(a.LastModified));
         return results;
@@ -260,46 +265,40 @@ public sealed class OffsiteBackupService
 
         var prefix = settings.Prefix ?? string.Empty;
         var tenantPrefix = (prefix.Length == 0 ? string.Empty : EnsureTrailingSlash(prefix)) + PerTenantKeyPrefix;
-        var results = new List<OffsitePerTenantObjectInfo>(capacity: Math.Min(maxObjects, 256));
-        using var client = CreateClient(settings);
-        string? continuation = null;
-        do
+        var provider = _providerFactory.Create(settings);
+        IReadOnlyList<OffsiteStorageObject> objects;
+        try
         {
-            var resp = await client.ListObjectsV2Async(new ListObjectsV2Request
-            {
-                BucketName = settings.Bucket,
-                Prefix = tenantPrefix,
-                ContinuationToken = continuation,
-                MaxKeys = Math.Min(1000, maxObjects - results.Count),
-            }, ct);
+            objects = await provider.ListAsync(tenantPrefix, maxObjects, ct);
+        }
+        finally
+        {
+            DisposeProvider(provider);
+        }
 
-            foreach (var obj in resp.S3Objects)
-            {
-                var remainder = StripPrefix(obj.Key, tenantPrefix);
-                // Expected shape: "<slug>/<filename>.tenant.zip". Reject
-                // anything with extra path segments or the wrong suffix.
-                var slash = remainder.IndexOf('/');
-                if (slash <= 0 || slash == remainder.Length - 1) continue;
-                var slug = remainder[..slash];
-                var fileName = remainder[(slash + 1)..];
-                if (fileName.Contains('/') || fileName.Contains('\\') || fileName.Contains("..", StringComparison.Ordinal)) continue;
-                if (!fileName.EndsWith(PerTenantBackupService.FileSuffix, StringComparison.Ordinal)) continue;
-                results.Add(new OffsitePerTenantObjectInfo(
-                    obj.Key, slug, fileName, obj.Size, obj.LastModified.ToUniversalTime()));
-                if (results.Count >= maxObjects) break;
-            }
-
-            continuation = resp.IsTruncated == true && results.Count < maxObjects
-                ? resp.NextContinuationToken
-                : null;
-        } while (continuation is not null);
+        var results = new List<OffsitePerTenantObjectInfo>(capacity: Math.Min(maxObjects, 256));
+        foreach (var obj in objects)
+        {
+            var remainder = StripPrefix(obj.Key, tenantPrefix);
+            // Expected shape: "<slug>/<filename>.tenant.zip". Reject
+            // anything with extra path segments or the wrong suffix.
+            var slash = remainder.IndexOf('/');
+            if (slash <= 0 || slash == remainder.Length - 1) continue;
+            var slug = remainder[..slash];
+            var fileName = remainder[(slash + 1)..];
+            if (fileName.Contains('/') || fileName.Contains('\\') || fileName.Contains("..", StringComparison.Ordinal)) continue;
+            if (!fileName.EndsWith(PerTenantBackupService.FileSuffix, StringComparison.Ordinal)) continue;
+            results.Add(new OffsitePerTenantObjectInfo(
+                obj.Key, slug, fileName, obj.Size, obj.LastModifiedUtc));
+            if (results.Count >= maxObjects) break;
+        }
 
         results.Sort((a, b) => b.LastModified.CompareTo(a.LastModified));
         return results;
     }
 
     /// <summary>
-    /// Downloads a single object from the bucket into the local backups
+    /// Downloads a single object from the store into the local backups
     /// directory and inserts a <c>backups</c> row pointing at it so the
     /// existing Restore button can take over. Reports byte-level progress
     /// via <paramref name="progress"/> so the SiteAdmin page can render a
@@ -347,34 +346,37 @@ public sealed class OffsiteBackupService
             File.Delete(stagingPath);
         }
 
-        using var client = CreateClient(settings);
-        using var response = await client.GetObjectAsync(new GetObjectRequest
+        var provider = _providerFactory.Create(settings);
+        try
         {
-            BucketName = settings.Bucket,
-            Key = objectKey,
-        }, ct);
+            await using var download = await provider.OpenReadAsync(objectKey, ct);
 
-        // Provenance: refuse a dump another deployment stamped. A missing stamp
-        // is treated as legacy (uploaded before fingerprinting existed) and
-        // allowed with a warning; enforcement is skipped when our own id is
-        // ephemeral, since it would otherwise spuriously reject after a restart.
-        var stampedDeployment = response.Metadata[DeploymentMetadataKey];
-        if (_deployment.IsPersistent && !string.IsNullOrEmpty(stampedDeployment)
-            && !string.Equals(stampedDeployment, _deployment.Id, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                $"Refusing to import '{fileName}': it was created by a different deployment " +
-                "(deployment-id mismatch). Restoring it would overwrite this database with " +
-                "another deployment's data.");
-        }
-        if (string.IsNullOrEmpty(stampedDeployment))
-        {
-            _logger.LogWarning(
-                "Off-site object {Key} carries no deployment-id stamp; importing it anyway (legacy upload). " +
-                "Verify it belongs to this deployment before restoring.", objectKey);
-        }
+            // Provenance: refuse a dump another deployment stamped. A missing stamp
+            // is treated as legacy (uploaded before fingerprinting existed) and
+            // allowed with a warning; enforcement is skipped when our own id is
+            // ephemeral, since it would otherwise spuriously reject after a restart.
+            download.Metadata.TryGetValue(DeploymentMetadataKey, out var stampedDeployment);
+            if (_deployment.IsPersistent && !string.IsNullOrEmpty(stampedDeployment)
+                && !string.Equals(stampedDeployment, _deployment.Id, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Refusing to import '{fileName}': it was created by a different deployment " +
+                    "(deployment-id mismatch). Restoring it would overwrite this database with " +
+                    "another deployment's data.");
+            }
+            if (string.IsNullOrEmpty(stampedDeployment))
+            {
+                _logger.LogWarning(
+                    "Off-site object {Key} carries no deployment-id stamp; importing it anyway (legacy upload). " +
+                    "Verify it belongs to this deployment before restoring.", objectKey);
+            }
 
-        await StreamToStagingAsync(response, stagingPath, progress, ct);
+            await StreamToStagingAsync(download.Body, download.ContentLength, stagingPath, progress, ct);
+        }
+        finally
+        {
+            DisposeProvider(provider);
+        }
 
         File.Move(stagingPath, finalPath);
         var size = new FileInfo(finalPath).Length;
@@ -392,7 +394,7 @@ public sealed class OffsiteBackupService
             // "latest scheduled at" decision matrix honest.
             Kind = BackupKind.AdHoc,
             // Auto-pin so the next retention sweep can't bin a DR snapshot
-            // that the operator just hauled down from S3. They can unpin
+            // that the operator just hauled down. They can unpin
             // after the restore.
             IsPinned = true,
             OffsiteObjectKey = objectKey,
@@ -413,7 +415,7 @@ public sealed class OffsiteBackupService
         }
 
         _logger.LogInformation(
-            "Downloaded off-site backup s3://{Bucket}/{Key} ({Bytes} bytes) into local row {BackupId}.",
+            "Downloaded off-site backup {Bucket}/{Key} ({Bytes} bytes) into local row {BackupId}.",
             settings.Bucket, objectKey, size, row.Id);
         return row.Id;
     }
@@ -484,14 +486,16 @@ public sealed class OffsiteBackupService
             File.Delete(stagingPath);
         }
 
-        using var client = CreateClient(settings);
-        using var response = await client.GetObjectAsync(new GetObjectRequest
+        var provider = _providerFactory.Create(settings);
+        try
         {
-            BucketName = settings.Bucket,
-            Key = objectKey,
-        }, ct);
-
-        await StreamToStagingAsync(response, stagingPath, progress, ct);
+            await using var download = await provider.OpenReadAsync(objectKey, ct);
+            await StreamToStagingAsync(download.Body, download.ContentLength, stagingPath, progress, ct);
+        }
+        finally
+        {
+            DisposeProvider(provider);
+        }
 
         // Verify the manifest before promoting the staging file to a row —
         // an object that doesn't carry a manifest, or whose manifest names
@@ -529,7 +533,7 @@ public sealed class OffsiteBackupService
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Downloaded off-site per-tenant snapshot s3://{Bucket}/{Key} ({Bytes} bytes) for org {Slug} into local row {RowId}.",
+            "Downloaded off-site per-tenant snapshot {Bucket}/{Key} ({Bytes} bytes) for org {Slug} into local row {RowId}.",
             settings.Bucket, objectKey, size, slug, row.Id);
         return row.Id;
     }
@@ -544,60 +548,42 @@ public sealed class OffsiteBackupService
         var settings = await _systemSettings.ResolveOffsiteAsync(ct);
         if (settings is null) return;
         var cutoff = _clock.GetUtcNow().UtcDateTime.AddDays(-settings.RetentionDays);
+        var prefix = settings.Prefix ?? string.Empty;
 
-        using var client = CreateClient(settings);
-        string? continuation = null;
-        do
+        var provider = _providerFactory.Create(settings);
+        try
         {
-            var resp = await client.ListObjectsV2Async(new ListObjectsV2Request
-            {
-                BucketName = settings.Bucket,
-                Prefix = settings.Prefix,
-                ContinuationToken = continuation,
-            }, ct);
+            var objects = await provider.ListAsync(prefix, PruneListCap, ct);
 
             // Prune only this deployment's whole-DB dumps. The bucket may hold
             // neighbour deployments' files and per-tenant ZIPs (a separate
             // catalogue with its own lifecycle) — deleting those by age would
             // be cross-catalogue data loss, so reuse the same filter ListAsync
             // applies to decide what belongs to us.
-            var stale = resp.S3Objects
-                .Where(o => o.LastModified.ToUniversalTime() < cutoff
-                    && IsWholeDbDumpKey(o.Key, settings.Prefix ?? string.Empty, out _))
+            var stale = objects
+                .Where(o => o.LastModifiedUtc < cutoff && IsWholeDbDumpKey(o.Key, prefix, out _))
+                .Select(o => o.Key)
                 .ToList();
             if (stale.Count > 0)
             {
-                await client.DeleteObjectsAsync(new DeleteObjectsRequest
-                {
-                    BucketName = settings.Bucket,
-                    Objects = stale.Select(o => new KeyVersion { Key = o.Key }).ToList(),
-                    Quiet = true,
-                }, ct);
+                await provider.DeleteAsync(stale, ct);
                 _logger.LogInformation(
-                    "Off-site prune deleted {Count} objects older than {Days} days from s3://{Bucket}/{Prefix}.",
-                    stale.Count, settings.RetentionDays, settings.Bucket, settings.Prefix ?? string.Empty);
+                    "Off-site prune deleted {Count} objects older than {Days} days from {Bucket}/{Prefix}.",
+                    stale.Count, settings.RetentionDays, settings.Bucket, prefix);
             }
-
-            continuation = resp.IsTruncated == true ? resp.NextContinuationToken : null;
-        } while (continuation is not null);
+        }
+        finally
+        {
+            DisposeProvider(provider);
+        }
     }
 
-    private static IAmazonS3 CreateClient(ResolvedOffsiteSettings settings)
+    private static readonly IReadOnlyDictionary<string, string> EmptyMetadata =
+        new Dictionary<string, string>(0);
+
+    private static void DisposeProvider(IOffsiteStorageProvider provider)
     {
-        var credentials = new BasicAWSCredentials(settings.AccessKey, settings.SecretKey);
-        var config = new AmazonS3Config
-        {
-            ForcePathStyle = settings.ForcePathStyle,
-        };
-        if (!string.IsNullOrWhiteSpace(settings.Endpoint))
-        {
-            config.ServiceURL = settings.Endpoint;
-        }
-        else if (!string.IsNullOrWhiteSpace(settings.Region))
-        {
-            config.RegionEndpoint = RegionEndpoint.GetBySystemName(settings.Region);
-        }
-        return new AmazonS3Client(credentials, config);
+        if (provider is IDisposable disposable) disposable.Dispose();
     }
 
     private static string BuildObjectKey(string? prefix, string fileName) =>
@@ -650,26 +636,27 @@ public sealed class OffsiteBackupService
     }
 
     /// <summary>
-    /// Streams an S3 object body into <paramref name="stagingPath"/> (created
+    /// Streams an object body into <paramref name="stagingPath"/> (created
     /// fresh — never overwriting) in 64 KB chunks, reporting byte-level
     /// progress. Both the whole-DB and per-tenant download paths stage their
-    /// bodies the same way before the atomic rename to the final path.
+    /// bodies the same way before the atomic rename to the final path. The
+    /// caller owns <paramref name="body"/> (via the <see cref="OffsiteDownload"/>
+    /// it came from) and disposes it.
     /// </summary>
     private static async Task StreamToStagingAsync(
-        GetObjectResponse response,
+        Stream body,
+        long? total,
         string stagingPath,
         IProgress<(long BytesDownloaded, long? TotalBytes)>? progress,
         CancellationToken ct)
     {
-        var total = response.ContentLength > 0 ? response.ContentLength : (long?)null;
         progress?.Report((0L, total));
 
         long bytes = 0;
-        await using var source = response.ResponseStream;
         await using var destination = new FileStream(stagingPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 64 * 1024, useAsync: true);
         var buffer = new byte[64 * 1024];
         int read;
-        while ((read = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), ct)) > 0)
+        while ((read = await body.ReadAsync(buffer.AsMemory(0, buffer.Length), ct)) > 0)
         {
             await destination.WriteAsync(buffer.AsMemory(0, read), ct);
             bytes += read;

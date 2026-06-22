@@ -464,6 +464,11 @@ builder.Services.AddScoped<SystemSettingsService>();
 builder.Services.AddScoped<SiteAdminService>();
 builder.Services.AddScoped<BackupService>();
 builder.Services.AddScoped<PerTenantBackupService>();
+// Off-site storage backend (S3-compatible or Azure Blob) is chosen per request
+// from the decrypted settings; the factory is stateless, the providers it
+// returns are short-lived and built per call, so only the factory is registered.
+builder.Services.AddSingleton<ALDevToolbox.Services.Offsite.IOffsiteStorageProviderFactory,
+    ALDevToolbox.Services.Offsite.OffsiteStorageProviderFactory>();
 builder.Services.AddScoped<OffsiteBackupService>();
 // Off-site restore download jobs: a singleton job tracker shared between
 // the SiteAdmin endpoint that enqueues and the worker that drains, and a

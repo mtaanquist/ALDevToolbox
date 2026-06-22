@@ -1,6 +1,7 @@
 using ALDevToolbox.Data;
 using ALDevToolbox.Domain.Entities;
 using ALDevToolbox.Services;
+using ALDevToolbox.Services.Offsite;
 using ALDevToolbox.Tests.Auth;
 using ALDevToolbox.Tests.Infrastructure;
 using FluentAssertions;
@@ -162,8 +163,9 @@ public sealed class BackupSchedulerTests : IDisposable
             NullLogger<PerTenantBackupService>.Instance, _clock);
         var systemSettings = new SystemSettingsService(
             ctx, _db.DataProtectionProvider, NullLogger<SystemSettingsService>.Instance, _clock);
+        var providerFactory = new OffsiteStorageProviderFactory(NullLoggerFactory.Instance);
         var offsite = new OffsiteBackupService(
-            ctx, systemSettings, backups, perTenant, NullLogger<OffsiteBackupService>.Instance, _clock,
+            ctx, systemSettings, backups, perTenant, providerFactory, NullLogger<OffsiteBackupService>.Instance, _clock,
             DeploymentIdentity.LoadOrCreate(Path.Combine(Path.GetTempPath(), "aldt-test-" + Guid.NewGuid().ToString("N")), NullLogger.Instance));
         await scheduler.TickOnceAsync(ctx, backups, perTenant, offsite, CancellationToken.None);
     }
