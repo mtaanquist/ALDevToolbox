@@ -1,6 +1,7 @@
 @page "/admin/object-explorer/release/{ReleaseId:int}/manage"
 @attribute [Authorize(Roles = "Admin,Editor")]
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Services.ObjectExplorer.PersistedImportJobs ImportJobs
 @inject IHttpContextAccessor Http
 @using ALDevToolbox.Services.ObjectExplorer
 
@@ -114,6 +115,78 @@
             </div>
         </section>
 
+        @if (_release.Status == "failed" && _release.DeletedAt is null)
+        {
+            <section class="manage-card">
+                <h2 class="manage-card__title">Retry import</h2>
+                @if (!string.IsNullOrEmpty(_release.StatusMessage))
+                {
+                    <p class="muted">Last attempt failed: <span class="manage-card__reason">@_release.StatusMessage</span></p>
+                }
+                <p class="muted">
+                    Re-runs the import into this same release — the label and metadata stay put, and the
+                    previous attempt's partial data is cleared first so the re-run starts clean.
+                </p>
+                <form method="post" action="@($"/admin/object-explorer/{ReleaseId}/retry")"
+                      enctype="multipart/form-data" class="form-grid">
+                    <AntiforgeryToken />
+                    <section class="form-section">
+                        @if (_origin is null || _origin.Kind == "url")
+                        {
+                            <label class="field">
+                                <span class="field__label">Download URL</span>
+                                <input type="url" name="DvdUrl" inputmode="url"
+                                       value="@(_origin?.DownloadUrl)"
+                                       placeholder="https://download.microsoft.com/…/Dynamics.365.BC.…DVD.zip"
+                                       class="field__input" />
+                                <small class="field__caption muted">
+                                    Leave the original URL to re-run it, or paste a corrected one (some older
+                                    DVDs moved). The host must be on the SiteAdmin download allow-list.
+                                </small>
+                            </label>
+                        }
+                        @if (_origin?.Kind == "staged_zip")
+                        {
+                            <label class="field">
+                                <span class="field__label">Re-upload application folder ZIP</span>
+                                <input type="file" name="FolderZip" accept=".zip" class="field__input field__input--file" />
+                                <small class="field__caption muted">
+                                    The original upload isn't kept on disk after the import, so retrying an
+                                    uploaded ZIP means picking the file again.
+                                </small>
+                            </label>
+                        }
+                        @if (_origin?.Kind == "cal_txt")
+                        {
+                            <label class="field">
+                                <span class="field__label">Re-upload C/AL TXT export</span>
+                                <input type="file" name="CalTxtFile" accept=".txt" class="field__input field__input--file" />
+                                <small class="field__caption muted">The original upload isn't kept on disk, so pick the file again.</small>
+                            </label>
+                            <label class="field">
+                                <span class="field__label">C/AL codepage</span>
+                                <select name="CalEncoding" class="field__input">
+                                    <option value="850" selected>IBM 850 (OEM — classic finsql default)</option>
+                                    <option value="1252">Windows-1252</option>
+                                </select>
+                            </label>
+                        }
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="StoreSymbolReference" value="true"
+                                   checked="@(_origin?.StoreSymbolReference ?? false)" />
+                            Store each extension's <code>SymbolReference.json</code> for debugging
+                        </label>
+                    </section>
+                    <section class="form-section">
+                        <button type="submit" class="btn btn--primary">
+                            <Icon Name="rotate-ccw" Width="16" Height="16" />
+                            <span>Retry import</span>
+                        </button>
+                    </section>
+                </form>
+            </section>
+        }
+
         <section class="manage-card manage-card--danger">
             <h2 class="manage-card__title">Danger zone</h2>
             @if (_release.DeletedAt is null)
@@ -159,6 +232,7 @@
     [Parameter] public int ReleaseId { get; set; }
 
     private ReleaseDetail? _release;
+    private ImportJobOrigin? _origin;
     private (string Message, bool IsError)? Status { get; set; }
 
     protected override async Task OnInitializedAsync()
@@ -183,6 +257,12 @@
         }
 
         _release = await ObjectExplorer.GetReleaseAsync(ReleaseId);
+        // Only the failed-release retry card needs the original import source;
+        // load it lazily so the common (ready) path skips the extra query.
+        if (_release is { Status: "failed", DeletedAt: null })
+        {
+            _origin = await ImportJobs.GetLatestForReleaseAsync(ReleaseId);
+        }
     }
 
     private static string FormatOkMessage(string ok) => ok switch
@@ -190,6 +270,7 @@
         "updated"          => "Details saved.",
         "soft-deleted"     => "Release soft-deleted. Restore it below if that was a mistake.",
         "restored"         => "Release restored.",
+        "retry-queued"     => "Import retry queued. It runs in the background; watch this release flip from Failed to Ingesting to Ready.",
         "backfill-queued"  => "System-reference backfill queued. It runs in the background; check the workers page for progress.",
         _                  => "Done.",
     };

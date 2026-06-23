@@ -549,6 +549,133 @@ internal static class ObjectExplorerEndpoints
             }
         }).RequireObjectExplorerAuthoring();
 
+        // Retry a failed import in place — re-runs into the SAME release row
+        // (label / metadata preserved) instead of forcing a delete-and-reimport.
+        // A URL import re-runs from its original (or a freshly pasted) URL with
+        // no re-upload; a staged-ZIP / C-AL import needs the file re-uploaded
+        // because its temp file is gone. Either way we wipe the previous
+        // attempt's partial data so the re-run starts clean. See the manage page.
+        app.MapPost("/admin/object-explorer/{id:int}/retry", async (
+            int id,
+            HttpContext ctx,
+            ReleaseImportService importer,
+            ReleaseManagementService management,
+            DvdDownloadService dvdDownloader,
+            ReleaseImportQueue queue,
+            PersistedImportJobs persistedJobs,
+            IOrganizationContext orgContext,
+            IAntiforgery antiforgery,
+            CancellationToken ct) =>
+        {
+            if (!await ValidateAntiforgeryAsync(ctx, antiforgery, ct)) return;
+
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var dvdUrl = form["DvdUrl"].ToString().Trim();
+            var folderZip = form.Files.GetFile("FolderZip");
+            var calTxtFile = form.Files.GetFile("CalTxtFile");
+            var calEncoding = form["CalEncoding"].ToString() is { Length: > 0 } ce ? ce : "850";
+            var storeSymbolReference = form["StoreSymbolReference"].ToString() is "true" or "on";
+
+            var origin = await persistedJobs.GetLatestForReleaseAsync(id, ct);
+
+            try
+            {
+                var hasFolderZip = folderZip is not null && folderZip.Length > 0;
+                var hasCalTxt = calTxtFile is not null && calTxtFile.Length > 0;
+
+                // Resolve the URL to use (pasted wins; else reuse the original
+                // URL import) and validate it against the allow-list BEFORE we
+                // touch the release, so a bad URL leaves the failed row untouched.
+                string? urlToUse = null;
+                if (dvdUrl.Length > 0)
+                {
+                    urlToUse = dvdUrl;
+                }
+                else if (!hasFolderZip && !hasCalTxt)
+                {
+                    if (origin is { Kind: "url", DownloadUrl: { Length: > 0 } originalUrl })
+                    {
+                        urlToUse = originalUrl;
+                    }
+                    else
+                    {
+                        throw RetryValidation(
+                            "There's nothing to re-run automatically — the original upload isn't on disk any more. "
+                            + "Paste a download URL, or re-upload the ZIP / C-AL file, to retry.");
+                    }
+                }
+                if (urlToUse is not null)
+                {
+                    await dvdDownloader.ValidateUrlForQueueAsync(urlToUse, ct).ConfigureAwait(false);
+                }
+
+                // Flip failed → ingesting (validates state) and wipe the previous
+                // attempt's partial modules so the re-run can't skip a
+                // half-written module on the idempotency check.
+                await importer.ReopenForRetryAsync(id, ct).ConfigureAwait(false);
+                await management.ClearIngestedDataAsync(id, ct).ConfigureAwait(false);
+
+                ReleaseImportSource source;
+                if (urlToUse is not null)
+                {
+                    source = new ReleaseImportSource.Url(urlToUse);
+                }
+                else if (hasFolderZip)
+                {
+                    string tempPath;
+                    try
+                    {
+                        tempPath = await StageFolderZipToTempAsync(folderZip!, ct).ConfigureAwait(false);
+                    }
+                    catch (IOException ex)
+                    {
+                        await importer.MarkFailedAsync(id, "Could not stage the uploaded ZIP to disk: " + ex.Message, ct).ConfigureAwait(false);
+                        RedirectQueued(ctx, id);
+                        return;
+                    }
+                    // A URL-origin DVD re-uploaded as a zip is still a DVD subset;
+                    // otherwise honour the original staged flag (defaults to the
+                    // whole-archive / workspace walk).
+                    var isDvd = origin?.Kind == "url" || (origin?.StagedIsDvd ?? false);
+                    source = new ReleaseImportSource.StagedZip(tempPath, isDvd);
+                }
+                else
+                {
+                    string tempPath;
+                    try
+                    {
+                        tempPath = await StageUploadToTempAsync(calTxtFile!, "oe-cal-", ".txt", ct).ConfigureAwait(false);
+                    }
+                    catch (IOException ex)
+                    {
+                        await importer.MarkFailedAsync(id, "Could not stage the uploaded C/AL file to disk: " + ex.Message, ct).ConfigureAwait(false);
+                        RedirectQueued(ctx, id);
+                        return;
+                    }
+                    source = new ReleaseImportSource.CalTxt(tempPath, calEncoding);
+                }
+
+                var identity = CaptureIdentity(orgContext);
+                var jobRowId = await persistedJobs.CreateAsync(id, identity, source, storeSymbolReference, ct).ConfigureAwait(false);
+                await queue.EnqueueAsync(
+                    new ReleaseImportJob(id, identity, source, storeSymbolReference, jobRowId), ct).ConfigureAwait(false);
+
+                ctx.Response.Redirect($"/admin/object-explorer/release/{id}/manage?ok=retry-queued");
+            }
+            catch (PlanValidationException ex)
+            {
+                var first = ex.Errors.First();
+                RedirectManage(ctx, id, first.Key, first.Value);
+            }
+        })
+        .RequireObjectExplorerAuthoring()
+        .WithMetadata(new RequestSizeLimitAttribute(MaxUploadBytes))
+        .WithMetadata(new RequestFormLimitsAttribute
+        {
+            MultipartBodyLengthLimit = MaxUploadBytes,
+            MultipartHeadersLengthLimit = 32 * 1024,
+        });
+
         // Maintenance: re-extract system references over already-stored source
         // for one release (no re-upload) — backfills oe_module_system_references
         // for releases imported before #279. Queued like an import; processed by
@@ -698,6 +825,10 @@ internal static class ObjectExplorerEndpoints
             $"/admin/object-explorer/release/{releaseId}/translations?err=" + Uri.EscapeDataString(errKey)
             + "&msg=" + Uri.EscapeDataString(message));
     }
+
+    /// <summary>Field-keyed (<c>Retry</c>) validation error for the retry endpoint's inline messages.</summary>
+    private static PlanValidationException RetryValidation(string message) =>
+        new(new Dictionary<string, string> { ["Retry"] = message });
 
     private static void RedirectAmend(HttpContext ctx, int releaseId, string errKey, string message)
     {

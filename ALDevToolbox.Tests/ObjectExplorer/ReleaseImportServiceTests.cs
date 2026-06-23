@@ -1106,4 +1106,79 @@ public sealed class ReleaseImportServiceTests : IDisposable
         dupes.Should().Be(0,
             because: "the amend path must DELETE then re-emit so the reindex doesn't produce duplicate rows");
     }
+
+    // ── Retry: ReopenForRetryAsync ───────────────────────────────────────
+
+    [Fact]
+    public async Task ReopenForRetryAsync_flips_a_failed_release_back_to_ingesting_and_clears_the_message()
+    {
+        int releaseId;
+        await using (var ctx = _db.NewContext())
+        {
+            var svc = NewService(ctx);
+            releaseId = await svc.BeginReleaseAsync(
+                new ReleaseImportMetadata("Retry me", "first_party", null, null));
+            await svc.MarkFailedAsync(releaseId, "the download stalled");
+        }
+
+        await using (var ctx = _db.NewContext())
+        {
+            await NewService(ctx).ReopenForRetryAsync(releaseId);
+        }
+
+        await using var read = _db.NewContext();
+        var r = await read.OeReleases.AsNoTracking().SingleAsync(x => x.Id == releaseId);
+        r.Status.Should().Be("ingesting");
+        r.StatusMessage.Should().BeNull("a reopened release reads as in-progress, not failed");
+    }
+
+    [Fact]
+    public async Task ReopenForRetryAsync_refuses_a_release_that_is_not_failed()
+    {
+        // A successfully-imported (ready) release can't be retried.
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        await using var app = File.OpenRead(Path.Combine(FixtureRoot, "Microsoft_DK_Core.app"));
+        var summary = await svc.ImportReleaseAsync(new ReleaseImportRequest(
+            Label: "Already ready", Kind: "first_party", ParentReleaseId: null, ApplicationVersionId: null,
+            Uploads: new[] { new AppFileUpload("Microsoft_DK_Core.app", app, SourceZipStream: null) }));
+
+        await using var ctx2 = _db.NewContext();
+        var act = async () => await NewService(ctx2).ReopenForRetryAsync(summary.ReleaseId);
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("Retry");
+    }
+
+    [Fact]
+    public async Task ReopenForRetryAsync_refuses_a_soft_deleted_release()
+    {
+        int releaseId;
+        await using (var ctx = _db.NewContext())
+        {
+            var svc = NewService(ctx);
+            releaseId = await svc.BeginReleaseAsync(
+                new ReleaseImportMetadata("Deleted then retried", "first_party", null, null));
+            await svc.MarkFailedAsync(releaseId, "boom");
+        }
+        await using (var ctx = _db.NewContext())
+        {
+            var r = await ctx.OeReleases.SingleAsync(x => x.Id == releaseId);
+            r.DeletedAt = DateTime.UtcNow;
+            await ctx.SaveChangesAsync();
+        }
+
+        await using var ctx3 = _db.NewContext();
+        var act = async () => await NewService(ctx3).ReopenForRetryAsync(releaseId);
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("Retry");
+    }
+
+    [Fact]
+    public async Task ReopenForRetryAsync_throws_for_a_missing_release()
+    {
+        await using var ctx = _db.NewContext();
+        var act = async () => await NewService(ctx).ReopenForRetryAsync(999_999);
+        (await act.Should().ThrowAsync<PlanValidationException>())
+            .Which.Errors.Should().ContainKey("Retry");
+    }
 }

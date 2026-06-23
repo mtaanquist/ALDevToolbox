@@ -85,6 +85,35 @@ public sealed class PersistedImportJobsTests : IDisposable
     }
 
     [Fact]
+    public async Task GetLatestForReleaseAsync_returns_the_most_recent_origin()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        var release = await SeedReleaseAsync(ctx);
+
+        await svc.CreateAsync(release.Id, Identity,
+            new ReleaseImportSource.Url("https://download.microsoft.com/old.zip"), storeSymbolReference: false);
+        // A later job — e.g. a retry with a corrected URL — must win.
+        await svc.CreateAsync(release.Id, Identity,
+            new ReleaseImportSource.Url("https://download.microsoft.com/new.zip"), storeSymbolReference: true);
+
+        var origin = await svc.GetLatestForReleaseAsync(release.Id);
+        origin.Should().NotBeNull();
+        origin!.Kind.Should().Be("url");
+        origin.DownloadUrl.Should().Be("https://download.microsoft.com/new.zip");
+        origin.StoreSymbolReference.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetLatestForReleaseAsync_returns_null_when_no_job_exists()
+    {
+        await using var ctx = _db.NewContext();
+        var svc = NewService(ctx);
+        var release = await SeedReleaseAsync(ctx);
+        (await svc.GetLatestForReleaseAsync(release.Id)).Should().BeNull();
+    }
+
+    [Fact]
     public async Task MarkRunning_then_completed_flows_through_the_status_field()
     {
         await using var ctx = _db.NewContext();

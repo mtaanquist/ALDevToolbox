@@ -157,22 +157,62 @@ public class ReleaseManagementService
         _db.OeReleases.Remove(release);
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
-        var reclaimed = 0;
-        if (candidateHashes.Count > 0)
-        {
-            // Bounded anti-join: delete only the candidate blobs that no
-            // oe_module_files row references any more. Raw SQL so the NOT EXISTS
-            // check sees ALL orgs (the EF query filter doesn't apply) — a blob
-            // still used by another tenant must survive.
-            reclaimed = await _db.Database.ExecuteSqlRawAsync(
-                "DELETE FROM oe_file_contents c WHERE c.content_hash = ANY({0}) " +
-                "AND NOT EXISTS (SELECT 1 FROM oe_module_files f WHERE f.content_hash = c.content_hash)",
-                new object[] { candidateHashes.ToArray() }, ct).ConfigureAwait(false);
-        }
+        var reclaimed = await ReclaimOrphanedBlobsAsync(candidateHashes, ct).ConfigureAwait(false);
 
         _logger.LogWarning(
             "Hard-deleted Release {ReleaseId} ({Label}). Dependent oe_* rows cascade-removed; reclaimed {Reclaimed} orphaned shared content blob(s) of {Candidates} candidate(s).",
             release.Id, release.Label, reclaimed, candidateHashes.Count);
+    }
+
+    /// <summary>
+    /// Wipes every ingested <c>oe_module*</c> row for a Release while keeping the
+    /// Release row itself, reclaiming any shared content blobs that become
+    /// orphaned. Used by the import-retry path so a re-run starts from a clean
+    /// slate rather than tripping the per-app idempotency skip on a module the
+    /// previous (failed) attempt left half-written. Deleting the
+    /// <c>oe_modules</c> rows cascades through every dependent module table
+    /// (objects / files / symbols / variables / references / translations) via
+    /// the FK relationships. Scoped by <c>release_id</c>, which is a global
+    /// identity already validated against the caller's org by the retry endpoint.
+    /// </summary>
+    public async Task ClearIngestedDataAsync(int releaseId, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+
+        // Capture the file content hashes before the cascade drops the
+        // oe_module_files rows, same as HardDeleteAsync, so we can GC blobs that
+        // no longer have any referrer afterwards.
+        var candidateHashes = await _db.OeModuleFiles.AsNoTracking()
+            .Where(f => f.Module!.ReleaseId == releaseId)
+            .Select(f => f.ContentHash)
+            .Distinct()
+            .ToListAsync(ct).ConfigureAwait(false);
+
+        var removedModules = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM oe_modules WHERE release_id = {0}",
+            new object[] { releaseId }, ct).ConfigureAwait(false);
+
+        var reclaimed = await ReclaimOrphanedBlobsAsync(candidateHashes, ct).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "Cleared ingested data for Release {ReleaseId}: removed {Modules} module(s), reclaimed {Reclaimed} orphaned blob(s) of {Candidates} candidate(s).",
+            releaseId, removedModules, reclaimed, candidateHashes.Count);
+    }
+
+    /// <summary>
+    /// Deletes the supplied content-hash blobs from <c>oe_file_contents</c> that
+    /// no <c>oe_module_files</c> row references any more. Raw SQL so the
+    /// <c>NOT EXISTS</c> check sees ALL orgs (the EF query filter doesn't apply)
+    /// — a blob still used by another tenant must survive. Returns the count
+    /// reclaimed. Shared by hard-delete and retry-clear.
+    /// </summary>
+    private async Task<int> ReclaimOrphanedBlobsAsync(IReadOnlyList<string> candidateHashes, CancellationToken ct)
+    {
+        if (candidateHashes.Count == 0) return 0;
+        return await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM oe_file_contents c WHERE c.content_hash = ANY({0}) " +
+            "AND NOT EXISTS (SELECT 1 FROM oe_module_files f WHERE f.content_hash = c.content_hash)",
+            new object[] { candidateHashes.ToArray() }, ct).ConfigureAwait(false);
     }
 
     private static PlanValidationException NotFound(int releaseId) =>

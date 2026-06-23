@@ -556,6 +556,44 @@ public class ReleaseImportService
     }
 
     /// <summary>
+    /// Reopens a <c>failed</c> Release for a fresh import attempt: flips it back
+    /// to <c>ingesting</c> and clears the failure message so the row reads as
+    /// in-progress while the re-queued job runs. The caller wipes any partial
+    /// data from the previous attempt
+    /// (<see cref="ReleaseManagementService.ClearIngestedDataAsync"/>) and
+    /// re-enqueues the import job — this method only owns the Release-row state
+    /// flip and its validation. Refuses anything that isn't a failed,
+    /// non-deleted Release in this org with a field-keyed (<c>Retry</c>) error
+    /// so the manage page renders it inline. See the <c>/retry</c> endpoint.
+    /// </summary>
+    public async Task ReopenForRetryAsync(int releaseId, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        var release = await _db.OeReleases
+            .SingleOrDefaultAsync(r => r.Id == releaseId, ct).ConfigureAwait(false)
+            ?? throw RetryError($"Release {releaseId} not found in this organisation.");
+
+        if (release.DeletedAt is not null)
+        {
+            throw RetryError("This release is soft-deleted. Restore it before retrying the import.");
+        }
+        if (!string.Equals(release.Status, "failed", StringComparison.Ordinal))
+        {
+            throw RetryError($"Only a failed import can be retried (status = {release.Status}).");
+        }
+
+        release.Status = "ingesting";
+        release.StatusMessage = null;
+        release.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+        _logger.LogInformation("Reopened Release {ReleaseId} ({Label}) for retry.", release.Id, release.Label);
+    }
+
+    private static PlanValidationException RetryError(string message) =>
+        new(new Dictionary<string, string> { ["Retry"] = message });
+
+    /// <summary>
     /// Refuses a label that's already in use by another active Release in the
     /// same org. The DB also enforces this via <c>ix_oe_releases_org_label_active</c>
     /// (partial unique index on <c>(organization_id, label)</c> filtered by

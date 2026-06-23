@@ -92,7 +92,7 @@ public class ObjectExplorerService
             .Where(r => r.Id == releaseId)
             .Select(r => new
             {
-                r.Id, r.Label, r.Kind, r.Status, r.BcVersion, r.ParentReleaseId, r.ImportedAt,
+                r.Id, r.Label, r.Kind, r.Status, r.StatusMessage, r.BcVersion, r.ParentReleaseId, r.ImportedAt,
                 r.Publisher, r.CustomerName, r.DeletedAt,
                 ParentLabel = r.ParentRelease != null ? r.ParentRelease.Label : null,
             })
@@ -107,6 +107,7 @@ public class ObjectExplorerService
             Label: row.Label,
             Kind: row.Kind,
             Status: row.Status,
+            StatusMessage: row.StatusMessage,
             BcVersion: row.BcVersion,
             ParentReleaseId: row.ParentReleaseId,
             ParentLabel: row.ParentLabel,
