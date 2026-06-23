@@ -1,10 +1,10 @@
 @*
-    Shared page header for the three Import Release modes (Upload / DVD /
-    Artifacts). Renders the "Import Release" h1, a one-line description, a
+    Shared page header for the four Import Release modes (Upload / DVD /
+    Artifacts / C/AL). Renders the "Import Release" h1, a one-line description, a
     back-to-admin link, and the pill-tab row. Each page sets ActiveTab to
     highlight its pill. Mirrors SiteAdminSettingsHeader: every pill is a real
-    <a href> so the Upload/DVD static-SSR forms and the interactive Artifacts
-    page each live at their own bookmarkable route.
+    <a href> so the Upload/DVD/C-AL static-SSR forms and the interactive
+    Artifacts page each live at their own bookmarkable route.
 *@
 
 @using ALDevToolbox.Components.Shared
@@ -15,8 +15,9 @@
         <p class="muted">
             One Release is one snapshot of the BC ecosystem. Pick a mode:
             <strong>Upload</strong> your own <code>.app</code> files, paste a
-            <strong>DVD</strong> download link, or pull a Microsoft
-            <strong>Artifact</strong> straight from the CDN.
+            <strong>DVD</strong> download link, pull a Microsoft
+            <strong>Artifact</strong> straight from the CDN, or import a legacy
+            <strong>C/AL</strong> text export.
         </p>
     </div>
     <a class="btn btn--sm" href="/admin/object-explorer">
@@ -28,7 +29,7 @@
 <PillTabs Items="@_tabs" AriaLabel="Import mode" Equal="true" />
 
 @code {
-    public enum Tab { Upload, Dvd, Artifacts }
+    public enum Tab { Upload, Dvd, Artifacts, Cal }
 
     [Parameter, EditorRequired] public Tab ActiveTab { get; set; }
 
@@ -38,9 +39,10 @@
     {
         _tabs = new List<PillTabs.PillTabItem>
         {
-            new("Upload",    "/admin/object-explorer/new",           "upload",   ActiveTab == Tab.Upload),
-            new("DVD",       "/admin/object-explorer/new/dvd",       "download", ActiveTab == Tab.Dvd),
-            new("Artifacts", "/admin/object-explorer/new/artifacts", "package",  ActiveTab == Tab.Artifacts),
+            new("Upload",    "/admin/object-explorer/new",           "upload",     ActiveTab == Tab.Upload),
+            new("DVD",       "/admin/object-explorer/new/dvd",       "download",   ActiveTab == Tab.Dvd),
+            new("Artifacts", "/admin/object-explorer/new/artifacts", "package",    ActiveTab == Tab.Artifacts),
+            new("C/AL",      "/admin/object-explorer/new/cal",       "file-code",  ActiveTab == Tab.Cal),
         };
     }
 }

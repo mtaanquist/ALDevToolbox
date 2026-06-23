@@ -1,4 +1,4 @@
-@page "/admin/object-explorer/new/dvd"
+@page "/admin/object-explorer/new/cal"
 @attribute [Authorize(Roles = "Admin,Editor")]
 @inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
 @inject IAntiforgery Antiforgery
@@ -7,18 +7,18 @@
 @using Microsoft.AspNetCore.Antiforgery
 
 @*
-    DVD tab of the Import Release page. Statically rendered; posts to the shared
-    /admin/object-explorer/import endpoint with just a download URL. The server
-    downloads the ZIP (behind the SiteAdmin allow-list + SSRF guard) and ingests
-    it in the background. For the common Microsoft DVD case the metadata is a
-    first-party label; the same Kind/Parent fields let a partner DVD hosted at a
-    URL still resolve against its base.
+    C/AL tab of the Import Release page. Statically rendered; posts the classic
+    NAV "Export Objects to text" dump to the shared /admin/object-explorer/import
+    endpoint, which dispatches to the C/AL ingest (Services/Cal/) on the presence
+    of CalTxtFile. Kept on its own pill because the C/AL pipeline — text parsing,
+    OEM codepage, the Base-vs-Customer comparison flow — is a different model from
+    the .app-based Upload / DVD / Artifacts modes.
 *@
 
-<PageTitle>Import Release · DVD · Admin · AL Dev Toolbox</PageTitle>
+<PageTitle>Import Release · C/AL · Admin · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page">
-    <AdminReleasesImportHeader ActiveTab="AdminReleasesImportHeader.Tab.Dvd" />
+    <AdminReleasesImportHeader ActiveTab="AdminReleasesImportHeader.Tab.Cal" />
 
     @if (_errorMessage is not null)
     {
@@ -48,38 +48,36 @@
 
         <section class="form-section">
             <label class="field">
-                <span class="field__label">Download URL</span>
-                <input type="url" name="DvdUrl" inputmode="url" required
-                       placeholder="https://download.microsoft.com/…/Dynamics.365.BC.…DVD.zip"
-                       class="field__input" />
+                <span class="field__label">Legacy C/AL TXT export</span>
+                <input type="file" name="CalTxtFile" accept=".txt" required
+                       class="field__input field__input--file" />
                 <small class="field__caption muted">
-                    Paste the link to Microsoft's BC DVD ZIP and we'll download
-                    and import it for you. The import runs in the background, and
-                    the file is deleted once it's done. The link's host has to be
-                    approved by a site administrator first (Site administration →
-                    Settings).
-                    <br />
-                    Want the latest Microsoft release without hunting for a link?
-                    Use the <strong>Artifacts</strong> tab instead.
+                    A classic NAV <em>Export Objects to text</em> file. To
+                    compare a customer's objects against the standard: import the
+                    plain Microsoft objects first with Kind set to
+                    <strong>First-party</strong>, then the customer's file with
+                    Kind <strong>Customer-specific</strong> and the Microsoft
+                    release picked as its parent. Up to 1 GB.
+                </small>
+            </label>
+
+            <label class="field">
+                <span class="field__label">C/AL codepage</span>
+                <select name="CalEncoding" class="field__input">
+                    <option value="850" selected>IBM 850 (OEM — classic finsql default)</option>
+                    <option value="1252">Windows-1252</option>
+                </select>
+                <small class="field__caption muted">
+                    The classic Windows client exports in the OEM codepage (850 for
+                    Western Europe); pick 1252 if accented characters look wrong
+                    after import.
                 </small>
             </label>
         </section>
 
         <section class="form-section">
-            <label class="checkbox-label">
-                <input type="checkbox" name="StoreSymbolReference" value="true" />
-                Keep each app's symbol file for troubleshooting
-            </label>
-            <small class="field__caption muted">
-                Stores extra technical detail that helps diagnose import problems.
-                These files are large, so leave this off unless you're looking into
-                a specific issue.
-            </small>
-        </section>
-
-        <section class="form-section">
             <button type="submit" class="btn btn--primary" data-oe-import-submit>
-                <Icon Name="download" Width="16" Height="16" />
+                <Icon Name="file-code" Width="16" Height="16" />
                 <span>Import Release</span>
             </button>
         </section>
@@ -105,6 +103,8 @@
             }
         }
 
+        // Only ready first-party Releases are sensible parents — a customer C/AL
+        // file resolves its references against the base picked here.
         var all = await ObjectExplorer.ListReleasesAsync();
         _parentCandidates = all
             .Where(r => r.Status == "ready" && r.Kind == "first_party")
