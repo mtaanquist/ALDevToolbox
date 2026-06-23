@@ -197,6 +197,9 @@ public sealed class BcArtifactService
             var platformUrl = TryReadPlatformUrl(appZip);
             if (platformUrl is not null)
             {
+                // The manifest hands back a blob-host URL (which now 403s); rewrite
+                // it onto the Front Door host that serves anonymously.
+                platformUrl = BcArtifactIndex.ToCdnUrl(platformUrl);
                 if (!Uri.TryCreate(platformUrl, UriKind.Absolute, out var platformUri)
                     || !BcArtifactIndex.IsTrustedArtifactHost(platformUri.Host))
                 {

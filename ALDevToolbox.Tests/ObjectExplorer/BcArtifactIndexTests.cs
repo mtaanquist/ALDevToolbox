@@ -109,10 +109,32 @@ public sealed class BcArtifactIndexTests
     }
 
     [Fact]
-    public void CountryIndexUrl_targets_the_blob_host_and_lowercases_country()
+    public void CountryIndexUrl_targets_the_cdn_host_and_lowercases_country()
     {
+        // Microsoft 403s the raw blob host; the index is fetched from the CDN.
         BcArtifactIndex.CountryIndexUrl("DK")
-            .Should().Be($"https://{BcArtifactIndex.BlobHost}/onprem/indexes/dk.json");
+            .Should().Be($"https://{BcArtifactIndex.CdnHost}/onprem/indexes/dk.json");
+    }
+
+    [Theory]
+    // Blob host → CDN (the manifest platformUrl case that was 403-ing).
+    [InlineData("https://bcartifacts.blob.core.windows.net/onprem/28.2.50931.51727/platform",
+                "https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net/onprem/28.2.50931.51727/platform")]
+    // Legacy edge host → CDN.
+    [InlineData("https://bcartifacts.azureedge.net/onprem/28.2.50931.51727/platform",
+                "https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net/onprem/28.2.50931.51727/platform")]
+    // A stale/other Front Door host → the active CDN.
+    [InlineData("https://bcartifacts-stalehash.b02.azurefd.net/onprem/28.2.50931.51727/platform",
+                "https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net/onprem/28.2.50931.51727/platform")]
+    // Already on the active CDN → unchanged.
+    [InlineData("https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net/onprem/28.2.50931.51727/platform",
+                "https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net/onprem/28.2.50931.51727/platform")]
+    // Foreign host → untouched (download-time trust check then refuses it).
+    [InlineData("https://evil.example.com/onprem/x/platform",
+                "https://evil.example.com/onprem/x/platform")]
+    public void ToCdnUrl_rewrites_only_microsoft_artifact_hosts(string input, string expected)
+    {
+        BcArtifactIndex.ToCdnUrl(input).Should().Be(expected);
     }
 
     [Theory]

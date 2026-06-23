@@ -22,23 +22,43 @@ public static class BcArtifactIndex
     /// <summary>Only OnPrem artifacts ship loose <c>.app</c> files the Object Explorer can walk (see CLAUDE.md / the plan).</summary>
     public const string OnPremType = "onprem";
 
-    /// <summary>Azure blob host the index JSON is read from (BcContainerHelper's default storage account, blob URL form).</summary>
+    /// <summary>
+    /// Azure blob host BcContainerHelper nominally resolves to. Microsoft has
+    /// since disabled anonymous access to it (it returns 403), so we don't fetch
+    /// from it — it's kept as the rewrite source for <see cref="ToCdnUrl"/> and
+    /// as a trusted host for <see cref="IsTrustedArtifactHost"/>.
+    /// </summary>
     public const string BlobHost = "bcartifacts.blob.core.windows.net";
 
-    /// <summary>Front Door CDN host the download URLs point at — matches the host BcContainerHelper resolves to.</summary>
-    public const string CdnHost = "bcartifacts-exdbf9fwegejdqak.b02.azurefd.net";
+    /// <summary>The Front Door host the index and downloads are actually served from.</summary>
+    public const string DefaultCdnHost = "bcartifacts-exdbf9fwegejdqak.b02.azurefd.net";
+
+    /// <summary>
+    /// Front Door CDN host for the index and download URLs. Defaults to
+    /// <see cref="DefaultCdnHost"/>; overridable via the <c>BC_ARTIFACT_CDN_HOST</c>
+    /// env var so a Microsoft rotation of the opaque Front Door identifier is a
+    /// config change + restart rather than a rebuild. There is no dynamic
+    /// discovery — BcContainerHelper itself hardcodes the same value.
+    /// </summary>
+    public static readonly string CdnHost = ResolveCdnHost();
+
+    private static string ResolveCdnHost()
+    {
+        var fromEnv = Environment.GetEnvironmentVariable("BC_ARTIFACT_CDN_HOST");
+        return string.IsNullOrWhiteSpace(fromEnv) ? DefaultCdnHost : fromEnv.Trim();
+    }
 
     /// <summary>URL of the per-country index for the OnPrem type.</summary>
     public static string CountryIndexUrl(string country) =>
-        $"https://{BlobHost}/{OnPremType}/indexes/{country.Trim().ToLowerInvariant()}.json";
+        $"https://{CdnHost}/{OnPremType}/indexes/{country.Trim().ToLowerInvariant()}.json";
 
     /// <summary>URL of the platform index for the OnPrem type.</summary>
     public static string PlatformIndexUrl() =>
-        $"https://{BlobHost}/{OnPremType}/indexes/platform.json";
+        $"https://{CdnHost}/{OnPremType}/indexes/platform.json";
 
     /// <summary>URL of the countries index for the OnPrem type (used to validate a configured country).</summary>
     public static string CountriesIndexUrl() =>
-        $"https://{BlobHost}/{OnPremType}/indexes/countries.json";
+        $"https://{CdnHost}/{OnPremType}/indexes/countries.json";
 
     /// <summary>
     /// Parses a country index (and optional platform index) into the available
@@ -110,6 +130,34 @@ public static class BcArtifactIndex
         $"https://{CdnHost}/{OnPremType}/{version}/{country.Trim().ToLowerInvariant()}";
 
     /// <summary>
+    /// Rewrites a Microsoft artifact URL onto the active <see cref="CdnHost"/>.
+    /// The manifest's <c>platformUrl</c> comes back pointing at the (now 403-ing)
+    /// blob host — or could point at a stale Front Door host — so we normalise it
+    /// onto the host we know serves anonymously before downloading. Mirrors
+    /// BcContainerHelper's <c>ReplaceCDN</c>. URLs on a non-bcartifacts host (or
+    /// already on <see cref="CdnHost"/>) are returned unchanged.
+    /// </summary>
+    public static string ToCdnUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)
+            || !Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return url;
+        }
+        var host = uri.Host.ToLowerInvariant();
+        if (host == CdnHost.ToLowerInvariant()) return url;
+
+        // Only rewrite recognised Microsoft artifact hosts; anything else is left
+        // alone (and would be refused by IsTrustedArtifactHost on download).
+        var isArtifactHost = host.EndsWith(".blob.core.windows.net", StringComparison.Ordinal)
+            || host.EndsWith(".azureedge.net", StringComparison.Ordinal)
+            || host.EndsWith(".azurefd.net", StringComparison.Ordinal);
+        if (!isArtifactHost) return url;
+
+        return $"{uri.Scheme}://{CdnHost}{uri.PathAndQuery}";
+    }
+
+    /// <summary>
     /// True when <paramref name="host"/> is one of Microsoft's fixed artifact
     /// hosts. Used to vet both the URLs we build and the <c>platformUrl</c> we
     /// read out of a downloaded manifest before fetching it, so a tampered
@@ -120,7 +168,8 @@ public static class BcArtifactIndex
     {
         if (string.IsNullOrWhiteSpace(host)) return false;
         host = host.Trim().ToLowerInvariant();
-        return host is BlobHost or CdnHost
+        return string.Equals(host, BlobHost, StringComparison.Ordinal)
+            || string.Equals(host, CdnHost, StringComparison.OrdinalIgnoreCase)
             || host.EndsWith(".azurefd.net", StringComparison.Ordinal)
             || host.EndsWith(".azureedge.net", StringComparison.Ordinal)
             || host.EndsWith(".blob.core.windows.net", StringComparison.Ordinal);
