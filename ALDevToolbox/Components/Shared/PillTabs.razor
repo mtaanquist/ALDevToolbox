@@ -8,7 +8,7 @@
     bookmarked and the back button works as expected.
 *@
 
-<nav class="pill-tabs" role="tablist" aria-label="@AriaLabel">
+<nav class="pill-tabs@(Equal ? " pill-tabs--equal" : "")" role="tablist" aria-label="@AriaLabel">
     @foreach (var item in Items)
     {
         var classes = item.IsActive ? "pill-tab pill-tab--active" : "pill-tab";
@@ -25,6 +25,9 @@
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<PillTabItem> Items { get; set; } = Array.Empty<PillTabItem>();
     [Parameter] public string AriaLabel { get; set; } = "Section";
+
+    /// <summary>When true the tabs stretch to equal width (a full-width row) instead of sizing to their labels.</summary>
+    [Parameter] public bool Equal { get; set; }
 
     public record PillTabItem(string Label, string Href, string? IconName, bool IsActive);
 }
