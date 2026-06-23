@@ -432,11 +432,20 @@ public sealed class FolderZipWalkerTests
     [InlineData("dk/Applications.DK/Microsoft_AI Test Toolkit_25.5.30849.48785.app")]
     [InlineData("dk/Applications.DK/Microsoft_Permissions Mock_25.5.30849.48785.app")]
     [InlineData("dk/Applications.DK/Microsoft_Performance Toolkit Tests_25.5.30849.48785.app")]
-    public void Artifact_application_walk_drops_flat_test_apps(string testAppPath)
+    // Test-framework / dev-tooling libraries the artifact ships flat (caught by
+    // the exact-name list rather than a "test" pattern):
+    [InlineData("dk/Applications.DK/Microsoft_Any_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_Library Assert_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_Library Variable Storage_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_Performance Toolkit_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_Performance Toolkit Samples_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_BuildTools_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_DemoTool_25.5.30849.48785.app")]
+    public void Artifact_application_walk_drops_test_and_tooling_apps(string nonProductAppPath)
     {
         using var archive = BuildArchive(
             "dk/Applications.DK/Microsoft_Base Application_25.5.30849.48785.app",
-            testAppPath);
+            nonProductAppPath);
 
         FolderZipWalker.WalkBcArtifactApplication(archive)
             .Select(e => e.FileName)
@@ -444,15 +453,17 @@ public sealed class FolderZipWalkerTests
     }
 
     [Fact]
-    public void Artifact_application_walk_keeps_real_apps_that_merely_resemble_test_names()
+    public void Artifact_application_walk_keeps_the_product_apps()
     {
-        // "Performance Toolkit" and "Performance Toolkit Samples" are real apps;
-        // only "Performance Toolkit Tests" is a test.
+        // The core localized product apps must survive the test/tooling filter.
         using var archive = BuildArchive(
-            "dk/Applications.DK/Microsoft_Performance Toolkit_25.5.30849.48785.app",
-            "dk/Applications.DK/Microsoft_Performance Toolkit Samples_25.5.30849.48785.app");
+            "dk/Applications.DK/Microsoft_Base Application_25.5.30849.48785.app",
+            "dk/Applications.DK/Microsoft_System Application_25.5.30849.48785.app",
+            "dk/Applications.DK/Microsoft_Application_25.5.30849.48785.app",
+            "dk/Applications.DK/Microsoft_Business Foundation_25.5.30849.48785.app",
+            "dk/Extensions/Microsoft_Sustainability_25.5.30849.48785.app");
 
-        FolderZipWalker.WalkBcArtifactApplication(archive).Should().HaveCount(2);
+        FolderZipWalker.WalkBcArtifactApplication(archive).Should().HaveCount(5);
     }
 
     [Fact]

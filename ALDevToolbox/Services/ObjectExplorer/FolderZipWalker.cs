@@ -218,10 +218,32 @@ public static class FolderZipWalker
     public static IReadOnlyList<FolderZipEntry> WalkBcArtifactPlatform(ZipArchive archive) =>
         Walk(archive, p => string.Equals(LeafName(p), "System.app", StringComparison.OrdinalIgnoreCase));
 
+    // Microsoft's test-toolkit and dev-tooling apps ship flat inside
+    // `Applications.<country>/` with ordinary names (no `Test/` folder, and some
+    // without "test" in the name at all), so the folder rule and the suffix
+    // heuristic below can't catch them. This is the exact-name drop-list for the
+    // ones that aren't product apps — the standard AL-Go "test toolkit" set plus
+    // the build/demo tooling. EXTENDING: add a name here (publisher prefix and
+    // version already stripped) if a new release ships another non-product app
+    // flat in the country folder.
+    private static readonly HashSet<string> ArtifactNonProductAppNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Any",
+        "Library Assert",
+        "Library Variable Storage",
+        "Performance Toolkit",
+        "Performance Toolkit Samples",
+        "AI Test Toolkit",
+        "Permissions Mock",
+        "Test Runner",
+        "BuildTools",
+        "DemoTool",
+    };
+
     private static bool IsWantedArtifactApp(string fullName)
     {
         if (HasTestAncestor(fullName)) return false;
-        if (IsArtifactTestAppName(LeafName(fullName))) return false;
+        if (IsArtifactNonProductApp(LeafName(fullName))) return false;
 
         foreach (var segment in fullName.Split('/', StringSplitOptions.RemoveEmptyEntries))
         {
@@ -236,24 +258,25 @@ public static class FolderZipWalker
     }
 
     /// <summary>
-    /// Recognises the flat test / test-framework apps the country artifact ships
-    /// inside <c>Applications.&lt;country&gt;</c> (no <c>Test/</c> folder to key
-    /// off): <c>Tests-*</c>, anything ending in <c>Test</c> / <c>Tests</c>, the
-    /// <c>Test Library</c> / <c>Test Libraries</c> / <c>Test Toolkit</c> /
-    /// <c>Test Runner</c> kits, and <c>Permissions Mock</c>. Conservative on
-    /// purpose — it drops the unambiguous test apps and leaves anything it isn't
-    /// sure about to import as a normal module.
+    /// Recognises the flat test / test-framework / dev-tooling apps the country
+    /// artifact ships inside <c>Applications.&lt;country&gt;</c> (no <c>Test/</c>
+    /// folder to key off), so the import keeps only the product apps. Catches the
+    /// pattern cases (<c>Tests-*</c>, anything ending in <c>Test</c> /
+    /// <c>Tests</c>, the <c>Test Library</c> / <c>Test Libraries</c> /
+    /// <c>Test Toolkit</c> / <c>Test Runner</c> kits) plus the
+    /// <see cref="ArtifactNonProductAppNames"/> exact-name list for the ones a
+    /// name pattern can't safely catch (<c>Any</c>, <c>Library Assert</c>, …).
     /// </summary>
-    private static bool IsArtifactTestAppName(string fileName)
+    private static bool IsArtifactNonProductApp(string fileName)
     {
         var stem = SplitAppNameAndVersion(
             StripPublisherPrefix(Path.GetFileNameWithoutExtension(fileName))).Stem;
 
+        if (ArtifactNonProductAppNames.Contains(stem)) return true;
+
         if (stem.StartsWith("Tests-", StringComparison.OrdinalIgnoreCase)
             || stem.StartsWith("Tests ", StringComparison.OrdinalIgnoreCase)
-            || stem.StartsWith("TestRunner", StringComparison.OrdinalIgnoreCase)
-            || stem.Equals("Test Runner", StringComparison.OrdinalIgnoreCase)
-            || stem.Equals("Permissions Mock", StringComparison.OrdinalIgnoreCase))
+            || stem.StartsWith("TestRunner", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
