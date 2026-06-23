@@ -158,6 +158,24 @@ public static class BcArtifactIndex
     }
 
     /// <summary>
+    /// Derives the platform-artifact URL from an application-artifact URL by
+    /// convention: replace the trailing country segment with the literal
+    /// <c>platform</c> (e.g. <c>…/onprem/28.2.50931.51034/dk</c> →
+    /// <c>…/onprem/28.2.50931.51034/platform</c>). Mirrors BcContainerHelper's
+    /// <c>Download-Artifacts</c> fallback for when the application manifest
+    /// carries no <c>platformUrl</c> (the common case for these artifacts).
+    /// Returns <see langword="null"/> if the URL can't be parsed.
+    /// </summary>
+    public static string? DerivePlatformUrl(string applicationUrl)
+    {
+        if (!Uri.TryCreate(applicationUrl, UriKind.Absolute, out var uri)) return null;
+        var path = uri.AbsolutePath.TrimEnd('/');
+        var lastSlash = path.LastIndexOf('/');
+        if (lastSlash <= 0) return null;
+        return $"{uri.Scheme}://{uri.Host}{path[..lastSlash]}/platform";
+    }
+
+    /// <summary>
     /// True when <paramref name="host"/> is one of Microsoft's fixed artifact
     /// hosts. Used to vet both the URLs we build and the <c>platformUrl</c> we
     /// read out of a downloaded manifest before fetching it, so a tampered

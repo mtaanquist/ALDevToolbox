@@ -150,6 +150,19 @@ public sealed class BcArtifactIndexTests
     }
 
     [Fact]
+    public void DerivePlatformUrl_swaps_the_country_segment_for_platform()
+    {
+        BcArtifactIndex.DerivePlatformUrl("https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net/onprem/28.2.50931.51034/dk")
+            .Should().Be("https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net/onprem/28.2.50931.51034/platform");
+    }
+
+    [Fact]
+    public void DerivePlatformUrl_returns_null_for_an_unparseable_url()
+    {
+        BcArtifactIndex.DerivePlatformUrl("not a url").Should().BeNull();
+    }
+
+    [Fact]
     public void ReadPlatformUrl_extracts_the_platform_url_from_a_manifest()
     {
         const string manifest = """

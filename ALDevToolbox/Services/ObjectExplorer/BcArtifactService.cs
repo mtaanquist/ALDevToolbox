@@ -194,17 +194,22 @@ public sealed class BcArtifactService
         string? platformZip = null;
         try
         {
-            var platformUrl = TryReadPlatformUrl(appZip);
+            // Prefer the manifest's platformUrl; fall back to the by-convention
+            // URL (…/{version}/platform) when it's absent — which is the common
+            // case for these artifacts. Without the platform artifact we'd miss
+            // System.app and platform-provided objects (Report Layout List,
+            // Tenant Report Layout, …) would resolve to nothing.
+            var platformUrl = TryReadPlatformUrl(appZip) ?? BcArtifactIndex.DerivePlatformUrl(applicationUrl);
             if (platformUrl is not null)
             {
-                // The manifest hands back a blob-host URL (which now 403s); rewrite
-                // it onto the Front Door host that serves anonymously.
+                // The manifest may hand back a blob-host URL (which now 403s);
+                // rewrite it onto the Front Door host that serves anonymously.
                 platformUrl = BcArtifactIndex.ToCdnUrl(platformUrl);
                 if (!Uri.TryCreate(platformUrl, UriKind.Absolute, out var platformUri)
                     || !BcArtifactIndex.IsTrustedArtifactHost(platformUri.Host))
                 {
                     _logger.LogWarning(
-                        "Artifact manifest platformUrl host '{Url}' isn't a trusted Microsoft artifact host; importing the application artifact alone.",
+                        "Platform artifact URL host '{Url}' isn't a trusted Microsoft artifact host; importing the application artifact alone.",
                         platformUrl);
                 }
                 else
@@ -214,7 +219,7 @@ public sealed class BcArtifactService
             }
             else
             {
-                _logger.LogWarning("Artifact at {Url} had no platformUrl in its manifest; importing the application artifact alone.", applicationUrl);
+                _logger.LogWarning("Couldn't determine a platform artifact URL for {Url}; importing the application artifact alone.", applicationUrl);
             }
         }
         catch
