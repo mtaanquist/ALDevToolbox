@@ -23,6 +23,15 @@ public static class BcArtifactIndex
     public const string OnPremType = "onprem";
 
     /// <summary>
+    /// Oldest major we offer for import. BC 15 (Oct 2019) is the first release
+    /// to run the AL-on-server architecture and ship loose <c>.app</c> files;
+    /// everything below it is C/AL, a different runtime the AL walker can't read
+    /// (the C/AL TXT ingest path is a separate, manual flow). Indexes still list
+    /// the 14.x-and-older builds, so we floor them out here.
+    /// </summary>
+    public const int MinimumAlMajor = 15;
+
+    /// <summary>
     /// Azure blob host BcContainerHelper nominally resolves to. Microsoft has
     /// since disabled anonymous access to it (it returns 403), so we don't fetch
     /// from it — it's kept as the rewrite source for <see cref="ToCdnUrl"/> and
@@ -79,6 +88,7 @@ public static class BcArtifactIndex
 
         return countryVersions
             .Where(v => platformVersions is null || platformVersions.Contains(v))
+            .Where(IsAlEra)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(ToComparableVersion)
             .ThenByDescending(v => v, StringComparer.OrdinalIgnoreCase)
@@ -290,4 +300,15 @@ public static class BcArtifactIndex
     /// <summary>Parses a dotted version for ordering; unparseable strings sort last.</summary>
     private static Version ToComparableVersion(string version) =>
         Version.TryParse(version, out var v) ? v : new Version(0, 0);
+
+    /// <summary>
+    /// True when the version's major is <see cref="MinimumAlMajor"/> or newer —
+    /// i.e. an AL-on-server build the walker can consume. Unparseable or
+    /// majorless versions are excluded.
+    /// </summary>
+    private static bool IsAlEra(string version)
+    {
+        var major = version?.Split('.', 2)[0];
+        return int.TryParse(major, out var n) && n >= MinimumAlMajor;
+    }
 }

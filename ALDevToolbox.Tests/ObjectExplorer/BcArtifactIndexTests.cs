@@ -51,6 +51,27 @@ public sealed class BcArtifactIndexTests
     }
 
     [Fact]
+    public void ParseVersions_drops_pre_AL_majors()
+    {
+        // 14.x and older are C/AL — a different runtime the AL walker can't read,
+        // so they're floored out even though the index lists them.
+        const string withLegacy = """
+        [
+          { "Version": "28.2.50931.51727", "CreationTime": "2026-06-10T00:00:00Z" },
+          { "Version": "15.0.36560.0",     "CreationTime": "2019-10-01T00:00:00Z" },
+          { "Version": "14.18.41442.0",    "CreationTime": "2020-06-01T00:00:00Z" },
+          { "Version": "13.0.30609.0",     "CreationTime": "2019-04-01T00:00:00Z" }
+        ]
+        """;
+
+        var versions = BcArtifactIndex.ParseVersions(withLegacy, platformJson: null);
+
+        versions.Should().ContainInOrder("28.2.50931.51727", "15.0.36560.0");
+        versions.Should().NotContain("14.18.41442.0");
+        versions.Should().NotContain("13.0.30609.0");
+    }
+
+    [Fact]
     public void SelectVersion_null_picks_newest()
     {
         var versions = BcArtifactIndex.ParseVersions(CountryJson, PlatformJson);
