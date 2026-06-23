@@ -277,6 +277,24 @@ public sealed class SystemSettingsServiceTests : IDisposable
         SystemSettingsService.IsHostAllowed("download.microsoft.com", System.Array.Empty<string>()).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task Migrated_singleton_row_does_not_carry_the_invalid_zero_retention_default()
+    {
+        // Regression: 20260511 seeds the singleton row before
+        // per_tenant_backup_retention_count exists; 20260604 added the column with a
+        // DB default of 0, which SaveAsync rejects (1..365) — blocking every settings
+        // save on a fresh install. Migration 20260701 heals the seeded row to 30.
+        var svc = NewService();
+        var view = await svc.GetViewAsync();
+        view.PerTenantBackupRetentionCount.Should().BeInRange(1, 365);
+
+        // A save of an unrelated section carries the row's current per-tenant value
+        // through SaveAsync's whole-row validation; with the seed healed it succeeds.
+        Func<Task> save = () => svc.SaveAsync(
+            NewInput() with { PerTenantBackupRetentionCount = view.PerTenantBackupRetentionCount });
+        await save.Should().NotThrowAsync();
+    }
+
     private SystemSettingsService NewService()
     {
         var ctx = _db.NewContextWithAudit(TestDb.NewAuditInterceptor());
