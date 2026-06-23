@@ -138,14 +138,20 @@
                         <span>Min. version</span>
                         <b class="mono">@(_recipe.MinimumApplicationVersion?.Application ?? "—")</b>
                     </div>
+                    @if (_recipe.EstimatedValueHours is { } hours)
+                    {
+                        <div class="rdm-row" title="Estimated implementation time this recipe saves — a customer should be billed at least this much.">
+                            <span>Est. value</span><b>@FormatHours(hours)</b>
+                        </div>
+                    }
                     <div class="rdm-row"><span>Files</span><b>@_recipe.Files.Count</b></div>
                     @if (_recipe.Files.Count > 0)
                     {
-                        <a class="btn btn--primary rd-download" href="@($"/api/cookbook/{_recipe.Id}/download")"
-                           title="Download all files in this recipe as a ZIP archive (folders preserved)">
+                        <button type="button" class="btn btn--primary rd-download" @onclick="OpenDownloadModal"
+                                title="Download all files in this recipe as a ZIP archive (folders preserved)">
                             <Icon Name="download" Width="15" Height="15" />
                             <span>Download all</span>
-                        </a>
+                        </button>
                     }
                 </div>
             </aside>
@@ -161,6 +167,41 @@
     }
 </div>
 
+@if (_showDownloadModal)
+{
+    <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="dl-modal-title"
+         @onkeydown="OnDownloadKeyDown">
+        <div class="confirm-modal__backdrop" @onclick="CloseDownloadModal" aria-hidden="true"></div>
+        <div class="confirm-modal__panel" @onclick:stopPropagation>
+            <h2 id="dl-modal-title" class="confirm-modal__title">Download recipe</h2>
+            <p class="confirm-modal__message">
+                Which customer is this being applied to? We record it so that, if a
+                bug turns up in this recipe, we know where a fix needs to land.
+            </p>
+            <div class="form-section">
+                <label class="section-label" for="dl-customer">Customer</label>
+                <input id="dl-customer" type="text" list="dl-customers" maxlength="200"
+                       @bind="_customerName" @bind:event="oninput"
+                       placeholder="e.g. Acme A/S" autofocus />
+                <datalist id="dl-customers">
+                    @foreach (var name in _customerSuggestions)
+                    {
+                        <option value="@name" />
+                    }
+                </datalist>
+            </div>
+            <div class="confirm-modal__actions">
+                <button type="button" class="btn" @onclick="CloseDownloadModal">Cancel</button>
+                <button type="button" class="btn btn--primary" @onclick="ConfirmDownloadAsync"
+                        disabled="@string.IsNullOrWhiteSpace(_customerName)">
+                    <Icon Name="download" Width="14" Height="14" />
+                    <span>Download</span>
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [Parameter] public int Id { get; set; }
 
@@ -170,12 +211,47 @@
     private string? _toast;
     private CancellationTokenSource? _toastTimer;
     private readonly HashSet<string> _collapsed = new(StringComparer.Ordinal);
+    private bool _showDownloadModal;
+    private string _customerName = string.Empty;
+    private List<string> _customerSuggestions = new();
 
     protected override async Task OnInitializedAsync()
     {
         _recipe = await Recipes.GetAsync(Id);
         _loaded = true;
         _active = _recipe?.Files.Count > 0 ? DisplayPath(_recipe.Files[0]) : null;
+    }
+
+    /// <summary>Formats the estimated-value hours compactly, e.g. <c>8 h</c> or <c>2.5 h</c>.</summary>
+    private static string FormatHours(decimal hours) => $"{hours.ToString("0.##")} h";
+
+    private async Task OpenDownloadModal()
+    {
+        _customerName = string.Empty;
+        // Refresh suggestions each open so a customer named in this session shows up.
+        _customerSuggestions = await Recipes.GetCustomerNamesAsync();
+        _showDownloadModal = true;
+    }
+
+    private void CloseDownloadModal() => _showDownloadModal = false;
+
+    private void OnDownloadKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "Escape" or "Esc") CloseDownloadModal();
+    }
+
+    /// <summary>
+    /// Hands the download off to the ZIP endpoint with the customer name as a
+    /// query value. The endpoint records the download and streams an
+    /// attachment, so navigating to it downloads the file without leaving the
+    /// page — hence <c>location.assign</c> rather than a Blazor navigation.
+    /// </summary>
+    private async Task ConfirmDownloadAsync()
+    {
+        if (_recipe is null || string.IsNullOrWhiteSpace(_customerName)) return;
+        var url = $"/api/cookbook/{_recipe.Id}/download?customer={Uri.EscapeDataString(_customerName.Trim())}";
+        _showDownloadModal = false;
+        await JS.InvokeVoidAsync("location.assign", url);
     }
 
     private static string DisplayPath(RecipeFile file) =>
@@ -187,7 +263,7 @@
     private static List<string> SplitKeywords(string? keywords) =>
         string.IsNullOrWhiteSpace(keywords)
             ? new List<string>()
-            : keywords.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            : keywords.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
 
     private void ToggleCollapsed(string path)
     {

@@ -236,6 +236,64 @@ public sealed class RecipeMetadataTests : IDisposable
             .Type.Should().Be(RecipeType.Pattern);
     }
 
+    [Fact]
+    public async Task EstimatedValueHours_round_trips_and_clears_back_to_null()
+    {
+        int recipeId;
+        await using (var ctx = _db.NewContext())
+        {
+            var created = await NewService(ctx).CreateAsync(new RecipeInput(
+                "Valued", "Body.", "", RecipeType.Snippet, false,
+                new[] { new RecipeFileInput("A.al", "// a") },
+                EstimatedValueHours: 8.5m));
+            recipeId = created.Id;
+        }
+
+        await using (var verify = _db.NewContext())
+        {
+            (await verify.Recipes.SingleAsync(s => s.Id == recipeId))
+                .EstimatedValueHours.Should().Be(8.5m);
+        }
+
+        await using (var update = _db.NewContext())
+        {
+            await NewService(update).UpdateAsync(recipeId, new RecipeInput(
+                "Valued", "Body.", "", RecipeType.Snippet, false,
+                new[] { new RecipeFileInput("A.al", "// a") },
+                EstimatedValueHours: null));
+        }
+
+        await using var verifyUpdate = _db.NewContext();
+        (await verifyUpdate.Recipes.SingleAsync(s => s.Id == recipeId))
+            .EstimatedValueHours.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Create_rejects_negative_estimated_value_hours()
+    {
+        await using var ctx = _db.NewContext();
+        var ex = await Assert.ThrowsAsync<PlanValidationException>(() =>
+            NewService(ctx).CreateAsync(new RecipeInput(
+                "Negative", "Body.", "", RecipeType.Snippet, false,
+                new[] { new RecipeFileInput("A.al", "// a") },
+                EstimatedValueHours: -1m)));
+
+        ex.Errors.Should().ContainKey("EstimatedValueHours");
+    }
+
+    [Fact]
+    public async Task Create_rejects_estimated_value_hours_over_cap()
+    {
+        await using var ctx = _db.NewContext();
+        var ex = await Assert.ThrowsAsync<PlanValidationException>(() =>
+            NewService(ctx).CreateAsync(new RecipeInput(
+                "Too much", "Body.", "", RecipeType.Snippet, false,
+                new[] { new RecipeFileInput("A.al", "// a") },
+                EstimatedValueHours: RecipeService.MaxEstimatedValueHours + 1m)));
+
+        ex.Errors.Should().ContainKey("EstimatedValueHours");
+    }
+
     private RecipeService NewService(ALDevToolbox.Data.AppDbContext ctx) =>
         new(ctx, NullLogger<RecipeService>.Instance, _db.OrgContext, _db.NewQuotaGuard(ctx));
 }

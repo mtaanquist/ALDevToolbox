@@ -75,8 +75,26 @@
                     <label class="section-label" for="recipe-keywords">Keywords</label>
                     <input id="recipe-keywords" type="text" maxlength="500"
                            @bind="_keywords" @bind:event="oninput"
-                           placeholder="space-separated, e.g. factbox attachment subscriber" />
+                           placeholder="space-separated; wrap a phrase in quotes, e.g. &quot;document attachments&quot; factbox subscriber" />
+                    <small class="muted">
+                        Separate tags with spaces or commas. Wrap a multi-word tag in
+                        double quotes to keep it as one — e.g.
+                        <code>"document attachments"</code>.
+                    </small>
                     <FieldError Field="Keywords" Errors="_errors" />
+                </section>
+
+                <section class="form-section">
+                    <label class="section-label" for="recipe-value-hours">Estimated value (hours)</label>
+                    <input id="recipe-value-hours" type="number" min="0" step="0.25"
+                           @bind="_estimatedValueHours" @bind:event="oninput"
+                           placeholder="e.g. 8" />
+                    <small class="muted">
+                        Optional. Roughly how many hours of work this recipe saves an
+                        implementer — shown on the recipe so a customer is billed at
+                        least this much. Leave blank if not estimated.
+                    </small>
+                    <FieldError Field="EstimatedValueHours" Errors="_errors" />
                 </section>
 
                 <section class="form-section">
@@ -120,6 +138,43 @@
             <RecipeFileEditor Files="_files" Errors="_errors" />
         </section>
 
+        @if (IsEdit)
+        {
+            <section class="admin-section">
+                <h2>Applied to customers</h2>
+                <p class="muted">
+                    Every download records the customer it was applied to, so a bug
+                    found in this recipe can be traced to who received it.
+                </p>
+                @if (_downloads is null)
+                {
+                    <p class="muted">Loading…</p>
+                }
+                else if (_downloads.Count == 0)
+                {
+                    <p class="muted">No downloads recorded yet.</p>
+                }
+                else
+                {
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Customer</th><th>Downloaded by</th><th>When</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var d in _downloads)
+                            {
+                                <tr>
+                                    <td>@d.CustomerName</td>
+                                    <td>@(d.DownloadedByUser?.Email ?? "—")</td>
+                                    <td>@d.DownloadedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+        }
+
         @if (_lastError is not null)
         {
             <p class="form-error" role="alert">@_lastError</p>
@@ -138,6 +193,8 @@
     private bool _deprecated;
     private string _instructions = string.Empty;
     private string _minimumApplicationVersionId = string.Empty;
+    private decimal? _estimatedValueHours;
+    private List<RecipeDownload>? _downloads;
     private List<ApplicationVersion> _applicationVersions = new();
     private List<RecipeFileEditor.EditableFile> _files = new() { new RecipeFileEditor.EditableFile() };
     private IReadOnlyDictionary<string, string>? _errors;
@@ -162,6 +219,8 @@
         _deprecated = existing.Deprecated;
         _instructions = existing.Instructions ?? string.Empty;
         _minimumApplicationVersionId = existing.MinimumApplicationVersionId?.ToString() ?? string.Empty;
+        _estimatedValueHours = existing.EstimatedValueHours;
+        _downloads = await Recipes.GetDownloadsAsync(Id.Value);
         // If the recipe points at a deprecated or soft-deleted catalogue row
         // the active-only list wouldn't include it; surface the existing
         // navigation entity as a synthetic option so the dropdown stays
@@ -202,7 +261,8 @@
                 _deprecated,
                 _files.Select(f => new RecipeFileInput(f.FileName, f.Content, f.RelativePath)).ToList(),
                 Instructions: _instructions,
-                MinimumApplicationVersionId: int.TryParse(_minimumApplicationVersionId, out var avId) ? avId : null);
+                MinimumApplicationVersionId: int.TryParse(_minimumApplicationVersionId, out var avId) ? avId : null,
+                EstimatedValueHours: _estimatedValueHours);
             if (Id is null)
             {
                 var created = await Recipes.CreateAsync(input);

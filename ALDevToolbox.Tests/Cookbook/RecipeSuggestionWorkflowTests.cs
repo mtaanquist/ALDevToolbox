@@ -318,7 +318,7 @@ public sealed class RecipeSuggestionWorkflowTests : IDisposable
             .SingleAsync(s => s.Id == suggestionId);
         row.Title.Should().Be("Revised Title");
         row.Description.Should().Be("Revised body.");
-        row.Keywords.Should().Be("alpha beta");
+        row.Keywords.Should().Be("alpha,beta", "keywords normalise to a comma-separated tag list");
         row.Type.Should().Be(RecipeType.Pattern);
         row.Decision.Should().Be(RecipeSuggestionDecision.Pending);
         row.Files.Select(f => f.FileName).Should().Equal("Keep.al", "New.al");

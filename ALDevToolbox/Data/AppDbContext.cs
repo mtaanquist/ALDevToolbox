@@ -171,6 +171,7 @@ public class AppDbContext : DbContext
     public DbSet<TranslationMemoryVote> TranslationMemoryVotes => Set<TranslationMemoryVote>();
     public DbSet<Recipe> Recipes => Set<Recipe>();
     public DbSet<RecipeFile> RecipeFiles => Set<RecipeFile>();
+    public DbSet<RecipeDownload> RecipeDownloads => Set<RecipeDownload>();
     public DbSet<RecipeSuggestion> RecipeSuggestions => Set<RecipeSuggestion>();
     public DbSet<RecipeSuggestionFile> RecipeSuggestionFiles => Set<RecipeSuggestionFile>();
     public DbSet<AuditLogEntry> AuditLog => Set<AuditLogEntry>();
@@ -255,6 +256,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<TranslationMemoryVote>(modelBuilder);
         ScopeToOrganization<Recipe>(modelBuilder);
         ScopeToOrganization<RecipeFile>(modelBuilder);
+        ScopeToOrganization<RecipeDownload>(modelBuilder);
         ScopeToOrganization<RecipeSuggestion>(modelBuilder);
         ScopeToOrganization<RecipeSuggestionFile>(modelBuilder);
         ScopeToOrganization<PersonalAccessToken>(modelBuilder);

@@ -26,9 +26,13 @@ public class Recipe
     public string Description { get; set; } = string.Empty;
 
     /// <summary>
-    /// Space-separated tag tokens (lower-cased on save). Matched alongside
+    /// Comma-separated tag tokens (lower-cased on save). A tag may contain
+    /// spaces — authors wrap a phrase in double quotes to keep it as one tag
+    /// (e.g. <c>"document attachments"</c>). Matched alongside
     /// <see cref="Title"/> and <see cref="Description"/> by the fuzzy
-    /// <c>ILike</c> search.
+    /// <c>ILike</c> search; the substring match spans the comma delimiter, so
+    /// search is unaffected by the grouping. See
+    /// <see cref="Services.RecipeService.NormaliseKeywords"/>.
     /// </summary>
     public string Keywords { get; set; } = string.Empty;
 
@@ -60,6 +64,16 @@ public class Recipe
     /// </summary>
     public int? MinimumApplicationVersionId { get; set; }
     public ApplicationVersion? MinimumApplicationVersion { get; set; }
+
+    /// <summary>
+    /// Optional estimate of how many hours of work this recipe saves an
+    /// implementer, surfaced as a factbox on the detail page for commercial
+    /// guidance ("a customer should be billed at least this much"). Measured
+    /// in hours rather than money so it stays currency-neutral; <c>null</c>
+    /// means "not estimated" and hides the factbox row. Visible to every user
+    /// who can see the recipe.
+    /// </summary>
+    public decimal? EstimatedValueHours { get; set; }
 
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
