@@ -23,16 +23,30 @@ public static class ReleaseZipStaging
         string tempZipPath, bool isDvd, List<Stream> openedStreams)
     {
         var archive = new ZipArchive(File.OpenRead(tempZipPath), ZipArchiveMode.Read);
-        // DVD path is explicit; otherwise auto-detect a VS Code AL workspace
-        // (folders each holding an app.json) and scope to each app's own build
-        // output, so an admin can zip a multi-root workspace and upload it
-        // through the same box. Falls back to the flat whole-archive walk for a
-        // plain applications/ folder zip (no app.json).
-        var entries = isDvd
-            ? FolderZipWalker.WalkDvd(archive)
-            : FolderZipWalker.LooksLikeWorkspace(archive)
-                ? FolderZipWalker.WalkWorkspace(archive)
-                : FolderZipWalker.Walk(archive);
+        var entries = WalkArchive(archive, isDvd);
+
+        // Nested-DVD wrapper: some older BC downloads (e.g. "Update 15.1
+        // Dynamics 365 Business Central 2019 Release Wave 2 DK") wrap the real
+        // DVD in an outer ZIP whose only payload is a single nested
+        // <Name>.DVD.zip. The outer walk then finds no apps, so descend into
+        // the lone nested zip and walk that instead. Bounded so a pathological
+        // wrapper-of-wrapper can't loop forever; in practice one level is all
+        // Microsoft ships. See GitHub issue #303.
+        var descend = 0;
+        while (entries.Count == 0 && descend < MaxNestedZipDescend
+            && TryFindSoleNestedZip(archive) is { } nested)
+        {
+            var inner = ExtractNestedZipToSelfDeletingArchive(nested);
+            // Done with the wrapper. Disposing it early releases the outer
+            // temp file's read handle; the caller still deletes that path in
+            // its own cleanup. The inner archive owns a DeleteOnClose temp, so
+            // the caller's existing `archive.Dispose()` reclaims it too — no
+            // new cleanup plumbing needed at any call site.
+            archive.Dispose();
+            archive = inner;
+            entries = WalkArchive(archive, isDvd);
+            descend++;
+        }
 
         var uploads = new List<AppFileUpload>(entries.Count);
         foreach (var entry in entries)
@@ -59,6 +73,137 @@ public static class ReleaseZipStaging
     }
 
     /// <summary>
+    /// How many times <see cref="OpenStagedZip"/> will descend into a sole
+    /// nested zip before giving up. Microsoft only ever wraps the DVD one level
+    /// deep; the small ceiling is purely a guard against a pathological
+    /// wrapper-of-wrapper chain looping forever.
+    /// </summary>
+    private const int MaxNestedZipDescend = 4;
+
+    /// <summary>
+    /// Hard cap on the bytes written while unwrapping a nested DVD zip. A real
+    /// BC DVD is 1–3 GB; 15 GB leaves generous margin for an unusually large
+    /// release while still refusing a malicious/decompression-bomb entry before
+    /// it fills the container's ephemeral scratch disk. The cap is enforced
+    /// during the copy rather than trusting the entry's declared
+    /// <see cref="ZipArchiveEntry.Length"/>, which an attacker controls.
+    /// </summary>
+    private const long MaxNestedZipBytes = 15L * 1024 * 1024 * 1024;
+
+    /// <summary>
+    /// Picks the walk strategy for an open archive. The DVD path is explicit;
+    /// otherwise auto-detect a VS Code AL workspace (folders each holding an
+    /// <c>app.json</c>) and scope to each app's own build output, so an admin
+    /// can zip a multi-root workspace and upload it through the same box. Falls
+    /// back to the flat whole-archive walk for a plain <c>applications/</c>
+    /// folder zip (no <c>app.json</c>).
+    /// </summary>
+    private static IReadOnlyList<FolderZipEntry> WalkArchive(ZipArchive archive, bool isDvd) =>
+        isDvd
+            ? FolderZipWalker.WalkDvd(archive)
+            : FolderZipWalker.LooksLikeWorkspace(archive)
+                ? FolderZipWalker.WalkWorkspace(archive)
+                : FolderZipWalker.Walk(archive);
+
+    /// <summary>
+    /// Finds the single nested <c>.zip</c> to descend into when the outer
+    /// archive holds no apps, or <see langword="null"/> when the choice is
+    /// ambiguous. Prefers an unambiguous sole zip; failing that, a sole
+    /// <c>*.dvd.zip</c> (Microsoft's naming for the wrapped DVD) so a stray
+    /// sibling zip alongside it doesn't block the descent. Multiple plausible
+    /// candidates stay ambiguous on purpose — the caller's "no apps" diagnostic
+    /// then names them so the admin can re-zip with just the DVD inside.
+    /// Directory entries and zero-length placeholders are ignored.
+    /// </summary>
+    private static ZipArchiveEntry? TryFindSoleNestedZip(ZipArchive archive)
+    {
+        ZipArchiveEntry? soleZip = null;
+        ZipArchiveEntry? soleDvdZip = null;
+        var zipCount = 0;
+        var dvdZipCount = 0;
+        foreach (var entry in archive.Entries)
+        {
+            var name = entry.FullName.Replace('\\', '/');
+            if (name.EndsWith('/')) continue;
+            if (!name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;
+            if (entry.Length == 0) continue;
+            zipCount++;
+            soleZip = entry;
+            if (name.EndsWith(".dvd.zip", StringComparison.OrdinalIgnoreCase))
+            {
+                dvdZipCount++;
+                soleDvdZip = entry;
+            }
+        }
+        if (zipCount == 1) return soleZip;
+        if (dvdZipCount == 1) return soleDvdZip;
+        return null;
+    }
+
+    /// <summary>
+    /// Extracts a nested zip entry to a temp file and returns a read-only
+    /// <see cref="ZipArchive"/> over it. <see cref="ZipArchive"/> in read mode
+    /// needs a seekable stream, which a compressed entry's
+    /// <see cref="ZipArchiveEntry.Open"/> stream isn't, so the inner zip is
+    /// spilled to disk first (the DVD can be a GB-plus — too large to buffer in
+    /// memory). The temp file is opened <see cref="FileOptions.DeleteOnClose"/>
+    /// so the OS reclaims it when the returned archive's stream is disposed,
+    /// tying its lifetime to the archive the caller already disposes.
+    /// </summary>
+    private static ZipArchive ExtractNestedZipToSelfDeletingArchive(ZipArchiveEntry nested)
+    {
+        var tempPath = Path.Combine(Path.GetTempPath(), "oe-nested-" + Guid.NewGuid().ToString("N") + ".zip");
+        var fs = new FileStream(tempPath, new FileStreamOptions
+        {
+            Mode = FileMode.Create,
+            Access = FileAccess.ReadWrite,
+            Share = FileShare.None,
+            Options = FileOptions.DeleteOnClose,
+        });
+        try
+        {
+            using (var source = nested.Open())
+            {
+                CopyWithCap(source, fs, MaxNestedZipBytes);
+            }
+            fs.Position = 0;
+            // ZipArchive owns fs (leaveOpen defaults to false), so disposing the
+            // archive disposes fs, which deletes the temp file.
+            return new ZipArchive(fs, ZipArchiveMode.Read);
+        }
+        catch
+        {
+            fs.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Streams <paramref name="source"/> into <paramref name="dest"/>, throwing
+    /// <see cref="InvalidDataException"/> once more than <paramref name="maxBytes"/>
+    /// have been written. Counting the bytes actually inflated (rather than
+    /// trusting the zip entry's declared length) is what makes this a real guard
+    /// against a decompression bomb.
+    /// </summary>
+    private static void CopyWithCap(Stream source, Stream dest, long maxBytes)
+    {
+        var buffer = new byte[81920];
+        long total = 0;
+        int read;
+        while ((read = source.Read(buffer)) > 0)
+        {
+            total += read;
+            if (total > maxBytes)
+            {
+                throw new InvalidDataException(
+                    $"The nested DVD zip expands past the {maxBytes / (1024 * 1024 * 1024)} GB limit; "
+                    + "it doesn't look like a Business Central DVD.");
+            }
+            dest.Write(buffer, 0, read);
+        }
+    }
+
+    /// <summary>
     /// Builds a short human description of where <c>.app</c> files actually sit
     /// in the archive, for the "no apps found" failure message — so an
     /// unrecognised DVD layout tells us the folder name to add to
@@ -68,19 +213,37 @@ public static class ReleaseZipStaging
     public static string DescribeAppLocations(ZipArchive archive)
     {
         var topFolders = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        var nestedZips = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         var sawApp = false;
         foreach (var entry in archive.Entries)
         {
             // Normalise backslash separators (some DVD ZIPs use them) before
             // taking the top segment.
             var full = entry.FullName.Replace('\\', '/');
-            if (!full.EndsWith(".app", StringComparison.OrdinalIgnoreCase)) continue;
-            sawApp = true;
-            var slash = full.IndexOf('/');
-            topFolders.Add(slash > 0 ? full[..slash] : "(archive root)");
+            if (full.EndsWith(".app", StringComparison.OrdinalIgnoreCase))
+            {
+                sawApp = true;
+                var slash = full.IndexOf('/');
+                topFolders.Add(slash > 0 ? full[..slash] : "(archive root)");
+            }
+            else if (!full.EndsWith('/') && full.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                nestedZips.Add(full);
+            }
         }
 
-        if (!sawApp) return "the archive contains no .app files at all";
-        return "the .app files are under: " + string.Join(", ", topFolders);
+        if (sawApp) return "the .app files are under: " + string.Join(", ", topFolders);
+
+        // A single nested zip is descended into automatically; reaching here
+        // with several means we couldn't pick which one is the DVD, so name
+        // them — the admin can re-zip with just the DVD inside.
+        if (nestedZips.Count > 0)
+        {
+            return "the archive contains no .app files, only nested zip(s): "
+                + string.Join(", ", nestedZips)
+                + " — a single nested zip is opened automatically, but several are ambiguous; "
+                + "re-zip with just the DVD inside";
+        }
+        return "the archive contains no .app files at all";
     }
 }
