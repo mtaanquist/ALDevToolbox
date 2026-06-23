@@ -1,0 +1,82 @@
+@*
+    The Release identity fields (Label / Kind / Parent / Publisher / Customer)
+    shared by the Upload and DVD import tabs. Rendered inside each tab's
+    <form data-oe-import-form>; object-explorer-import.js shows/hides Parent,
+    Publisher and Customer by the selected Kind (no-JS submits leave them
+    visible, which the endpoint tolerates). The Artifacts tab doesn't use this —
+    those releases are always first-party with an auto-generated label.
+*@
+
+@using ALDevToolbox.Services.ObjectExplorer
+
+<section class="form-section">
+    <label class="field">
+        <span class="field__label">Label</span>
+        <input type="text" name="Label" required maxlength="120"
+               placeholder="e.g. BC 25.18 DK or Acme Co on BC 25.18"
+               class="field__input" />
+        <small class="field__caption muted">
+            Shown in the version picker. Use something memorable —
+            "BC 25.18 DK" beats "release_20260601_v3".
+        </small>
+    </label>
+
+    <label class="field">
+        <span class="field__label">Kind</span>
+        <select name="Kind" required class="field__input">
+            <option value="first_party">First-party (Microsoft)</option>
+            <option value="third_party">Third-party / partner</option>
+            <option value="customer">Customer-specific bundle</option>
+        </select>
+        <small class="field__caption muted">
+            Third-party and customer Releases sit on top of a first-party
+            parent; pick that parent below so cross-module references resolve.
+        </small>
+    </label>
+
+    <label class="field" data-oe-field-parent>
+        <span class="field__label">Parent Release (optional)</span>
+        <select name="ParentReleaseId" class="field__input">
+            <option value="">— none (first-party, no parent) —</option>
+            @if (ParentCandidates is not null)
+            {
+                @foreach (var r in ParentCandidates)
+                {
+                    <option value="@r.Id">@r.Label</option>
+                }
+            }
+        </select>
+        <small class="field__caption muted">
+            Required for third-party / customer Releases — the chain walker
+            follows this pointer to resolve references that target objects
+            in the parent's modules.
+        </small>
+    </label>
+
+    <label class="field" data-oe-field-publisher>
+        <span class="field__label">Publisher (optional)</span>
+        <input type="text" name="Publisher" maxlength="200"
+               placeholder="e.g. Continia Software"
+               class="field__input" />
+        <small class="field__caption muted">
+            For third-party / customer Releases — who owns this extension.
+            Set it explicitly when you've taken over an app someone else built.
+        </small>
+    </label>
+
+    <label class="field" data-oe-field-customer>
+        <span class="field__label">Customer (optional)</span>
+        <input type="text" name="CustomerName" maxlength="200"
+               placeholder="e.g. Acme Co"
+               class="field__input" />
+        <small class="field__caption muted">
+            Only used for customer Releases — the customer this bundle
+            belongs to.
+        </small>
+    </label>
+</section>
+
+@code {
+    /// <summary>Ready first-party Releases offered as parents in the dropdown.</summary>
+    [Parameter] public IReadOnlyList<ReleaseListItem>? ParentCandidates { get; set; }
+}

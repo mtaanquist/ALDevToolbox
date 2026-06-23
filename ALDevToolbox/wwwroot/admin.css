@@ -624,3 +624,23 @@ ul.form-field-error {
     color: var(--error-text);
     max-width: 32ch;
 }
+
+/* Artifacts tab (Import Release): country + refresh toolbar sits inline above
+   the read-only versions table, and the per-row action column stays narrow. */
+.oe-artifact-toolbar {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+}
+.oe-artifact-toolbar .form-section {
+    margin: 0;
+    min-width: 220px;
+}
+.data-table th.oe-artifact-action-col,
+.data-table td.oe-artifact-action-col {
+    width: 1%;
+    white-space: nowrap;
+    text-align: right;
+}

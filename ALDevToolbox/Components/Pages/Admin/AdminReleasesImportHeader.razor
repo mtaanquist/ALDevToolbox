@@ -1,0 +1,46 @@
+@*
+    Shared page header for the three Import Release modes (Upload / DVD /
+    Artifacts). Renders the "Import Release" h1, a one-line description, a
+    back-to-admin link, and the pill-tab row. Each page sets ActiveTab to
+    highlight its pill. Mirrors SiteAdminSettingsHeader: every pill is a real
+    <a href> so the Upload/DVD static-SSR forms and the interactive Artifacts
+    page each live at their own bookmarkable route.
+*@
+
+@using ALDevToolbox.Components.Shared
+
+<header class="admin-page__header">
+    <div>
+        <h1>Import Release</h1>
+        <p class="muted">
+            One Release is one snapshot of the BC ecosystem. Pick a mode:
+            <strong>Upload</strong> your own <code>.app</code> files, paste a
+            <strong>DVD</strong> download link, or pull a Microsoft
+            <strong>Artifact</strong> straight from the CDN.
+        </p>
+    </div>
+    <a class="btn btn--sm" href="/admin/object-explorer">
+        <Icon Name="arrow-left" Width="14" Height="14" />
+        <span>Back to admin</span>
+    </a>
+</header>
+
+<PillTabs Items="@_tabs" AriaLabel="Import mode" />
+
+@code {
+    public enum Tab { Upload, Dvd, Artifacts }
+
+    [Parameter, EditorRequired] public Tab ActiveTab { get; set; }
+
+    private IReadOnlyList<PillTabs.PillTabItem> _tabs = Array.Empty<PillTabs.PillTabItem>();
+
+    protected override void OnParametersSet()
+    {
+        _tabs = new List<PillTabs.PillTabItem>
+        {
+            new("Upload",    "/admin/object-explorer/new",           "upload",   ActiveTab == Tab.Upload),
+            new("DVD",       "/admin/object-explorer/new/dvd",       "download", ActiveTab == Tab.Dvd),
+            new("Artifacts", "/admin/object-explorer/new/artifacts", "package",  ActiveTab == Tab.Artifacts),
+        };
+    }
+}

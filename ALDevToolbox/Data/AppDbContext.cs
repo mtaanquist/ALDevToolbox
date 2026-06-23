@@ -13,6 +13,7 @@ using OeModuleReference = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleRefe
 using OeModuleSystemReference = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleSystemReference;
 using OeModuleTranslation = ALDevToolbox.Domain.Entities.ObjectExplorer.ModuleTranslation;
 using OeImportJob = ALDevToolbox.Domain.Entities.ObjectExplorer.ImportJob;
+using OeArtifactVersion = ALDevToolbox.Domain.Entities.ObjectExplorer.BcArtifactVersion;
 
 namespace ALDevToolbox.Data;
 
@@ -166,6 +167,8 @@ public class AppDbContext : DbContext
     public DbSet<OeModuleSystemReference> OeModuleSystemReferences => Set<OeModuleSystemReference>();
     public DbSet<OeModuleTranslation> OeModuleTranslations => Set<OeModuleTranslation>();
     public DbSet<OeImportJob> OeImportJobs => Set<OeImportJob>();
+    // Cached Microsoft artifact index (available OnPrem builds per country).
+    public DbSet<OeArtifactVersion> OeArtifactVersions => Set<OeArtifactVersion>();
     // Translator tool — cross-source translation memory (see .design/translator/).
     public DbSet<TranslationMemoryEntry> TranslationMemory => Set<TranslationMemoryEntry>();
     public DbSet<TranslationMemoryVote> TranslationMemoryVotes => Set<TranslationMemoryVote>();
@@ -247,6 +250,7 @@ public class AppDbContext : DbContext
         ScopeToOrganization<OeModuleSystemReference>(modelBuilder);
         ScopeToOrganization<OeModuleTranslation>(modelBuilder);
         ScopeToOrganization<OeImportJob>(modelBuilder);
+        ScopeToOrganization<OeArtifactVersion>(modelBuilder);
         // NOTE: OeFileContent (oe_file_contents) is deliberately NOT scoped.
         // It is the content-addressable, cross-tenant-shared source-blob store;
         // it has no organization_id. Isolation holds because it is only ever

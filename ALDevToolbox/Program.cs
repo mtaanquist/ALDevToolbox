@@ -154,6 +154,10 @@ builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.TranslationImpor
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ReleaseImportService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.CalImportService>();
 builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.DvdDownloadService>();
+// Resolve + download Microsoft OnPrem artifacts straight from the CDN, and the
+// coordinator both the Artifacts tab and the auto-import scheduler call.
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.BcArtifactService>();
+builder.Services.AddScoped<ALDevToolbox.Services.ObjectExplorer.ArtifactReleaseImporter>();
 // In-process hand-off + worker for the DVD-scale imports (folder-ZIP upload,
 // URL download) so the admin isn't held on the page while they ingest.
 builder.Services.AddSingleton<ALDevToolbox.Services.ObjectExplorer.ReleaseImportQueue>();
@@ -527,6 +531,13 @@ if (Environment.GetEnvironmentVariable("DISABLE_OE_VACUUM_SCHEDULER") != "1")
 if (Environment.GetEnvironmentVariable("DISABLE_USAGE_SNAPSHOT_SCHEDULER") != "1" && !singleTenantMode)
 {
     builder.Services.AddHostedService<ALDevToolbox.Services.UsageSnapshotScheduler>();
+}
+// Daily import of new Microsoft OnPrem releases for orgs that opted in
+// (OrganizationSettings.AutoImportReleasesEnabled). Same opt-out pattern as the
+// other schedulers; runs in single- and multi-tenant alike.
+if (Environment.GetEnvironmentVariable("DISABLE_RELEASE_AUTO_IMPORT_SCHEDULER") != "1")
+{
+    builder.Services.AddHostedService<ALDevToolbox.Services.ObjectExplorer.ReleaseAutoImportScheduler>();
 }
 // Email shares the AppDbContext lifetime (Scoped) so it can read the
 // hybrid SMTP override from system_settings.

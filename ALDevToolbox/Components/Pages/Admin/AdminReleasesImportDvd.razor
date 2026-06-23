@@ -1,0 +1,117 @@
+@page "/admin/object-explorer/new/dvd"
+@attribute [Authorize(Roles = "Admin,Editor")]
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject IAntiforgery Antiforgery
+@inject IHttpContextAccessor Http
+@using ALDevToolbox.Services.ObjectExplorer
+@using Microsoft.AspNetCore.Antiforgery
+
+@*
+    DVD tab of the Import Release page. Statically rendered; posts to the shared
+    /admin/object-explorer/import endpoint with just a download URL. The server
+    downloads the ZIP (behind the SiteAdmin allow-list + SSRF guard) and ingests
+    it in the background. For the common Microsoft DVD case the metadata is a
+    first-party label; the same Kind/Parent fields let a partner DVD hosted at a
+    URL still resolve against its base.
+*@
+
+<PageTitle>Import Release · DVD · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page">
+    <AdminReleasesImportHeader ActiveTab="AdminReleasesImportHeader.Tab.Dvd" />
+
+    @if (_errorMessage is not null)
+    {
+        <div class="form-error" role="alert"><p>@_errorMessage</p></div>
+    }
+
+    <form method="post"
+          action="/admin/object-explorer/import"
+          enctype="multipart/form-data"
+          class="form-grid"
+          data-oe-import-form>
+        @if (_antiforgeryToken is not null)
+        {
+            <input type="hidden" name="@_antiforgeryToken.FormFieldName" value="@_antiforgeryToken.RequestToken" />
+        }
+
+        <div class="oe-import-progress" data-oe-import-progress hidden role="status" aria-live="polite">
+            <div class="oe-import-progress__row">
+                <span class="oe-import-progress__label" data-oe-import-label>Uploading…</span>
+                <span class="oe-import-progress__pct" data-oe-import-pct></span>
+            </div>
+            <progress class="oe-import-progress__bar" data-oe-import-bar max="100" value="0"></progress>
+            <p class="oe-import-progress__hint muted" data-oe-import-hint></p>
+        </div>
+
+        <ReleaseImportMetadataFields ParentCandidates="_parentCandidates" />
+
+        <section class="form-section">
+            <label class="field">
+                <span class="field__label">Download URL</span>
+                <input type="url" name="DvdUrl" inputmode="url" required
+                       placeholder="https://download.microsoft.com/…/Dynamics.365.BC.…DVD.zip"
+                       class="field__input" />
+                <small class="field__caption muted">
+                    Paste the link to Microsoft's BC DVD ZIP and we download it
+                    for you — keeping only what the Object Explorer needs
+                    (everything under <code>Applications/</code> plus
+                    <code>System.app</code>; test extensions are skipped). The
+                    host must be on the download allow-list a SiteAdmin
+                    configures under Site administration → Settings. The file is
+                    deleted as soon as the import finishes. Runs in the
+                    background — you'll be taken back to the releases list while
+                    it ingests.
+                    <br />
+                    Want the latest Microsoft release without hunting for a link?
+                    Use the <strong>Artifacts</strong> tab instead.
+                </small>
+            </label>
+        </section>
+
+        <section class="form-section">
+            <label class="checkbox-label">
+                <input type="checkbox" name="StoreSymbolReference" value="true" />
+                Store each extension's <code>SymbolReference.json</code> for debugging
+            </label>
+            <small class="field__caption muted">
+                Keeps the raw symbol file per module so resolver errors can be traced.
+                Off by default — a first-party DVD's symbol files run to tens of MB each.
+            </small>
+        </section>
+
+        <section class="form-section">
+            <button type="submit" class="btn btn--primary" data-oe-import-submit>
+                <Icon Name="download" Width="16" Height="16" />
+                <span>Import Release</span>
+            </button>
+        </section>
+    </form>
+</div>
+
+@code {
+    private AntiforgeryTokenSet? _antiforgeryToken;
+    private List<ReleaseListItem>? _parentCandidates;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var ctx = Http.HttpContext;
+        if (ctx is not null)
+        {
+            _antiforgeryToken = Antiforgery.GetAndStoreTokens(ctx);
+            var err = ctx.Request.Query["err"].ToString();
+            var msg = ctx.Request.Query["msg"].ToString();
+            if (!string.IsNullOrEmpty(err) && !string.IsNullOrEmpty(msg))
+            {
+                _errorMessage = $"{err}: {msg}";
+            }
+        }
+
+        var all = await ObjectExplorer.ListReleasesAsync();
+        _parentCandidates = all
+            .Where(r => r.Status == "ready" && r.Kind == "first_party")
+            .OrderBy(r => r.Label)
+            .ToList();
+    }
+}

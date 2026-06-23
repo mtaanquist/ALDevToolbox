@@ -107,5 +107,22 @@ public class OrganizationSettings
     /// </summary>
     public MtTrigger MachineTranslationTrigger { get; set; } = MtTrigger.Off;
 
+    /// <summary>
+    /// When <see langword="true"/>, the <c>ReleaseAutoImportScheduler</c> imports
+    /// the newest Microsoft <em>OnPrem</em> Business Central release for this org
+    /// once a day (skipping versions already in the catalogue). Doubles as the
+    /// feature's master switch — there is no separate enabled flag. Only OnPrem
+    /// artifacts ship the loose <c>.app</c> files the Object Explorer walks, so
+    /// the artifact type isn't configurable. See <c>.design/object-explorer.md</c>.
+    /// </summary>
+    public bool AutoImportReleasesEnabled { get; set; }
+
+    /// <summary>
+    /// BC localisation/country code the auto-import fetches, e.g. <c>dk</c> or
+    /// <c>w1</c>. Required when <see cref="AutoImportReleasesEnabled"/>; uppercased
+    /// into the generated release label "Business Central {Major}.{Minor} ({CC})".
+    /// </summary>
+    public string? AutoImportCountry { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }

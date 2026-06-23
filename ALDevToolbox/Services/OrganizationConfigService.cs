@@ -258,6 +258,42 @@ public class OrganizationConfigService
             orgId, body.Length);
     }
 
+    /// <summary>
+    /// Persists the per-org automatic-release-import settings (enable toggle +
+    /// country). A country is required to enable it; the value is lower-cased
+    /// for the artifact lookup. Throws <see cref="PlanValidationException"/>
+    /// (field key <c>AutoImportCountry</c>) so the form renders the error inline.
+    /// </summary>
+    public async Task SaveAutoImportAsync(bool enabled, string? country, CancellationToken ct = default)
+    {
+        var normalized = country?.Trim().ToLowerInvariant();
+        if (enabled && string.IsNullOrEmpty(normalized))
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["AutoImportCountry"] = "Pick a country code (e.g. 'dk' or 'w1') to enable automatic import.",
+            });
+        }
+
+        var orgId = RequireOrganizationId();
+        var row = await _db.OrganizationSettings
+            .FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
+        if (row is null)
+        {
+            row = new OrganizationSettings { OrganizationId = orgId };
+            _db.OrganizationSettings.Add(row);
+        }
+        row.AutoImportReleasesEnabled = enabled;
+        row.AutoImportCountry = normalized;
+        row.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+        InvalidateCache(orgId);
+        _logger.LogInformation(
+            "Updated release auto-import settings for org {OrgId} (enabled={Enabled}, country={Country}).",
+            orgId, enabled, normalized ?? "(none)");
+    }
+
     // ── Machine translation (per-tenant DeepL / future providers) ───────────
 
     /// <summary>
