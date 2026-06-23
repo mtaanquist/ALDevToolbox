@@ -201,6 +201,26 @@ public sealed class PersistedImportJobs
         return toResume;
     }
 
+    /// <summary>
+    /// Returns the most recent import job for a Release (org-scoped via the EF
+    /// query filter), or <see langword="null"/> when none exists. The retry path
+    /// uses it to reuse the original source: a <c>url</c> job's
+    /// <see cref="ImportJob.DownloadUrl"/> lets a retry re-run without the admin
+    /// re-pasting the link, and the kind / DVD flag tell the UI whether a
+    /// re-upload is required (the staged-zip / cal-txt temp file is gone).
+    /// </summary>
+    public async Task<ImportJobOrigin?> GetLatestForReleaseAsync(int releaseId, CancellationToken ct = default)
+    {
+        return await _db.OeImportJobs.AsNoTracking()
+            .Where(j => j.ReleaseId == releaseId)
+            // Newest first; tie-break on the serial id so two jobs created within
+            // the clock's resolution still resolve to the genuinely-latest row.
+            .OrderByDescending(j => j.CreatedAt)
+            .ThenByDescending(j => j.Id)
+            .Select(j => new ImportJobOrigin(j.Kind, j.DownloadUrl, j.StagedIsDvd, j.StoreSymbolReference))
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+    }
+
     /// <summary>Snapshot for the admin "Background workers" page — depth + recent rows.</summary>
     public async Task<ImportQueueSnapshot> SnapshotAsync(int recentLimit = 10, CancellationToken ct = default)
     {
@@ -230,6 +250,16 @@ public sealed class PersistedImportJobs
     private static string Truncate(string s, int max) =>
         string.IsNullOrEmpty(s) ? s : (s.Length <= max ? s : s.Substring(0, max));
 }
+
+/// <summary>
+/// The reusable origin of a Release's most recent import — its source
+/// <see cref="ImportJob.Kind"/> (<c>url</c> / <c>staged_zip</c> / <c>cal_txt</c>
+/// / <c>backfill_system_references</c>), the download URL when it was a URL
+/// import, the DVD-subset flag for staged zips, and the store-symbol-reference
+/// choice. Drives the retry endpoint's source reuse and the manage page's
+/// prefill / re-upload prompt.
+/// </summary>
+public sealed record ImportJobOrigin(string Kind, string? DownloadUrl, bool? StagedIsDvd, bool StoreSymbolReference);
 
 public sealed record ImportQueueSnapshot(int Pending, IReadOnlyList<ImportQueueRow> Recent);
 

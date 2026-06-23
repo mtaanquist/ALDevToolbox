@@ -33,6 +33,7 @@ public sealed record ReleaseDetail(
     string Label,
     string Kind,
     string Status,
+    string? StatusMessage,
     string? BcVersion,
     int? ParentReleaseId,
     string? ParentLabel,

@@ -149,6 +149,33 @@ public sealed class ReleaseManagementServiceTests : IDisposable
         (await read.OeReleases.AsNoTracking().AnyAsync(r => r.Id == id)).Should().BeTrue();
     }
 
+    // ── Clear ingested data (retry support) ─────────────────────────────
+
+    [Fact]
+    public async Task ClearIngestedDataAsync_removes_modules_but_keeps_the_release_row()
+    {
+        var id = await SeedReleaseAsync(label: "Clear me");
+
+        await using (var before = _db.NewContext())
+        {
+            (await before.OeModules.AsNoTracking().AnyAsync(m => m.ReleaseId == id))
+                .Should().BeTrue("the seed import wrote at least one module");
+        }
+
+        await using (var ctx = _db.NewContext())
+        {
+            await NewManagement(ctx).ClearIngestedDataAsync(id);
+        }
+
+        await using var read = _db.NewContext();
+        (await read.OeReleases.AsNoTracking().AnyAsync(r => r.Id == id))
+            .Should().BeTrue("the release row is kept so the retry re-runs into it");
+        (await read.OeModules.AsNoTracking().AnyAsync(m => m.ReleaseId == id))
+            .Should().BeFalse();
+        (await read.OeModuleFiles.AsNoTracking().AnyAsync(f => f.Module!.ReleaseId == id))
+            .Should().BeFalse("the module cascade wiped the dependent file rows");
+    }
+
     [Fact]
     public async Task HardDeleteAsync_works_on_an_already_soft_deleted_release()
     {
