@@ -890,6 +890,17 @@
     background: var(--surface);
 }
 
+/* Equal-width variant (PillTabs Equal="true"): the row fills its container and
+   every tab takes an equal share, so labels of different lengths don't give the
+   tabs different widths. Used by the Import Release header. */
+.pill-tabs--equal {
+    display: flex;
+}
+.pill-tabs--equal .pill-tab {
+    flex: 1 1 0;
+    justify-content: center;
+}
+
 .pill-tab {
     border: 1px solid transparent;
     background: transparent;

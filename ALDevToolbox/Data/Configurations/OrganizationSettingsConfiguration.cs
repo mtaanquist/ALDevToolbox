@@ -38,6 +38,9 @@ internal sealed class OrganizationSettingsConfiguration : IEntityTypeConfigurati
         entity.Property(e => e.MachineTranslationTrigger)
             .HasColumnName("machine_translation_trigger").HasConversion<int>().IsRequired()
             .HasDefaultValue(ALDevToolbox.Domain.ValueObjects.MtTrigger.Off);
+        entity.Property(e => e.AutoImportReleasesEnabled)
+            .HasColumnName("auto_import_releases_enabled").IsRequired().HasDefaultValue(false);
+        entity.Property(e => e.AutoImportCountry).HasColumnName("auto_import_country").HasMaxLength(20);
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.HasIndex(e => e.OrganizationId).IsUnique();
         entity.HasOne(e => e.Organization)

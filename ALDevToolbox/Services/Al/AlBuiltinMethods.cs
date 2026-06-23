@@ -362,6 +362,25 @@ public static class AlBuiltinMethods
     };
 
     /// <summary>
+    /// The subset of <see cref="EnumMethods"/> invoked on the enum <em>type</em>
+    /// itself (reflection over the value set) rather than on an enum value.
+    /// These are unambiguously enum-static, so the chain walker treats them as
+    /// built-ins even when a type-literal head resolved to a <em>same-named</em>
+    /// table / interface instead of the enum. BC ships colliding names — e.g.
+    /// <c>enum "Ext. File Storage Connector"</c> beside a same-named table, and
+    /// <c>enum "Email Connector"</c> beside <c>interface "Email Connector"</c> —
+    /// so <c>"X".Ordinals()</c> otherwise strands as a <c>chain-step</c>
+    /// unresolved against the wrong object kind.
+    /// </summary>
+    public static readonly HashSet<string> EnumStaticMethods = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Names", "Ordinals", "GetValueAt", "FromInteger",
+    };
+
+    /// <summary>True when <paramref name="memberName"/> is an enum reflection static (<see cref="EnumStaticMethods"/>).</summary>
+    public static bool IsEnumStaticMethod(string memberName) => EnumStaticMethods.Contains(memberName);
+
+    /// <summary>
     /// Catch-all: a name we treat as built-in regardless of receiver
     /// kind. Add sparingly — these get filtered everywhere they
     /// appear in a chain.

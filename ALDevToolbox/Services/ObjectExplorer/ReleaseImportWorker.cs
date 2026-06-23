@@ -93,6 +93,10 @@ public sealed class ReleaseImportWorker : BackgroundService
         var openedStreams = new List<Stream>();
         ZipArchive? archive = null;
         string? tempToDelete = null;
+        // BC artifact imports stage two zips (application + platform); the
+        // second slots carry the platform archive/temp file for cleanup.
+        ZipArchive? archive2 = null;
+        string? tempToDelete2 = null;
         var jobSucceeded = false;
         string? jobFailureMessage = null;
         try
@@ -162,6 +166,25 @@ public sealed class ReleaseImportWorker : BackgroundService
                         tempToDelete = staged.TempPath;
                         (uploads, archive) = ReleaseZipStaging.OpenStagedZip(staged.TempPath, staged.IsDvd, openedStreams);
                         break;
+                    case ReleaseImportSource.BcArtifact artifact:
+                        var artifacts = scope.ServiceProvider.GetRequiredService<BcArtifactService>();
+                        var download = await artifacts.DownloadArtifactSetAsync(artifact.ApplicationUrl, ct).ConfigureAwait(false);
+                        tempToDelete = download.ApplicationZipPath;
+                        tempToDelete2 = download.PlatformZipPath;
+                        // The application (country) artifact carries the localized
+                        // apps (Applications.<country>/ + Extensions/); the platform
+                        // artifact contributes ONLY System.app — its W1 apps would
+                        // collide (same AppId+Version, different bytes) with the
+                        // localized ones. See FolderZipWalker's artifact notes.
+                        (uploads, archive) = ReleaseZipStaging.OpenBcArtifactZip(download.ApplicationZipPath, isPlatform: false, openedStreams);
+                        if (download.PlatformZipPath is not null)
+                        {
+                            var (platformUploads, platformArchive) =
+                                ReleaseZipStaging.OpenBcArtifactZip(download.PlatformZipPath, isPlatform: true, openedStreams);
+                            archive2 = platformArchive;
+                            uploads = uploads.Concat(platformUploads).ToList();
+                        }
+                        break;
                     default:
                         throw new InvalidOperationException($"Unknown import source {job.Source.GetType().Name}.");
                 }
@@ -225,9 +248,14 @@ public sealed class ReleaseImportWorker : BackgroundService
                 try { s.Dispose(); } catch { /* swallow */ }
             }
             archive?.Dispose();
+            archive2?.Dispose();
             if (tempToDelete is not null && File.Exists(tempToDelete))
             {
                 try { File.Delete(tempToDelete); } catch { /* swallow */ }
+            }
+            if (tempToDelete2 is not null && File.Exists(tempToDelete2))
+            {
+                try { File.Delete(tempToDelete2); } catch { /* swallow */ }
             }
             if (job.JobRowId != 0)
             {

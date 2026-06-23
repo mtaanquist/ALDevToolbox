@@ -949,8 +949,12 @@ internal static class ObjectExplorerEndpoints
 
     private static void Redirect(HttpContext ctx, string errKey, string message)
     {
+        // DVD-URL errors come from the DVD tab; send the admin back there so the
+        // message lands next to the field they used. Everything else is the
+        // Upload tab's file pickers.
+        var page = errKey == "DvdUrl" ? "/admin/object-explorer/new/dvd" : "/admin/object-explorer/new";
         ctx.Response.Redirect(
-            "/admin/object-explorer/new?err=" + Uri.EscapeDataString(errKey)
+            page + "?err=" + Uri.EscapeDataString(errKey)
             + "&msg=" + Uri.EscapeDataString(message));
     }
 

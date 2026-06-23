@@ -48,6 +48,33 @@ public static class ReleaseZipStaging
             descend++;
         }
 
+        return (BuildUploads(entries, openedStreams), archive);
+    }
+
+    /// <summary>
+    /// Opens a downloaded Microsoft BC artifact zip and builds its uploads.
+    /// <paramref name="isPlatform"/> selects the platform walk (System.app only —
+    /// see <see cref="FolderZipWalker.WalkBcArtifactPlatform"/>) over the
+    /// application walk (localized <c>Applications.&lt;country&gt;</c> /
+    /// <c>Extensions</c> apps, tests dropped). Artifacts aren't nested-zipped, so
+    /// there's no descent step. The returned <see cref="ZipArchive"/> owns the
+    /// entry streams added to <paramref name="openedStreams"/>; the caller
+    /// disposes both and deletes the temp file.
+    /// </summary>
+    public static (List<AppFileUpload> Uploads, ZipArchive Archive) OpenBcArtifactZip(
+        string tempZipPath, bool isPlatform, List<Stream> openedStreams)
+    {
+        var archive = new ZipArchive(File.OpenRead(tempZipPath), ZipArchiveMode.Read);
+        var entries = isPlatform
+            ? FolderZipWalker.WalkBcArtifactPlatform(archive)
+            : FolderZipWalker.WalkBcArtifactApplication(archive);
+        return (BuildUploads(entries, openedStreams), archive);
+    }
+
+    /// <summary>Opens each walked entry's app (and paired source) stream into one upload list.</summary>
+    private static List<AppFileUpload> BuildUploads(
+        IReadOnlyList<FolderZipEntry> entries, List<Stream> openedStreams)
+    {
         var uploads = new List<AppFileUpload>(entries.Count);
         foreach (var entry in entries)
         {
@@ -69,7 +96,7 @@ public static class ReleaseZipStaging
                 IsInternal: entry.IsInternal,
                 IsLanguagePack: entry.IsLanguagePack));
         }
-        return (uploads, archive);
+        return uploads;
     }
 
     /// <summary>

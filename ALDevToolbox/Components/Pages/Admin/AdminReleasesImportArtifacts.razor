@@ -1,0 +1,329 @@
+@page "/admin/object-explorer/new/artifacts"
+@attribute [Authorize(Roles = "Admin,Editor")]
+@rendermode InteractiveServer
+@inject ALDevToolbox.Services.ObjectExplorer.BcArtifactService Artifacts
+@inject ALDevToolbox.Services.ObjectExplorer.ArtifactReleaseImporter Importer
+@inject ALDevToolbox.Services.ObjectExplorer.ObjectExplorerService ObjectExplorer
+@inject ALDevToolbox.Services.OrganizationConfigService Config
+@inject ILogger<AdminReleasesImportArtifacts> Log
+@using ALDevToolbox.Domain.Entities.ObjectExplorer
+@using ALDevToolbox.Domain.ValueObjects
+@using ALDevToolbox.Services.ObjectExplorer
+
+@*
+    Artifacts tab of the Import Release page. Interactive (InteractiveServer):
+    browse Microsoft's available OnPrem builds for a country and import any one
+    of them (newest, or an older version to backfill), plus opt the org into a
+    daily auto-import. Microsoft releases are always first-party with the label
+    "Business Central {Major}.{Minor} ({CC})"; a version already in the catalogue
+    shows "Imported" instead of an Import button so we never re-download it.
+    Only OnPrem is offered — Sandbox artifacts hide their apps inside a database
+    backup and aren't walkable. See .design/object-explorer.md.
+*@
+
+<PageTitle>Import Release · Artifacts · Admin · AL Dev Toolbox</PageTitle>
+
+<div class="admin-page admin-page--wide">
+    <AdminReleasesImportHeader ActiveTab="AdminReleasesImportHeader.Tab.Artifacts" />
+
+    @if (_message is not null)
+    {
+        <p class="form-success" role="status">@_message</p>
+    }
+    @if (_error is not null)
+    {
+        <div class="form-error" role="alert"><p>@_error</p></div>
+    }
+
+    @* ── Automatic import (per-org) ─────────────────────────────────── *@
+    <section class="admin-section">
+        <h2>Automatic import</h2>
+        <p class="muted">
+            Import the newest Microsoft <strong>OnPrem</strong> release for a
+            country once a day. Versions already in the catalogue are skipped, so
+            this only ever adds a new <code>Major.Minor</code>.
+        </p>
+        <div class="form-grid form-grid--narrow">
+            <label class="checkbox-label">
+                <input type="checkbox" @bind="_autoEnabled" />
+                Automatically import new OnPrem releases for this organisation
+            </label>
+            <section class="form-section">
+                <label class="section-label" for="auto-country">Country code</label>
+                <input id="auto-country" type="text" maxlength="20"
+                       placeholder="e.g. dk or w1"
+                       @bind="_autoCountry" @bind:event="oninput" />
+                <small class="muted">The localisation to track (BC country code).</small>
+            </section>
+            <div class="form-actions">
+                <button type="button" class="btn btn--sm" @onclick="SaveAutoImportAsync" disabled="@_savingAuto">
+                    <Icon Name="save" Width="14" Height="14" />
+                    <span>@(_savingAuto ? "Saving…" : "Save automatic import")</span>
+                </button>
+            </div>
+        </div>
+    </section>
+
+    @* ── Browse & import a specific version ─────────────────────────── *@
+    <section class="admin-section">
+        <h2>Browse versions</h2>
+        <p class="muted">
+            Pick a country and refresh to list the available OnPrem builds, then
+            import the newest — or an older one to backfill a specific release.
+        </p>
+
+        <div class="oe-artifact-toolbar">
+            <section class="form-section">
+                <label class="section-label" for="browse-country">Country code</label>
+                <input id="browse-country" type="text" maxlength="20"
+                       placeholder="e.g. dk or w1"
+                       @bind="_browseCountry" @bind:event="oninput"
+                       @onkeydown="OnBrowseCountryKeyDown" />
+            </section>
+            <button type="button" class="btn btn--sm" @onclick="RefreshAsync" disabled="@(_refreshing || string.IsNullOrWhiteSpace(_browseCountry))">
+                <Icon Name="refresh-cw" Width="14" Height="14" />
+                <span>@(_refreshing ? "Refreshing…" : "Refresh from Microsoft")</span>
+            </button>
+        </div>
+
+        @if (_refreshing && _rows.Count == 0)
+        {
+            <p class="muted">Querying Microsoft's artifact index…</p>
+        }
+        else if (_loadedCountry is null)
+        {
+            <p class="muted">Enter a country code and refresh to see available versions.</p>
+        }
+        else if (_rows.Count == 0)
+        {
+            <p class="muted">
+                No OnPrem artifacts found for <code>@_loadedCountry</code>. Double-check
+                the country code (e.g. <code>dk</code>, <code>w1</code>) and refresh again.
+            </p>
+        }
+        else
+        {
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Version</th>
+                        <th scope="col">Major.Minor</th>
+                        <th scope="col">Discovered</th>
+                        <th scope="col">Status</th>
+                        <th scope="col" class="oe-artifact-action-col">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _rows)
+                    {
+                        var label = BcArtifactIndex.FormatLabel(row.Version, _loadedCountry!);
+                        var importedId = ImportedReleaseId(label);
+                        <tr @key="row.Version">
+                            <td>@row.Version</td>
+                            <td>@row.MajorMinor</td>
+                            <td>@row.RefreshedAt.ToString("yyyy-MM-dd")</td>
+                            <td>
+                                @if (importedId is int rid)
+                                {
+                                    <a href="@($"/object-explorer/release/{rid}")">Imported</a>
+                                }
+                                else if (_queuedVersions.Contains(row.Version))
+                                {
+                                    <span class="muted">Queued…</span>
+                                }
+                                else
+                                {
+                                    <span class="muted">—</span>
+                                }
+                            </td>
+                            <td class="oe-artifact-action-col">
+                                @if (importedId is null && !_queuedVersions.Contains(row.Version))
+                                {
+                                    <button type="button" class="btn btn--sm"
+                                            @onclick="() => ImportAsync(row.Version)"
+                                            disabled="@_importing">
+                                        <Icon Name="download" Width="14" Height="14" />
+                                        <span>Import</span>
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <small class="muted">
+                Versions are read live from Microsoft's index and cached here. The
+                application artifact and its referenced platform artifact are
+                downloaded and merged at import time; the import runs in the
+                background — watch it on the releases list.
+            </small>
+        }
+    </section>
+</div>
+
+@code {
+    // Auto-import settings (persisted to OrganizationSettings).
+    private bool _autoEnabled;
+    private string _autoCountry = string.Empty;
+    private bool _savingAuto;
+
+    // Browse / version-table state.
+    private string _browseCountry = string.Empty;
+    private string? _loadedCountry;
+    private IReadOnlyList<BcArtifactVersion> _rows = Array.Empty<BcArtifactVersion>();
+    private bool _refreshing;
+    private bool _importing;
+    private readonly HashSet<string> _queuedVersions = new(StringComparer.OrdinalIgnoreCase);
+
+    // Label → release id for the "Imported" status, refreshed after each import.
+    private Dictionary<string, int> _importedByLabel = new(StringComparer.OrdinalIgnoreCase);
+
+    private string? _message;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var config = await Config.GetCurrentAsync();
+        _autoEnabled = config.Settings.AutoImportReleasesEnabled;
+        _autoCountry = config.Settings.AutoImportCountry ?? string.Empty;
+        // Pre-fill the browse country from the auto-import country so the common
+        // case is one click to refresh.
+        _browseCountry = _autoCountry;
+
+        await LoadImportedLabelsAsync();
+
+        // If the org already tracks a country, show its cached versions immediately.
+        if (!string.IsNullOrWhiteSpace(_browseCountry))
+        {
+            try
+            {
+                var cached = await Artifacts.GetCachedVersionsAsync(_browseCountry);
+                if (cached.Count > 0)
+                {
+                    _rows = cached;
+                    _loadedCountry = _browseCountry.Trim().ToLowerInvariant();
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.LogWarning(ex, "Failed to load cached artifact versions for {Country}.", _browseCountry);
+            }
+        }
+    }
+
+    private async Task LoadImportedLabelsAsync()
+    {
+        var releases = await ObjectExplorer.ListReleasesAsync();
+        _importedByLabel = releases
+            .Where(r => r.Status != "failed")
+            .GroupBy(r => r.Label, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private int? ImportedReleaseId(string label) =>
+        _importedByLabel.TryGetValue(label, out var id) ? id : null;
+
+    private async Task OnBrowseCountryKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !_refreshing && !string.IsNullOrWhiteSpace(_browseCountry))
+        {
+            await RefreshAsync();
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_refreshing || string.IsNullOrWhiteSpace(_browseCountry)) return;
+        _refreshing = true;
+        _message = null;
+        _error = null;
+        try
+        {
+            _rows = await Artifacts.RefreshIndexAsync(_browseCountry);
+            _loadedCountry = _browseCountry.Trim().ToLowerInvariant();
+            await LoadImportedLabelsAsync();
+            _message = $"Found {_rows.Count} OnPrem version(s) for '{_loadedCountry}'.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _error = ex.Errors.FirstOrDefault().Value ?? "Couldn't refresh the artifact index.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to refresh artifact index for {Country}.", _browseCountry);
+            _error = "Couldn't reach Microsoft's artifact index. Check connectivity and try again.";
+        }
+        finally
+        {
+            _refreshing = false;
+        }
+    }
+
+    private async Task ImportAsync(string version)
+    {
+        if (_importing || _loadedCountry is null) return;
+        _importing = true;
+        _message = null;
+        _error = null;
+        try
+        {
+            var outcome = await Importer.ImportAsync(_loadedCountry, version);
+            switch (outcome.Status)
+            {
+                case ArtifactImportStatus.Queued:
+                    _queuedVersions.Add(version);
+                    _message = $"Queued '{outcome.Label}' — it'll appear on the releases list as it ingests.";
+                    break;
+                case ArtifactImportStatus.AlreadyImported:
+                    _message = $"'{outcome.Label}' is already in the catalogue.";
+                    await LoadImportedLabelsAsync();
+                    break;
+                case ArtifactImportStatus.NotFound:
+                    _error = $"Version {version} is no longer available for '{_loadedCountry}'. Refresh and try again.";
+                    break;
+            }
+        }
+        catch (PlanValidationException ex)
+        {
+            _error = ex.Errors.FirstOrDefault().Value ?? "Couldn't queue the import.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to queue artifact import {Version} for {Country}.", version, _loadedCountry);
+            _error = "Couldn't queue the import. Check connectivity and try again.";
+        }
+        finally
+        {
+            _importing = false;
+        }
+    }
+
+    private async Task SaveAutoImportAsync()
+    {
+        if (_savingAuto) return;
+        _savingAuto = true;
+        _message = null;
+        _error = null;
+        try
+        {
+            await Config.SaveAutoImportAsync(_autoEnabled, _autoCountry);
+            _autoCountry = _autoCountry.Trim().ToLowerInvariant();
+            _message = _autoEnabled
+                ? $"Automatic import enabled for '{_autoCountry}'."
+                : "Automatic import disabled.";
+        }
+        catch (PlanValidationException ex)
+        {
+            _error = ex.Errors.FirstOrDefault().Value ?? "Couldn't save automatic import settings.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to save auto-import settings.");
+            _error = "An unexpected error occurred. The change was not saved.";
+        }
+        finally
+        {
+            _savingAuto = false;
+        }
+    }
+}

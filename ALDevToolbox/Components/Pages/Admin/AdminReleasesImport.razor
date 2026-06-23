@@ -7,34 +7,17 @@
 @using Microsoft.AspNetCore.Antiforgery
 
 @*
-    Bulk-upload form for a Release of BC application .app files. Posts to
-    /admin/object-explorer/import (see ObjectExplorerEndpoints) so the multipart
-    body streams through Kestrel rather than the Blazor SignalR circuit —
-    a full BC DVD is ~150 MB and would choke as an InputFile.
-
-    Static-rendered: no @rendermode, no interactivity. The parent-Release
-    select is server-rendered from the existing Releases list.
+    Upload tab of the Import Release page. Statically rendered (no @rendermode):
+    it posts a multipart body — up to 1 GB — straight to
+    /admin/object-explorer/import through Kestrel rather than the SignalR
+    circuit. The DVD (URL) and Artifacts (Microsoft CDN) modes live on sibling
+    routes behind the shared pill header; this tab is the manual-files path.
 *@
 
-<PageTitle>Import Release · Admin · AL Dev Toolbox</PageTitle>
+<PageTitle>Import Release · Upload · Admin · AL Dev Toolbox</PageTitle>
 
 <div class="admin-page">
-    <header class="admin-page__header">
-        <div>
-            <h1>Import Release</h1>
-            <p class="muted">
-                One Release is one snapshot of the BC ecosystem — first-party DVD,
-                a partner app stack, or a customer's full set. Pick all the
-                <code>.app</code> files in one upload; if your bundle includes
-                paired <code>.Source.zip</code> files for apps that don't embed
-                source, drop them in the second box and we'll match by name.
-            </p>
-        </div>
-        <a class="btn btn--sm" href="/admin/object-explorer">
-            <Icon Name="arrow-left" Width="14" Height="14" />
-            <span>Back to admin</span>
-        </a>
-    </header>
+    <AdminReleasesImportHeader ActiveTab="AdminReleasesImportHeader.Tab.Upload" />
 
     @if (_errorMessage is not null)
     {
@@ -60,96 +43,9 @@
             <p class="oe-import-progress__hint muted" data-oe-import-hint></p>
         </div>
 
-        <section class="form-section">
-            <label class="field">
-                <span class="field__label">Label</span>
-                <input type="text" name="Label" required maxlength="120"
-                       placeholder="e.g. BC 25.18 DK or Acme Co on BC 25.18"
-                       class="field__input" />
-                <small class="field__caption muted">
-                    Shown in the version picker. Use something memorable —
-                    "BC 25.18 DK" beats "release_20260601_v3".
-                </small>
-            </label>
-
-            <label class="field">
-                <span class="field__label">Kind</span>
-                <select name="Kind" required class="field__input">
-                    <option value="first_party">First-party DVD (Microsoft)</option>
-                    <option value="third_party">Third-party / partner</option>
-                    <option value="customer">Customer-specific bundle</option>
-                </select>
-                <small class="field__caption muted">
-                    Third-party and customer Releases sit on top of a first-party
-                    parent; pick that parent below so cross-module references resolve.
-                </small>
-            </label>
-
-            <label class="field" data-oe-field-parent>
-                <span class="field__label">Parent Release (optional)</span>
-                <select name="ParentReleaseId" class="field__input">
-                    <option value="">— none (first-party, no parent) —</option>
-                    @if (_parentCandidates is not null)
-                    {
-                        @foreach (var r in _parentCandidates)
-                        {
-                            <option value="@r.Id">@r.Label</option>
-                        }
-                    }
-                </select>
-                <small class="field__caption muted">
-                    Required for third-party / customer Releases — the chain walker
-                    follows this pointer to resolve references that target objects
-                    in the parent's modules.
-                </small>
-            </label>
-
-            <label class="field" data-oe-field-publisher>
-                <span class="field__label">Publisher (optional)</span>
-                <input type="text" name="Publisher" maxlength="200"
-                       placeholder="e.g. Continia Software"
-                       class="field__input" />
-                <small class="field__caption muted">
-                    For third-party / customer Releases — who owns this extension.
-                    Set it explicitly when you've taken over an app someone else built.
-                </small>
-            </label>
-
-            <label class="field" data-oe-field-customer>
-                <span class="field__label">Customer (optional)</span>
-                <input type="text" name="CustomerName" maxlength="200"
-                       placeholder="e.g. Acme Co"
-                       class="field__input" />
-                <small class="field__caption muted">
-                    Only used for customer Releases — the customer this bundle
-                    belongs to.
-                </small>
-            </label>
-        </section>
+        <ReleaseImportMetadataFields ParentCandidates="_parentCandidates" />
 
         <section class="form-section">
-            <label class="field">
-                <span class="field__label">Download URL (recommended)</span>
-                <input type="url" name="DvdUrl" inputmode="url"
-                       placeholder="https://download.microsoft.com/…/Dynamics.365.BC.…DVD.zip"
-                       class="field__input" />
-                <small class="field__caption muted">
-                    Paste the link to Microsoft's BC DVD ZIP and we download it
-                    for you — keeping only what the Object Explorer needs
-                    (everything under <code>Applications/</code> plus
-                    <code>System.app</code>; test extensions are skipped). The
-                    host must be on the download allow-list a SiteAdmin
-                    configures under Site administration → Settings. The file is
-                    deleted as soon as the import finishes. Runs in the
-                    background — you'll be taken back to the releases list while
-                    it ingests.
-                </small>
-            </label>
-        </section>
-
-        <section class="form-section">
-            <p class="muted">— or upload the files yourself —</p>
-
             <label class="field">
                 <span class="field__label">Application folder ZIP</span>
                 <input type="file" name="FolderZip" accept=".zip" class="field__input field__input--file" />

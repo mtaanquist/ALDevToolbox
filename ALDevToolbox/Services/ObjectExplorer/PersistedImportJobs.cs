@@ -59,6 +59,13 @@ public sealed class PersistedImportJobs
                 row.Kind = "url";
                 row.DownloadUrl = url.DownloadUrl;
                 break;
+            case ReleaseImportSource.BcArtifact artifact:
+                // Resumable like a URL import: the application-artifact URL was
+                // resolved from Microsoft's index before enqueue, so a restart
+                // re-downloads it idempotently into a fresh temp file.
+                row.Kind = "bc_artifact";
+                row.DownloadUrl = artifact.ApplicationUrl;
+                break;
             case ReleaseImportSource.StagedZip staged:
                 row.Kind = "staged_zip";
                 row.StagedZipPath = staged.TempPath;
@@ -154,6 +161,19 @@ public sealed class PersistedImportJobs
                         Identity: new AmbientOrganizationScope.OrganizationIdentity(
                             row.OrganizationId, row.UserId, row.IsSiteAdmin, row.IsSystemOrganization),
                         Source: new ReleaseImportSource.Url(row.DownloadUrl),
+                        StoreSymbolReference: row.StoreSymbolReference,
+                        JobRowId: row.Id));
+                    break;
+                case "bc_artifact" when !string.IsNullOrEmpty(row.DownloadUrl):
+                    // Re-resolve happened at enqueue; the stored application URL
+                    // is enough to re-download the whole artifact set on resume.
+                    row.Status = "queued";
+                    row.StartedAt = null;
+                    toResume.Add(new ReleaseImportJob(
+                        ReleaseId: row.ReleaseId,
+                        Identity: new AmbientOrganizationScope.OrganizationIdentity(
+                            row.OrganizationId, row.UserId, row.IsSiteAdmin, row.IsSystemOrganization),
+                        Source: new ReleaseImportSource.BcArtifact(row.DownloadUrl),
                         StoreSymbolReference: row.StoreSymbolReference,
                         JobRowId: row.Id));
                     break;

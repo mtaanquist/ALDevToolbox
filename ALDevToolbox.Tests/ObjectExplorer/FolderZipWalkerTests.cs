@@ -390,6 +390,98 @@ public sealed class FolderZipWalkerTests
     /// entry paths. File bodies are empty — none of the walker's behaviour
     /// depends on payload content, only on names and folder layout.
     /// </summary>
+    // ── Microsoft artifact layout (verified against a real BC 25.5 DK artifact) ──
+
+    [Fact]
+    public void Artifact_application_walk_picks_localized_apps_under_country_suffixed_folder()
+    {
+        using var archive = BuildArchive(
+            "dk/Applications.DK/Microsoft_Base Application_25.5.30849.48785.app",
+            "dk/Applications.DK/Base Application.Source.zip",
+            "dk/Applications.DK/Microsoft_System Application_25.5.30849.48785.app",
+            "dk/Extensions/Microsoft_Sustainability_25.5.30849.48785.app",
+            "dk/BusinessCentral-DK.bak",
+            "dk/manifest.json");
+
+        var entries = FolderZipWalker.WalkBcArtifactApplication(archive);
+
+        entries.Select(e => e.FileName).Should().BeEquivalentTo(
+            "Microsoft_Base Application_25.5.30849.48785.app",
+            "Microsoft_System Application_25.5.30849.48785.app",
+            "Microsoft_Sustainability_25.5.30849.48785.app");
+    }
+
+    [Fact]
+    public void Artifact_application_walk_pairs_versioned_app_with_unversioned_source_zip()
+    {
+        using var archive = BuildArchive(
+            "dk/Applications.DK/Microsoft_Base Application_25.5.30849.48785.app",
+            "dk/Applications.DK/Base Application.Source.zip");
+
+        var entry = FolderZipWalker.WalkBcArtifactApplication(archive).Should().ContainSingle().Subject;
+        entry.SourceZipEntry.Should().NotBeNull();
+        entry.SourceZipEntry!.Name.Should().Be("Base Application.Source.zip");
+    }
+
+    [Theory]
+    [InlineData("dk/Applications.DK/Microsoft_Tests-Bank_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_System Application Test Library_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_Business Foundation Test Libraries_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_Test Runner_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_TestRunner-Internal_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_AI Test Toolkit_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_Permissions Mock_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_Performance Toolkit Tests_25.5.30849.48785.app")]
+    // Test-framework / dev-tooling libraries the artifact ships flat (caught by
+    // the exact-name list rather than a "test" pattern):
+    [InlineData("dk/Applications.DK/Microsoft_Any_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_Library Assert_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_Library Variable Storage_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_Performance Toolkit_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_Performance Toolkit Samples_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_BuildTools_25.5.30849.48785.app")]
+    [InlineData("dk/Applications.DK/Microsoft_DemoTool_25.5.30849.48785.app")]
+    public void Artifact_application_walk_drops_test_and_tooling_apps(string nonProductAppPath)
+    {
+        using var archive = BuildArchive(
+            "dk/Applications.DK/Microsoft_Base Application_25.5.30849.48785.app",
+            nonProductAppPath);
+
+        FolderZipWalker.WalkBcArtifactApplication(archive)
+            .Select(e => e.FileName)
+            .Should().ContainSingle().Which.Should().StartWith("Microsoft_Base Application");
+    }
+
+    [Fact]
+    public void Artifact_application_walk_keeps_the_product_apps()
+    {
+        // The core localized product apps must survive the test/tooling filter.
+        using var archive = BuildArchive(
+            "dk/Applications.DK/Microsoft_Base Application_25.5.30849.48785.app",
+            "dk/Applications.DK/Microsoft_System Application_25.5.30849.48785.app",
+            "dk/Applications.DK/Microsoft_Application_25.5.30849.48785.app",
+            "dk/Applications.DK/Microsoft_Business Foundation_25.5.30849.48785.app",
+            "dk/Extensions/Microsoft_Sustainability_25.5.30849.48785.app");
+
+        FolderZipWalker.WalkBcArtifactApplication(archive).Should().HaveCount(5);
+    }
+
+    [Fact]
+    public void Artifact_platform_walk_returns_only_system_app_not_the_w1_apps()
+    {
+        // The platform artifact is the classic W1 DVD plus the unique System.app;
+        // its W1 apps would collide with the localized ones, so only System.app
+        // comes through.
+        using var archive = BuildArchive(
+            "platform/Applications/BaseApp/Source/Microsoft_Base Application.app",
+            "platform/Applications/Application/Source/Microsoft_Application.app",
+            "platform/ModernDev/program files/Microsoft Dynamics NAV/252/AL Development Environment/System.app");
+
+        var entries = FolderZipWalker.WalkBcArtifactPlatform(archive);
+
+        entries.Should().ContainSingle().Which.FileName.Should().Be("System.app");
+    }
+
     private static ZipArchive BuildArchive(params string[] paths)
     {
         var ms = new MemoryStream();

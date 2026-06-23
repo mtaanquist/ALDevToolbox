@@ -61,6 +61,16 @@ public abstract record ReleaseImportSource
     /// <summary>Download the full DVD ZIP from a (already allow-list-validated) URL, then keep only the DVD subset.</summary>
     public sealed record Url(string DownloadUrl) : ReleaseImportSource;
 
+    /// <summary>
+    /// Resolve and download a Microsoft Business Central OnPrem artifact set —
+    /// the application artifact at <paramref name="ApplicationUrl"/> plus the
+    /// platform artifact it references — then walk the merged loose <c>.app</c>
+    /// files as a DVD subset. The URL is resolved from Microsoft's index before
+    /// enqueue (so it's fixed/validated), which keeps the worker resumable like
+    /// <see cref="Url"/>. See <c>BcArtifactService</c>.
+    /// </summary>
+    public sealed record BcArtifact(string ApplicationUrl) : ReleaseImportSource;
+
     /// <summary>Open a ZIP already staged to a temp file. <paramref name="IsDvd"/> selects the DVD-subset walk vs the whole-archive walk.</summary>
     public sealed record StagedZip(string TempPath, bool IsDvd) : ReleaseImportSource;
 
