@@ -154,6 +154,13 @@ public class ReleaseManagementService
             .Distinct()
             .ToListAsync(ct).ConfigureAwait(false);
 
+        // The single cascading DELETE fans out through every dependent oe_*
+        // table; for a large first-party release (tens of thousands of objects)
+        // that runs well past Npgsql's default 30 s command timeout, surfacing
+        // as a spurious "transient failure". Grant the same headroom the import
+        // passes use.
+        _db.Database.SetCommandTimeout(TimeSpan.FromMinutes(10));
+
         _db.OeReleases.Remove(release);
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
@@ -187,6 +194,11 @@ public class ReleaseManagementService
             .Select(f => f.ContentHash)
             .Distinct()
             .ToListAsync(ct).ConfigureAwait(false);
+
+        // Same cascade exposure as HardDeleteAsync — the module-wide DELETE can
+        // run long on a large release, so lift the command timeout off the 30 s
+        // default before issuing it.
+        _db.Database.SetCommandTimeout(TimeSpan.FromMinutes(10));
 
         var removedModules = await _db.Database.ExecuteSqlRawAsync(
             "DELETE FROM oe_modules WHERE release_id = {0}",
