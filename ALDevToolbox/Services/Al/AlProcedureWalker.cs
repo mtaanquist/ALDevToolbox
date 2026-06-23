@@ -1595,6 +1595,21 @@ internal sealed class AlProcedureWalker
                     if (followedByParen) WalkArgsForBuiltin(receiverType, memberTok.Value);
                     return;
                 }
+                // Enum reflection statics (Names / Ordinals / GetValueAt /
+                // FromInteger) are invoked on the enum *type*. When the
+                // type-literal head name also matches a table/interface — BC
+                // ships `enum "Ext. File Storage Connector"` beside a same-named
+                // table, and `enum "Email Connector"` beside `interface "Email
+                // Connector"` — the head resolves to the non-enum object and
+                // these enum-only statics miss. They're built-ins, not real
+                // references, so silence (and walk any args for inner refs)
+                // rather than counting a chain-step unresolved against the wrong
+                // object kind. See AlBuiltinMethods.EnumStaticMethods.
+                if (AlBuiltinMethods.IsEnumStaticMethod(memberTok.Value))
+                {
+                    if (followedByParen) WalkBalancedParens();
+                    return;
+                }
                 // Platform virtual tables (Record Field, Record Company,
                 // Record File, Record Media, Record User, …) have
                 // schemas that aren't fully modelled. Two ways to spot

@@ -394,6 +394,28 @@ public sealed class AlReferenceExtractorTests
     }
 
     [Fact]
+    public void Enum_static_method_on_name_colliding_type_literal_is_silenced()
+    {
+        // `"Ext. File Storage Connector".Ordinals()` — BC ships an enum and a
+        // same-named table, so the type-literal head resolves to the table.
+        // Ordinals() is an enum-static built-in, so it must be filtered, not
+        // counted as a chain-step unresolved against the table.
+        var resolver = MakeResolver();
+        resolver.AddType("Ext. File Storage Connector",
+            new AlTypeRef(BaseAppId, "table", 9450, "Ext. File Storage Connector"));
+        const string src = """
+            procedure GetOrdinals(): List of [Integer]
+            begin
+                exit("Ext. File Storage Connector".Ordinals());
+            end;
+            """;
+        var result = AlReferenceExtractor.Extract(src, OwnerCodeunit(resolver));
+
+        result.Stats.UnresolvedReceivers.Should().Be(0,
+            because: "enum-static reflection methods are built-ins even when the name resolves to a table");
+    }
+
+    [Fact]
     public void User_declared_method_with_same_name_as_builtin_still_emits_reference()
     {
         // Customer.Validate IS in the resolver (added by MakeResolver).
