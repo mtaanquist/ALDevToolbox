@@ -32,7 +32,7 @@
         <p class="caption muted">
             You've been invited to join <strong>@_invite.Organization?.Name</strong>
             as a <strong>@FormatRoleLabel(_invite.Role)</strong>.
-            Pick a display name and password to activate your account.
+            Pick a full name and password to activate your account.
         </p>
 
         @if (Error is not null && Message is not null)
@@ -51,7 +51,7 @@
             </section>
 
             <section class="form-section">
-                <label class="section-label" for="ai-name">Display name</label>
+                <label class="section-label" for="ai-name">Full name</label>
                 <input id="ai-name" type="text" name="DisplayName" required minlength="2" maxlength="80" autofocus />
             </section>
 

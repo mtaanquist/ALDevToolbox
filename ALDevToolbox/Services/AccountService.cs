@@ -455,7 +455,7 @@ public sealed class AccountService
         var trimmed = value?.Trim() ?? string.Empty;
         if (trimmed.Length is < 2 or > 80)
         {
-            errors["DisplayName"] = "Display name must be 2–80 characters.";
+            errors["DisplayName"] = "Full name must be 2–80 characters.";
         }
     }
 

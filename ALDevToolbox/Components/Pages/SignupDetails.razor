@@ -20,7 +20,7 @@
         Verified <strong>@_email</strong>.
         @if (_domainMatched)
         {
-            <text>You'll join <strong>@_domainOrgName</strong>. Pick a display name and password to finish.</text>
+            <text>You'll join <strong>@_domainOrgName</strong>. Pick a full name and password to finish.</text>
         }
         else if (SingleTenant.IsEnabled)
         {
@@ -47,9 +47,9 @@
             <AntiforgeryToken />
 
             <section class="form-section">
-                <label class="section-label" for="su-display">Display name</label>
+                <label class="section-label" for="su-display">Full name</label>
                 <input id="su-display" type="text" name="DisplayName" required minlength="2" maxlength="80"
-                       autofocus placeholder="e.g. Bob — Engineering" />
+                       autofocus placeholder="Your full name" />
             </section>
 
             <section class="form-section">

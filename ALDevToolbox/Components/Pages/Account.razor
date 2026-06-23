@@ -71,10 +71,10 @@
             <form method="post" action="/auth/account/display-name" class="form-grid form-grid--narrow">
                 <AntiforgeryToken />
                 <section class="form-section">
-                    <label class="section-label" for="ac-display">Display name</label>
+                    <label class="section-label" for="ac-display">Full name</label>
                     <input id="ac-display" type="text" name="DisplayName" value="@_user.DisplayName" required minlength="2" maxlength="80" />
                 </section>
-                <button type="submit" class="btn">Update display name</button>
+                <button type="submit" class="btn">Update full name</button>
             </form>
         </section>
 
@@ -323,7 +323,7 @@
     private static string FlashFor(string ok) => ok switch
     {
         "password" => "Password updated.",
-        "display-name" => "Display name updated.",
+        "display-name" => "Full name updated.",
         "totp-disabled" => "Authenticator app disabled.",
         "email-mfa-sent" => "We sent you a verification code. Enter it below to enable email codes.",
         "email-mfa-enabled" => "Email codes enabled.",
