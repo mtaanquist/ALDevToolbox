@@ -15,10 +15,18 @@ internal static class CookbookEndpoints
         // org. 404 collapses both "doesn't exist" and "exists in another
         // org" into the same response. Each file's RelativePath is joined
         // with `/` so ZipArchive materialises folders automatically.
+        //
+        // A `customer` query value is required: the download modal collects it
+        // and we record the download against that customer (RecordDownloadAsync)
+        // so a later bug in a recipe can be traced to who received it. We record
+        // BEFORE writing the ZIP body — once the stream starts the status code
+        // is fixed. The recording GET has a side effect by design; the download
+        // is a navigation and the trace is the point.
         app.MapGet("/api/cookbook/{id:int}/download", async (
             int id,
             HttpContext ctx,
             RecipeService recipes,
+            IOrganizationContext orgContext,
             CancellationToken ct) =>
         {
             var recipe = await recipes.GetAsync(id, ct);
@@ -27,6 +35,16 @@ internal static class CookbookEndpoints
                 ctx.Response.StatusCode = StatusCodes.Status404NotFound;
                 return;
             }
+
+            var customer = (ctx.Request.Query["customer"].ToString() ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(customer))
+            {
+                ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+                ctx.Response.ContentType = "text/plain; charset=utf-8";
+                await ctx.Response.WriteAsync("A customer name is required to download a recipe.", ct);
+                return;
+            }
+            await recipes.RecordDownloadAsync(id, customer, orgContext.CurrentUserId, ct);
 
             var fileName = BuildArchiveFileName(recipe.Title, recipe.Id);
             WriteAttachmentHeaders(ctx, fileName);

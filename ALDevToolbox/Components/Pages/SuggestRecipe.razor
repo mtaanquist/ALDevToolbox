@@ -81,7 +81,12 @@
                     <label class="section-label" for="recipe-keywords">Keywords</label>
                     <input id="recipe-keywords" type="text" maxlength="500"
                            @bind="_keywords" @bind:event="oninput"
-                           placeholder="space-separated, e.g. factbox attachment subscriber" />
+                           placeholder="space-separated; wrap a phrase in quotes, e.g. &quot;document attachments&quot; factbox subscriber" />
+                    <small class="muted">
+                        Separate tags with spaces or commas. Wrap a multi-word tag in
+                        double quotes to keep it as one — e.g.
+                        <code>"document attachments"</code>.
+                    </small>
                     <FieldError Field="Keywords" Errors="_errors" />
                 </section>
 

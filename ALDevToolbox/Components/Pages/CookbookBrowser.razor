@@ -149,7 +149,7 @@
     private static List<string> SplitKeywords(string? keywords) =>
         string.IsNullOrWhiteSpace(keywords)
             ? new List<string>()
-            : keywords.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            : keywords.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
 
     protected override async Task OnInitializedAsync()
     {

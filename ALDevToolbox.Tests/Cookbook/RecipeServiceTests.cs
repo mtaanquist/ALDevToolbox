@@ -46,7 +46,8 @@ public sealed class RecipeServiceTests : IDisposable
             .SingleAsync(s => s.Id == recipe.Id);
         persisted.Title.Should().Be("Doc Attachment Factbox");
         persisted.Type.Should().Be(RecipeType.Pattern);
-        persisted.Keywords.Should().Be("factbox attachment subscriber", "keywords are normalised to lower-case");
+        persisted.Keywords.Should().Be("factbox,attachment,subscriber",
+            "keywords are normalised to lower-case and stored comma-separated");
         persisted.Files.Select(f => f.FileName).Should().Equal(
             "EventSub.Codeunit.al", "MyPageExt.PageExt.al");
         persisted.Files.Select(f => f.Ordering).Should().Equal(0, 1);

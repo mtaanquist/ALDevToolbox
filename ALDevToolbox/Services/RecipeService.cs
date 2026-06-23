@@ -33,6 +33,10 @@ public sealed class RecipeService
     /// row (a single recipe would have to be quite pathological to top this).
     /// </summary>
     public const int MaxInstructionsLength = 10_000;
+    /// <summary>Upper bound on the estimated-value hours field — a sanity cap, not a billing rule.</summary>
+    public const decimal MaxEstimatedValueHours = 100_000m;
+    /// <summary>Cap on a recorded download's customer name.</summary>
+    public const int MaxCustomerNameLength = 200;
 
     // One segment in a recipe file's RelativePath. Letters/digits/`._-`,
     // plus space anywhere but the first character. Matches the same shape
@@ -153,6 +157,7 @@ public sealed class RecipeService
             Deprecated = input.Deprecated,
             Instructions = NullIfBlank(input.Instructions),
             MinimumApplicationVersionId = input.MinimumApplicationVersionId,
+            EstimatedValueHours = input.EstimatedValueHours,
             CreatedAt = now,
             UpdatedAt = now,
             Files = input.Files
@@ -198,6 +203,7 @@ public sealed class RecipeService
         existing.Deprecated = input.Deprecated;
         existing.Instructions = NullIfBlank(input.Instructions);
         existing.MinimumApplicationVersionId = input.MinimumApplicationVersionId;
+        existing.EstimatedValueHours = input.EstimatedValueHours;
         existing.UpdatedAt = DateTime.UtcNow;
 
         ReconcileFiles(existing, input.Files, orgId);
@@ -265,12 +271,162 @@ public sealed class RecipeService
             existing.Title, existing.Id, deprecated);
     }
 
-    /// <summary>Lower-cases and collapses internal whitespace so search is consistent across submissions.</summary>
+    /// <summary>
+    /// Records that a recipe was downloaded for a named customer. Required so a
+    /// later bug in a recipe can be traced to the customers that received it
+    /// (see the admin "applied to customers" panel). Throws
+    /// <see cref="PlanValidationException"/> when the recipe is missing in this
+    /// org or the customer name is blank/oversized.
+    /// </summary>
+    public async Task RecordDownloadAsync(int recipeId, string customerName, int? userId, CancellationToken ct = default)
+    {
+        var orgId = RequireOrganizationId();
+
+        var name = customerName?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(name))
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["CustomerName"] = "Customer name is required before downloading.",
+            });
+        }
+        if (name.Length > MaxCustomerNameLength)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["CustomerName"] = $"Customer name must be {MaxCustomerNameLength} characters or fewer.",
+            });
+        }
+
+        var recipeExists = await _db.Recipes
+            .AsNoTracking()
+            .AnyAsync(r => r.Id == recipeId && r.DeletedAt == null, ct);
+        if (!recipeExists)
+        {
+            throw new PlanValidationException(new Dictionary<string, string>
+            {
+                ["Id"] = $"Recipe with id {recipeId} was not found.",
+            });
+        }
+
+        _db.RecipeDownloads.Add(new RecipeDownload
+        {
+            OrganizationId = orgId,
+            RecipeId = recipeId,
+            CustomerName = name,
+            DownloadedByUserId = userId,
+            DownloadedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Recorded download of recipe {RecipeId} for customer '{Customer}' by user {UserId}.",
+            recipeId, name, userId);
+    }
+
+    /// <summary>
+    /// Download history for a recipe, newest first, with the downloading user's
+    /// nav loaded for the admin panel. Drives the "applied to customers" list
+    /// on the admin recipe page.
+    /// </summary>
+    public Task<List<RecipeDownload>> GetDownloadsAsync(int recipeId, CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        return _db.RecipeDownloads
+            .AsNoTracking()
+            .Include(d => d.DownloadedByUser)
+            .Where(d => d.RecipeId == recipeId)
+            .OrderByDescending(d => d.DownloadedAt)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Distinct customer names previously recorded in this org, for the
+    /// download modal's autocomplete datalist so spellings stay consistent.
+    /// </summary>
+    public Task<List<string>> GetCustomerNamesAsync(CancellationToken ct = default)
+    {
+        RequireOrganizationId();
+        return _db.RecipeDownloads
+            .AsNoTracking()
+            .Select(d => d.CustomerName)
+            .Distinct()
+            .OrderBy(n => n)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Tokenises the raw keyword input into a canonical, comma-separated tag
+    /// list. Whitespace and commas separate tags, except inside a
+    /// double-quoted phrase — so <c>"document attachments" factbox</c> yields
+    /// the two tags <c>document attachments</c> and <c>factbox</c>. Each tag is
+    /// lower-cased, has its internal whitespace collapsed to single spaces, and
+    /// any stray comma (only reachable inside quotes, since comma is the
+    /// storage delimiter) folded to a space so it can't corrupt the delimiter.
+    /// Empty tags are dropped and duplicates removed (first-seen order kept).
+    /// Comma-separated rather than space-separated so a multi-word tag survives
+    /// the round-trip; substring <c>ILike</c> search is unaffected.
+    /// </summary>
     internal static string NormaliseKeywords(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
-        var tokens = raw.Split(new[] { ' ', '\t', '\n', '\r', ',' }, StringSplitOptions.RemoveEmptyEntries);
-        return string.Join(' ', tokens.Select(t => t.ToLowerInvariant()));
+
+        var tags = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var current = new System.Text.StringBuilder();
+        var inQuote = false;
+
+        void Flush()
+        {
+            if (current.Length == 0) return;
+            // Collapse internal whitespace runs and fold commas to spaces.
+            var tag = CollapseWhitespace(current.ToString().Replace(',', ' ')).ToLowerInvariant();
+            current.Clear();
+            if (tag.Length > 0 && seen.Add(tag))
+            {
+                tags.Add(tag);
+            }
+        }
+
+        foreach (var c in raw)
+        {
+            if (c == '"')
+            {
+                inQuote = !inQuote;
+            }
+            else if (!inQuote && (char.IsWhiteSpace(c) || c == ','))
+            {
+                Flush();
+            }
+            else
+            {
+                current.Append(c);
+            }
+        }
+        Flush();
+
+        return string.Join(',', tags);
+    }
+
+    /// <summary>Collapses runs of whitespace to single spaces and trims the ends.</summary>
+    private static string CollapseWhitespace(string value)
+    {
+        var sb = new System.Text.StringBuilder(value.Length);
+        var lastWasSpace = true; // suppress leading whitespace
+        foreach (var c in value)
+        {
+            if (char.IsWhiteSpace(c))
+            {
+                if (!lastWasSpace) sb.Append(' ');
+                lastWasSpace = true;
+            }
+            else
+            {
+                sb.Append(c);
+                lastWasSpace = false;
+            }
+        }
+        return sb.ToString().TrimEnd();
     }
 
     /// <summary>Trims to null for whitespace-only input so an empty textarea persists as null rather than "".</summary>
@@ -339,6 +495,18 @@ public sealed class RecipeService
         if (!Enum.IsDefined(typeof(RecipeType), input.Type))
         {
             errors[nameof(input.Type)] = "Unknown recipe type.";
+        }
+
+        if (input.EstimatedValueHours is decimal hours)
+        {
+            if (hours < 0)
+            {
+                errors[nameof(input.EstimatedValueHours)] = "Estimated value (hours) can't be negative.";
+            }
+            else if (hours > MaxEstimatedValueHours)
+            {
+                errors[nameof(input.EstimatedValueHours)] = $"Estimated value (hours) must be {MaxEstimatedValueHours:0} or fewer.";
+            }
         }
 
         await ValidateMetadataAsync(_db, input.Instructions, input.MinimumApplicationVersionId, errors, ct);
@@ -521,7 +689,8 @@ public record RecipeInput(
     bool Deprecated,
     IReadOnlyList<RecipeFileInput> Files,
     string? Instructions = null,
-    int? MinimumApplicationVersionId = null);
+    int? MinimumApplicationVersionId = null,
+    decimal? EstimatedValueHours = null);
 
 /// <summary>One file row submitted by the recipe file editor.</summary>
 public record RecipeFileInput(string FileName, string Content, string RelativePath = "");

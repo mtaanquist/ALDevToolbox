@@ -121,7 +121,8 @@ public sealed class CookbookTools
             s.Deprecated,
             counts.TryGetValue(s.Id, out var c) ? c : 0,
             s.MinimumApplicationVersion?.Name,
-            s.MinimumApplicationVersion?.Application)).ToList();
+            s.MinimumApplicationVersion?.Application,
+            s.EstimatedValueHours)).ToList();
     }
 
     [McpServerTool(Name = "get_recipe", ReadOnly = true)]
@@ -144,7 +145,8 @@ public sealed class CookbookTools
                 f.Content)).ToList(),
             row.Instructions,
             row.MinimumApplicationVersion?.Name,
-            row.MinimumApplicationVersion?.Application);
+            row.MinimumApplicationVersion?.Application,
+            row.EstimatedValueHours);
     }
 
     [McpServerTool(Name = "get_cookbook_guidance", ReadOnly = true)]

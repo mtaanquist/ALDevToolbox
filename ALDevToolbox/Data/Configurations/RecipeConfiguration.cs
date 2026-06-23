@@ -23,6 +23,7 @@ internal sealed class RecipeConfiguration : IEntityTypeConfiguration<Recipe>
         entity.Property(e => e.Deprecated).HasColumnName("deprecated").IsRequired();
         entity.Property(e => e.Instructions).HasColumnName("instructions");
         entity.Property(e => e.MinimumApplicationVersionId).HasColumnName("minimum_application_version_id");
+        entity.Property(e => e.EstimatedValueHours).HasColumnName("estimated_value_hours").HasPrecision(8, 2);
         entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");

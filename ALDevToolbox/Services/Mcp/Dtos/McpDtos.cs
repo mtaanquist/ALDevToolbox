@@ -112,7 +112,8 @@ public sealed record RecipeSummary(
     bool Deprecated,
     int FileCount,
     string? MinimumApplicationVersionName = null,
-    string? MinimumApplication = null);
+    string? MinimumApplication = null,
+    decimal? EstimatedValueHours = null);
 
 public sealed record RecipeFileDto(string Path, string Content);
 
@@ -126,7 +127,8 @@ public sealed record RecipeDetail(
     IReadOnlyList<RecipeFileDto> Files,
     string? Instructions = null,
     string? MinimumApplicationVersionName = null,
-    string? MinimumApplication = null);
+    string? MinimumApplication = null,
+    decimal? EstimatedValueHours = null);
 
 /// <summary>
 /// One file body submitted as part of a <see cref="SuggestRecipeInput"/>.
