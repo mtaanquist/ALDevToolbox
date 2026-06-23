@@ -161,7 +161,7 @@ public sealed class InviteService
     {
         var errors = new Dictionary<string, string>();
         var trimmedName = (displayName ?? string.Empty).Trim();
-        if (trimmedName.Length is < 2 or > 80) errors["DisplayName"] = "Display name must be 2–80 characters.";
+        if (trimmedName.Length is < 2 or > 80) errors["DisplayName"] = "Full name must be 2–80 characters.";
         ALDevToolbox.Services.Account.AuthService.ValidatePassword(password, errors);
         if (errors.Count > 0) throw new PlanValidationException(errors);
 

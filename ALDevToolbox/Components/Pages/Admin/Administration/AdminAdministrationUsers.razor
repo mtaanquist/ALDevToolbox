@@ -114,7 +114,7 @@ else
         {
             <table class="data-table">
                 <thead>
-                    <tr><th>Email</th><th>Display name</th><th>Requested</th><th></th></tr>
+                    <tr><th>Email</th><th>Full name</th><th>Requested</th><th></th></tr>
                 </thead>
                 <tbody>
                 @foreach (var (request, user) in _pending)
@@ -201,7 +201,7 @@ else
                                checked="@AllVisibleSelected" @onchange="ToggleSelectAllVisible" />
                     </th>
                     <th>Email</th>
-                    <th>Display name</th>
+                    <th>Full name</th>
                     <th>Role</th>
                     <th>Status</th>
                     <th>Last login</th>
@@ -247,12 +247,34 @@ else
                                 <button type="submit" class="btn btn--sm">Re-enable</button>
                             </form>
                         }
+                        <button type="button" class="btn btn--sm" @onclick="() => OpenNameRow(u)">
+                            <Icon Name="pencil" Width="14" Height="14" />
+                            <span>Edit name</span>
+                        </button>
                         <button type="button" class="btn btn--sm" @onclick="() => ToggleEmailRow(u.Id)">
                             <Icon Name="mail" Width="14" Height="14" />
                             <span>Change email</span>
                         </button>
                     </td>
                 </tr>
+                @if (_nameRowOpen == u.Id)
+                {
+                    <tr class="email-change-row">
+                        <td colspan="7">
+                            <div class="inline-form">
+                                <input type="text" @bind="_nameDraft" @bind:event="oninput"
+                                       minlength="2" maxlength="80" aria-label="Full name" placeholder="Full name" />
+                                <button type="button" class="btn btn--sm btn--primary"
+                                        @onclick="() => SaveNameAsync(u)" disabled="@_busy">Save name</button>
+                                <button type="button" class="btn btn--sm" @onclick="CloseNameRow">Cancel</button>
+                                @if (_nameError is not null)
+                                {
+                                    <span class="form-error" role="alert">@_nameError</span>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
                 @if (_emailRowOpen == u.Id)
                 {
                     <tr class="email-change-row">
@@ -297,8 +319,55 @@ else
     private ConfirmDialog? _confirm;
     private int _emailRowOpen;
     private string? _oneShotLink;
+    private int _nameRowOpen;
+    private string _nameDraft = string.Empty;
+    private string? _nameError;
 
     private void ToggleEmailRow(int id) => _emailRowOpen = _emailRowOpen == id ? 0 : id;
+
+    private void OpenNameRow(User user)
+    {
+        _nameRowOpen = user.Id;
+        _nameDraft = user.DisplayName;
+        _nameError = null;
+    }
+
+    private void CloseNameRow()
+    {
+        _nameRowOpen = 0;
+        _nameError = null;
+    }
+
+    private async Task SaveNameAsync(User user)
+    {
+        if (_busy) return;
+        var orgId = Org.CurrentOrganizationId;
+        if (orgId is null) return;
+
+        _busy = true;
+        _nameError = null;
+        try
+        {
+            await Accounts.ChangeDisplayNameAsync(user.Id, _nameDraft, orgId.Value);
+            // The reloaded table is the confirmation — the row shows the new
+            // name. Close the editor and drop any stale per-row error.
+            _nameRowOpen = 0;
+            await LoadAsync();
+        }
+        catch (PlanValidationException ex)
+        {
+            _nameError = ex.Errors.FirstOrDefault().Value ?? "The name was rejected.";
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Failed to change full name for user {Id}.", user.Id);
+            _nameError = "An unexpected error occurred. The name was not changed.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
 
     private async Task CopyLinkAsync()
     {

@@ -136,7 +136,7 @@ public static class EmailTemplates
             + $"<p><strong>{Html(invitingAdminName)}</strong> has invited you to join "
             + $"<strong>{Html(orgName)}</strong> on AL Dev Toolbox as a <strong>{Html(roleLabel)}</strong>.</p>"
             + welcomeBlock
-            + $"<p>Use this link within the next 7 days to set a display name and password:</p>"
+            + $"<p>Use this link within the next 7 days to set a full name and password:</p>"
             + $"<p><a href=\"{Html(acceptUrl)}\">{Html(acceptUrl)}</a></p>"
             + $"<p>If you weren't expecting this invitation, you can ignore this message.</p>");
     }

@@ -101,6 +101,24 @@ public sealed class UserAdministrationService
         await _db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Admin correction of a user's full name (the <see cref="User.DisplayName"/>
+    /// column). Scoped to the acting admin's organisation via
+    /// <see cref="LoadUserAsync"/>; same 2–80 character rule as the
+    /// self-service change on the Account page.
+    /// </summary>
+    public async Task ChangeDisplayNameAsync(int userId, string newDisplayName, int actingOrgId, CancellationToken ct = default)
+    {
+        var user = await LoadUserAsync(userId, actingOrgId, ct);
+        var trimmed = newDisplayName?.Trim() ?? string.Empty;
+        if (trimmed.Length is < 2 or > 80)
+        {
+            throw new PlanValidationException(new Dictionary<string, string> { ["DisplayName"] = "Full name must be 2–80 characters." });
+        }
+        user.DisplayName = trimmed;
+        await _db.SaveChangesAsync(ct);
+    }
+
     /// <summary>Promotes / demotes a user. Last-admin protection on any demotion away from Admin (User or Editor).</summary>
     public async Task ChangeRoleAsync(int userId, UserRole newRole, int actingOrgId, CancellationToken ct = default)
     {

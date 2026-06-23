@@ -138,6 +138,47 @@ public sealed class AccountAdministrationTests : IDisposable
     }
 
     [Fact]
+    public async Task ChangeDisplayName_admin_corrects_a_users_name_and_trims_it()
+    {
+        var orgId = TestDb.OtherOrgId;
+        var subjectId = await SeedActiveUserAsync(orgId, "typo@example.com", UserRole.User);
+
+        await using (var ctx = _db.NewContext())
+        {
+            await NewUserAdmin(ctx).ChangeDisplayNameAsync(subjectId, "   Correct Name   ", orgId);
+        }
+
+        await using var read = _db.NewContext();
+        (await read.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == subjectId)).DisplayName
+            .Should().Be("Correct Name", "the admin edit trims surrounding whitespace like the self-service change");
+    }
+
+    [Fact]
+    public async Task ChangeDisplayName_rejects_a_name_outside_the_length_bounds()
+    {
+        var orgId = TestDb.OtherOrgId;
+        var subjectId = await SeedActiveUserAsync(orgId, "shortname@example.com", UserRole.User);
+
+        await using var ctx = _db.NewContext();
+        Func<Task> act = () => NewUserAdmin(ctx).ChangeDisplayNameAsync(subjectId, "x", orgId);
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("DisplayName");
+    }
+
+    [Fact]
+    public async Task ChangeDisplayName_refuses_to_edit_a_user_in_another_org()
+    {
+        // The acting admin's org must own the target user — LoadUserAsync is
+        // the tenant-isolation guard for this admin action.
+        var subjectId = await SeedActiveUserAsync(TestDb.OtherOrgId, "outsider@example.com", UserRole.User);
+
+        await using var ctx = _db.NewContext();
+        Func<Task> act = () => NewUserAdmin(ctx).ChangeDisplayNameAsync(subjectId, "New Name", TestDb.DefaultOrgId);
+        var ex = await act.Should().ThrowAsync<PlanValidationException>();
+        ex.Which.Errors.Should().ContainKey("UserId");
+    }
+
+    [Fact]
     public async Task ChangeRole_promotes_user_to_editor_without_tripping_last_admin_guard()
     {
         var orgId = TestDb.OtherOrgId;

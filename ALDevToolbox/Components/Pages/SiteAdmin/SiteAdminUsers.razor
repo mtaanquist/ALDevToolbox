@@ -11,7 +11,7 @@
         <div>
             <h1>Users</h1>
             <p class="muted">
-                Search across every organisation by email or display name. Use
+                Search across every organisation by email or full name. Use
                 this page to grant or revoke the SiteAdmin (hosting-operator)
                 flag. Per-organisation Admin status is managed by each org's
                 own <a href="/admin/administration/users">Users</a> page.
@@ -35,7 +35,7 @@
     <form method="get" action="/site-admin/users" class="admin-search-form">
         <label for="q" class="visually-hidden">Search by email or name</label>
         <input id="q" name="q" type="search" value="@Query"
-               placeholder="Search by email or display name…" class="admin-search-input" />
+               placeholder="Search by email or full name…" class="admin-search-input" />
         <button type="submit" class="btn btn--sm">Search</button>
     </form>
 
@@ -57,7 +57,7 @@
             <thead>
                 <tr>
                     <th>Email</th>
-                    <th>Display name</th>
+                    <th>Full name</th>
                     <th>Organisation</th>
                     <th>Role</th>
                     <th>Status</th>
