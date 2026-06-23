@@ -112,6 +112,22 @@
 .inline-form input {
     width: auto;
     min-width: 160px;
+    /* Inline-form inputs sit outside the .form-section / .admin-form
+       containers that carry the base input box styling, so restate it here
+       to match the rest of the app's text fields. */
+    padding: 8px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r);
+    font-family: inherit;
+    font-size: 13.5px;
+    background: var(--surface);
+    color: var(--ink);
+}
+
+.inline-form input:focus {
+    outline: none;
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px var(--blue-50);
 }
 
 /* Disclosure block used to fold revoked / expired tokens out of the
