@@ -182,6 +182,91 @@ public static class FolderZipWalker
         return string.Equals(name, "System.app", StringComparison.OrdinalIgnoreCase);
     }
 
+    // ── Microsoft artifact layout (BcContainerHelper Get-BCArtifactUrl) ──
+    //
+    // A downloaded BC OnPrem artifact is NOT shaped like the DVD. The country
+    // (application) artifact holds the *localized* apps under
+    // `Applications.<COUNTRY>/` (e.g. `Applications.DK/`) plus first-party
+    // `Extensions/`, with VERSIONED `.app` filenames
+    // (`Microsoft_Base Application_25.5.30849.48785.app`) whose paired
+    // `.Source.zip` is named without the version (`Base Application.Source.zip`).
+    // Its test apps are flat (named `Tests-*`, `* Test Library`, …) rather than
+    // under a `Test/` folder. The separate platform artifact is the classic W1
+    // DVD (`platform/Applications/`, unversioned names) plus the unique
+    // `System.app` — and its W1 apps collide (same AppId+Version, different
+    // bytes) with the localized ones, so we take ONLY `System.app` from it.
+    // See `.design/object-explorer.md` "Importing from Microsoft artifacts".
+
+    /// <summary>
+    /// Walks the <em>application</em> (country) artifact: every <c>.app</c> under
+    /// an <c>Applications</c> / <c>Applications.&lt;country&gt;</c> /
+    /// <c>Extensions</c> / <c>Extensions.&lt;country&gt;</c> folder, minus test
+    /// apps (by <c>Test*</c> folder ancestor or by the flat test-app naming the
+    /// artifact uses). Version-aware <c>.Source.zip</c> pairing is handled by
+    /// <see cref="PairingCandidates"/>.
+    /// </summary>
+    public static IReadOnlyList<FolderZipEntry> WalkBcArtifactApplication(ZipArchive archive) =>
+        Walk(archive, IsWantedArtifactApp);
+
+    /// <summary>
+    /// Walks the <em>platform</em> artifact for the single thing the application
+    /// artifact lacks and the resolver wants: the platform symbols
+    /// <c>System.app</c>. Everything else under the platform's W1
+    /// <c>Applications/</c> duplicates the localized apps and would abort the
+    /// import on an <c>(AppId, Version)</c> collision, so it's deliberately skipped.
+    /// </summary>
+    public static IReadOnlyList<FolderZipEntry> WalkBcArtifactPlatform(ZipArchive archive) =>
+        Walk(archive, p => string.Equals(LeafName(p), "System.app", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsWantedArtifactApp(string fullName)
+    {
+        if (HasTestAncestor(fullName)) return false;
+        if (IsArtifactTestAppName(LeafName(fullName))) return false;
+
+        foreach (var segment in fullName.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (DvdAppFolderNames.Contains(segment)) return true;
+            // `Applications.DK`, `Extensions.W1`, … — the country-suffixed forms.
+            foreach (var folder in DvdAppFolderNames)
+            {
+                if (segment.StartsWith(folder + ".", StringComparison.OrdinalIgnoreCase)) return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Recognises the flat test / test-framework apps the country artifact ships
+    /// inside <c>Applications.&lt;country&gt;</c> (no <c>Test/</c> folder to key
+    /// off): <c>Tests-*</c>, anything ending in <c>Test</c> / <c>Tests</c>, the
+    /// <c>Test Library</c> / <c>Test Libraries</c> / <c>Test Toolkit</c> /
+    /// <c>Test Runner</c> kits, and <c>Permissions Mock</c>. Conservative on
+    /// purpose — it drops the unambiguous test apps and leaves anything it isn't
+    /// sure about to import as a normal module.
+    /// </summary>
+    private static bool IsArtifactTestAppName(string fileName)
+    {
+        var stem = SplitAppNameAndVersion(
+            StripPublisherPrefix(Path.GetFileNameWithoutExtension(fileName))).Stem;
+
+        if (stem.StartsWith("Tests-", StringComparison.OrdinalIgnoreCase)
+            || stem.StartsWith("Tests ", StringComparison.OrdinalIgnoreCase)
+            || stem.StartsWith("TestRunner", StringComparison.OrdinalIgnoreCase)
+            || stem.Equals("Test Runner", StringComparison.OrdinalIgnoreCase)
+            || stem.Equals("Permissions Mock", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        if (stem.EndsWith(" Tests", StringComparison.OrdinalIgnoreCase)
+            || stem.EndsWith(" Test", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        return stem.Contains("Test Library", StringComparison.OrdinalIgnoreCase)
+            || stem.Contains("Test Libraries", StringComparison.OrdinalIgnoreCase)
+            || stem.Contains("Test Toolkit", StringComparison.OrdinalIgnoreCase);
+    }
+
     // ── VS Code AL workspace layout ─────────────────────────────────────
 
     // Folders that hold dependency caches or editor/tooling state rather than
@@ -523,6 +608,21 @@ public static class FolderZipWalker
         if (!string.Equals(stripped, bareStem, StringComparison.Ordinal))
         {
             yield return stripped;
+        }
+        // 3. Version-stripped variants. Microsoft artifact .app filenames carry a
+        //    version ("Microsoft_Base Application_25.5.30849.48785.app") while the
+        //    paired source is named without one ("Base Application.Source.zip").
+        //    DVD names have no version, so SplitAppNameAndVersion is a no-op there.
+        var bareNoVer = SplitAppNameAndVersion(bareStem).Stem;
+        if (!string.Equals(bareNoVer, bareStem, StringComparison.Ordinal))
+        {
+            yield return bareNoVer;
+        }
+        var strippedNoVer = SplitAppNameAndVersion(stripped).Stem;
+        if (!string.Equals(strippedNoVer, stripped, StringComparison.Ordinal)
+            && !string.Equals(strippedNoVer, bareNoVer, StringComparison.Ordinal))
+        {
+            yield return strippedNoVer;
         }
     }
 

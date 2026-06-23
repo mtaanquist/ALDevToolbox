@@ -171,15 +171,16 @@ public sealed class ReleaseImportWorker : BackgroundService
                         var download = await artifacts.DownloadArtifactSetAsync(artifact.ApplicationUrl, ct).ConfigureAwait(false);
                         tempToDelete = download.ApplicationZipPath;
                         tempToDelete2 = download.PlatformZipPath;
-                        // Both artifact zips lay their loose .app files out under an
-                        // Applications/ folder, so walk each as a DVD subset (test
-                        // apps dropped) and merge. FolderZipWalker.DvdAppFolderNames
-                        // already recognises "Applications".
-                        (uploads, archive) = ReleaseZipStaging.OpenStagedZip(download.ApplicationZipPath, isDvd: true, openedStreams);
+                        // The application (country) artifact carries the localized
+                        // apps (Applications.<country>/ + Extensions/); the platform
+                        // artifact contributes ONLY System.app — its W1 apps would
+                        // collide (same AppId+Version, different bytes) with the
+                        // localized ones. See FolderZipWalker's artifact notes.
+                        (uploads, archive) = ReleaseZipStaging.OpenBcArtifactZip(download.ApplicationZipPath, isPlatform: false, openedStreams);
                         if (download.PlatformZipPath is not null)
                         {
                             var (platformUploads, platformArchive) =
-                                ReleaseZipStaging.OpenStagedZip(download.PlatformZipPath, isDvd: true, openedStreams);
+                                ReleaseZipStaging.OpenBcArtifactZip(download.PlatformZipPath, isPlatform: true, openedStreams);
                             archive2 = platformArchive;
                             uploads = uploads.Concat(platformUploads).ToList();
                         }
