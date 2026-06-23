@@ -81,6 +81,16 @@ public static class ReleaseZipStaging
     private const int MaxNestedZipDescend = 4;
 
     /// <summary>
+    /// Hard cap on the bytes written while unwrapping a nested DVD zip. A real
+    /// BC DVD is 1–3 GB; 15 GB leaves generous margin for an unusually large
+    /// release while still refusing a malicious/decompression-bomb entry before
+    /// it fills the container's ephemeral scratch disk. The cap is enforced
+    /// during the copy rather than trusting the entry's declared
+    /// <see cref="ZipArchiveEntry.Length"/>, which an attacker controls.
+    /// </summary>
+    private const long MaxNestedZipBytes = 15L * 1024 * 1024 * 1024;
+
+    /// <summary>
     /// Picks the walk strategy for an open archive. The DVD path is explicit;
     /// otherwise auto-detect a VS Code AL workspace (folders each holding an
     /// <c>app.json</c>) and scope to each app's own build output, so an admin
@@ -154,7 +164,7 @@ public static class ReleaseZipStaging
         {
             using (var source = nested.Open())
             {
-                source.CopyTo(fs);
+                CopyWithCap(source, fs, MaxNestedZipBytes);
             }
             fs.Position = 0;
             // ZipArchive owns fs (leaveOpen defaults to false), so disposing the
@@ -165,6 +175,31 @@ public static class ReleaseZipStaging
         {
             fs.Dispose();
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Streams <paramref name="source"/> into <paramref name="dest"/>, throwing
+    /// <see cref="InvalidDataException"/> once more than <paramref name="maxBytes"/>
+    /// have been written. Counting the bytes actually inflated (rather than
+    /// trusting the zip entry's declared length) is what makes this a real guard
+    /// against a decompression bomb.
+    /// </summary>
+    private static void CopyWithCap(Stream source, Stream dest, long maxBytes)
+    {
+        var buffer = new byte[81920];
+        long total = 0;
+        int read;
+        while ((read = source.Read(buffer)) > 0)
+        {
+            total += read;
+            if (total > maxBytes)
+            {
+                throw new InvalidDataException(
+                    $"The nested DVD zip expands past the {maxBytes / (1024 * 1024 * 1024)} GB limit; "
+                    + "it doesn't look like a Business Central DVD.");
+            }
+            dest.Write(buffer, 0, read);
         }
     }
 
