@@ -29,8 +29,8 @@
             <option value="customer">Customer-specific bundle</option>
         </select>
         <small class="field__caption muted">
-            Third-party and customer Releases sit on top of a first-party
-            parent; pick that parent below so cross-module references resolve.
+            Third-party and customer releases build on top of a Microsoft
+            (first-party) release — pick that base below.
         </small>
     </label>
 
@@ -47,9 +47,8 @@
             }
         </select>
         <small class="field__caption muted">
-            Required for third-party / customer Releases — the chain walker
-            follows this pointer to resolve references that target objects
-            in the parent's modules.
+            Required for third-party / customer releases — the Microsoft base
+            they extend, so references to its objects resolve correctly.
         </small>
     </label>
 
@@ -59,8 +58,8 @@
                placeholder="e.g. Continia Software"
                class="field__input" />
         <small class="field__caption muted">
-            For third-party / customer Releases — who owns this extension.
-            Set it explicitly when you've taken over an app someone else built.
+            Who owns this extension. Mainly useful for third-party / customer
+            releases.
         </small>
     </label>
 

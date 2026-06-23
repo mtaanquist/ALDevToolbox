@@ -50,73 +50,16 @@
                 <span class="field__label">Application folder ZIP</span>
                 <input type="file" name="FolderZip" accept=".zip" class="field__input field__input--file" />
                 <small class="field__caption muted">
-                    Drop the DVD's <code>applications/</code> folder as one ZIP.
-                    We walk every <code>.app</code> entry, pair it with its
-                    sibling <code>.Source.zip</code>, and flag test apps
-                    (anything under a <code>Test*</code> folder), internal apps
-                    (Microsoft's <code>_Exclude_</code> marker), and language
-                    packs (translation-only modules) automatically.
-                    Up to 1 GB.
+                    Drop your <code>.app</code> files in a single ZIP — either
+                    Microsoft's DVD <code>applications/</code> folder or just the
+                    apps you've built. Test and helper apps are skipped
+                    automatically. Up to 1 GB.
                     <br />
-                    Also accepts a zipped <strong>VS Code AL workspace</strong> —
-                    any folder with an <code>app.json</code> is treated as one
-                    app and we import its compiled <code>.app</code> (newest
-                    version), ignoring the <code>.alpackages</code> dependency
-                    cache. App folders that haven't been built yet are skipped.
-                </small>
-            </label>
-        </section>
-
-        <section class="form-section">
-            <p class="muted">
-                — or pick individual files (useful for partner extensions you've built locally) —
-            </p>
-
-            <label class="field">
-                <span class="field__label">.app files</span>
-                <input type="file" name="AppFiles" accept=".app" multiple
-                       class="field__input field__input--file" />
-                <small class="field__caption muted">
-                    Pick every <code>.app</code> for this Release in one go. We
-                    deduplicate by (AppId, Version) and SHA-256 the bytes — re-uploads
-                    of byte-identical .apps are silent no-ops.
-                </small>
-            </label>
-
-            <label class="field">
-                <span class="field__label">.Source.zip files (optional)</span>
-                <input type="file" name="SourceZips" accept=".zip,.Source.zip" multiple
-                       class="field__input field__input--file" />
-                <small class="field__caption muted">
-                    Only needed when an .app was built without
-                    <code>IncludeSourceInSymbolFile=true</code>. We pair each zip
-                    with its .app by filename stem (case-insensitive).
-                </small>
-            </label>
-
-            <label class="field">
-                <span class="field__label">Legacy C/AL TXT export</span>
-                <input type="file" name="CalTxtFile" accept=".txt" class="field__input field__input--file" />
-                <small class="field__caption muted">
-                    A classic NAV <em>Export Objects to text</em> file (one big
-                    <code>OBJECT … { }</code> dump). Import the bare-Microsoft
-                    <strong>Base</strong> first as Kind = <code>first_party</code>,
-                    then the <strong>Customer</strong> file as Kind = <code>customer</code>
-                    with the base picked as its Parent Release — that powers the
-                    Base-vs-Customer object comparison.
-                </small>
-            </label>
-
-            <label class="field">
-                <span class="field__label">C/AL codepage</span>
-                <select name="CalEncoding" class="field__input">
-                    <option value="850" selected>IBM 850 (OEM — classic finsql default)</option>
-                    <option value="1252">Windows-1252</option>
-                </select>
-                <small class="field__caption muted">
-                    Only used for the C/AL TXT upload. The classic Windows client
-                    exports in the OEM codepage (850 for Western Europe); pick
-                    1252 if accented characters look wrong after import.
+                    The <code>.app</code> files alone are enough to browse
+                    objects. To also see source code and where things are called,
+                    the apps need their source included — which is the norm for
+                    builds you make yourself. If an app was built without it, add
+                    its <code>.Source.zip</code> to the same ZIP.
                 </small>
             </label>
         </section>
@@ -124,13 +67,12 @@
         <section class="form-section">
             <label class="checkbox-label">
                 <input type="checkbox" name="StoreSymbolReference" value="true" />
-                Store each extension's <code>SymbolReference.json</code> for debugging
+                Keep each app's symbol file for troubleshooting
             </label>
             <small class="field__caption muted">
-                Keeps the raw symbol file per module so resolver errors can be traced
-                and the JSON downloaded later (via the <code>download_symbol_reference</code>
-                MCP tool). Off by default — a first-party DVD's symbol files run to tens
-                of MB each, so only enable it when you're chasing a resolver bug.
+                Stores extra technical detail that helps diagnose import problems.
+                These files are large, so leave this off unless you're looking into
+                a specific issue.
             </small>
         </section>
 

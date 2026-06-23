@@ -184,9 +184,12 @@ internal static class ObjectExplorerEndpoints
             catch (PlanValidationException ex)
             {
                 // URL/allow-list validation, label collisions, quota — all
-                // field-keyed so the form renders them inline.
+                // field-keyed so the form renders them inline. Keep a C/AL
+                // submission on the C/AL tab (its label/parent errors would
+                // otherwise surface on Upload, which no longer has the field).
                 var first = ex.Errors.First();
-                Redirect(ctx, first.Key, first.Value);
+                var page = calTxtFile is { Length: > 0 } ? "/admin/object-explorer/new/cal" : null;
+                Redirect(ctx, first.Key, first.Value, page);
             }
         })
         .RequireObjectExplorerAuthoring()
@@ -947,12 +950,12 @@ internal static class ObjectExplorerEndpoints
         yield return stem.Replace('_', ' ');
     }
 
-    private static void Redirect(HttpContext ctx, string errKey, string message)
+    private static void Redirect(HttpContext ctx, string errKey, string message, string? page = null)
     {
-        // DVD-URL errors come from the DVD tab; send the admin back there so the
-        // message lands next to the field they used. Everything else is the
-        // Upload tab's file pickers.
-        var page = errKey == "DvdUrl" ? "/admin/object-explorer/new/dvd" : "/admin/object-explorer/new";
+        // An explicit page wins (the caller knows which tab the post came from).
+        // Otherwise DVD-URL errors come from the DVD tab; everything else is the
+        // Upload tab's folder-ZIP picker.
+        page ??= errKey == "DvdUrl" ? "/admin/object-explorer/new/dvd" : "/admin/object-explorer/new";
         ctx.Response.Redirect(
             page + "?err=" + Uri.EscapeDataString(errKey)
             + "&msg=" + Uri.EscapeDataString(message));
